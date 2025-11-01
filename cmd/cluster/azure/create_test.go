@@ -171,6 +171,59 @@ func TestCreateCluster(t *testing.T) {
 				"--kas-dns-name=test-dns-name.example.com",
 			},
 		},
+		{
+			name: "with image generation Gen1",
+			args: []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
+				"--image-generation=Gen1",
+			},
+		},
+		{
+			name: "with image generation Gen2",
+			args: []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
+				"--image-generation=Gen2",
+			},
+		},
+		{
+			name: "with marketplace flags and image generation Gen1",
+			args: []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
+				"--marketplace-publisher=azureopenshift",
+				"--marketplace-offer=aro4",
+				"--marketplace-sku=aro_414",
+				"--marketplace-version=414.92.2024021",
+				"--image-generation=Gen1",
+			},
+		},
+		{
+			name: "with availability zones and image generation Gen1",
+			args: []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
+				"--availability-zones=1,2,3",
+				"--image-generation=Gen1",
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
