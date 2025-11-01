@@ -1,0 +1,26 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  annotations:
+  labels:
+  name: base
+  namespace: default
+spec:
+  arch: amd64
+  clusterName: some-cluster
+  management:
+    autoRepair: false
+    upgradeType: Replace
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.17.0-rc.0-x86_64
+  replicas: 0
+  platform:
+    aws:
+      instanceProfile: a-profile
+      instanceType: m6a.2xlarge
+      rootVolume:
+        size: 120
+        type: gp3
+      subnet:
+        id: "subnet-any"
+    type: AWS

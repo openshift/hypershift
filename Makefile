@@ -38,6 +38,7 @@ GOWS=GO111MODULE=on GOWORK=$(shell pwd)/hack/workspace/go.work GOFLAGS=-mod=vend
 GO_BUILD_RECIPE=CGO_ENABLED=1 $(GO) build $(GO_GCFLAGS)
 GO_CLI_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS) -ldflags '-extldflags "-static"'
 GO_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2e -c
+GO_E2EV2_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2ev2 -c
 GO_REQSERVING_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags reqserving -c
 
 OUT_DIR ?= bin
@@ -268,7 +269,7 @@ test: generate
 	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
 
 .PHONY: e2e
-e2e: reqserving-e2e
+e2e: reqserving-e2e e2ev2
 	$(GO_E2E_RECIPE) -o bin/test-e2e ./test/e2e
 	$(GO_BUILD_RECIPE) -o bin/test-setup ./test/setup
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o ../../bin/gotestsum gotest.tools/gotestsum
@@ -277,6 +278,11 @@ e2e: reqserving-e2e
 .PHONY: reqserving-e2e
 reqserving-e2e:
 	CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags reqserving -c -o bin/test-reqserving ./test/reqserving-e2e
+
+# Build e2e v2 tests
+.PHONY: e2ev2
+e2ev2:
+	$(GO_E2EV2_RECIPE) -o bin/test-e2e-v2 ./test/e2e/v2/tests
 
 # Run go fmt against code
 .PHONY: fmt
