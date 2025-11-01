@@ -311,7 +311,8 @@ type ResourceSpans struct {
 	// A list of ScopeSpans that originate from a resource.
 	ScopeSpans []*ScopeSpans `protobuf:"bytes,2,rep,name=scope_spans,json=scopeSpans,proto3" json:"scope_spans,omitempty"`
 	// The Schema URL, if known. This is the identifier of the Schema that the resource data
-	// is recorded in. To learn more about Schema URL see
+	// is recorded in. Notably, the last part of the URL path is the version number of the
+	// schema: http[s]://server[:port]/path/<version>. To learn more about Schema URL see
 	// https://opentelemetry.io/docs/specs/otel/schemas/#schema-url
 	// This schema_url applies to the data in the "resource" field. It does not apply
 	// to the data in the "scope_spans" field which have their own schema_url field.
@@ -384,7 +385,8 @@ type ScopeSpans struct {
 	// A list of Spans that originate from an instrumentation scope.
 	Spans []*Span `protobuf:"bytes,2,rep,name=spans,proto3" json:"spans,omitempty"`
 	// The Schema URL, if known. This is the identifier of the Schema that the span data
-	// is recorded in. To learn more about Schema URL see
+	// is recorded in. Notably, the last part of the URL path is the version number of the
+	// schema: http[s]://server[:port]/path/<version>. To learn more about Schema URL see
 	// https://opentelemetry.io/docs/specs/otel/schemas/#schema-url
 	// This schema_url applies to all spans and span events in the "spans" field.
 	SchemaUrl string `protobuf:"bytes,3,opt,name=schema_url,json=schemaUrl,proto3" json:"schema_url,omitempty"`
@@ -532,10 +534,18 @@ type Span struct {
 	//     "example.com/myattribute": true
 	//     "example.com/score": 10.239
 	//
-	// The OpenTelemetry API specification further restricts the allowed value types:
-	// https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/common/README.md#attribute
 	// Attribute keys MUST be unique (it is not allowed to have more than one
 	// attribute with the same key).
+	//
+	// The attribute values SHOULD NOT contain empty values.
+	// The attribute values SHOULD NOT contain bytes values.
+	// The attribute values SHOULD NOT contain array values different than array of string values, bool values, int values,
+	// double values.
+	// The attribute values SHOULD NOT contain kvlist values.
+	// The behavior of software that receives attributes containing such values can be unpredictable.
+	// These restrictions can change in a minor release.
+	// The restrictions take origin from the OpenTelemetry specification:
+	// https://github.com/open-telemetry/opentelemetry-specification/blob/v1.47.0/specification/common/README.md#attribute.
 	Attributes []*v11.KeyValue `protobuf:"bytes,9,rep,name=attributes,proto3" json:"attributes,omitempty"`
 	// dropped_attributes_count is the number of attributes that were discarded. Attributes
 	// can be discarded because their keys are too long or because there are too many
@@ -775,6 +785,16 @@ type Span_Event struct {
 	// attributes is a collection of attribute key/value pairs on the event.
 	// Attribute keys MUST be unique (it is not allowed to have more than one
 	// attribute with the same key).
+	//
+	// The attribute values SHOULD NOT contain empty values.
+	// The attribute values SHOULD NOT contain bytes values.
+	// The attribute values SHOULD NOT contain array values different than array of string values, bool values, int values,
+	// double values.
+	// The attribute values SHOULD NOT contain kvlist values.
+	// The behavior of software that receives attributes containing such values can be unpredictable.
+	// These restrictions can change in a minor release.
+	// The restrictions take origin from the OpenTelemetry specification:
+	// https://github.com/open-telemetry/opentelemetry-specification/blob/v1.47.0/specification/common/README.md#attribute.
 	Attributes []*v11.KeyValue `protobuf:"bytes,3,rep,name=attributes,proto3" json:"attributes,omitempty"`
 	// dropped_attributes_count is the number of dropped attributes. If the value is 0,
 	// then no attributes were dropped.
@@ -860,6 +880,16 @@ type Span_Link struct {
 	// attributes is a collection of attribute key/value pairs on the link.
 	// Attribute keys MUST be unique (it is not allowed to have more than one
 	// attribute with the same key).
+	//
+	// The attribute values SHOULD NOT contain empty values.
+	// The attribute values SHOULD NOT contain bytes values.
+	// The attribute values SHOULD NOT contain array values different than array of string values, bool values, int values,
+	// double values.
+	// The attribute values SHOULD NOT contain kvlist values.
+	// The behavior of software that receives attributes containing such values can be unpredictable.
+	// These restrictions can change in a minor release.
+	// The restrictions take origin from the OpenTelemetry specification:
+	// https://github.com/open-telemetry/opentelemetry-specification/blob/v1.47.0/specification/common/README.md#attribute.
 	Attributes []*v11.KeyValue `protobuf:"bytes,4,rep,name=attributes,proto3" json:"attributes,omitempty"`
 	// dropped_attributes_count is the number of dropped attributes. If the value is 0,
 	// then no attributes were dropped.
