@@ -22,6 +22,7 @@ package v1beta1
 type OperatorConfigurationApplyConfiguration struct {
 	ClusterVersionOperator *ClusterVersionOperatorSpecApplyConfiguration `json:"clusterVersionOperator,omitempty"`
 	ClusterNetworkOperator *ClusterNetworkOperatorSpecApplyConfiguration `json:"clusterNetworkOperator,omitempty"`
+	IngressOperator        *IngressOperatorSpecApplyConfiguration        `json:"ingressOperator,omitempty"`
 }
 
 // OperatorConfigurationApplyConfiguration constructs a declarative configuration of the OperatorConfiguration type for use with
@@ -43,5 +44,13 @@ func (b *OperatorConfigurationApplyConfiguration) WithClusterVersionOperator(val
 // If called multiple times, the ClusterNetworkOperator field is set to the value of the last call.
 func (b *OperatorConfigurationApplyConfiguration) WithClusterNetworkOperator(value *ClusterNetworkOperatorSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
 	b.ClusterNetworkOperator = value
+	return b
+}
+
+// WithIngressOperator sets the IngressOperator field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the IngressOperator field is set to the value of the last call.
+func (b *OperatorConfigurationApplyConfiguration) WithIngressOperator(value *IngressOperatorSpecApplyConfiguration) *OperatorConfigurationApplyConfiguration {
+	b.IngressOperator = value
 	return b
 }
