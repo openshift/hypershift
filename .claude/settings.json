@@ -10,5 +10,31 @@
   "enabledPlugins": {
     "jira@ai-helpers": true,
     "utils@ai-helpers": true
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/pre-push-check.sh",
+            "description": "Verify and test code before git push"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/post-edit-go.sh",
+            "description": "Auto-fix linting and run tests for Go files"
+          }
+        ]
+      }
+    ]
   }
 }
