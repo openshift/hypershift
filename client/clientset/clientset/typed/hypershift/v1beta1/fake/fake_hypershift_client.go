@@ -31,6 +31,10 @@ func (c *FakeHypershiftV1beta1) CertificateSigningRequestApprovals(namespace str
 	return newFakeCertificateSigningRequestApprovals(c, namespace)
 }
 
+func (c *FakeHypershiftV1beta1) GCPPrivateServiceConnects(namespace string) v1beta1.GCPPrivateServiceConnectInterface {
+	return newFakeGCPPrivateServiceConnects(c, namespace)
+}
+
 func (c *FakeHypershiftV1beta1) HostedClusters(namespace string) v1beta1.HostedClusterInterface {
 	return newFakeHostedClusters(c, namespace)
 }

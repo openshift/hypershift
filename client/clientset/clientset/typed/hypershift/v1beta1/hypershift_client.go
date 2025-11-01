@@ -28,6 +28,7 @@ import (
 type HypershiftV1beta1Interface interface {
 	RESTClient() rest.Interface
 	CertificateSigningRequestApprovalsGetter
+	GCPPrivateServiceConnectsGetter
 	HostedClustersGetter
 	HostedControlPlanesGetter
 	NodePoolsGetter
@@ -40,6 +41,10 @@ type HypershiftV1beta1Client struct {
 
 func (c *HypershiftV1beta1Client) CertificateSigningRequestApprovals(namespace string) CertificateSigningRequestApprovalInterface {
 	return newCertificateSigningRequestApprovals(c, namespace)
+}
+
+func (c *HypershiftV1beta1Client) GCPPrivateServiceConnects(namespace string) GCPPrivateServiceConnectInterface {
+	return newGCPPrivateServiceConnects(c, namespace)
 }
 
 func (c *HypershiftV1beta1Client) HostedClusters(namespace string) HostedClusterInterface {

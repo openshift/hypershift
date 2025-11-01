@@ -4138,6 +4138,56 @@ spec:
                     description: gcp specifies configuration for clusters running
                       on Google Cloud Platform.
                     properties:
+                      customerNetworkConfig:
+                        description: |-
+                          customerNetworkConfig specifies customer VPC configuration for PSC.
+                          Required for customer VPC configuration in PSC deployments.
+                        properties:
+                          network:
+                            description: network is the customer's VPC network name
+                            properties:
+                              name:
+                                description: name is the name of the GCP resource
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z]([a-z0-9-]*[a-z0-9])?$
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          project:
+                            description: project is the customer's GCP project ID.
+                            maxLength: 30
+                            minLength: 6
+                            pattern: ^[a-z]([a-z0-9]*(-[a-z0-9]+)*)?$
+                            type: string
+                          pscSubnet:
+                            description: pscSubnet is the customer's subnet for PSC
+                              endpoints
+                            properties:
+                              name:
+                                description: name is the name of the GCP resource
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z]([a-z0-9-]*[a-z0-9])?$
+                                type: string
+                            required:
+                            - name
+                            type: object
+                        required:
+                        - network
+                        - project
+                        - pscSubnet
+                        type: object
+                      endpointAccess:
+                        default: Private
+                        description: |-
+                          endpointAccess controls API endpoint accessibility for the HostedControlPlane on GCP.
+                          Allowed values: "Private", "PublicAndPrivate". Defaults to "Private".
+                        enum:
+                        - PublicAndPrivate
+                        - Private
+                        type: string
                       project:
                         description: |-
                           project is the GCP project ID.
@@ -4147,7 +4197,8 @@ spec:
                             start and end: Must begin with a lowercase letter and must not end with a hyphen
                             valid examples: "my-project", "my-project-1", "my-project-123".
                         maxLength: 30
-                        pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]$
+                        minLength: 6
+                        pattern: ^[a-z]([a-z0-9]*(-[a-z0-9]+)*)?$
                         type: string
                         x-kubernetes-validations:
                         - message: Project is immutable
@@ -4168,6 +4219,7 @@ spec:
                         - message: Region is immutable
                           rule: self == oldSelf
                     required:
+                    - customerNetworkConfig
                     - project
                     - region
                     type: object

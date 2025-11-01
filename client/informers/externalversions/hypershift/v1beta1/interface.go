@@ -25,6 +25,8 @@ import (
 type Interface interface {
 	// CertificateSigningRequestApprovals returns a CertificateSigningRequestApprovalInformer.
 	CertificateSigningRequestApprovals() CertificateSigningRequestApprovalInformer
+	// GCPPrivateServiceConnects returns a GCPPrivateServiceConnectInformer.
+	GCPPrivateServiceConnects() GCPPrivateServiceConnectInformer
 	// HostedClusters returns a HostedClusterInformer.
 	HostedClusters() HostedClusterInformer
 	// HostedControlPlanes returns a HostedControlPlaneInformer.
@@ -47,6 +49,11 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 // CertificateSigningRequestApprovals returns a CertificateSigningRequestApprovalInformer.
 func (v *version) CertificateSigningRequestApprovals() CertificateSigningRequestApprovalInformer {
 	return &certificateSigningRequestApprovalInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// GCPPrivateServiceConnects returns a GCPPrivateServiceConnectInformer.
+func (v *version) GCPPrivateServiceConnects() GCPPrivateServiceConnectInformer {
+	return &gCPPrivateServiceConnectInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // HostedClusters returns a HostedClusterInformer.
