@@ -157,6 +157,11 @@ func (v hostedClusterValidator) ValidateCreate(ctx context.Context, obj runtime.
 		return nil, fmt.Errorf("wrong type %T for validation, instead of HostedCluster", obj)
 	}
 
+	// Validate OAuth tokenConfig for all platforms
+	if err := validateOAuthTokenConfig(hc); err != nil {
+		return nil, err
+	}
+
 	switch hc.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
 		return v.validateCreateKubevirtHostedCluster(ctx, hc)
@@ -174,6 +179,11 @@ func (v hostedClusterValidator) ValidateUpdate(ctx context.Context, oldHC, newHC
 	hcOld, ok := oldHC.(*hyperv1.HostedCluster)
 	if !ok {
 		return nil, fmt.Errorf("wrong type %T for validation, instead of HostedCluster", oldHC)
+	}
+
+	// Validate OAuth tokenConfig for all platforms
+	if err := validateOAuthTokenConfig(hc); err != nil {
+		return nil, err
 	}
 
 	switch hc.Spec.Platform.Type {
@@ -297,6 +307,27 @@ func validateJsonAnnotation(annotations map[string]string) error {
 				return fmt.Errorf("wrong json patch structure in the %q annotation: %w", hyperv1.JSONPatchAnnotation, err)
 			}
 		}
+	}
+
+	return nil
+}
+
+// validateOAuthTokenConfig validates OAuth tokenConfig settings.
+// It ensures that accessTokenInactivityTimeout is not set below the minimum acceptable value of 300 seconds.
+func validateOAuthTokenConfig(hc *hyperv1.HostedCluster) error {
+	if hc.Spec.Configuration == nil || hc.Spec.Configuration.OAuth == nil {
+		return nil
+	}
+
+	oauth := hc.Spec.Configuration.OAuth
+	if oauth.TokenConfig.AccessTokenInactivityTimeout == nil {
+		return nil
+	}
+
+	timeout := oauth.TokenConfig.AccessTokenInactivityTimeout.Duration
+	const minTokenTimeout = 300
+	if timeout.Seconds() < minTokenTimeout {
+		return fmt.Errorf("spec.configuration.oauth.tokenConfig.accessTokenInactivityTimeout: Invalid value: %q: the minimum acceptable token timeout value is 300 seconds", timeout.String())
 	}
 
 	return nil
