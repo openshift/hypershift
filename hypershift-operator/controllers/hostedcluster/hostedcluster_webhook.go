@@ -227,6 +227,8 @@ func (v nodePoolValidator) ValidateCreate(ctx context.Context, obj runtime.Objec
 	switch np.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
 		return v.validateCreateKubevirtNodePool(ctx, np)
+	case hyperv1.AWSPlatform:
+		return v.validateCreateAWSNodePool(ctx, np)
 	default:
 		return nil, nil // no validation needed
 	}
@@ -246,6 +248,11 @@ func (v nodePoolValidator) ValidateUpdate(ctx context.Context, oldNP, newNP runt
 	switch npNew.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
 		err := v.validateUpdateKubevirtNodePool(ctx, npOld, npNew)
+		if err != nil {
+			return nil, err
+		}
+	case hyperv1.AWSPlatform:
+		err := v.validateUpdateAWSNodePool(ctx, npOld, npNew)
 		if err != nil {
 			return nil, err
 		}
@@ -271,6 +278,39 @@ func (v nodePoolValidator) validateUpdateKubevirtNodePool(ctx context.Context, o
 	err := validateJsonAnnotation(newNP.Annotations)
 	if err != nil {
 		return err
+	}
+	return nil
+}
+
+func (v nodePoolValidator) validateCreateAWSNodePool(ctx context.Context, np *hyperv1.NodePool) (admission.Warnings, error) {
+	if np.Spec.Platform.AWS != nil {
+		if err := validateAWSResourceTags(np.Spec.Platform.AWS.ResourceTags); err != nil {
+			return nil, err
+		}
+	}
+
+	return nil, nil
+}
+
+func (v nodePoolValidator) validateUpdateAWSNodePool(ctx context.Context, oldNP, newNP *hyperv1.NodePool) error {
+	if newNP.Spec.Platform.AWS != nil {
+		if err := validateAWSResourceTags(newNP.Spec.Platform.AWS.ResourceTags); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// validateAWSResourceTags validates that AWS resource tags have non-empty keys and values.
+func validateAWSResourceTags(tags []hyperv1.AWSResourceTag) error {
+	for i, tag := range tags {
+		if len(tag.Key) == 0 {
+			return fmt.Errorf("spec.platform.aws.resourceTags[%d].key cannot be empty", i)
+		}
+		if len(tag.Value) == 0 {
+			return fmt.Errorf("spec.platform.aws.resourceTags[%d].value cannot be empty", i)
+		}
 	}
 	return nil
 }

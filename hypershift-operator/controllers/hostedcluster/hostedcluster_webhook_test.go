@@ -646,3 +646,305 @@ func TestKubevirtNodePoolManagementDefaulting(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateAWSNodePoolCreate(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		np          *v1beta1.NodePool
+		expectError bool
+	}{
+		{
+			name: "When a NodePool has valid AWS resource tags, it should be accepted",
+			np: &v1beta1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "np-under-test",
+					Namespace: "myns",
+				},
+				Spec: v1beta1.NodePoolSpec{
+					ClusterName: "cluster-under-test",
+					Platform: v1beta1.NodePoolPlatform{
+						Type: v1beta1.AWSPlatform,
+						AWS: &v1beta1.AWSNodePoolPlatform{
+							InstanceType: "m5.large",
+							ResourceTags: []v1beta1.AWSResourceTag{
+								{Key: "environment", Value: "production"},
+								{Key: "team", Value: "engineering"},
+							},
+						},
+					},
+					Release: v1beta1.Release{
+						Image: "image-4.16.0",
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When a NodePool has no AWS resource tags, it should be accepted",
+			np: &v1beta1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "np-under-test",
+					Namespace: "myns",
+				},
+				Spec: v1beta1.NodePoolSpec{
+					ClusterName: "cluster-under-test",
+					Platform: v1beta1.NodePoolPlatform{
+						Type: v1beta1.AWSPlatform,
+						AWS: &v1beta1.AWSNodePoolPlatform{
+							InstanceType: "m5.large",
+						},
+					},
+					Release: v1beta1.Release{
+						Image: "image-4.16.0",
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When a NodePool has an empty AWS resource tag value, it should be rejected",
+			np: &v1beta1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "np-under-test",
+					Namespace: "myns",
+				},
+				Spec: v1beta1.NodePoolSpec{
+					ClusterName: "cluster-under-test",
+					Platform: v1beta1.NodePoolPlatform{
+						Type: v1beta1.AWSPlatform,
+						AWS: &v1beta1.AWSNodePoolPlatform{
+							InstanceType: "m5.large",
+							ResourceTags: []v1beta1.AWSResourceTag{
+								{Key: "environment", Value: ""},
+							},
+						},
+					},
+					Release: v1beta1.Release{
+						Image: "image-4.16.0",
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "When a NodePool has an empty AWS resource tag key, it should be rejected",
+			np: &v1beta1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "np-under-test",
+					Namespace: "myns",
+				},
+				Spec: v1beta1.NodePoolSpec{
+					ClusterName: "cluster-under-test",
+					Platform: v1beta1.NodePoolPlatform{
+						Type: v1beta1.AWSPlatform,
+						AWS: &v1beta1.AWSNodePoolPlatform{
+							InstanceType: "m5.large",
+							ResourceTags: []v1beta1.AWSResourceTag{
+								{Key: "", Value: "production"},
+							},
+						},
+					},
+					Release: v1beta1.Release{
+						Image: "image-4.16.0",
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "When a NodePool has mixed valid and empty AWS resource tag values, it should be rejected",
+			np: &v1beta1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "np-under-test",
+					Namespace: "myns",
+				},
+				Spec: v1beta1.NodePoolSpec{
+					ClusterName: "cluster-under-test",
+					Platform: v1beta1.NodePoolPlatform{
+						Type: v1beta1.AWSPlatform,
+						AWS: &v1beta1.AWSNodePoolPlatform{
+							InstanceType: "m5.large",
+							ResourceTags: []v1beta1.AWSResourceTag{
+								{Key: "environment", Value: "production"},
+								{Key: "team", Value: ""},
+							},
+						},
+					},
+					Release: v1beta1.Release{
+						Image: "image-4.16.0",
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "When a NodePool has a nil AWS platform, it should be accepted",
+			np: &v1beta1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "np-under-test",
+					Namespace: "myns",
+				},
+				Spec: v1beta1.NodePoolSpec{
+					ClusterName: "cluster-under-test",
+					Platform: v1beta1.NodePoolPlatform{
+						Type: v1beta1.AWSPlatform,
+						AWS:  nil,
+					},
+					Release: v1beta1.Release{
+						Image: "image-4.16.0",
+					},
+				},
+			},
+			expectError: false,
+		},
+	} {
+		t.Run(testCase.name, func(tt *testing.T) {
+			npVal := &nodePoolValidator{}
+			warnings, err := npVal.ValidateCreate(tt.Context(), testCase.np)
+
+			if testCase.expectError && err == nil {
+				t.Error("should return error but didn't")
+			} else if !testCase.expectError && err != nil {
+				t.Errorf("should not return error but returned %q", err.Error())
+			}
+			if warnings != nil {
+				t.Errorf("should not return warnings but returned %q", warnings)
+			}
+		})
+	}
+}
+
+func TestValidateAWSNodePoolUpdate(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		oldNP       *v1beta1.NodePool
+		newNP       *v1beta1.NodePool
+		expectError bool
+	}{
+		{
+			name: "When updating a NodePool with valid AWS resource tags, it should be accepted",
+			oldNP: &v1beta1.NodePool{
+				Spec: v1beta1.NodePoolSpec{
+					Release: v1beta1.Release{
+						Image: "image-4.15.0",
+					},
+				},
+			},
+			newNP: &v1beta1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "np-under-test",
+					Namespace: "myns",
+				},
+				Spec: v1beta1.NodePoolSpec{
+					ClusterName: "cluster-under-test",
+					Platform: v1beta1.NodePoolPlatform{
+						Type: v1beta1.AWSPlatform,
+						AWS: &v1beta1.AWSNodePoolPlatform{
+							InstanceType: "m5.large",
+							ResourceTags: []v1beta1.AWSResourceTag{
+								{Key: "environment", Value: "production"},
+							},
+						},
+					},
+					Release: v1beta1.Release{
+						Image: "image-4.16.0",
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When updating a NodePool to add an empty AWS resource tag value, it should be rejected",
+			oldNP: &v1beta1.NodePool{
+				Spec: v1beta1.NodePoolSpec{
+					Platform: v1beta1.NodePoolPlatform{
+						Type: v1beta1.AWSPlatform,
+						AWS: &v1beta1.AWSNodePoolPlatform{
+							InstanceType: "m5.large",
+							ResourceTags: []v1beta1.AWSResourceTag{
+								{Key: "environment", Value: "production"},
+							},
+						},
+					},
+					Release: v1beta1.Release{
+						Image: "image-4.15.0",
+					},
+				},
+			},
+			newNP: &v1beta1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "np-under-test",
+					Namespace: "myns",
+				},
+				Spec: v1beta1.NodePoolSpec{
+					ClusterName: "cluster-under-test",
+					Platform: v1beta1.NodePoolPlatform{
+						Type: v1beta1.AWSPlatform,
+						AWS: &v1beta1.AWSNodePoolPlatform{
+							InstanceType: "m5.large",
+							ResourceTags: []v1beta1.AWSResourceTag{
+								{Key: "environment", Value: ""},
+							},
+						},
+					},
+					Release: v1beta1.Release{
+						Image: "image-4.16.0",
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "When updating a NodePool to add an empty AWS resource tag key, it should be rejected",
+			oldNP: &v1beta1.NodePool{
+				Spec: v1beta1.NodePoolSpec{
+					Platform: v1beta1.NodePoolPlatform{
+						Type: v1beta1.AWSPlatform,
+						AWS: &v1beta1.AWSNodePoolPlatform{
+							InstanceType: "m5.large",
+						},
+					},
+					Release: v1beta1.Release{
+						Image: "image-4.15.0",
+					},
+				},
+			},
+			newNP: &v1beta1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "np-under-test",
+					Namespace: "myns",
+				},
+				Spec: v1beta1.NodePoolSpec{
+					ClusterName: "cluster-under-test",
+					Platform: v1beta1.NodePoolPlatform{
+						Type: v1beta1.AWSPlatform,
+						AWS: &v1beta1.AWSNodePoolPlatform{
+							InstanceType: "m5.large",
+							ResourceTags: []v1beta1.AWSResourceTag{
+								{Key: "", Value: "production"},
+							},
+						},
+					},
+					Release: v1beta1.Release{
+						Image: "image-4.16.0",
+					},
+				},
+			},
+			expectError: true,
+		},
+	} {
+		t.Run(testCase.name, func(tt *testing.T) {
+			npVal := &nodePoolValidator{}
+			warnings, err := npVal.ValidateUpdate(tt.Context(), testCase.oldNP, testCase.newNP)
+
+			if testCase.expectError && err == nil {
+				t.Error("should return error but didn't")
+			} else if !testCase.expectError && err != nil {
+				t.Errorf("should not return error but returned %q", err.Error())
+			}
+			if warnings != nil {
+				t.Errorf("should not return warnings but returned %q", warnings)
+			}
+		})
+	}
+}
