@@ -485,6 +485,88 @@ func fakePullSecret(hc *hyperv1.HostedCluster) *corev1.Secret {
 	}
 }
 
+func TestValidateResourceTags(t *testing.T) {
+	testCases := []struct {
+		name          string
+		tags          []hyperv1.AWSResourceTag
+		expectedError string
+	}{
+		{
+			name: "When it has unique tags it should succeed",
+			tags: []hyperv1.AWSResourceTag{
+				{Key: "foo", Value: "bar"},
+				{Key: "baz", Value: "qux"},
+				{Key: "hello", Value: "world"},
+			},
+			expectedError: "",
+		},
+		{
+			name: "When it has duplicate tag keys it should fail",
+			tags: []hyperv1.AWSResourceTag{
+				{Key: "foo", Value: "bar"},
+				{Key: "foo", Value: "test"},
+			},
+			expectedError: "invalid tags, user tag keys must be unique, duplicate key 'foo' found",
+		},
+		{
+			name: "When it has multiple duplicates it should report the first",
+			tags: []hyperv1.AWSResourceTag{
+				{Key: "foo", Value: "bar"},
+				{Key: "baz", Value: "qux"},
+				{Key: "foo", Value: "test"},
+				{Key: "baz", Value: "duplicate"},
+			},
+			expectedError: "invalid tags, user tag keys must be unique, duplicate key 'foo' found",
+		},
+		{
+			name:          "When tags list is empty it should succeed",
+			tags:          []hyperv1.AWSResourceTag{},
+			expectedError: "",
+		},
+		{
+			name:          "When tags list is nil it should succeed",
+			tags:          nil,
+			expectedError: "",
+		},
+		{
+			name: "When it has a single tag it should succeed",
+			tags: []hyperv1.AWSResourceTag{
+				{Key: "foo", Value: "bar"},
+			},
+			expectedError: "",
+		},
+		{
+			name: "When it has case-sensitive duplicates it should fail",
+			tags: []hyperv1.AWSResourceTag{
+				{Key: "Environment", Value: "prod"},
+				{Key: "Environment", Value: "dev"},
+			},
+			expectedError: "invalid tags, user tag keys must be unique, duplicate key 'Environment' found",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateResourceTags(tc.tags)
+
+			if tc.expectedError == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+
+			if err == nil {
+				t.Fatalf("expected error containing '%s', got no error", tc.expectedError)
+			}
+
+			if !strings.Contains(err.Error(), tc.expectedError) {
+				t.Fatalf("expected error to contain '%s', got '%v'", tc.expectedError, err)
+			}
+		})
+	}
+}
+
 func TestValidateAWSPlatformConfig(t *testing.T) {
 	hostedcluster := &hyperv1.HostedCluster{
 		ObjectMeta: metav1.ObjectMeta{
@@ -504,12 +586,22 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 		name                 string
 		hostedClusterVersion string
 		oldCondition         *hyperv1.NodePoolCondition
+		resourceTags         []hyperv1.AWSResourceTag
 		expectedError        string
 	}{
 		{
 			name:                 "If hostedCluster < 4.19 it should fail",
 			hostedClusterVersion: "4.18.0",
 			expectedError:        "capacityReservation is only supported on 4.19+ clusters",
+		},
+		{
+			name:                 "When it has duplicate resource tags it should fail",
+			hostedClusterVersion: "4.19.0",
+			resourceTags: []hyperv1.AWSResourceTag{
+				{Key: "foo", Value: "bar"},
+				{Key: "foo", Value: "test"},
+			},
+			expectedError: "invalid tags, user tag keys must be unique, duplicate key 'foo' found",
 		},
 	}
 
@@ -528,6 +620,7 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 				Spec: hyperv1.NodePoolSpec{
 					Platform: hyperv1.NodePoolPlatform{
 						AWS: &hyperv1.AWSNodePoolPlatform{
+							ResourceTags: tc.resourceTags,
 							Placement: &hyperv1.PlacementOptions{
 								CapacityReservation: &hyperv1.CapacityReservationOptions{
 									ID: &capacityReservationID,
