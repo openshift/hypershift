@@ -1,10 +1,8 @@
 FROM registry.ci.openshift.org/openshift/release:rhel-9-release-golang-1.24-openshift-4.21 AS builder
 WORKDIR /workspace
 
-# Force module mode and leverage Go module caching
-ENV GOFLAGS=-mod=mod
-COPY go.mod go.sum ./
-RUN go mod download
+# Use vendored dependencies for hermetic builds
+ENV GOFLAGS=-mod=vendor
 
 # Copy only the gomaxprocs-webhook sources
 COPY . ./
