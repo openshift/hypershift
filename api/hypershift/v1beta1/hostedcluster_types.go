@@ -1862,6 +1862,7 @@ type ConfigurationStatus struct {
 //
 // The API for individual configuration items is at:
 // https://docs.openshift.com/container-platform/4.7/rest_api/config_apis/config-apis-index.html
+// +kubebuilder:validation:XValidation:rule="!has(self.oauth) || !has(self.oauth.tokenConfig) || !has(self.oauth.tokenConfig.accessTokenInactivityTimeout) || duration(self.oauth.tokenConfig.accessTokenInactivityTimeout).getSeconds() >= 300", message="spec.configuration.oauth.tokenConfig.accessTokenInactivityTimeout minimum acceptable token timeout value is 300 seconds"
 type ClusterConfiguration struct {
 	// apiServer holds configuration (like serving certificates, client CA and CORS domains)
 	// shared by all API servers in the system, among them especially kube-apiserver
@@ -1906,7 +1907,6 @@ type ClusterConfiguration struct {
 	// It is used to configure the integrated OAuth server.
 	// This configuration is only honored when the top level Authentication config has type set to IntegratedOAuth.
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="!has(self.tokenConfig) || !has(self.tokenConfig.accessTokenInactivityTimeout) || duration(self.tokenConfig.accessTokenInactivityTimeout).getSeconds() >= 300", message="spec.configuration.oauth.tokenConfig.accessTokenInactivityTimeout minimum acceptable token timeout value is 300 seconds"
 	OAuth *configv1.OAuthSpec `json:"oauth,omitempty"`
 
 	// operatorhub specifies the configuration for the Operator Lifecycle Manager in the HostedCluster. This is only configured at deployment time but the controller are not reconcilling over it.

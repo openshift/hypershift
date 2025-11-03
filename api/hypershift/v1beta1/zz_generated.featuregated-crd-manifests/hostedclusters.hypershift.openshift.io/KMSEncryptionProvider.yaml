@@ -2140,12 +2140,6 @@ spec:
                             type: integer
                         type: object
                     type: object
-                    x-kubernetes-validations:
-                    - message: spec.configuration.oauth.tokenConfig.accessTokenInactivityTimeout
-                        minimum acceptable token timeout value is 300 seconds
-                      rule: '!has(self.tokenConfig) || !has(self.tokenConfig.accessTokenInactivityTimeout)
-                        || duration(self.tokenConfig.accessTokenInactivityTimeout).getSeconds()
-                        >= 300'
                   operatorhub:
                     description: |-
                       operatorhub specifies the configuration for the Operator Lifecycle Manager in the HostedCluster. This is only configured at deployment time but the controller are not reconcilling over it.
@@ -2315,6 +2309,12 @@ spec:
                         type: string
                     type: object
                 type: object
+                x-kubernetes-validations:
+                - message: spec.configuration.oauth.tokenConfig.accessTokenInactivityTimeout
+                    minimum acceptable token timeout value is 300 seconds
+                  rule: '!has(self.oauth) || !has(self.oauth.tokenConfig) || !has(self.oauth.tokenConfig.accessTokenInactivityTimeout)
+                    || duration(self.oauth.tokenConfig.accessTokenInactivityTimeout).getSeconds()
+                    >= 300'
               controlPlaneRelease:
                 description: |-
                   controlPlaneRelease is like spec.release but only for the components running on the management cluster.
