@@ -20,7 +20,6 @@ package v1beta1
 // GCPNetworkConfigCustomerApplyConfiguration represents a declarative configuration of the GCPNetworkConfigCustomer type for use
 // with apply.
 type GCPNetworkConfigCustomerApplyConfiguration struct {
-	Project   *string                                 `json:"project,omitempty"`
 	Network   *GCPResourceReferenceApplyConfiguration `json:"network,omitempty"`
 	PSCSubnet *GCPResourceReferenceApplyConfiguration `json:"pscSubnet,omitempty"`
 }
@@ -29,14 +28,6 @@ type GCPNetworkConfigCustomerApplyConfiguration struct {
 // apply.
 func GCPNetworkConfigCustomer() *GCPNetworkConfigCustomerApplyConfiguration {
 	return &GCPNetworkConfigCustomerApplyConfiguration{}
-}
-
-// WithProject sets the Project field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the Project field is set to the value of the last call.
-func (b *GCPNetworkConfigCustomerApplyConfiguration) WithProject(value string) *GCPNetworkConfigCustomerApplyConfiguration {
-	b.Project = &value
-	return b
 }
 
 // WithNetwork sets the Network field in the declarative configuration to the given value
