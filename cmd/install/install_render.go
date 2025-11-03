@@ -68,7 +68,55 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("template", "outputs")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		return RenderHyperShiftOperator(cmd.OutOrStdout(), opts)
+		opts.ApplyDefaults()
+
+		var err error
+		if err = opts.ValidateRender(); err != nil {
+			return err
+		}
+
+		var crds []crclient.Object
+		var objects []crclient.Object
+
+		if opts.Template {
+			templateObject, err := openshiftTemplate(opts)
+			if err != nil {
+				return err
+			}
+			objects = []crclient.Object{templateObject}
+		} else {
+			crds, objects, err = hyperShiftOperatorManifests(*opts)
+			if err != nil {
+				return err
+			}
+		}
+
+		var objectsToRender []crclient.Object
+		switch Outputs(opts.OutputTypes) {
+		case OutputAll:
+			objectsToRender = append(crds, objects...)
+		case OutputCRDs:
+			objectsToRender = crds
+		case OutputResources:
+			objectsToRender = objects
+		}
+		var out io.Writer
+		if opts.OutputFile != "" {
+			file, err := os.Create(opts.OutputFile)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+			out = file
+		} else {
+			out = cmd.OutOrStdout()
+		}
+
+		err = render(objectsToRender, opts.Format, out)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
 
 	return cmd
@@ -88,58 +136,6 @@ func (o *Options) ValidateRender() error {
 		return fmt.Errorf("--outputs must be one of %v", outputs.UnsortedList())
 	}
 
-	return nil
-}
-
-func RenderHyperShiftOperator(cmdOut io.Writer, opts *Options) error {
-	opts.ApplyDefaults()
-
-	var err error
-	if err = opts.ValidateRender(); err != nil {
-		return err
-	}
-
-	var crds []crclient.Object
-	var objects []crclient.Object
-
-	if opts.Template {
-		templateObject, err := openshiftTemplate(opts)
-		if err != nil {
-			return err
-		}
-		objects = []crclient.Object{templateObject}
-	} else {
-		crds, objects, err = hyperShiftOperatorManifests(*opts)
-		if err != nil {
-			return err
-		}
-	}
-
-	var objectsToRender []crclient.Object
-	switch Outputs(opts.OutputTypes) {
-	case OutputAll:
-		objectsToRender = append(crds, objects...)
-	case OutputCRDs:
-		objectsToRender = crds
-	case OutputResources:
-		objectsToRender = objects
-	}
-	var out io.Writer
-	if opts.OutputFile != "" {
-		file, err := os.Create(opts.OutputFile)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-		out = file
-	} else {
-		out = cmdOut
-	}
-
-	err = render(objectsToRender, opts.Format, out)
-	if err != nil {
-		return err
-	}
 	return nil
 }
 

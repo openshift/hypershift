@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -118,15 +119,15 @@ func (ign *ignitionServer) getRegistryOverrides(ctx context.Context, imageProvid
 
 	// Determine if we need to override the machine config operator and cluster config operator
 	// images based on image mappings present in management cluster.
-	overrideConfigAPIImage, err := util.LookupMappedImage(ctx, ocpRegistryMapping, configAPIImage, pullSecret, registryclient.GetMetadata)
+	overrideConfigAPIImage, err := lookupMappedImage(ctx, ocpRegistryMapping, configAPIImage, pullSecret)
 	if err != nil {
 		return nil, err
 	}
-	overrideMachineConfigOperatorImage, err := util.LookupMappedImage(ctx, ocpRegistryMapping, machineConfigOperatorImage, pullSecret, registryclient.GetMetadata)
+	overrideMachineConfigOperatorImage, err := lookupMappedImage(ctx, ocpRegistryMapping, machineConfigOperatorImage, pullSecret)
 	if err != nil {
 		return nil, err
 	}
-	overrideClusterAuthenticationOperatorImage, err := util.LookupMappedImage(ctx, ocpRegistryMapping, clusterAuthenticationOperatorImage, pullSecret, registryclient.GetMetadata)
+	overrideClusterAuthenticationOperatorImage, err := lookupMappedImage(ctx, ocpRegistryMapping, clusterAuthenticationOperatorImage, pullSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -143,4 +144,26 @@ func (ign *ignitionServer) getRegistryOverrides(ctx context.Context, imageProvid
 	}
 
 	return registryOverrides, nil
+}
+
+func lookupMappedImage(ctx context.Context, ocpOverrides map[string][]string, image string, pullSecret []byte) (string, error) {
+	log := ctrl.LoggerFrom(ctx)
+	ref, err := reference.Parse(image)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse image (%s): %w", image, err)
+	}
+	for source, replacements := range ocpOverrides {
+		if ref.AsRepository().String() == source {
+			for _, replacement := range replacements {
+				newRef := fmt.Sprintf("%s@%s", replacement, ref.ID)
+				// Verify mirror image availability.
+				if _, _, _, err = registryclient.GetMetadata(ctx, newRef, pullSecret); err == nil {
+					return newRef, nil
+				}
+				log.Info("WARNING: The current mirrors image is unavailable, continue Scanning multiple mirrors", "error", err.Error(), "mirror image", ref)
+				continue
+			}
+		}
+	}
+	return image, nil
 }

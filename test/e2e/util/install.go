@@ -17,13 +17,6 @@ func InstallHyperShiftOperator(ctx context.Context, opts HyperShiftOperatorInsta
 
 	installOpts := getInstallOptions(opts)
 
-	if opts.DryRun {
-		installOpts.OutputFile = opts.DryRunDir + "/install-hypershift-operator.yaml"
-		installOpts.Format = install.RenderFormatYaml
-		installOpts.OutputTypes = string(install.OutputAll)
-		return install.RenderHyperShiftOperator(os.Stdout, &installOpts)
-	}
-
 	return install.InstallHyperShiftOperator(ctx, os.Stdout, installOpts)
 }
 
@@ -59,10 +52,6 @@ func getInstallOptions(opts HyperShiftOperatorInstallOptions) install.Options {
 	installOpts.PlatformMonitoring = metrics.PlatformMonitoring(opts.PlatformMonitoring)
 	installOpts.PrivatePlatform = opts.PrivatePlatform
 	installOpts.WaitUntilAvailable = true
-	installOpts.EnableSizeTagging = opts.EnableSizeTagging
-	installOpts.EnableDedicatedRequestServingIsolation = opts.EnableDedicatedRequestServingIsolation
-	installOpts.EnableCPOOverrides = opts.EnableCPOOverrides
-	installOpts.EnableEtcdRecovery = opts.EnableEtcdRecovery
 
 	return installOpts
 }

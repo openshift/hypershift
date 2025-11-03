@@ -32,9 +32,8 @@ const (
 // NOTE: The .0 (z release) should be ignored. It's only here to support
 // semver parsing.
 var (
-	LatestSupportedVersion      = semver.MustParse("4.21.0")
-	MinSupportedVersion         = semver.MustParse("4.14.0")
-	IBMCloudMinSupportedVersion = semver.MustParse("4.14.0")
+	LatestSupportedVersion = semver.MustParse("4.21.0")
+	MinSupportedVersion    = semver.MustParse("4.14.0")
 )
 
 // ocpVersionToKubeVersion maps OCP versions to their corresponding Kubernetes versions.
@@ -58,7 +57,6 @@ func GetKubeVersionForSupportedVersion(supportedVersion semver.Version) (*semver
 	return &kubeVersion, nil
 }
 
-// Get the minimum OCP version for HostedClusters, not the management cluster where HO runs.
 func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
 	if _, exists := hc.Annotations[hyperv1.SkipReleaseImageValidation]; exists {
 		return semver.MustParse("0.0.0")
@@ -66,12 +64,8 @@ func GetMinSupportedVersion(hc *hyperv1.HostedCluster) semver.Version {
 
 	defaultMinVersion := MinSupportedVersion
 	switch hc.Spec.Platform.Type {
-	// Red Hat OpenShift on IBM Cloud (ROKS) may support OCP versions beyond
-	// standard OCP version support timelines (see [1]). Please contact ROKS
-	// development before changing values here.
-	// [1] https://cloud.ibm.com/docs/openshift?topic=openshift-openshift_versions
 	case hyperv1.IBMCloudPlatform:
-		return IBMCloudMinSupportedVersion
+		return semver.MustParse("4.9.0")
 	default:
 		return defaultMinVersion
 	}

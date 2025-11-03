@@ -37,7 +37,7 @@ spec:
         git:
           context: ./
           dockerfileUrl: Containerfile.operator
-          revision: "ho-hotfix-{{.versionName}}"
+          revision: "ho-hotfix-{{.version}}"
           url: https://github.com/openshift/hypershift
 
   - apiVersion: appstudio.redhat.com/v1alpha1

@@ -44,7 +44,10 @@ func NewComponent(deploymentSpec *appsv1.DeploymentSpec, platformPolicyRules []r
 	return component.NewDeploymentComponent(ComponentName, capi).
 		WithAdaptFunction(capi.adaptDeployment).
 		WithPredicate(predicate).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
+		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{
+			KubeconfigVolumeName:          "svc-kubeconfig",
+			WaitForInfrastructureResource: true,
+		}).
 		WithManifestAdapter(
 			"role.yaml",
 			component.WithAdaptFunction(capi.adaptRole),

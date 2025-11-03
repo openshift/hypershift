@@ -30,8 +30,8 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+	"github.com/openshift/hypershift/support/util"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -45,11 +45,14 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/route53"
 
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	k8sadmissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	kapierror "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -58,6 +61,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
+	"k8s.io/client-go/kubernetes"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -65,6 +69,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/go-logr/logr"
@@ -77,57 +82,32 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
-var (
-	expectedKasManagementComponents = []string{
-		"cluster-network-operator",
-		"ignition-server",
-		"cluster-storage-operator",
-		"csi-snapshot-controller-operator",
-		"machine-approver",
-		"cluster-autoscaler",
-		"cluster-node-tuning-operator",
-		"capi-provider-controller-manager",
-		"capi-provider",
-		"cluster-api",
-		"etcd",
-		"control-plane-operator",
-		"control-plane-pki-operator",
-		"hosted-cluster-config-operator",
-		"cloud-controller-manager",
-		"olm-collect-profiles",
-		"aws-ebs-csi-driver-operator",
-		"karpenter",
-		"karpenter-operator",
-		"featuregate-generator",
-	}
-
-	// podCrashTolerations defines the tolerated amount of restarts a pod is allowed to suffer until it is considered to be crashing.
-	// Pods whose component matches the key are evaluated with the associated toleration.
-	// If a pod is not listed, the default toleration is used.
-	podCrashTolerations = map[string]int32{
-		// TODO: Figure out why Route kind does not exist when ingress-operator first starts
-		"ingress-operator": 20,
-		// Seeing flakes due to https://issues.redhat.com/browse/OCPBUGS-30068
-		"cloud-credential-operator": 20,
-		// Restart built into OLM by design by
-		// https://github.com/openshift/operator-framework-olm/commit/1cf358424a0cbe353428eab9a16051c6cabbd002
-		"olm-operator":                20,
-		"catalog-operator":            20,
-		"certified-operators-catalog": 20,
-		"community-operators-catalog": 20,
-		"redhat-operators-catalog":    20,
-		"redhat-marketplace-catalog":  20,
-		// Temporary workaround for https://issues.redhat.com/browse/OCPBUGS-45182
-		"openstack-manila-csi-controllerplugin": 20,
-		// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
-		"kubevirt-csi":                  20,
-		"aws-ebs-csi-driver-controller": 1,
-	}
-)
+var expectedKasManagementComponents = []string{
+	"cluster-network-operator",
+	"ignition-server",
+	"cluster-storage-operator",
+	"csi-snapshot-controller-operator",
+	"machine-approver",
+	"cluster-autoscaler",
+	"cluster-node-tuning-operator",
+	"capi-provider-controller-manager",
+	"capi-provider",
+	"cluster-api",
+	"etcd",
+	"control-plane-operator",
+	"control-plane-pki-operator",
+	"hosted-cluster-config-operator",
+	"cloud-controller-manager",
+	"olm-collect-profiles",
+	"aws-ebs-csi-driver-operator",
+	"karpenter",
+	"karpenter-operator",
+	"featuregate-generator",
+}
 
 type GuestClients struct {
 	CfgClient  *configv1client.Clientset
-	KubeClient *kubeclient.Clientset
+	KubeClient *kubernetes.Clientset
 }
 
 // InitGuestClients initializes the Kubernetes and OpenShift config clients for the guest cluster
@@ -142,7 +122,7 @@ func InitGuestClients(ctx context.Context, t *testing.T, g Gomega, mgtClient crc
 	cfgClient, err := configv1client.NewForConfig(guestConfig)
 	g.Expect(err).NotTo(HaveOccurred())
 
-	kubeClient, err := kubeclient.NewForConfig(guestConfig)
+	kubeClient, err := kubernetes.NewForConfig(guestConfig)
 	g.Expect(err).NotTo(HaveOccurred())
 
 	return &GuestClients{
@@ -163,7 +143,7 @@ func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client c
 
 		if err := client.Patch(ctx, obj, crclient.MergeFrom(original)); err != nil {
 			t.Logf("failed to patch object %s, will retry: %v", original.GetName(), err)
-			if apierrors.IsConflict(err) {
+			if errors.IsConflict(err) {
 				return false, nil
 			}
 			return false, err
@@ -182,7 +162,7 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 		if err := client.Delete(ctx, ns, &crclient.DeleteOptions{}); err != nil {
-			if apierrors.IsNotFound(err) {
+			if errors.IsNotFound(err) {
 				return true, nil
 			}
 			t.Logf("Failed to delete namespace: %s, will retry: %v", namespace, err)
@@ -200,7 +180,7 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 	err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: namespace}}
 		if err := client.Get(ctx, crclient.ObjectKeyFromObject(ns), ns); err != nil {
-			if apierrors.IsNotFound(err) {
+			if errors.IsNotFound(err) {
 				return true, nil
 			}
 			t.Logf("Failed to get namespace: %s. %v", namespace, err)
@@ -217,7 +197,7 @@ func DeleteNamespace(t *testing.T, ctx context.Context, client crclient.Client, 
 	return nil
 }
 
-func GetCustomKubeconfigClients(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, serverAddress string) (*kubeclient.Clientset, crclient.Client) {
+func GetCustomKubeconfigClients(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, serverAddress string) (*kubernetes.Clientset, crclient.Client) {
 	g := NewWithT(t)
 
 	customKubeconfigData := WaitForCustomKubeconfig(t, ctx, client, hostedCluster)
@@ -229,7 +209,7 @@ func GetCustomKubeconfigClients(t *testing.T, ctx context.Context, client crclie
 	if len(serverAddress) > 0 {
 		customConfig.Host = serverAddress
 	}
-	GetKubeClientSet, err := kubeclient.NewForConfig(customConfig)
+	GetKubeClientSet, err := kubernetes.NewForConfig(customConfig)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create custom kube client for guest cluster")
 	kbCrclient, err := crclient.New(customConfig, crclient.Options{Scheme: scheme})
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create custom cr client for guest cluster")
@@ -329,22 +309,14 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 	guestConfig.QPS = -1
 	guestConfig.Burst = -1
 
-	connectTimeout := 10 * time.Minute
-	if timeoutOverride := os.Getenv("GUEST_CONNECT_TIMEOUT"); timeoutOverride != "" {
-		connectTimeout, err = time.ParseDuration(timeoutOverride)
-		if err != nil {
-			t.Fatalf("failed to parse GUEST_CONNECT_TIMEOUT: %v", err)
-		}
-	}
-
-	kubeClient, err := kubeclient.NewForConfig(guestConfig)
+	kubeClient, err := kubernetes.NewForConfig(guestConfig)
 	if err != nil {
 		t.Fatalf("failed to create kube client for guest cluster: %v", err)
 	}
 	if IsLessThan(Version415) {
 		// SelfSubjectReview API is only available in 4.15+
 		// Use the old method to check if the API server is up
-		err = wait.PollUntilContextTimeout(ctx, 35*time.Second, connectTimeout, true, func(ctx context.Context) (done bool, err error) {
+		err = wait.PollUntilContextTimeout(ctx, 35*time.Second, 10*time.Minute, true, func(ctx context.Context) (done bool, err error) {
 			_, err = crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 			if err != nil {
 				t.Logf("attempt to connect failed: %s", err)
@@ -359,8 +331,9 @@ func WaitForGuestClient(t *testing.T, ctx context.Context, client crclient.Clien
 		EventuallyObject(t, ctx, "a successful connection to the guest API server",
 			func(ctx context.Context) (*authenticationv1.SelfSubjectReview, error) {
 				return kubeClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
-			}, nil, WithTimeout(connectTimeout),
+			}, nil, WithTimeout(10*time.Minute),
 		)
+
 	}
 	guestClient, err := crclient.New(guestConfig, crclient.Options{Scheme: scheme})
 	if err != nil {
@@ -464,7 +437,7 @@ func WaitForNodePoolConfigUpdateComplete(t *testing.T, ctx context.Context, clie
 				Status: metav1.ConditionTrue,
 			}),
 		},
-		// TODO:https://issues.redhat.com/browse/OCPBUGS-43824
+		//TODO:https://issues.redhat.com/browse/OCPBUGS-43824
 		WithTimeout(5*time.Minute),   // Increased from 1 minute
 		WithInterval(15*time.Second), // Increased from 10 seconds to reduce API calls and prevent rate limiting
 	)
@@ -692,7 +665,7 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 	t.Run("EnsureNoCrashingPods", func(t *testing.T) {
 		g := NewWithT(t)
 
-		var defaultCrashToleration int32
+		var crashToleration int32
 
 		switch hostedCluster.Spec.Platform.Type {
 		case hyperv1.KubevirtPlatform:
@@ -708,7 +681,7 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			// This toleration is not used for the default local HCP KubeVirt,
 			// only external infra
 			if kvPlatform != nil && kvPlatform.Credentials != nil {
-				defaultCrashToleration = 1
+				crashToleration = 1
 			}
 
 			// In Azure infra, CAPK pod might crash on startup due to not being able to
@@ -717,11 +690,11 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			if kvPlatform != nil && hostedCluster.Annotations != nil {
 				mgmtPlatform, annotationExists := hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation]
 				if annotationExists && mgmtPlatform == string(hyperv1.AzurePlatform) {
-					defaultCrashToleration = 1
+					crashToleration = 1
 				}
 			}
 		default:
-			defaultCrashToleration = 0
+			crashToleration = 0
 		}
 
 		guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
@@ -736,11 +709,36 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
 		}
 		for _, pod := range podList.Items {
-			crashToleration := defaultCrashToleration
-			if toleration, ok := podCrashTolerations[getComponentName(&pod)]; ok {
-				crashToleration = toleration
+			// TODO: Figure out why Route kind does not exist when ingress-operator first starts
+			if strings.HasPrefix(pod.Name, "ingress-operator-") {
+				continue
+			}
+			// Seeing flakes due to https://issues.redhat.com/browse/OCPBUGS-30068
+			if strings.HasPrefix(pod.Name, "cloud-credential-operator-") {
+				continue
+			}
+			// Restart built into OLM by design by
+			// https://github.com/openshift/operator-framework-olm/commit/1cf358424a0cbe353428eab9a16051c6cabbd002
+			if strings.HasPrefix(pod.Name, "olm-operator-") {
+				continue
 			}
 
+			if strings.HasPrefix(pod.Name, "catalog-operator-") {
+				continue
+			}
+			if strings.Contains(pod.Name, "-catalog") {
+				continue
+			}
+
+			// Temporary workaround for https://issues.redhat.com/browse/OCPBUGS-45182
+			if strings.HasPrefix(pod.Name, "openstack-manila-csi-controllerplugin-") {
+				continue
+			}
+
+			// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
+			if strings.HasPrefix(pod.Name, "kubevirt-csi") {
+				continue
+			}
 			for _, containerStatus := range pod.Status.ContainerStatuses {
 				if containerStatus.RestartCount > crashToleration {
 					// For kube-controller-manager, check if restart was triggered by certificate rotation
@@ -755,7 +753,7 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 						t.Logf("Leader election failure detected in container %s in pod %s", containerStatus.Name, pod.Name)
 						continue
 					}
-					t.Errorf("Container %s in pod %s has a restartCount > %d (%d)", containerStatus.Name, pod.Name, crashToleration, containerStatus.RestartCount)
+					t.Errorf("Container %s in pod %s has a restartCount > 0 (%d)", containerStatus.Name, pod.Name, containerStatus.RestartCount)
 				}
 			}
 		}
@@ -885,6 +883,7 @@ func EnsureOAPIMountsTrustBundle(t *testing.T, ctx context.Context, mgmtClient c
 			return err
 		}, 5*time.Minute, 30*time.Second).Should(Succeed(), "ca-bundle.crt file should be available in openshift-apiserver pod")
 	})
+
 }
 
 func EnsureAllContainersHavePullPolicyIfNotPresent(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -1076,7 +1075,7 @@ func EnsurePSANotPrivileged(t *testing.T, ctx context.Context, guestClient crcli
 		if err == nil {
 			t.Errorf("pod admitted when rejection was expected")
 		}
-		if !apierrors.IsForbidden(err) {
+		if !kapierror.IsForbidden(err) {
 			t.Errorf("forbidden error expected, got %s", err)
 		}
 	})
@@ -1095,7 +1094,7 @@ func EnsureAllRoutesUseHCPRouter(t *testing.T, ctx context.Context, hostClient c
 		}
 		for _, route := range routes.Items {
 			original := route.DeepCopy()
-			hyperutil.AddHCPRouteLabel(&route)
+			util.AddHCPRouteLabel(&route)
 			if diff := cmp.Diff(route.GetLabels(), original.GetLabels()); diff != "" {
 				t.Errorf("route %s is missing the label to use the per-HCP router: %s", route.Name, diff)
 			}
@@ -1112,7 +1111,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 		t.Run("EnsureComponentsHaveNeedManagementKASAccessLabel", func(t *testing.T) {
 			g := NewWithT(t)
-			err := checkPodsHaveLabel(ctx, c, expectedKasManagementComponents, hcpNamespace, crclient.MatchingLabels{suppconfig.NeedManagementKASAccessLabel: "true"})
+			err := checkPodsHaveLabel(ctx, c, expectedKasManagementComponents, hcpNamespace, client.MatchingLabels{suppconfig.NeedManagementKASAccessLabel: "true"})
 			g.Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -1120,7 +1119,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 			g := NewWithT(t)
 
 			kubernetesEndpoint := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}}
-			err := c.Get(ctx, crclient.ObjectKeyFromObject(kubernetesEndpoint), kubernetesEndpoint)
+			err := c.Get(ctx, client.ObjectKeyFromObject(kubernetesEndpoint), kubernetesEndpoint)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			kasAddress := ""
@@ -1215,7 +1214,7 @@ func getComponentName(pod *corev1.Pod) string {
 func checkPodsHaveLabel(ctx context.Context, c crclient.Client, allowedComponents []string, namespace string, labels map[string]string) error {
 	// Get all Pods with wanted label.
 	podList := &corev1.PodList{}
-	err := c.List(ctx, podList, crclient.InNamespace(namespace), crclient.MatchingLabels(labels))
+	err := c.List(ctx, podList, client.InNamespace(namespace), client.MatchingLabels(labels))
 	if err != nil {
 		return fmt.Errorf("failed to list pods: %w", err)
 	}
@@ -1229,8 +1228,14 @@ func checkPodsHaveLabel(ctx context.Context, c crclient.Client, allowedComponent
 		if componentName == "" {
 			return fmt.Errorf("unable to determine component name for pod that has NeedManagementKASAccessLabel: %s", pod.Name)
 		}
-
-		if !slices.Contains(allowedComponents, componentName) {
+		allowed := false
+		for _, component := range allowedComponents {
+			if component == componentName {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
 			return fmt.Errorf("NeedManagementKASAccessLabel label is not allowed on component: %s", componentName)
 		}
 	}
@@ -1241,8 +1246,8 @@ func checkPodsHaveLabel(ctx context.Context, c crclient.Client, allowedComponent
 func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespace string, command []string, containerName string, timeout time.Duration) (string, error) {
 	podList := &corev1.PodList{}
 	if err := c.List(ctx, podList,
-		crclient.InNamespace(namespace),
-		crclient.MatchingLabels{"app": component}); err != nil {
+		client.InNamespace(namespace),
+		client.MatchingLabels{"app": component}); err != nil {
 		return "", fmt.Errorf("failed to list Pods: %w", err)
 	}
 	if len(podList.Items) < 1 {
@@ -1424,6 +1429,7 @@ func NewLogr(t *testing.T) logr.Logger {
 }
 
 func CorrelateDaemonSet(ds *appsv1.DaemonSet, nodePool *hyperv1.NodePool, dsName string) {
+
 	for _, c := range ds.Spec.Template.Spec.Containers {
 		if c.Name == ds.Name {
 			c.Name = dsName
@@ -1443,6 +1449,7 @@ func CorrelateDaemonSet(ds *appsv1.DaemonSet, nodePool *hyperv1.NodePool, dsName
 	// Set NodeSelector for the DS
 	ds.Spec.Template.Spec.NodeSelector = make(map[string]string)
 	ds.Spec.Template.Spec.NodeSelector["hypershift.openshift.io/nodePool"] = nodePool.Name
+
 }
 
 func NewPrometheusClient(ctx context.Context) (prometheusv1.API, error) {
@@ -1451,7 +1458,7 @@ func NewPrometheusClient(ctx context.Context) (prometheusv1.API, error) {
 		return nil, err
 	}
 
-	kubeClient, err := kubeclient.NewForConfig(config)
+	kubeClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		panic(err)
 	}
@@ -1513,6 +1520,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 	AtLeast(t, Version420)
 
 	t.Run("EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations", func(t *testing.T) {
+
 		g := NewWithT(t)
 
 		auditedAppList := map[string]string{
@@ -1552,7 +1560,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 		}
 
 		hcpPods := &corev1.PodList{}
-		if err := hostClient.List(ctx, hcpPods, &crclient.ListOptions{
+		if err := hostClient.List(ctx, hcpPods, &client.ListOptions{
 			Namespace: hcpNs,
 		}); err != nil {
 			t.Fatalf("cannot list hostedControlPlane pods: %v", err)
@@ -1588,7 +1596,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 				hasTmpDirAnnotation := false
 				safe2EvictVolumes := strings.Split(pod.Annotations[suppconfig.PodSafeToEvictLocalVolumesKey], ",")
 				safe2EvictVolumes = slices.DeleteFunc(safe2EvictVolumes, func(s string) bool {
-					hasTmpDir := s == hyperutil.PodTmpDirMountName
+					hasTmpDir := s == util.PodTmpDirMountName
 					hasTmpDirAnnotation = hasTmpDirAnnotation || hasTmpDir
 					return s == "" || hasTmpDir
 				})
@@ -1616,14 +1624,18 @@ type labelSelector struct {
 	value string
 }
 
-// findAuditedContainers returns the map of audited containers for a pod, or nil if the pod is not audited
-func findAuditedContainers(pod *corev1.Pod, auditedContainersSelector map[labelSelector]map[string]struct{}) map[string]struct{} {
-	for selector, containers := range auditedContainersSelector {
-		if pod.Labels[selector.label] == selector.value {
-			return containers
-		}
+// auditedContainersHas checks the given map to see if the container name exists in it; if the map is empty, always return true
+func auditedContainersHas(container corev1.Container, auditedContainers map[string]struct{}) bool {
+	if auditedContainers == nil {
+		return false
 	}
-	return nil
+
+	if len(auditedContainers) == 0 {
+		return true
+	}
+
+	_, has := auditedContainers[container.Name]
+	return has
 }
 
 func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient crclient.Client, hcpNs string) {
@@ -1635,13 +1647,13 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 		g := NewWithT(t)
 
 		hcpPods := &corev1.PodList{}
-		if err := hostClient.List(ctx, hcpPods, &crclient.ListOptions{
+		if err := hostClient.List(ctx, hcpPods, &client.ListOptions{
 			Namespace: hcpNs,
 		}); err != nil {
 			t.Fatalf("cannot list hostedControlPlane pods: %v", err)
 		}
 
-		// a list of applications that are allowed to have Pod.Spec.Containers[*].SecurityContext.ReadOnlyRootFilesystem != true
+		// a list of applications that are allowed to have Pod.Spec.Containers[*].SecurityContext.ReadOnlyRootFilesystem == false
 		// auditedAppContainersNoRORFS[labelSelector{label: "app", value: "value"}][pod.Spec.Containers[*]] indicates that particular container is allowed to be false.
 		// if a labelSelector is given with an empty map, allow all containers to be false
 		auditedAppContainersNoRORFS := map[labelSelector]map[string]struct{}{
@@ -1670,23 +1682,21 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 				continue
 			}
 
-			auditedContainers := findAuditedContainers(&pod, auditedAppContainersNoRORFS)
+			var auditedContainers map[string]struct{}
 
-			// skip all containers if the pod is audited and the auditedContainers map is empty
-			if auditedContainers != nil && len(auditedContainers) == 0 {
-				continue
+			for selector, containers := range auditedAppContainersNoRORFS {
+				if v, has := pod.Labels[selector.label]; has && v == selector.value {
+					auditedContainers = containers
+					break
+				}
 			}
 
 			for _, c := range pod.Spec.Containers {
-				// skip if this specific container is exempted
-				if auditedContainers != nil {
-					if _, ok := auditedContainers[c.Name]; ok {
-						continue
-					}
-				}
+				isAuditedOff := auditedContainersHas(c, auditedContainers)
+				isRORFS := c.SecurityContext != nil && c.SecurityContext.ReadOnlyRootFilesystem != nil && *c.SecurityContext.ReadOnlyRootFilesystem
 
-				g.Expect(c.SecurityContext).NotTo(BeNil(), "expected container %s in pod %s to have a security context", c.Name, pod.Name)
-				g.Expect(c.SecurityContext.ReadOnlyRootFilesystem).To(HaveValue(BeTrue()), "expected container %s in pod %s to have a readOnlyRootFilesystem field set to true", c.Name, pod.Name)
+				// valid cases are isAuditedOff && !isRORFS and !isAuditedOff && isRORFS
+				g.Expect(isRORFS).ToNot(BeIdenticalTo(isAuditedOff), "container %s in pod %s expects readOnlyRootFilesystem to be %v, it was %v", c.Name, pod.Name, !isAuditedOff, isRORFS)
 			}
 		}
 	})
@@ -1697,7 +1707,7 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 		g := NewWithT(t)
 
 		hcpPods := &corev1.PodList{}
-		if err := hostClient.List(ctx, hcpPods, &crclient.ListOptions{
+		if err := hostClient.List(ctx, hcpPods, &client.ListOptions{
 			Namespace: hcpNs,
 		}); err != nil {
 			t.Fatalf("cannot list hostedControlPlane pods: %v", err)
@@ -1735,22 +1745,21 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 				continue
 			}
 
-			auditedContainers := findAuditedContainers(&pod, auditedAppContainerNoTmpDir)
+			var auditedContainers map[string]struct{}
 
-			// skip all containers if the pod is audited and the auditedContainers map is empty
-			if auditedContainers != nil && len(auditedContainers) == 0 {
-				continue
+			for selector, containers := range auditedAppContainerNoTmpDir {
+				if v, has := pod.Labels[selector.label]; has && v == selector.value {
+					auditedContainers = containers
+					break
+				}
 			}
 
 			for _, c := range pod.Spec.Containers {
-				// skip if this specific container is exempted
-				if auditedContainers != nil {
-					if _, ok := auditedContainers[c.Name]; ok {
-						continue
-					}
+				if auditedContainersHas(c, auditedContainers) {
+					continue
 				}
 				containerHasTmpDir := slices.ContainsFunc(c.VolumeMounts, func(v corev1.VolumeMount) bool {
-					return v.MountPath == hyperutil.PodTmpDirMountPath
+					return v.MountPath == util.PodTmpDirMountPath
 				})
 				g.Expect(containerHasTmpDir).To(BeTrue(), "container %s in pod %s does not have /tmp mounted, and it is expected to mount it", c.Name, pod.Name)
 			}
@@ -1760,7 +1769,7 @@ func EnsureReadOnlyRootFilesystem(t *testing.T, ctx context.Context, hostClient 
 
 func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient crclient.Client) {
 	t.Run("EnsureGuestWebhooksValidated", func(t *testing.T) {
-		guestWebhookConf := &k8sadmissionv1.ValidatingWebhookConfiguration{
+		guestWebhookConf := &admissionregistrationv1.ValidatingWebhookConfiguration{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-webhook",
 				Namespace: "default",
@@ -1770,16 +1779,16 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 			},
 		}
 
-		sideEffectsNone := k8sadmissionv1.SideEffectClassNone
-		guestWebhookConf.Webhooks = []k8sadmissionv1.ValidatingWebhook{{
+		sideEffectsNone := admissionregistrationv1.SideEffectClassNone
+		guestWebhookConf.Webhooks = []admissionregistrationv1.ValidatingWebhook{{
 			AdmissionReviewVersions: []string{"v1"},
 			Name:                    "etcd-client.example.com",
-			ClientConfig: k8sadmissionv1.WebhookClientConfig{
+			ClientConfig: admissionregistrationv1.WebhookClientConfig{
 				URL: ptr.To("https://etcd-client:2379"),
 			},
-			Rules: []k8sadmissionv1.RuleWithOperations{{
-				Operations: []k8sadmissionv1.OperationType{k8sadmissionv1.Create},
-				Rule: k8sadmissionv1.Rule{
+			Rules: []admissionregistrationv1.RuleWithOperations{{
+				Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},
+				Rule: admissionregistrationv1.Rule{
 					APIGroups:   []string{""},
 					APIVersions: []string{"v1"},
 					Resources:   []string{"pods"},
@@ -1793,17 +1802,19 @@ func EnsureGuestWebhooksValidated(t *testing.T, ctx context.Context, guestClient
 		}
 
 		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 1*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-			webhook := &k8sadmissionv1.ValidatingWebhookConfiguration{}
-			if err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(guestWebhookConf), webhook); err != nil && apierrors.IsNotFound(err) {
+			webhook := &admissionregistrationv1.ValidatingWebhookConfiguration{}
+			if err := guestClient.Get(ctx, client.ObjectKeyFromObject(guestWebhookConf), webhook); err != nil && errors.IsNotFound(err) {
 				// webhook has been deleted
 				return true, nil
 			}
 
 			return false, nil
 		})
+
 		if err != nil {
 			t.Errorf("failed to ensure guest webhooks validated, violating webhook %s was not deleted: %v", guestWebhookConf.Name, err)
 		}
+
 	})
 }
 
@@ -1847,7 +1858,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Run("Check if GlobalPullSecret secret is in the right place at Dataplane", func(t *testing.T) {
 			globalPullSecret := hccomanifests.GlobalPullSecret()
 			g.Eventually(func() error {
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+				if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
 					return err
 				}
 				g.Expect(globalPullSecret.Data).NotTo(BeEmpty(), "global-pull-secret secret is empty")
@@ -1862,27 +1873,27 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 			g.Eventually(func() error {
 				// Check RBAC in kube-system and openshift-config namespace
 				role := hccomanifests.GlobalPullSecretSyncerRole(additionalPullSecretNamespace)
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: role.Name, Namespace: role.Namespace}, role); err != nil {
+				if err := guestClient.Get(ctx, client.ObjectKey{Name: role.Name, Namespace: role.Namespace}, role); err != nil {
 					return err
 				}
 
 				roleBinding := hccomanifests.GlobalPullSecretSyncerRoleBinding(additionalPullSecretNamespace)
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: roleBinding.Name, Namespace: roleBinding.Namespace}, roleBinding); err != nil {
+				if err := guestClient.Get(ctx, client.ObjectKey{Name: roleBinding.Name, Namespace: roleBinding.Namespace}, roleBinding); err != nil {
 					return err
 				}
 
 				openshiftConfigRole := hccomanifests.GlobalPullSecretSyncerRole(pullSecretNamespace)
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: openshiftConfigRole.Name, Namespace: openshiftConfigRole.Namespace}, openshiftConfigRole); err != nil {
+				if err := guestClient.Get(ctx, client.ObjectKey{Name: openshiftConfigRole.Name, Namespace: openshiftConfigRole.Namespace}, openshiftConfigRole); err != nil {
 					return err
 				}
 
 				openshiftConfigRoleBinding := hccomanifests.GlobalPullSecretSyncerRoleBinding(pullSecretNamespace)
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: openshiftConfigRoleBinding.Name, Namespace: openshiftConfigRoleBinding.Namespace}, openshiftConfigRoleBinding); err != nil {
+				if err := guestClient.Get(ctx, client.ObjectKey{Name: openshiftConfigRoleBinding.Name, Namespace: openshiftConfigRoleBinding.Namespace}, openshiftConfigRoleBinding); err != nil {
 					return err
 				}
 
 				serviceAccount := hccomanifests.GlobalPullSecretSyncerServiceAccount()
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: serviceAccount.Name, Namespace: serviceAccount.Namespace}, serviceAccount); err != nil {
+				if err := guestClient.Get(ctx, client.ObjectKey{Name: serviceAccount.Name, Namespace: serviceAccount.Namespace}, serviceAccount); err != nil {
 					return err
 				}
 
@@ -1894,7 +1905,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Run("Check if the DaemonSet is present in the DataPlane", func(t *testing.T) {
 			g.Eventually(func() error {
 				daemonSet := hccomanifests.GlobalPullSecretDaemonSet()
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet); err != nil {
+				if err := guestClient.Get(ctx, client.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet); err != nil {
 					return err
 				}
 				dsImage = daemonSet.Spec.Template.Spec.Containers[0].Image
@@ -1906,7 +1917,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Run("Check if we can pull restricted images, should fail", func(t *testing.T) {
 			g.Eventually(func() error {
 				globalPullSecret := hccomanifests.GlobalPullSecret()
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+				if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
 					return err
 				}
 				pullSecretData := globalPullSecret.Data[corev1.DockerConfigJsonKey]
@@ -1927,7 +1938,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		// Modify the additional-pull-secret secret in the DataPlane
 		t.Run("Modify the additional-pull-secret secret in the DataPlane by adding the valid pull secret", func(t *testing.T) {
 			additionalPullSecret := hccomanifests.AdditionalPullSecret()
-			err := guestClient.Get(ctx, crclient.ObjectKey{Name: additionalPullSecret.Name, Namespace: additionalPullSecret.Namespace}, additionalPullSecret)
+			err := guestClient.Get(ctx, client.ObjectKey{Name: additionalPullSecret.Name, Namespace: additionalPullSecret.Namespace}, additionalPullSecret)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to get additional-pull-secret secret")
 			additionalPullSecret.Data[corev1.DockerConfigJsonKey] = additionalPullSecretReadOnlyE2EData
 			err = guestClient.Update(ctx, additionalPullSecret)
@@ -1938,7 +1949,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Run("Check if GlobalPullSecret secret is updated in the DataPlane", func(t *testing.T) {
 			globalPullSecret := hccomanifests.GlobalPullSecret()
 			g.Eventually(func() error {
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+				if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
 					return err
 				}
 				g.Expect(globalPullSecret.Data[corev1.DockerConfigJsonKey]).NotTo(BeEmpty(), "global-pull-secret secret is empty")
@@ -1953,7 +1964,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Run("Check if we can pull other restricted images, should succeed", func(t *testing.T) {
 			g.Eventually(func() error {
 				globalPullSecret := hccomanifests.GlobalPullSecret()
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+				if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
 					return err
 				}
 				pullSecretData := globalPullSecret.Data[corev1.DockerConfigJsonKey]
@@ -1980,7 +1991,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Run("Check if the GlobalPullSecret secret is deleted in the DataPlane", func(t *testing.T) {
 			g.Eventually(func() error {
 				globalPullSecret := hccomanifests.GlobalPullSecret()
-				if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+				if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
 					if !apierrors.IsNotFound(err) {
 						return err
 					}
@@ -2076,7 +2087,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		}
 
 		g := NewWithT(t)
-		if !hyperutil.IsPublicHC(entryHostedCluster) {
+		if !util.IsPublicHC(entryHostedCluster) {
 			return
 		}
 
@@ -2106,7 +2117,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			// Get the latest version of the object
 			latestHC := &hyperv1.HostedCluster{}
-			if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), latestHC); err != nil {
+			if err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hc), latestHC); err != nil {
 				return err
 			}
 
@@ -2147,7 +2158,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		_ = WaitForCustomKubeconfig(t, ctx, mgmtClient, entryHostedCluster)
 
 		// Get HC and HCP updated
-		err = mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), hc)
+		err = mgmtClient.Get(ctx, client.ObjectKeyFromObject(hc), hc)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get updated HostedCluster")
 
 		hcp := &hyperv1.HostedControlPlane{}
@@ -2231,7 +2242,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 			if err != nil {
 				return false
 			}
-			return hyperutil.IsDeploymentReady(ctx, kubeAPIServerDeployment)
+			return util.IsDeploymentReady(ctx, kubeAPIServerDeployment)
 		}, kasDeploymentTimeout, 10*time.Second).Should(BeTrue(), "failed to ensure KAS Deployment is ready")
 
 		// KAS deployment readiness should ensure certificate configuration is loaded
@@ -2249,7 +2260,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 			// Get KASCustomKubeconfig secret from HCP Namespace
 			t.Log("Checking CustomAdminKubeconfigs are present")
 			hcpKASCustomKubeconfig := cpomanifests.KASCustomKubeconfigSecret(hcpNamespace, nil)
-			err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hcpKASCustomKubeconfig), hcpKASCustomKubeconfig)
+			err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hcpKASCustomKubeconfig), hcpKASCustomKubeconfig)
 			g.Expect(err).ToNot(HaveOccurred(), "failed to get KAS custom kubeconfig secret")
 			g.Expect(hc.Status.CustomKubeconfig).ToNot(BeNil(), "KASCustomKubeconfig is nil")
 
@@ -2300,7 +2311,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			// Get the latest version of the object
 			latestHC := &hyperv1.HostedCluster{}
-			if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), latestHC); err != nil {
+			if err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hc), latestHC); err != nil {
 				return err
 			}
 			// Apply our changes to the latest version
@@ -2355,7 +2366,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 			g := NewWithT(t)
 			t.Log("Checking CustomAdminKubeconfig are removed")
 			hcpKASCustomKubeconfig := cpomanifests.KASCustomKubeconfigSecret(hcpNamespace, nil)
-			err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hcpKASCustomKubeconfig), hcpKASCustomKubeconfig)
+			err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hcpKASCustomKubeconfig), hcpKASCustomKubeconfig)
 			g.Expect(err).To(HaveOccurred(), "KAS custom kubeconfig secret still exists in HCP namespace")
 
 			// Get KASCustomKubeconfig secret from HC Namespace
@@ -2389,7 +2400,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 		// Delete NamedCertificates from the KAS
 		err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			latestHC := &hyperv1.HostedCluster{}
-			if err := mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(hc), latestHC); err != nil {
+			if err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(hc), latestHC); err != nil {
 				return fmt.Errorf("failed to get latest HostedCluster: %v", err)
 			}
 			latestHC.Spec.Configuration.APIServer.ServingCerts.NamedCertificates = []configv1.APIServerNamedServingCert{}
@@ -2408,7 +2419,7 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 }
 
 func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hc *hyperv1.HostedCluster) {
-	if !hyperutil.IsPublicHC(hc) {
+	if !util.IsPublicHC(hc) {
 		return // Admission policies are only validated in public clusters does not worth to test it in private ones.
 	}
 	guestClient := WaitForGuestClient(t, ctx, mgmtClient, hc)
@@ -2447,13 +2458,14 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 				Name: "cluster",
 			},
 		}
-		err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(apiServer), apiServer)
+		err := guestClient.Get(ctx, client.ObjectKeyFromObject(apiServer), apiServer)
 		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to wait grabbing HostedCluster apiserver configuration: %v", err))
 		g.Expect(apiServer).NotTo(BeNil(), "Apiserver configuration is nil")
 		apiServerCP := apiServer.DeepCopy()
 		apiServerCP.Spec.Audit.Profile = configv1.AllRequestBodiesAuditProfileType
 		err = guestClient.Update(ctx, apiServerCP)
 		g.Expect(err).To(HaveOccurred(), fmt.Sprintf("Failed block apiservers configuration update: %v", err))
+
 	})
 	t.Run("EnsureValidatingAdmissionPoliciesDontBlockStatusModifications", func(t *testing.T) {
 		g := NewWithT(t)
@@ -2463,7 +2475,7 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 				Name: "cluster",
 			},
 		}
-		err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(network), network)
+		err := guestClient.Get(ctx, client.ObjectKeyFromObject(network), network)
 		g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to wait grabbing HostedCluster network configuration: %v", err))
 		g.Expect(network).NotTo(BeNil(), "network configuration is nil")
 		cpNetwork := network.DeepCopy()
@@ -2480,7 +2492,7 @@ func EnsureAdmissionPolicies(t *testing.T, ctx context.Context, mgmtClient crcli
 					Name: "cluster",
 				},
 			}
-			err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(operatorHub), operatorHub)
+			err := guestClient.Get(ctx, client.ObjectKeyFromObject(operatorHub), operatorHub)
 			g.Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Failed to wait grabbing HostedCluster network configuration: %v", err))
 			g.Expect(operatorHub).NotTo(BeNil(), "OperatorHub configuration is nil")
 			operatorHubCP := operatorHub.DeepCopy()
@@ -2624,14 +2636,6 @@ func getIngressRouterDefaultIP(t *testing.T, ctx context.Context, client crclien
 	return routerDefaultIP, nil
 }
 
-// redactAppsRecord creates a redacted version of the apps record name to avoid leaking baseDomain
-func redactAppsRecord(clusterName, baseDomain string) string {
-	if baseDomain == "" {
-		return "*.apps." + clusterName
-	}
-	return "*.apps." + clusterName + ".[REDACTED]"
-}
-
 func createIngressRoute53Record(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
 	t.Helper()
 	g := NewWithT(t)
@@ -2655,15 +2659,11 @@ func createIngressRoute53Record(t *testing.T, ctx context.Context, client crclie
 	clusterName := hostedCluster.Name
 	baseDomain := hostedCluster.Spec.DNS.BaseDomain
 	zoneID, err := awsinfra.LookupZone(ctx, route53Client, hostedCluster.Spec.DNS.BaseDomain, false)
-	if err != nil {
-		t.Fatalf("failed to lookup Route53 hosted zone (details elided)")
-	}
+	g.Expect(err).ToNot(HaveOccurred(), "failed to lookup Route53 hosted zone %s", baseDomain)
 
 	err = awsprivatelink.CreateRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, routerDefaultIP, "A")
-	if err != nil {
-		t.Fatalf("failed to create Route53 record (details elided)")
-	}
-	t.Logf("Created Route53 record for HostedCluster %s", hostedCluster.Name)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to create Route53 record")
+	t.Logf("Created Route53 record for HostedCluster %s: %s", hostedCluster.Name, "*.apps."+clusterName+"."+baseDomain)
 }
 
 func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
@@ -2686,24 +2686,17 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 	clusterName := hostedCluster.Name
 	baseDomain := hostedCluster.Spec.DNS.BaseDomain
 	zoneID, err := awsinfra.LookupZone(ctx, route53Client, hostedCluster.Spec.DNS.BaseDomain, false)
-	if err != nil {
-		t.Fatalf("failed to lookup Route53 hosted zone (details elided)")
-	}
+	g.Expect(err).ToNot(HaveOccurred(), "failed to lookup Route53 hosted zone %s", baseDomain)
 
 	record, err := awsprivatelink.FindRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, "A")
-	if err != nil {
-		t.Fatalf("failed to find Route53 record (details elided)")
-	}
+	g.Expect(err).ToNot(HaveOccurred(), "failed to find Route53 record %s", "*.apps."+clusterName+"."+baseDomain)
 
 	if record == nil || len(record.ResourceRecords) == 0 {
-		t.Logf("Route53 record for HostedCluster %s not found", hostedCluster.Name)
+		t.Logf("Route53 record for HostedCluster %s not found: %s", hostedCluster.Name, "*.apps."+clusterName+"."+baseDomain)
 	} else {
 		err = awsprivatelink.DeleteRecord(ctx, route53Client, zoneID, record)
-		redactedRecord := redactAppsRecord(clusterName, baseDomain)
-		if err != nil {
-			t.Fatalf("failed to delete Route53 record %s (details elided)", redactedRecord)
-		}
-		t.Logf("Deleted Route53 record for HostedCluster %s: %s", hostedCluster.Name, redactedRecord)
+		g.Expect(err).ToNot(HaveOccurred(), "failed to delete Route53 record %s", "*.apps."+clusterName+"."+baseDomain)
+		t.Logf("Deleted Route53 record for HostedCluster %s: %s", hostedCluster.Name, "*.apps."+clusterName+"."+baseDomain)
 	}
 }
 
@@ -2734,7 +2727,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
-	serviceStrategy := hyperutil.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
+	serviceStrategy := util.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
 	g.Expect(serviceStrategy).ToNot(BeNil())
 	if serviceStrategy.Type == hyperv1.Route && serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).To(Equal(serviceStrategy.Route.Hostname))
@@ -2785,7 +2778,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
-	serviceStrategy := hyperutil.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
+	serviceStrategy := util.ServicePublishingStrategyByTypeByHC(hostedCluster, hyperv1.APIServer)
 	g.Expect(serviceStrategy).ToNot(BeNil())
 	if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
 		g.Expect(hostedCluster.Status.ControlPlaneEndpoint.Host).To(Equal(serviceStrategy.Route.Hostname))
@@ -2808,6 +2801,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	if hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		g.Expect(hostedCluster.Spec.Configuration.Ingress.LoadBalancer.Platform.AWS.Type).To(Equal(configv1.NLB))
 	}
+
 }
 
 func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration) {
@@ -3116,7 +3110,7 @@ func EnsurePayloadArchSetCorrectly(t *testing.T, ctx context.Context, client crc
 			[]Predicate[*hyperv1.HostedCluster]{
 				func(cluster *hyperv1.HostedCluster) (done bool, reasons string, err error) {
 					imageMetadataProvider := &hyperutil.RegistryClientImageMetadataProvider{}
-					payloadArch, err := hyperutil.DetermineHostedClusterPayloadArch(ctx, client, cluster, imageMetadataProvider)
+					payloadArch, err := util.DetermineHostedClusterPayloadArch(ctx, client, cluster, imageMetadataProvider)
 					if err != nil {
 						return false, "failed to get hc payload arch", err
 					}
@@ -3282,6 +3276,7 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 				Value: aws.String(day2TagValue),
 			}))
 		}).WithContext(ctx).WithTimeout(time.Minute * 2).WithPolling(time.Second).Should(Succeed())
+
 	})
 }
 
@@ -3289,7 +3284,7 @@ func EnsureKubeAPIServerAllowedCIDRs(t *testing.T, ctx context.Context, mgmtClie
 	t.Run("EnsureKubeAPIServerAllowedCIDRs", func(t *testing.T) {
 		g := NewWithT(t)
 
-		kubeClient, err := kubeclient.NewForConfig(guestConfig)
+		kubeClient, err := kubernetes.NewForConfig(guestConfig)
 		g.Expect(err).NotTo(HaveOccurred())
 
 		// ensure that kube-apiserver is not reachable from anywhere
@@ -3321,6 +3316,7 @@ func ensureAPIServerAllowedCIDRs(ctx context.Context, t *testing.T, g Gomega, mg
 			g.Expect(err).To(HaveOccurred(), "kube-apiserver should not be reachable")
 		}
 	}).WithContext(ctx).WithTimeout(time.Minute * 3).WithPolling(time.Second * 5).Should(Succeed())
+
 }
 
 // generateTestCIDRs250 is a helper to generate 250 /32 CIDRs starting at 250.250.250.1
@@ -3685,7 +3681,7 @@ func runAndCheckPod(t *testing.T, ctx context.Context, guestClient crclient.Clie
 	t.Logf("Created pod %s in namespace %s", pod.Name, pod.Namespace)
 	g.Eventually(func() error {
 		pod := &corev1.Pod{}
-		err := guestClient.Get(ctx, crclient.ObjectKey{Name: fmt.Sprintf("%s-pod", name), Namespace: namespace}, pod)
+		err := guestClient.Get(ctx, client.ObjectKey{Name: fmt.Sprintf("%s-pod", name), Namespace: namespace}, pod)
 		if err != nil {
 			return err
 		}
@@ -3728,25 +3724,6 @@ func isCertificateTriggeredRestart(ctx context.Context, client crclient.Client, 
 	return false
 }
 
-// hasAzureCSIDriverUIDSupport checks if the hosted cluster supports Azure CSI driver UID security context.
-// CSI driver UID support was added in 4.21.
-func hasAzureCSIDriverUIDSupport(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) bool {
-	pullSecret, err := hyperutil.GetPullSecretBytes(ctx, client, hostedCluster)
-	if err != nil {
-		t.Logf("Warning: Failed to get pull secret for Azure CSI driver version check: %v. Assuming no UID support.", err)
-		return false
-	}
-
-	releaseProvider := releaseinfo.RegistryClientProvider{}
-	version, err := hyperutil.GetPayloadVersion(ctx, &releaseProvider, hostedCluster, pullSecret)
-	if err != nil {
-		t.Logf("Warning: Failed to get payload version for Azure CSI driver UID support check: %v. Assuming no UID support.", err)
-		return false
-	}
-
-	return version.GTE(Version421)
-}
-
 // EnsureSecurityContextUID validates that all pods in the control plane namespace have the expected SecurityContext UID.
 // TestCreateClusterDefaultSecurityContextUID ensures uniqueness across namespaces.
 func EnsureSecurityContextUID(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -3764,8 +3741,6 @@ func EnsureSecurityContextUID(t *testing.T, ctx context.Context, client crclient
 		expectedUID, err := strconv.ParseInt(uid, 10, 64)
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't parse SCC UID", controlPlaneNamespace.Name, uid)
 
-		skipAzureCSI := !hasAzureCSIDriverUIDSupport(t, ctx, client, hostedCluster)
-
 		var podList corev1.PodList
 		err = client.List(ctx, &podList, &crclient.ListOptions{Namespace: namespaceName})
 		g.Expect(err).NotTo(HaveOccurred(), "failed to list pods in namespace %s", controlPlaneNamespace)
@@ -3775,17 +3750,17 @@ func EnsureSecurityContextUID(t *testing.T, ctx context.Context, client crclient
 			// Skip pods that are known exceptions for SecurityContext UID validation
 			name := pod.Name
 			switch {
-			case strings.HasPrefix(name, "azure-disk-csi-driver-controller") && skipAzureCSI,
-				strings.HasPrefix(name, "azure-file-csi-driver-controller") && skipAzureCSI,
-				strings.HasPrefix(name, "azure-disk-csi-driver-operator") && skipAzureCSI,
-				strings.HasPrefix(name, "azure-file-csi-driver-operator") && skipAzureCSI,
+			case strings.HasPrefix(name, "azure-disk-csi-driver-controller"),
+				strings.HasPrefix(name, "azure-file-csi-driver-controller"),
+				strings.HasPrefix(name, "azure-disk-csi-driver-operator"),
+				strings.HasPrefix(name, "azure-file-csi-driver-operator"),
 				strings.HasPrefix(name, "network-node-identity"),
 				strings.HasPrefix(name, "ovnkube-control-plane"):
 				continue
 			}
 			if pod.Spec.SecurityContext == nil || pod.Spec.SecurityContext.RunAsUser == nil || *pod.Spec.SecurityContext.RunAsUser != expectedUID {
 				errs = append(errs, fmt.Sprintf("pod %s/%s: RunAsUser %v does not match expected UID %d", pod.Namespace, pod.Name,
-					func() any {
+					func() interface{} {
 						if pod.Spec.SecurityContext == nil || pod.Spec.SecurityContext.RunAsUser == nil {
 							return nil
 						}

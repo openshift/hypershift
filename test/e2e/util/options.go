@@ -32,10 +32,6 @@ import (
 	"github.com/blang/semver"
 )
 
-const (
-	DefaultCIBaseDomain = "origin-ci-int-aws.dev.rhcloud.com"
-)
-
 // Options are global test options applicable to all scenarios.
 type Options struct {
 	LatestReleaseImage   string
@@ -92,25 +88,19 @@ type Options struct {
 }
 
 type HyperShiftOperatorInstallOptions struct {
-	AWSOidcS3BucketName                    string
-	AWSOidcS3Credentials                   string
-	AWSOidcS3Region                        string
-	AWSPrivateCredentialsFile              string
-	AWSPrivateRegion                       string
-	EnableCIDebugOutput                    bool
-	ExternalDNSCredentials                 string
-	ExternalDNSDomain                      string
-	ExternalDNSDomainFilter                string
-	ExternalDNSProvider                    string
-	HyperShiftOperatorLatestImage          string
-	PlatformMonitoring                     string
-	PrivatePlatform                        string
-	EnableSizeTagging                      bool
-	EnableDedicatedRequestServingIsolation bool
-	EnableCPOOverrides                     bool
-	EnableEtcdRecovery                     bool
-	DryRun                                 bool
-	DryRunDir                              string
+	AWSOidcS3BucketName           string
+	AWSOidcS3Credentials          string
+	AWSOidcS3Region               string
+	AWSPrivateCredentialsFile     string
+	AWSPrivateRegion              string
+	EnableCIDebugOutput           bool
+	ExternalDNSCredentials        string
+	ExternalDNSDomain             string
+	ExternalDNSDomainFilter       string
+	ExternalDNSProvider           string
+	HyperShiftOperatorLatestImage string
+	PlatformMonitoring            string
+	PrivatePlatform               string
 }
 
 type ConfigurableClusterOptions struct {
@@ -126,7 +116,6 @@ type ConfigurableClusterOptions struct {
 	AzureMultiArch                        bool
 	AzureServiceAccountTokenIssuerKeyPath string
 	AzureDataPlaneIdentities              string
-	AzureWorkloadIdentitiesFile           string
 	AzureEncryptionKeyID                  string
 	AzureKMSUserAssignedCredsSecretName   string
 	OpenStackCredentialsFile              string
@@ -359,10 +348,6 @@ func (o *Options) DefaultAzureOptions() azure.RawCreateOptions {
 		opts.ManagedIdentitiesFile = o.ConfigurableClusterOptions.AzureManagedIdentitiesFile
 	}
 
-	if o.ConfigurableClusterOptions.AzureWorkloadIdentitiesFile != "" {
-		opts.WorkloadIdentitiesFile = o.ConfigurableClusterOptions.AzureWorkloadIdentitiesFile
-	}
-
 	if opts.ManagedIdentitiesFile != "" {
 		opts.TechPreviewEnabled = true
 	}
@@ -439,7 +424,7 @@ func (o *Options) Complete() error {
 		}
 		if len(o.ConfigurableClusterOptions.BaseDomain) == 0 && o.Platform != hyperv1.KubevirtPlatform {
 			// TODO: make this an envvar with change to openshift/release, then change here
-			o.ConfigurableClusterOptions.BaseDomain = DefaultCIBaseDomain
+			o.ConfigurableClusterOptions.BaseDomain = "origin-ci-int-aws.dev.rhcloud.com"
 		}
 	}
 

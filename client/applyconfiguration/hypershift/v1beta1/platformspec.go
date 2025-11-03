@@ -32,7 +32,6 @@ type PlatformSpecApplyConfiguration struct {
 	PowerVS   *PowerVSPlatformSpecApplyConfiguration   `json:"powervs,omitempty"`
 	Kubevirt  *KubevirtPlatformSpecApplyConfiguration  `json:"kubevirt,omitempty"`
 	OpenStack *OpenStackPlatformSpecApplyConfiguration `json:"openstack,omitempty"`
-	GCP       *GCPPlatformSpecApplyConfiguration       `json:"gcp,omitempty"`
 }
 
 // PlatformSpecApplyConfiguration constructs a declarative configuration of the PlatformSpec type for use with
@@ -102,13 +101,5 @@ func (b *PlatformSpecApplyConfiguration) WithKubevirt(value *KubevirtPlatformSpe
 // If called multiple times, the OpenStack field is set to the value of the last call.
 func (b *PlatformSpecApplyConfiguration) WithOpenStack(value *OpenStackPlatformSpecApplyConfiguration) *PlatformSpecApplyConfiguration {
 	b.OpenStack = value
-	return b
-}
-
-// WithGCP sets the GCP field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the GCP field is set to the value of the last call.
-func (b *PlatformSpecApplyConfiguration) WithGCP(value *GCPPlatformSpecApplyConfiguration) *PlatformSpecApplyConfiguration {
-	b.GCP = value
 	return b
 }

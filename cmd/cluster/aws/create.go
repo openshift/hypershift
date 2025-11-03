@@ -551,7 +551,6 @@ func CreateInfraOptions(awsOpts *ValidatedCreateOptions, opts *core.CreateOption
 		Name:                         opts.Name,
 		BaseDomain:                   opts.BaseDomain,
 		BaseDomainPrefix:             opts.BaseDomainPrefix,
-		RedactBaseDomain:             opts.RedactBaseDomain,
 		AdditionalTags:               awsOpts.AdditionalTags,
 		Zones:                        awsOpts.Zones,
 		EnableProxy:                  awsOpts.EnableProxy,

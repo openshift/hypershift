@@ -98,7 +98,6 @@ hostedclusters.hypershift.openshift.io:
   - DynamicResourceAllocation
   - ExternalOIDC
   - ExternalOIDCWithUIDAndExtraClaimMappings
-  - GCPPlatform
   - ImageStreamImportMode
   - KMSEncryptionProvider
   - NetworkDiagnosticsConfig
@@ -155,7 +154,6 @@ hostedcontrolplanes.hypershift.openshift.io:
   - DynamicResourceAllocation
   - ExternalOIDC
   - ExternalOIDCWithUIDAndExtraClaimMappings
-  - GCPPlatform
   - ImageStreamImportMode
   - KMSEncryptionProvider
   - NetworkDiagnosticsConfig
