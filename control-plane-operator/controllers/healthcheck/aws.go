@@ -15,8 +15,33 @@ import (
 )
 
 func awsHealthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	// Check if KAS is available before attempting to validate AWS identity provider.
+	// The AWS identity provider validation requires a token to be minted, which requires KAS to be up.
+	kasAvailable := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.KubeAPIServerAvailable))
+	if kasAvailable == nil || kasAvailable.Status != metav1.ConditionTrue {
+		// KAS is not available, cannot validate AWS identity provider
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAWSIdentityProvider),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionUnknown,
+			Message:            "Cannot validate AWS identity provider while KubeAPIServer is not available",
+			Reason:             hyperv1.StatusUnknownReason,
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return nil
+	}
+
 	ec2Client, _ := hostedcontrolplane.GetEC2Client()
 	if ec2Client == nil {
+		// EC2 client is not available (token minting may have failed)
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAWSIdentityProvider),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionUnknown,
+			Message:            "AWS EC2 client is not available",
+			Reason:             hyperv1.StatusUnknownReason,
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
 		return nil
 	}
 
