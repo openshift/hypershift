@@ -63,11 +63,7 @@ var (
 			"osd-fleet-manager-production-me-central-1",
 			"osd-fleet-manager-production-ap-southeast-5",
 		},
-		// These envs belongs to Fedramp and HCM are not managing the upgrades
-		// xref: https://redhat-internal.slack.com/archives/C081W589GRG/p1750926263072849?thread_ts=1750681329.961589&cid=C081W589GRG
 		"no-update": {
-			"osd-fleet-manager-production-ca-west-1",
-			"osd-fleet-manager-production-il-central-1",
 		},
 	}
 
