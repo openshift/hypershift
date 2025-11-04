@@ -2322,7 +2322,7 @@ kubevirt.io/api/core/v1
 ## explicit; go 1.22.0
 kubevirt.io/containerized-data-importer-api/pkg/apis/core
 kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1
-# kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90
+# kubevirt.io/controller-lifecycle-operator-sdk/api v0.2.4
 ## explicit; go 1.17
 kubevirt.io/controller-lifecycle-operator-sdk/api
 # sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.32.0
