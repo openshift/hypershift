@@ -17,23 +17,23 @@ limitations under the License.
 
 package v1beta1
 
-// GCPNetworkConfigCustomerApplyConfiguration represents a declarative configuration of the GCPNetworkConfigCustomer type for use
+// GCPNetworkConfigApplyConfiguration represents a declarative configuration of the GCPNetworkConfig type for use
 // with apply.
-type GCPNetworkConfigCustomerApplyConfiguration struct {
+type GCPNetworkConfigApplyConfiguration struct {
 	Network                     *GCPResourceReferenceApplyConfiguration `json:"network,omitempty"`
 	PrivateServiceConnectSubnet *GCPResourceReferenceApplyConfiguration `json:"privateServiceConnectSubnet,omitempty"`
 }
 
-// GCPNetworkConfigCustomerApplyConfiguration constructs a declarative configuration of the GCPNetworkConfigCustomer type for use with
+// GCPNetworkConfigApplyConfiguration constructs a declarative configuration of the GCPNetworkConfig type for use with
 // apply.
-func GCPNetworkConfigCustomer() *GCPNetworkConfigCustomerApplyConfiguration {
-	return &GCPNetworkConfigCustomerApplyConfiguration{}
+func GCPNetworkConfig() *GCPNetworkConfigApplyConfiguration {
+	return &GCPNetworkConfigApplyConfiguration{}
 }
 
 // WithNetwork sets the Network field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Network field is set to the value of the last call.
-func (b *GCPNetworkConfigCustomerApplyConfiguration) WithNetwork(value *GCPResourceReferenceApplyConfiguration) *GCPNetworkConfigCustomerApplyConfiguration {
+func (b *GCPNetworkConfigApplyConfiguration) WithNetwork(value *GCPResourceReferenceApplyConfiguration) *GCPNetworkConfigApplyConfiguration {
 	b.Network = value
 	return b
 }
@@ -41,7 +41,7 @@ func (b *GCPNetworkConfigCustomerApplyConfiguration) WithNetwork(value *GCPResou
 // WithPrivateServiceConnectSubnet sets the PrivateServiceConnectSubnet field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the PrivateServiceConnectSubnet field is set to the value of the last call.
-func (b *GCPNetworkConfigCustomerApplyConfiguration) WithPrivateServiceConnectSubnet(value *GCPResourceReferenceApplyConfiguration) *GCPNetworkConfigCustomerApplyConfiguration {
+func (b *GCPNetworkConfigApplyConfiguration) WithPrivateServiceConnectSubnet(value *GCPResourceReferenceApplyConfiguration) *GCPNetworkConfigApplyConfiguration {
 	b.PrivateServiceConnectSubnet = value
 	return b
 }

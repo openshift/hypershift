@@ -26,13 +26,13 @@ const (
 	GCPEndpointAccessPrivate GCPEndpointAccessType = "Private"
 )
 
-// GCPNetworkConfigCustomer specifies customer VPC configuration for GCP clusters and Private Service Connect endpoint creation.
-type GCPNetworkConfigCustomer struct {
-	// network is the customer's VPC network name
+// GCPNetworkConfig specifies VPC configuration for GCP clusters and Private Service Connect endpoint creation.
+type GCPNetworkConfig struct {
+	// network is the VPC network name
 	// +required
 	Network GCPResourceReference `json:"network"`
 
-	// privateServiceConnectSubnet is the customer's subnet for Private Service Connect endpoints
+	// privateServiceConnectSubnet is the subnet for Private Service Connect endpoints
 	// +required
 	PrivateServiceConnectSubnet GCPResourceReference `json:"privateServiceConnectSubnet"`
 }
@@ -70,10 +70,10 @@ type GCPPlatformSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Region is immutable"
 	Region string `json:"region"`
 
-	// customerNetworkConfig specifies customer VPC configuration for Private Service Connect.
-	// Required for customer VPC configuration in Private Service Connect deployments.
+	// networkConfig specifies VPC configuration for Private Service Connect.
+	// Required for VPC configuration in Private Service Connect deployments.
 	// +required
-	CustomerNetworkConfig GCPNetworkConfigCustomer `json:"customerNetworkConfig"`
+	NetworkConfig GCPNetworkConfig `json:"networkConfig"`
 
 	// endpointAccess controls API endpoint accessibility for the HostedControlPlane on GCP.
 	// Allowed values: "Private", "PublicAndPrivate". Defaults to "Private".

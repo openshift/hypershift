@@ -5836,13 +5836,13 @@ private node communication with the control plane via Private Service Connect.</
 </td>
 </tr></tbody>
 </table>
-###GCPNetworkConfigCustomer { #hypershift.openshift.io/v1beta1.GCPNetworkConfigCustomer }
+###GCPNetworkConfig { #hypershift.openshift.io/v1beta1.GCPNetworkConfig }
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
 </p>
 <p>
-<p>GCPNetworkConfigCustomer specifies customer VPC configuration for GCP clusters and Private Service Connect endpoint creation.</p>
+<p>GCPNetworkConfig specifies VPC configuration for GCP clusters and Private Service Connect endpoint creation.</p>
 </p>
 <table>
 <thead>
@@ -5862,7 +5862,7 @@ GCPResourceReference
 </em>
 </td>
 <td>
-<p>network is the customer&rsquo;s VPC network name</p>
+<p>network is the VPC network name</p>
 </td>
 </tr>
 <tr>
@@ -5875,7 +5875,7 @@ GCPResourceReference
 </em>
 </td>
 <td>
-<p>privateServiceConnectSubnet is the customer&rsquo;s subnet for Private Service Connect endpoints</p>
+<p>privateServiceConnectSubnet is the subnet for Private Service Connect endpoints</p>
 </td>
 </tr>
 </tbody>
@@ -5932,16 +5932,16 @@ For a full list of valid regions, see: <a href="https://cloud.google.com/compute
 </tr>
 <tr>
 <td>
-<code>customerNetworkConfig</code></br>
+<code>networkConfig</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1beta1.GCPNetworkConfigCustomer">
-GCPNetworkConfigCustomer
+<a href="#hypershift.openshift.io/v1beta1.GCPNetworkConfig">
+GCPNetworkConfig
 </a>
 </em>
 </td>
 <td>
-<p>customerNetworkConfig specifies customer VPC configuration for Private Service Connect.
-Required for customer VPC configuration in Private Service Connect deployments.</p>
+<p>networkConfig specifies VPC configuration for Private Service Connect.
+Required for VPC configuration in Private Service Connect deployments.</p>
 </td>
 </tr>
 <tr>
@@ -6112,7 +6112,7 @@ string
 ###GCPResourceReference { #hypershift.openshift.io/v1beta1.GCPResourceReference }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.GCPNetworkConfigCustomer">GCPNetworkConfigCustomer</a>)
+<a href="#hypershift.openshift.io/v1beta1.GCPNetworkConfig">GCPNetworkConfig</a>)
 </p>
 <p>
 <p>GCPResourceReference represents a reference to a GCP resource by name.

@@ -4965,13 +4965,22 @@ spec:
                     description: gcp specifies configuration for clusters running
                       on Google Cloud Platform.
                     properties:
-                      customerNetworkConfig:
+                      endpointAccess:
+                        default: Private
                         description: |-
-                          customerNetworkConfig specifies customer VPC configuration for Private Service Connect.
-                          Required for customer VPC configuration in Private Service Connect deployments.
+                          endpointAccess controls API endpoint accessibility for the HostedControlPlane on GCP.
+                          Allowed values: "Private", "PublicAndPrivate". Defaults to "Private".
+                        enum:
+                        - PublicAndPrivate
+                        - Private
+                        type: string
+                      networkConfig:
+                        description: |-
+                          networkConfig specifies VPC configuration for Private Service Connect.
+                          Required for VPC configuration in Private Service Connect deployments.
                         properties:
                           network:
-                            description: network is the customer's VPC network name
+                            description: network is the VPC network name
                             properties:
                               name:
                                 description: name is the name of the GCP resource
@@ -4983,8 +4992,8 @@ spec:
                             - name
                             type: object
                           privateServiceConnectSubnet:
-                            description: privateServiceConnectSubnet is the customer's
-                              subnet for Private Service Connect endpoints
+                            description: privateServiceConnectSubnet is the subnet
+                              for Private Service Connect endpoints
                             properties:
                               name:
                                 description: name is the name of the GCP resource
@@ -4999,15 +5008,6 @@ spec:
                         - network
                         - privateServiceConnectSubnet
                         type: object
-                      endpointAccess:
-                        default: Private
-                        description: |-
-                          endpointAccess controls API endpoint accessibility for the HostedControlPlane on GCP.
-                          Allowed values: "Private", "PublicAndPrivate". Defaults to "Private".
-                        enum:
-                        - PublicAndPrivate
-                        - Private
-                        type: string
                       project:
                         description: |-
                           project is the GCP project ID.
@@ -5040,7 +5040,7 @@ spec:
                         - message: Region is immutable
                           rule: self == oldSelf
                     required:
-                    - customerNetworkConfig
+                    - networkConfig
                     - project
                     - region
                     type: object

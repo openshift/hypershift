@@ -147,8 +147,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.FilterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("FilterByNeutronTags"):
 		return &hypershiftv1beta1.FilterByNeutronTagsApplyConfiguration{}
-	case v1beta1.SchemeGroupVersion.WithKind("GCPNetworkConfigCustomer"):
-		return &hypershiftv1beta1.GCPNetworkConfigCustomerApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("GCPNetworkConfig"):
+		return &hypershiftv1beta1.GCPNetworkConfigApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPPlatformSpec"):
 		return &hypershiftv1beta1.GCPPlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPPrivateServiceConnect"):
