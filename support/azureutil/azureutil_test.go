@@ -12,6 +12,8 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -534,4 +536,66 @@ func isCapabilityDisabled(capabilities *hyperv1.Capabilities, capability hyperv1
 		}
 	}
 	return false
+}
+
+func TestGetAzureCloudConfiguration(t *testing.T) {
+	tests := []struct {
+		name      string
+		cloudName string
+		wantCloud cloud.Configuration
+		wantErr   bool
+	}{
+		{
+			name:      "AzurePublicCloud returns public cloud configuration",
+			cloudName: "AzurePublicCloud",
+			wantCloud: cloud.AzurePublic,
+			wantErr:   false,
+		},
+		{
+			name:      "Empty string defaults to public cloud configuration",
+			cloudName: "",
+			wantCloud: cloud.AzurePublic,
+			wantErr:   false,
+		},
+		{
+			name:      "AzureUSGovernmentCloud returns government cloud configuration",
+			cloudName: "AzureUSGovernmentCloud",
+			wantCloud: cloud.AzureGovernment,
+			wantErr:   false,
+		},
+		{
+			name:      "AzureChinaCloud returns China cloud configuration",
+			cloudName: "AzureChinaCloud",
+			wantCloud: cloud.AzureChina,
+			wantErr:   false,
+		},
+		{
+			name:      "Invalid cloud name returns error",
+			cloudName: "InvalidCloud",
+			wantCloud: cloud.Configuration{},
+			wantErr:   true,
+		},
+		{
+			name:      "Unknown cloud name returns error",
+			cloudName: "AzureStackCloud",
+			wantCloud: cloud.Configuration{},
+			wantErr:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotCloud, err := GetAzureCloudConfiguration(tt.cloudName)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetAzureCloudConfiguration() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				// Compare the ActiveDirectoryAuthorityHost to verify we got the right cloud configuration
+				if gotCloud.ActiveDirectoryAuthorityHost != tt.wantCloud.ActiveDirectoryAuthorityHost {
+					t.Errorf("GetAzureCloudConfiguration() = %v, want %v", gotCloud, tt.wantCloud)
+				}
+			}
+		})
+	}
 }

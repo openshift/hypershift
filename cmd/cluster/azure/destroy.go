@@ -11,7 +11,10 @@ import (
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/azureutil"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 
 	"k8s.io/apimachinery/pkg/util/errors"
@@ -61,9 +64,14 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 		return err
 	}
 
+	// Get cloud configuration from HostedCluster if available, default to AzurePublicCloud
+	cloudName := "AzurePublicCloud"
 	if hostedCluster != nil {
 		o.InfraID = hostedCluster.Spec.InfraID
 		o.AzurePlatform.Location = hostedCluster.Spec.Platform.Azure.Location
+		if hostedCluster.Spec.Platform.Azure.Cloud != "" {
+			cloudName = hostedCluster.Spec.Platform.Azure.Cloud
+		}
 	}
 
 	var inputErrors []error
@@ -85,8 +93,15 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 			return fmt.Errorf("failed to setup Azure credentials: %w", err)
 		}
 
+		// Setup cloud configuration
+		cloudConfig, err := azureutil.GetAzureCloudConfiguration(cloudName)
+		if err != nil {
+			return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+		}
+		clientOptions := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}}
+
 		// Setup Azure resource group client
-		resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, azureCreds, nil)
+		resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, azureCreds, clientOptions)
 		if err != nil {
 			return fmt.Errorf("failed to create new resource groups client: %w", err)
 		}
