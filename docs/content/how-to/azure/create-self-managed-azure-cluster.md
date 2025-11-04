@@ -35,10 +35,10 @@ Before creating a self-managed Azure HostedCluster, ensure you have:
 Your Azure service principal must have the following permissions:
 
 - **Subscription Level**:
-  - `Contributor` role
-  - `User Access Administrator` role
+    - `Contributor` role
+    - `User Access Administrator` role
 - **Microsoft Graph API**:
-  - `Application.ReadWrite.OwnedBy` permission (requires DPTP request in most cases)
+    - `Application.ReadWrite.OwnedBy` permission (requires DPTP request in most cases)
 
 ## Creating the Self-Managed Azure HostedCluster
 
@@ -47,7 +47,7 @@ Your Azure service principal must have the following permissions:
 Before creating the HostedCluster, set up the necessary Azure infrastructure:
 
 !!! note "About PERSISTENT_RG_NAME"
-    In Red Hat environments, a periodic Azure resource "reaper" deletes resources that are not properly tagged or not located in an approved resource group. We frequently use the `os4-common` resource group for shared, long-lived assets (for example, public DNS zones) to avoid accidental cleanup. If you are not in Red Hat infrastructure, set `PERSISTENT_RG_NAME` to any long-lived resource group in your subscription that will not be automatically reaped, or ensure your organization’s required tags/policies are applied. The name does not have to be `os4-common`—use whatever persistent resource group fits your environment.
+    In Red Hat environments, a periodic Azure resource "reaper" deletes resources that are not properly tagged or not located in an approved resource group. We frequently use the `os4-common` resource group for shared, long-lived assets (for example, public DNS zones) to avoid accidental cleanup. If you are not in Red Hat infrastructure, set `PERSISTENT_RG_NAME` to any long-lived resource group in your subscription that will not be automatically reaped, or ensure your organization's required tags/policies are applied. The name does not have to be `os4-common`—use whatever persistent resource group fits your environment.
 
 ```bash
 # Set cluster configuration variables
@@ -113,92 +113,126 @@ GetSubnetID=$(az network vnet subnet show \
 ### Create the HostedCluster
 
 !!! note "Federated Identity Prerequisites"
-    
+
     Before creating the cluster, ensure that all federated identity credentials have been set up for your workload identities as described in the [Azure Workload Identity Setup](azure-workload-identity-setup.md) guide. The cluster creation will fail if these are not properly configured.
 
-Choose the cluster creation approach that matches your management cluster setup:
+!!! note "Azure Marketplace Images"
 
-=== "With External DNS"
+    For OpenShift 4.20 and later, HyperShift automatically selects the appropriate Azure Marketplace image from the release payload. You no longer need to specify `--marketplace-*` flags unless you want to use a specific custom image. See [Configuring Azure Marketplace Images](#configuring-azure-marketplace-images) for more details.
 
-    Create the HostedCluster with External DNS for automatic DNS management:
+Create the HostedCluster:
 
-    ```bash
-    # Create the HostedCluster with External DNS
-    ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
-        --name "$CLUSTER_NAME" \
-        --namespace "$CLUSTER_NAMESPACE" \
-        --azure-creds $AZURE_CREDS \
-        --location ${LOCATION} \
-        --node-pool-replicas 2 \
-        --base-domain $PARENT_DNS_ZONE \
-        --pull-secret $PULL_SECRET \
-        --generate-ssh \
-        --release-image ${RELEASE_IMAGE} \
-        --external-dns-domain ${DNS_ZONE_NAME} \
-        --resource-group-name "${MANAGED_RG_NAME}" \
-        --vnet-id "${GetVnetID}" \
-        --subnet-id "${GetSubnetID}" \
-        --network-security-group-id "${GetNsgID}" \
-        --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
-        --oidc-issuer-url "${OIDC_ISSUER_URL}" \
-        --control-plane-operator-image="quay.io/hypershift/hypershift:${TAG}" \
-        --marketplace-publisher azureopenshift \
-        --marketplace-offer aro4 \
-        --marketplace-sku aro_419 \
-        --marketplace-version 419.6.20250523 \
-        --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
-        --assign-service-principal-roles \
-        --workload-identities-file ./workload-identities.json \
-        --diagnostics-storage-account-type Managed
-    ```
+```bash
+# Create the HostedCluster
+${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+    --name "$CLUSTER_NAME" \
+    --namespace "$CLUSTER_NAMESPACE" \
+    --azure-creds $AZURE_CREDS \
+    --location ${LOCATION} \
+    --node-pool-replicas 2 \
+    --base-domain $PARENT_DNS_ZONE \
+    --pull-secret $PULL_SECRET \
+    --generate-ssh \
+    --release-image ${RELEASE_IMAGE} \
+    --external-dns-domain ${DNS_ZONE_NAME} \
+    --resource-group-name "${MANAGED_RG_NAME}" \
+    --vnet-id "${GetVnetID}" \
+    --subnet-id "${GetSubnetID}" \
+    --network-security-group-id "${GetNsgID}" \
+    --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
+    --oidc-issuer-url "${OIDC_ISSUER_URL}" \
+    --control-plane-operator-image="quay.io/hypershift/hypershift:${TAG}" \
+    --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
+    --assign-service-principal-roles \
+    --workload-identities-file ./workload-identities.json \
+    --diagnostics-storage-account-type Managed
+```
 
-    This creates custom DNS names managed by External DNS:
+### Configuring Azure Marketplace Images
 
-    - API server: `api-${CLUSTER_NAME}.${DNS_ZONE_NAME}`
-    - OAuth: `oauth-${CLUSTER_NAME}.${DNS_ZONE_NAME}`
-    - Konnectivity: `konnectivity-${CLUSTER_NAME}.${DNS_ZONE_NAME}`
-    - Ignition: `ignition-${CLUSTER_NAME}.${DNS_ZONE_NAME}`
+HyperShift supports multiple approaches for configuring Azure Marketplace images for your cluster nodes. The recommended approach varies based on your OpenShift version and requirements.
 
-=== "Without External DNS"
+#### For OpenShift 4.20 and Later (Recommended)
 
-    Create the HostedCluster without External DNS (uses Azure LoadBalancer DNS):
+**Pattern 1: Use Release Payload Defaults (Simplest)**
 
-    ```bash
-    # Create the HostedCluster without External DNS
-    ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
-        --name "$CLUSTER_NAME" \
-        --namespace "$CLUSTER_NAMESPACE" \
-        --azure-creds $AZURE_CREDS \
-        --location ${LOCATION} \
-        --node-pool-replicas 2 \
-        --base-domain $PARENT_DNS_ZONE \
-        --pull-secret $PULL_SECRET \
-        --generate-ssh \
-        --release-image ${RELEASE_IMAGE} \
-        --resource-group-name "${MANAGED_RG_NAME}" \
-        --vnet-id "${GetVnetID}" \
-        --subnet-id "${GetSubnetID}" \
-        --network-security-group-id "${GetNsgID}" \
-        --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
-        --oidc-issuer-url "${OIDC_ISSUER_URL}" \
-        --control-plane-operator-image="quay.io/hypershift/hypershift:${TAG}" \
-        --marketplace-publisher azureopenshift \
-        --marketplace-offer aro4 \
-        --marketplace-sku aro_419 \
-        --marketplace-version 419.6.20250523 \
-        --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
-        --assign-service-principal-roles \
-        --workload-identities-file ./workload-identities.json \
-        --diagnostics-storage-account-type Managed
-    ```
+For OpenShift 4.20+, HyperShift automatically selects the appropriate Azure Marketplace image from the release payload. Simply omit all marketplace-related flags:
 
-    !!! info "DNS Without External DNS"
+```bash
+# No marketplace flags needed - HyperShift will auto-select the image
+# Gen2 VM generation is used by default
+${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+    --name "$CLUSTER_NAME" \
+    # ... other flags ...
+```
 
-        Without the `--external-dns-domain` flag:
+This is the **recommended approach** as it ensures your nodes use the officially tested and supported image for your OpenShift version.
 
-        - API server uses an Azure LoadBalancer with auto-assigned DNS (e.g., `abc123.eastus.cloudapp.azure.com`)
-        - OAuth, Konnectivity, and Ignition use Routes through the management cluster ingress
-        - You can optionally create custom DNS records manually pointing to the LoadBalancer IP
+**Pattern 2: Specify VM Generation Only**
+
+If you need to use a specific VM generation (Gen1 or Gen2), you can specify only the `--image-generation` flag:
+
+```bash
+${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+    --name "$CLUSTER_NAME" \
+    --image-generation Gen2 \  # Or Gen1 (case-sensitive)
+    # ... other flags ...
+```
+
+!!! note "VM Generation"
+
+    - Valid values: `Gen1` or `Gen2` (case-sensitive)
+    - Default: `Gen2` (recommended for new clusters)
+    - Gen2 VMs offer better performance and support for newer Azure features
+
+**Pattern 3: Use Custom Marketplace Image**
+
+If you need to use a specific custom marketplace image, provide all marketplace details:
+
+```bash
+${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+    --name "$CLUSTER_NAME" \
+    --marketplace-publisher azureopenshift \
+    --marketplace-offer aro4 \
+    --marketplace-sku aro_419 \
+    --marketplace-version 419.6.20250523 \
+    --image-generation Gen2 \  # Optional, defaults to Gen2
+    # ... other flags ...
+```
+
+!!! important "Marketplace Flag Requirements"
+
+    When specifying marketplace details, you must provide **all four** flags (`--marketplace-publisher`, `--marketplace-offer`, `--marketplace-sku`, `--marketplace-version`) together. Partial specification is not allowed.
+
+#### For OpenShift Versions Before 4.20
+
+For OpenShift versions prior to 4.20, you must explicitly specify marketplace image details (Pattern 3 above) or provide a custom image ID. The automatic image selection from release payload is not available.
+
+#### Adding NodePools with Custom Images
+
+When creating additional NodePools, you can specify image configuration in the same way:
+
+```bash
+# Use default from release payload (OCP 4.20+)
+${HYPERSHIFT_BINARY_PATH}/hypershift create nodepool azure \
+    --cluster-name "$CLUSTER_NAME" \
+    # ... other flags ...
+
+# Or specify generation
+${HYPERSHIFT_BINARY_PATH}/hypershift create nodepool azure \
+    --cluster-name "$CLUSTER_NAME" \
+    --image-generation Gen1 \
+    # ... other flags ...
+
+# Or use custom marketplace image
+${HYPERSHIFT_BINARY_PATH}/hypershift create nodepool azure \
+    --cluster-name "$CLUSTER_NAME" \
+    --marketplace-publisher azureopenshift \
+    --marketplace-offer aro4 \
+    --marketplace-sku aro_419 \
+    --marketplace-version 419.6.20250523 \
+    # ... other flags ...
+```
 
 !!! important "Key Configuration Options"
     
@@ -207,7 +241,8 @@ Choose the cluster creation approach that matches your management cluster setup:
     - `--sa-token-issuer-private-key-path`: Path to the private key for service account token signing
     - `--oidc-issuer-url`: URL of the OIDC issuer created in the workload identity setup
     - `--vnet-id`, `--subnet-id`, `--network-security-group-id`: Custom networking infrastructure
-    - `--marketplace-*`: Azure Marketplace image information for ARO-based node images
+    - `--image-generation`: (Optional) VM generation (`Gen1` or `Gen2`, defaults to `Gen2`). For OCP 4.20+, omit to use release payload defaults. See [Configuring Azure Marketplace Images](#configuring-azure-marketplace-images)
+    - `--marketplace-publisher/offer/sku/version`: (Optional) Explicit Azure Marketplace image. Must specify all four flags together, or omit all to use defaults (OCP 4.20+)
     - `--dns-zone-rg-name`: Resource group containing the DNS zone (os4-common)
     - `--diagnostics-storage-account-type Managed`: Use Azure managed storage for diagnostics
     - `--control-plane-operator-image`: Custom HyperShift operator image (optional)
