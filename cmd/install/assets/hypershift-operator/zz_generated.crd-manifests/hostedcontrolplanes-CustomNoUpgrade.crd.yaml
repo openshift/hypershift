@@ -4967,8 +4967,8 @@ spec:
                     properties:
                       customerNetworkConfig:
                         description: |-
-                          customerNetworkConfig specifies customer VPC configuration for PSC.
-                          Required for customer VPC configuration in PSC deployments.
+                          customerNetworkConfig specifies customer VPC configuration for Private Service Connect.
+                          Required for customer VPC configuration in Private Service Connect deployments.
                         properties:
                           network:
                             description: network is the customer's VPC network name
@@ -4982,9 +4982,9 @@ spec:
                             required:
                             - name
                             type: object
-                          pscSubnet:
-                            description: pscSubnet is the customer's subnet for PSC
-                              endpoints
+                          privateServiceConnectSubnet:
+                            description: privateServiceConnectSubnet is the customer's
+                              subnet for Private Service Connect endpoints
                             properties:
                               name:
                                 description: name is the name of the GCP resource
@@ -4997,7 +4997,7 @@ spec:
                             type: object
                         required:
                         - network
-                        - pscSubnet
+                        - privateServiceConnectSubnet
                         type: object
                       endpointAccess:
                         default: Private
@@ -5015,6 +5015,7 @@ spec:
                             length: Must be between 6 and 30 characters, inclusive
                             characters: Only lowercase letters (`a-z`), digits (`0-9`), and hyphens (`-`) are allowed
                             start and end: Must begin with a lowercase letter and must not end with a hyphen
+                            hyphens: No consecutive hyphens are allowed (e.g., "my--project" is invalid)
                             valid examples: "my-project", "my-project-1", "my-project-123".
                         maxLength: 30
                         minLength: 6

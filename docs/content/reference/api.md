@@ -5828,11 +5828,11 @@ Equivalent to AWS EndpointAccessType but adapted for GCP networking model.</p>
 </thead>
 <tbody><tr><td><p>&#34;Private&#34;</p></td>
 <td><p>GCPEndpointAccessPrivate endpoint access allows only private API server access and private
-node communication with the control plane via PSC.</p>
+node communication with the control plane via Private Service Connect.</p>
 </td>
 </tr><tr><td><p>&#34;PublicAndPrivate&#34;</p></td>
 <td><p>GCPEndpointAccessPublicAndPrivate endpoint access allows public API server access and
-private node communication with the control plane via PSC.</p>
+private node communication with the control plane via Private Service Connect.</p>
 </td>
 </tr></tbody>
 </table>
@@ -5842,7 +5842,7 @@ private node communication with the control plane via PSC.</p>
 <a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
 </p>
 <p>
-<p>GCPNetworkConfigCustomer specifies customer VPC configuration for GCP clusters and PSC endpoint creation.</p>
+<p>GCPNetworkConfigCustomer specifies customer VPC configuration for GCP clusters and Private Service Connect endpoint creation.</p>
 </p>
 <table>
 <thead>
@@ -5867,7 +5867,7 @@ GCPResourceReference
 </tr>
 <tr>
 <td>
-<code>pscSubnet</code></br>
+<code>privateServiceConnectSubnet</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
 GCPResourceReference
@@ -5875,7 +5875,7 @@ GCPResourceReference
 </em>
 </td>
 <td>
-<p>pscSubnet is the customer&rsquo;s subnet for PSC endpoints</p>
+<p>privateServiceConnectSubnet is the customer&rsquo;s subnet for Private Service Connect endpoints</p>
 </td>
 </tr>
 </tbody>
@@ -5909,6 +5909,7 @@ A valid project ID must satisfy the following rules:
 length: Must be between 6 and 30 characters, inclusive
 characters: Only lowercase letters (<code>a-z</code>), digits (<code>0-9</code>), and hyphens (<code>-</code>) are allowed
 start and end: Must begin with a lowercase letter and must not end with a hyphen
+hyphens: No consecutive hyphens are allowed (e.g., &ldquo;my&ndash;project&rdquo; is invalid)
 valid examples: &ldquo;my-project&rdquo;, &ldquo;my-project-1&rdquo;, &ldquo;my-project-123&rdquo;.</p>
 </td>
 </tr>
@@ -5939,8 +5940,8 @@ GCPNetworkConfigCustomer
 </em>
 </td>
 <td>
-<p>customerNetworkConfig specifies customer VPC configuration for PSC.
-Required for customer VPC configuration in PSC deployments.</p>
+<p>customerNetworkConfig specifies customer VPC configuration for Private Service Connect.
+Required for customer VPC configuration in Private Service Connect deployments.</p>
 </td>
 </tr>
 <tr>
