@@ -44,6 +44,7 @@ type GCPPlatformSpec struct {
 	//   length: Must be between 6 and 30 characters, inclusive
 	//   characters: Only lowercase letters (`a-z`), digits (`0-9`), and hyphens (`-`) are allowed
 	//   start and end: Must begin with a lowercase letter and must not end with a hyphen
+	//   hyphens: No consecutive hyphens are allowed (e.g., "my--project" is invalid)
 	//   valid examples: "my-project", "my-project-1", "my-project-123".
 	//
 	// +required
