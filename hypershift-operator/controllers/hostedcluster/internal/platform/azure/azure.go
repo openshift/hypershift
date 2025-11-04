@@ -288,6 +288,7 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 		workloadIdentities := hcluster.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities
 
 		// Define credential configurations for the utility function
+		// NOTE: CSI driver credentials (disk/file) are managed by control-plane-operator, not here
 		credentialConfigs := []azureutil.AzureCredentialConfig{
 			// Ingress Operator credentials (only if capability enabled)
 			{
@@ -304,22 +305,6 @@ func (a Azure) ReconcileCredentials(ctx context.Context, c client.Client, create
 				ClientID:          string(workloadIdentities.ImageRegistry.ClientID),
 				CapabilityChecker: capabilities.IsImageRegistryCapabilityEnabled,
 				ErrorContext:      "image registry credentials",
-			},
-			// Azure Disk CSI credentials
-			{
-				Name:              "disk-csi",
-				ManifestFunc:      func() *corev1.Secret { return manifests.AzureDiskCSICredentials(controlPlaneNamespace) },
-				ClientID:          string(workloadIdentities.Disk.ClientID),
-				CapabilityChecker: nil, // Always enabled
-				ErrorContext:      "disk CSI credentials",
-			},
-			// Azure File CSI credentials
-			{
-				Name:              "file-csi",
-				ManifestFunc:      func() *corev1.Secret { return manifests.AzureFileCSICredentials(controlPlaneNamespace) },
-				ClientID:          string(workloadIdentities.File.ClientID),
-				CapabilityChecker: nil, // Always enabled
-				ErrorContext:      "file CSI credentials",
 			},
 		}
 
