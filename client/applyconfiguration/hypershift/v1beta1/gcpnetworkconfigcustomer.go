@@ -20,8 +20,8 @@ package v1beta1
 // GCPNetworkConfigCustomerApplyConfiguration represents a declarative configuration of the GCPNetworkConfigCustomer type for use
 // with apply.
 type GCPNetworkConfigCustomerApplyConfiguration struct {
-	Network   *GCPResourceReferenceApplyConfiguration `json:"network,omitempty"`
-	PSCSubnet *GCPResourceReferenceApplyConfiguration `json:"pscSubnet,omitempty"`
+	Network                     *GCPResourceReferenceApplyConfiguration `json:"network,omitempty"`
+	PrivateServiceConnectSubnet *GCPResourceReferenceApplyConfiguration `json:"privateServiceConnectSubnet,omitempty"`
 }
 
 // GCPNetworkConfigCustomerApplyConfiguration constructs a declarative configuration of the GCPNetworkConfigCustomer type for use with
@@ -38,10 +38,10 @@ func (b *GCPNetworkConfigCustomerApplyConfiguration) WithNetwork(value *GCPResou
 	return b
 }
 
-// WithPSCSubnet sets the PSCSubnet field in the declarative configuration to the given value
+// WithPrivateServiceConnectSubnet sets the PrivateServiceConnectSubnet field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the PSCSubnet field is set to the value of the last call.
-func (b *GCPNetworkConfigCustomerApplyConfiguration) WithPSCSubnet(value *GCPResourceReferenceApplyConfiguration) *GCPNetworkConfigCustomerApplyConfiguration {
-	b.PSCSubnet = value
+// If called multiple times, the PrivateServiceConnectSubnet field is set to the value of the last call.
+func (b *GCPNetworkConfigCustomerApplyConfiguration) WithPrivateServiceConnectSubnet(value *GCPResourceReferenceApplyConfiguration) *GCPNetworkConfigCustomerApplyConfiguration {
+	b.PrivateServiceConnectSubnet = value
 	return b
 }

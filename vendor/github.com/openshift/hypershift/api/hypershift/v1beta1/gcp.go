@@ -18,23 +18,23 @@ type GCPEndpointAccessType string
 
 const (
 	// GCPEndpointAccessPublicAndPrivate endpoint access allows public API server access and
-	// private node communication with the control plane via PSC.
+	// private node communication with the control plane via Private Service Connect.
 	GCPEndpointAccessPublicAndPrivate GCPEndpointAccessType = "PublicAndPrivate"
 
 	// GCPEndpointAccessPrivate endpoint access allows only private API server access and private
-	// node communication with the control plane via PSC.
+	// node communication with the control plane via Private Service Connect.
 	GCPEndpointAccessPrivate GCPEndpointAccessType = "Private"
 )
 
-// GCPNetworkConfigCustomer specifies customer VPC configuration for GCP clusters and PSC endpoint creation.
+// GCPNetworkConfigCustomer specifies customer VPC configuration for GCP clusters and Private Service Connect endpoint creation.
 type GCPNetworkConfigCustomer struct {
 	// network is the customer's VPC network name
 	// +required
 	Network GCPResourceReference `json:"network"`
 
-	// pscSubnet is the customer's subnet for PSC endpoints
+	// privateServiceConnectSubnet is the customer's subnet for Private Service Connect endpoints
 	// +required
-	PSCSubnet GCPResourceReference `json:"pscSubnet"`
+	PrivateServiceConnectSubnet GCPResourceReference `json:"privateServiceConnectSubnet"`
 }
 
 // GCPPlatformSpec specifies configuration for clusters running on Google Cloud Platform.
@@ -44,6 +44,7 @@ type GCPPlatformSpec struct {
 	//   length: Must be between 6 and 30 characters, inclusive
 	//   characters: Only lowercase letters (`a-z`), digits (`0-9`), and hyphens (`-`) are allowed
 	//   start and end: Must begin with a lowercase letter and must not end with a hyphen
+	//   hyphens: No consecutive hyphens are allowed (e.g., "my--project" is invalid)
 	//   valid examples: "my-project", "my-project-1", "my-project-123".
 	//
 	// +required
@@ -69,8 +70,8 @@ type GCPPlatformSpec struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Region is immutable"
 	Region string `json:"region"`
 
-	// customerNetworkConfig specifies customer VPC configuration for PSC.
-	// Required for customer VPC configuration in PSC deployments.
+	// customerNetworkConfig specifies customer VPC configuration for Private Service Connect.
+	// Required for customer VPC configuration in Private Service Connect deployments.
 	// +required
 	CustomerNetworkConfig GCPNetworkConfigCustomer `json:"customerNetworkConfig"`
 
