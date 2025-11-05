@@ -336,6 +336,192 @@ func TestOnCreateAPIUX(t *testing.T) {
 				},
 			},
 			{
+				name: "when GCP network configuration is not valid it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when GCP network name has invalid format it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project: "my-project-123",
+								Region:  "us-central1",
+								NetworkConfig: hyperv1.GCPNetworkConfig{
+									Network: hyperv1.GCPResourceReference{
+										Name: "Invalid-Network-Name",
+									},
+									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
+										Name: "valid-subnet",
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "name in body should match",
+					},
+					{
+						name: "when GCP privateServiceConnectSubnet name has invalid format it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project: "my-project-123",
+								Region:  "us-central1",
+								NetworkConfig: hyperv1.GCPNetworkConfig{
+									Network: hyperv1.GCPResourceReference{
+										Name: "valid-network",
+									},
+									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
+										Name: "Invalid--Subnet",
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "name in body should match",
+					},
+					{
+						name: "when GCP network name is too long it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project: "my-project-123",
+								Region:  "us-central1",
+								NetworkConfig: hyperv1.GCPNetworkConfig{
+									Network: hyperv1.GCPResourceReference{
+										Name: "this-network-name-is-way-too-long-and-exceeds-the-maximum-limit",
+									},
+									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
+										Name: "valid-subnet",
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "name in body should be at most 63 chars long",
+					},
+					{
+						name: "when GCP network name is empty it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project: "my-project-123",
+								Region:  "us-central1",
+								NetworkConfig: hyperv1.GCPNetworkConfig{
+									Network: hyperv1.GCPResourceReference{
+										Name: "",
+									},
+									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
+										Name: "valid-subnet",
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "name in body should be at least 1 chars long",
+					},
+					{
+						name: "when GCP endpointAccess has invalid value it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project: "my-project-123",
+								Region:  "us-central1",
+								NetworkConfig: hyperv1.GCPNetworkConfig{
+									Network: hyperv1.GCPResourceReference{
+										Name: "valid-network",
+									},
+									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
+										Name: "valid-subnet",
+									},
+								},
+								EndpointAccess: "InvalidAccess",
+							}
+						},
+						expectedErrorSubstring: "Unsupported value: \"InvalidAccess\": supported values: \"PublicAndPrivate\", \"Private\"",
+					},
+					{
+						name: "when all GCP network configuration is valid it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project: "my-project-123",
+								Region:  "us-central1",
+								NetworkConfig: hyperv1.GCPNetworkConfig{
+									Network: hyperv1.GCPResourceReference{
+										Name: "valid-network-name",
+									},
+									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
+										Name: "valid-subnet-name",
+									},
+								},
+								EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when GCP endpointAccess is PublicAndPrivate it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project: "my-project-123",
+								Region:  "us-central1",
+								NetworkConfig: hyperv1.GCPNetworkConfig{
+									Network: hyperv1.GCPResourceReference{
+										Name: "test-network",
+									},
+									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
+										Name: "test-subnet",
+									},
+								},
+								EndpointAccess: hyperv1.GCPEndpointAccessPublicAndPrivate,
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when GCP resource names contain hyphens correctly it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project: "my-project-123",
+								Region:  "us-central1",
+								NetworkConfig: hyperv1.GCPNetworkConfig{
+									Network: hyperv1.GCPResourceReference{
+										Name: "my-vpc-network",
+									},
+									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
+										Name: "my-psc-subnet-01",
+									},
+								},
+								EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when GCP resource names are single characters it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project: "my-project-123",
+								Region:  "us-central1",
+								NetworkConfig: hyperv1.GCPNetworkConfig{
+									Network: hyperv1.GCPResourceReference{
+										Name: "n",
+									},
+									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
+										Name: "s",
+									},
+								},
+								EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
+			{
 				name: "when infraID or clusterID are not valid input it should fail",
 				file: "hostedcluster-base.yaml",
 				validations: []struct {

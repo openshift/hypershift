@@ -17,11 +17,17 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // GCPPlatformSpecApplyConfiguration represents a declarative configuration of the GCPPlatformSpec type for use
 // with apply.
 type GCPPlatformSpecApplyConfiguration struct {
-	Project *string `json:"project,omitempty"`
-	Region  *string `json:"region,omitempty"`
+	Project        *string                                  `json:"project,omitempty"`
+	Region         *string                                  `json:"region,omitempty"`
+	NetworkConfig  *GCPNetworkConfigApplyConfiguration      `json:"networkConfig,omitempty"`
+	EndpointAccess *hypershiftv1beta1.GCPEndpointAccessType `json:"endpointAccess,omitempty"`
 }
 
 // GCPPlatformSpecApplyConfiguration constructs a declarative configuration of the GCPPlatformSpec type for use with
@@ -43,5 +49,21 @@ func (b *GCPPlatformSpecApplyConfiguration) WithProject(value string) *GCPPlatfo
 // If called multiple times, the Region field is set to the value of the last call.
 func (b *GCPPlatformSpecApplyConfiguration) WithRegion(value string) *GCPPlatformSpecApplyConfiguration {
 	b.Region = &value
+	return b
+}
+
+// WithNetworkConfig sets the NetworkConfig field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the NetworkConfig field is set to the value of the last call.
+func (b *GCPPlatformSpecApplyConfiguration) WithNetworkConfig(value *GCPNetworkConfigApplyConfiguration) *GCPPlatformSpecApplyConfiguration {
+	b.NetworkConfig = value
+	return b
+}
+
+// WithEndpointAccess sets the EndpointAccess field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the EndpointAccess field is set to the value of the last call.
+func (b *GCPPlatformSpecApplyConfiguration) WithEndpointAccess(value hypershiftv1beta1.GCPEndpointAccessType) *GCPPlatformSpecApplyConfiguration {
+	b.EndpointAccess = &value
 	return b
 }

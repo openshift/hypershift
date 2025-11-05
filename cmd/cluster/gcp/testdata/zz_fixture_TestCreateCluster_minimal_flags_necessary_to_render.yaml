@@ -37,6 +37,11 @@ spec:
   olmCatalogPlacement: management
   platform:
     gcp:
+      networkConfig:
+        network:
+          name: ""
+        privateServiceConnectSubnet:
+          name: ""
       project: test-project-123
       region: us-central1
     type: GCP
