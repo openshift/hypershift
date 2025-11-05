@@ -40,6 +40,8 @@ const (
 type Options struct {
 	LatestReleaseImage   string
 	PreviousReleaseImage string
+	N4MinorReleaseImage  string
+	N3MinorReleaseImage  string
 	N2MinorReleaseImage  string
 	N1MinorReleaseImage  string
 	IsRunningInCI        bool
