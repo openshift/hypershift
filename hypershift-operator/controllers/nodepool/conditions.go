@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
 	"github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
@@ -21,6 +22,8 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/blang/semver"
 )
 
 const (
@@ -850,5 +853,94 @@ func (r NodePoolReconciler) validPlatformConfigCondition(ctx context.Context, no
 	}
 
 	SetStatusCondition(&nodePool.Status.Conditions, *condition)
+	return nil, nil
+}
+
+func (r *NodePoolReconciler) supportedVersionSkewCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
+	if hcluster.Status.Version == nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,
+			Status:             corev1.ConditionUnknown,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            "HostedCluster version is not available yet, waiting for version information",
+			ObservedGeneration: nodePool.Generation,
+		})
+		return nil, nil
+	}
+
+	// Get the control plane version string
+	var controlPlaneVersionStr string
+	if len(hcluster.Status.Version.History) == 0 {
+		// If the cluster is in the process of installation, there is no history
+		// Use the desired version as the control plane version
+		controlPlaneVersionStr = hcluster.Status.Version.Desired.Version
+	} else {
+		// If the cluster is installed or upgrading
+		// Start with the most recent version from history as the default
+		controlPlaneVersionStr = hcluster.Status.Version.History[0].Version
+		// Find the most recent Completed version
+		for _, history := range hcluster.Status.Version.History {
+			if history.State == "Completed" {
+				controlPlaneVersionStr = history.Version
+				break
+			}
+		}
+	}
+	// Parse control plane version
+	controlPlaneVersion, err := semver.Parse(controlPlaneVersionStr)
+	if err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,
+			Status:             corev1.ConditionUnknown,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            fmt.Sprintf("Failed to parse control plane version (%s): %v", controlPlaneVersionStr, err.Error()),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return nil, nil
+	}
+
+	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
+	if err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,
+			Status:             corev1.ConditionUnknown,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            fmt.Sprintf("Failed to get release image: %v", err.Error()),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return nil, nil
+	}
+
+	// Parse NodePool version
+	nodePoolVersion, err := semver.Parse(releaseImage.Version())
+	if err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,
+			Status:             corev1.ConditionUnknown,
+			Reason:             hyperv1.NodePoolValidationFailedReason,
+			Message:            fmt.Sprintf("Failed to parse NodePool version (%s): %v", releaseImage.Version(), err.Error()),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return nil, nil
+	}
+
+	// Validate version skew using the centralized validation logic
+	if err := supportedversion.ValidateVersionSkew(&controlPlaneVersion, &nodePoolVersion); err != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,
+			Status:             corev1.ConditionFalse,
+			Reason:             hyperv1.NodePoolUnsupportedSkewReason,
+			Message:            err.Error(),
+			ObservedGeneration: nodePool.Generation,
+		})
+		return nil, nil
+	}
+	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+		Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,
+		Status:             corev1.ConditionTrue,
+		Reason:             hyperv1.AsExpectedReason,
+		Message:            "Release image version is valid",
+		ObservedGeneration: nodePool.Generation,
+	})
 	return nil, nil
 }
