@@ -25,6 +25,14 @@ type CertificateSigningRequestApprovalListerExpansion interface{}
 // CertificateSigningRequestApprovalNamespaceLister.
 type CertificateSigningRequestApprovalNamespaceListerExpansion interface{}
 
+// GCPPrivateServiceConnectListerExpansion allows custom methods to be added to
+// GCPPrivateServiceConnectLister.
+type GCPPrivateServiceConnectListerExpansion interface{}
+
+// GCPPrivateServiceConnectNamespaceListerExpansion allows custom methods to be added to
+// GCPPrivateServiceConnectNamespaceLister.
+type GCPPrivateServiceConnectNamespaceListerExpansion interface{}
+
 // HostedClusterListerExpansion allows custom methods to be added to
 // HostedClusterLister.
 type HostedClusterListerExpansion interface{}

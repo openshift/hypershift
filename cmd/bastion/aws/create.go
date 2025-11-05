@@ -385,6 +385,46 @@ func existingKeyPair(ctx context.Context, ec2Client *ec2.EC2, infraID string) (s
 	return keyPairID, nil
 }
 
+func getLatestAmazonLinux2AMI(ctx context.Context, ec2Client *ec2.EC2) (string, error) {
+	filters := []*ec2.Filter{
+		{
+			Name:   aws.String("name"),
+			Values: []*string{aws.String("amzn2-ami-hvm-*-x86_64-gp2")},
+		},
+		{
+			Name:   aws.String("owner-alias"),
+			Values: []*string{aws.String("amazon")},
+		},
+		{
+			Name:   aws.String("state"),
+			Values: []*string{aws.String("available")},
+		},
+	}
+
+	amiCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	result, err := ec2Client.DescribeImagesWithContext(amiCtx, &ec2.DescribeImagesInput{
+		Filters: filters,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to describe AMIs: %w", err)
+	}
+
+	if len(result.Images) == 0 {
+		return "", fmt.Errorf("no Amazon Linux 2 AMIs found")
+	}
+
+	// Find the latest AMI by creation date
+	var latestAMI *ec2.Image
+	for _, image := range result.Images {
+		if latestAMI == nil || aws.StringValue(image.CreationDate) > aws.StringValue(latestAMI.CreationDate) {
+			latestAMI = image
+		}
+	}
+
+	return aws.StringValue(latestAMI.ImageId), nil
+}
+
 func runEC2BastionInstance(ctx context.Context, logger logr.Logger, ec2Client *ec2.EC2, sgID, infraID string) (string, error) {
 	// find existing instance
 	instanceID, err := existingInstance(ctx, ec2Client, infraID)
@@ -405,10 +445,18 @@ func runEC2BastionInstance(ctx context.Context, logger logr.Logger, ec2Client *e
 		return "", fmt.Errorf("no public subnet was found")
 	}
 
+	// get latest Amazon Linux 2 AMI
+	amiID, err := getLatestAmazonLinux2AMI(ctx, ec2Client)
+	if err != nil {
+		logger.Info("Failed to get latest AMI via API, falling back to SSM parameter", "error", err)
+		amiID = "resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+	}
+	logger.Info("Using AMI", "id", amiID)
+
 	runCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	result, err := ec2Client.RunInstancesWithContext(runCtx, &ec2.RunInstancesInput{
-		ImageId:      aws.String("resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"),
+		ImageId:      aws.String(amiID),
 		MaxCount:     aws.Int64(1),
 		MinCount:     aws.Int64(1),
 		InstanceType: aws.String("t2.micro"),

@@ -41,6 +41,7 @@ type DestroyInfraOptions struct {
 	Name                string
 	BaseDomain          string
 	BaseDomainPrefix    string
+	RedactBaseDomain    bool
 	AwsInfraGracePeriod time.Duration
 	Log                 logr.Logger
 

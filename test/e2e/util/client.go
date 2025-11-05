@@ -8,6 +8,7 @@ import (
 
 	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 // GetConfig creates a REST config from current context
@@ -35,4 +36,11 @@ func GetClient() (crclient.Client, error) {
 		return nil, fmt.Errorf("unable to get kubernetes client: %w", err)
 	}
 	return client, nil
+}
+
+func GetFakeClient(objects ...crclient.Object) crclient.Client {
+	return fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(objects...).
+		Build()
 }

@@ -86,6 +86,45 @@ controlplanecomponents.hypershift.openshift.io:
   TopLevelFeatureGates: []
   Version: v1beta1
 
+gcpprivateserviceconnects.hypershift.openshift.io:
+  Annotations: {}
+  ApprovedPRNumber: ""
+  CRDName: gcpprivateserviceconnects.hypershift.openshift.io
+  Capability: ""
+  Category: ""
+  FeatureGates:
+  - GCPPlatform
+  FilenameOperatorName: ""
+  FilenameOperatorOrdering: ""
+  FilenameRunLevel: ""
+  GroupName: hypershift.openshift.io
+  HasStatus: true
+  KindName: GCPPrivateServiceConnect
+  Labels: {}
+  PluralName: gcpprivateserviceconnects
+  PrinterColumns:
+  - description: Name of the Service Attachment
+    jsonPath: .status.serviceAttachmentName
+    name: Service Attachment
+    type: string
+  - description: IP address of the PSC endpoint
+    jsonPath: .status.endpointIP
+    name: Endpoint IP
+    type: string
+  - description: Overall PSC availability status
+    jsonPath: .status.conditions[?(@.type=="GCPPrivateServiceConnectAvailable")].status
+    name: Available
+    type: string
+  - jsonPath: .metadata.creationTimestamp
+    name: Age
+    type: date
+  Scope: Namespaced
+  ShortNames:
+  - gcppsc
+  TopLevelFeatureGates:
+  - GCPPlatform
+  Version: v1beta1
+
 hostedclusters.hypershift.openshift.io:
   Annotations: {}
   ApprovedPRNumber: ""

@@ -15,7 +15,9 @@ WORKDIR /hypershift
 RUN mkdir -p /hypershift/bin /hypershift/hack
 COPY --from=builder /hypershift/bin/test-e2e /hypershift/bin/test-e2e
 COPY --from=builder /hypershift/bin/test-setup /hypershift//bin/test-setup
+COPY --from=builder /hypershift/bin/test-reqserving /hypershift/bin/test-reqserving
 COPY --from=builder /hypershift/hack/ci-test-e2e.sh /hypershift/hack/ci-test-e2e.sh
+COPY --from=builder /hypershift/hack/run-reqserving-e2e.sh /hypershift/hack/run-reqserving-e2e.sh
 
 RUN rpm --import https://packages.microsoft.com/keys/microsoft.asc && \
     dnf install -y https://packages.microsoft.com/config/rhel/9/packages-microsoft-prod.rpm && \

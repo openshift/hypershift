@@ -4113,7 +4113,7 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 		return fmt.Errorf("controlplane service account signing key secret %q missing required key %s", client.ObjectKeyFromObject(secret), serviceSignerPublicKey)
 	}
 
-	params := oidc.ODICGeneratorParams{
+	params := oidc.OIDCGeneratorParams{
 		IssuerURL: hcp.Spec.IssuerURL,
 		PubKey:    secret.Data[serviceSignerPublicKey],
 	}

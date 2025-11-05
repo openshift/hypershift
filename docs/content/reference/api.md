@@ -100,6 +100,122 @@ CertificateSigningRequestApprovalStatus
 </tr>
 </tbody>
 </table>
+##GCPPrivateServiceConnect { #hypershift.openshift.io/v1beta1.GCPPrivateServiceConnect }
+<p>
+<p>GCPPrivateServiceConnect represents GCP Private Service Connect infrastructure.
+This resource is feature-gated behind the GCPPlatform feature gate.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>apiVersion</code></br>
+string</td>
+<td>
+<code>
+hypershift.openshift.io/v1beta1
+</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>kind</code></br>
+string
+</td>
+<td><code>GCPPrivateServiceConnect</code></td>
+</tr>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metadata is the metadata for the GCPPrivateServiceConnect.</p>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectSpec">
+GCPPrivateServiceConnectSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>spec is the specification for the GCPPrivateServiceConnect.</p>
+<br/>
+<br/>
+<table>
+<tr>
+<td>
+<code>forwardingRuleName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>forwardingRuleName is the name of the Internal Load Balancer forwarding rule</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>consumerAcceptList</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<p>consumerAcceptList specifies which customer projects can connect
+Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers (e.g. &ldquo;123456789012&rdquo;)</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>natSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>natSubnet is the subnet used for NAT by the Service Attachment
+Auto-populated by the HyperShift Operator</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+<tr>
+<td>
+<code>status</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectStatus">
+GCPPrivateServiceConnectStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>status is the status of the GCPPrivateServiceConnect.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ##HostedCluster { #hypershift.openshift.io/v1beta1.HostedCluster }
 <p>
 <p>HostedCluster is the primary representation of a HyperShift cluster and encapsulates
@@ -1476,6 +1592,25 @@ string
 <em>(Optional)</em>
 <p>ami is the image id to use for node instances. If unspecified, the default
 is chosen based on the NodePool release payload image.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ImageType">
+ImageType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>imageType specifies the type of image to use for node instances.
+Valid values are &ldquo;Linux&rdquo; or &ldquo;Windows&rdquo;
+When set to Windows, the controller will automatically populate the AMI field
+with a Windows-compatible AMI based on the region and OpenShift version.
+When the AMI field is also set, it will take precedence over automatic selection based
+on imageType. Also note that Windows ImageType is only compatible with an Arch of amd64</p>
 </td>
 </tr>
 <tr>
@@ -4781,6 +4916,21 @@ recovery job was triggered.</p>
 A failure here requires external user intervention to resolve. E.g. changing the external DNS domain or making sure the domain is created
 and registered correctly.</p>
 </td>
+</tr><tr><td><p>&#34;GCPDNSAvailable&#34;</p></td>
+<td><p>GCPDNSAvailable indicates whether the DNS configuration has been
+created in the customer VPC</p>
+</td>
+</tr><tr><td><p>&#34;GCPEndpointAvailable&#34;</p></td>
+<td><p>GCPEndpointAvailable indicates whether the GCP PSC Endpoint has been
+created in the customer VPC</p>
+</td>
+</tr><tr><td><p>&#34;GCPPrivateServiceConnectAvailable&#34;</p></td>
+<td><p>GCPPrivateServiceConnectAvailable indicates overall PSC infrastructure availability</p>
+</td>
+</tr><tr><td><p>&#34;GCPServiceAttachmentAvailable&#34;</p></td>
+<td><p>GCPServiceAttachmentAvailable indicates whether the GCP Service Attachment
+has been created for the specified Internal Load Balancer in the management VPC</p>
+</td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td><p>HostedClusterAvailable indicates whether the HostedCluster has a healthy
 control plane.
@@ -5678,6 +5828,76 @@ which contain any of the given tags will be excluded from the result.</p>
 </tr>
 </tbody>
 </table>
+###GCPEndpointAccessType { #hypershift.openshift.io/v1beta1.GCPEndpointAccessType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
+</p>
+<p>
+<p>GCPEndpointAccessType defines the endpoint access type for GCP clusters.
+Equivalent to AWS EndpointAccessType but adapted for GCP networking model.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Private&#34;</p></td>
+<td><p>GCPEndpointAccessPrivate endpoint access allows only private API server access and private
+node communication with the control plane via Private Service Connect.</p>
+</td>
+</tr><tr><td><p>&#34;PublicAndPrivate&#34;</p></td>
+<td><p>GCPEndpointAccessPublicAndPrivate endpoint access allows public API server access and
+private node communication with the control plane via Private Service Connect.</p>
+</td>
+</tr></tbody>
+</table>
+###GCPNetworkConfig { #hypershift.openshift.io/v1beta1.GCPNetworkConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
+</p>
+<p>
+<p>GCPNetworkConfig specifies VPC configuration for GCP clusters and Private Service Connect endpoint creation.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>network</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
+GCPResourceReference
+</a>
+</em>
+</td>
+<td>
+<p>network is the VPC network name</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateServiceConnectSubnet</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
+GCPResourceReference
+</a>
+</em>
+</td>
+<td>
+<p>privateServiceConnectSubnet is the subnet for Private Service Connect endpoints</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###GCPPlatformSpec { #hypershift.openshift.io/v1beta1.GCPPlatformSpec }
 <p>
 (<em>Appears on:</em>
@@ -5707,6 +5927,7 @@ A valid project ID must satisfy the following rules:
 length: Must be between 6 and 30 characters, inclusive
 characters: Only lowercase letters (<code>a-z</code>), digits (<code>0-9</code>), and hyphens (<code>-</code>) are allowed
 start and end: Must begin with a lowercase letter and must not end with a hyphen
+hyphens: No consecutive hyphens are allowed (e.g., &ldquo;my&ndash;project&rdquo; is invalid)
 valid examples: &ldquo;my-project&rdquo;, &ldquo;my-project-1&rdquo;, &ldquo;my-project-123&rdquo;.</p>
 </td>
 </tr>
@@ -5725,6 +5946,214 @@ characters: Only lowercase letters (<code>a-z</code>), digits (<code>0-9</code>)
 valid examples: &ldquo;us-central1&rdquo;, &ldquo;europe-west2&rdquo;
 region must not include zone suffixes (e.g., &ldquo;-a&rdquo;).
 For a full list of valid regions, see: <a href="https://cloud.google.com/compute/docs/regions-zones">https://cloud.google.com/compute/docs/regions-zones</a>.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>networkConfig</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNetworkConfig">
+GCPNetworkConfig
+</a>
+</em>
+</td>
+<td>
+<p>networkConfig specifies VPC configuration for Private Service Connect.
+Required for VPC configuration in Private Service Connect deployments.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>endpointAccess</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPEndpointAccessType">
+GCPEndpointAccessType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>endpointAccess controls API endpoint accessibility for the HostedControlPlane on GCP.
+Allowed values: &ldquo;Private&rdquo;, &ldquo;PublicAndPrivate&rdquo;. Defaults to &ldquo;Private&rdquo;.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPPrivateServiceConnectSpec { #hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnect">GCPPrivateServiceConnect</a>)
+</p>
+<p>
+<p>GCPPrivateServiceConnectSpec defines the desired state of PSC infrastructure</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>forwardingRuleName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>forwardingRuleName is the name of the Internal Load Balancer forwarding rule</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>consumerAcceptList</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<p>consumerAcceptList specifies which customer projects can connect
+Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers (e.g. &ldquo;123456789012&rdquo;)</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>natSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>natSubnet is the subnet used for NAT by the Service Attachment
+Auto-populated by the HyperShift Operator</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPPrivateServiceConnectStatus { #hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnect">GCPPrivateServiceConnect</a>)
+</p>
+<p>
+<p>GCPPrivateServiceConnectStatus defines the observed state of PSC infrastructure</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>conditions represent the current state of PSC infrastructure
+Current condition types are: &ldquo;GCPPrivateServiceConnectAvailable&rdquo;, &ldquo;GCPServiceAttachmentAvailable&rdquo;, &ldquo;GCPEndpointAvailable&rdquo;, &ldquo;GCPDNSAvailable&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceAttachmentName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>serviceAttachmentName is the name of the created Service Attachment</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceAttachmentURI</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>serviceAttachmentURI is the URI customers use to connect
+Format: projects/{project}/regions/{region}/serviceAttachments/{name}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>endpointIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>endpointIP is the reserved IP address for the PSC endpoint</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dnsZoneName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>dnsZoneName is the private DNS zone name</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dnsRecords</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>dnsRecords lists the created DNS A records</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPResourceReference { #hypershift.openshift.io/v1beta1.GCPResourceReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNetworkConfig">GCPNetworkConfig</a>)
+</p>
+<p>
+<p>GCPResourceReference represents a reference to a GCP resource by name.
+Follows GCP naming patterns (name-based APIs, not ID-based like AWS).
+See <a href="https://google.aip.dev/122">https://google.aip.dev/122</a> for GCP resource name standards.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the name of the GCP resource</p>
 </td>
 </tr>
 </tbody>
@@ -7562,6 +7991,32 @@ specifications.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###ImageType { #hypershift.openshift.io/v1beta1.ImageType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
+</p>
+<p>
+<p>ImageType specifies the type of image to use for node instances.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Linux&#34;</p></td>
+<td><p>ImageTypeLinux represents the default image type (Linux/RHCOS).
+This is used when ImageType is empty or unspecified.</p>
+</td>
+</tr><tr><td><p>&#34;Windows&#34;</p></td>
+<td><p>ImageTypeWindows represents a Windows-based image type.
+When set, the controller will automatically populate the AMI field
+with a Windows-compatible AMI based on the region and OpenShift version.</p>
+</td>
+</tr></tbody>
 </table>
 ###InPlaceUpgrade { #hypershift.openshift.io/v1beta1.InPlaceUpgrade }
 <p>

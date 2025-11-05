@@ -15,7 +15,7 @@ import (
 	"github.com/go-jose/go-jose/v3"
 )
 
-type ODICGeneratorParams struct {
+type OIDCGeneratorParams struct {
 	IssuerURL string
 	PubKey    []byte
 }
@@ -24,9 +24,9 @@ type KeyResponse struct {
 	Keys []jose.JSONWebKey `json:"keys"`
 }
 
-type OIDCDocumentGeneratorFunc func(params ODICGeneratorParams) (io.ReadSeeker, error)
+type OIDCDocumentGeneratorFunc func(params OIDCGeneratorParams) (io.ReadSeeker, error)
 
-func GenerateJWKSDocument(params ODICGeneratorParams) (io.ReadSeeker, error) {
+func GenerateJWKSDocument(params OIDCGeneratorParams) (io.ReadSeeker, error) {
 	block, _ := pem.Decode(params.PubKey)
 	if block == nil || block.Type != "RSA PUBLIC KEY" {
 		return nil, fmt.Errorf("failed to decode PEM block containing RSA public key")
@@ -78,6 +78,6 @@ const (
 }`
 )
 
-func GenerateConfigurationDocument(params ODICGeneratorParams) (io.ReadSeeker, error) {
+func GenerateConfigurationDocument(params OIDCGeneratorParams) (io.ReadSeeker, error) {
 	return strings.NewReader(fmt.Sprintf(discoveryTemplate, params.IssuerURL, params.IssuerURL, JWKSURI)), nil
 }
