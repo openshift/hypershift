@@ -330,7 +330,7 @@ func (o *OpenshiftManagerOperator) getAuthOperatorRequiredInputResourcesForResou
 func (o *OpenshiftManagerOperator) execAuthOperatorApplyConfigurationCommand(ctx context.Context) (libraryapplyconfiguration.AllDesiredMutationsGetter, error) {
 	res, err := applyconfiguration.ExecApplyConfiguration(
 		ctx,
-		"/Users/lszaszki/go/src/github.com/openshift/cluster-authentication-operator/authentication-operator",
+		"authentication-operator",
 		applyconfiguration.ApplyConfigurationOptions{
 			InputDirectory:  o.InputDirectory,
 			OutputDirectory: o.OutputDirectory,
