@@ -129,6 +129,10 @@ func TestNodePool(t *testing.T) {
 						name: "TestMirrorConfigs",
 						test: NewMirrorConfigsTest(ctx, mgtClient, hostedCluster, hostedClusterClient),
 					},
+					{
+						name: "TestImageTypes",
+						test: NewNodePoolImageTypeTest(ctx, mgtClient, hostedCluster, hostedClusterClient, clusterOpts),
+					},
 				}
 			},
 		},

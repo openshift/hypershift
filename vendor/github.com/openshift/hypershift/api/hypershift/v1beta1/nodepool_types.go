@@ -27,6 +27,20 @@ const (
 	IgnitionServerTokenExpirationTimestampAnnotation = "hypershift.openshift.io/ignition-token-expiration-timestamp"
 )
 
+// ImageType specifies the type of image to use for node instances.
+type ImageType string
+
+const (
+	// ImageTypeLinux represents the default image type (Linux/RHCOS).
+	// This is used when ImageType is empty or unspecified.
+	ImageTypeLinux ImageType = "Linux"
+
+	// ImageTypeWindows represents a Windows-based image type.
+	// When set, the controller will automatically populate the AMI field
+	// with a Windows-compatible AMI based on the region and OpenShift version.
+	ImageTypeWindows ImageType = "Windows"
+)
+
 var (
 	// ArchAliases contains the RHCOS release metadata aliases for the different architectures supported as API input.
 	ArchAliases = map[string]string{
@@ -86,6 +100,7 @@ type NodePool struct {
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.arch) || has(self.arch)", message="Arch is required once set"
 // +kubebuilder:validation:XValidation:rule="self.arch != 'arm64' || has(self.platform.aws) || has(self.platform.azure) || has(self.platform.agent) || self.platform.type == 'None'", message="Setting Arch to arm64 is only supported for AWS, Azure, Agent and None"
 // +kubebuilder:validation:XValidation:rule="!has(self.replicas) || !has(self.autoScaling)", message="Both replicas or autoScaling should not be set"
+// +kubebuilder:validation:XValidation:rule="!has(self.platform.aws) || self.platform.aws.imageType != 'Windows' || self.arch == 'amd64'", message="ImageType 'Windows' requires arch 'amd64' (AWS only)"
 type NodePoolSpec struct {
 	// clusterName is the name of the HostedCluster this NodePool belongs to.
 	// If a HostedCluster with this name doesn't exist, the controller will no-op until it exists.
