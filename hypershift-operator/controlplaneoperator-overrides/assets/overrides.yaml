@@ -224,53 +224,53 @@ platforms:
     # Beginning of OCPBUGS-61296 overrides
     # Beginning of OCPBUGS-61296 overrides 4.17 section
     - version: 4.17.20
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.21
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.22
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.23
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.24
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.25
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.26
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.27
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.28
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.29
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.30
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.31
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.32
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.33
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.34
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.35
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.36
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.37
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.38
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.39
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.40
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.41
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.42
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     - version: 4.17.43
-      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
     # End of OCPBUGS-61296 overrides 4.17 section
     # End of OCPBUGS-61296 overrides
     testing:
@@ -278,5 +278,5 @@ platforms:
     # testing. Currently, we only test one latest/previous combination. In the future, we 
     # may be able to test multiple combinations at a time. To test more than one, update
     # the referenced images before each e2e test run.
-      latest: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:765731018bc98e0a8ad89a636cfa2fe9fce9aab2
+      latest: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63639:27910f321ff4c8b5555a25b91e48d2f338d3d57e
       previous: quay.io/openshift-release-dev/ocp-release:4.17.43-x86_64
