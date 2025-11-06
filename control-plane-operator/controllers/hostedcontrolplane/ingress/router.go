@@ -35,6 +35,14 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 		util.ApplyAWSLoadBalancerTargetNodesAnnotation(svc, hcp)
 	}
 
+	if hcp.Spec.Platform.Type == hyperv1.GCPPlatform {
+		if svc.Annotations == nil {
+			svc.Annotations = map[string]string{}
+		}
+		// Configure GCP Internal Load Balancer for PSC Service Attachment creation
+		svc.Annotations["networking.gke.io/load-balancer-type"] = "Internal"
+	}
+
 	if svc.Labels == nil {
 		svc.Labels = map[string]string{}
 	}

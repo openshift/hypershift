@@ -2298,6 +2298,44 @@ func TestUseHCPRouter(t *testing.T) {
 			},
 			expectedResult: true,
 		},
+		{
+			name: "Provider is GCP, Private",
+			hcp: &hyperv1.HostedControlPlane{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "tenant1",
+					Name:      "cluster1",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPPlatformSpec{
+							EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
+						},
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name: "Provider is GCP, PublicAndPrivate",
+			hcp: &hyperv1.HostedControlPlane{
+				TypeMeta: metav1.TypeMeta{},
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "tenant1",
+					Name:      "cluster1",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPPlatformSpec{
+							EndpointAccess: hyperv1.GCPEndpointAccessPublicAndPrivate,
+						},
+					},
+				},
+			},
+			expectedResult: true,
+		},
 	}
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
