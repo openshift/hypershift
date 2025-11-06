@@ -2,8 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    operator.openshift.io/rvs-hash: WrHTv18i2lr7lLoVCGQpABTUgSoy9TOpZUMBEMdl3WuGuWfnyRl7JC-j-QgLyjLQEy46efojRNEy_fuTQClmqA
-    operator.openshift.io/spec-hash: d476a2318c87820a3bc4dfafc89c0546a62e2a8613dcf47475d3d1d5a830ffd3
+    operator.openshift.io/rvs-hash: HpBPs3PTHD8aYLqpcIA-a_yotv6V3XUjJGNpopAEuRf5E829VsMUhap6No-z787hLMeMQKV7Ngoq7mSXOhudfg
+    operator.openshift.io/spec-hash: a4e6c324340507e65e3e60d927097a8ab09e9ce00b6f892997c3362e81e49e57
   creationTimestamp: null
   labels:
     app: oauth-openshift
@@ -23,7 +23,7 @@ spec:
     metadata:
       annotations:
         openshift.io/required-scc: privileged
-        operator.openshift.io/rvs-hash: WrHTv18i2lr7lLoVCGQpABTUgSoy9TOpZUMBEMdl3WuGuWfnyRl7JC-j-QgLyjLQEy46efojRNEy_fuTQClmqA
+        operator.openshift.io/rvs-hash: HpBPs3PTHD8aYLqpcIA-a_yotv6V3XUjJGNpopAEuRf5E829VsMUhap6No-z787hLMeMQKV7Ngoq7mSXOhudfg
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
       creationTimestamp: null
       labels:
