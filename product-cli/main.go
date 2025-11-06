@@ -21,6 +21,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/openshift/hypershift/cmd/plugins"
 	cliversion "github.com/openshift/hypershift/cmd/version"
 	"github.com/openshift/hypershift/product-cli/cmd/create"
 	"github.com/openshift/hypershift/product-cli/cmd/destroy"
@@ -46,6 +47,7 @@ func main() {
 
 	cmd.AddCommand(create.NewCommand())
 	cmd.AddCommand(destroy.NewCommand())
+	cmd.AddCommand(plugins.NewPluginsCommand())
 	cmd.AddCommand(cliversion.NewVersionCommand())
 
 	sigs := make(chan os.Signal, 1)
