@@ -2,8 +2,10 @@ package util
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -27,11 +29,78 @@ import (
 
 const cacheTTL = time.Hour * 12
 
+// MirrorAvailabilityCache caches mirror availability results to prevent flapping
+type MirrorAvailabilityCache struct {
+	cache map[string]mirrorCacheEntry
+	mutex sync.RWMutex
+}
+
+type mirrorCacheEntry struct {
+	available bool
+	timestamp time.Time
+	ttl       time.Duration
+}
+
 var (
+	// Global cache instance for mirror availability
+	mirrorCache = &MirrorAvailabilityCache{
+		cache: make(map[string]mirrorCacheEntry),
+	}
 	imageMetadataCache = cache.NewLRUExpireCache(1000)
 	manifestsCache     = cache.NewLRUExpireCache(1000)
 	digestCache        = cache.NewLRUExpireCache(1000)
 )
+
+// generateCacheKey creates a composite cache key combining mirror URL and pull secret hash
+func generateCacheKey(mirrorURL string, pullSecret []byte) string {
+	h := sha256.Sum256(pullSecret)
+	secretHash := fmt.Sprintf("%x", h[:8]) // Use first 8 bytes of hash for brevity
+	return fmt.Sprintf("%s|%s", mirrorURL, secretHash)
+}
+
+// get checks if a mirror URL is cached and not expired
+func (c *MirrorAvailabilityCache) get(mirrorURL string, pullSecret []byte) (bool, bool) {
+	cacheKey := generateCacheKey(mirrorURL, pullSecret)
+
+	c.mutex.RLock()
+	entry, exists := c.cache[cacheKey]
+	c.mutex.RUnlock()
+
+	if exists {
+		if time.Since(entry.timestamp) < entry.ttl {
+			return entry.available, true // cache hit
+		}
+		// Entry expired, upgrade to write lock to remove it
+		c.mutex.Lock()
+		// Double-check: ensure the entry is still expired after acquiring write lock
+		if entry, exists := c.cache[cacheKey]; exists && time.Since(entry.timestamp) >= entry.ttl {
+			delete(c.cache, cacheKey)
+		}
+		c.mutex.Unlock()
+	}
+	return false, false // cache miss
+}
+
+// set stores the availability result for a mirror URL with appropriate TTL
+func (c *MirrorAvailabilityCache) set(mirrorURL string, pullSecret []byte, available bool) {
+	cacheKey := generateCacheKey(mirrorURL, pullSecret)
+
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	var ttl time.Duration
+	if available {
+		ttl = 5 * time.Minute // Positive results cached longer
+	} else {
+		ttl = 1 * time.Minute // Negative results cached shorter for faster recovery
+	}
+
+	c.cache[cacheKey] = mirrorCacheEntry{
+		available: available,
+		timestamp: time.Now(),
+		ttl:       ttl,
+	}
+}
 
 type ImageMetadataProvider interface {
 	ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error)
@@ -460,12 +529,33 @@ func SeekOverride(ctx context.Context, openshiftImageRegistryOverrides map[strin
 				continue
 			}
 			if overrideFound {
-				// Verify mirror image availability.
-				if _, _, _, err = getMetadata(ctx, ref.String(), pullSecret); err == nil {
-					return ref
+				mirrorURL := ref.String()
+
+				// Check cache first to prevent flapping
+				if available, found := mirrorCache.get(mirrorURL, pullSecret); found {
+					if available {
+						log.V(2).Info("Mirror available (cached)", "mirror", mirrorURL)
+						return ref
+					} else {
+						log.V(2).Info("Mirror unavailable (cached), skipping", "mirror", mirrorURL)
+						continue
+					}
 				}
-				log.Info("WARNING: The current mirrors image is unavailable, continue Scanning multiple mirrors", "error", err.Error(), "mirror image", ref)
-				continue
+
+				// Cache miss - verify mirror availability with 15s timeout
+				verifyCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+				defer cancel()
+
+				if _, _, _, err = getMetadata(verifyCtx, mirrorURL, pullSecret); err == nil {
+					log.Info("Mirror verified as available", "mirror", mirrorURL, "timeout", "15s")
+					mirrorCache.set(mirrorURL, pullSecret, true)
+					return ref
+				} else {
+					log.Info("Mirror unavailable within timeout, caching result",
+						"error", err.Error(), "mirror", mirrorURL, "timeout", "15s")
+					mirrorCache.set(mirrorURL, pullSecret, false)
+					continue
+				}
 			}
 		}
 	}
