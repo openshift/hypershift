@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/openshift/hypershift/support/oadp"
 )
 
 // TestCreateOptionsDefaults verifies that the default values for CreateOptions
@@ -184,13 +186,13 @@ func TestGenerateBackupObjectComprehensive(t *testing.T) {
 		customResourcesExact     bool // if true, expect exact match for includedResources
 	}
 
-	// Use global platform resource mappings from create.go
+	// Use global platform resource mappings from oadp package
 	testPlatformResources := map[string][]string{
-		"AWS":       awsResources,
-		"AGENT":     agentResources,
-		"KUBEVIRT":  kubevirtResources,
-		"OPENSTACK": openstackResources,
-		"AZURE":     azureResources,
+		"AWS":       oadp.AWSResources,
+		"AGENT":     oadp.AgentResources,
+		"KUBEVIRT":  oadp.KubevirtResources,
+		"OPENSTACK": oadp.OpenstackResources,
+		"AZURE":     oadp.AzureResources,
 	}
 
 	// Base resources expected in all default configurations
@@ -348,43 +350,43 @@ func TestGetDefaultResourcesForPlatform(t *testing.T) {
 		{
 			name:                     "AWS platform",
 			platform:                 "AWS",
-			expectedPlatformSpecific: awsResources,
+			expectedPlatformSpecific: oadp.AWSResources,
 		},
 		{
 			name:                     "Agent platform",
 			platform:                 "AGENT",
-			expectedPlatformSpecific: agentResources,
+			expectedPlatformSpecific: oadp.AgentResources,
 		},
 		{
 			name:                     "KubeVirt platform",
 			platform:                 "KUBEVIRT",
-			expectedPlatformSpecific: kubevirtResources,
+			expectedPlatformSpecific: oadp.KubevirtResources,
 		},
 		{
 			name:                     "OpenStack platform",
 			platform:                 "OPENSTACK",
-			expectedPlatformSpecific: openstackResources,
+			expectedPlatformSpecific: oadp.OpenstackResources,
 		},
 		{
 			name:                     "Azure platform",
 			platform:                 "AZURE",
-			expectedPlatformSpecific: azureResources,
+			expectedPlatformSpecific: oadp.AzureResources,
 		},
 		{
 			name:                     "Unknown platform defaults to AWS",
 			platform:                 "UNKNOWN",
-			expectedPlatformSpecific: awsResources,
+			expectedPlatformSpecific: oadp.AWSResources,
 		},
 		{
 			name:                     "Lowercase platform should work",
 			platform:                 "aws",
-			expectedPlatformSpecific: awsResources,
+			expectedPlatformSpecific: oadp.AWSResources,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			resources := getDefaultResourcesForPlatform(tt.platform)
+			resources := oadp.GetDefaultResourcesForPlatform(tt.platform)
 
 			// Check that we have a reasonable number of resources
 			if len(resources) < 15 {
@@ -395,7 +397,7 @@ func TestGetDefaultResourcesForPlatform(t *testing.T) {
 			resourcesStr := fmt.Sprintf("%v", resources)
 
 			// Check base resources are always included
-			for _, expected := range baseResources {
+			for _, expected := range oadp.BaseResources {
 				if !strings.Contains(resourcesStr, expected) {
 					t.Errorf("Expected base resources to contain '%s'", expected)
 				}

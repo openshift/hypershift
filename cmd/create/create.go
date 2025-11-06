@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/cmd/kubeconfig"
 	"github.com/openshift/hypershift/cmd/nodepool"
 	"github.com/openshift/hypershift/cmd/restore"
+	"github.com/openshift/hypershift/cmd/schedule"
 
 	"github.com/spf13/cobra"
 )
@@ -26,6 +27,7 @@ func NewCommand() *cobra.Command {
 	cmd.AddCommand(kubeconfig.NewCreateCommand())
 	cmd.AddCommand(nodepool.NewCreateCommand())
 	cmd.AddCommand(restore.NewCreateCommand())
+	cmd.AddCommand(schedule.NewCreateCommand())
 	cmd.AddCommand(bastion.NewCreateCommand())
 
 	return cmd
