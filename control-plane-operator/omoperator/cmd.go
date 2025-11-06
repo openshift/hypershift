@@ -161,7 +161,50 @@ func (o *OpenshiftManagerOperator) Run(ctx context.Context) error {
 	return o.runInternal(ctx, mgmtKubeClient, guestClusterKubeClient, mgmtHcpClient)
 }
 
+func (o *OpenshiftManagerOperator) bootstrapAuthenticationCRD(ctx context.Context, guestClusterKubeClient *dynamic.DynamicClient) error {
+	crdPath := "control-plane-operator/omoperator/manifests/0000_50_authentication_01_authentications.crd.yaml"
+
+	crdBytes, err := os.ReadFile(crdPath)
+	if err != nil {
+		return fmt.Errorf("failed to read Authentication CRD from %s: %w", crdPath, err)
+	}
+
+	var crdObj map[string]interface{}
+	if err := yaml.Unmarshal(crdBytes, &crdObj); err != nil {
+		return fmt.Errorf("failed to parse Authentication CRD YAML: %w", err)
+	}
+
+	crd := &unstructured.Unstructured{Object: crdObj}
+
+	gvr := schema.GroupVersionResource{
+		Group:    "apiextensions.k8s.io",
+		Version:  "v1",
+		Resource: "customresourcedefinitions",
+	}
+
+	crdName := crd.GetName()
+	_, err = guestClusterKubeClient.Resource(gvr).Get(ctx, crdName, metav1.GetOptions{})
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to check if Authentication CRD exists: %w", err)
+		}
+
+		_, err = guestClusterKubeClient.Resource(gvr).Create(ctx, crd, metav1.CreateOptions{})
+		if err != nil && !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create Authentication CRD: %w", err)
+		}
+		ctrl.Log.Info("Successfully installed Authentication CRD in guest cluster")
+	} else {
+		ctrl.Log.Info("Authentication CRD already exists in guest cluster, skipping installation")
+	}
+
+	return nil
+}
+
 func (o *OpenshiftManagerOperator) bootstrap(ctx context.Context, mgmtKubeClient, guestClusterKubeClient *dynamic.DynamicClient) error {
+	if err := o.bootstrapAuthenticationCRD(ctx, guestClusterKubeClient); err != nil {
+		return err
+	}
 	return o.bootstrapOperatorAuthenticationClusterResource(ctx, mgmtKubeClient, guestClusterKubeClient)
 }
 
@@ -170,10 +213,6 @@ func (o *OpenshiftManagerOperator) bootstrap(ctx context.Context, mgmtKubeClient
 // additionally, this resource must be stored on the management cluster otherwise, the operator will not be able to function without the guest cluster.
 //
 // for the POC, we are going to store the resource on the guest cluster and wrap it in a ConfigMap that is stored on the management cluster.
-//
-// Note:
-// the guest cluster didn't have the definition, so I had to create it manually.
-// TODO: do ^ automatically
 func (o *OpenshiftManagerOperator) bootstrapOperatorAuthenticationClusterResource(ctx context.Context, mgmtKubeClient, guestClusterKubeClient *dynamic.DynamicClient) error {
 	gvr := schema.GroupVersionResource{Group: operatorv1.SchemeGroupVersion.Group, Version: operatorv1.SchemeGroupVersion.Version, Resource: "authentications"}
 	unstructuredAuthOperator, err := guestClusterKubeClient.Resource(gvr).Get(ctx, "cluster", metav1.GetOptions{})

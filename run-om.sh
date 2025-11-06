@@ -44,10 +44,6 @@ fi
 
 echo "Guest kubeconfig saved to: $guest_kubeconfig"
 
-# Install authentication CRD in guest cluster
-echo "Installing authentication CRD in guest cluster..."
-kubectl --kubeconfig="$guest_kubeconfig" apply -f control-plane-operator/omoperator/manifests/0000_50_authentication_01_authentications.crd.yaml
-
 # Use management cluster kubeconfig
 mgmt_kubeconfig="${MGMT_KUBECONFIG:-${KUBECONFIG:-$HOME/.kube/config}}"
 
