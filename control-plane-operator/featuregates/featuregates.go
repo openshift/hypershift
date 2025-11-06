@@ -17,7 +17,7 @@ const (
 var (
 	allFeatures = featuregates.NewFeatureSetAwareFeatures()
 
-	externalOIDCWithUIDAndExtraClaimMappingsFeature = featuregates.NewFeature(ExternalOIDCWithUIDAndExtraClaimMappings, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	externalOIDCWithUIDAndExtraClaimMappingsFeature = featuregates.NewFeature(ExternalOIDCWithUIDAndExtraClaimMappings, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
 )
 
 func init() {
