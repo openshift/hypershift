@@ -319,6 +319,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
 			"--azure-config-file=/etc/provider/credentials",
 			"--min-event-sync-interval=1m",
+			"--azure-maxretries-count=10",
 		)
 	}
 
