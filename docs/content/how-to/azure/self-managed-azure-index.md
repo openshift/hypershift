@@ -25,6 +25,24 @@ Unlike managed Azure HyperShift deployments, self-managed Azure:
 - Uses an OpenShift cluster as the management platform instead of AKS
 - Requires you to provision and manage the lifecycle of the management cluster
 
+## DNS Management Options
+
+Self-managed Azure HyperShift supports two DNS management approaches, and both are documented in the same guides:
+
+| Aspect | With External DNS | Without External DNS |
+|--------|------------------|---------------------|
+| **Best For** | Production, multi-cluster | Development, testing |
+| **API Server DNS** | Custom (e.g., `api-cluster.example.com`) | Azure LoadBalancer (e.g., `abc123.region.cloudapp.azure.com`) |
+| **Setup Complexity** | Higher (requires DNS zones, service principal) | Lower (minimal configuration) |
+| **Management** | Fully automatic | Manual or Azure-provided |
+
+!!! tip "Both Approaches in One Guide"
+
+    Our setup guides include instructions for both approaches. Simply follow the sections that match your choice:
+
+    - **With External DNS**: Follow all sections including DNS Zone Configuration and External DNS Service Principal Setup
+    - **Without External DNS**: Skip DNS sections and use the simplified operator installation command
+
 ## Deployment Workflow
 
 Setting up self-managed Azure HyperShift is a three-phase process that must be completed in order:
@@ -49,17 +67,17 @@ This phase creates the foundational security infrastructure required for your ho
 
 **Purpose**: Prepare your Azure OpenShift management cluster to host and manage HyperShift control planes.
 
-This phase configures the management cluster infrastructure:
+This phase installs the HyperShift operator with optional External DNS configuration:
 
-- **DNS Zone Configuration**: Creates Azure DNS zones and delegates DNS records for hosted cluster API endpoints and application routes
-- **External DNS**: Sets up a service principal and deploys ExternalDNS to automatically manage DNS records for hosted clusters
-- **HyperShift Operator**: Installs the HyperShift operator that will create and manage hosted control planes
+- **DNS Zone Configuration** (Optional): Creates Azure DNS zones for automatic DNS record management
+- **External DNS** (Optional): Sets up a service principal and deploys ExternalDNS operator
+- **HyperShift Operator**: Installs the HyperShift operator
 
-**Why This Matters**: The management cluster needs to automatically provision DNS records for each hosted cluster's API server and ingress endpoints. ExternalDNS watches for HostedCluster resources and creates the appropriate DNS records in Azure DNS. The HyperShift operator orchestrates the entire lifecycle of hosted control planes, from creation to upgrades to deletion.
+**Why This Matters**: The HyperShift operator orchestrates the entire lifecycle of hosted control planes. If you choose External DNS, it automatically provisions DNS records for each hosted cluster's endpoints.
 
 **When to Complete**: After Phase 1 is complete, but before creating any hosted clusters.
 
-👉 **Guide**: [Setup Azure Management Cluster for HyperShift](setup-management-cluster.md)
+👉 **Guide**: [Setup Azure Management Cluster for HyperShift](setup-management-cluster.md) - Includes both DNS approaches
 
 ### Phase 3: Create Hosted Clusters
 
@@ -75,7 +93,7 @@ This phase creates your actual hosted OpenShift clusters:
 
 **When to Complete**: After Phases 1 and 2 are fully configured and verified.
 
-👉 **Guide**: [Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md)
+👉 **Guide**: [Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md) - Includes both DNS approaches
 
 ## Prerequisites Summary
 
@@ -85,7 +103,7 @@ Before beginning the deployment process, ensure you have:
 
     - An existing Azure OpenShift management cluster
     - Azure subscription with appropriate permissions (Contributor + User Access Administrator)
-    - A parent DNS zone in Azure DNS for delegating cluster DNS records
+    - (Optional) A parent DNS zone in Azure DNS for delegating cluster DNS records (required only if using External DNS)
 
 - **Tools and Access**:
 
@@ -109,8 +127,8 @@ Self-managed Azure deployments use multiple resource groups with different lifec
 
     - Workload identities (managed identities)
     - OIDC issuer storage account
-    - Azure DNS zones
-    - External DNS service principal
+    - Azure DNS zones (if using External DNS)
+    - External DNS service principal (if using External DNS)
 
 - **Cluster-Specific Resource Groups**: Created and destroyed with each hosted cluster
 
@@ -140,9 +158,11 @@ Self-managed Azure HyperShift implements several security best practices:
 
 Begin your self-managed Azure HyperShift deployment by following the guides in order:
 
-1. [Azure Workload Identity Setup](azure-workload-identity-setup.md) - Set up managed identities and OIDC federation
-2. [Setup Azure Management Cluster for HyperShift](setup-management-cluster.md) - Configure DNS and install HyperShift operator
-3. [Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md) - Deploy your first hosted cluster
+1. **[Azure Workload Identity Setup](azure-workload-identity-setup.md)** - Set up managed identities and OIDC federation
+2. **[Setup Azure Management Cluster for HyperShift](setup-management-cluster.md)** - Install HyperShift operator (with or without External DNS)
+3. **[Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md)** - Deploy your first hosted cluster
+
+Each guide includes sections for both DNS approaches - simply follow the sections that match your choice.
 
 ## Additional Resources
 

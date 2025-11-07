@@ -18,17 +18,17 @@ Before creating a self-managed Azure HostedCluster, ensure you have:
 - HyperShift CLI binary
 - OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`)
 - `jq` command-line JSON processor
-- An Azure OpenShift management cluster with HyperShift operator and ExternalDNS installed
-- External DNS configured for the management cluster
+- An Azure OpenShift management cluster with HyperShift operator installed
 - Azure workload identities and OIDC issuer configured
 - Appropriate Azure permissions (see [Permission Requirements](#permission-requirements))
+- **Optional**: External DNS configured (only if you want automatic DNS management)
 
 !!! note "Setup Requirements"
-    
+
     This guide assumes you have already completed the workload identity configuration and management cluster setup. Follow these guides in order:
-    
+
     1. [Azure Workload Identity Setup](azure-workload-identity-setup.md) - Workload identities and OIDC issuer configuration
-    2. [Setup Azure Management Cluster for HyperShift](setup-management-cluster.md) - ExternalDNS and HyperShift operator installation
+    2. [Setup Azure Management Cluster for HyperShift](setup-management-cluster.md) - HyperShift operator installation (with or without External DNS)
 
 ### Permission Requirements
 
@@ -116,37 +116,89 @@ GetSubnetID=$(az network vnet subnet show \
     
     Before creating the cluster, ensure that all federated identity credentials have been set up for your workload identities as described in the [Azure Workload Identity Setup](azure-workload-identity-setup.md) guide. The cluster creation will fail if these are not properly configured.
 
-Create the HostedCluster with comprehensive configuration:
+Choose the cluster creation approach that matches your management cluster setup:
 
-```bash
-# Create the HostedCluster
-${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
-    --name "$CLUSTER_NAME" \
-    --namespace "$CLUSTER_NAMESPACE" \
-    --azure-creds $AZURE_CREDS \
-    --location ${LOCATION} \
-    --node-pool-replicas 2 \
-    --base-domain $PARENT_DNS_ZONE \
-    --pull-secret $PULL_SECRET \
-    --generate-ssh \
-    --release-image ${RELEASE_IMAGE} \
-    --external-dns-domain ${DNS_ZONE_NAME} \
-    --resource-group-name "${MANAGED_RG_NAME}" \
-    --vnet-id "${GetVnetID}" \
-    --subnet-id "${GetSubnetID}" \
-    --network-security-group-id "${GetNsgID}" \
-    --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
-    --oidc-issuer-url "${OIDC_ISSUER_URL}" \
-    --control-plane-operator-image="quay.io/hypershift/hypershift:${TAG}" \
-    --marketplace-publisher azureopenshift \
-    --marketplace-offer aro4 \
-    --marketplace-sku aro_419 \
-    --marketplace-version 419.6.20250523 \
-    --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
-    --assign-service-principal-roles \
-    --workload-identities-file ./workload-identities.json \
-    --diagnostics-storage-account-type Managed
-```
+=== "With External DNS"
+
+    Create the HostedCluster with External DNS for automatic DNS management:
+
+    ```bash
+    # Create the HostedCluster with External DNS
+    ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+        --name "$CLUSTER_NAME" \
+        --namespace "$CLUSTER_NAMESPACE" \
+        --azure-creds $AZURE_CREDS \
+        --location ${LOCATION} \
+        --node-pool-replicas 2 \
+        --base-domain $PARENT_DNS_ZONE \
+        --pull-secret $PULL_SECRET \
+        --generate-ssh \
+        --release-image ${RELEASE_IMAGE} \
+        --external-dns-domain ${DNS_ZONE_NAME} \
+        --resource-group-name "${MANAGED_RG_NAME}" \
+        --vnet-id "${GetVnetID}" \
+        --subnet-id "${GetSubnetID}" \
+        --network-security-group-id "${GetNsgID}" \
+        --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
+        --oidc-issuer-url "${OIDC_ISSUER_URL}" \
+        --control-plane-operator-image="quay.io/hypershift/hypershift:${TAG}" \
+        --marketplace-publisher azureopenshift \
+        --marketplace-offer aro4 \
+        --marketplace-sku aro_419 \
+        --marketplace-version 419.6.20250523 \
+        --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
+        --assign-service-principal-roles \
+        --workload-identities-file ./workload-identities.json \
+        --diagnostics-storage-account-type Managed
+    ```
+
+    This creates custom DNS names managed by External DNS:
+
+    - API server: `api-${CLUSTER_NAME}.${DNS_ZONE_NAME}`
+    - OAuth: `oauth-${CLUSTER_NAME}.${DNS_ZONE_NAME}`
+    - Konnectivity: `konnectivity-${CLUSTER_NAME}.${DNS_ZONE_NAME}`
+    - Ignition: `ignition-${CLUSTER_NAME}.${DNS_ZONE_NAME}`
+
+=== "Without External DNS"
+
+    Create the HostedCluster without External DNS (uses Azure LoadBalancer DNS):
+
+    ```bash
+    # Create the HostedCluster without External DNS
+    ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
+        --name "$CLUSTER_NAME" \
+        --namespace "$CLUSTER_NAMESPACE" \
+        --azure-creds $AZURE_CREDS \
+        --location ${LOCATION} \
+        --node-pool-replicas 2 \
+        --base-domain $PARENT_DNS_ZONE \
+        --pull-secret $PULL_SECRET \
+        --generate-ssh \
+        --release-image ${RELEASE_IMAGE} \
+        --resource-group-name "${MANAGED_RG_NAME}" \
+        --vnet-id "${GetVnetID}" \
+        --subnet-id "${GetSubnetID}" \
+        --network-security-group-id "${GetNsgID}" \
+        --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
+        --oidc-issuer-url "${OIDC_ISSUER_URL}" \
+        --control-plane-operator-image="quay.io/hypershift/hypershift:${TAG}" \
+        --marketplace-publisher azureopenshift \
+        --marketplace-offer aro4 \
+        --marketplace-sku aro_419 \
+        --marketplace-version 419.6.20250523 \
+        --dns-zone-rg-name ${PERSISTENT_RG_NAME} \
+        --assign-service-principal-roles \
+        --workload-identities-file ./workload-identities.json \
+        --diagnostics-storage-account-type Managed
+    ```
+
+    !!! info "DNS Without External DNS"
+
+        Without the `--external-dns-domain` flag:
+
+        - API server uses an Azure LoadBalancer with auto-assigned DNS (e.g., `abc123.eastus.cloudapp.azure.com`)
+        - OAuth, Konnectivity, and Ignition use Routes through the management cluster ingress
+        - You can optionally create custom DNS records manually pointing to the LoadBalancer IP
 
 !!! important "Key Configuration Options"
     
