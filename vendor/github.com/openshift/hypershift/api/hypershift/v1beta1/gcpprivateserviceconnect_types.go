@@ -38,12 +38,20 @@ const (
 
 // GCPPrivateServiceConnectSpec defines the desired state of PSC infrastructure
 type GCPPrivateServiceConnectSpec struct {
-	// forwardingRuleName is the name of the Internal Load Balancer forwarding rule
+	// loadBalancerIP is the IP address of the Internal Load Balancer
+	// Populated by the observer from service status
 	// +required
-	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MinLength=7
+	// +kubebuilder:validation:MaxLength=15
+	// +kubebuilder:validation:Pattern=`^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$`
+	LoadBalancerIP string `json:"loadBalancerIP"`
+
+	// forwardingRuleName is the name of the Internal Load Balancer forwarding rule
+	// Populated by the reconciler via GCP API lookup
+	// +optional
 	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
-	ForwardingRuleName string `json:"forwardingRuleName"`
+	ForwardingRuleName string `json:"forwardingRuleName,omitempty"`
 
 	// consumerAcceptList specifies which customer projects can connect
 	// Accepts both project IDs (e.g. "my-project-123") and project numbers (e.g. "123456789012")

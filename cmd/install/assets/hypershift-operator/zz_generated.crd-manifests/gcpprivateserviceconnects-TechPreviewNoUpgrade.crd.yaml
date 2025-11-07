@@ -73,11 +73,19 @@ spec:
                 minItems: 1
                 type: array
               forwardingRuleName:
-                description: forwardingRuleName is the name of the Internal Load Balancer
-                  forwarding rule
+                description: |-
+                  forwardingRuleName is the name of the Internal Load Balancer forwarding rule
+                  Populated by the reconciler via GCP API lookup
                 maxLength: 63
-                minLength: 1
                 pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
+                type: string
+              loadBalancerIP:
+                description: |-
+                  loadBalancerIP is the IP address of the Internal Load Balancer
+                  Populated by the observer from service status
+                maxLength: 15
+                minLength: 7
+                pattern: ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$
                 type: string
               natSubnet:
                 description: |-
@@ -88,7 +96,7 @@ spec:
                 type: string
             required:
             - consumerAcceptList
-            - forwardingRuleName
+            - loadBalancerIP
             type: object
           status:
             description: status is the status of the GCPPrivateServiceConnect.
