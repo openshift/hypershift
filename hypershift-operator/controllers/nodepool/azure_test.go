@@ -1001,10 +1001,11 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 			releaseImage:      createMockReleaseImage("4.20.0", true),
 			expectedImageType: hyperv1.AzureMarketplace,
 			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
-				Publisher: "azureopenshift",
-				Offer:     "aro4",
-				SKU:       "419-v2",
-				Version:   "419.6.20250523",
+				Publisher:       "azureopenshift",
+				Offer:           "aro4",
+				SKU:             "419-v2",
+				Version:         "419.6.20250523",
+				ImageGeneration: ptr.To(hyperv1.Gen2),
 			},
 		},
 		{
@@ -1028,10 +1029,11 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 			releaseImage:      createMockReleaseImage("4.20.0", true),
 			expectedImageType: hyperv1.AzureMarketplace,
 			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
-				Publisher: "azureopenshift",
-				Offer:     "aro4",
-				SKU:       "aro_419",
-				Version:   "419.6.20250523",
+				Publisher:       "azureopenshift",
+				Offer:           "aro4",
+				SKU:             "aro_419",
+				Version:         "419.6.20250523",
+				ImageGeneration: ptr.To(hyperv1.Gen1),
 			},
 		},
 		{
@@ -1050,10 +1052,11 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 			releaseImage:      createMockReleaseImage("4.20.0", true),
 			expectedImageType: hyperv1.AzureMarketplace,
 			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
-				Publisher: "azureopenshift",
-				Offer:     "aro4",
-				SKU:       "419-v2",
-				Version:   "419.6.20250523",
+				Publisher:       "azureopenshift",
+				Offer:           "aro4",
+				SKU:             "419-v2",
+				Version:         "419.6.20250523",
+				ImageGeneration: ptr.To(hyperv1.Gen2),
 			},
 		},
 		{
@@ -1077,10 +1080,11 @@ func TestDefaultAzureNodePoolImage(t *testing.T) {
 			releaseImage:      createMockReleaseImage("4.20.0", true),
 			expectedImageType: hyperv1.AzureMarketplace,
 			expectedMarketplaceImage: &hyperv1.AzureMarketplaceImage{
-				Publisher: "azureopenshift",
-				Offer:     "aro4",
-				SKU:       "aro_419",
-				Version:   "419.6.20250523",
+				Publisher:       "azureopenshift",
+				Offer:           "aro4",
+				SKU:             "aro_419",
+				Version:         "419.6.20250523",
+				ImageGeneration: ptr.To(hyperv1.Gen1),
 			},
 		},
 	}

@@ -1,0 +1,148 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: null
+  name: clusters
+spec: {}
+status: {}
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  creationTimestamp: null
+  name: example
+  namespace: clusters
+spec:
+  autoscaling: {}
+  capabilities: {}
+  configuration: {}
+  controllerAvailabilityPolicy: SingleReplica
+  dns:
+    baseDomain: fakeBaseDomain
+    privateZoneID: fakePrivateZoneID
+    publicZoneID: fakePublicZoneID
+  etcd:
+    managed:
+      storage:
+        persistentVolume:
+          size: 8Gi
+        type: PersistentVolume
+    managementType: Managed
+  fips: false
+  infraID: fakeInfraID
+  networking:
+    clusterNetwork:
+    - cidr: 10.132.0.0/14
+    networkType: OVNKubernetes
+    serviceNetwork:
+    - cidr: 172.31.0.0/16
+  olmCatalogPlacement: management
+  platform:
+    azure:
+      azureAuthenticationConfig:
+        azureAuthenticationConfigType: ManagedIdentities
+        managedIdentities:
+          controlPlane:
+            cloudProvider:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+            controlPlaneOperator:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+            disk:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+            file:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+            imageRegistry:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+            ingress:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+            managedIdentitiesKeyVault:
+              name: ""
+              tenantID: ""
+            network:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+            nodePoolManagement:
+              credentialsSecretName: ""
+              objectEncoding: utf-8
+          dataPlane:
+            diskMSIClientID: ""
+            fileMSIClientID: ""
+            imageRegistryMSIClientID: ""
+      location: fakeLocation
+      resourceGroup: fakeResourceGroupName
+      securityGroupID: fakeSecurityGroupID
+      subnetID: fakeSubnetID
+      subscriptionID: fakeSubscriptionID
+      tenantID: fakeTenantID
+      vnetID: fakeVNetID
+    type: Azure
+  pullSecret:
+    name: example-pull-secret
+  release:
+    image: ""
+  secretEncryption:
+    aescbc:
+      activeKey:
+        name: example-etcd-encryption-key
+    type: aescbc
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  sshKey: {}
+status:
+  controlPlaneEndpoint:
+    host: ""
+    port: 0
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  creationTimestamp: null
+  name: example
+  namespace: clusters
+spec:
+  arch: amd64
+  clusterName: example
+  management:
+    autoRepair: false
+    upgradeType: Replace
+  nodeDrainTimeout: 0s
+  nodeVolumeDetachTimeout: 0s
+  platform:
+    azure:
+      image:
+        azureMarketplace:
+          imageGeneration: Gen1
+          offer: aro4
+          publisher: azureopenshift
+          sku: aro_414
+          version: 414.92.2024021
+        type: AzureMarketplace
+      osDisk:
+        diskStorageAccountType: Premium_LRS
+        sizeGiB: 120
+      subnetID: fakeSubnetID
+      vmSize: Standard_D4s_v3
+    type: Azure
+  release:
+    image: ""
+  replicas: 0
+status:
+  replicas: 0
+---
