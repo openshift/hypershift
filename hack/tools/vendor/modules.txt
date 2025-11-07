@@ -854,8 +854,8 @@ github.com/magiconair/properties
 github.com/mailru/easyjson/buffer
 github.com/mailru/easyjson/jlexer
 github.com/mailru/easyjson/jwriter
-# github.com/maratori/testableexamples v1.0.0
-## explicit; go 1.19
+# github.com/maratori/testableexamples v1.0.1
+## explicit; go 1.22.0
 github.com/maratori/testableexamples/pkg/testableexamples
 # github.com/maratori/testpackage v1.1.1
 ## explicit; go 1.20
