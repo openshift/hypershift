@@ -71,6 +71,8 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.SSHKeyFile, "e2e.ssh-key-file", "", "Path to a ssh public key")
 	flag.StringVar(&globalOpts.N1MinorReleaseImage, "e2e.n1-minor-release-image", "", "The n-1 minor OCP release image relative to the latest")
 	flag.StringVar(&globalOpts.N2MinorReleaseImage, "e2e.n2-minor-release-image", "", "The n-2 minor OCP release image relative to the latest")
+	flag.StringVar(&globalOpts.N3MinorReleaseImage, "e2e.n3-minor-release-image", "", "The n-3 minor OCP release image relative to the latest")
+	flag.StringVar(&globalOpts.N4MinorReleaseImage, "e2e.n4-minor-release-image", "", "The n-4 minor OCP release image relative to the latest")
 	flag.StringVar(&globalOpts.PlatformRaw, "e2e.platform", string(hyperv1.AWSPlatform), "The platform to use for the tests")
 	flag.Var(&globalOpts.ConfigurableClusterOptions.Annotations, "e2e.annotations", "Annotations to apply to the HostedCluster (key=value). Can be specified multiple times")
 	flag.Var(&globalOpts.ConfigurableClusterOptions.ClusterCIDR, "e2e.cluster-cidr", "The CIDR of the cluster network. Can be specified multiple times.")
