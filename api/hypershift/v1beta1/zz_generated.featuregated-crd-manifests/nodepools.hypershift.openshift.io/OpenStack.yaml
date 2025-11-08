@@ -89,6 +89,7 @@ spec:
                 - arm64
                 - amd64
                 - ppc64le
+                - s390x
                 type: string
                 x-kubernetes-validations:
                 - message: Arch is immutable
@@ -1644,6 +1645,8 @@ spec:
                 || has(self.platform.agent) || self.platform.type == 'None'
             - message: Both replicas or autoScaling should not be set
               rule: '!has(self.replicas) || !has(self.autoScaling)'
+            - message: s390x is only supported on KubeVirt platform
+              rule: self.arch != 's390x' || has(self.platform.kubevirt)
             - message: ImageType 'Windows' requires arch 'amd64' (AWS only)
               rule: '!has(self.platform.aws) || self.platform.aws.imageType != ''Windows''
                 || self.arch == ''amd64'''
