@@ -1,8 +1,8 @@
 module github.com/openshift/hypershift/contrib/gomaxprocs-webhook
 
-go 1.24
+go 1.24.0
 
-toolchain go1.24.0
+toolchain go1.24.6
 
 require (
 	github.com/go-logr/logr v1.4.2
@@ -49,7 +49,7 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/net v0.30.0 // indirect
-	golang.org/x/oauth2 v0.23.0 // indirect
+	golang.org/x/oauth2 v0.33.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
 	golang.org/x/term v0.25.0 // indirect
