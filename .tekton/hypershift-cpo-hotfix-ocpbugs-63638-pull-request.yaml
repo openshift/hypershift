@@ -24,7 +24,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63638:on-pr-{{revision}}
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-{{.versionName}}:on-pr-{{revision}}
   - name: image-expires-after
     value: 5d
   - name: build-platforms
@@ -613,7 +613,7 @@ spec:
         - name: name
           value: rpms-signature-scan
         - name: bundle
-          value: quay.io/konflux-ci/konflux-vanguard/task-rpms-signature-scan:0.2@sha256:9c3a523814410046412abc09beb6f10082fecc56eb6d3386f6a6df305e5e011e
+          value: quay.io/konflux-ci/konflux-vanguard/task-rpms-signature-scan:0.2@sha256:da66f14b1a3f2c2ec1e02a3183941ee4230ea4ac4a36515342c97bdb2fe905e0
         - name: kind
           value: task
         resolver: bundles
