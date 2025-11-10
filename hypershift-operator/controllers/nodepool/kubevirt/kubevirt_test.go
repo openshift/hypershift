@@ -1501,3 +1501,68 @@ func generateNodeTemplate(options ...nodeTemplateOption) *capikubevirt.VirtualMa
 
 	return template
 }
+
+func TestDefaultImage(t *testing.T) {
+	// Create a mock ReleaseImage with architecture-specific Kubevirt images
+	ri := &releaseinfo.ReleaseImage{
+		StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+			Architectures: map[string]releaseinfo.CoreOSArchitecture{
+				hyperv1.ArchitectureS390X: {
+					Images: releaseinfo.CoreOSImages{
+						Kubevirt: releaseinfo.CoreOSKubevirtImages{
+							DigestRef: "quay.io/openshift/release@sha256:s390x1234",
+						},
+					},
+				},
+				hyperv1.ArchAliases[hyperv1.ArchitectureAMD64]: {
+					Images: releaseinfo.CoreOSImages{
+						Kubevirt: releaseinfo.CoreOSKubevirtImages{
+							DigestRef: "quay.io/openshift/release@sha256:x86_641234",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name           string
+		arch           string
+		expectedImage  string
+		expectedDigest string
+	}{
+		{
+			name:           "s390x architecture",
+			arch:           hyperv1.ArchitectureS390X,
+			expectedImage:  "quay.io/openshift/release@sha256:s390x1234",
+			expectedDigest: "sha256:s390x1234",
+		},
+		{
+			name:           "x86_64 architecture",
+			arch:           hyperv1.ArchitectureAMD64,
+			expectedImage:  "quay.io/openshift/release@sha256:x86_641234",
+			expectedDigest: "sha256:x86_641234",
+		},
+		{
+			name:           "unknown architecture falls back to x86_64",
+			arch:           "",
+			expectedImage:  "quay.io/openshift/release@sha256:x86_641234",
+			expectedDigest: "sha256:x86_641234",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			img, digest, err := defaultImage(tt.arch, ri)
+			if err != nil {
+				t.Fatalf("unexpected error for %s: %v", tt.arch, err)
+			}
+			if img != tt.expectedImage {
+				t.Errorf("got image %q, expected %q", img, tt.expectedImage)
+			}
+			if digest != tt.expectedDigest {
+				t.Errorf("got digest %q, expected %q", digest, tt.expectedDigest)
+			}
+		})
+	}
+}
