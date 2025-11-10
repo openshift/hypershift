@@ -10,15 +10,11 @@ require (
 )
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.38.0 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.3 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.233.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/eks v1.64.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.0 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.3 // indirect
-	github.com/aws/aws-sdk-go-v2/service/sqs v1.38.8 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ssm v1.59.1 // indirect
+	github.com/aws/aws-sdk-go-v2 v1.39.6 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.264.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/eks v1.74.7 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.42.13 // indirect
+	github.com/aws/aws-sdk-go-v2/service/ssm v1.67.0 // indirect
 	github.com/awslabs/operatorpkg v0.0.0-20241205163410-0fff9f28d115 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
