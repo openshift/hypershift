@@ -1337,9 +1337,38 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 // that were previously created for OIDC authentication but are no longer referenced in the
 // HCP configuration. This prevents orphaned resources from accumulating when OIDC providers
 // are removed or their configurations change.
+//
+// IMPORTANT: This function only deletes resources after verifying that the guest cluster's
+// Authentication resource no longer references OIDC providers. This prevents a race condition
+// where resources are deleted while components still expect them to exist.
 func (r *reconciler) cleanupOrphanedOIDCResources(ctx context.Context, expectedConfigMaps, expectedSecrets sets.Set[string]) error {
 	log := ctrl.LoggerFrom(ctx)
 	var errs []error
+
+	// Check if the Authentication resource in the guest cluster still has OIDC clients configured.
+	// If it does, we should NOT delete the resources yet to avoid breaking the cluster.
+	// The Authentication status is managed by the authentication-operator and kube-apiserver,
+	// and we need to wait for them to finish processing the configuration change before cleanup.
+	auth := &configv1.Authentication{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+	}
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(auth), auth); err != nil {
+		if !apierrors.IsNotFound(err) {
+			log.Error(err, "failed to get authentication resource, skipping cleanup to be safe")
+			return fmt.Errorf("failed to get authentication resource: %w", err)
+		}
+		// Authentication resource doesn't exist, safe to clean up
+	} else if len(auth.Status.OIDCClients) > 0 {
+		// Authentication status still shows OIDC clients - the authentication-operator
+		// hasn't finished processing the removal yet. Skip cleanup to avoid breaking the cluster.
+		log.Info("skipping OIDC resource cleanup: authentication status still shows OIDC clients",
+			"oidcClientCount", len(auth.Status.OIDCClients))
+		return nil
+	}
+
+	// Safe to proceed with cleanup - Authentication resource either doesn't exist or has no OIDC clients
 
 	// Clean up orphaned ConfigMaps
 	configMapList := &corev1.ConfigMapList{}
