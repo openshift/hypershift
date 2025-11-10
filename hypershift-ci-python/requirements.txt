@@ -7,7 +7,7 @@ google-auth==2.38.0
 google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.1
 googleapis-common-protos==1.68.0
-httplib2==0.22.0
+httplib2==0.31.0
 idna==3.10
 oauthlib==3.2.2
 proto-plus==1.26.0
