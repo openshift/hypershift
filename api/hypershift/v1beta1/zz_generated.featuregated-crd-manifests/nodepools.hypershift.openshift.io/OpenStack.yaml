@@ -1648,8 +1648,9 @@ spec:
             - message: s390x is only supported on KubeVirt platform
               rule: self.arch != 's390x' || has(self.platform.kubevirt)
             - message: ImageType 'Windows' requires arch 'amd64' (AWS only)
-              rule: '!has(self.platform.aws) || self.platform.aws.imageType != ''Windows''
-                || self.arch == ''amd64'''
+              rule: '(has(self.platform.aws) && has(self.platform.aws.imageType) &&
+                self.platform.aws.imageType == ''Windows'') ? self.arch == ''amd64''
+                : true'
           status:
             description: status is the latest observed status of the NodePool.
             properties:

@@ -2170,6 +2170,107 @@ func TestOnCreateAPIUX(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "when AWS imageType and arch combinations are validated",
+				file: "nodepool-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.NodePool)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "should pass when imageType is not specified for arm64",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Arch = hyperv1.ArchitectureARM64
+							np.Spec.Platform.Type = hyperv1.AWSPlatform
+							if np.Spec.Platform.AWS == nil {
+								np.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{}
+							}
+							np.Spec.Platform.AWS.InstanceType = "m6g.large"
+							// ImageType intentionally not set
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "should pass when imageType is not specified for amd64",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Arch = hyperv1.ArchitectureAMD64
+							np.Spec.Platform.Type = hyperv1.AWSPlatform
+							if np.Spec.Platform.AWS == nil {
+								np.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{}
+							}
+							np.Spec.Platform.AWS.InstanceType = "m6i.large"
+							// ImageType intentionally not set
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "should fail when imageType is Windows with arm64 architecture",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Arch = hyperv1.ArchitectureARM64
+							np.Spec.Platform.Type = hyperv1.AWSPlatform
+							if np.Spec.Platform.AWS == nil {
+								np.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{}
+							}
+							np.Spec.Platform.AWS.InstanceType = "m6g.large"
+							np.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeWindows
+						},
+						expectedErrorSubstring: "ImageType 'Windows' requires arch 'amd64' (AWS only)",
+					},
+					{
+						name: "should pass when imageType is Windows with amd64 architecture",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Arch = hyperv1.ArchitectureAMD64
+							np.Spec.Platform.Type = hyperv1.AWSPlatform
+							if np.Spec.Platform.AWS == nil {
+								np.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{}
+							}
+							np.Spec.Platform.AWS.InstanceType = "m6i.large"
+							np.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeWindows
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "should pass when imageType is Windows without arch (defaults to amd64)",
+						mutateInput: func(np *hyperv1.NodePool) {
+							// Don't set arch - it will default to amd64
+							np.Spec.Platform.Type = hyperv1.AWSPlatform
+							if np.Spec.Platform.AWS == nil {
+								np.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{}
+							}
+							np.Spec.Platform.AWS.InstanceType = "m6i.large"
+							np.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeWindows
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "should pass when imageType is Linux with arm64 architecture",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Arch = hyperv1.ArchitectureARM64
+							np.Spec.Platform.Type = hyperv1.AWSPlatform
+							if np.Spec.Platform.AWS == nil {
+								np.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{}
+							}
+							np.Spec.Platform.AWS.InstanceType = "m6g.large"
+							np.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeLinux
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "should pass when imageType is Linux with amd64 architecture",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Arch = hyperv1.ArchitectureAMD64
+							np.Spec.Platform.Type = hyperv1.AWSPlatform
+							if np.Spec.Platform.AWS == nil {
+								np.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{}
+							}
+							np.Spec.Platform.AWS.InstanceType = "m6i.large"
+							np.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeLinux
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
 		}
 
 		for _, tc := range testCases {
