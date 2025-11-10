@@ -67,7 +67,8 @@ func GetImpersonatedClient(userName string) (crclient.Client, error) {
 	return client, nil
 }
 
-// ParseAWSTags does exactly that
+// ParseAWSTags parses a slice of "key=value" strings into a map.
+// Returns an error if any tag is malformed or if duplicate keys are found.
 func ParseAWSTags(tags []string) (map[string]string, error) {
 	tagMap := make(map[string]string, len(tags))
 	for _, tagStr := range tags {
@@ -75,7 +76,11 @@ func ParseAWSTags(tags []string) (map[string]string, error) {
 		if len(parts) != 2 {
 			return nil, fmt.Errorf("invalid tag specification: %q (expecting \"key=value\")", tagStr)
 		}
-		tagMap[parts[0]] = parts[1]
+		key := parts[0]
+		if _, exists := tagMap[key]; exists {
+			return nil, fmt.Errorf("duplicate tag key: %q", key)
+		}
+		tagMap[key] = parts[1]
 	}
 	return tagMap, nil
 }
