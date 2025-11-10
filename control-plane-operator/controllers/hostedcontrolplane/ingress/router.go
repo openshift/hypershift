@@ -39,8 +39,10 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 		if svc.Annotations == nil {
 			svc.Annotations = map[string]string{}
 		}
-		// Configure GCP Internal Load Balancer for PSC Service Attachment creation
-		svc.Annotations["networking.gke.io/load-balancer-type"] = "Internal"
+		if internal {
+			// Configure GCP Internal Load Balancer for PSC Service Attachment creation
+			svc.Annotations["networking.gke.io/load-balancer-type"] = "Internal"
+		}
 	}
 
 	if svc.Labels == nil {
