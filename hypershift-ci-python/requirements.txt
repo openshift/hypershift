@@ -13,7 +13,7 @@ oauthlib==3.2.2
 proto-plus==1.26.0
 protobuf==5.29.3
 pyasn1==0.6.1
-pyasn1_modules==0.4.1
+pyasn1_modules==0.4.2
 pyparsing==3.2.1
 requests==2.32.3
 requests-oauthlib==2.0.0
