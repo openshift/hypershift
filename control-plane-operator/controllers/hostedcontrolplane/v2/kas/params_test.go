@@ -129,6 +129,7 @@ func defaultKubeAPIServerConfigParams() KubeAPIServerConfigParams {
 		MaxRequestsInflight:          fmt.Sprint(defaultMaxRequestsInflight),
 		MaxMutatingRequestsInflight:  fmt.Sprint(defaultMaxMutatingRequestsInflight),
 		GoAwayChance:                 fmt.Sprint(defaultGoAwayChance),
+		EventTTL:                     defaultEventTTL,
 		APIServerSTSDirectives:       "max-age=31536000,includeSubDomains,preload",
 	}
 }
@@ -271,6 +272,7 @@ func TestNewConfigParams(t *testing.T) {
 					hyperv1.KubeAPIServerMaximumRequestsInFlight:         "5000",
 					hyperv1.KubeAPIServerMaximumMutatingRequestsInFlight: "2000",
 					hyperv1.KubeAPIServerGoAwayChance:                    "0.002",
+					hyperv1.KubeAPIServerEventTTLMinutes:                 "60",
 					hyperv1.DisableProfilingAnnotation:                   manifests.KASDeployment("").Name,
 				}
 				return hcp
@@ -282,6 +284,23 @@ func TestNewConfigParams(t *testing.T) {
 				params.MaxRequestsInflight = "5000"
 				params.MaxMutatingRequestsInflight = "2000"
 				params.GoAwayChance = "0.002"
+				params.EventTTL = "60m"
+				return params
+			},
+		},
+		{
+			name: "with event-ttl annotation",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Annotations = map[string]string{
+					hyperv1.KubeAPIServerEventTTLMinutes: "180",
+				}
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.EventTTL = "180m"
 				return params
 			},
 		},

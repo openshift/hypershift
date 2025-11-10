@@ -2229,6 +2229,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.AWSMachinePublicIPs,
 		hyperkarpenterv1.KarpenterProviderAWSImage,
 		hyperv1.KubeAPIServerGoAwayChance,
+		hyperv1.KubeAPIServerEventTTLMinutes,
 		hyperv1.HostedClusterRestoredFromBackupAnnotation,
 	}
 	for _, key := range mirroredAnnotations {
