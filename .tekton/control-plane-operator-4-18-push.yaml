@@ -32,6 +32,7 @@ spec:
   - name: build-platforms
     value:
     - linux/x86_64
+    - linux/arm64
   - name: dockerfile
     value: /Containerfile.control-plane
   - name: path-context
