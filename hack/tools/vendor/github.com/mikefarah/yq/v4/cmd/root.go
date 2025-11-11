@@ -71,6 +71,10 @@ yq -P -oy sample.json
 			level := logging.WARNING
 			stringFormat := `[%{level}] %{color}%{time:15:04:05}%{color:reset} %{message}`
 
+			// when NO_COLOR environment variable presents and not an empty string the coloured output should be disabled;
+			// refer to no-color.org
+			forceNoColor = forceNoColor || os.Getenv("NO_COLOR") != ""
+
 			if verbose && forceNoColor {
 				level = logging.DEBUG
 				stringFormat = `[%{level:5.5s}] %{time:15:04:05} %{shortfile:-33s} %{shortfunc:-25s} %{message}`
@@ -90,15 +94,12 @@ yq -P -oy sample.json
 			logging.SetBackend(backend)
 			yqlib.InitExpressionParser()
 
-			// when NO_COLOR environment variable presents and not an empty string the coloured output should be disabled;
-			// refer to no-color.org
-			forceNoColor = os.Getenv("NO_COLOR") != ""
-
 			return nil
 		},
 	}
 
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose mode")
+	rootCmd.PersistentFlags().BoolVarP(&printNodeInfo, "debug-node-info", "", false, "debug node info")
 
 	rootCmd.PersistentFlags().BoolVarP(&outputToJSON, "tojson", "j", false, "(deprecated) output as json. Set indent to 0 to print json in one line.")
 	err := rootCmd.PersistentFlags().MarkDeprecated("tojson", "please use -o=json instead")
@@ -196,8 +197,9 @@ yq -P -oy sample.json
 		panic(err)
 	}
 	rootCmd.PersistentFlags().BoolVarP(&yqlib.ConfiguredYamlPreferences.LeadingContentPreProcessing, "header-preprocess", "", true, "Slurp any header comments and separators before processing expression.")
+	rootCmd.PersistentFlags().BoolVarP(&yqlib.ConfiguredYamlPreferences.FixMergeAnchorToSpec, "yaml-fix-merge-anchor-to-spec", "", false, "Fix merge anchor to match YAML spec. Will default to true in late 2025")
 
-	rootCmd.PersistentFlags().StringVarP(&splitFileExp, "split-exp", "s", "", "print each result (or doc) into a file named (exp). [exp] argument must return a string. You can use $index in the expression as the result counter.")
+	rootCmd.PersistentFlags().StringVarP(&splitFileExp, "split-exp", "s", "", "print each result (or doc) into a file named (exp). [exp] argument must return a string. You can use $index in the expression as the result counter. The necessary directories will be created.")
 	if err = rootCmd.RegisterFlagCompletionFunc("split-exp", cobra.NoFileCompletions); err != nil {
 		panic(err)
 	}
