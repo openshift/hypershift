@@ -45,6 +45,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	vpaautoscalingv1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	"k8s.io/client-go/discovery"
 	kubeclient "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
@@ -392,12 +393,17 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 		&secretsstorev1.SecretProviderClass{},
 	}
 
+	controlPlaneAutoscalingResources := []client.Object{
+		&vpaautoscalingv1.VerticalPodAutoscaler{},
+	}
+
 	// The management cluster may not be an OpenShift cluster.
 	// Only dump registered OpenShift GVKs to avoid errors.
 	kubeClient := kubeclient.NewForConfigOrDie(cfg)
 	kubeDiscoveryClient := kubeClient.Discovery()
 	optionalResources := append(featureGatedResources, ocpResources...)
 	optionalResources = append(optionalResources, monitoringResources...)
+	optionalResources = append(optionalResources, controlPlaneAutoscalingResources...)
 	for _, resource := range optionalResources {
 		gvk, err := c.GroupVersionKindFor(resource)
 		if err != nil {

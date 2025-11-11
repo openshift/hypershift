@@ -215,6 +215,33 @@ func (r *reconciler) reconcile(
 				sizeClass = &config.Spec.Sizes[i]
 			}
 		}
+	} else if autoScaling := hostedCluster.Annotations[hypershiftv1beta1.ResourceBasedControlPlaneAutoscalingAnnotation]; autoScaling == "true" {
+		if len(config.Spec.Sizes) == 0 {
+			logger.Error(fmt.Errorf("could not find a size class for hosted cluster"), "no size can be set on hosted cluster")
+			return nil, nil
+		}
+		recommendedSize := hostedCluster.Annotations[hypershiftv1beta1.RecommendedClusterSizeAnnotation]
+
+		// First, try to find the recommended size in the configuration
+		if recommendedSize != "" {
+			for i, class := range config.Spec.Sizes {
+				if class.Name == recommendedSize {
+					sizeClass = &config.Spec.Sizes[i]
+					logger.V(1).Info("Using recommended cluster size", "size", recommendedSize)
+					break
+				}
+			}
+		}
+
+		// If no recommended size is set, or the recommended size wasn't found, use the first size class as fallback
+		if sizeClass == nil {
+			sizeClass = &config.Spec.Sizes[0]
+			if recommendedSize == "" {
+				logger.Info("Resource-based autoscaling enabled but no recommended size set, using first size class", "defaultSize", sizeClass.Name)
+			} else {
+				logger.Info("Recommended size not found in configuration, falling back to first size class", "requestedSize", recommendedSize, "fallbackSize", sizeClass.Name)
+			}
+		}
 	} else {
 		nodeCount, err := r.determineNodeCount(ctx, hostedCluster, sizeClassLabelPresent)
 		if err != nil {

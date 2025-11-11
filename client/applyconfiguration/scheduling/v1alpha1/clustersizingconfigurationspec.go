@@ -24,10 +24,11 @@ import (
 // ClusterSizingConfigurationSpecApplyConfiguration represents a declarative configuration of the ClusterSizingConfigurationSpec type for use
 // with apply.
 type ClusterSizingConfigurationSpecApplyConfiguration struct {
-	Sizes                               []SizeConfigurationApplyConfiguration           `json:"sizes,omitempty"`
-	Concurrency                         *ConcurrencyConfigurationApplyConfiguration     `json:"concurrency,omitempty"`
-	TransitionDelay                     *TransitionDelayConfigurationApplyConfiguration `json:"transitionDelay,omitempty"`
-	NonRequestServingNodesBufferPerZone *resource.Quantity                              `json:"nonRequestServingNodesBufferPerZone,omitempty"`
+	Sizes                               []SizeConfigurationApplyConfiguration                    `json:"sizes,omitempty"`
+	Concurrency                         *ConcurrencyConfigurationApplyConfiguration              `json:"concurrency,omitempty"`
+	TransitionDelay                     *TransitionDelayConfigurationApplyConfiguration          `json:"transitionDelay,omitempty"`
+	NonRequestServingNodesBufferPerZone *resource.Quantity                                       `json:"nonRequestServingNodesBufferPerZone,omitempty"`
+	ResourceBasedAutoscaling            *ResourceBasedAutoscalingConfigurationApplyConfiguration `json:"resourceBasedAutoscaling,omitempty"`
 }
 
 // ClusterSizingConfigurationSpecApplyConfiguration constructs a declarative configuration of the ClusterSizingConfigurationSpec type for use with
@@ -70,5 +71,13 @@ func (b *ClusterSizingConfigurationSpecApplyConfiguration) WithTransitionDelay(v
 // If called multiple times, the NonRequestServingNodesBufferPerZone field is set to the value of the last call.
 func (b *ClusterSizingConfigurationSpecApplyConfiguration) WithNonRequestServingNodesBufferPerZone(value resource.Quantity) *ClusterSizingConfigurationSpecApplyConfiguration {
 	b.NonRequestServingNodesBufferPerZone = &value
+	return b
+}
+
+// WithResourceBasedAutoscaling sets the ResourceBasedAutoscaling field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ResourceBasedAutoscaling field is set to the value of the last call.
+func (b *ClusterSizingConfigurationSpecApplyConfiguration) WithResourceBasedAutoscaling(value *ResourceBasedAutoscalingConfigurationApplyConfiguration) *ClusterSizingConfigurationSpecApplyConfiguration {
+	b.ResourceBasedAutoscaling = value
 	return b
 }

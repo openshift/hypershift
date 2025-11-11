@@ -1266,6 +1266,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Verbs:     []string{"sign"},
 				// we can't specify a signer domain with ResourceNames (or even *): https://github.com/kubernetes/kubernetes/issues/122154
 			},
+			{
+				APIGroups: []string{"autoscaling.k8s.io"},
+				Resources: []string{"verticalpodautoscalers"},
+				Verbs:     []string{rbacv1.VerbAll},
+			},
 		},
 	}
 	if o.EnableCVOManagementClusterMetricsAccess {

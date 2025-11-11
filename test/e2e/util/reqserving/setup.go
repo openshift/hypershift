@@ -535,7 +535,7 @@ func reconcileClusterSizingConfiguration(csc *schedulingv1alpha1.ClusterSizingCo
 				Duration: 5 * time.Minute,
 			},
 		},
-		NonRequestServingNodesBufferPerZone: mustQuantity("0.33"),
+		NonRequestServingNodesBufferPerZone: mustQuantity("1"),
 		Sizes: []schedulingv1alpha1.SizeConfiguration{
 			{
 				Name: "small",
