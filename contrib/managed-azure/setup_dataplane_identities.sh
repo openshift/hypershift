@@ -1,12 +1,13 @@
 #!/bin/bash
+set -o nounset
 set -x
 
 # Prerequisites.
-PERSISTENT_RG_NAME=${PERSISTENT_RG_NAME:-}
-OIDC_ISSUER_URL=${OIDC_ISSUER_URL:-}
+PERSISTENT_RG_NAME=${PERSISTENT_RG_NAME:?"Provide persistent resource group name"}
+OIDC_ISSUER_URL=${OIDC_ISSUER_URL:?"Provide OIDC issuer URL"}
 
 # Local.
-DP_OUTPUT_FILE=${DP_OUTPUT_FILE:-}
+DP_OUTPUT_FILE=${DP_OUTPUT_FILE:?"Provide data plane output file path"}
 AZURE_DISK_MI_NAME="azure-disk-MI-${PREFIX}"
 AZURE_FILE_MI_NAME="azure-file-MI-${PREFIX}"
 IMAGE_REGISTRY_MI_NAME="image-registry-MI-${PREFIX}"

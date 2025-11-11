@@ -48,7 +48,7 @@ export HYPERSHIFT_BINARY_PATH="/path/go/src/github.com/openshift/hypershift/bin/
 export HYPERSHIFT_IMAGE="quay.io/hypershift/hypershift-operator:latest"
 export RELEASE_IMAGE="quay.io/openshift-release-dev/ocp-release:4.20.0-ec.3-multi"
 export LOCATION="eastus"
-export AZURE_CREDS="/path/azure-hypershift-dev.json"
+export AZURE_CREDS="/path/azure-creds.json"
 # Azure storage account names must be between 3 and 24 characters in length and may contain numbers and lowercase letters only.
 export OIDC_ISSUER_NAME="USERmanagement"
 EOF
