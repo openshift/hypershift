@@ -35,6 +35,7 @@ require (
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/go-jose/go-jose/v3 v3.0.4
 	github.com/go-logr/logr v1.4.3
+	github.com/go-logr/stdr v1.2.2
 	github.com/go-logr/zapr v1.3.0
 	github.com/google/cel-go v0.22.1
 	github.com/google/go-cmp v0.7.0
@@ -87,6 +88,7 @@ require (
 	k8s.io/apiextensions-apiserver v0.32.3
 	k8s.io/apimachinery v0.32.3
 	k8s.io/apiserver v0.32.3
+	k8s.io/autoscaler/vertical-pod-autoscaler v1.3.0
 	k8s.io/cli-runtime v0.32.3
 	k8s.io/client-go v0.32.3
 	k8s.io/component-base v0.32.3
@@ -156,7 +158,6 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/go-errors/errors v1.5.1 // indirect
 	github.com/go-jose/go-jose/v4 v4.0.5 // indirect
-	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/analysis v0.21.5 // indirect
 	github.com/go-openapi/errors v0.22.1 // indirect
 	github.com/go-openapi/jsonpointer v0.21.1 // indirect
