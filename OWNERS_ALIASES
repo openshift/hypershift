@@ -35,8 +35,14 @@ aliases:
   ibm-reviewers:
     - hasueki
     - rtheis
+  gcp-approvers:
+    - apahim
+    - cblecker
+    - ckandag
+    - cristianoveiga
   gcp-reviewers:
     - apahim
+    - cblecker
     - ckandag
     - cristianoveiga
   openstack-approvers:
