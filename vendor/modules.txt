@@ -491,7 +491,7 @@ github.com/dustin/go-humanize
 # github.com/elazarl/goproxy v0.0.0-20231117061959-7cc037d33fb5
 ## explicit
 github.com/elazarl/goproxy
-# github.com/emicklei/go-restful/v3 v3.12.2
+# github.com/emicklei/go-restful/v3 v3.13.0
 ## explicit; go 1.13
 github.com/emicklei/go-restful/v3
 github.com/emicklei/go-restful/v3/log
