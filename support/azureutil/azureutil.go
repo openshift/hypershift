@@ -15,6 +15,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 
@@ -30,6 +31,23 @@ type AzureEncryptionKey struct {
 	KeyVaultName string
 	KeyName      string
 	KeyVersion   string
+}
+
+// GetAzureCloudConfiguration converts a cloud name string to the Azure SDK cloud.Configuration.
+// This function maps the cloud names used in the HyperShift API to the corresponding Azure SDK cloud configurations.
+// Valid cloud names are: AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud, and empty string (defaults to AzurePublicCloud).
+// Returns an error if the cloud name is not recognized.
+func GetAzureCloudConfiguration(cloudName string) (cloud.Configuration, error) {
+	switch cloudName {
+	case "AzurePublicCloud", "":
+		return cloud.AzurePublic, nil
+	case "AzureUSGovernmentCloud":
+		return cloud.AzureGovernment, nil
+	case "AzureChinaCloud":
+		return cloud.AzureChina, nil
+	default:
+		return cloud.Configuration{}, fmt.Errorf("unknown Azure cloud: %s", cloudName)
+	}
 }
 
 // GetSubnetNameFromSubnetID extracts the subnet name from a subnet ID

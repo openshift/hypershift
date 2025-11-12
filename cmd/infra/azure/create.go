@@ -33,11 +33,13 @@ func NewCreateCommand() *cobra.Command {
 
 	opts := CreateInfraOptions{
 		Location: "eastus",
+		Cloud:    "AzurePublicCloud",
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID(required)")
 	cmd.Flags().StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, "Path to a credentials file (required). This file is used to create credentials used to create the necessary Azure resources for the HostedCluster.")
 	cmd.Flags().StringVar(&opts.Location, "location", opts.Location, "Azure location where HostedCluster infrastructure should be created")
+	cmd.Flags().StringVar(&opts.Cloud, "cloud", opts.Cloud, "Azure cloud environment (AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud)")
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the HostedCluster")
 	cmd.Flags().StringVar(&opts.Name, "name", opts.Name, "A name for the HostedCluster")
 	cmd.Flags().StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, "A resource group name to create the HostedCluster infrastructure resources under. If not provided, a new resource group will be created.")
@@ -96,8 +98,8 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	}
 
 	// Initialize managers
-	rgMgr := NewResourceGroupManager(subscriptionID, azureCreds)
-	netMgr := NewNetworkManager(subscriptionID, azureCreds)
+	rgMgr := NewResourceGroupManager(subscriptionID, azureCreds, o.Cloud)
+	netMgr := NewNetworkManager(subscriptionID, azureCreds, o.Cloud)
 	imgMgr := NewImageManager(subscriptionID, azureCreds)
 	rbacMgr := NewRBACManager(subscriptionID, azureCreds)
 	identityMgr := NewIdentityManager(subscriptionID, azureCreds)

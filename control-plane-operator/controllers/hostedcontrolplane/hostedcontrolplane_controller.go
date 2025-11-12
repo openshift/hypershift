@@ -94,7 +94,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/kms"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
 	"github.com/Azure/msi-dataplane/pkg/dataplane"
 
@@ -3316,7 +3315,13 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		if !found {
 			// Retrieve the KMS UserAssignedCredentials path
 			credentialsPath := config.ManagedAzureCredentialsPathForKMS + hcp.Spec.SecretEncryption.KMS.Azure.KMS.CredentialsSecretName
-			cred, err := dataplane.NewUserAssignedIdentityCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}))
+			cloudConfig, err := hyperazureutil.GetAzureCloudConfiguration(hcp.Spec.Platform.Azure.Cloud)
+			if err != nil {
+				conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
+					fmt.Sprintf("failed to get Azure cloud configuration: %v", err))
+				return
+			}
+			cred, err := dataplane.NewUserAssignedIdentityCredential(ctx, credentialsPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloudConfig}))
 			if err != nil {
 				conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
 					fmt.Sprintf("failed to obtain azure client credentials: %v", err))
@@ -3432,7 +3437,11 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 	storedCreds, found := r.cpoAzureCredentialsLoaded.Load(key)
 	if !found {
 		certPath := config.ManagedAzureCertificatePath + hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.CredentialsSecretName
-		creds, err = dataplane.NewUserAssignedIdentityCredential(ctx, certPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}), dataplane.WithLogger(&log))
+		cloudConfig, err := hyperazureutil.GetAzureCloudConfiguration(hcp.Spec.Platform.Azure.Cloud)
+		if err != nil {
+			return fmt.Errorf("failed to get Azure cloud configuration: %v", err)
+		}
+		creds, err = dataplane.NewUserAssignedIdentityCredential(ctx, certPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloudConfig}), dataplane.WithLogger(&log))
 		if err != nil {
 			return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
 		}

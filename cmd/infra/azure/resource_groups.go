@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openshift/hypershift/support/azureutil"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 
 	"k8s.io/utils/ptr"
@@ -14,13 +17,15 @@ import (
 type ResourceGroupManager struct {
 	subscriptionID string
 	creds          azcore.TokenCredential
+	cloud          string
 }
 
 // NewResourceGroupManager creates a new ResourceGroupManager
-func NewResourceGroupManager(subscriptionID string, creds azcore.TokenCredential) *ResourceGroupManager {
+func NewResourceGroupManager(subscriptionID string, creds azcore.TokenCredential, cloud string) *ResourceGroupManager {
 	return &ResourceGroupManager{
 		subscriptionID: subscriptionID,
 		creds:          creds,
+		cloud:          cloud,
 	}
 }
 
@@ -32,7 +37,11 @@ func (r *ResourceGroupManager) CreateOrGetResourceGroup(ctx context.Context, opt
 	existingRGSuccessMsg := "Successfully found existing resource group"
 	createdRGSuccessMsg := "Successfully created resource group"
 
-	resourceGroupClient, err := armresources.NewResourceGroupsClient(r.subscriptionID, r.creds, nil)
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(r.cloud)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	resourceGroupClient, err := armresources.NewResourceGroupsClient(r.subscriptionID, r.creds, &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}})
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create new resource groups client: %w", err)
 	}
