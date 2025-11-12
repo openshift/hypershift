@@ -2,7 +2,9 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"reflect"
 	"strings"
 	"sync"
@@ -67,7 +69,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/errors"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/rest"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
@@ -141,6 +143,7 @@ type reconciler struct {
 	versions                  map[string]string
 	operateOnReleaseImage     string
 	ImageMetaDataProvider     util.ImageMetadataProvider
+	cleanupTracker            *util.CleanupTracker
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -197,6 +200,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		versions:                  opts.Versions,
 		operateOnReleaseImage:     opts.OperateOnReleaseImage,
 		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
+		cleanupTracker:            util.NewCleanupTracker(),
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
@@ -781,7 +785,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		finished, err = r.reconcileRestoredCluster(ctx, hcp)
 		if err != nil {
 			log.Error(err, "failed to reconcile hosted cluster recovery")
-			return ctrl.Result{}, errors.NewAggregate(append(errs, err))
+			return ctrl.Result{}, utilerrors.NewAggregate(append(errs, err))
 		}
 
 		if !finished {
@@ -809,7 +813,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		log.Info("successfully updated hcp status with recovery finished condition")
 	}
 
-	return ctrl.Result{}, errors.NewAggregate(errs)
+	return ctrl.Result{}, utilerrors.NewAggregate(errs)
 }
 
 func (r *reconciler) reconcileCSIDriver(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
@@ -836,7 +840,7 @@ func (r *reconciler) reconcileCRDs(ctx context.Context) error {
 		errs = append(errs, fmt.Errorf("failed to reconcile request count crd: %w", err))
 	}
 
-	return errors.NewAggregate(errs)
+	return utilerrors.NewAggregate(errs)
 }
 
 func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -951,7 +955,7 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		errs = append(errs, fmt.Errorf("failed to reconcile apiserver config: %w", err))
 	}
 
-	return errors.NewAggregate(errs)
+	return utilerrors.NewAggregate(errs)
 }
 
 func (r *reconciler) reconcileProxyTrustedCAConfigMap(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -1039,7 +1043,7 @@ func (r *reconciler) reconcileNamespaces(ctx context.Context, hcp *hyperv1.Hoste
 		}
 	}
 
-	return errors.NewAggregate(errs)
+	return utilerrors.NewAggregate(errs)
 }
 
 type manifestAndReconcile[o client.Object] struct {
@@ -1147,7 +1151,7 @@ func (r *reconciler) reconcileRBAC(ctx context.Context, hcp *hyperv1.HostedContr
 		}
 	}
 
-	return errors.NewAggregate(errs)
+	return utilerrors.NewAggregate(errs)
 }
 
 func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -1229,7 +1233,7 @@ func (r *reconciler) reconcileIngressController(ctx context.Context, hcp *hyperv
 		}
 	}
 
-	return errors.NewAggregate(errs)
+	return utilerrors.NewAggregate(errs)
 }
 
 func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -1300,7 +1304,7 @@ func (r *reconciler) reconcileAuthOIDC(ctx context.Context, hcp *hyperv1.HostedC
 			}
 		}
 	}
-	return errors.NewAggregate(errs)
+	return utilerrors.NewAggregate(errs)
 }
 
 func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
@@ -1363,7 +1367,7 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 		errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent daemonset: %w", err))
 	}
 
-	return errors.NewAggregate(errs)
+	return utilerrors.NewAggregate(errs)
 }
 
 func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -1400,7 +1404,7 @@ func (r *reconciler) reconcileOpenshiftAPIServerAPIServices(ctx context.Context,
 			errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver apiservice (%s): %w", apiSvcGroup, err))
 		}
 	}
-	return errors.NewAggregate(errs)
+	return utilerrors.NewAggregate(errs)
 }
 
 func (r *reconciler) reconcileOpenshiftOAuthAPIServerAPIServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -1418,7 +1422,7 @@ func (r *reconciler) reconcileOpenshiftOAuthAPIServerAPIServices(ctx context.Con
 			errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver apiservice (%s): %w", apiSvcGroup, err))
 		}
 	}
-	return errors.NewAggregate(errs)
+	return utilerrors.NewAggregate(errs)
 }
 
 func (r *reconciler) reconcileKASEndpoints(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -1450,7 +1454,7 @@ func (r *reconciler) reconcileKASEndpoints(ctx context.Context, hcp *hyperv1.Hos
 	}); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile kubernetes.default endpoint slice: %w", err))
 	}
-	return errors.NewAggregate(errs)
+	return utilerrors.NewAggregate(errs)
 }
 
 func (r *reconciler) reconcileOpenshiftAPIServerEndpoints(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -2046,7 +2050,7 @@ func (r *reconciler) reconcileGuestClusterAlertRules(ctx context.Context) error 
 		errs = append(errs, fmt.Errorf("failed to reconcile guest cluster pod security violation rule: %w", err))
 	}
 
-	return errors.NewAggregate(errs)
+	return utilerrors.NewAggregate(errs)
 }
 
 func (r *reconciler) reconcileAWSIdentityWebhook(ctx context.Context) []error {
@@ -2113,7 +2117,7 @@ func (r *reconciler) reconcileAWSIdentityWebhook(ctx context.Context) []error {
 }
 
 func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.HostedControlPlane) (ctrl.Result, error) {
-	remaining, err := r.ensureCloudResourcesDestroyed(ctx, hcp)
+	remaining, skipReason, err := r.ensureCloudResourcesDestroyed(ctx, hcp)
 
 	var status metav1.ConditionStatus
 	var reason, message string
@@ -2122,6 +2126,11 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 		reason = "ErrorOccurred"
 		status = metav1.ConditionFalse
 		message = fmt.Sprintf("Error: %v", err)
+	} else if skipReason != "" {
+		// Cleanup was skipped - set condition to indicate why
+		reason = string(hyperv1.CloudResourcesCleanupSkippedReason)
+		status = metav1.ConditionFalse
+		message = fmt.Sprintf("Cleanup skipped: %s", skipReason)
 	} else {
 		if remaining.Len() == 0 {
 			reason = "CloudResourcesDestroyed"
@@ -2156,18 +2165,46 @@ func (r *reconciler) destroyCloudResources(ctx context.Context, hcp *hyperv1.Hos
 	}
 }
 
-func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyperv1.HostedControlPlane) (sets.Set[string], error) {
+func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyperv1.HostedControlPlane) (sets.Set[string], string, error) {
 	log := ctrl.LoggerFrom(ctx)
 	remaining := sets.New[string]()
+	hcpKey := client.ObjectKeyFromObject(hcp).String()
+
+	// Check if we should skip cleanup (includes KAS availability check and failure tracking)
+	shouldSkip, reason, err := r.cleanupTracker.ShouldSkipCleanup(ctx, hcp, r.cpClient)
+	if err != nil {
+		log.Error(err, "Failed to check if cleanup should be skipped")
+		return remaining, "", err
+	}
+	if shouldSkip {
+		log.Info("Skipping cleanup", "reason", reason,
+			"failureCount", r.cleanupTracker.GetFailureCount(hcpKey),
+			"firstFailureTime", r.cleanupTracker.GetFirstFailureTime(hcpKey))
+		return remaining, reason, nil
+	}
+
 	log.Info("Ensuring resource creation is blocked in cluster")
 	if err := r.ensureResourceCreationIsBlocked(ctx, hcp); err != nil {
-		return remaining, err
+		if isConnectionError(err) {
+			log.Info("Connection error while blocking resource creation", "error", err.Error())
+			r.cleanupTracker.RecordFailure(hcpKey)
+			return remaining, "", err
+		}
+		r.cleanupTracker.ResetFailures(hcpKey)
+		return remaining, "", err
 	}
+
 	var errs []error
+	var hasConnectionError bool
+
 	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
 		log.Info("Ensuring image registry storage is removed")
 		removed, err := r.ensureImageRegistryStorageRemoved(ctx)
 		if err != nil {
+			if isConnectionError(err) {
+				hasConnectionError = true
+				log.Info("Connection error while removing image registry", "error", err.Error())
+			}
 			errs = append(errs, err)
 		}
 		if !removed {
@@ -2176,10 +2213,15 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 			log.Info("Image registry is removed")
 		}
 	}
+
 	if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
 		log.Info("Ensuring ingress controllers are removed")
 		removed, err := r.ensureIngressControllersRemoved(ctx, hcp)
 		if err != nil {
+			if isConnectionError(err) {
+				hasConnectionError = true
+				log.Info("Connection error while removing ingress controllers", "error", err.Error())
+			}
 			errs = append(errs, err)
 		}
 		if !removed {
@@ -2188,9 +2230,14 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 			log.Info("Ingress controllers are removed")
 		}
 	}
+
 	log.Info("Ensuring load balancers are removed")
 	removed, err := r.ensureServiceLoadBalancersRemoved(ctx)
 	if err != nil {
+		if isConnectionError(err) {
+			hasConnectionError = true
+			log.Info("Connection error while removing load balancers", "error", err.Error())
+		}
 		errs = append(errs, err)
 	}
 	if !removed {
@@ -2202,6 +2249,10 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 	log.Info("Ensuring persistent volumes are removed")
 	removed, err = r.ensurePersistentVolumesRemoved(ctx)
 	if err != nil {
+		if isConnectionError(err) {
+			hasConnectionError = true
+			log.Info("Connection error while removing persistent volumes", "error", err.Error())
+		}
 		errs = append(errs, err)
 	}
 	if !removed {
@@ -2213,6 +2264,10 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 	log.Info("Ensuring volume snapshots are removed")
 	removed, err = r.ensureVolumeSnapshotsRemoved(ctx)
 	if err != nil {
+		if isConnectionError(err) {
+			hasConnectionError = true
+			log.Info("Connection error while removing volume snapshots", "error", err.Error())
+		}
 		errs = append(errs, err)
 	}
 	if !removed {
@@ -2221,7 +2276,20 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 		log.Info("Volume snapshots are removed")
 	}
 
-	return remaining, errors.NewAggregate(errs)
+	aggregatedErr := utilerrors.NewAggregate(errs)
+	if aggregatedErr != nil {
+		if hasConnectionError {
+			r.cleanupTracker.RecordFailure(hcpKey)
+		} else {
+			// Reset on non-connection errors (different issue)
+			r.cleanupTracker.ResetFailures(hcpKey)
+		}
+		return remaining, "", aggregatedErr
+	}
+
+	// Success - reset failure tracking
+	r.cleanupTracker.ResetFailures(hcpKey)
+	return remaining, "", nil
 }
 
 func (r *reconciler) reconcileRestoredCluster(ctx context.Context, hcp *hyperv1.HostedControlPlane) (bool, error) {
@@ -2234,7 +2302,7 @@ func (r *reconciler) reconcileRestoredCluster(ctx context.Context, hcp *hyperv1.
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Ensuring monitoring stack is properly working after hosted cluster restoration")
 	if finished, err = dr.RecoverMonitoringStack(ctx, hcp, r.uncachedClient); err != nil {
-		return false, errors.NewAggregate(append(errs, err))
+		return false, utilerrors.NewAggregate(append(errs, err))
 	}
 
 	if finished {
@@ -2284,7 +2352,7 @@ func (r *reconciler) ensureGuestAdmissionWebhooksAreValid(ctx context.Context) e
 	mutatingWebhookConfigurations := &admissionregistrationv1.MutatingWebhookConfigurationList{}
 	if err := r.client.List(ctx, mutatingWebhookConfigurations); err != nil {
 		errs = append(errs, fmt.Errorf("failed to list mutatingWebhookConfigurations: %w", err))
-		return errors.NewAggregate(errs)
+		return utilerrors.NewAggregate(errs)
 	}
 
 	for _, configuration := range mutatingWebhookConfigurations.Items {
@@ -2297,7 +2365,7 @@ func (r *reconciler) ensureGuestAdmissionWebhooksAreValid(ctx context.Context) e
 		}
 	}
 
-	return errors.NewAggregate(errs)
+	return utilerrors.NewAggregate(errs)
 }
 
 // reconcileKubeletConfig Lists the KubeletConfig ConfigMaps from the controlPlane cluster
@@ -2470,7 +2538,7 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *h
 		}
 	}
 	if len(errs) > 0 {
-		return false, fmt.Errorf("failed to delete ingress controllers: %w", errors.NewAggregate(errs))
+		return false, fmt.Errorf("failed to delete ingress controllers: %w", utilerrors.NewAggregate(errs))
 	}
 
 	// Force deleting pods under openshift-ingress to unblock ingress-controller deletion.
@@ -2489,7 +2557,7 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *h
 	}
 
 	if len(errs) > 0 {
-		return false, fmt.Errorf("failed to force delete pods under openshift-ingress namespace: %w", errors.NewAggregate(errs))
+		return false, fmt.Errorf("failed to force delete pods under openshift-ingress namespace: %w", utilerrors.NewAggregate(errs))
 	}
 
 	// Remove ingress service and route that were created by HCCO in case of basedomain passthrough feature is enabled
@@ -2527,7 +2595,7 @@ func (r *reconciler) ensureIngressControllersRemoved(ctx context.Context, hcp *h
 	}
 
 	if len(errs) > 0 {
-		return false, fmt.Errorf("failed to delete ingress resources on infra cluster: %w", errors.NewAggregate(errs))
+		return false, fmt.Errorf("failed to delete ingress resources on infra cluster: %w", utilerrors.NewAggregate(errs))
 	}
 
 	return false, nil
@@ -2661,6 +2729,23 @@ func shouldCleanupCloudResources(hcp *hyperv1.HostedControlPlane) bool {
 		meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.CVOScaledDown))
 }
 
+// isConnectionError detects connection-related errors that indicate the guest cluster API is unavailable.
+func isConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	// Check for K8s API errors that indicate connectivity issues
+	if apierrors.IsTimeout(err) || apierrors.IsServerTimeout(err) || apierrors.IsServiceUnavailable(err) {
+		return true
+	}
+
+	// Check for network-level errors
+	// These are typically connection refused, EOF, DNS resolution failures, timeouts, etc.
+	var netErr net.Error
+	return errors.As(err, &netErr)
+}
+
 // cleanupResources generically deletes resources of a given type using an optional filter
 // function. The result is a boolean indicating whether resources were found that match
 // the filter and an error if one occurred.
@@ -2691,7 +2776,7 @@ func cleanupResources(ctx context.Context, c client.Client, list client.ObjectLi
 			}
 		}
 	}
-	return foundResource, errors.NewAggregate(errs)
+	return foundResource, utilerrors.NewAggregate(errs)
 }
 
 type genericListAccessor struct {
