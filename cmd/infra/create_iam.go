@@ -2,6 +2,7 @@ package infra
 
 import (
 	"github.com/openshift/hypershift/cmd/infra/aws"
+	"github.com/openshift/hypershift/cmd/infra/gcp"
 
 	"github.com/spf13/cobra"
 )
@@ -15,6 +16,7 @@ func NewCreateIAMCommand() *cobra.Command {
 
 	cmd.AddCommand(aws.NewCreateIAMCommand())
 	cmd.AddCommand(aws.NewCreateCLIRoleCommand())
+	cmd.AddCommand(gcp.NewCreateIAMCommand())
 
 	return cmd
 }
