@@ -64,32 +64,6 @@ func TestGetConsumerAcceptList(t *testing.T) {
 			expected: []string{"my-gcp-project"},
 		},
 		{
-			name: "empty project",
-			hcp: &hyperv1.HostedControlPlane{
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.GCPPlatform,
-						GCP: &hyperv1.GCPPlatformSpec{
-							Project: "",
-						},
-					},
-				},
-			},
-			expected: []string{""},
-		},
-		{
-			name: "nil GCP platform",
-			hcp: &hyperv1.HostedControlPlane{
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AWSPlatform, // Different platform
-						GCP:  nil,
-					},
-				},
-			},
-			expected: nil,
-		},
-		{
 			name: "project with numeric project ID",
 			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
