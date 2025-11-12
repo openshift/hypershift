@@ -64,6 +64,38 @@ func TestIsPrivateHCP(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "GCP Private",
+			args: args{
+				hcp: &hyperv1.HostedControlPlane{
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{
+							Type: hyperv1.GCPPlatform,
+							GCP: &hyperv1.GCPPlatformSpec{
+								EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "GCP PublicAndPrivate",
+			args: args{
+				hcp: &hyperv1.HostedControlPlane{
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{
+							Type: hyperv1.GCPPlatform,
+							GCP: &hyperv1.GCPPlatformSpec{
+								EndpointAccess: hyperv1.GCPEndpointAccessPublicAndPrivate,
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
 			name: "None",
 			args: args{
 				hcp: &hyperv1.HostedControlPlane{
@@ -142,6 +174,38 @@ func TestIsPublicHCP(t *testing.T) {
 				},
 			},
 			want: false,
+		},
+		{
+			name: "GCP Private",
+			args: args{
+				hcp: &hyperv1.HostedControlPlane{
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{
+							Type: hyperv1.GCPPlatform,
+							GCP: &hyperv1.GCPPlatformSpec{
+								EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "GCP PublicAndPrivate",
+			args: args{
+				hcp: &hyperv1.HostedControlPlane{
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{
+							Type: hyperv1.GCPPlatform,
+							GCP: &hyperv1.GCPPlatformSpec{
+								EndpointAccess: hyperv1.GCPEndpointAccessPublicAndPrivate,
+							},
+						},
+					},
+				},
+			},
+			want: true,
 		},
 		{
 			name: "None",

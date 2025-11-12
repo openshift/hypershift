@@ -121,3 +121,36 @@ func TestReconcileRouterService_AppliesLoadBalancerSourceRanges(t *testing.T) {
 		}
 	})
 }
+
+// Test that GCP router service is configured with Internal Load Balancer
+func TestReconcileRouterService_GCPInternalLoadBalancer(t *testing.T) {
+	// Given a HostedControlPlane on GCP platform
+	hcp := &hyperv1.HostedControlPlane{}
+	hcp.Spec.Platform.Type = hyperv1.GCPPlatform
+
+	// And an empty Service to reconcile
+	svc := &corev1.Service{}
+
+	// When reconciling the router service
+	if err := ReconcileRouterService(svc, true /* internal */, false /* cross-zone */, hcp); err != nil {
+		t.Fatalf("ReconcileRouterService returned error: %v", err)
+	}
+
+	// Then the service should be configured as an Internal Load Balancer on GCP
+	if got := svc.Annotations["networking.gke.io/load-balancer-type"]; got != "Internal" {
+		t.Fatalf("expected GCP ILB annotation to be 'Internal', got %q", got)
+	}
+
+	// And the service should be configured as a LoadBalancer type
+	if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
+		t.Fatalf("expected service type to be LoadBalancer, got %v", svc.Spec.Type)
+	}
+
+	// And it should have the proper labels and selectors
+	if svc.Labels["app"] != "private-router" {
+		t.Fatalf("expected service label app to be 'private-router', got %q", svc.Labels["app"])
+	}
+	if svc.Spec.Selector["app"] != "private-router" {
+		t.Fatalf("expected service selector app to be 'private-router', got %q", svc.Spec.Selector["app"])
+	}
+}
