@@ -8,6 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/upsert"
 
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -115,21 +116,15 @@ func (r *GCPPrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Verify this is an Internal Load Balancer
-	if svc.Annotations[gcpLoadBalancerTypeAnnotation] != gcpInternalLoadBalancerType {
+	if !isInternalLoadBalancer(svc) {
 		r.log.Info("service is not Internal LoadBalancer type, skipping", "loadBalancerType", svc.Annotations[gcpLoadBalancerTypeAnnotation])
 		return ctrl.Result{}, nil
 	}
 
-	// Check if LoadBalancer is ready
-	if len(svc.Status.LoadBalancer.Ingress) == 0 {
-		r.log.Info("load balancer not provisioned yet")
-		return ctrl.Result{}, nil
-	}
-
-	// Extract LoadBalancer IP
-	loadBalancerIP := svc.Status.LoadBalancer.Ingress[0].IP
-	if loadBalancerIP == "" {
-		r.log.Info("LoadBalancer IP not populated yet")
+	// Extract LoadBalancer IP and validate it's ready
+	loadBalancerIP, hasValidIP := extractLoadBalancerIP(svc)
+	if !hasValidIP {
+		r.log.Info("LoadBalancer IP not ready yet")
 		return ctrl.Result{}, nil
 	}
 
@@ -206,4 +201,25 @@ func getConsumerAcceptList(hcp *hyperv1.HostedControlPlane) []string {
 	// Use the GCP project as the consumer accept list entry
 	// This allows the service attachment to be accessed by the same project
 	return []string{hcp.Spec.Platform.GCP.Project}
+}
+
+// isInternalLoadBalancer checks if the service is configured as an Internal Load Balancer
+func isInternalLoadBalancer(svc *corev1.Service) bool {
+	return svc.Annotations[gcpLoadBalancerTypeAnnotation] == gcpInternalLoadBalancerType
+}
+
+// extractLoadBalancerIP extracts the LoadBalancer IP from the service and returns whether it's valid
+func extractLoadBalancerIP(svc *corev1.Service) (string, bool) {
+	// Check if LoadBalancer is ready
+	if len(svc.Status.LoadBalancer.Ingress) == 0 {
+		return "", false
+	}
+
+	// Extract LoadBalancer IP
+	loadBalancerIP := svc.Status.LoadBalancer.Ingress[0].IP
+	if loadBalancerIP == "" {
+		return "", false
+	}
+
+	return loadBalancerIP, true
 }

@@ -198,22 +198,17 @@ func TestServiceLoadBalancerValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			// Test LoadBalancer type validation
-			isInternalType := tt.service.Annotations[gcpLoadBalancerTypeAnnotation] == gcpInternalLoadBalancerType
+			// Test LoadBalancer type validation using actual implementation
+			isInternalType := isInternalLoadBalancer(tt.service)
 			g.Expect(isInternalType).To(Equal(tt.expectIsInternalType))
 
-			// Test IP validation - requires both internal type and valid IP
-			hasIngress := len(tt.service.Status.LoadBalancer.Ingress) > 0
-			hasValidIP := false
-			if hasIngress {
-				ip := tt.service.Status.LoadBalancer.Ingress[0].IP
-				hasValidIP = ip != ""
-				if tt.expectLoadBalancerIP != "" {
-					g.Expect(ip).To(Equal(tt.expectLoadBalancerIP))
-				}
-			}
-
+			// Test IP extraction using actual implementation
+			ip, hasValidIP := extractLoadBalancerIP(tt.service)
 			g.Expect(hasValidIP).To(Equal(tt.expectHasValidIP))
+
+			if tt.expectLoadBalancerIP != "" {
+				g.Expect(ip).To(Equal(tt.expectLoadBalancerIP))
+			}
 		})
 	}
 }
