@@ -62,10 +62,15 @@ func ReconcileImageSourceMirrorsIgnitionConfigFromIDMS(cm *corev1.ConfigMap, own
 func workerSSHConfig(sshKey string) ([]byte, error) {
 	config := &igntypes.Config{}
 	config.Ignition.Version = ignitionVersion
+
+	// Set password hash for core user to enable console login
+	passwordHash := "$y$j9T$E8ZAQHg0JKcyOpIjkvKVV.$OR8gi4uUvM44Gd9ZAbt47zXas5/1fi.fijVwK8/A84B" // hypershift
+
 	config.Passwd = igntypes.Passwd{
 		Users: []igntypes.PasswdUser{
 			{
-				Name: "core",
+				Name:         "core",
+				PasswordHash: &passwordHash,
 			},
 		},
 	}

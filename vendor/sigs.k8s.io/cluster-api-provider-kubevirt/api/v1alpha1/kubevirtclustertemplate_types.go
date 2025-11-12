@@ -34,13 +34,13 @@ type KubevirtClusterTemplateSpec struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=kubevirtclustertemplates,scope=Namespaced,categories=cluster-api,shortName=kct
-// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="KubevirtClusterTemplate is immutable"
 
 // KubevirtClusterTemplate is the Schema for the kubevirtclustertemplates API.
 type KubevirtClusterTemplate struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              KubevirtClusterTemplateSpec `json:"spec,omitempty"`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="KubevirtClusterTemplate Spec is immutable"
+	Spec KubevirtClusterTemplateSpec `json:"spec,omitempty"`
 }
 
 // +kubebuilder:object:root=true

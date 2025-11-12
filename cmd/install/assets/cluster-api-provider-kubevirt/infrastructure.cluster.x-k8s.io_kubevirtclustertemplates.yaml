@@ -247,9 +247,9 @@ spec:
             required:
             - template
             type: object
+            x-kubernetes-validations:
+            - message: KubevirtClusterTemplate Spec is immutable
+              rule: self == oldSelf
         type: object
-        x-kubernetes-validations:
-        - message: KubevirtClusterTemplate is immutable
-          rule: self == oldSelf
     served: true
     storage: true
