@@ -102,6 +102,15 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		return err
 	}
 
+	// kube-scheduler server cert
+	if _, err := reconcileSub(
+		manifests.KubeSchedulerServerCertSecret(hcp.Namespace),
+		kubeControlPlaneSigner,
+		pki.ReconcileKubeSchedulerServerCertSecret,
+	); err != nil {
+		return err
+	}
+
 	// KCM client cert
 	if _, err := reconcileSub(
 		manifests.KubeControllerManagerClientCertSecret(hcp.Namespace),
