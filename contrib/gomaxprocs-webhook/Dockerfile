@@ -11,7 +11,7 @@ COPY . ./
 
 RUN make build
 
-FROM registry.access.redhat.com/ubi9-minimal:latest
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7-1762180032
 COPY --from=builder /workspace/bin/gomaxprocs-webhook /usr/bin/gomaxprocs-webhook
 USER 1001
 
