@@ -129,13 +129,7 @@ func (r *GCPPrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Find HostedControlPlane from service OwnerReference
-	var hcpName string
-	for _, ownerRef := range svc.OwnerReferences {
-		if ownerRef.Kind == "HostedControlPlane" && ownerRef.APIVersion == hyperv1.GroupVersion.String() {
-			hcpName = ownerRef.Name
-			break
-		}
-	}
+	hcpName := extractHostedControlPlaneOwnerName(svc.OwnerReferences)
 	if hcpName == "" {
 		return ctrl.Result{}, fmt.Errorf("service does not have HostedControlPlane owner reference")
 	}
@@ -222,4 +216,14 @@ func extractLoadBalancerIP(svc *corev1.Service) (string, bool) {
 	}
 
 	return loadBalancerIP, true
+}
+
+// extractHostedControlPlaneOwnerName finds and returns the HostedControlPlane owner reference name
+func extractHostedControlPlaneOwnerName(ownerRefs []metav1.OwnerReference) string {
+	for _, ownerRef := range ownerRefs {
+		if ownerRef.Kind == "HostedControlPlane" && ownerRef.APIVersion == hyperv1.GroupVersion.String() {
+			return ownerRef.Name
+		}
+	}
+	return ""
 }

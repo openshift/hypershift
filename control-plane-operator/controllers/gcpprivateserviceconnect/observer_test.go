@@ -264,14 +264,8 @@ func TestServiceOwnerReferenceValidation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			// Simulate the owner reference lookup logic from the controller
-			var hcpName string
-			for _, ownerRef := range tt.ownerRefs {
-				if ownerRef.Kind == "HostedControlPlane" && ownerRef.APIVersion == hyperv1.GroupVersion.String() {
-					hcpName = ownerRef.Name
-					break
-				}
-			}
+			// Test owner reference extraction using actual implementation
+			hcpName := extractHostedControlPlaneOwnerName(tt.ownerRefs)
 
 			g.Expect(hcpName).To(Equal(tt.expectHCPName))
 			g.Expect(hcpName != "").To(Equal(tt.expectHasOwner))
