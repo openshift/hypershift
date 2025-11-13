@@ -2,6 +2,7 @@ package supportedversion
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -584,6 +585,344 @@ func TestRetrieveSupportedOCPVersion(t *testing.T) {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(version.Name).To(ContainSubstring(tc.expectedOCPVersion.Name))
 				g.Expect(version.PullSpec).To(ContainSubstring(tc.expectedOCPVersion.PullSpec))
+			}
+		})
+	}
+}
+
+func TestIsMultiArchStream(t *testing.T) {
+	testCases := []struct {
+		name           string
+		releaseStream  string
+		expectedResult bool
+	}{
+		{
+			name:           "When stream ends with -multi, it should be identified as multi-arch",
+			releaseStream:  "4-stable-multi",
+			expectedResult: true,
+		},
+		{
+			name:           "When stream ends with -multi (different version), it should be identified as multi-arch",
+			releaseStream:  "4.19-stable-multi",
+			expectedResult: true,
+		},
+		{
+			name:           "When stream does not end with -multi, it should not be identified as multi-arch",
+			releaseStream:  "4-stable",
+			expectedResult: false,
+		},
+		{
+			name:           "When stream is 4-dev-preview, it should not be identified as multi-arch",
+			releaseStream:  "4-dev-preview",
+			expectedResult: false,
+		},
+		{
+			name:           "When stream is empty, it should not be identified as multi-arch",
+			releaseStream:  "",
+			expectedResult: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			result := isMultiArchStream(tc.releaseStream)
+			g.Expect(result).To(Equal(tc.expectedResult))
+		})
+	}
+}
+
+func TestRetrieveSupportedOCPVersionWithRCFiltering(t *testing.T) {
+	supportedVersionsCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "supported-versions",
+			Namespace: "test",
+			Labels:    map[string]string{"hypershift.openshift.io/supported-versions": "true"},
+		},
+		Data: map[string]string{
+			"server-version":     "test-server",
+			"supported-versions": `{"versions":["4.19", "4.18", "4.17", "4.16", "4.15", "4.14"]}`,
+		},
+	}
+
+	// Mock HTTP server that returns release tags with RC versions
+	mockServerWithRC := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Simulate the scenario from JIRA where RC versions appear before GA versions
+		response := `{
+			"name": "4-stable-multi",
+			"tags": [
+				{
+					"name": "4.20.0-rc.3",
+					"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.20.0-rc.3-multi",
+					"downloadURL": "https://example.com/4.20.0-rc.3"
+				},
+				{
+					"name": "4.19.5",
+					"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.5-multi",
+					"downloadURL": "https://example.com/4.19.5"
+				},
+				{
+					"name": "4.19.0",
+					"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.0-multi",
+					"downloadURL": "https://example.com/4.19.0"
+				},
+				{
+					"name": "4.18.8",
+					"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.18.8-multi",
+					"downloadURL": "https://example.com/4.18.8"
+				}
+			]
+		}`
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte(response))
+		if err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
+	}))
+	defer mockServerWithRC.Close()
+
+	// Mock HTTP server that returns single version with RC
+	mockServerSingleRC := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := `{
+			"name": "4.20.0-rc.5",
+			"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.20.0-rc.5",
+			"downloadURL": "https://example.com/4.20.0-rc.5"
+		}`
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte(response))
+		if err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
+	}))
+	defer mockServerSingleRC.Close()
+
+	// Mock HTTP server that returns single version without RC
+	mockServerSingleGA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := `{
+			"name": "4.19.5",
+			"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.5",
+			"downloadURL": "https://example.com/4.19.5"
+		}`
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte(response))
+		if err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
+	}))
+	defer mockServerSingleGA.Close()
+
+	// Mock HTTP server that returns single version not supported
+	mockServerUnsupported := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := `{
+			"name": "4.20.5",
+			"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.20.5",
+			"downloadURL": "https://example.com/4.20.5"
+		}`
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, err := w.Write([]byte(response))
+		if err != nil {
+			t.Fatalf("failed to write response: %v", err)
+		}
+	}))
+	defer mockServerUnsupported.Close()
+
+	testCases := []struct {
+		name               string
+		cm                 *corev1.ConfigMap
+		releaseURL         string
+		expectErr          bool
+		expectedErrMsg     string
+		expectedOCPVersion ocpVersion
+	}{
+		{
+			name:       "When latest releases include RC versions, expect latest non-RC supported version (/tags endpoint)",
+			cm:         supportedVersionsCM,
+			releaseURL: mockServerWithRC.URL,
+			expectErr:  false,
+			expectedOCPVersion: ocpVersion{
+				Name:     "4.19.5",
+				PullSpec: "quay.io/openshift-release-dev/ocp-release:4.19.5-multi",
+			},
+		},
+		{
+			name:           "When single version is RC, expect error (/latest endpoint)",
+			cm:             supportedVersionsCM,
+			releaseURL:     mockServerSingleRC.URL,
+			expectErr:      true,
+			expectedErrMsg: "is a release candidate",
+		},
+		{
+			name:       "When single version is GA and supported, expect success (/latest endpoint)",
+			cm:         supportedVersionsCM,
+			releaseURL: mockServerSingleGA.URL,
+			expectErr:  false,
+			expectedOCPVersion: ocpVersion{
+				Name:     "4.19.5",
+				PullSpec: "quay.io/openshift-release-dev/ocp-release:4.19.5",
+			},
+		},
+		{
+			name:           "When single version is not supported by HO, expect error",
+			cm:             supportedVersionsCM,
+			releaseURL:     mockServerUnsupported.URL,
+			expectErr:      true,
+			expectedErrMsg: "is not supported by this HyperShift Operator",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			scheme := api.Scheme
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			var fakeClient client.Client
+			if tc.cm != nil {
+				fakeClient = fake.NewClientBuilder().WithScheme(scheme).WithObjects(tc.cm).Build()
+			} else {
+				fakeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+			}
+
+			version, err := retrieveSupportedOCPVersion(t.Context(), tc.releaseURL, fakeClient)
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				if tc.expectedErrMsg != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrMsg))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(version.Name).To(Equal(tc.expectedOCPVersion.Name))
+				g.Expect(version.PullSpec).To(Equal(tc.expectedOCPVersion.PullSpec))
+			}
+		})
+	}
+}
+
+func TestFindLatestSupportedVersionWithSorting(t *testing.T) {
+	supportedVersionsCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "supported-versions",
+			Namespace: "test",
+			Labels:    map[string]string{"hypershift.openshift.io/supported-versions": "true"},
+		},
+		Data: map[string]string{
+			"server-version":     "test-server",
+			"supported-versions": `{"versions":["4.19", "4.18", "4.17", "4.16", "4.15", "4.14"]}`,
+		},
+	}
+
+	testCases := []struct {
+		name             string
+		tags             string
+		expectedVersion  string
+		expectedPullSpec string
+		expectErr        bool
+		expectedErrMsg   string
+	}{
+		{
+			name: "When tags are in random order with oldest first, expect NEWEST supported version",
+			tags: `[
+				{"name": "4.14.21", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.14.21-multi", "downloadURL": "https://example.com/4.14.21"},
+				{"name": "4.19.5", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.5-multi", "downloadURL": "https://example.com/4.19.5"},
+				{"name": "4.18.3", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.18.3-multi", "downloadURL": "https://example.com/4.18.3"},
+				{"name": "4.17.10", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.17.10-multi", "downloadURL": "https://example.com/4.17.10"}
+			]`,
+			expectedVersion:  "4.19.5",
+			expectedPullSpec: "quay.io/openshift-release-dev/ocp-release:4.19.5-multi",
+		},
+		{
+			name: "When tags include RC versions, expect latest non-RC supported version",
+			tags: `[
+				{"name": "4.20.0-rc.5", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.20.0-rc.5-multi", "downloadURL": "https://example.com/4.20.0-rc.5"},
+				{"name": "4.19.5", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.5-multi", "downloadURL": "https://example.com/4.19.5"},
+				{"name": "4.19.0-rc.2", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.0-rc.2-multi", "downloadURL": "https://example.com/4.19.0-rc.2"},
+				{"name": "4.18.3", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.18.3-multi", "downloadURL": "https://example.com/4.18.3"}
+			]`,
+			expectedVersion:  "4.19.5",
+			expectedPullSpec: "quay.io/openshift-release-dev/ocp-release:4.19.5-multi",
+		},
+		{
+			name: "When tags are in ascending order, expect NEWEST supported version",
+			tags: `[
+				{"name": "4.14.21", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.14.21-multi", "downloadURL": "https://example.com/4.14.21"},
+				{"name": "4.15.10", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.15.10-multi", "downloadURL": "https://example.com/4.15.10"},
+				{"name": "4.16.5", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.16.5-multi", "downloadURL": "https://example.com/4.16.5"},
+				{"name": "4.17.3", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.17.3-multi", "downloadURL": "https://example.com/4.17.3"},
+				{"name": "4.18.2", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.18.2-multi", "downloadURL": "https://example.com/4.18.2"},
+				{"name": "4.19.1", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.1-multi", "downloadURL": "https://example.com/4.19.1"}
+			]`,
+			expectedVersion:  "4.19.1",
+			expectedPullSpec: "quay.io/openshift-release-dev/ocp-release:4.19.1-multi",
+		},
+		{
+			name: "When tags are in descending order, expect NEWEST supported version",
+			tags: `[
+				{"name": "4.19.1", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.1-multi", "downloadURL": "https://example.com/4.19.1"},
+				{"name": "4.18.2", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.18.2-multi", "downloadURL": "https://example.com/4.18.2"},
+				{"name": "4.17.3", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.17.3-multi", "downloadURL": "https://example.com/4.17.3"},
+				{"name": "4.16.5", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.16.5-multi", "downloadURL": "https://example.com/4.16.5"}
+			]`,
+			expectedVersion:  "4.19.1",
+			expectedPullSpec: "quay.io/openshift-release-dev/ocp-release:4.19.1-multi",
+		},
+		{
+			name: "When all versions are RC, expect error",
+			tags: `[
+				{"name": "4.20.0-rc.5", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.20.0-rc.5-multi", "downloadURL": "https://example.com/4.20.0-rc.5"},
+				{"name": "4.20.0-rc.4", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.20.0-rc.4-multi", "downloadURL": "https://example.com/4.20.0-rc.4"},
+				{"name": "4.19.0-rc.2", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.0-rc.2-multi", "downloadURL": "https://example.com/4.19.0-rc.2"}
+			]`,
+			expectErr:      true,
+			expectedErrMsg: "failed to find the latest supported OCP version",
+		},
+		{
+			name: "When RC versions are mixed throughout list, expect latest non-RC supported version",
+			tags: `[
+				{"name": "4.18.1", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.18.1-multi", "downloadURL": "https://example.com/4.18.1"},
+				{"name": "4.20.0-rc.3", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.20.0-rc.3-multi", "downloadURL": "https://example.com/4.20.0-rc.3"},
+				{"name": "4.19.8", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.8-multi", "downloadURL": "https://example.com/4.19.8"},
+				{"name": "4.19.0-rc.1", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.0-rc.1-multi", "downloadURL": "https://example.com/4.19.0-rc.1"},
+				{"name": "4.17.5", "pullSpec": "quay.io/openshift-release-dev/ocp-release:4.17.5-multi", "downloadURL": "https://example.com/4.17.5"}
+			]`,
+			expectedVersion:  "4.19.8",
+			expectedPullSpec: "quay.io/openshift-release-dev/ocp-release:4.19.8-multi",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				response := fmt.Sprintf(`{"name": "4-stable-multi", "tags": %s}`, tc.tags)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				_, err := w.Write([]byte(response))
+				if err != nil {
+					t.Fatalf("failed to write response: %v", err)
+				}
+			}))
+			defer mockServer.Close()
+
+			scheme := api.Scheme
+			g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(supportedVersionsCM).Build()
+
+			version, err := retrieveSupportedOCPVersion(t.Context(), mockServer.URL, fakeClient)
+
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				if tc.expectedErrMsg != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrMsg))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(version.Name).To(Equal(tc.expectedVersion))
+				g.Expect(version.PullSpec).To(Equal(tc.expectedPullSpec))
 			}
 		})
 	}
