@@ -451,7 +451,7 @@ type Capabilities struct {
 // +kubebuilder:validation:XValidation:rule=`self.platform.type == "Azure" ? self.services.exists(s, s.service == "Ignition" && s.servicePublishingStrategy.type == "Route") : true`,message="Azure platform requires Ignition to use Route service publishing strategy"
 // +kubebuilder:validation:XValidation:rule=`has(self.issuerURL) || !has(self.serviceAccountSigningKey)`,message="If serviceAccountSigningKey is set, issuerURL must be set"
 // +kubebuilder:validation:XValidation:rule=`!self.services.exists(s, s.service == 'APIServer' && has(s.servicePublishingStrategy.loadBalancer) && s.servicePublishingStrategy.loadBalancer.hostname != "" && has(self.configuration) && has(self.configuration.apiServer) && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert, cert.names.exists(n, n == s.servicePublishingStrategy.loadBalancer.hostname)))`, message="APIServer loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates[]"
-// +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
+// +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || (has(self.networking) && has(self.networking.networkType) && !(self.networking.networkType in ['OpenShiftSDN','OVNKubernetes']))",message="disableMultiNetwork can only be true when networking.networkType is neither 'OpenShiftSDN' nor 'OVNKubernetes'"
 // +kubebuilder:validation:XValidation:rule="self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)", message="ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes"
 type HostedClusterSpec struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
@@ -1112,22 +1112,18 @@ type APIServerNetworking struct {
 }
 
 // NetworkType specifies the SDN provider used for cluster networking.
-//
-// +kubebuilder:validation:Enum=OpenShiftSDN;Calico;OVNKubernetes;Other
+// Any string value is accepted to support third-party network providers.
+// The values OpenShiftSDN and OVNKubernetes receive special handling by HyperShift.
+// +kubebuilder:validation:MaxLength=255
+// +kubebuilder:validation:MinLength=1
 type NetworkType string
 
 const (
 	// OpenShiftSDN specifies OpenShiftSDN as the SDN provider
 	OpenShiftSDN NetworkType = "OpenShiftSDN"
 
-	// Calico specifies Calico as the SDN provider
-	Calico NetworkType = "Calico"
-
 	// OVNKubernetes specifies OVN as the SDN provider
 	OVNKubernetes NetworkType = "OVNKubernetes"
-
-	// Other specifies an undefined SDN provider
-	Other NetworkType = "Other"
 )
 
 // PlatformType is a specific supported infrastructure provider.

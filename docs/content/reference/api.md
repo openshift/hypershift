@@ -4512,8 +4512,8 @@ in the hosted cluster. This prevents the installation of multus daemon sets in t
 guest cluster and the multus-admission-controller in the management cluster.
 Default is false (Multus is enabled).
 This field is immutable.
-This field can only be set to true when NetworkType is &ldquo;Other&rdquo;. Setting it to true
-with any other NetworkType will result in a validation error during cluster creation.</p>
+This field can only be set to true when NetworkType is third-party. Setting it to true
+with NetworkType OpenShiftSDN or OVNKubernetes will result in a validation error during cluster creation.</p>
 </td>
 </tr>
 <tr>
@@ -9651,7 +9651,9 @@ NetworkFilter
 <a href="#hypershift.openshift.io/v1beta1.ClusterNetworking">ClusterNetworking</a>)
 </p>
 <p>
-<p>NetworkType specifies the SDN provider used for cluster networking.</p>
+<p>NetworkType specifies the SDN provider used for cluster networking.
+Any string value is accepted to support third-party network providers.
+The values OpenShiftSDN and OVNKubernetes receive special handling by HyperShift.</p>
 </p>
 <table>
 <thead>
@@ -9660,17 +9662,11 @@ NetworkFilter
 <th>Description</th>
 </tr>
 </thead>
-<tbody><tr><td><p>&#34;Calico&#34;</p></td>
-<td><p>Calico specifies Calico as the SDN provider</p>
-</td>
-</tr><tr><td><p>&#34;OVNKubernetes&#34;</p></td>
+<tbody><tr><td><p>&#34;OVNKubernetes&#34;</p></td>
 <td><p>OVNKubernetes specifies OVN as the SDN provider</p>
 </td>
 </tr><tr><td><p>&#34;OpenShiftSDN&#34;</p></td>
 <td><p>OpenShiftSDN specifies OpenShiftSDN as the SDN provider</p>
-</td>
-</tr><tr><td><p>&#34;Other&#34;</p></td>
-<td><p>Other specifies an undefined SDN provider</p>
 </td>
 </tr></tbody>
 </table>
