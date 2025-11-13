@@ -104,9 +104,13 @@ func AdvertiseAddressWithDefault(hcp *hyperv1.HostedControlPlane, defaultValue s
 	return defaultValue
 }
 
-func AllowedCIDRBlocks(hcp *hyperv1.HostedControlPlane) []hyperv1.CIDRBlock {
+func AllowedCIDRBlocks(hcp *hyperv1.HostedControlPlane) []string {
 	if hcp != nil && hcp.Spec.Networking.APIServer != nil {
-		return hcp.Spec.Networking.APIServer.AllowedCIDRBlocks
+		var allowedCIDRBlocks []string
+		for _, block := range hcp.Spec.Networking.APIServer.AllowedCIDRBlocks {
+			allowedCIDRBlocks = append(allowedCIDRBlocks, string(block))
+		}
+		return allowedCIDRBlocks
 	}
 	return nil
 }
