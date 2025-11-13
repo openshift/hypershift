@@ -11,7 +11,8 @@ metadata:
       event == "push"
       && target_branch == "main"
       && ( "^shared-ingress/***".pathChanged() ||
-           ".tekton/hypershift-shared-ingress*".pathChanged() )
+           ".tekton/hypershift-shared-ingress*".pathChanged() ||
+           ".tekton/pipelines/common-operator-build.yaml".pathChanged() )
     pipelinesascode.tekton.dev/pipeline: ".tekton/pipelines/common-operator-build.yaml"
   creationTimestamp:
   labels:
