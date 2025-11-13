@@ -93,6 +93,7 @@ func (a Azure) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 	}
 	defaultMode := int32(0640)
 	deploymentSpec := &appsv1.DeploymentSpec{
+		Replicas: ptr.To[int32](1),
 		Template: corev1.PodTemplateSpec{
 			Spec: corev1.PodSpec{
 				TerminationGracePeriodSeconds: ptr.To[int64](10),
