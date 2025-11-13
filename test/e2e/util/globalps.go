@@ -4,19 +4,17 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	. "github.com/onsi/gomega"
 
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	hyperutil "github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -71,11 +69,9 @@ func CreateKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crcli
 					},
 				},
 				Spec: corev1.PodSpec{
-					ServiceAccountName:           manifests.GlobalPullSecretDSName,
-					AutomountServiceAccountToken: ptr.To(true),
-					SecurityContext:              &corev1.PodSecurityContext{},
-					DNSPolicy:                    corev1.DNSDefault,
-					Tolerations:                  []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
+					SecurityContext: &corev1.PodSecurityContext{},
+					DNSPolicy:       corev1.DNSDefault,
+					Tolerations:     []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
 					Containers: []corev1.Container{
 						{
 							Name:            KubeletConfigVerifierDaemonSetName,
@@ -166,8 +162,8 @@ func CreateKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crcli
 							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("50Mi"),
-									corev1.ResourceCPU:    resource.MustParse("40m"),
+									corev1.ResourceMemory: resource.MustParse("40Mi"),
+									corev1.ResourceCPU:    resource.MustParse("20m"),
 								},
 							},
 						},
@@ -205,18 +201,6 @@ func CreateKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crcli
 	return guestClient.Create(ctx, daemonSet)
 }
 
-// WaitForKubeletConfigVerifierDaemonSet waits for the DaemonSet to be ready
-func WaitForKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crclient.Client) error {
-	return wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true,
-		func(ctx context.Context) (done bool, err error) {
-			ds := &appsv1.DaemonSet{}
-			if err := guestClient.Get(ctx, crclient.ObjectKey{Name: KubeletConfigVerifierDaemonSetName, Namespace: KubeletConfigVerifierNamespace}, ds); err != nil {
-				return false, err
-			}
-			return ds.Status.NumberReady == ds.Status.DesiredNumberScheduled, nil
-		})
-}
-
 // VerifyKubeletConfigWithDaemonSet implements complete verification using DaemonSet
 func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestClient crclient.Client, dsImage string) {
 	g := NewWithT(t)
@@ -226,32 +210,20 @@ func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestCl
 	err := CreateKubeletConfigVerifierDaemonSet(ctx, guestClient, dsImage)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create kubelet config verifier DaemonSet")
 
-	// Wait for the DaemonSet to be ready
-	t.Log("Waiting for DaemonSet to be ready")
-	err = WaitForKubeletConfigVerifierDaemonSet(ctx, guestClient)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for kubelet config verifier DaemonSet")
+	// Wait for all DaemonSets to be ready using our new generic function
+	t.Log("Waiting for OVN, GlobalPullSecret, Konnectivity and kubelet config verifier DaemonSets to be ready")
+	availableNodesCount, err := hyperutil.CountAvailableNodes(ctx, guestClient)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to count available nodes")
 
-	// Verify that all DaemonSet pods are running
-	t.Log("Verifying all DaemonSet pods are running")
-	EventuallyObjects(t, ctx, "DaemonSet pods to be running", func(ctx context.Context) ([]*corev1.Pod, error) {
-		pods := &corev1.PodList{}
-		err := guestClient.List(ctx, pods, &crclient.ListOptions{
-			Namespace: KubeletConfigVerifierNamespace,
-			LabelSelector: labels.Set(map[string]string{
-				"name": KubeletConfigVerifierDaemonSetName,
-			}).AsSelector(),
-		})
-		if err != nil {
-			return nil, err
-		}
-		var items []*corev1.Pod
-		for i := range pods.Items {
-			items = append(items, &pods.Items[i])
-		}
-		return items, nil
-	}, nil, []Predicate[*corev1.Pod]{func(pod *corev1.Pod) (done bool, reasons string, err error) {
-		return pod.Status.Phase == corev1.PodRunning, fmt.Sprintf("Pod has phase %s", pod.Status.Phase), nil
-	}}, WithInterval(5*time.Second), WithTimeout(30*time.Minute))
+	daemonSetsToCheck := []DaemonSetManifest{
+		{GetFunc: OpenshiftOVNKubeDaemonSet, AllowPartialNodes: false},
+		{GetFunc: hccomanifests.GlobalPullSecretDaemonSet, AllowPartialNodes: false},
+		{GetFunc: hccomanifests.KonnectivityAgentDaemonSet, AllowPartialNodes: false},
+		{GetFunc: KubeletConfigVerifierDaemonSet, AllowPartialNodes: true},
+	}
+
+	err = waitForDaemonSetsReady(t, ctx, guestClient, daemonSetsToCheck, availableNodesCount)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for DaemonSets to be ready")
 
 	// Clean up the DaemonSet after verification
 	t.Log("Cleaning up kubelet config verifier DaemonSet")
@@ -273,35 +245,23 @@ func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestCl
 	g.Expect(guestClient.Delete(ctx, pullSecret)).To(Succeed())
 }
 
-// GetKubeletConfigVerifierLogs gets logs from all pods of the kubelet config verifier DaemonSet
-func GetKubeletConfigVerifierLogs(ctx context.Context, guestClient crclient.Client) (map[string]string, error) {
-	pods := &corev1.PodList{}
-	err := guestClient.List(ctx, pods, &crclient.ListOptions{
-		Namespace: KubeletConfigVerifierNamespace,
-		LabelSelector: labels.Set(map[string]string{
-			"name": KubeletConfigVerifierDaemonSetName,
-		}).AsSelector(),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list verifier pods: %w", err)
+// Manifests
+// KubeletConfigVerifierDaemonSet returns a manifest for the kubelet config verifier DaemonSet
+func KubeletConfigVerifierDaemonSet() *appsv1.DaemonSet {
+	return &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      KubeletConfigVerifierDaemonSetName,
+			Namespace: KubeletConfigVerifierNamespace,
+		},
 	}
+}
 
-	logs := make(map[string]string)
-	for _, pod := range pods.Items {
-		// Get logs from the container
-		logs[pod.Name] = fmt.Sprintf("Pod Phase: %s\n", pod.Status.Phase)
-
-		// Add container status information
-		for _, container := range pod.Status.ContainerStatuses {
-			logs[pod.Name] += fmt.Sprintf("Container %s: Ready=%v, RestartCount=%d\n",
-				container.Name, container.Ready, container.RestartCount)
-
-			if container.State.Terminated != nil {
-				logs[pod.Name] += fmt.Sprintf("Exit Code: %d, Reason: %s\n",
-					container.State.Terminated.ExitCode, container.State.Terminated.Reason)
-			}
-		}
+// OpenshiftOVNKubeDaemonSet returns a manifest for the OVN-Kubernetes DaemonSet
+func OpenshiftOVNKubeDaemonSet() *appsv1.DaemonSet {
+	return &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "ovnkube-node",
+			Namespace: "openshift-ovn-kubernetes",
+		},
 	}
-
-	return logs, nil
 }
