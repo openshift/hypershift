@@ -20,6 +20,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 		expectedVolumeMounts []corev1.VolumeMount
 		expectedVolumes      []corev1.Volume
 		expectedArgs         []string
+		expectedEnvVars      []corev1.EnvVar
 	}{
 		"empty oidc parameters result in no volume mounts": {
 			inputBuildParameters: HyperShiftOperatorDeployment{
@@ -337,6 +338,99 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
 			},
 		},
+		"When AdditionalEnvironmentVariables are set, they are included as env vars in the HO deployment": {
+			inputBuildParameters: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				OperatorImage: testOperatorImage,
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "hypershift",
+					},
+				},
+				Replicas:                               3,
+				PrivatePlatform:                        string(hyperv1.NonePlatform),
+				EnableDedicatedRequestServingIsolation: false,
+				AdditionalOperatorEnvVars: map[string]string{
+					"TEST1": "value1",
+					"TEST2": "value2",
+				},
+			},
+			expectedEnvVars: []corev1.EnvVar{
+				{
+					Name:  "TEST1",
+					Value: "value1",
+				},
+				{
+					Name:  "TEST2",
+					Value: "value2",
+				},
+			},
+			expectedArgs: []string{
+				"run",
+				"--namespace=$(MY_NAMESPACE)",
+				"--pod-name=$(MY_NAME)",
+				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", false),
+				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
+				fmt.Sprintf("--enable-ci-debug-output=%t", false),
+				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
+			},
+		},
+		"AdditionalEnvironmentVariables dont overwrite existing environment variables set": {
+			inputBuildParameters: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				OperatorImage: testOperatorImage,
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "hypershift",
+					},
+				},
+				Replicas:                               3,
+				PrivatePlatform:                        string(hyperv1.NonePlatform),
+				EnableDedicatedRequestServingIsolation: false,
+				AdditionalOperatorEnvVars: map[string]string{
+					"MY_NAMESPACE": "testnamespace",
+					"MY_NAME":      "testname",
+				},
+			},
+			// These are the existing environment variables on the deployment that should not be overwritten.
+			expectedEnvVars: []corev1.EnvVar{
+				{
+					Name: "MY_NAMESPACE",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath: "metadata.namespace",
+						},
+					},
+				},
+				{
+					Name: "MY_NAME",
+					ValueFrom: &corev1.EnvVarSource{
+						FieldRef: &corev1.ObjectFieldSelector{
+							FieldPath: "metadata.name",
+						},
+					},
+				},
+			},
+			expectedArgs: []string{
+				"run",
+				"--namespace=$(MY_NAMESPACE)",
+				"--pod-name=$(MY_NAME)",
+				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", false),
+				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
+				fmt.Sprintf("--enable-ci-debug-output=%t", false),
+				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
+			},
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -345,6 +439,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Args).To(BeEquivalentTo(test.expectedArgs))
 			g.Expect(deployment.Spec.Template.Spec.Volumes).To(BeEquivalentTo(test.expectedVolumes))
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(BeEquivalentTo(test.expectedVolumeMounts))
+			g.Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElements(test.expectedEnvVars))
 		})
 	}
 }

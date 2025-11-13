@@ -3,6 +3,8 @@ package assets
 import (
 	_ "embed"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -397,6 +399,7 @@ type HyperShiftOperatorDeployment struct {
 	EnableSizeTagging                       bool
 	EnableEtcdRecovery                      bool
 	EnableCPOOverrides                      bool
+	AdditionalOperatorEnvVars               map[string]string
 	AROHCPKeyVaultUsersClientID             string
 	TechPreviewNoUpgrade                    bool
 	RegistryOverrides                       string
@@ -444,6 +447,23 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			Name:  "CERT_ROTATION_SCALE",
 			Value: o.CertRotationScale.String(),
 		},
+	}
+
+	// Add any additional environment variables specified if they don't already exist.
+	for key, value := range o.AdditionalOperatorEnvVars {
+		trimmedKey := strings.TrimSpace(key)
+		trimmedValue := strings.TrimSpace(value)
+
+		if trimmedKey != "" &&
+			trimmedValue != "" &&
+			!slices.ContainsFunc(envVars, func(e corev1.EnvVar) bool {
+				return e.Name == trimmedKey
+			}) {
+			envVars = append(envVars, corev1.EnvVar{
+				Name:  trimmedKey,
+				Value: trimmedValue,
+			})
+		}
 	}
 
 	// Add the new HYPERSHIFT_FEATURESET env var if TPNU is set.
