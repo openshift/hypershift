@@ -128,6 +128,23 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 								corev1.ResourceMemory: resource.MustParse("20Mi"),
 							},
 						},
+						SecurityContext: &corev1.SecurityContext{
+							ReadOnlyRootFilesystem: ptr.To(true),
+						},
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "tmp-dir",
+								MountPath: "/tmp",
+							},
+						},
+					},
+				},
+				Volumes: []corev1.Volume{
+					{
+						Name: "tmp-dir",
+						VolumeSource: corev1.VolumeSource{
+							EmptyDir: &corev1.EmptyDirVolumeSource{},
+						},
 					},
 				},
 			},
