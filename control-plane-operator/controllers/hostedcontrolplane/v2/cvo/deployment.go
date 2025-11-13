@@ -3,6 +3,7 @@ package cvo
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -95,8 +97,20 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 		}
 		if cvo.enableCVOManagementClusterMetricsAccess {
 			c.Args = append(c.Args, "--use-dns-for-services=true")
-			c.Args = append(c.Args, "--metrics-ca-bundle-file=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt")
-			c.Args = append(c.Args, fmt.Sprintf("--metrics-url=https://thanos-querier.openshift-monitoring.svc:9092?namespace=%s", cpContext.HCP.Namespace))
+
+			// Configure metrics endpoint based on monitoring stack
+			// RHOBS monitoring uses Prometheus directly on HTTP, while CoreOS monitoring uses Thanos Querier on HTTPS
+			var metricsURL string
+			if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
+				// OBO (RHOBS) uses Prometheus directly on HTTP port 9090
+				metricsURL = fmt.Sprintf("http://hypershift-monitoring-stack-prometheus.openshift-observability-operator.svc:9090?namespace=%s", cpContext.HCP.Namespace)
+				// HTTP endpoint does not require CA bundle
+			} else {
+				// CoreOS monitoring uses Thanos Querier on HTTPS port 9092
+				c.Args = append(c.Args, "--metrics-ca-bundle-file=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt")
+				metricsURL = fmt.Sprintf("https://thanos-querier.openshift-monitoring.svc:9092?namespace=%s", cpContext.HCP.Namespace)
+			}
+			c.Args = append(c.Args, fmt.Sprintf("--metrics-url=%s", metricsURL))
 		}
 	})
 

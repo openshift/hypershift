@@ -178,9 +178,9 @@ func (o *Options) Validate() error {
 		errs = append(errs, fmt.Errorf("cannot set --cert-rotation-scale longer than 24h, invalid value: %s", o.CertRotationScale.String()))
 	}
 
-	if o.RHOBSMonitoring && o.EnableCVOManagementClusterMetricsAccess {
-		errs = append(errs, fmt.Errorf("when invoking this command with the --rhobs-monitoring flag, the --enable-cvo-management-cluster-metrics-access flag is not supported "))
-	}
+	// if o.RHOBSMonitoring && o.EnableCVOManagementClusterMetricsAccess {
+	// 	errs = append(errs, fmt.Errorf("when invoking this command with the --rhobs-monitoring flag, the --enable-cvo-management-cluster-metrics-access flag is not supported "))
+	// }
 
 	if len(o.ManagedService) > 0 && o.ManagedService != hyperv1.AroHCP {
 		errs = append(errs, fmt.Errorf("not a valid managed service type: %s", o.ManagedService))
