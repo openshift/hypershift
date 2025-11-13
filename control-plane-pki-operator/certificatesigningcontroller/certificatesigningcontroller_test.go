@@ -18,6 +18,7 @@ import (
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
+	"github.com/openshift/hypershift/support/testutil"
 
 	librarygocrypto "github.com/openshift/library-go/pkg/crypto"
 
@@ -25,7 +26,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/diff"
 	certificatesv1applyconfigurations "k8s.io/client-go/applyconfigurations/certificates/v1"
 	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
 	"k8s.io/client-go/util/certificate/csr"
@@ -493,7 +493,7 @@ func TestSign(t *testing.T) {
 		MaxPathLen:            -1,
 	}
 
-	if d := cmp.Diff(*certs[0], want, diff.IgnoreUnset()); d != "" {
+	if d := cmp.Diff(*certs[0], want, testutil.IgnoreUnset()); d != "" {
 		t.Errorf("unexpected diff: %v", d)
 	}
 }
