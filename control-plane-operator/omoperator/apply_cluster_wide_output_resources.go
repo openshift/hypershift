@@ -67,9 +67,14 @@ func getAndExtractConfigMapDataNoCopy(ctx context.Context, kubeClient *dynamic.D
 		return nil, nil, err
 	}
 
+	configMapData, err := extractConfigMapDataNoCopy(unstructuredConfigMap)
+	return unstructuredConfigMap, configMapData, err
+}
+
+func extractConfigMapDataNoCopy(unstructuredConfigMap *unstructured.Unstructured) (map[string]string, error) {
 	configMapRawData, found, err := unstructured.NestedFieldNoCopy(unstructuredConfigMap.Object, "data")
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed reading .Data field from %s/%s configmap, err: %w", namespace, name, err)
+		return nil, fmt.Errorf("failed reading .Data field from %s/%s configmap, err: %w", unstructuredConfigMap.GetNamespace(), unstructuredConfigMap.GetName(), err)
 	}
 
 	configMapData := map[string]string{}
@@ -77,18 +82,18 @@ func getAndExtractConfigMapDataNoCopy(ctx context.Context, kubeClient *dynamic.D
 		var ok bool
 		configMapRawMap, ok := configMapRawData.(map[string]interface{})
 		if !ok {
-			return nil, nil, fmt.Errorf("unexpected type of data in .Data field for %s/%s configmap, expected map[string]interface{}, got: %T", namespace, name, configMapRawData)
+			return nil, fmt.Errorf("unexpected type of data in .Data field for %s/%s configmap, expected map[string]interface{}, got: %T", unstructuredConfigMap.GetNamespace(), unstructuredConfigMap.GetName(), configMapRawData)
 		}
 		for k, v := range configMapRawMap {
 			strVal, ok := v.(string)
 			if !ok {
-				return nil, nil, fmt.Errorf("unexpected type stored in %s/%s configmap under %s key, expected string, got: %T", namespace, name, k, v)
+				return nil, fmt.Errorf("unexpected type stored in %s/%s configmap under %s key, expected string, got: %T", unstructuredConfigMap.GetNamespace(), unstructuredConfigMap.GetName(), k, v)
 			}
 			configMapData[k] = strVal
 		}
 	}
 
-	return unstructuredConfigMap, configMapData, nil
+	return configMapData, nil
 }
 
 func getAndUpdateUnstructuredConfigMapData(ctx context.Context, mgmtKubeClient *dynamic.DynamicClient, name string, namespace string, configMapDataUpdateFn func(map[string]string)) error {
