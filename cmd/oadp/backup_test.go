@@ -117,7 +117,7 @@ func TestGenerateBackupObject(t *testing.T) {
 		DefaultVolumesToFsBackup: false,
 	}
 
-	backup, backupName, err := opts.generateBackupObjectWithPlatform("AWS")
+	backup, backupName, err := opts.GenerateBackupObjectWithPlatform("AWS")
 	if err != nil {
 		t.Errorf("generateBackupObject() error = %v", err)
 		return
@@ -295,9 +295,9 @@ func TestGenerateBackupObjectComprehensive(t *testing.T) {
 				IncludedResources:        tt.includedResources,
 			}
 
-			backup, backupName, err := opts.generateBackupObjectWithPlatform(tt.platform)
+			backup, backupName, err := opts.GenerateBackupObjectWithPlatform(tt.platform)
 			if err != nil {
-				t.Errorf("generateBackupObjectWithPlatform() error = %v", err)
+				t.Errorf("GenerateBackupObjectWithPlatform() error = %v", err)
 				return
 			}
 

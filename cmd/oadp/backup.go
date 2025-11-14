@@ -140,7 +140,7 @@ func (o *CreateOptions) Run(ctx context.Context) error {
 				// In render mode, if we can't connect to cluster, we'll still render but skip validations
 				o.Log.Info("Warning: Cannot connect to cluster for validation, skipping all checks")
 				// Step: Generate backup object with default platform (AWS)
-				backup, _, err := o.generateBackupObjectWithPlatform("AWS")
+				backup, _, err := o.GenerateBackupObjectWithPlatform("AWS")
 				if err != nil {
 					return fmt.Errorf("backup generation failed: %w", err)
 				}
@@ -196,7 +196,7 @@ func (o *CreateOptions) Run(ctx context.Context) error {
 	}
 
 	// Step 4: Generate backup object with detected platform
-	backup, backupName, err := o.generateBackupObjectWithPlatform(platform)
+	backup, backupName, err := o.GenerateBackupObjectWithPlatform(platform)
 	if err != nil {
 		return fmt.Errorf("backup generation failed: %w", err)
 	}
@@ -241,7 +241,7 @@ func generateBackupName(hcName, hcNamespace string, randomGen randomStringGenera
 	return fmt.Sprintf("%s-%s-%s", hcName, hcNamespace, randomSuffix)
 }
 
-func (o *CreateOptions) generateBackupObjectWithPlatform(platform string) (*unstructured.Unstructured, string, error) {
+func (o *CreateOptions) GenerateBackupObjectWithPlatform(platform string) (*unstructured.Unstructured, string, error) {
 	// Generate backup name with random suffix
 	backupName := generateBackupName(o.HCName, o.HCNamespace, utilrand.String)
 
@@ -274,7 +274,7 @@ func (o *CreateOptions) generateBackupObjectWithPlatform(platform string) (*unst
 				},
 				"includedResources":        includedResources,
 				"storageLocation":          o.StorageLocation,
-				"ttl":                      fmt.Sprintf("%s", o.TTL),
+				"ttl":                      o.TTL.String(),
 				"snapshotMoveData":         o.SnapshotMoveData,
 				"defaultVolumesToFsBackup": o.DefaultVolumesToFsBackup,
 				"dataMover":                "velero",
