@@ -297,6 +297,9 @@ const (
 	// AroHCP represents the ARO HCP managed service offering
 	AroHCP = "ARO-HCP"
 
+	// GcpHCP represents the GCP HCP managed service offering
+	GcpHCP = "GCP-HCP"
+
 	// HostedClusterSizeLabel is a label on HostedClusters indicating a size based on the number of nodes.
 	HostedClusterSizeLabel = "hypershift.openshift.io/hosted-cluster-size"
 

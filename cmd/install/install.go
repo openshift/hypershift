@@ -182,7 +182,9 @@ func (o *Options) Validate() error {
 		errs = append(errs, fmt.Errorf("when invoking this command with the --rhobs-monitoring flag, the --enable-cvo-management-cluster-metrics-access flag is not supported "))
 	}
 
-	if len(o.ManagedService) > 0 && o.ManagedService != hyperv1.AroHCP {
+	validManagedServices := set.New(hyperv1.AroHCP, hyperv1.GcpHCP)
+
+	if len(o.ManagedService) > 0 && !validManagedServices.Has(o.ManagedService) {
 		errs = append(errs, fmt.Errorf("not a valid managed service type: %s", o.ManagedService))
 	}
 
@@ -267,7 +269,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().DurationVar(&opts.CertRotationScale, "cert-rotation-scale", opts.CertRotationScale, "The scaling factor for certificate rotation. It is not supported to set this to anything other than 24h.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", opts.EnableDedicatedRequestServingIsolation, "If true, enables scheduling of request serving components to dedicated nodes")
 	cmd.PersistentFlags().StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "File path to a pull secret.")
-	cmd.PersistentFlags().StringVar(&opts.ManagedService, "managed-service", opts.ManagedService, "The type of managed service the HyperShift Operator is installed on; this is used to configure different HostedCluster options depending on the managed service. Examples: ARO-HCP, ROSA-HCP")
+	cmd.PersistentFlags().StringVar(&opts.ManagedService, "managed-service", opts.ManagedService, "The type of managed service the HyperShift Operator is installed on; this is used to configure different HostedCluster options depending on the managed service. Examples: ARO-HCP, ROSA-HCP, GCP-HCP")
 	cmd.PersistentFlags().BoolVar(&opts.EnableSizeTagging, "enable-size-tagging", opts.EnableSizeTagging, "If true, HyperShift will tag the HostedCluster with a size label corresponding to the number of worker nodes")
 	cmd.PersistentFlags().BoolVar(&opts.EnableEtcdRecovery, "enable-etcd-recovery", opts.EnableEtcdRecovery, "If true, the HyperShift operator checks for failed etcd pods and attempts a recovery if possible")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCPOOverrides, "enable-cpo-overrides", opts.EnableCPOOverrides, "If true, the HyperShift operator uses a set of static overrides for the CPO image given specific release versions")
@@ -987,9 +989,21 @@ func setupRBAC(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Servi
 
 	// In OpenShift management clusters, this RoleBinding is brought in through openshift/cluster-kube-apiserver-operator.
 	// In ARO HCP, Hosted Clusters are running on AKS management clusters, so we need to provide this through the HO.
-	if opts.ManagedService == hyperv1.AroHCP {
+	// In GCP HCP, Hosted Clusters are running on GKE management clusters, which similarly need this RoleBinding.
+	switch opts.ManagedService {
+	case hyperv1.AroHCP:
+		// ARO HCP uses system:authenticated group (all authenticated users including service accounts)
 		roleBinding := assets.KubeSystemRoleBinding{
-			Namespace: "kube-system",
+			Namespace:    "kube-system",
+			SubjectGroup: "system:authenticated",
+		}.Build()
+		objects = append(objects, roleBinding)
+	case hyperv1.GcpHCP:
+		// GCP HCP uses system:serviceaccounts group (only service accounts)
+		// GKE Autopilot's Warden policy blocks binding to system:authenticated
+		roleBinding := assets.KubeSystemRoleBinding{
+			Namespace:    "kube-system",
+			SubjectGroup: "system:serviceaccounts",
 		}.Build()
 		objects = append(objects, roleBinding)
 	}

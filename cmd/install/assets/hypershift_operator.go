@@ -1980,7 +1980,8 @@ func (o HyperShiftPullSecret) Build() *corev1.Secret {
 }
 
 type KubeSystemRoleBinding struct {
-	Namespace string
+	Namespace    string
+	SubjectGroup string
 }
 
 func (o KubeSystemRoleBinding) Build() *rbacv1.RoleBinding {
@@ -2002,7 +2003,7 @@ func (o KubeSystemRoleBinding) Build() *rbacv1.RoleBinding {
 			{
 				Kind:     "Group",
 				APIGroup: "rbac.authorization.k8s.io",
-				Name:     "system:authenticated",
+				Name:     o.SubjectGroup,
 			},
 		},
 	}
