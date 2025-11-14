@@ -1,7 +1,6 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  creationTimestamp: null
   labels:
     hypershift.openshift.io/owner.name: test-hc
     hypershift.openshift.io/owner.namespace: test-namespace

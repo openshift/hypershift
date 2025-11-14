@@ -1,7 +1,6 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  creationTimestamp: null
   name: clusters
 spec: {}
 status: {}
@@ -9,7 +8,6 @@ status: {}
 apiVersion: hypershift.openshift.io/v1beta1
 kind: HostedCluster
 metadata:
-  creationTimestamp: null
   name: example
   namespace: clusters
 spec:
@@ -113,7 +111,6 @@ status:
 apiVersion: hypershift.openshift.io/v1beta1
 kind: NodePool
 metadata:
-  creationTimestamp: null
   name: example-1
   namespace: clusters
 spec:
@@ -145,7 +142,6 @@ status:
 apiVersion: hypershift.openshift.io/v1beta1
 kind: NodePool
 metadata:
-  creationTimestamp: null
   name: example-2
   namespace: clusters
 spec:
@@ -177,7 +173,6 @@ status:
 apiVersion: hypershift.openshift.io/v1beta1
 kind: NodePool
 metadata:
-  creationTimestamp: null
   name: example-3
   namespace: clusters
 spec:

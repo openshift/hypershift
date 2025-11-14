@@ -123,13 +123,6 @@ data:
     ingress:
       ingressIPNetworkCIDR: ""
     kind: OpenShiftControllerManagerConfig
-    kubeClientConfig:
-      connectionOverrides:
-        acceptContentTypes: ""
-        burst: 0
-        contentType: ""
-        qps: 0
-      kubeConfig: /etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
     leaderElection:
       leaseDuration: 0s
       renewDeadline: 0s
@@ -169,7 +162,6 @@ data:
       requestTimeoutSeconds: 0
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: cluster-policy-controller-config
   namespace: hcp-namespace
   ownerReferences:

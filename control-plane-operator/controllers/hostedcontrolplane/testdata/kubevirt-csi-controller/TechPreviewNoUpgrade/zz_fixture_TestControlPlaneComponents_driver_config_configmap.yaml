@@ -7,7 +7,6 @@ data:
     allowAll: false
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: driver-config
   namespace: hcp-namespace
   ownerReferences:
