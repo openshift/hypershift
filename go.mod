@@ -302,6 +302,11 @@ replace github.com/aws/karpenter-provider-aws => github.com/jkyros/aws-karpenter
 // Use our openshift version of karpenter-libs instead of upstream
 replace sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20251113050548-80a590d42358
 
+// TODO(jkyros): We can't move to CAPI 1.11 yet, and CAPI 1.10 has fuzzer incompatibility with 1.34 because
+// k8s.io/apimachinery/pkg/api/apitesting/fuzzer.FuzzerFor() now returns *randfill.Filler instead of *fuzz.Fuzzer, so I just
+// patched the fix into my branch in the interim. DO NOT MERGE THIS :)
+replace sigs.k8s.io/cluster-api => github.com/jkyros/cluster-api v0.0.0-20251113202422-ab36b77c802b
+
 // Pin etcd dependencies to v3.5.20 to avoid incompatible v3.6.x versions
 replace (
 	go.etcd.io/etcd/api/v3 => go.etcd.io/etcd/api/v3 v3.5.20

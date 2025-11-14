@@ -174,8 +174,8 @@ github.com/cockroachdb/datadriven v1.0.2 h1:H9MtNqVoVhvd9nCBwOyDjUEdZCREqbIdCJD9
 github.com/cockroachdb/datadriven v1.0.2/go.mod h1:a9RdTaap04u637JoCzcUoIcDmvwSUtcUFtT/C3kJlTU=
 github.com/coredns/caddy v1.1.1 h1:2eYKZT7i6yxIfGP3qLJoJ7HAsDJqYB+X68g4NYjSrE0=
 github.com/coredns/caddy v1.1.1/go.mod h1:A6ntJQlAWuQfFlsd9hvigKbo2WS0VUs2l1e2F+BawD4=
-github.com/coredns/corefile-migration v1.0.26 h1:xiiEkVB1Dwolb24pkeDUDBfygV9/XsOSq79yFCrhptY=
-github.com/coredns/corefile-migration v1.0.26/go.mod h1:56DPqONc3njpVPsdilEnfijCwNGC3/kTJLl7i7SPavY=
+github.com/coredns/corefile-migration v1.0.28 h1:O8YafUREqUcGbRtcJfOmWU6ifcw2HX76I1QvI5xZpsw=
+github.com/coredns/corefile-migration v1.0.28/go.mod h1:56DPqONc3njpVPsdilEnfijCwNGC3/kTJLl7i7SPavY=
 github.com/coreos/go-semver v0.3.1 h1:yi21YpKnrx1gt5R+la8n5WgS0kCrsPp33dmEyHReZr4=
 github.com/coreos/go-semver v0.3.1/go.mod h1:irMmmIw/7yzSRPWryHsK7EYSg09caPQL03VsM8rvUec=
 github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf h1:iW4rZ826su+pqaw19uhpSCzhj44qo35pNgKFGqzDKkU=
@@ -421,6 +421,8 @@ github.com/jellydator/ttlcache/v3 v3.3.0 h1:BdoC9cE81qXfrxeb9eoJi9dWrdhSuwXMAnHT
 github.com/jellydator/ttlcache/v3 v3.3.0/go.mod h1:bj2/e0l4jRnQdrnSTaGTsh4GSXvMjQcy41i7th0GVGw=
 github.com/jkyros/aws-karpenter-provider-aws v0.0.0-20251114021300-edcd0d398f81 h1:HEIKnm4+IkyJ4eFoFDmPcqeLRxDzx9HNhTTKsVgE5FA=
 github.com/jkyros/aws-karpenter-provider-aws v0.0.0-20251114021300-edcd0d398f81/go.mod h1:/BYVMj79rfGQgpkbSCmnsePlSh4r7UiPXswCX0Unoco=
+github.com/jkyros/cluster-api v0.0.0-20251113202422-ab36b77c802b h1:ee2d/GafrmiM52e1aN3NG0+v28A88uaqn2qAhGKAnIM=
+github.com/jkyros/cluster-api v0.0.0-20251113202422-ab36b77c802b/go.mod h1:PTuQc7CgNahPlJrLNJ0q4gKdpQ4wITgeVXDiDQQv2to=
 github.com/jmespath/go-jmespath v0.4.0 h1:BEgLn5cpjn8UN1mAw4NjwDrS35OdebyEtFe+9YPoQUg=
 github.com/jmespath/go-jmespath v0.4.0/go.mod h1:T8mJZnbsbmF+m6zOOFylbeCJqk5+pHWvzYPziyZiYoo=
 github.com/jmespath/go-jmespath/internal/testify v1.5.1 h1:shLQSRRSCCPj3f2gpwzGwWFoC7ycTf1rcQZHOlsJ6N8=
@@ -1032,8 +1034,6 @@ kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6
 kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90/go.mod h1:018lASpFYBsYN6XwmA2TIrPCx6e0gviTd/ZNtSitKgc=
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.32.0 h1:XotDXzqvJ8Nx5eiZZueLpTuafJz8SiodgOemI+w87QU=
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.32.0/go.mod h1:Ve9uj1L+deCXFrPOk1LpFXqTg7LCFzFso6PA48q/XZw=
-sigs.k8s.io/cluster-api v1.10.4 h1:5mdyWLGbbwOowWrjqM/J9N600QnxTohu5J1/1YR6g7c=
-sigs.k8s.io/cluster-api v1.10.4/go.mod h1:68GJs286ZChsncp+TxYNj/vhy2NWokiPtH4+SA0afs0=
 sigs.k8s.io/cluster-api-provider-aws/v2 v2.8.2-0.20250820205306-645f38e4c152 h1:Hs6qmsPSdKTZYbqjPUBtE1L4m8Q8OcGmpxdh8oth+/0=
 sigs.k8s.io/cluster-api-provider-aws/v2 v2.8.2-0.20250820205306-645f38e4c152/go.mod h1:wdqD8SRkgbIAoj0L2geEItos4X4xmCr8yQpEOqIwLp4=
 sigs.k8s.io/cluster-api-provider-azure v1.21.0 h1:8SYwQX4ANgy2CAa2NEk41mqBZrmyAH03Xlk214qvxCA=

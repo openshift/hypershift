@@ -2511,7 +2511,7 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/common/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/proto/client
-# sigs.k8s.io/cluster-api v1.10.4
+# sigs.k8s.io/cluster-api v1.10.4 => github.com/jkyros/cluster-api v0.0.0-20251113202422-ab36b77c802b
 ## explicit; go 1.23.0
 sigs.k8s.io/cluster-api/api/addons/v1beta1
 sigs.k8s.io/cluster-api/api/v1beta1
@@ -2737,6 +2737,7 @@ sigs.k8s.io/yaml/goyaml.v3
 # sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.7
 # github.com/aws/karpenter-provider-aws => github.com/jkyros/aws-karpenter-provider-aws v0.0.0-20251114021300-edcd0d398f81
 # sigs.k8s.io/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20251113050548-80a590d42358
+# sigs.k8s.io/cluster-api => github.com/jkyros/cluster-api v0.0.0-20251113202422-ab36b77c802b
 # go.etcd.io/etcd/api/v3 => go.etcd.io/etcd/api/v3 v3.5.20
 # go.etcd.io/etcd/client/pkg/v3 => go.etcd.io/etcd/client/pkg/v3 v3.5.20
 # go.etcd.io/etcd/client/v2 => go.etcd.io/etcd/client/v2 v2.305.20
