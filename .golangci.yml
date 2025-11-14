@@ -29,6 +29,15 @@ issues:
         - staticcheck
       text: "SA1019: infra.Status.Platform is deprecated: Use platformStatus.type instead"
     - linters:
+        - staticcheck
+      text: "SA1019: cel.Declarations is deprecated"
+    - linters:
+        - staticcheck
+      text: "SA1019: corev1.Endpoints is deprecated"
+    - linters:
+        - staticcheck
+      text: "SA1019: corev1.EndpointSubset is deprecated"
+    - linters:
         - unused
       text: "const `tuningConfigKey` is unused"
 linters:
