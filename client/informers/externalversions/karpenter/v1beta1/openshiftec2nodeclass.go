@@ -61,13 +61,25 @@ func NewFilteredOpenshiftEC2NodeClassInformer(client clientset.Interface, namesp
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.KarpenterV1beta1().OpenshiftEC2NodeClasses(namespace).List(context.TODO(), options)
+				return client.KarpenterV1beta1().OpenshiftEC2NodeClasses(namespace).List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.KarpenterV1beta1().OpenshiftEC2NodeClasses(namespace).Watch(context.TODO(), options)
+				return client.KarpenterV1beta1().OpenshiftEC2NodeClasses(namespace).Watch(context.Background(), options)
+			},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.KarpenterV1beta1().OpenshiftEC2NodeClasses(namespace).List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.KarpenterV1beta1().OpenshiftEC2NodeClasses(namespace).Watch(ctx, options)
 			},
 		},
 		&apikarpenterv1beta1.OpenshiftEC2NodeClass{},
