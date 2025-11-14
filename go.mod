@@ -49,15 +49,15 @@ require (
 	github.com/onsi/gomega v1.38.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0
-	github.com/openshift/api v0.0.0-20250609083529-2b129d95495e
-	github.com/openshift/client-go v0.0.0-20250131180035-f7ec47e2d87a
+	github.com/openshift/api v0.0.0-20251111013132-5c461e21bdb7
+	github.com/openshift/client-go v0.0.0-20251015124057-db0dee36e235
 	github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250624174747-899af6573f5f
 	github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20250225115807-f166846b7256
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
 	github.com/openshift/hypershift/api v0.0.0-20240604072534-cd2d5291e2b7
-	github.com/openshift/library-go v0.0.0-20250203131244-80620876b7c2
+	github.com/openshift/library-go v0.0.0-20251112091634-ab97ebb73f0f
 	github.com/operator-framework/api v0.22.0
 	github.com/pkg/errors v0.9.1
 	github.com/ppc64le-cloud/powervs-utils v0.0.0-20250403153021-219b161805db
@@ -94,7 +94,7 @@ require (
 	k8s.io/component-base v0.34.1
 	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.130.1
-	k8s.io/kube-aggregator v0.32.2
+	k8s.io/kube-aggregator v0.34.1
 	k8s.io/kube-scheduler v0.32.2
 	k8s.io/kubectl v0.32.3
 	k8s.io/pod-security-admission v0.32.2
@@ -209,6 +209,7 @@ require (
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/moby/spdystream v0.5.0 // indirect
+	github.com/moby/sys/user v0.4.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
@@ -216,7 +217,6 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
-	github.com/opencontainers/runc v1.1.14 // indirect
 	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
