@@ -42,11 +42,6 @@ func TestAutoscaling(t *testing.T) {
 				"custom.ignore.label": "test1",
 			}
 
-			// Set instance type to m5.xlarge for autoscaling tests to increase node capacity
-			if nodepool.Spec.Platform.AWS != nil {
-				nodepool.Spec.Platform.AWS.InstanceType = "m5.xlarge"
-			}
-
 			if additionalNP == nil {
 				additionalNP = &hyperv1.NodePool{
 					ObjectMeta: metav1.ObjectMeta{
@@ -63,11 +58,6 @@ func TestAutoscaling(t *testing.T) {
 				additionalNP.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
 					Min: 1,
 					Max: 3,
-				}
-
-				// Also set m5.xlarge for the additional NodePool
-				if additionalNP.Spec.Platform.AWS != nil {
-					additionalNP.Spec.Platform.AWS.InstanceType = "m5.xlarge"
 				}
 			}
 		}
@@ -217,8 +207,8 @@ func testAutoscalingBalancing(ctx context.Context, mgtClient crclient.Client, ho
 				BalancingIgnoredLabels: []string{
 					"custom.ignore.label",
 				},
-				MaxNodesTotal:                 ptr.To[int32](6),
-				MaxFreeDifferenceRatioPercent: ptr.To[int32](70),
+				MaxNodesTotal:                 ptr.To[int32](4),
+				MaxFreeDifferenceRatioPercent: ptr.To[int32](50),
 			}
 			return mgtClient.Update(ctx, hostedCluster)
 		})
@@ -285,8 +275,8 @@ func testAutoscalingBalancing(ctx context.Context, mgtClient crclient.Client, ho
 		// be used, not enough to have more than 1 pod per
 		// node.
 		workloadMemRequest := resource.MustParse(fmt.Sprintf("%v", 0.5*float32(bytes)))
-		expectNodes := int32(6) // Target 6 nodes total for balancing test
-		workload := newWorkLoad(6, workloadMemRequest, "", globalOpts.LatestReleaseImage)
+		expectNodes := numNodes + 2 // default nodepool(min + 1) + additional nodepool(min + 1)
+		workload := newWorkLoad(expectNodes, workloadMemRequest, "", globalOpts.LatestReleaseImage)
 		err = guestClient.Create(ctx, workload)
 		g.Expect(err).NotTo(HaveOccurred())
 		t.Logf("Created workload. Node: %s, memcapacity: %s, workload memory request: %s", nodes[0].Name, memCapacity.String(), workloadMemRequest.String())
@@ -297,7 +287,7 @@ func testAutoscalingBalancing(ctx context.Context, mgtClient crclient.Client, ho
 		_ = e2eutil.WaitForNReadyNodes(t, ctx, guestClient, expectNodes, hostedCluster.Spec.Platform.Type)
 		t.Logf("Successfully reached %d nodes", expectNodes)
 		// Check load balancing between nodepools
-		e2eutil.EventuallyObjects(t, ctx, fmt.Sprintf("both nodepools (%s and %s) to have reasonable distribution totaling %d nodes", defaultNodePool.Name, additionalNodePool.Name, expectNodes), func(ctx context.Context) ([]*hyperv1.NodePool, error) {
+		e2eutil.EventuallyObjects(t, ctx, fmt.Sprintf("both nodepools (%s and %s) to have 2 replicas each", defaultNodePool.Name, additionalNodePool.Name), func(ctx context.Context) ([]*hyperv1.NodePool, error) {
 			nodePools := []*hyperv1.NodePool{defaultNodePool, additionalNodePool}
 			for _, np := range nodePools {
 				if err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(np), np); err != nil {
@@ -309,17 +299,9 @@ func testAutoscalingBalancing(ctx context.Context, mgtClient crclient.Client, ho
 			if len(nps) != 2 {
 				return false, fmt.Sprintf("expected 2 nodepools, got %d", len(nps)), nil
 			}
-			// Relaxing the check to allow reasonable distribution between nodepools, it's not deterministic which nodepool will get the nodes.
-			// This supports 2+4, 3+3, 4+2 configurations (each nodepool must have at least 2 nodes).
-			// With this we make sure no nodepool has ≤1 nodes and resolve flaky tests.
-			totalReplicas := nps[0].Status.Replicas + nps[1].Status.Replicas
-			if totalReplicas != 6 {
-				return false, fmt.Sprintf("total replicas is %d, want 6", totalReplicas), nil
+			if nps[0].Status.Replicas != 2 || nps[1].Status.Replicas != 2 {
+				return false, fmt.Sprintf("nodepools replicas are %d and %d, want both 2", nps[0].Status.Replicas, nps[1].Status.Replicas), nil
 			}
-			if nps[0].Status.Replicas <= 1 || nps[1].Status.Replicas <= 1 {
-				return false, fmt.Sprintf("unbalanced: nodepool has ≤1 nodes (%d, %d)", nps[0].Status.Replicas, nps[1].Status.Replicas), nil
-			}
-
 			return true, fmt.Sprintf("nodepools balanced - %s: %d, %s: %d", nps[0].Name, nps[0].Status.Replicas, nps[1].Name, nps[1].Status.Replicas), nil
 		}}, nil, e2eutil.WithInterval(30*time.Second), e2eutil.WithTimeout(10*time.Minute))
 	}

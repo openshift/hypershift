@@ -1,6 +1,7 @@
 package syncglobalpullsecret
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -8,7 +9,12 @@ import (
 
 	. "github.com/onsi/gomega"
 
-	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
 	"go.uber.org/mock/gomock"
 )
 
@@ -86,68 +92,6 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectedFinalContent: `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
 			expectError:          true,
 		},
-		{
-			name:               "preserve trailing newline when original file has one",
-			description:        "file has trailing newline, new content doesn't, should preserve newline",
-			initialContent:     "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
-			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
-			rollbackShouldFail: false,
-			expectedErrorContains: []string{
-				"failed to restart kubelet after 3 attempts",
-				"rolled back changes",
-			},
-			expectedFinalContent: "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
-			expectError:          true,
-		},
-		{
-			name:               "preserve single newline when both have newlines",
-			description:        "both original file and new content have trailing newlines, should preserve single newline",
-			initialContent:     "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
-			secretContent:      "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
-			rollbackShouldFail: false,
-			expectedErrorContains: []string{
-				"failed to restart kubelet after 3 attempts",
-				"rolled back changes",
-			},
-			expectedFinalContent: "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
-			expectError:          true,
-		},
-		{
-			name:               "no newline when original file has none",
-			description:        "original file has no newline, new content has newline, should preserve new content format",
-			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
-			secretContent:      "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
-			rollbackShouldFail: false,
-			expectedErrorContains: []string{
-				"failed to restart kubelet after 3 attempts",
-				"rolled back changes",
-			},
-			expectedFinalContent: `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
-			expectError:          true,
-		},
-		{
-			name:               "no newlines preserved",
-			description:        "neither original file nor new content have newlines, should preserve format",
-			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
-			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
-			rollbackShouldFail: false,
-			expectedErrorContains: []string{
-				"failed to restart kubelet after 3 attempts",
-				"rolled back changes",
-			},
-			expectedFinalContent: `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
-			expectError:          true,
-		},
-		{
-			name:                  "same content with newline - no change needed",
-			description:           "file content is identical including newline, no restart should be attempted",
-			initialContent:        "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
-			secretContent:         `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
-			rollbackShouldFail:    false,
-			expectedErrorContains: []string{},
-			expectedFinalContent:  "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
-			expectError:           false,
-		},
 	}
 
 	for _, tt := range tests {
@@ -162,6 +106,20 @@ func TestCheckAndFixFile(t *testing.T) {
 			// Create test file path
 			testFilePath := filepath.Join(tempDir, "config.json")
 
+			// Create test secret
+			testSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-pull-secret",
+					Namespace: "kube-system",
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: []byte(tt.secretContent),
+				},
+			}
+
+			// Create fake client
+			fakeClient := fake.NewClientBuilder().WithObjects(testSecret).Build()
+
 			// Write initial content if provided
 			if tt.initialContent != "" {
 				err = os.WriteFile(testFilePath, []byte(tt.initialContent), 0600)
@@ -175,10 +133,13 @@ func TestCheckAndFixFile(t *testing.T) {
 				g.Expect(string(content)).To(Equal(tt.initialContent))
 			}
 
-			// Create syncer for testing
-			syncer := &GlobalPullSecretSyncer{
+			// Create reconciler for testing
+			reconciler := &GlobalPullSecretReconciler{
+				cachedClient:          fakeClient,
+				uncachedClient:        fakeClient,
 				kubeletConfigJsonPath: testFilePath,
-				log:                   logr.Discard(),
+				globalPSSecretName:    "test-pull-secret",
+				globalPSSecretNS:      "kube-system",
 			}
 
 			// Save original write function and restore it after test
@@ -200,7 +161,7 @@ func TestCheckAndFixFile(t *testing.T) {
 			}
 
 			// Run checkAndFixFile
-			err = syncer.checkAndFixFile([]byte(tt.secretContent))
+			err = reconciler.checkAndFixFile(context.Background(), testSecret)
 
 			// Check error expectations
 			if tt.expectError {
@@ -217,6 +178,77 @@ func TestCheckAndFixFile(t *testing.T) {
 				content, err := os.ReadFile(testFilePath)
 				g.Expect(err).To(BeNil())
 				g.Expect(string(content)).To(Equal(tt.expectedFinalContent))
+			}
+		})
+	}
+}
+
+func TestIsTargetSecret(t *testing.T) {
+	tests := []struct {
+		name     string
+		obj      client.Object
+		expected bool
+	}{
+		{
+			name: "correct secret",
+			obj: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      defaultGlobalPSSecretName,
+					Namespace: defaultGlobalPullSecretNamespace,
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "wrong namespace",
+			obj: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      defaultGlobalPSSecretName,
+					Namespace: "wrong-namespace",
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "wrong name",
+			obj: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "wrong-name",
+					Namespace: defaultGlobalPullSecretNamespace,
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "wrong name and namespace",
+			obj: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "wrong-name",
+					Namespace: "wrong-namespace",
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "different resource type",
+			obj: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      defaultGlobalPSSecretName,
+					Namespace: defaultGlobalPullSecretNamespace,
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			o := &syncGlobalPullSecretOptions{
+				globalPSSecretName: defaultGlobalPSSecretName,
+			}
+			result := o.isTargetSecret(tt.obj)
+			if result != tt.expected {
+				t.Errorf("isTargetSecret() = %v, want %v", result, tt.expected)
 			}
 		})
 	}
@@ -327,7 +359,7 @@ func TestRestartKubelet(t *testing.T) {
 			mock := NewMockdbusConn(ctrl)
 			tt.setupMock(mock)
 
-			err := restartKubelet(mock)
+			err := restartKubelet(context.Background(), mock)
 			if err != nil {
 				if tt.expectedError == "" {
 					t.Errorf("unexpected error: %v", err)
@@ -336,150 +368,6 @@ func TestRestartKubelet(t *testing.T) {
 				}
 			} else if tt.expectedError != "" {
 				t.Errorf("expected error '%s', got nil", tt.expectedError)
-			}
-		})
-	}
-}
-
-func TestValidateDockerConfigJSON(t *testing.T) {
-	tests := []struct {
-		name        string
-		input       []byte
-		expectError bool
-		description string
-	}{
-		{
-			name:        "valid docker config with single auth",
-			input:       []byte(`{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`),
-			expectError: false,
-			description: "valid JSON with auths key containing single registry",
-		},
-		{
-			name:        "valid docker config with multiple auths",
-			input:       []byte(`{"auths":{"registry1.com":{"auth":"dGVzdDp0ZXN0"},"registry2.com":{"auth":"YW5vdGhlcjphdXRo"}}}`),
-			expectError: false,
-			description: "valid JSON with auths key containing multiple registries",
-		},
-		{
-			name:        "valid docker config with empty auths",
-			input:       []byte(`{"auths":{}}`),
-			expectError: false,
-			description: "valid JSON with empty auths object",
-		},
-		{
-			name:        "valid docker config with additional fields",
-			input:       []byte(`{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}},"credsStore":"desktop","credHelpers":{"registry.com":"registry-helper"}}`),
-			expectError: false,
-			description: "valid JSON with auths key and additional docker config fields",
-		},
-		{
-			name:        "invalid JSON - malformed",
-			input:       []byte(`{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}`),
-			expectError: true,
-			description: "malformed JSON missing closing brace",
-		},
-		{
-			name:        "invalid JSON - trailing comma",
-			input:       []byte(`{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}},}`),
-			expectError: true,
-			description: "malformed JSON with trailing comma",
-		},
-		{
-			name:        "invalid JSON - unquoted key",
-			input:       []byte(`{auths:{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`),
-			expectError: true,
-			description: "malformed JSON with unquoted key",
-		},
-		{
-			name:        "missing auths key",
-			input:       []byte(`{"registries":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`),
-			expectError: true,
-			description: "valid JSON but missing required auths key",
-		},
-		{
-			name:        "empty input",
-			input:       []byte(``),
-			expectError: true,
-			description: "empty byte slice should fail JSON parsing",
-		},
-		{
-			name:        "null input",
-			input:       []byte(`null`),
-			expectError: true,
-			description: "null JSON value should fail validation",
-		},
-		{
-			name:        "string input",
-			input:       []byte(`"some string"`),
-			expectError: true,
-			description: "string JSON value should fail validation",
-		},
-		{
-			name:        "array input",
-			input:       []byte(`[{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}]`),
-			expectError: true,
-			description: "array JSON value should fail validation",
-		},
-		{
-			name:        "number input",
-			input:       []byte(`123`),
-			expectError: true,
-			description: "number JSON value should fail validation",
-		},
-		{
-			name:        "boolean input",
-			input:       []byte(`true`),
-			expectError: true,
-			description: "boolean JSON value should fail validation",
-		},
-		{
-			name:        "auths key with null value",
-			input:       []byte(`{"auths":null}`),
-			expectError: false,
-			description: "auths key with null value should be valid (auths key exists)",
-		},
-		{
-			name:        "auths key with string value",
-			input:       []byte(`{"auths":"not an object"}`),
-			expectError: false,
-			description: "auths key with non-object value should be valid (auths key exists)",
-		},
-		{
-			name:        "auths key with array value",
-			input:       []byte(`{"auths":[]}`),
-			expectError: false,
-			description: "auths key with array value should be valid (auths key exists)",
-		},
-		{
-			name:        "whitespace only",
-			input:       []byte(`   `),
-			expectError: true,
-			description: "whitespace only input should fail JSON parsing",
-		},
-		{
-			name:        "empty object",
-			input:       []byte(`{}`),
-			expectError: true,
-			description: "empty object should fail validation (missing auths key)",
-		},
-		{
-			name:        "nested auths key",
-			input:       []byte(`{"config":{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}}`),
-			expectError: true,
-			description: "auths key nested inside another object should fail validation",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			err := validateDockerConfigJSON(tt.input)
-
-			if tt.expectError {
-				g.Expect(err).To(HaveOccurred(), "Expected error for test case: %s", tt.description)
-			} else {
-				g.Expect(err).To(BeNil(), "Expected no error for test case: %s, but got: %v", tt.description, err)
 			}
 		})
 	}
