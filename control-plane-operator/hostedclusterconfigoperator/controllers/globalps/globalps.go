@@ -25,9 +25,10 @@ import (
 )
 
 const (
-	ControllerName     = "globalps"
-	configSeedLabelKey = "hypershift.openshift.io/globalps-config-hash"
-	globalPSLabelKey   = "hypershift.openshift.io/nodepool-globalps-enabled"
+	ControllerName                     = "globalps"
+	configSeedLabelKey                 = "hypershift.openshift.io/globalps-config-hash"
+	globalPSLabelKey                   = "hypershift.openshift.io/nodepool-globalps-enabled"
+	openshiftUserCriticalPriorityClass = "openshift-user-critical"
 )
 
 // GlobalPullSecretPodConfig encapsulates the configuration for GlobalPullSecret DaemonSet pods
@@ -286,6 +287,7 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 					AutomountServiceAccountToken: ptr.To(false),
 					SecurityContext:              &corev1.PodSecurityContext{},
 					DNSPolicy:                    corev1.DNSDefault,
+					PriorityClassName:            openshiftUserCriticalPriorityClass,
 					Tolerations:                  []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
 					// Use nodeSelector to only include nodes that are explicitly enabled for GlobalPullSecret
 					NodeSelector: map[string]string{
