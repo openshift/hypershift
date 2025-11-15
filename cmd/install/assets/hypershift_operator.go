@@ -405,6 +405,7 @@ type HyperShiftOperatorDeployment struct {
 	RegistryOverrides                       string
 	PlatformsInstalled                      string
 	ImagePullPolicy                         string
+	EnableAuditLogPersistence               bool
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -471,6 +472,14 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  "HYPERSHIFT_FEATURESET",
 			Value: string(configv1.TechPreviewNoUpgrade),
+		})
+	}
+
+	// Add audit log persistence env var if enabled
+	if o.EnableAuditLogPersistence {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  "ENABLE_AUDIT_LOG_PERSISTENCE",
+			Value: "true",
 		})
 	}
 
@@ -1018,6 +1027,7 @@ func (o HyperShiftOperatorServiceAccount) Build() *corev1.ServiceAccount {
 type HyperShiftOperatorClusterRole struct {
 	EnableCVOManagementClusterMetricsAccess bool
 	ManagedService                          string
+	EnableAuditLogPersistence               bool
 }
 
 func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
@@ -1044,6 +1054,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				APIGroups: []string{"scheduling.hypershift.openshift.io"},
 				Resources: []string{rbacv1.ResourceAll},
 				Verbs:     []string{rbacv1.VerbAll},
+			},
+			{
+				APIGroups: []string{"auditlogpersistence.hypershift.openshift.io"},
+				Resources: []string{rbacv1.ResourceAll},
+				Verbs:     []string{"get", "list", "watch"},
 			},
 			{
 				APIGroups: []string{"config.openshift.io"},
@@ -1311,6 +1326,38 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				},
 			})
 	}
+
+	// Add audit log persistence RBAC if enabled
+	if o.EnableAuditLogPersistence {
+		role.Rules = append(role.Rules,
+			rbacv1.PolicyRule{
+				APIGroups: []string{""},
+				Resources: []string{"persistentvolumeclaims"},
+				Verbs:     []string{"create", "update", "get", "list", "watch"},
+			},
+			rbacv1.PolicyRule{
+				APIGroups: []string{""},
+				Resources: []string{"pods"},
+				Verbs:     []string{"get", "list", "watch", "update"},
+			},
+			rbacv1.PolicyRule{
+				APIGroups: []string{"apps"},
+				Resources: []string{"replicasets"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			rbacv1.PolicyRule{
+				APIGroups: []string{""},
+				Resources: []string{"configmaps"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			rbacv1.PolicyRule{
+				APIGroups: []string{"snapshot.storage.k8s.io"},
+				Resources: []string{"volumesnapshots"},
+				Verbs:     []string{"get", "list", "watch", "create", "delete"},
+			},
+		)
+	}
+
 	return role
 }
 
@@ -1813,8 +1860,13 @@ func (o HyperShiftReaderClusterRoleBinding) Build() *rbacv1.ClusterRoleBinding {
 }
 
 type HyperShiftMutatingWebhookConfiguration struct {
-	Namespace *corev1.Namespace
+	Namespace                 *corev1.Namespace
+	EnableAuditLogPersistence bool
 }
+
+const (
+	controlPlaneNamespaceLabel = "hypershift.openshift.io/hosted-control-plane"
+)
 
 func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1.MutatingWebhookConfiguration {
 	scope := admissionregistrationv1.NamespacedScope
@@ -1889,6 +1941,78 @@ func (o HyperShiftMutatingWebhookConfiguration) Build() *admissionregistrationv1
 			},
 		},
 	}
+
+	// Add audit log persistence webhooks if enabled
+	if o.EnableAuditLogPersistence {
+		podPath := "/mutate-kas-audit-logs"
+		configMapPath := "/mutate-kas-audit-log-config"
+		namespaceSelector := metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				controlPlaneNamespaceLabel: "true",
+			},
+		}
+
+		mutatingWebhookConfiguration.Webhooks = append(mutatingWebhookConfiguration.Webhooks,
+			admissionregistrationv1.MutatingWebhook{
+				Name: "pods.auditlogpersistence.hypershift.openshift.io",
+				Rules: []admissionregistrationv1.RuleWithOperations{
+					{
+						Operations: []admissionregistrationv1.OperationType{
+							admissionregistrationv1.Create,
+						},
+						Rule: admissionregistrationv1.Rule{
+							APIGroups:   []string{""},
+							APIVersions: []string{"v1"},
+							Resources:   []string{"pods"},
+							Scope:       &scope,
+						},
+					},
+				},
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					Service: &admissionregistrationv1.ServiceReference{
+						Namespace: "hypershift",
+						Name:      "operator",
+						Path:      &podPath,
+					},
+				},
+				SideEffects:             &sideEffects,
+				AdmissionReviewVersions: []string{"v1"},
+				TimeoutSeconds:          &timeout,
+				NamespaceSelector:       &namespaceSelector,
+				FailurePolicy:           ptr.To(admissionregistrationv1.Ignore),
+			},
+			admissionregistrationv1.MutatingWebhook{
+				Name: "configmaps.auditlogpersistence.hypershift.openshift.io",
+				Rules: []admissionregistrationv1.RuleWithOperations{
+					{
+						Operations: []admissionregistrationv1.OperationType{
+							admissionregistrationv1.Create,
+							admissionregistrationv1.Update,
+						},
+						Rule: admissionregistrationv1.Rule{
+							APIGroups:   []string{""},
+							APIVersions: []string{"v1"},
+							Resources:   []string{"configmaps"},
+							Scope:       &scope,
+						},
+					},
+				},
+				ClientConfig: admissionregistrationv1.WebhookClientConfig{
+					Service: &admissionregistrationv1.ServiceReference{
+						Namespace: "hypershift",
+						Name:      "operator",
+						Path:      &configMapPath,
+					},
+				},
+				SideEffects:             &sideEffects,
+				AdmissionReviewVersions: []string{"v1"},
+				TimeoutSeconds:          &timeout,
+				NamespaceSelector:       &namespaceSelector,
+				FailurePolicy:           ptr.To(admissionregistrationv1.Ignore),
+			},
+		)
+	}
+
 	return mutatingWebhookConfiguration
 }
 

@@ -130,6 +130,7 @@ type Options struct {
 	RenderNamespace                           bool
 	PlatformsToInstall                        []string
 	ImagePullPolicy                           string
+	EnableAuditLogPersistence                 bool
 }
 
 func (o *Options) Validate() error {
@@ -279,6 +280,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.RegistryOverrides, "registry-overrides", "", "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 	cmd.PersistentFlags().StringSliceVar(&opts.PlatformsToInstall, "limit-crd-install", opts.PlatformsToInstall, "Used to limit the CRDs that are installed to a per platform basis (example: --limit-crd-install=AWS,Azure). If this flag is not specified, all CRDs for all platforms will be installed. Valid, case-insensitive values are: AWS, Azure, IBMCloud, KubeVirt, Agent, OpenStack.")
 	cmd.PersistentFlags().StringToStringVar(&opts.AdditionalOperatorEnvVars, "additional-operator-env-vars", opts.AdditionalOperatorEnvVars, "Set of additional environment variables to be set on the HyperShift Operator deployment.")
+	cmd.PersistentFlags().BoolVar(&opts.EnableAuditLogPersistence, "enable-audit-log-persistence", opts.EnableAuditLogPersistence, "If true, enables persistent audit logs with automatic snapshots for kube-apiserver pods")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
@@ -556,9 +558,10 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 	operatorServiceAccount, rbacObjs := setupRBAC(opts, operatorNamespace)
 	objects = append(objects, rbacObjs...)
 
-	if opts.EnableDefaultingWebhook {
+	if opts.EnableDefaultingWebhook || opts.EnableAuditLogPersistence {
 		mutatingWebhookConfiguration := assets.HyperShiftMutatingWebhookConfiguration{
-			Namespace: operatorNamespace,
+			Namespace:                 operatorNamespace,
+			EnableAuditLogPersistence: opts.EnableAuditLogPersistence,
 		}.Build()
 		objects = append(objects, mutatingWebhookConfiguration)
 	}
@@ -677,6 +680,10 @@ func setupCRDs(opts Options, operatorNamespace *corev1.Namespace, operatorServic
 				if strings.Contains(path, "cluster-api/") {
 					return true
 				}
+				// Conditionally include auditlogpersistence CRD only if feature is enabled
+				if strings.Contains(path, "auditlogpersistence") {
+					return opts.EnableAuditLogPersistence
+				}
 				if len(opts.PlatformsToInstall) > 0 {
 					for _, platform := range opts.PlatformsToInstall {
 						if strings.Contains(path, strings.ToLower(platform)) {
@@ -791,7 +798,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		Replicas:                                opts.HyperShiftOperatorReplicas,
 		EnableOCPClusterMonitoring:              opts.PlatformMonitoring == metrics.PlatformMonitoringAll,
 		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,
-		EnableWebhook:                           opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || opts.EnableValidatingWebhook,
+		EnableWebhook:                           opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || opts.EnableValidatingWebhook || opts.EnableAuditLogPersistence,
 		EnableValidatingWebhook:                 opts.EnableValidatingWebhook,
 		PrivatePlatform:                         opts.PrivatePlatform,
 		AWSPrivateRegion:                        opts.AWSPrivateRegion,
@@ -820,6 +827,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		RegistryOverrides:                       opts.RegistryOverrides,
 		PlatformsInstalled:                      strings.Join(opts.PlatformsToInstall, ","),
 		ImagePullPolicy:                         opts.ImagePullPolicy,
+		EnableAuditLogPersistence:               opts.EnableAuditLogPersistence,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
@@ -969,6 +977,7 @@ func setupRBAC(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Servi
 	operatorClusterRole := assets.HyperShiftOperatorClusterRole{
 		EnableCVOManagementClusterMetricsAccess: opts.EnableCVOManagementClusterMetricsAccess,
 		ManagedService:                          opts.ManagedService,
+		EnableAuditLogPersistence:               opts.EnableAuditLogPersistence,
 	}.Build()
 	objects = append(objects, operatorClusterRole)
 
