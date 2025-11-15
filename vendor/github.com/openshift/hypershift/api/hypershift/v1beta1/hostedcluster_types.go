@@ -289,6 +289,32 @@ const (
 	// control plane load balancers in the AWS platform.
 	AWSLoadBalancerTargetNodesAnnotation = "hypershift.openshift.io/aws-load-balancer-target-node-labels"
 
+	// AWSLoadBalancerHealthProbeModeAnnotation allows overriding the health probe mode for AWS load balancers.
+	// Valid values are "Shared" or "ServiceNodePort".
+	// When set to "Shared", all services on the cluster that use a LoadBalancer share a single health probe (default).
+	// When set to "ServiceNodePort", each service gets its own dedicated health probe.
+	AWSLoadBalancerHealthProbeModeAnnotation = "hypershift.openshift.io/aws-load-balancer-health-probe-mode"
+
+	// SharedLoadBalancerHealthProbePathAnnotation allows overriding the health probe path for shared load balancers.
+	// This annotation applies to both AWS and Azure platforms.
+	// For AWS, this annotation only takes effect when aws-load-balancer-health-probe-mode is set to "Shared".
+	// For Azure, this annotation only takes effect when azure-load-balancer-health-probe-mode is set to "shared".
+	// The default value is "/healthz".
+	SharedLoadBalancerHealthProbePathAnnotation = "hypershift.openshift.io/shared-load-balancer-health-probe-path"
+
+	// SharedLoadBalancerHealthProbePortAnnotation allows overriding the health probe port for shared load balancers.
+	// This annotation applies to both AWS and Azure platforms.
+	// For AWS, this annotation only takes effect when aws-load-balancer-health-probe-mode is set to "Shared".
+	// For Azure, this annotation only takes effect when azure-load-balancer-health-probe-mode is set to "shared".
+	// The value must be a valid port number (1-65535). The default value is 10256.
+	SharedLoadBalancerHealthProbePortAnnotation = "hypershift.openshift.io/shared-load-balancer-health-probe-port"
+
+	// AzureLoadBalancerHealthProbeModeAnnotation allows overriding the health probe mode for Azure load balancers.
+	// Valid values are "shared" or "servicenodeport".
+	// When set to "shared", all services on the cluster that use a LoadBalancer share a single health probe (default).
+	// When set to "servicenodeport", each service gets its own dedicated health probe.
+	AzureLoadBalancerHealthProbeModeAnnotation = "hypershift.openshift.io/azure-load-balancer-health-probe-mode"
+
 	// DisableClusterAutoscalerAnnotation allows disabling the cluster autoscaler for a hosted cluster.
 	// This annotation is only set by the hypershift-operator on HosterControlPlanes.
 	// It is not set by the end-user.
