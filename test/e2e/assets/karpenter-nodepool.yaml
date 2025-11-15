@@ -4,6 +4,15 @@ metadata:
   name: on-demand
 spec:
   template:
+    metadata:
+      labels:
+        # This label enables the GlobalPullSecret DaemonSet to run on Karpenter-managed nodes.
+        # The GlobalPullSecret feature allows users to add custom registry credentials by creating
+        # an additional-pull-secret in kube-system, which is then merged with the cluster's pull
+        # secret and synced to kubelet on each node.
+        # TODO(jkyros): When OpenshiftNodePool wrapper is implemented, this label should be auto-injected
+        # similar to how OpenshiftEC2NodeClass wraps EC2NodeClass.
+        hypershift.openshift.io/nodepool-globalps-enabled: "true"
     spec:
       requirements:
       - key: node.kubernetes.io/instance-type
