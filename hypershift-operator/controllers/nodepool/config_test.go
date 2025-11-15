@@ -85,7 +85,6 @@ spec:
 	machineConfigDefaulted := `apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
-  creationTimestamp: null
   labels:
     machineconfiguration.openshift.io/role: worker
   name: config-1
@@ -120,8 +119,8 @@ spec:
 	}
 	// Validating against this ensure that if marshaling of the config APIs ever produces a different output
 	// because new fields are added, this test will fail.
-	expectedGlobalConfigString := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"trustedCA":{"name":""}},"status":{}}
-{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
+	expectedGlobalConfigString := `{"metadata":{"name":"cluster"},"spec":{"trustedCA":{"name":""}},"status":{}}
+{"metadata":{"name":"cluster"},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
 `
 
 	hostedCluster := &hyperv1.HostedCluster{
@@ -152,7 +151,7 @@ spec:
 	}{
 		{
 			name:                       "When all input is given it should not return an error",
-			expectedHash:               "e1d8d58e",
+			expectedHash:               "453c6c94",
 			expectedHashWithoutVersion: "0db5756d",
 			nodePool:                   &hyperv1.NodePool{},
 			releaseImage: &releaseinfo.ReleaseImage{
@@ -184,8 +183,8 @@ spec:
 		},
 		{
 			name:                       "When nodepool has configs it should populate mcoRawConfig ",
-			expectedHash:               "801aff6a",
-			expectedHashWithoutVersion: "fef02451",
+			expectedHash:               "100780e6",
+			expectedHashWithoutVersion: "b9488bc3",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test",
@@ -243,8 +242,8 @@ spec:
 		},
 		{
 			name:                       "When additionalTrustBundle is specified it should be included in rolloutConfig",
-			expectedHash:               "dc74976e",
-			expectedHashWithoutVersion: "71375893",
+			expectedHash:               "3272ccc2",
+			expectedHashWithoutVersion: "7575c40d",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: "test",
@@ -646,7 +645,6 @@ spec:
 	coreMachineConfig1Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
-  creationTimestamp: null
   labels:
     machineconfiguration.openshift.io/role: worker
   name: config-1
@@ -697,7 +695,6 @@ spec:
 	machineConfig1Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
-  creationTimestamp: null
   labels:
     machineconfiguration.openshift.io/role: worker
   name: config-1
@@ -767,7 +764,6 @@ spec:
 	machineConfig23Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
-  creationTimestamp: null
   labels:
     machineconfiguration.openshift.io/role: worker
   name: config-2
@@ -799,7 +795,6 @@ spec:
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
-  creationTimestamp: null
   labels:
     machineconfiguration.openshift.io/role: worker
   name: config-3
@@ -840,7 +835,6 @@ spec:
 	kubeletConfig1Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
 kind: KubeletConfig
 metadata:
-  creationTimestamp: null
   name: set-max-pods
 spec:
   kubeletConfig:
@@ -863,7 +857,6 @@ spec:
 	kubeletConfig2Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
 kind: KubeletConfig
 metadata:
-  creationTimestamp: null
   name: set-max-pods-2
 spec:
   kubeletConfig:
@@ -947,7 +940,6 @@ spec:
 	containerRuntimeConfig1Defaulted := `apiVersion: machineconfiguration.openshift.io/v1
 kind: ContainerRuntimeConfig
 metadata:
-  creationTimestamp: null
   name: set-pids-limit
 spec:
   containerRuntimeConfig:
@@ -1683,7 +1675,6 @@ metadata:
 apiVersion: machineconfiguration.openshift.io/v1
 kind: MachineConfig
 metadata:
-  creationTimestamp: null
   labels:
     machineconfiguration.openshift.io/role: worker
   name: test-config
@@ -1741,11 +1732,11 @@ spec:
 }
 
 func TestGlobalConfigString(t *testing.T) {
-	expectedGlobalConfigStringWhenEmpty := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"trustedCA":{"name":""}},"status":{}}
-{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
+	expectedGlobalConfigStringWhenEmpty := `{"metadata":{"name":"cluster"},"spec":{"trustedCA":{"name":""}},"status":{}}
+{"metadata":{"name":"cluster"},"spec":{"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
 `
-	expectedGlobalConfigStringWithValues := `{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"httpProxy":"proxy","noProxy":"noProxy","trustedCA":{"name":""}},"status":{"httpProxy":"proxy","noProxy":".cluster.local,.local,.svc,127.0.0.1,localhost,noProxy"}}
-{"metadata":{"name":"cluster","creationTimestamp":null},"spec":{"externalRegistryHostnames":["external registry"],"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
+	expectedGlobalConfigStringWithValues := `{"metadata":{"name":"cluster"},"spec":{"httpProxy":"proxy","noProxy":"noProxy","trustedCA":{"name":""}},"status":{"httpProxy":"proxy","noProxy":".cluster.local,.local,.svc,127.0.0.1,localhost,noProxy"}}
+{"metadata":{"name":"cluster"},"spec":{"externalRegistryHostnames":["external registry"],"additionalTrustedCA":{"name":""},"registrySources":{}},"status":{}}
 `
 
 	testCases := []struct {

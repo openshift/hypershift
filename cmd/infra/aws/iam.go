@@ -429,7 +429,10 @@ var (
 				"Sid": "AllowInstanceProfileReadActions",
 				"Effect": "Allow",
 				"Resource": "arn:*:iam::*:instance-profile/*",
-				"Action": "iam:GetInstanceProfile"
+				"Action": [
+					"iam:GetInstanceProfile",
+					"iam:ListInstanceProfiles"
+				]
 			  }
 			]
 		  }`,

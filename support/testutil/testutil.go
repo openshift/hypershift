@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -176,4 +177,51 @@ func MatchExpected(expected any, opts ...cmp.Option) types.GomegaMatcher {
 	return WithTransform(func(actual any) string {
 		return cmp.Diff(actual, expected, opts...)
 	}, BeEmpty())
+}
+
+// IgnoreUnset is a cmp.Option that ignores fields that are unset (nil, empty) in the
+// expected value. This is useful for comparing partial templates against full objects,
+// where you only want to verify specific fields that you explicitly set in the template.
+//
+// This is a copy of the k8s.io/apimachinery/pkg/util/diff.IgnoreUnset() function that
+// was removed in Kubernetes v0.34. Kubernetes upstream now copies this function locally
+// in tests that need it (e.g., pkg/controller/certificates/authority/authority_test.go).
+//
+// Example usage:
+//
+//	template := x509.Certificate{Subject: pkix.Name{CommonName: "test"}}
+//	actual := generateCert() // has CommonName + many auto-generated fields
+//	cmp.Diff(actual, template, testutil.IgnoreUnset()) // only compares CommonName
+func IgnoreUnset() cmp.Option {
+	return cmp.Options{
+		// ignore unset fields in expected value (v2)
+		cmp.FilterPath(func(path cmp.Path) bool {
+			_, v2 := path.Last().Values()
+			switch v2.Kind() {
+			case reflect.Slice, reflect.Map:
+				if v2.IsNil() || v2.Len() == 0 {
+					return true
+				}
+			case reflect.String:
+				if v2.Len() == 0 {
+					return true
+				}
+			case reflect.Interface, reflect.Pointer:
+				if v2.IsNil() {
+					return true
+				}
+			}
+			return false
+		}, cmp.Ignore()),
+		// ignore map entries that aren't set in expected value (v2)
+		cmp.FilterPath(func(path cmp.Path) bool {
+			switch i := path.Last().(type) {
+			case cmp.MapIndex:
+				if _, v2 := i.Values(); !v2.IsValid() {
+					return true
+				}
+			}
+			return false
+		}, cmp.Ignore()),
+	}
 }

@@ -1506,7 +1506,7 @@ func GetMetricsFromPod(ctx context.Context, c crclient.Client, componentName, co
 		return nil, fmt.Errorf("no metrics found")
 	}
 
-	var parser expfmt.TextParser
+	parser := expfmt.NewTextParser(model.LegacyValidation)
 	return parser.TextToMetricFamilies(strings.NewReader(cmdOutput))
 }
 

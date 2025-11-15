@@ -14,7 +14,6 @@ data:
       hypershift.openshift.io/infra-id: ""
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: kubevirt-cloud-config
   namespace: hcp-namespace
   ownerReferences:

@@ -9,5 +9,4 @@ data:
     ClusterServiceLoadBalancerHealthProbeMode = Shared
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: aws-cloud-config

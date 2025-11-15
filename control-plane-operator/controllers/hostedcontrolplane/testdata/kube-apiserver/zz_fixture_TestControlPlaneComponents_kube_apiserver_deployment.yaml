@@ -1,7 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-apiserver
@@ -29,9 +28,8 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs,tmp-dir
-        component.hypershift.openshift.io/config-hash: 19dc307e1d8949e2360eec7552ebd36a741638a5741638a5741638a5741638a58a2366b599376ce0c825c12fe7e69167
+        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e1d8949e2360eec75741638a5741638a5741638a5741638a58b110e8899376ce0a2a4098ce7e69167
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
-      creationTimestamp: null
       labels:
         app: kube-apiserver
         hypershift.openshift.io/control-plane-component: kube-apiserver
@@ -376,7 +374,6 @@ spec:
             apiVersion: config.openshift.io/v1
             kind: FeatureGate
             metadata:
-              creationTimestamp: null
               name: cluster
             spec: {}
             status:
@@ -416,7 +413,6 @@ spec:
             apiVersion: config.openshift.io/v1
             kind: FeatureGate
             metadata:
-              creationTimestamp: null
               name: cluster
             spec: {}
             status:

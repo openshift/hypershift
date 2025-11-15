@@ -63,7 +63,6 @@ spec:
 	tuned1Defaulted := `apiVersion: tuned.openshift.io/v1
 kind: Tuned
 metadata:
-  creationTimestamp: null
   name: tuned-1
   namespace: openshift-cluster-node-tuning-operator
 spec:
@@ -111,7 +110,6 @@ spec:
 	tuned2Defaulted := `apiVersion: tuned.openshift.io/v1
 kind: Tuned
 metadata:
-  creationTimestamp: null
   name: tuned-2
   namespace: openshift-cluster-node-tuning-operator
 spec:
@@ -177,7 +175,6 @@ spec:
 	perfprofOneDefaulted := `apiVersion: performance.openshift.io/v2
 kind: PerformanceProfile
 metadata:
-  creationTimestamp: null
   name: perfprofOne
 spec:
   cpu:

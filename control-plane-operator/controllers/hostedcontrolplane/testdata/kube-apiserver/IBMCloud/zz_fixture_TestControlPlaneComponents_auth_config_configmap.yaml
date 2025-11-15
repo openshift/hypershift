@@ -3,7 +3,6 @@ data:
   auth.json: '{"kind":"AuthenticationConfiguration","apiVersion":"apiserver.config.k8s.io/v1alpha1","jwt":[]}'
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: auth-config
   namespace: hcp-namespace
   ownerReferences:

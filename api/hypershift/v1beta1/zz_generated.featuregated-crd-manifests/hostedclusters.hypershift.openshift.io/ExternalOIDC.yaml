@@ -555,9 +555,8 @@ spec:
                         description: |-
                           tlsSecurityProfile specifies settings for TLS connections for externally exposed servers.
 
-                          If unset, a default (which may change between releases) is chosen. Note that only Old,
-                          Intermediate and Custom profiles are currently supported, and the maximum available
-                          minTLSVersion is VersionTLS12.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                          The current default is the Intermediate profile.
                         properties:
                           custom:
                             description: |-
@@ -791,7 +790,7 @@ spec:
                           properties:
                             claimMappings:
                               description: |-
-                                claimMappings is an optional field that configures the rules to be used by
+                                claimMappings is a required field that configures the rules to be used by
                                 the Kubernetes API server for translating claims in a JWT token, issued
                                 by the identity provider, to a cluster identity.
                               properties:
@@ -827,7 +826,7 @@ spec:
                                   type: object
                                 username:
                                   description: |-
-                                    username is an optional field that configures how the username of a cluster identity
+                                    username is a required field that configures how the username of a cluster identity
                                     should be constructed from the claims in a JWT token issued by the identity provider.
                                   properties:
                                     claim:
@@ -835,6 +834,10 @@ spec:
                                         claim is a required field that configures the JWT token
                                         claim whose value is assigned to the cluster identity
                                         field associated with this mapping.
+
+                                        claim must not be an empty string ("") and must not exceed 256 characters.
+                                      maxLength: 256
+                                      minLength: 1
                                       type: string
                                     prefix:
                                       description: |-
@@ -893,6 +896,8 @@ spec:
                                     rule: 'has(self.prefixPolicy) && self.prefixPolicy
                                       == ''Prefix'' ? (has(self.prefix) && size(self.prefix.prefixString)
                                       > 0) : !has(self.prefix)'
+                              required:
+                              - username
                               type: object
                             claimValidationRules:
                               description: |-
@@ -996,9 +1001,23 @@ spec:
                                     The Kubernetes API server determines how authentication tokens should be handled
                                     by matching the 'iss' claim in the JWT to the issuerURL of configured identity providers.
 
-                                    issuerURL must use the 'https' scheme.
-                                  pattern: ^https:\/\/[^\s]
+                                    Must be at least 1 character and must not exceed 512 characters in length.
+                                    Must be a valid URL that uses the 'https' scheme and does not contain a query, fragment or user.
+                                  maxLength: 512
+                                  minLength: 1
                                   type: string
+                                  x-kubernetes-validations:
+                                  - message: must be a valid URL
+                                    rule: isURL(self)
+                                  - message: must use the 'https' scheme
+                                    rule: isURL(self) && url(self).getScheme() ==
+                                      'https'
+                                  - message: must not have a query
+                                    rule: isURL(self) && url(self).getQuery() == {}
+                                  - message: must not have a fragment
+                                    rule: self.find('#(.+)$') == ''
+                                  - message: must not have user info
+                                    rule: self.find('@') == ''
                               required:
                               - audiences
                               - issuerURL
@@ -1103,6 +1122,7 @@ spec:
                               - componentName
                               x-kubernetes-list-type: map
                           required:
+                          - claimMappings
                           - issuer
                           - name
                           type: object
@@ -6326,7 +6346,7 @@ spec:
                           description: |-
                             acceptedRisks records risks which were accepted to initiate the update.
                             For example, it may menition an Upgradeable=False or missing signature
-                            that was overriden via desiredUpdate.force, or an update that was
+                            that was overridden via desiredUpdate.force, or an update that was
                             initiated despite not being in the availableUpdates set of recommended
                             update targets.
                           type: string
