@@ -4901,6 +4901,20 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 </tr><tr><td><p>&#34;RolloutComplete&#34;</p></td>
 <td><p>ControlPlaneComponentRolloutComplete indicates whether the ControlPlaneComponent has completed its rollout.</p>
 </td>
+</tr><tr><td><p>&#34;ControlPlaneToDataPlaneConnectivity&#34;</p></td>
+<td><p>ControlPlaneToDataPlaneConnectivity indicates whether the control plane can successfully
+reach the data plane components.
+When True, control plane has healthy connectivity to data plane nodes.
+When False, there are network connectivity issues preventing control plane from reaching the data plane.
+A failure here may indicate network policy issues, firewall rules, or infrastructure problems.</p>
+</td>
+</tr><tr><td><p>&#34;DataPlaneToControlPlaneConnectivity&#34;</p></td>
+<td><p>DataPlaneToControlPlaneConnectivity indicates whether the data plane can successfully
+reach the control plane components.
+When True, data plane nodes have healthy connectivity to control plane services.
+When False, there are network connectivity issues preventing data plane from reaching the control plane.
+A failure here may indicate network policy issues, firewall rules, or infrastructure problems.</p>
+</td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
 A failure here often means a software bug or a non-stable cluster.</p>
