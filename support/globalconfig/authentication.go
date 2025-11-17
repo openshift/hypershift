@@ -19,6 +19,11 @@ func AuthenticationConfiguration() *configv1.Authentication {
 func ReconcileAuthenticationConfiguration(authentication *configv1.Authentication, config *hyperv1.ClusterConfiguration, issuerURL string) error {
 	if config != nil && config.Authentication != nil {
 		authentication.Spec = *config.Authentication
+	} else {
+		// When configuration or authentication is removed, explicitly clear the spec
+		// to ensure the Authentication resource is reset to default state.
+		// Only preserve the ServiceAccountIssuer which is set below.
+		authentication.Spec = configv1.AuthenticationSpec{}
 	}
 	authentication.Spec.ServiceAccountIssuer = issuerURL
 	return nil

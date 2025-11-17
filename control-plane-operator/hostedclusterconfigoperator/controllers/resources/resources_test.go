@@ -2571,7 +2571,7 @@ func TestCleanupOrphanedOIDCResources(t *testing.T) {
 			for _, name := range test.expectDeletedConfigMaps {
 				cm := &corev1.ConfigMap{}
 				err := hcClient.Get(ctx, client.ObjectKey{Name: name, Namespace: ConfigNamespace}, cm)
-				g.Expect(errors.IsNotFound(err)).To(BeTrue(), "ConfigMap %s should have been deleted", name)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "ConfigMap %s should have been deleted", name)
 			}
 
 			// Verify remaining ConfigMaps
@@ -2585,7 +2585,7 @@ func TestCleanupOrphanedOIDCResources(t *testing.T) {
 			for _, name := range test.expectDeletedSecrets {
 				secret := &corev1.Secret{}
 				err := hcClient.Get(ctx, client.ObjectKey{Name: name, Namespace: ConfigNamespace}, secret)
-				g.Expect(errors.IsNotFound(err)).To(BeTrue(), "Secret %s should have been deleted", name)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Secret %s should have been deleted", name)
 			}
 
 			// Verify remaining Secrets
@@ -2729,12 +2729,12 @@ func TestCleanupOrphanedOIDCResourcesWithAuthenticationStatus(t *testing.T) {
 				for _, name := range test.expectRemainingConfigMaps {
 					cm := &corev1.ConfigMap{}
 					err := hcClient.Get(ctx, client.ObjectKey{Name: name, Namespace: ConfigNamespace}, cm)
-					g.Expect(errors.IsNotFound(err)).To(BeTrue(), "ConfigMap %s should have been deleted", name)
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "ConfigMap %s should have been deleted", name)
 				}
 				for _, name := range test.expectRemainingSecrets {
 					secret := &corev1.Secret{}
 					err := hcClient.Get(ctx, client.ObjectKey{Name: name, Namespace: ConfigNamespace}, secret)
-					g.Expect(errors.IsNotFound(err)).To(BeTrue(), "Secret %s should have been deleted", name)
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "Secret %s should have been deleted", name)
 				}
 			} else {
 				// Resources should still exist
