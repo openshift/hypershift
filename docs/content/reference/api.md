@@ -1175,6 +1175,156 @@ NodePoolStatus
 </tr>
 </tbody>
 </table>
+##OCIPrivateEndpoint { #hypershift.openshift.io/v1beta1.OCIPrivateEndpoint }
+<p>
+<p>OCIPrivateEndpoint represents OCI Private Endpoint infrastructure for private connectivity
+between customer VCNs and hosted control planes.
+This resource is feature-gated behind the OCIPlatform feature gate.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>apiVersion</code></br>
+string</td>
+<td>
+<code>
+hypershift.openshift.io/v1beta1
+</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>kind</code></br>
+string
+</td>
+<td><code>OCIPrivateEndpoint</code></td>
+</tr>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metadata is the metadata for the OCIPrivateEndpoint.</p>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OCIPrivateEndpointSpec">
+OCIPrivateEndpointSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>spec is the specification for the OCIPrivateEndpoint.</p>
+<br/>
+<br/>
+<table>
+<tr>
+<td>
+<code>networkLoadBalancerID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>networkLoadBalancerID is the OCID of the Network Load Balancer in the management VCN
+Network Load Balancers are regional resources and require a non-empty region segment</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>reservedIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>reservedIP is the reserved private IPv4 address for the Network Load Balancer.
+The address must belong to the selected management VCN subnet.
+If omitted, an available IP will be automatically assigned from the subnet.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceGateway</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OCIResourceReference">
+OCIResourceReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>serviceGateway is the reference to the Service Gateway in the customer VCN.
+The Service Gateway must be in the same tenancy and region as the customer VCN.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>customerVCN</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OCIVCNReference">
+OCIVCNReference
+</a>
+</em>
+</td>
+<td>
+<p>customerVCN is the reference to the customer VCN.
+The VCN must be in the same tenancy and region as specified in the OCIPlatformSpec.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>allowedCIDRs</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>allowedCIDRs specifies which IPv4 CIDR blocks are allowed to access the private endpoint.
+Must be valid IPv4 CIDR blocks (e.g., &ldquo;10.0.0.0/16&rdquo;, &ldquo;192.168.1.0/24&rdquo;).
+If omitted or empty, access is allowed from all addresses in the customer VCN.</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+<tr>
+<td>
+<code>status</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OCIPrivateEndpointStatus">
+OCIPrivateEndpointStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>status is the status of the OCIPrivateEndpoint.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AESCBCSpec { #hypershift.openshift.io/v1beta1.AESCBCSpec }
 <p>
 (<em>Appears on:</em>
@@ -5004,6 +5154,25 @@ A failure here often means a software bug or a non-stable cluster.</p>
 </tr><tr><td><p>&#34;KubeVirtNodesLiveMigratable&#34;</p></td>
 <td><p>KubeVirtNodesLiveMigratable indicates if all nodes (VirtualMachines) of the kubevirt
 hosted cluster can be live migrated without experiencing a node restart</p>
+</td>
+</tr><tr><td><p>&#34;OCIDNSConfigured&#34;</p></td>
+<td><p>OCIDNSConfigured indicates whether the private DNS zone and A records
+have been created in the customer VCN</p>
+</td>
+</tr><tr><td><p>&#34;OCINetworkLoadBalancerReady&#34;</p></td>
+<td><p>OCINetworkLoadBalancerReady indicates whether the Network Load Balancer
+has been created and configured in the management VCN</p>
+</td>
+</tr><tr><td><p>&#34;OCIPrivateEndpointAvailable&#34;</p></td>
+<td><p>OCIPrivateEndpointAvailable indicates overall private endpoint infrastructure availability</p>
+</td>
+</tr><tr><td><p>&#34;OCIRouteRulesConfigured&#34;</p></td>
+<td><p>OCIRouteRulesConfigured indicates whether route table rules have been created
+to direct traffic over the private path (LPG or DRG) toward the management VCN and private Network Load Balancer</p>
+</td>
+</tr><tr><td><p>&#34;OCIServiceGatewayAttached&#34;</p></td>
+<td><p>OCIServiceGatewayAttached indicates whether inter-VCN connectivity (Local Peering Gateway or DRG)
+has been configured between the customer VCN and the management VCN</p>
 </td>
 </tr><tr><td><p>&#34;PlatformCredentialsFound&#34;</p></td>
 <td><p>PlatformCredentialsFound indicates that credentials required for the
@@ -10785,6 +10954,453 @@ assigned when the service is created.</p>
 </tr>
 </tbody>
 </table>
+###OCIEndpointAccessType { #hypershift.openshift.io/v1beta1.OCIEndpointAccessType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OCIPlatformSpec">OCIPlatformSpec</a>)
+</p>
+<p>
+<p>OCIEndpointAccessType defines the endpoint access type for OCI clusters.
+Determines how the hosted control plane API server is accessible.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Private&#34;</p></td>
+<td><p>OCIEndpointAccessPrivate endpoint access allows only private API server access.
+The control plane API is exposed via a private Network Load Balancer with a private IP.
+Node communication with the control plane uses private connectivity within the VCN.</p>
+</td>
+</tr><tr><td><p>&#34;PublicAndPrivate&#34;</p></td>
+<td><p>OCIEndpointAccessPublicAndPrivate endpoint access allows public API server access and
+private node communication with the control plane within the VCN.</p>
+</td>
+</tr></tbody>
+</table>
+###OCINetworkConfig { #hypershift.openshift.io/v1beta1.OCINetworkConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OCIPlatformSpec">OCIPlatformSpec</a>)
+</p>
+<p>
+<p>OCINetworkConfig specifies VCN configuration for OCI clusters and private connectivity.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>vcn</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OCIVCNReference">
+OCIVCNReference
+</a>
+</em>
+</td>
+<td>
+<p>vcn is the Virtual Cloud Network (VCN) for the cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nlbSubnet</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OCISubnetReference">
+OCISubnetReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nlbSubnet is the subnet in the management VCN where the Network Load Balancer is deployed.
+This subnet hosts the private NLB that fronts the hosted control plane API.
+Required for private connectivity between customer VCNs (via Local Peering Gateway) and the hosted control plane.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OCIPlatformSpec { #hypershift.openshift.io/v1beta1.OCIPlatformSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PlatformSpec">PlatformSpec</a>)
+</p>
+<p>
+<p>OCIPlatformSpec specifies configuration for clusters running on Oracle Cloud Infrastructure.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>tenancy</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>tenancy is the OCI tenancy OCID.
+A tenancy is the root compartment that contains all cloud resources.
+The OCID must be in the format: ocid1.tenancy.<realm>..<unique_id>
+where <realm> identifies the OCI realm for your tenancy (e.g., oc1, oc2, oc3).
+See <a href="https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm">https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm</a> for current realms.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>compartment</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>compartment is the OCI compartment OCID where cluster resources will be created.
+A compartment is a logical container for organizing and isolating cloud resources.
+The OCID must be in the format: ocid1.compartment.<realm>..<unique_id>
+where <realm> identifies the OCI realm for your tenancy (e.g., oc1, oc2, oc3).
+See <a href="https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm">https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm</a> for current realms.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>region</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>region is the OCI region in which the cluster resides.
+A valid region must satisfy the following rules:
+format: Must be in the form <code>&lt;location&gt;-&lt;city&gt;-&lt;number&gt;</code> or <code>&lt;location&gt;-&lt;realm&gt;-&lt;city&gt;-&lt;number&gt;</code> for gov regions
+characters: Only lowercase letters (<code>a-z</code>), digits (<code>0-9</code>), and hyphens (<code>-</code>)
+valid examples: &ldquo;us-ashburn-1&rdquo;, &ldquo;uk-london-1&rdquo;, &ldquo;ap-tokyo-1&rdquo;, &ldquo;us-gov-ashburn-1&rdquo;, &ldquo;uk-gov-london-1&rdquo;
+For a full list of valid regions, see: <a href="https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm">https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm</a>.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>networkConfig</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OCINetworkConfig">
+OCINetworkConfig
+</a>
+</em>
+</td>
+<td>
+<p>networkConfig specifies VCN configuration for the cluster.
+Required for VCN configuration and private connectivity to the hosted control plane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>endpointAccess</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OCIEndpointAccessType">
+OCIEndpointAccessType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>endpointAccess controls API endpoint accessibility for the HostedControlPlane on OCI.
+Allowed values: &ldquo;Private&rdquo;, &ldquo;PublicAndPrivate&rdquo;. Defaults to &ldquo;Private&rdquo;.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OCIPrivateEndpointSpec { #hypershift.openshift.io/v1beta1.OCIPrivateEndpointSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OCIPrivateEndpoint">OCIPrivateEndpoint</a>)
+</p>
+<p>
+<p>OCIPrivateEndpointSpec defines the desired state of OCI Private Endpoint infrastructure</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>networkLoadBalancerID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>networkLoadBalancerID is the OCID of the Network Load Balancer in the management VCN
+Network Load Balancers are regional resources and require a non-empty region segment</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>reservedIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>reservedIP is the reserved private IPv4 address for the Network Load Balancer.
+The address must belong to the selected management VCN subnet.
+If omitted, an available IP will be automatically assigned from the subnet.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceGateway</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OCIResourceReference">
+OCIResourceReference
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>serviceGateway is the reference to the Service Gateway in the customer VCN.
+The Service Gateway must be in the same tenancy and region as the customer VCN.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>customerVCN</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OCIVCNReference">
+OCIVCNReference
+</a>
+</em>
+</td>
+<td>
+<p>customerVCN is the reference to the customer VCN.
+The VCN must be in the same tenancy and region as specified in the OCIPlatformSpec.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>allowedCIDRs</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>allowedCIDRs specifies which IPv4 CIDR blocks are allowed to access the private endpoint.
+Must be valid IPv4 CIDR blocks (e.g., &ldquo;10.0.0.0/16&rdquo;, &ldquo;192.168.1.0/24&rdquo;).
+If omitted or empty, access is allowed from all addresses in the customer VCN.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OCIPrivateEndpointStatus { #hypershift.openshift.io/v1beta1.OCIPrivateEndpointStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OCIPrivateEndpoint">OCIPrivateEndpoint</a>)
+</p>
+<p>
+<p>OCIPrivateEndpointStatus defines the observed state of OCI Private Endpoint infrastructure</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>conditions represent the current state of private endpoint infrastructure
+Current condition types are: &ldquo;OCIPrivateEndpointAvailable&rdquo;, &ldquo;OCINetworkLoadBalancerReady&rdquo;, &ldquo;OCIServiceGatewayAttached&rdquo;, &ldquo;OCIRouteRulesConfigured&rdquo;, &ldquo;OCIDNSConfigured&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>networkLoadBalancerIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>networkLoadBalancerIP is the private IP address assigned to the Network Load Balancer</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceGatewayID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>serviceGatewayID is the OCID of the Service Gateway in the customer VCN</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>routeTableID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>routeTableID is the OCID of the route table with rules directing traffic to the Service Gateway</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dnsZoneID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>dnsZoneID is the OCID of the private DNS zone in the customer VCN</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dnsRecordName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>dnsRecordName is the A record pointing to the Network Load Balancer private IP</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OCIResourceReference { #hypershift.openshift.io/v1beta1.OCIResourceReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OCIPrivateEndpointSpec">OCIPrivateEndpointSpec</a>)
+</p>
+<p>
+<p>OCIResourceReference represents a reference to an OCI resource by OCID.
+OCIDs (Oracle Cloud IDs) are unique identifiers for OCI resources.
+See <a href="https://docs.oracle.com/en-us/iaas/Content/General/Concepts/identifiers.htm">https://docs.oracle.com/en-us/iaas/Content/General/Concepts/identifiers.htm</a> for OCID format.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ocid</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ocid is the Oracle Cloud Identifier (OCID) for the resource.
+OCIDs follow the format: ocid1.<resource_type>.<realm>.[region][.future_use].<unique_id>
+The region segment may be empty for global resources (e.g., ocid1.tenancy.oc1..<unique_id>)
+The unique_id segment is an opaque string assigned by OCI.
+See <a href="https://docs.oracle.com/en-us/iaas/Content/General/Concepts/identifiers.htm">https://docs.oracle.com/en-us/iaas/Content/General/Concepts/identifiers.htm</a> for format details and examples.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OCISubnetReference { #hypershift.openshift.io/v1beta1.OCISubnetReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OCINetworkConfig">OCINetworkConfig</a>)
+</p>
+<p>
+<p>OCISubnetReference represents a reference to an OCI Subnet by OCID.
+Subnets are regional resources.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ocid</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ocid is the Oracle Cloud Identifier (OCID) for the subnet.
+Subnets are regional resources and require a non-empty region segment.
+Format: ocid1.subnet.<realm>.<region>[.future_use].<unique_id></p>
+</td>
+</tr>
+</tbody>
+</table>
+###OCIVCNReference { #hypershift.openshift.io/v1beta1.OCIVCNReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OCINetworkConfig">OCINetworkConfig</a>, 
+<a href="#hypershift.openshift.io/v1beta1.OCIPrivateEndpointSpec">OCIPrivateEndpointSpec</a>)
+</p>
+<p>
+<p>OCIVCNReference represents a reference to an OCI Virtual Cloud Network by OCID.
+VCNs are regional resources.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ocid</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ocid is the Oracle Cloud Identifier (OCID) for the VCN.
+VCNs are regional resources and require a non-empty region segment.
+Format: ocid1.vcn.<realm>.<region>[.future_use].<unique_id></p>
+</td>
+</tr>
+</tbody>
+</table>
 ###OLMCatalogPlacement { #hypershift.openshift.io/v1beta1.OLMCatalogPlacement }
 <p>
 (<em>Appears on:</em>
@@ -11579,6 +12195,20 @@ GCPPlatformSpec
 <p>gcp specifies configuration for clusters running on Google Cloud Platform.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>oci</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OCIPlatformSpec">
+OCIPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>oci specifies configuration for clusters running on Oracle Cloud Infrastructure.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###PlatformStatus { #hypershift.openshift.io/v1beta1.PlatformStatus }
@@ -11651,6 +12281,9 @@ AWSPlatformStatus
 </td>
 </tr><tr><td><p>&#34;None&#34;</p></td>
 <td><p>NonePlatform represents user supplied (e.g. bare metal) infrastructure.</p>
+</td>
+</tr><tr><td><p>&#34;OCI&#34;</p></td>
+<td><p>OCIPlatform represents Oracle Cloud Infrastructure.</p>
 </td>
 </tr><tr><td><p>&#34;OpenStack&#34;</p></td>
 <td><p>OpenStackPlatform represents OpenStack infrastructure.</p>
