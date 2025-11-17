@@ -195,6 +195,15 @@ const (
 	// This condition is used to track the status of the recovery process and to determine if the HostedCluster
 	// is ready to be used after restoration.
 	HostedClusterRestoredFromBackup ConditionType = "HostedClusterRestoredFromBackup"
+
+	// DataPlaneConnectionAvailable indicates whether the control plane has a successful
+	// network connection to the data plane components.
+	// **True** means the control plane can successfully reach the data plane nodes.
+	// **False** means there are network connection issues preventing the control plane from reaching the data plane.
+	// A failure here suggests potential issues such as: network policy restrictions,
+	// firewall rules, missing data plane nodes, or problems with infrastructure
+	// components like the konnectivity-agent workload.
+	DataPlaneConnectionAvailable ConditionType = "DataPlaneConnectionAvailable"
 )
 
 // Reasons.
@@ -250,7 +259,15 @@ const (
 
 	RecoveryFinishedReason = "RecoveryFinished"
 
+	ReconcileErrorReason = "ReconcileError"
+
 	CloudResourcesCleanupSkippedReason = "CloudResourcesCleanupSkipped"
+
+	DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason = "KonnectivityAgentPodsNotFound"
+
+	DataPlaneConnectionLogsAccessFailedReason = "LogsAccessFailed"
+
+	DataPlaneConnectionNoWorkerNodesAvailableReason = "NoWorkerNodesAvailable"
 )
 
 // Messages.
