@@ -293,13 +293,6 @@ type KubeconfigSecretRef struct {
 
 type ConditionType string
 
-const (
-	HostedControlPlaneAvailable ConditionType = "Available"
-	HostedControlPlaneDegraded  ConditionType = "Degraded"
-	EtcdSnapshotRestored        ConditionType = "EtcdSnapshotRestored"
-	CVOScaledDown               ConditionType = "CVOScaledDown"
-)
-
 // HostedControlPlaneStatus defines the observed state of HostedControlPlane
 type HostedControlPlaneStatus struct {
 	// conditions contains details for one aspect of the current state of the HostedControlPlane.
