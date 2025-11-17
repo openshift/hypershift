@@ -4864,7 +4864,10 @@ created in the guest VPC</p>
 has been created for the specified NLB in the management VPC</p>
 </td>
 </tr><tr><td><p>&#34;CVOScaledDown&#34;</p></td>
-<td></td>
+<td><p>CVOScaledDown indicates whether the Cluster Version Operator has been scaled down.
+When True, the CVO is scaled down (typically during maintenance operations).
+When False, the CVO is running normally.</p>
+</td>
 </tr><tr><td><p>&#34;CloudResourcesDestroyed&#34;</p></td>
 <td><p>CloudResourcesDestroyed bubbles up the same condition from HCP. It signals if the cloud provider infrastructure created by Kubernetes
 in the consumer cloud provider account was destroyed.
@@ -4901,6 +4904,20 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 </tr><tr><td><p>&#34;RolloutComplete&#34;</p></td>
 <td><p>ControlPlaneComponentRolloutComplete indicates whether the ControlPlaneComponent has completed its rollout.</p>
 </td>
+</tr><tr><td><p>&#34;ControlPlaneToDataPlaneConnectivity&#34;</p></td>
+<td><p>ControlPlaneToDataPlaneConnectivity indicates whether the control plane can successfully
+reach the data plane components.
+When True, control plane has healthy connectivity to data plane nodes.
+When False, there are network connectivity issues preventing control plane from reaching the data plane.
+A failure here may indicate network policy issues, firewall rules, or infrastructure problems.</p>
+</td>
+</tr><tr><td><p>&#34;DataPlaneToControlPlaneConnectivity&#34;</p></td>
+<td><p>DataPlaneToControlPlaneConnectivity indicates whether the data plane can successfully
+reach the control plane components.
+When True, data plane nodes have healthy connectivity to control plane services.
+When False, there are network connectivity issues preventing data plane from reaching the control plane.
+A failure here may indicate network policy issues, firewall rules, or infrastructure problems.</p>
+</td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
 A failure here often means a software bug or a non-stable cluster.</p>
@@ -4910,7 +4927,10 @@ A failure here often means a software bug or a non-stable cluster.</p>
 recovery job was triggered.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdSnapshotRestored&#34;</p></td>
-<td></td>
+<td><p>EtcdSnapshotRestored indicates whether an etcd snapshot has been restored.
+When True, an etcd snapshot has been successfully restored.
+When False, no etcd snapshot restoration has occurred or restoration failed.</p>
+</td>
 </tr><tr><td><p>&#34;ExternalDNSReachable&#34;</p></td>
 <td><p>ExternalDNSReachable bubbles up the same condition from HCP. It signals if the configured external DNS is reachable.
 A failure here requires external user intervention to resolve. E.g. changing the external DNS domain or making sure the domain is created
@@ -4956,9 +4976,16 @@ This condition is used to track the status of the recovery process and to determ
 is ready to be used after restoration.</p>
 </td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
-<td></td>
+<td><p>HostedControlPlaneAvailable indicates whether the HostedControlPlane has a healthy control plane.
+When True, the control plane is operational and serving requests.
+When False, the control plane is experiencing issues that prevent normal operation.</p>
+</td>
 </tr><tr><td><p>&#34;Degraded&#34;</p></td>
-<td></td>
+<td><p>HostedControlPlaneDegraded indicates whether the HostedControlPlane is encountering
+an error that may require user intervention to resolve.
+When True, the control plane is degraded and experiencing issues.
+When False, the control plane is operating normally without degradation.</p>
+</td>
 </tr><tr><td><p>&#34;IgnitionEndpointAvailable&#34;</p></td>
 <td><p>IgnitionEndpointAvailable indicates whether the ignition server for the
 HostedCluster is available to handle ignition requests.
