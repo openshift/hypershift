@@ -35,6 +35,7 @@ type CPOOverride struct {
 type CPOOverrideTestReleases struct {
 	Latest   string `yaml:"latest"`
 	Previous string `yaml:"previous"`
+	RunTests bool   `yaml:"runTests"`
 }
 
 //go:embed assets/overrides.yaml
@@ -73,6 +74,10 @@ func LatestOverrideTestReleases(platform string) (string, string) {
 	return overrideTestReleases(platform, overrides)
 }
 
+func ShouldRunOverrideTests(platform string) bool {
+	return shouldRunOverrideTests(platform, overrides)
+}
+
 func overrideTestReleases(platform string, o *CPOOverrides) (string, string) {
 	switch strings.ToLower(platform) {
 	case "aws":
@@ -85,6 +90,20 @@ func overrideTestReleases(platform string, o *CPOOverrides) (string, string) {
 		}
 	}
 	return "", ""
+}
+
+func shouldRunOverrideTests(platform string, o *CPOOverrides) bool {
+	switch strings.ToLower(platform) {
+	case "aws":
+		if o.Platforms.AWS != nil && o.Platforms.AWS.Testing != nil {
+			return o.Platforms.AWS.Testing.RunTests
+		}
+	case "azure":
+		if o.Platforms.Azure != nil && o.Platforms.Azure.Testing != nil {
+			return o.Platforms.Azure.Testing.RunTests
+		}
+	}
+	return false
 }
 
 func mustLoadOverrides() *CPOOverrides {
