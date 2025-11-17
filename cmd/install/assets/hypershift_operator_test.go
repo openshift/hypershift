@@ -20,6 +20,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 		expectedVolumeMounts []corev1.VolumeMount
 		expectedVolumes      []corev1.Volume
 		expectedArgs         []string
+		expectedEnvVars      []corev1.EnvVar
 	}{
 		"empty oidc parameters result in no volume mounts": {
 			inputBuildParameters: HyperShiftOperatorDeployment{
@@ -337,6 +338,50 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
 			},
 		},
+		"When Additional Environment variables are set": {
+			inputBuildParameters: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				OperatorImage: testOperatorImage,
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "hypershift",
+					},
+				},
+				Replicas:                               3,
+				PrivatePlatform:                        string(hyperv1.NonePlatform),
+				EnableDedicatedRequestServingIsolation: false,
+				AdditionalEnvironmentVariables: map[string]string{
+					"TEST1": "VALUE1",
+					"TEST2": "VALUE2",
+				},
+			},
+			expectedVolumeMounts: nil,
+			expectedVolumes:      nil,
+			expectedEnvVars: []corev1.EnvVar{
+				{
+					Name:  "TEST1",
+					Value: "VALUE1",
+				},
+				{
+					Name:  "TEST2",
+					Value: "VALUE2",
+				},
+			},
+			expectedArgs: []string{
+				"run",
+				"--namespace=$(MY_NAMESPACE)",
+				"--pod-name=$(MY_NAME)",
+				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", false),
+				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
+				fmt.Sprintf("--enable-ci-debug-output=%t", false),
+				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
+			},
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -345,6 +390,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Args).To(BeEquivalentTo(test.expectedArgs))
 			g.Expect(deployment.Spec.Template.Spec.Volumes).To(BeEquivalentTo(test.expectedVolumes))
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(BeEquivalentTo(test.expectedVolumeMounts))
+			g.Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElements(test.expectedEnvVars))
 		})
 	}
 }

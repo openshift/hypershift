@@ -402,6 +402,7 @@ type HyperShiftOperatorDeployment struct {
 	RegistryOverrides                       string
 	PlatformsInstalled                      string
 	ImagePullPolicy                         string
+	AdditionalEnvironmentVariables          map[string]string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -444,6 +445,14 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			Name:  "CERT_ROTATION_SCALE",
 			Value: o.CertRotationScale.String(),
 		},
+	}
+
+	// Propagate specified environment variables from the installer's environment to the operator deployment
+	for name, value := range o.AdditionalEnvironmentVariables {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  name,
+			Value: value,
+		})
 	}
 
 	// Add the new HYPERSHIFT_FEATURESET env var if TPNU is set.

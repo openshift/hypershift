@@ -129,6 +129,7 @@ type Options struct {
 	RenderNamespace                           bool
 	PlatformsToInstall                        []string
 	ImagePullPolicy                           string
+	EnvironmentVariablesToPropagate           []string
 }
 
 func (o *Options) Validate() error {
@@ -200,6 +201,13 @@ func (o *Options) Validate() error {
 		case "always", "never", "ifnotpresent":
 		default:
 			errs = append(errs, fmt.Errorf("invalid --image-pull-policy: %s (want Always|Never|IfNotPresent)", o.ImagePullPolicy))
+		}
+	}
+
+	// Validate that all environment variables to propagate are set in the current environment
+	for _, envVar := range o.EnvironmentVariablesToPropagate {
+		if _, exists := os.LookupEnv(envVar); !exists {
+			errs = append(errs, fmt.Errorf("environment variable %q specified in --forward-env is not set in the current environment", envVar))
 		}
 	}
 
@@ -277,6 +285,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.TechPreviewNoUpgrade, "tech-preview-no-upgrade", opts.TechPreviewNoUpgrade, "If true, the HyperShift operator runs with TechPreviewNoUpgrade features enabled")
 	cmd.PersistentFlags().StringVar(&opts.RegistryOverrides, "registry-overrides", "", "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 	cmd.PersistentFlags().StringSliceVar(&opts.PlatformsToInstall, "limit-crd-install", opts.PlatformsToInstall, "Used to limit the CRDs that are installed to a per platform basis (example: --limit-crd-install=AWS,Azure). If this flag is not specified, all CRDs for all platforms will be installed. Valid, case-insensitive values are: AWS, Azure, IBMCloud, KubeVirt, Agent, OpenStack.")
+	cmd.PersistentFlags().StringSliceVar(&opts.EnvironmentVariablesToPropagate, "forward-env", opts.EnvironmentVariablesToPropagate, "A list of environment variables to propagate from the install cmd to the HyperShift operator deployment.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
@@ -347,6 +356,7 @@ func NewInstallOptionsWithDefaults() Options {
 	opts.OIDCStorageProviderS3CredentialsSecretKey = "credentials"
 	opts.PrivatePlatform = string(hyperv1.NonePlatform)
 	opts.ImagePullPolicy = "IfNotPresent"
+	opts.EnvironmentVariablesToPropagate = []string{}
 
 	return opts
 }
@@ -816,12 +826,23 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		RegistryOverrides:                       opts.RegistryOverrides,
 		PlatformsInstalled:                      strings.Join(opts.PlatformsToInstall, ","),
 		ImagePullPolicy:                         opts.ImagePullPolicy,
+		AdditionalEnvironmentVariables:          lookupEnvVars(opts.EnvironmentVariablesToPropagate),
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
 	}.Build()
 
 	return operatorService, []crclient.Object{operatorDeployment, operatorService}
+}
+
+func lookupEnvVars(envs []string) map[string]string {
+	envVars := make(map[string]string)
+	for _, name := range envs {
+		if value, exists := os.LookupEnv(name); exists {
+			envVars[name] = value
+		}
+	}
+	return envVars
 }
 
 // setupExternalDNS creates the resources for external-dns
