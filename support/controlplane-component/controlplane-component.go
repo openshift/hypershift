@@ -23,6 +23,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
+const (
+	// WorkloadFinalizer is added to control plane workloads (deployments, statefulsets) to ensure proper cleanup.
+	// This prevents accidental deletion of workloads before their managed resources (e.g., CAPI resources) can be cleaned up.
+	WorkloadFinalizer = "hypershift.openshift.io/control-plane-workload-finalizer"
+)
+
 type NamedComponent interface {
 	Name() string
 }
@@ -304,6 +310,11 @@ func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContex
 		}
 	}
 
+	// Handle workload deletion with finalizer
+	if !oldWorkloadObj.GetDeletionTimestamp().IsZero() {
+		return c.handleWorkloadDeletion(cpContext, oldWorkloadObj)
+	}
+
 	if !cpContext.OmitOwnerReference {
 		ownerRef := config.OwnerRefFrom(cpContext.HCP)
 		ownerRef.ApplyTo(workloadObj)
@@ -326,8 +337,78 @@ func (c *controlPlaneWorkload[T]) reconcileWorkload(cpContext ControlPlaneContex
 		return err
 	}
 
+	// Ensure the workload has a finalizer for cleanup
+	if !controllerutil.ContainsFinalizer(workloadObj, WorkloadFinalizer) {
+		controllerutil.AddFinalizer(workloadObj, WorkloadFinalizer)
+	}
+
 	if _, err := cpContext.ApplyManifest(cpContext, cpContext.Client, workloadObj); err != nil {
 		return err
 	}
 	return nil
+}
+
+// handleWorkloadDeletion handles the deletion of a workload with finalizer protection.
+// It ensures that all pods are terminated before removing the finalizer, preventing
+// orphaned cloud resources by keeping controllers running until cleanup is complete.
+func (c *controlPlaneWorkload[T]) handleWorkloadDeletion(cpContext ControlPlaneContext, workloadObj T) error {
+	if !controllerutil.ContainsFinalizer(workloadObj, WorkloadFinalizer) {
+		// Finalizer already removed, nothing to do
+		return nil
+	}
+
+	// Check if it's safe to remove the finalizer (all pods terminated)
+	canRemove, err := c.canRemoveWorkloadFinalizer(cpContext, workloadObj)
+	if err != nil {
+		return fmt.Errorf("failed to check if finalizer can be removed: %w", err)
+	}
+
+	if !canRemove {
+		// Pods are still running, requeue and wait
+		return fmt.Errorf("waiting for all pods from %s to terminate before removing finalizer", workloadObj.GetName())
+	}
+
+	// All pods are terminated, safe to remove the finalizer
+	controllerutil.RemoveFinalizer(workloadObj, WorkloadFinalizer)
+	if err := cpContext.Client.Update(cpContext, workloadObj); err != nil {
+		return fmt.Errorf("failed to remove finalizer from %s: %w", workloadObj.GetName(), err)
+	}
+
+	return nil
+}
+
+// canRemoveWorkloadFinalizer checks if it's safe to remove the workload finalizer.
+// It returns true when all pods managed by the workload have terminated.
+func (c *controlPlaneWorkload[T]) canRemoveWorkloadFinalizer(cpContext ControlPlaneContext, workloadObj T) (bool, error) {
+	// Get the pod template to extract labels for pod selection
+	podTemplateSpec := c.workloadProvider.PodTemplateSpec(workloadObj)
+
+	// List all pods matching the workload's selector
+	podList := &corev1.PodList{}
+	listOpts := []client.ListOption{
+		client.InNamespace(workloadObj.GetNamespace()),
+		client.MatchingLabels(podTemplateSpec.Labels),
+	}
+
+	if err := cpContext.Client.List(cpContext, podList, listOpts...); err != nil {
+		return false, fmt.Errorf("failed to list pods for %s: %w", workloadObj.GetName(), err)
+	}
+
+	// If there are no pods, it's safe to remove the finalizer
+	if len(podList.Items) == 0 {
+		return true, nil
+	}
+
+	// Check if all pods are terminated
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		// A pod is considered terminated if it's in Succeeded or Failed phase
+		if pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed {
+			// At least one pod is still running or pending
+			return false, nil
+		}
+	}
+
+	// All pods are terminated
+	return true, nil
 }
