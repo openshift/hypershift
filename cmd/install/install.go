@@ -107,6 +107,7 @@ type Options struct {
 	ExternalDNSDomainFilter                   string
 	ExternalDNSTxtOwnerId                     string
 	ExternalDNSImage                          string
+	AdditionalOperatorEnvVars                 map[string]string
 	EnableAdminRBACGeneration                 bool
 	EnableUWMTelemetryRemoteWrite             bool
 	EnableCVOManagementClusterMetricsAccess   bool
@@ -277,6 +278,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.TechPreviewNoUpgrade, "tech-preview-no-upgrade", opts.TechPreviewNoUpgrade, "If true, the HyperShift operator runs with TechPreviewNoUpgrade features enabled")
 	cmd.PersistentFlags().StringVar(&opts.RegistryOverrides, "registry-overrides", "", "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
 	cmd.PersistentFlags().StringSliceVar(&opts.PlatformsToInstall, "limit-crd-install", opts.PlatformsToInstall, "Used to limit the CRDs that are installed to a per platform basis (example: --limit-crd-install=AWS,Azure). If this flag is not specified, all CRDs for all platforms will be installed. Valid, case-insensitive values are: AWS, Azure, IBMCloud, KubeVirt, Agent, OpenStack.")
+	cmd.PersistentFlags().StringToStringVar(&opts.AdditionalOperatorEnvVars, "additional-operator-env-vars", opts.AdditionalOperatorEnvVars, "Set of additional environment variables to be set on the HyperShift Operator deployment.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
@@ -347,6 +349,7 @@ func NewInstallOptionsWithDefaults() Options {
 	opts.OIDCStorageProviderS3CredentialsSecretKey = "credentials"
 	opts.PrivatePlatform = string(hyperv1.NonePlatform)
 	opts.ImagePullPolicy = "IfNotPresent"
+	opts.AdditionalOperatorEnvVars = map[string]string{}
 
 	return opts
 }
@@ -811,6 +814,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		EnableSizeTagging:                       opts.EnableSizeTagging,
 		EnableEtcdRecovery:                      opts.EnableEtcdRecovery,
 		EnableCPOOverrides:                      opts.EnableCPOOverrides,
+		AdditionalOperatorEnvVars:               opts.AdditionalOperatorEnvVars,
 		AROHCPKeyVaultUsersClientID:             opts.AroHCPKeyVaultUsersClientID,
 		TechPreviewNoUpgrade:                    opts.TechPreviewNoUpgrade,
 		RegistryOverrides:                       opts.RegistryOverrides,
