@@ -2,6 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   creationTimestamp: null
+  finalizers:
+  - hypershift.openshift.io/control-plane-workload-finalizer
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-controller-manager

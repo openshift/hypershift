@@ -2,6 +2,8 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   creationTimestamp: null
+  finalizers:
+  - hypershift.openshift.io/control-plane-workload-finalizer
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: featuregate-generator
