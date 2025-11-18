@@ -1,0 +1,64 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  creationTimestamp: null
+  name: catalogs
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  lookupPolicy:
+    local: true
+  tags:
+  - annotations: null
+    from:
+      kind: DockerImage
+      name: registry.redhat.io/redhat/certified-operator-index:v4.16
+    generation: null
+    importPolicy:
+      importMode: PreserveOriginal
+      scheduled: true
+    name: certified-operators
+    referencePolicy:
+      type: Local
+  - annotations: null
+    from:
+      kind: DockerImage
+      name: registry.redhat.io/redhat/community-operator-index:v4.16
+    generation: null
+    importPolicy:
+      importMode: PreserveOriginal
+      scheduled: true
+    name: community-operators
+    referencePolicy:
+      type: Local
+  - annotations: null
+    from:
+      kind: DockerImage
+      name: registry.redhat.io/redhat/redhat-marketplace-index:v4.16
+    generation: null
+    importPolicy:
+      importMode: PreserveOriginal
+      scheduled: true
+    name: redhat-marketplace
+    referencePolicy:
+      type: Local
+  - annotations: null
+    from:
+      kind: DockerImage
+      name: registry.redhat.io/redhat/redhat-operator-index:v4.16
+    generation: null
+    importPolicy:
+      importMode: PreserveOriginal
+      scheduled: true
+    name: redhat-operators
+    referencePolicy:
+      type: Local
+status:
+  dockerImageRepository: ""

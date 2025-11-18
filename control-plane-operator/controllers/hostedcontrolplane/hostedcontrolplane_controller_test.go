@@ -1801,6 +1801,11 @@ func TestControlPlaneComponents(t *testing.T) {
 			featureSet:   configv1.Default,
 			platformType: ptr.To(hyperv1.IBMCloudPlatform),
 		},
+		{
+			name:         "TechPreviewNoUpgrade feature set, GCP platform type",
+			featureSet:   configv1.TechPreviewNoUpgrade,
+			platformType: ptr.To(hyperv1.GCPPlatform),
+		},
 	}
 
 	for _, tt := range tests {
