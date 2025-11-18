@@ -18,8 +18,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// validateOADPComponents checks if OADP operator is installed and running
-func validateOADPComponents(ctx context.Context, c client.Client, namespace string) error {
+// ValidateOADPComponents checks if OADP operator is installed and running
+func ValidateOADPComponents(ctx context.Context, c client.Client, namespace string) error {
 	log := ctrl.LoggerFrom(ctx)
 	// Check if OADP operator deployment exists
 	deployment := &appsv1.Deployment{}
@@ -51,7 +51,7 @@ func validateOADPComponents(ctx context.Context, c client.Client, namespace stri
 	}
 
 	// Check DPA plugins configuration
-	if err := checkDPAHypershiftPlugin(ctx, c, namespace); err != nil {
+	if err := CheckDPAHypershiftPlugin(ctx, c, namespace); err != nil {
 		// Log as warning but don't fail validation
 		log.Info("Warning: HyperShift plugin validation", "error", err.Error())
 	}
@@ -59,9 +59,9 @@ func validateOADPComponents(ctx context.Context, c client.Client, namespace stri
 	return nil
 }
 
-// verifyDPAStatus checks if DataProtectionApplication CR exists and is ready
+// VerifyDPAStatus checks if DataProtectionApplication CR exists and is ready
 // Not vendored the oadp-operator API to save space in the binary
-func verifyDPAStatus(ctx context.Context, c client.Client, namespace string) error {
+func VerifyDPAStatus(ctx context.Context, c client.Client, namespace string) error {
 	// List all DPA resources in the namespace using unstructured
 	dpaList := &unstructured.UnstructuredList{}
 	dpaList.SetGroupVersionKind(schema.GroupVersionKind{
@@ -106,8 +106,8 @@ func verifyDPAStatus(ctx context.Context, c client.Client, namespace string) err
 	return fmt.Errorf("no ready DataProtectionApplication found in namespace %s", namespace)
 }
 
-// validateAndGetHostedClusterPlatform validates that the HostedCluster exists and returns its platform
-func validateAndGetHostedClusterPlatform(ctx context.Context, c client.Client, hcName, hcNamespace string) (string, error) {
+// ValidateAndGetHostedClusterPlatform validates that the HostedCluster exists and returns its platform
+func ValidateAndGetHostedClusterPlatform(ctx context.Context, c client.Client, hcName, hcNamespace string) (string, error) {
 	// Get the HostedCluster resource using typed API
 	hostedCluster := &hypershiftv1beta1.HostedCluster{}
 
@@ -129,8 +129,8 @@ func validateAndGetHostedClusterPlatform(ctx context.Context, c client.Client, h
 	return strings.ToUpper(string(platformSpec.Type)), nil
 }
 
-// checkDPAHypershiftPlugin checks if the hypershift plugin is configured in DataProtectionApplication resources
-func checkDPAHypershiftPlugin(ctx context.Context, c client.Client, namespace string) error {
+// CheckDPAHypershiftPlugin checks if the hypershift plugin is configured in DataProtectionApplication resources
+func CheckDPAHypershiftPlugin(ctx context.Context, c client.Client, namespace string) error {
 	log := ctrl.LoggerFrom(ctx)
 	// List all DPA resources in the namespace using unstructured
 	dpaList := &unstructured.UnstructuredList{}
