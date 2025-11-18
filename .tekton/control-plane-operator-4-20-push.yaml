@@ -188,7 +188,7 @@ spec:
         - name: name
           value: prefetch-dependencies-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta:0.2@sha256:5946ca57aa29f162e11b74984ec58960f55f9fb6a0e97c6c9215c4161f768726
+          value: quay.io/konflux-ci/tekton-catalog/task-prefetch-dependencies-oci-ta:0.2@sha256:9dbb38efdfca525b00dc502acf44723ac4a6c413bb2ab97459a13cd3a6056f17
         - name: kind
           value: task
         resolver: bundles
@@ -242,7 +242,7 @@ spec:
         - name: name
           value: buildah-remote-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.6@sha256:17b267b5ae3deca5905d930e54337b89df45d3579f33b7fab4df74ee644cded4
+          value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.6@sha256:5e36ca5a8f0b53e4a479c011aa08171aa372b9e10f1cfbb574a6c05ae194062a
         - name: kind
           value: task
         resolver: bundles
