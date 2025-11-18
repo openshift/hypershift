@@ -17,7 +17,7 @@ func newHTTPDialer(proxyURL *url.URL) proxy.Dialer {
 }
 
 // Everything below is a copied from https://github.com/fasthttp/websocket/blob/2f8e79d2aac1e8e5a06518870e872b15608cea90/proxy.go
-// as the golang.org/x/net/proxy package only supports socks5 proxies, but does allow registering additional protocols.
+// as the golang.org/x/xnet/proxy package only supports socks5 proxies, but does allow registering additional protocols.
 type httpProxyDialer struct {
 	proxyURL    *url.URL
 	forwardDial func(network, addr string) (net.Conn, error)

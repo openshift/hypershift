@@ -27,17 +27,17 @@ const (
 	// When False, the CVO is running normally.
 	CVOScaledDown ConditionType = "CVOScaledDown"
 
-	// DataPlaneToControlPlaneConnectivity indicates whether the data plane can successfully
+	// DataPlaneToControlPlaneConnectivityHealthy indicates whether the data plane can successfully
 	// reach the control plane components.
 	// When True, data plane nodes have healthy connectivity to control plane services.
 	// When False, there are network connectivity issues preventing data plane from reaching the control plane.
 	// A failure here may indicate network policy issues, firewall rules, or infrastructure problems.
-	DataPlaneToControlPlaneConnectivity ConditionType = "DataPlaneToControlPlaneConnectivity"
+	DataPlaneToControlPlaneConnectivityHealthy ConditionType = "DataPlaneToControlPlaneConnectivityHealthy"
 
-	// ControlPlaneToDataPlaneConnectivity indicates whether the control plane can successfully
+	// ControlPlaneToDataPlaneConnectivityHealthy indicates whether the control plane can successfully
 	// reach the data plane components.
 	// When True, control plane has healthy connectivity to data plane nodes.
 	// When False, there are network connectivity issues preventing control plane from reaching the data plane.
 	// A failure here may indicate network policy issues, firewall rules, or infrastructure problems.
-	ControlPlaneToDataPlaneConnectivity ConditionType = "ControlPlaneToDataPlaneConnectivity"
+	ControlPlaneToDataPlaneConnectivityHealthy ConditionType = "ControlPlaneToDataPlaneConnectivityHealthy"
 )
