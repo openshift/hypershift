@@ -2,10 +2,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    api.openshift.io/merged-by-featuregates: "true"
-    include.release.openshift.io/ibm-cloud-managed: "true"
-    include.release.openshift.io/self-managed-high-availability: "true"
-    release.openshift.io/feature-set: TechPreviewNoUpgrade
+    feature-gate.release.openshift.io/OCIPlatform: "true"
   name: ociprivateendpoints.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io

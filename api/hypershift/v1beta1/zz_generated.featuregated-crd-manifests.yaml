@@ -277,3 +277,42 @@ nodepools.hypershift.openshift.io:
   TopLevelFeatureGates: []
   Version: v1beta1
 
+ociprivateendpoints.hypershift.openshift.io:
+  Annotations: {}
+  ApprovedPRNumber: ""
+  CRDName: ociprivateendpoints.hypershift.openshift.io
+  Capability: ""
+  Category: ""
+  FeatureGates:
+  - OCIPlatform
+  FilenameOperatorName: ""
+  FilenameOperatorOrdering: ""
+  FilenameRunLevel: ""
+  GroupName: hypershift.openshift.io
+  HasStatus: true
+  KindName: OCIPrivateEndpoint
+  Labels: {}
+  PluralName: ociprivateendpoints
+  PrinterColumns:
+  - description: IP address of the Network Load Balancer
+    jsonPath: .status.networkLoadBalancerIP
+    name: Network Load Balancer IP
+    type: string
+  - description: OCID of the Service Gateway
+    jsonPath: .status.serviceGatewayID
+    name: Service Gateway
+    type: string
+  - description: Overall private endpoint availability status
+    jsonPath: .status.conditions[?(@.type=="OCIPrivateEndpointAvailable")].status
+    name: Available
+    type: string
+  - jsonPath: .metadata.creationTimestamp
+    name: Age
+    type: date
+  Scope: Namespaced
+  ShortNames:
+  - ocipe
+  TopLevelFeatureGates:
+  - OCIPlatform
+  Version: v1beta1
+
