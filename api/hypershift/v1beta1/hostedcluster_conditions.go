@@ -151,6 +151,17 @@ const (
 	// A failure here indicates that the input is invalid, or permissions are missing to use the encryption key.
 	ValidAzureKMSConfig ConditionType = "ValidAzureKMSConfig"
 
+	// ValidGCPCredentials indicates if GCP credentials are valid and operational
+	// for the HostedCluster. This includes service account authentication and
+	// proper IAM permissions for CAPG controllers.
+	// A failure here may require external user intervention to resolve.
+	ValidGCPCredentials ConditionType = "ValidGCPCredentials"
+
+	// ValidGCPWorkloadIdentity indicates if GCP Workload Identity Federation
+	// is properly configured and operational for the cluster.
+	// A failure here may require external user intervention to resolve.
+	ValidGCPWorkloadIdentity ConditionType = "ValidGCPWorkloadIdentity"
+
 	// AWSDefaultSecurityGroupCreated indicates whether the default security group
 	// for AWS workers has been created.
 	// A failure here indicates that NodePools without a security group will be
