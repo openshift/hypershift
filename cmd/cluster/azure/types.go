@@ -18,7 +18,6 @@ type RawCreateOptions struct {
 	NetworkSecurityGroupID           string
 	ResourceGroupTags                map[string]string
 	SubnetID                         string
-	RHCOSImage                       string
 	KMSUserAssignedCredsSecretName   string
 	TechPreviewEnabled               bool
 	DNSZoneRGName                    string
