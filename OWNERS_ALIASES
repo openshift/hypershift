@@ -40,6 +40,8 @@ aliases:
     - cblecker
     - ckandag
     - cristianoveiga
+    - jimdaga
+    - patjlm
   openstack-approvers:
     - mandre
     - stephenfin
