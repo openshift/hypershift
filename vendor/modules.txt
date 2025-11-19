@@ -401,8 +401,8 @@ github.com/aws/aws-sdk-go-v2/service/eks/types
 ## explicit; go 1.23.6
 github.com/aws/karpenter-provider-aws/pkg/apis
 github.com/aws/karpenter-provider-aws/pkg/apis/v1
-# github.com/aws/smithy-go v1.22.5
-## explicit; go 1.22
+# github.com/aws/smithy-go v1.23.2
+## explicit; go 1.23
 github.com/aws/smithy-go
 github.com/aws/smithy-go/auth
 github.com/aws/smithy-go/auth/bearer
