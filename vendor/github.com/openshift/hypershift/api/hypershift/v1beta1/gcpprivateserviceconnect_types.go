@@ -40,10 +40,10 @@ const (
 type GCPPrivateServiceConnectSpec struct {
 	// loadBalancerIP is the IP address of the Internal Load Balancer
 	// Populated by the observer from service status
+	// This value must be a valid IPv4 or IPv6 address.
 	// +required
-	// +kubebuilder:validation:MinLength=7
-	// +kubebuilder:validation:MaxLength=15
-	// +kubebuilder:validation:Pattern=`^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$`
+	// +kubebuilder:validation:XValidation:rule="isIP(self)",message="loadBalancerIP must be a valid IPv4 or IPv6 address"
+	// +kubebuilder:validation:MaxLength=45
 	LoadBalancerIP string `json:"loadBalancerIP"`
 
 	// forwardingRuleName is the name of the Internal Load Balancer forwarding rule
@@ -99,9 +99,10 @@ type GCPPrivateServiceConnectStatus struct {
 	// Customer Side Status (PSC Endpoint and DNS)
 
 	// endpointIP is the reserved IP address for the PSC endpoint
+	// This value must be a valid IPv4 or IPv6 address.
 	// +optional
-	// +kubebuilder:validation:MaxLength=15
-	// +kubebuilder:validation:Pattern=`^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$`
+	// +kubebuilder:validation:XValidation:rule="self == '' || isIP(self)",message="endpointIP must be a valid IPv4 or IPv6 address"
+	// +kubebuilder:validation:MaxLength=45
 	EndpointIP string `json:"endpointIP,omitempty"`
 
 	// dnsZoneName is the private DNS zone name
@@ -123,7 +124,7 @@ type GCPPrivateServiceConnectStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Service Attachment",type="string",JSONPath=".status.serviceAttachmentName",description="Name of the Service Attachment"
 // +kubebuilder:printcolumn:name="Endpoint IP",type="string",JSONPath=".status.endpointIP",description="IP address of the PSC endpoint"
-// +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type==\"GCPPrivateServiceConnectAvailable\")].status",description="Overall PSC availability status"
+// +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type==\"GCPEndpointAvailable\")].status",description="PSC endpoint availability status"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 // +openshift:enable:FeatureGate=GCPPlatform
 
