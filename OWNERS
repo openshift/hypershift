@@ -12,23 +12,15 @@ filters:
     - konflux-approvers
   # GCP-specific OWNERS
   "^(cmd|control-plane-operator|hypershift-operator|product-cli)(/.*)?/.*gcp.*/.*":
-    approvers:
-    - gcp-approvers
     reviewers:
     - gcp-reviewers
   "^api/.*gcp.*":
-    approvers:
-    - gcp-approvers
     reviewers:
     - gcp-reviewers
   "^docs/.*gcp.*":
-    approvers:
-    - gcp-approvers
     reviewers:
     - gcp-reviewers
   "^test/.*gcp.*":
-    approvers:
-    - gcp-approvers
     reviewers:
     - gcp-reviewers
   # KubeVirt-specific OWNERS
