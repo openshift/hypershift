@@ -27,8 +27,8 @@ spec:
       jsonPath: .status.endpointIP
       name: Endpoint IP
       type: string
-    - description: Overall PSC availability status
-      jsonPath: .status.conditions[?(@.type=="GCPPrivateServiceConnectAvailable")].status
+    - description: PSC endpoint availability status
+      jsonPath: .status.conditions[?(@.type=="GCPEndpointAvailable")].status
       name: Available
       type: string
     - jsonPath: .metadata.creationTimestamp
@@ -83,10 +83,12 @@ spec:
                 description: |-
                   loadBalancerIP is the IP address of the Internal Load Balancer
                   Populated by the observer from service status
-                maxLength: 15
-                minLength: 7
-                pattern: ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$
+                  This value must be a valid IPv4 or IPv6 address.
+                maxLength: 45
                 type: string
+                x-kubernetes-validations:
+                - message: loadBalancerIP must be a valid IPv4 or IPv6 address
+                  rule: isIP(self)
               natSubnet:
                 description: |-
                   natSubnet is the subnet used for NAT by the Service Attachment
@@ -176,10 +178,14 @@ spec:
                 maxLength: 253
                 type: string
               endpointIP:
-                description: endpointIP is the reserved IP address for the PSC endpoint
-                maxLength: 15
-                pattern: ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$
+                description: |-
+                  endpointIP is the reserved IP address for the PSC endpoint
+                  This value must be a valid IPv4 or IPv6 address.
+                maxLength: 45
                 type: string
+                x-kubernetes-validations:
+                - message: endpointIP must be a valid IPv4 or IPv6 address
+                  rule: self == '' || isIP(self)
               serviceAttachmentName:
                 description: serviceAttachmentName is the name of the created Service
                   Attachment

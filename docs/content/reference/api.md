@@ -170,7 +170,8 @@ string
 </td>
 <td>
 <p>loadBalancerIP is the IP address of the Internal Load Balancer
-Populated by the observer from service status</p>
+Populated by the observer from service status
+This value must be a valid IPv4 or IPv6 address.</p>
 </td>
 </tr>
 <tr>
@@ -6018,7 +6019,8 @@ string
 </td>
 <td>
 <p>loadBalancerIP is the IP address of the Internal Load Balancer
-Populated by the observer from service status</p>
+Populated by the observer from service status
+This value must be a valid IPv4 or IPv6 address.</p>
 </td>
 </tr>
 <tr>
@@ -6126,7 +6128,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>endpointIP is the reserved IP address for the PSC endpoint</p>
+<p>endpointIP is the reserved IP address for the PSC endpoint
+This value must be a valid IPv4 or IPv6 address.</p>
 </td>
 </tr>
 <tr>
