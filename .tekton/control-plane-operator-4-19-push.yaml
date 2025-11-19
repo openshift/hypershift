@@ -23,7 +23,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-{{.versionName}}:{{revision}}
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19:{{revision}}
   - name: build-platforms
     value:
     - linux/x86_64
@@ -377,7 +377,7 @@ spec:
         - name: name
           value: ecosystem-cert-preflight-checks
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks:0.2@sha256:9568c51a5158d534248908b9b561cf67d2826ed4ea164ffd95628bb42380e6ec
+          value: quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks:0.2@sha256:04f75593558f79a27da2336400bc63d460bf0c5669e3c13f40ee2fb650b1ad1e
         - name: kind
           value: task
         resolver: bundles
