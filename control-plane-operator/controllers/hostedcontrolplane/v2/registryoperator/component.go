@@ -42,7 +42,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"azure-secretprovider.yaml",
 			component.WithAdaptFunction(adaptAzureSecretProvider),
-			component.WithPredicate(isAroHCP),
+			component.WithPlatformPredicate(isAroHCP),
 		).
 		WithDependencies(oapiv2.ComponentName).
 		InjectTokenMinterContainer(component.TokenMinterContainerOptions{

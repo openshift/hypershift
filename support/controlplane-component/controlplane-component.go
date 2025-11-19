@@ -131,6 +131,9 @@ type controlPlaneWorkload[T client.Object] struct {
 	manifestsAdapters map[string]genericAdapter
 	// predicate is called at the beginning, the component is disabled if it returns false.
 	predicate func(cpContext WorkloadContext) (bool, error)
+	// platformPredicate determines if this component is applicable to the current platform.
+	// If it returns false, the component is completely skipped (no API calls, no deletion attempts).
+	platformPredicate func(cpContext WorkloadContext) (bool, error)
 
 	// if provided, konnectivity proxy container and required volumes will be injected into the deployment/statefulset.
 	konnectivityContainerOpts *KonnectivityContainerOptions
@@ -155,13 +158,29 @@ func (c *controlPlaneWorkload[T]) Name() string {
 func (c *controlPlaneWorkload[T]) Reconcile(cpContext ControlPlaneContext) error {
 	workloadContext := cpContext.workloadContext()
 
-	if !cpContext.SkipPredicate && c.predicate != nil {
-		isEnabled, err := c.predicate(workloadContext)
-		if err != nil {
-			return err
+	if !cpContext.SkipPredicate {
+		// Check platformPredicate first - if false, completely skip this component
+		// This prevents any API calls for platform-specific components on the wrong platform
+		if c.platformPredicate != nil {
+			isApplicable, err := c.platformPredicate(workloadContext)
+			if err != nil {
+				return err
+			}
+			if !isApplicable {
+				return nil
+			}
 		}
-		if !isEnabled {
-			return c.delete(cpContext)
+
+		// Check regular predicate - if false, attempt cleanup
+		// This handles configuration-based enabling/disabling
+		if c.predicate != nil {
+			isEnabled, err := c.predicate(workloadContext)
+			if err != nil {
+				return err
+			}
+			if !isEnabled {
+				return c.delete(cpContext)
+			}
 		}
 	}
 

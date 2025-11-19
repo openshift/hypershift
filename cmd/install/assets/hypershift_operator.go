@@ -1277,22 +1277,20 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			})
 	}
 
-	// Add SecretProviderClass RBAC unconditionally.
-	// The SecretProviderClass CRD may be installed by the Secrets Store CSI Driver operator
-	// or other components, independent of HyperShift. The hypershift-operator needs permission
-	// to grant SecretProviderClass RBAC to control-plane-operators, even on non-Azure platforms.
-	role.Rules = append(role.Rules,
-		rbacv1.PolicyRule{
-			APIGroups: []string{"secrets-store.csi.x-k8s.io"},
-			Resources: []string{"secretproviderclasses"},
-			Verbs: []string{
-				"get",
-				"list",
-				"create",
-				"update",
-				"watch",
-			},
-		})
+	if o.ManagedService == hyperv1.AroHCP {
+		role.Rules = append(role.Rules,
+			rbacv1.PolicyRule{
+				APIGroups: []string{"secrets-store.csi.x-k8s.io"},
+				Resources: []string{"secretproviderclasses"},
+				Verbs: []string{
+					"get",
+					"list",
+					"create",
+					"update",
+					"watch",
+				},
+			})
+	}
 	return role
 }
 

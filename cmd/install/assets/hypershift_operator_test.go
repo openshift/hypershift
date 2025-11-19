@@ -2,7 +2,6 @@ package assets
 
 import (
 	"fmt"
-	"reflect"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -10,7 +9,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	corev1 "k8s.io/api/core/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -347,54 +345,6 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Args).To(BeEquivalentTo(test.expectedArgs))
 			g.Expect(deployment.Spec.Template.Spec.Volumes).To(BeEquivalentTo(test.expectedVolumes))
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(BeEquivalentTo(test.expectedVolumeMounts))
-		})
-	}
-}
-
-// TestHyperShiftOperatorClusterRole_SecretProviderClassRBAC verifies that SecretProviderClass RBAC
-// permissions are granted unconditionally, regardless of the ManagedService setting.
-// This is a regression test for OCPBUGS-65687 where the RBAC was previously only granted for AroHCP,
-// causing "reflector forbidden" errors on other platforms when the Secrets Store CSI Driver CRD was installed.
-func TestHyperShiftOperatorClusterRole_SecretProviderClassRBAC(t *testing.T) {
-	tests := map[string]struct {
-		managedService string
-	}{
-		"When ManagedService is empty it should include SecretProviderClass RBAC": {
-			managedService: "",
-		},
-		"When ManagedService is AroHCP it should include SecretProviderClass RBAC": {
-			managedService: hyperv1.AroHCP,
-		},
-		"When ManagedService is another value it should include SecretProviderClass RBAC": {
-			managedService: "some-other-service",
-		},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-
-			clusterRole := HyperShiftOperatorClusterRole{
-				ManagedService: test.managedService,
-			}.Build()
-
-			// Verify SecretProviderClass RBAC rule exists
-			expectedRule := rbacv1.PolicyRule{
-				APIGroups: []string{"secrets-store.csi.x-k8s.io"},
-				Resources: []string{"secretproviderclasses"},
-				Verbs:     []string{"get", "list", "create", "update", "watch"},
-			}
-
-			found := false
-			for _, rule := range clusterRole.Rules {
-				if reflect.DeepEqual(rule, expectedRule) {
-					found = true
-					break
-				}
-			}
-
-			g.Expect(found).To(BeTrue(),
-				"SecretProviderClass RBAC rule should be present unconditionally to prevent 'reflector forbidden' errors when Secrets Store CSI Driver CRD is installed (OCPBUGS-65687)")
 		})
 	}
 }
