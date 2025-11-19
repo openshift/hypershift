@@ -10,6 +10,19 @@ filters:
   "^\\.tekton/.*":
     approvers:
     - konflux-approvers
+  # GCP-specific OWNERS
+  "^(cmd|control-plane-operator|hypershift-operator|product-cli)(/.*)?/.*gcp.*/.*":
+    reviewers:
+    - gcp-reviewers
+  "^api/.*gcp.*":
+    reviewers:
+    - gcp-reviewers
+  "^docs/.*gcp.*":
+    reviewers:
+    - gcp-reviewers
+  "^test/.*gcp.*":
+    reviewers:
+    - gcp-reviewers
   # KubeVirt-specific OWNERS
   "^(cmd|control-plane-operator|hypershift-operator|product-cli)(/.*)?/.*kubevirt.*/.*":
     approvers:
