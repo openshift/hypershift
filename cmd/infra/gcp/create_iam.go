@@ -33,13 +33,13 @@ type CreateIAMOutput struct {
 	ProjectNumber        string                 `json:"projectNumber"`
 	InfraID              string                 `json:"infraId"`
 	WorkloadIdentityPool WorkloadIdentityConfig `json:"workloadIdentityPool"`
+	ServiceAccounts      map[string]string      `json:"serviceAccounts"`
 }
 
 type WorkloadIdentityConfig struct {
 	PoolID     string `json:"poolId"`
 	ProviderID string `json:"providerId"`
 	Audience   string `json:"audience"`
-	//TODO ServiceAccountRefs
 }
 
 func NewCreateIAMCommand() *cobra.Command {
@@ -166,14 +166,20 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, logger logr.Logger) (*
 		return nil, fmt.Errorf("failed to create OIDC Provider: %w", err)
 	}
 
-	//TODO Setup ServiceAccounts, RoleBindings Refs
+	// Create service accounts, assign roles, and setup WIF bindings
+	serviceAccountEmails, err := iamManager.CreateServiceAccounts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create service accounts: %w", err)
+	}
+
 	results.WorkloadIdentityPool = WorkloadIdentityConfig{
 		PoolID:     poolID,
 		ProviderID: providerID,
 		Audience:   providerAudience,
 	}
+	results.ServiceAccounts = serviceAccountEmails
 
-	logger.Info("Created GCP IAM infrastructure ", "infraID", o.InfraID, "projectID", o.ProjectID)
+	logger.Info("Created GCP IAM infrastructure", "infraID", o.InfraID, "projectID", o.ProjectID, "serviceAccountsCreated", len(serviceAccountEmails))
 
 	return results, nil
 }
