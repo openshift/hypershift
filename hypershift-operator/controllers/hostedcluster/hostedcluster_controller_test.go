@@ -62,6 +62,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
 
 	"github.com/blang/semver"
 	"github.com/docker/distribution"
@@ -1685,6 +1686,9 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			if testCase.isManagedService {
 				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
 				t.Setenv("ARO_HCP_KEY_VAULT_USER_CLIENT_ID", "12345678-1234-1234-1234-123456789abc")
+				// Ensure SecretProviderClass is registered in the scheme for ARO-HCP tests
+				// This is needed because the scheme init() runs before the test sets MANAGED_SERVICE
+				_ = secretsstorev1.AddToScheme(api.Scheme)
 			}
 			client := &createTypeTrackingClient{Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).WithStatusSubresource(&hyperv1.HostedCluster{}).Build()}
 			r := &HostedClusterReconciler{

@@ -54,7 +54,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"config-secretprovider.yaml",
 			component.WithAdaptFunction(adaptSecretProvider),
-			component.WithPredicate(isAroHCP),
+			component.WithPlatformPredicate(isAroHCP),
 		).
 		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
 			TokenType:               component.CloudToken,
