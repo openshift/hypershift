@@ -34,7 +34,11 @@ aliases:
     - qinqon
   ibm-reviewers:
     - hasueki
+    - mihivagyok
+    - pamelachristie
     - rtheis
+    - ryan-cradick
+    - twodcube
   openstack-approvers:
     - mandre
     - stephenfin
