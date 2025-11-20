@@ -42,7 +42,7 @@ type GCPPrivateServiceConnectSpec struct {
 	// Populated by the observer from service status
 	// This value must be a valid IPv4 or IPv6 address.
 	// +required
-	// +kubebuilder:validation:XValidation:rule="isIP(self)",message="loadBalancerIP must be a valid IPv4 or IPv6 address"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^((\\\\d{1,3}\\\\.){3}\\\\d{1,3})$') || self.matches('^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$')",message="loadBalancerIP must be a valid IPv4 or IPv6 address"
 	// +kubebuilder:validation:MaxLength=45
 	LoadBalancerIP string `json:"loadBalancerIP"`
 
@@ -101,7 +101,7 @@ type GCPPrivateServiceConnectStatus struct {
 	// endpointIP is the reserved IP address for the PSC endpoint
 	// This value must be a valid IPv4 or IPv6 address.
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="self == '' || isIP(self)",message="endpointIP must be a valid IPv4 or IPv6 address"
+	// +kubebuilder:validation:XValidation:rule="self == '' || self.matches('^((\\\\d{1,3}\\\\.){3}\\\\d{1,3})$') || self.matches('^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$')",message="endpointIP must be a valid IPv4 or IPv6 address"
 	// +kubebuilder:validation:MaxLength=45
 	EndpointIP string `json:"endpointIP,omitempty"`
 
