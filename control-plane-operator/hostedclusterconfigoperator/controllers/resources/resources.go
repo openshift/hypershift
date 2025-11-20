@@ -149,7 +149,7 @@ type reconciler struct {
 	cleanupTracker            *util.CleanupTracker
 
 	// exposed for unit test since GetLogs looks hard to be mocked
-	GetPodLogs func(context context.Context, clientet *clientset.Clientset, namespace, name, container string) ([]byte, error)
+	GetPodLogs func(context context.Context, clientset *clientset.Clientset, namespace, name, container string) ([]byte, error)
 }
 
 func getPodLogs(ctx context.Context, clientSet *clientset.Clientset, namespace, name, container string) ([]byte, error) {
@@ -1411,6 +1411,11 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	return nil
 }
 
+const (
+	ControlPlaneToDataplaneReasonNoKonnectivityAgentPodsFound = "NoKonnectivityAgentPodsFound"
+	ControlPlaneToDataPlaneReasonConnectivityOK               = "ControlPlaneToDataPlaneConnectivityOK"
+)
+
 func (r *reconciler) updateControlPlaneDatapPlaneConnectivityConditions(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	var podList corev1.PodList
 	if err := r.client.List(ctx, &podList,
@@ -1422,7 +1427,7 @@ func (r *reconciler) updateControlPlaneDatapPlaneConnectivityConditions(ctx cont
 	condition := &metav1.Condition{
 		Type:    string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy),
 		Status:  metav1.ConditionFalse,
-		Reason:  "NoKonnectivityAgentPodsFound",
+		Reason:  ControlPlaneToDataplaneReasonNoKonnectivityAgentPodsFound,
 		Message: "Couldn't find an konnectivity-agent running in data plane",
 	}
 
@@ -1439,12 +1444,22 @@ func (r *reconciler) updateControlPlaneDatapPlaneConnectivityConditions(ctx cont
 		}()
 		if err == nil {
 			condition.Status = metav1.ConditionTrue
-			condition.Reason = "ControlPlaneToDataPlaneConnectivityOK"
+			condition.Reason = ControlPlaneToDataPlaneReasonConnectivityOK
 			condition.Message = "At least a konnectivity-agent is running on data plane"
 			break
 		}
 	}
+
+	original := hcp.DeepCopy()
 	meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
+
+	if equality.Semantic.DeepEqual(original.Status.Conditions, hcp.Status.Conditions) {
+		return nil // No status change; avoid unnecessary API call.
+	}
+	if err := r.cpClient.Status().Update(ctx, hcp); err != nil {
+		return fmt.Errorf("failed to update HostedControlPlane status with %s condition: %w", condition.Type, err)
+	}
+
 	return nil
 
 }

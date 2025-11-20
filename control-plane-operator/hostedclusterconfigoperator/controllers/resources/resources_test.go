@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
@@ -46,7 +48,6 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
-	"github.com/onsi/gomega"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -90,7 +91,7 @@ var initialObjects = []client.Object{
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameMirror)),
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameICSP)),
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameInfra)),
-
+	&corev1.Pod{},
 	fakeOperatorHub(),
 }
 
@@ -149,11 +150,13 @@ func TestReconcileErrorHandling(t *testing.T) {
 	errorExceptions := []string{
 		"global pull secret syncer signaled to shutdown",
 	}
-
+	indexFunc := func(obj client.Object) []string {
+		return []string{"Running"}
+	}
 	var totalCreates int
 	{
 		fakeClient := &testClient{
-			Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).WithStatusSubresource(&configv1.Infrastructure{}).Build(),
+			Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).WithIndex(&corev1.Pod{}, "status.phase", indexFunc).WithStatusSubresource(&configv1.Infrastructure{}).Build(),
 		}
 		uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
 
@@ -163,7 +166,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			platformType:           hyperv1.NonePlatform,
 			clusterSignerCA:        "foobar",
-			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).Build(),
+			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build(),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
@@ -313,16 +316,16 @@ func TestReconcileOLM(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			g := gomega.NewWithT(t)
+			g := NewWithT(t)
 			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret)...)
 			hcp.Spec.Configuration = tc.hcpClusterConfig
 			hcp.Spec.OLMCatalogPlacement = tc.olmCatalogPlacement
 			errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret)...)
-			g.Expect(errs).To(gomega.BeEmpty(), "unexpected errors")
+			g.Expect(errs).To(BeEmpty(), "unexpected errors")
 			hcOpHub := manifests.OperatorHub()
 			err := r.client.Get(ctx, client.ObjectKeyFromObject(hcOpHub), hcOpHub)
-			g.Expect(err).To(gomega.BeNil(), "error checking HC OperatorHub")
-			g.Expect(hcOpHub.Spec).To(gomega.Equal(*tc.want))
+			g.Expect(err).To(BeNil(), "error checking HC OperatorHub")
+			g.Expect(hcOpHub.Spec).To(Equal(*tc.want))
 		})
 	}
 }
@@ -506,7 +509,7 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			g := gomega.NewGomegaWithT(t)
+			g := NewGomegaWithT(t)
 			r := &reconciler{
 				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
@@ -515,20 +518,20 @@ func TestReconcileKubeadminPasswordHashSecret(t *testing.T) {
 				hcpNamespace:           testNamespace,
 			}
 			err := r.reconcileKubeadminPasswordHashSecret(t.Context(), test.inputHCP)
-			g.Expect(err).To(gomega.BeNil())
+			g.Expect(err).To(BeNil())
 			if test.expectKubeadminPasswordHashSecretToExist {
 				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
 				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
-				g.Expect(err).To(gomega.BeNil())
-				g.Expect(len(actualKubeAdminSecret.Data["kubeadmin"]) > 0).To(gomega.BeTrue())
+				g.Expect(err).To(BeNil())
+				g.Expect(len(actualKubeAdminSecret.Data["kubeadmin"]) > 0).To(BeTrue())
 			} else {
 				actualKubeAdminSecret := manifests.KubeadminPasswordHashSecret()
 				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(actualKubeAdminSecret), actualKubeAdminSecret)
-				g.Expect(apierrors.IsNotFound(err)).To(gomega.BeTrue())
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			}
 			actualOauthDeployment := manifests.OAuthDeployment(testNamespace)
 			err = r.cpClient.Get(t.Context(), client.ObjectKeyFromObject(actualOauthDeployment), actualOauthDeployment)
-			g.Expect(err).To(gomega.BeNil())
+			g.Expect(err).To(BeNil())
 		})
 	}
 }
@@ -576,7 +579,7 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			g := gomega.NewGomegaWithT(t)
+			g := NewGomegaWithT(t)
 			r := &reconciler{
 				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).Build(),
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
@@ -585,15 +588,15 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 				hcpNamespace:           testNamespace,
 			}
 			err := r.reconcileUserCertCABundle(t.Context(), test.inputHCP)
-			g.Expect(err).To(gomega.BeNil())
+			g.Expect(err).To(BeNil())
 			guestUserCABundle := manifests.UserCABundle()
 			if test.expectUserCAConfigMap {
 				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
-				g.Expect(err).To(gomega.BeNil())
-				g.Expect(len(guestUserCABundle.Data["ca-bundle.crt"]) > 0).To(gomega.BeTrue())
+				g.Expect(err).To(BeNil())
+				g.Expect(len(guestUserCABundle.Data["ca-bundle.crt"]) > 0).To(BeTrue())
 			} else {
 				err := r.client.Get(t.Context(), client.ObjectKeyFromObject(guestUserCABundle), guestUserCABundle)
-				g.Expect(apierrors.IsNotFound(err)).To(gomega.BeTrue())
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 			}
 		})
 	}
@@ -623,13 +626,13 @@ func TestDestroyCloudResources(t *testing.T) {
 		}
 	}
 
-	verifyCleanupWebhook := func(g *gomega.WithT, c client.Client, hcp *hyperv1.HostedControlPlane) {
+	verifyCleanupWebhook := func(g *WithT, c client.Client, hcp *hyperv1.HostedControlPlane) {
 		wh := manifests.ResourceCreationBlockerWebhook()
 		err := c.Get(t.Context(), client.ObjectKeyFromObject(wh), wh)
-		g.Expect(err).ToNot(gomega.HaveOccurred())
+		g.Expect(err).ToNot(HaveOccurred())
 		expected := manifests.ResourceCreationBlockerWebhook()
 		reconcileCreationBlockerWebhook(expected, hcp)
-		g.Expect(wh.Webhooks).To(gomega.BeEquivalentTo(expected.Webhooks))
+		g.Expect(wh.Webhooks).To(BeEquivalentTo(expected.Webhooks))
 	}
 
 	managedImageRegistry := func() client.Object {
@@ -639,11 +642,11 @@ func TestDestroyCloudResources(t *testing.T) {
 		return config
 	}
 
-	verifyImageRegistryConfig := func(g *gomega.WithT, c, _ client.Client) {
+	verifyImageRegistryConfig := func(g *WithT, c, _ client.Client) {
 		config := manifests.Registry()
 		err := c.Get(t.Context(), client.ObjectKeyFromObject(config), config)
-		g.Expect(err).ToNot(gomega.HaveOccurred())
-		g.Expect(config.Spec.ManagementState).To(gomega.Equal(operatorv1.Removed))
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(config.Spec.ManagementState).To(Equal(operatorv1.Removed))
 	}
 
 	ingressController := func(name string) client.Object {
@@ -655,11 +658,11 @@ func TestDestroyCloudResources(t *testing.T) {
 		}
 	}
 
-	verifyIngressControllersRemoved := func(g *gomega.WithT, c, _ client.Client) {
+	verifyIngressControllersRemoved := func(g *WithT, c, _ client.Client) {
 		ingressControllers := &operatorv1.IngressControllerList{}
 		err := c.List(t.Context(), ingressControllers)
-		g.Expect(err).ToNot(gomega.HaveOccurred())
-		g.Expect(len(ingressControllers.Items)).To(gomega.Equal(0))
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(len(ingressControllers.Items)).To(Equal(0))
 	}
 
 	serviceLoadBalancer := func(name string) client.Object {
@@ -699,25 +702,25 @@ func TestDestroyCloudResources(t *testing.T) {
 		}
 	}
 
-	verifyServiceLoadBalancersRemoved := func(g *gomega.WithT, c client.Client) {
+	verifyServiceLoadBalancersRemoved := func(g *WithT, c client.Client) {
 		services := &corev1.ServiceList{}
 		err := c.List(t.Context(), services)
-		g.Expect(err).ToNot(gomega.HaveOccurred())
+		g.Expect(err).ToNot(HaveOccurred())
 		for _, svc := range services.Items {
-			g.Expect(svc.Spec.Type).ToNot(gomega.Equal(corev1.ServiceTypeLoadBalancer))
+			g.Expect(svc.Spec.Type).ToNot(Equal(corev1.ServiceTypeLoadBalancer))
 		}
 	}
 
-	verifyServiceLoadBalancersOwnedByIngressControllerExists := func(name string, g *gomega.WithT, c client.Client) {
+	verifyServiceLoadBalancersOwnedByIngressControllerExists := func(name string, g *WithT, c client.Client) {
 		service := serviceLoadBalancerOwnedByIngressController(name)
 		err := c.Get(t.Context(), client.ObjectKeyFromObject(service), service)
-		g.Expect(err).ToNot(gomega.HaveOccurred())
+		g.Expect(err).ToNot(HaveOccurred())
 	}
 
-	verifyServiceExists := func(name string, g *gomega.WithT, c client.Client) {
+	verifyServiceExists := func(name string, g *WithT, c client.Client) {
 		service := clusterIPService(name)
 		err := c.Get(t.Context(), client.ObjectKeyFromObject(service), service)
-		g.Expect(err).ToNot(gomega.HaveOccurred())
+		g.Expect(err).ToNot(HaveOccurred())
 	}
 
 	pv := func(name string) client.Object {
@@ -758,42 +761,42 @@ func TestDestroyCloudResources(t *testing.T) {
 		}
 	}
 
-	verifyPVCsRemoved := func(g *gomega.WithT, c client.Client) {
+	verifyPVCsRemoved := func(g *WithT, c client.Client) {
 		pvcs := &corev1.PersistentVolumeClaimList{}
 		err := c.List(t.Context(), pvcs)
-		g.Expect(err).ToNot(gomega.HaveOccurred())
-		g.Expect(len(pvcs.Items)).To(gomega.Equal(0))
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(len(pvcs.Items)).To(Equal(0))
 	}
 
-	verifyPodsRemoved := func(g *gomega.WithT, c client.Client) {
+	verifyPodsRemoved := func(g *WithT, c client.Client) {
 		pods := &corev1.PodList{}
 		err := c.List(t.Context(), pods)
-		g.Expect(err).ToNot(gomega.HaveOccurred())
-		g.Expect(len(pods.Items)).To(gomega.Equal(0))
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(len(pods.Items)).To(Equal(0))
 	}
 
-	verifyDoneCond := func(g *gomega.WithT, c client.Client) {
+	verifyDoneCond := func(g *WithT, c client.Client) {
 		hcp := fakeHostedControlPlane()
 		err := c.Get(t.Context(), client.ObjectKeyFromObject(hcp), hcp)
-		g.Expect(err).ToNot(gomega.HaveOccurred())
+		g.Expect(err).ToNot(HaveOccurred())
 		cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
-		g.Expect(cond).ToNot(gomega.BeNil())
+		g.Expect(cond).ToNot(BeNil())
 	}
 
-	verifyNotDoneCond := func(g *gomega.WithT, c client.Client) {
+	verifyNotDoneCond := func(g *WithT, c client.Client) {
 		hcp := fakeHostedControlPlane()
 		err := c.Get(t.Context(), client.ObjectKeyFromObject(hcp), hcp)
-		g.Expect(err).ToNot(gomega.HaveOccurred())
+		g.Expect(err).ToNot(HaveOccurred())
 		cond := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.CloudResourcesDestroyed))
-		g.Expect(cond).ToNot(gomega.BeNil())
-		g.Expect(cond.Status).To(gomega.Equal(metav1.ConditionFalse))
+		g.Expect(cond).ToNot(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
 	}
 
 	tests := []struct {
 		name             string
 		existing         []client.Object
 		existingUncached []client.Object
-		verify           func(*gomega.WithT, client.Client, client.Client)
+		verify           func(*WithT, client.Client, client.Client)
 		verifyDoneCond   bool
 	}{
 		{
@@ -822,7 +825,7 @@ func TestDestroyCloudResources(t *testing.T) {
 				serviceLoadBalancer("bar"),
 				clusterIPService("baz"),
 			},
-			verify: func(g *gomega.WithT, c, _ client.Client) {
+			verify: func(g *WithT, c, _ client.Client) {
 				verifyServiceLoadBalancersRemoved(g, c)
 				verifyServiceExists("baz", g, c)
 			},
@@ -834,7 +837,7 @@ func TestDestroyCloudResources(t *testing.T) {
 				serviceLoadBalancerOwnedByIngressController("bar"),
 				clusterIPService("baz"),
 			},
-			verify: func(g *gomega.WithT, c, _ client.Client) {
+			verify: func(g *WithT, c, _ client.Client) {
 				verifyServiceLoadBalancersOwnedByIngressControllerExists("bar", g, c)
 				verifyServiceExists("baz", g, c)
 			},
@@ -848,7 +851,7 @@ func TestDestroyCloudResources(t *testing.T) {
 			existingUncached: []client.Object{
 				pod("pod1"), pod("pod2"),
 			},
-			verify: func(g *gomega.WithT, c, uc client.Client) {
+			verify: func(g *WithT, c, uc client.Client) {
 				verifyPVCsRemoved(g, c)
 				verifyPodsRemoved(g, uc)
 			},
@@ -868,7 +871,7 @@ func TestDestroyCloudResources(t *testing.T) {
 			existingUncached: []client.Object{
 				pod("pod1"), pod("pod2"),
 			},
-			verify: func(g *gomega.WithT, c, uc client.Client) {
+			verify: func(g *WithT, c, uc client.Client) {
 				verifyImageRegistryConfig(g, c, nil)
 				verifyIngressControllersRemoved(g, c, nil)
 				verifyServiceLoadBalancersRemoved(g, c)
@@ -880,7 +883,7 @@ func TestDestroyCloudResources(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			g := gomega.NewGomegaWithT(t)
+			g := NewGomegaWithT(t)
 			fakeHCP := fakeHostedControlPlane()
 			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.existing...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 			uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(test.existingUncached...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
@@ -900,7 +903,7 @@ func TestDestroyCloudResources(t *testing.T) {
 				cleanupTracker:         supportutil.NewCleanupTracker(),
 			}
 			_, err := r.destroyCloudResources(t.Context(), fakeHCP)
-			g.Expect(err).ToNot(gomega.HaveOccurred())
+			g.Expect(err).ToNot(HaveOccurred())
 			verifyCleanupWebhook(g, guestClient, fakeHCP)
 			if test.verify != nil {
 				test.verify(g, guestClient, uncachedClient)
@@ -950,7 +953,7 @@ func TestDestroyCloudResourcesWithKASUnavailable(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			g := gomega.NewGomegaWithT(t)
+			g := NewGomegaWithT(t)
 
 			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
 			uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
@@ -977,16 +980,16 @@ func TestDestroyCloudResourcesWithKASUnavailable(t *testing.T) {
 			}
 
 			remaining, skipReason, err := r.ensureCloudResourcesDestroyed(t.Context(), fakeHCP)
-			g.Expect(err).ToNot(gomega.HaveOccurred())
+			g.Expect(err).ToNot(HaveOccurred())
 
 			if test.expectCleanupSkipped {
 				// When KAS is unavailable, cleanup should be skipped with empty remaining
-				g.Expect(remaining.Len()).To(gomega.Equal(0))
-				g.Expect(skipReason).To(gomega.Equal("KubeAPIServerUnavailable"))
+				g.Expect(remaining.Len()).To(Equal(0))
+				g.Expect(skipReason).To(Equal("KubeAPIServerUnavailable"))
 			} else {
 				// When KAS is available, cleanup should proceed normally
-				g.Expect(remaining.Len()).To(gomega.Equal(0))
-				g.Expect(skipReason).To(gomega.BeEmpty())
+				g.Expect(remaining.Len()).To(Equal(0))
+				g.Expect(skipReason).To(BeEmpty())
 			}
 		})
 	}
@@ -1064,9 +1067,9 @@ func TestConnectionErrorTracking(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			g := gomega.NewGomegaWithT(t)
+			g := NewGomegaWithT(t)
 			result := isConnectionError(test.err)
-			g.Expect(result).To(gomega.Equal(test.expectedConnection))
+			g.Expect(result).To(Equal(test.expectedConnection))
 		})
 	}
 }
@@ -1088,10 +1091,10 @@ func TestListAccessor(t *testing.T) {
 	}
 
 	a := listAccessor(list)
-	g := gomega.NewGomegaWithT(t)
-	g.Expect(a.len()).To(gomega.Equal(2))
-	g.Expect(a.item(0).GetName()).To(gomega.Equal("test1"))
-	g.Expect(a.item(1).GetName()).To(gomega.Equal("test2"))
+	g := NewGomegaWithT(t)
+	g.Expect(a.len()).To(Equal(2))
+	g.Expect(a.item(0).GetName()).To(Equal("test1"))
+	g.Expect(a.item(1).GetName()).To(Equal("test2"))
 }
 
 func TestReconcileClusterVersion(t *testing.T) {
@@ -1132,16 +1135,16 @@ func TestReconcileClusterVersion(t *testing.T) {
 		},
 	}
 	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(clusterVersion).Build()
-	g := gomega.NewWithT(t)
+	g := NewWithT(t)
 	r := &reconciler{
 		client:                 fakeClient,
 		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 	}
 	err := r.reconcileClusterVersion(t.Context(), hcp)
-	g.Expect(err).ToNot(gomega.HaveOccurred())
+	g.Expect(err).ToNot(HaveOccurred())
 	err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
-	g.Expect(err).ToNot(gomega.HaveOccurred())
-	g.Expect(clusterVersion.Spec.ClusterID).To(gomega.Equal(configv1.ClusterID("test-cluster-id")))
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(clusterVersion.Spec.ClusterID).To(Equal(configv1.ClusterID("test-cluster-id")))
 	expectedCapabilities := &configv1.ClusterVersionCapabilitiesSpec{
 		BaselineCapabilitySet: configv1.ClusterVersionCapabilitySetNone,
 		AdditionalEnabledCapabilities: []configv1.ClusterVersionCapability{
@@ -1163,10 +1166,10 @@ func TestReconcileClusterVersion(t *testing.T) {
 			configv1.ClusterVersionCapabilityOpenShiftSamples,
 		},
 	}
-	g.Expect(clusterVersion.Spec.Capabilities).To(gomega.Equal(expectedCapabilities))
-	g.Expect(clusterVersion.Spec.DesiredUpdate).To(gomega.BeNil())
-	g.Expect(clusterVersion.Spec.Overrides).To(gomega.Equal(testOverrides))
-	g.Expect(clusterVersion.Spec.Channel).To(gomega.BeEmpty())
+	g.Expect(clusterVersion.Spec.Capabilities).To(Equal(expectedCapabilities))
+	g.Expect(clusterVersion.Spec.DesiredUpdate).To(BeNil())
+	g.Expect(clusterVersion.Spec.Overrides).To(Equal(testOverrides))
+	g.Expect(clusterVersion.Spec.Channel).To(BeEmpty())
 }
 
 func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
@@ -1212,15 +1215,15 @@ func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
 		},
 	}
 	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(clusterVersion).Build()
-	g := gomega.NewWithT(t)
+	g := NewWithT(t)
 	r := &reconciler{
 		client:                 fakeClient,
 		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 	}
 	err := r.reconcileClusterVersion(t.Context(), hcp)
-	g.Expect(err).ToNot(gomega.HaveOccurred())
+	g.Expect(err).ToNot(HaveOccurred())
 	err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
-	g.Expect(err).ToNot(gomega.HaveOccurred())
+	g.Expect(err).ToNot(HaveOccurred())
 
 	expectedCapabilities := &configv1.ClusterVersionCapabilitiesSpec{
 		BaselineCapabilitySet: configv1.ClusterVersionCapabilitySetNone,
@@ -1243,7 +1246,7 @@ func TestReconcileClusterVersionWithDisabledCapabilities(t *testing.T) {
 			// configv1.ClusterVersionCapabilityOpenShiftSamples,
 		},
 	}
-	g.Expect(clusterVersion.Spec.Capabilities).To(gomega.Equal(expectedCapabilities))
+	g.Expect(clusterVersion.Spec.Capabilities).To(Equal(expectedCapabilities))
 }
 
 func TestReconcileClusterVersionWithEnabledCapabilities(t *testing.T) {
@@ -1289,15 +1292,15 @@ func TestReconcileClusterVersionWithEnabledCapabilities(t *testing.T) {
 		},
 	}
 	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(clusterVersion).Build()
-	g := gomega.NewWithT(t)
+	g := NewWithT(t)
 	r := &reconciler{
 		client:                 fakeClient,
 		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 	}
 	err := r.reconcileClusterVersion(t.Context(), hcp)
-	g.Expect(err).ToNot(gomega.HaveOccurred())
+	g.Expect(err).ToNot(HaveOccurred())
 	err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(clusterVersion), clusterVersion)
-	g.Expect(err).ToNot(gomega.HaveOccurred())
+	g.Expect(err).ToNot(HaveOccurred())
 
 	expectedCapabilities := &configv1.ClusterVersionCapabilitiesSpec{
 		BaselineCapabilitySet: configv1.ClusterVersionCapabilitySetNone,
@@ -1321,7 +1324,7 @@ func TestReconcileClusterVersionWithEnabledCapabilities(t *testing.T) {
 			configv1.ClusterVersionCapabilityOpenShiftSamples,
 		},
 	}
-	g.Expect(clusterVersion.Spec.Capabilities).To(gomega.Equal(expectedCapabilities))
+	g.Expect(clusterVersion.Spec.Capabilities).To(Equal(expectedCapabilities))
 }
 
 func TestReconcileImageContentPolicyType(t *testing.T) {
@@ -1347,7 +1350,7 @@ func TestReconcileImageContentPolicyType(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			g := gomega.NewWithT(t)
+			g := NewWithT(t)
 
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.hcp).Build()
 			r := &reconciler{
@@ -1355,14 +1358,14 @@ func TestReconcileImageContentPolicyType(t *testing.T) {
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			}
 			err := r.reconcileImageContentPolicyType(t.Context(), tc.hcp)
-			g.Expect(err).ToNot(gomega.HaveOccurred())
+			g.Expect(err).ToNot(HaveOccurred())
 
 			idms := globalconfig.ImageDigestMirrorSet()
 			err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(idms), idms)
-			g.Expect(err).ToNot(gomega.HaveOccurred(), "error getting IDMS")
+			g.Expect(err).ToNot(HaveOccurred(), "error getting IDMS")
 
 			// Same number of ICS and IDMS
-			g.Expect(len(tc.hcp.Spec.ImageContentSources)).To(gomega.Equal(len(idms.Spec.ImageDigestMirrors)), "expecting equal values between IDMS and ICS")
+			g.Expect(len(tc.hcp.Spec.ImageContentSources)).To(Equal(len(idms.Spec.ImageDigestMirrors)), "expecting equal values between IDMS and ICS")
 
 			if tc.hcp.Spec.ImageContentSources != nil {
 				// Check if the ICS and IDMS have the same values
@@ -1375,24 +1378,24 @@ func TestReconcileImageContentPolicyType(t *testing.T) {
 				origHCP.Spec.ImageContentSources = nil
 
 				err = r.reconcileImageContentPolicyType(t.Context(), origHCP)
-				g.Expect(err).ToNot(gomega.HaveOccurred())
+				g.Expect(err).ToNot(HaveOccurred())
 				idms := globalconfig.ImageDigestMirrorSet()
 				err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(idms), idms)
-				g.Expect(err).ToNot(gomega.HaveOccurred(), "error getting IDMS")
-				g.Expect(len(origHCP.Spec.ImageContentSources)).To(gomega.Equal(len(idms.Spec.ImageDigestMirrors)), "expecting equal values between IDMS and ICS")
+				g.Expect(err).ToNot(HaveOccurred(), "error getting IDMS")
+				g.Expect(len(origHCP.Spec.ImageContentSources)).To(Equal(len(idms.Spec.ImageDigestMirrors)), "expecting equal values between IDMS and ICS")
 				compareICSAndIDMS(g, origHCP.Spec.ImageContentSources, idms)
 			}
 		})
 	}
 }
 
-func compareICSAndIDMS(g *gomega.WithT, ics []hyperv1.ImageContentSource, idms *configv1.ImageDigestMirrorSet) {
-	g.Expect(len(ics)).To(gomega.Equal(len(idms.Spec.ImageDigestMirrors)), "expecting equal values between IDMS and ICS")
+func compareICSAndIDMS(g *WithT, ics []hyperv1.ImageContentSource, idms *configv1.ImageDigestMirrorSet) {
+	g.Expect(len(ics)).To(Equal(len(idms.Spec.ImageDigestMirrors)), "expecting equal values between IDMS and ICS")
 	// Check if the ICS and IDMS have the same values
 	for i, ics := range ics {
-		g.Expect(ics.Source).To(gomega.Equal(idms.Spec.ImageDigestMirrors[i].Source))
+		g.Expect(ics.Source).To(Equal(idms.Spec.ImageDigestMirrors[i].Source))
 		for j, mirrorics := range ics.Mirrors {
-			g.Expect(mirrorics).To(gomega.Equal(string(idms.Spec.ImageDigestMirrors[i].Mirrors[j])))
+			g.Expect(mirrorics).To(Equal(string(idms.Spec.ImageDigestMirrors[i].Mirrors[j])))
 		}
 	}
 }
@@ -1428,7 +1431,7 @@ func TestReconcileKASEndpoints(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			g := gomega.NewWithT(t)
+			g := NewWithT(t)
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
 			r := &reconciler{
 				client:                 fakeClient,
@@ -1436,19 +1439,19 @@ func TestReconcileKASEndpoints(t *testing.T) {
 			}
 
 			err := r.reconcileKASEndpoints(t.Context(), tc.hcp)
-			g.Expect(err).ToNot(gomega.HaveOccurred())
+			g.Expect(err).ToNot(HaveOccurred())
 
 			endpoints := &corev1.Endpoints{}
 			err = fakeClient.Get(t.Context(), client.ObjectKey{Name: "kubernetes", Namespace: corev1.NamespaceDefault}, endpoints)
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			g.Expect(endpoints.Subsets[0].Ports[0].Name).To(gomega.Equal("https"))
-			g.Expect(endpoints.Subsets[0].Ports[0].Port).To(gomega.Equal(int32(tc.expectedPort)))
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(endpoints.Subsets[0].Ports[0].Name).To(Equal("https"))
+			g.Expect(endpoints.Subsets[0].Ports[0].Port).To(Equal(int32(tc.expectedPort)))
 
 			endpointSlice := &discoveryv1.EndpointSlice{}
 			err = fakeClient.Get(t.Context(), client.ObjectKey{Name: "kubernetes", Namespace: corev1.NamespaceDefault}, endpointSlice)
-			g.Expect(err).ToNot(gomega.HaveOccurred())
-			g.Expect(endpoints.Subsets[0].Ports[0].Name).To(gomega.Equal("https"))
-			g.Expect(endpoints.Subsets[0].Ports[0].Port).To(gomega.Equal(int32(tc.expectedPort)))
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(endpoints.Subsets[0].Ports[0].Name).To(Equal("https"))
+			g.Expect(endpoints.Subsets[0].Ports[0].Port).To(Equal(int32(tc.expectedPort)))
 		})
 	}
 }
@@ -1513,7 +1516,7 @@ func TestReconcileKubeletConfig(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			g := gomega.NewWithT(t)
+			g := NewWithT(t)
 			cpFakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.hostedControlPlaneObjects...).Build()
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.existHostedControlPlaneObjects...).Build()
 			r := &reconciler{
@@ -1521,9 +1524,9 @@ func TestReconcileKubeletConfig(t *testing.T) {
 				client:                 fakeClient,
 				cpClient:               cpFakeClient,
 			}
-			g.Expect(r.reconcileKubeletConfig(t.Context())).To(gomega.Succeed())
+			g.Expect(r.reconcileKubeletConfig(t.Context())).To(Succeed())
 			for _, obj := range tc.expectedHostedClusterObjects {
-				g.Expect(r.client.Get(t.Context(), client.ObjectKeyFromObject(obj), obj)).To(gomega.Succeed(), "failed to get %s", client.ObjectKeyFromObject(obj))
+				g.Expect(r.client.Get(t.Context(), client.ObjectKeyFromObject(obj), obj)).To(Succeed(), "failed to get %s", client.ObjectKeyFromObject(obj))
 			}
 			listOpts := []client.ListOption{
 				client.InNamespace(hcNamespace),
@@ -1532,9 +1535,9 @@ func TestReconcileKubeletConfig(t *testing.T) {
 				},
 			}
 			cmList := &corev1.ConfigMapList{}
-			g.Expect(r.client.List(t.Context(), cmList, listOpts...)).To(gomega.Succeed(), "failed to list KubeletConfig ConfigMap")
+			g.Expect(r.client.List(t.Context(), cmList, listOpts...)).To(Succeed(), "failed to list KubeletConfig ConfigMap")
 			expectedLen := len(tc.expectedHostedClusterObjects)
-			g.Expect(cmList.Items).To(gomega.HaveLen(expectedLen), "more ConfigMaps found then expected; got=%d want=%", len(cmList.Items), expectedLen)
+			g.Expect(cmList.Items).To(HaveLen(expectedLen), "more ConfigMaps found then expected; got=%d want=%", len(cmList.Items), expectedLen)
 		})
 	}
 }
@@ -1639,11 +1642,13 @@ func TestReconcileOcmConfigChange(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			g := gomega.NewWithT(t)
+			g := NewWithT(t)
 			// Create a context with a logger for the test
 			ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
-
-			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(initialObjects, registryConfig)...).WithStatusSubresource(&configv1.Infrastructure{}).Build()
+			indexFunc := func(obj client.Object) []string {
+				return []string{"Running"}
+			}
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(initialObjects, registryConfig)...).WithIndex(&corev1.Pod{}, "status.phase", indexFunc).WithStatusSubresource(&configv1.Infrastructure{}).Build()
 			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(cpObjects, initialOcmConfigMap)...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 			r := &reconciler{
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
@@ -1657,13 +1662,13 @@ func TestReconcileOcmConfigChange(t *testing.T) {
 				platformType:           tc.platformType,
 			}
 			_, err := r.Reconcile(ctx, controllerruntime.Request{})
-			g.Expect(err).NotTo(gomega.HaveOccurred())
+			g.Expect(err).NotTo(HaveOccurred())
 
 			// Check if the OCM configuration has changed or not
 			updatedOcmConfigMap := &corev1.ConfigMap{}
 			err = cpClient.Get(ctx, types.NamespacedName{Name: "openshift-controller-manager-config", Namespace: "bar"}, updatedOcmConfigMap)
-			g.Expect(err).NotTo(gomega.HaveOccurred())
-			g.Expect(reflect.DeepEqual(updatedOcmConfigMap.Data, initialOcmConfigMap.Data)).To(gomega.Equal(tc.expectConfigMapUnchanged))
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(reflect.DeepEqual(updatedOcmConfigMap.Data, initialOcmConfigMap.Data)).To(Equal(tc.expectConfigMapUnchanged))
 		})
 	}
 
@@ -2228,7 +2233,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			g := gomega.NewWithT(t)
+			g := NewWithT(t)
 			ctx := t.Context()
 
 			cpClient := fake.NewClientBuilder().
@@ -2258,8 +2263,8 @@ func TestReconcileAuthOIDC(t *testing.T) {
 					Namespace: ConfigNamespace,
 					Name:      provider.Issuer.CertificateAuthority.Name,
 				}, caConfigMap)
-				g.Expect(err).To(gomega.HaveOccurred())
-				g.Expect(apierrors.IsNotFound(err)).To(gomega.BeTrue(), "CA configmap should not exist before reconciliation")
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "CA configmap should not exist before reconciliation")
 			}
 
 			for _, secretName := range test.expectOIDCClientSecrets {
@@ -2268,20 +2273,20 @@ func TestReconcileAuthOIDC(t *testing.T) {
 					Namespace: ConfigNamespace,
 					Name:      secretName,
 				}, clientSecret)
-				g.Expect(err).To(gomega.HaveOccurred())
-				g.Expect(apierrors.IsNotFound(err)).To(gomega.BeTrue(), "OIDC client secret should not exist before reconciliation")
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "OIDC client secret should not exist before reconciliation")
 			}
 
 			err := r.reconcileAuthOIDC(ctx, test.inputHCP)
 
 			if test.expectErrors {
-				g.Expect(err).To(gomega.HaveOccurred())
+				g.Expect(err).To(HaveOccurred())
 				errorStr := err.Error()
 				for _, expectedMsg := range test.expectedErrorMessages {
-					g.Expect(errorStr).To(gomega.ContainSubstring(expectedMsg))
+					g.Expect(errorStr).To(ContainSubstring(expectedMsg))
 				}
 			} else {
-				g.Expect(err).ToNot(gomega.HaveOccurred())
+				g.Expect(err).ToNot(HaveOccurred())
 			}
 
 			// Check if issuer CA configmap was copied to openshift-config namespace
@@ -2295,7 +2300,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 						Namespace: ConfigNamespace,
 						Name:      provider.Issuer.CertificateAuthority.Name,
 					}, caConfigMap)
-					g.Expect(err).ToNot(gomega.HaveOccurred())
+					g.Expect(err).ToNot(HaveOccurred())
 					// Get expected CA certificate from the test case input objects
 					expectedCA := ""
 					for _, obj := range test.inputCPObjects {
@@ -2304,7 +2309,7 @@ func TestReconcileAuthOIDC(t *testing.T) {
 							break
 						}
 					}
-					g.Expect(caConfigMap.Data["ca-bundle.crt"]).To(gomega.Equal(expectedCA))
+					g.Expect(caConfigMap.Data["ca-bundle.crt"]).To(Equal(expectedCA))
 				}
 			}
 
@@ -2315,8 +2320,8 @@ func TestReconcileAuthOIDC(t *testing.T) {
 					Namespace: ConfigNamespace,
 					Name:      secretName,
 				}, clientSecret)
-				g.Expect(err).ToNot(gomega.HaveOccurred())
-				g.Expect(clientSecret.Data["clientSecret"]).ToNot(gomega.BeEmpty())
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(clientSecret.Data["clientSecret"]).ToNot(BeEmpty())
 			}
 
 			// Verify that unexpected resources were not created
@@ -2331,13 +2336,13 @@ func TestReconcileAuthOIDC(t *testing.T) {
 						Namespace: ConfigNamespace,
 						Name:      provider.Issuer.CertificateAuthority.Name,
 					}, caConfigMap)
-					g.Expect(apierrors.IsNotFound(err)).To(gomega.BeTrue())
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
 				}
 			}
 			// Verify that no unexpected client secrets were copied
 			secretList := &corev1.SecretList{}
 			err = hcClient.List(ctx, secretList, client.InNamespace(ConfigNamespace))
-			g.Expect(err).ToNot(gomega.HaveOccurred())
+			g.Expect(err).ToNot(HaveOccurred())
 
 			expectedSecrets := sets.New(test.expectOIDCClientSecrets...)
 
@@ -2359,7 +2364,7 @@ func initCondition(conditionType string, status metav1.ConditionStatus, reason, 
 	}
 }
 
-func initPod() corev1.Pod {
+func initKonnectivyAgentRunningPod() corev1.Pod {
 	return corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "konnectivity-agent-rdax",
@@ -2374,8 +2379,7 @@ func initPod() corev1.Pod {
 
 func Test_reconciler_updateControlPlaneDatapPlaneConnectivityConditions(t *testing.T) {
 	tests := []struct {
-		name string // description of this test case
-		// Named input parameters for target function.
+		name              string
 		hcp               *hyperv1.HostedControlPlane
 		wantErr           bool
 		expectedCondition *metav1.Condition
@@ -2383,28 +2387,20 @@ func Test_reconciler_updateControlPlaneDatapPlaneConnectivityConditions(t *testi
 		mockedGetPodLogs  func(context context.Context, clientet *clientset.Clientset, namespace, name, container string) ([]byte, error)
 	}{
 		{
-			name: "no konnectivity-agent PODs condition False",
-			hcp: &hyperv1.HostedControlPlane{
-				Status: hyperv1.HostedControlPlaneStatus{
-					Conditions: []metav1.Condition{},
-				},
-			},
+			name:    "no konnectivity-agent PODs condition False",
+			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: initCondition(string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy),
-				metav1.ConditionFalse, "NoKonnectivityAgentPodsFound", "Couldn't find an konnectivity-agent running in data plane"),
+				metav1.ConditionFalse, ControlPlaneToDataplaneReasonNoKonnectivityAgentPodsFound, "Couldn't find an konnectivity-agent running in data plane"),
 			pods: []corev1.Pod{},
 		},
 		{
-			name: "one konnectivity-agent PODs running condition OK",
-			hcp: &hyperv1.HostedControlPlane{
-				Status: hyperv1.HostedControlPlaneStatus{
-					Conditions: []metav1.Condition{},
-				},
-			},
+			name:    "one konnectivity-agent PODs running condition OK",
+			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: initCondition(string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy),
-				metav1.ConditionTrue, "ControlPlaneToDataPlaneConnectivityOK", "At least a konnectivity-agent is running on data plane"),
-			pods: []corev1.Pod{initPod()},
+				metav1.ConditionTrue, ControlPlaneToDataPlaneReasonConnectivityOK, "At least a konnectivity-agent is running on data plane"),
+			pods: []corev1.Pod{initKonnectivyAgentRunningPod()},
 			mockedGetPodLogs: func(context context.Context,
 				clientet *clientset.Clientset,
 				namespace, name,
@@ -2423,8 +2419,9 @@ func Test_reconciler_updateControlPlaneDatapPlaneConnectivityConditions(t *testi
 			indexFunc := func(obj client.Object) []string {
 				return []string{"Running"}
 			}
-			fakeClient := fake.NewClientBuilder().WithLists(podList).WithIndex(&corev1.Pod{}, "status.phase", indexFunc).Build()
-			r.client = fakeClient
+			r.client = fake.NewClientBuilder().WithLists(podList).WithIndex(&corev1.Pod{}, "status.phase", indexFunc).Build()
+
+			r.cpClient = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 
 			r.GetPodLogs = tt.mockedGetPodLogs
 
