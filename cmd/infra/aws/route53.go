@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 
@@ -157,21 +159,53 @@ func (o *DestroyInfraOptions) DestroyDNS(ctx context.Context, client route53ifac
 }
 
 func (o *DestroyInfraOptions) DestroyPrivateZones(ctx context.Context, listClient, recordsClient route53iface.Route53API, vpcID *string) []error {
-	var output *route53.ListHostedZonesByVPCOutput
-	if err := retryRoute53WithBackoff(ctx, func() (err error) {
-		output, err = listClient.ListHostedZonesByVPCWithContext(ctx, &route53.ListHostedZonesByVPCInput{VPCId: vpcID, VPCRegion: aws.String(o.Region)})
-		return err
-	}); err != nil {
-		return []error{fmt.Errorf("failed to list hosted zones for vpc %s: %w", *vpcID, err)}
-	}
-
 	var errs []error
-	for _, zone := range output.HostedZoneSummaries {
-		id := cleanZoneID(*zone.HostedZoneId)
-		if err := deleteZone(ctx, id, recordsClient, o.Log); err != nil {
-			return []error{fmt.Errorf("failed to delete private hosted zones for vpc %s: %w", *vpcID, err)}
+	var nextToken *string
+
+	// Paginate through all hosted zones associated with the VPC
+	for {
+		var output *route53.ListHostedZonesByVPCOutput
+		if err := retryRoute53WithBackoff(ctx, func() (err error) {
+			input := &route53.ListHostedZonesByVPCInput{
+				VPCId:     vpcID,
+				VPCRegion: aws.String(o.Region),
+			}
+			if nextToken != nil {
+				input.NextToken = nextToken
+			}
+			output, err = listClient.ListHostedZonesByVPCWithContext(ctx, input)
+			return err
+		}); err != nil {
+			// If VPC doesn't exist, we can skip gracefully
+			if awsErr := awserr.Error(nil); errors.As(err, &awsErr) && awsErr.Code() == route53.ErrCodeInvalidVPCId {
+				o.Log.Info("VPC not found", "vpc", *vpcID)
+				return errs
+			}
+			errs = append(errs, fmt.Errorf("failed to list hosted zones for vpc %s: %w", *vpcID, err))
+			return errs
 		}
-		o.Log.Info("Deleted private hosted zone", "id", id, "name", *zone.Name)
+
+		// Delete each zone found on this page
+		for _, zone := range output.HostedZoneSummaries {
+			id := cleanZoneID(*zone.HostedZoneId)
+			if err := deleteZone(ctx, id, recordsClient, o.Log); err != nil {
+				// Collect the error but continue trying to delete other zones
+				if awsErr := awserr.Error(nil); errors.As(err, &awsErr) && awsErr.Code() == route53.ErrCodeNoSuchHostedZone {
+					o.Log.Info("Hosted zone already deleted", "id", id, "name", *zone.Name)
+					continue
+				}
+				o.Log.Error(err, "Failed to delete private hosted zone", "id", id, "name", *zone.Name, "vpc", *vpcID)
+				errs = append(errs, fmt.Errorf("failed to delete private hosted zone %s (%s): %w", id, *zone.Name, err))
+				continue
+			}
+			o.Log.Info("Deleted private hosted zone", "id", id, "name", *zone.Name)
+		}
+
+		// Check if there are more pages
+		if output.NextToken == nil || *output.NextToken == "" {
+			break
+		}
+		nextToken = output.NextToken
 	}
 
 	return errs
