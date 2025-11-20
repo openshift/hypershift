@@ -1,0 +1,30 @@
+{
+  "serviceAccounts": [
+   {
+      "name": "nodepool-mgmt",
+      "displayName": "Node Pool Management Service Account",
+      "description": "Service account for HyperShift node pool management",
+      "roles": [
+        "roles/compute.instanceAdmin.v1",
+        "roles/compute.networkAdmin"
+      ],
+      "k8sServiceAccount": {
+        "namespace": "kube-system",
+        "name": "capi-gcp-controller-manager"
+      }
+    },
+    {
+      "name": "ctrlplane-op",
+      "displayName": "Control Plane Operator Service Account",
+      "description": "Service account for HyperShift control plane operator",
+      "roles": [
+        "roles/dns.admin",
+        "roles/compute.networkAdmin"
+      ],
+      "k8sServiceAccount": {
+        "namespace": "kube-system",
+        "name": "control-plane-operator"
+      }
+    }
+  ]
+}

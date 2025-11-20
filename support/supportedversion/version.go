@@ -292,6 +292,41 @@ type ocpTags struct {
 	Tags []ocpVersion `json:"tags"`
 }
 
+// ValidateVersionSkew validates the version skew between HostedCluster and NodePool versions.
+// Returns nil if the version skew is supported, otherwise returns a descriptive error.
+// All 4.y versions support n-3 version skew (e.g., 4.18 HostedCluster supports NodePools running 4.17, 4.16, and 4.15).
+func ValidateVersionSkew(hostedClusterVersion, nodePoolVersion *semver.Version) error {
+	// Reject mismatched major versions
+	if nodePoolVersion.Major != hostedClusterVersion.Major {
+		return fmt.Errorf("NodePool major version %d must match HostedCluster major version %d",
+			nodePoolVersion.Major, hostedClusterVersion.Major)
+	}
+
+	if nodePoolVersion.GT(*hostedClusterVersion) {
+		return fmt.Errorf("NodePool version %s cannot be higher than the HostedCluster version %s",
+			nodePoolVersion, hostedClusterVersion)
+	}
+
+	versionDiff := int(hostedClusterVersion.Minor) - int(nodePoolVersion.Minor)
+	maxAllowedDiff := 3
+
+	if versionDiff > maxAllowedDiff {
+		// Compute minSupportedMinor with explicit conditional
+		var minSupportedMinor int
+		if int(hostedClusterVersion.Minor)-maxAllowedDiff < 0 {
+			minSupportedMinor = 0
+		} else {
+			minSupportedMinor = int(hostedClusterVersion.Minor) - maxAllowedDiff
+		}
+		return fmt.Errorf("NodePool minor version %d.%d is less than %d.%d, which is the minimum NodePool version compatible with the %d.%d HostedCluster",
+			nodePoolVersion.Major, nodePoolVersion.Minor,
+			hostedClusterVersion.Major, minSupportedMinor,
+			hostedClusterVersion.Major, hostedClusterVersion.Minor)
+	}
+
+	return nil
+}
+
 // retrieveSupportedOCPVersion retrieves the latest supported OCP version from supported versions ConfigMap, retrieves
 // the latest stable release images from the provided release URL, and returns the latest supported OCP version that is
 // not a release candidate and matches the latest supported OCP version supported by the HyperShift operator.

@@ -104,6 +104,7 @@ func ExpectedNodePoolConditions(nodePool *hyperv1.NodePool) map[string]corev1.Co
 		hyperv1.NodePoolReachedIgnitionEndpoint:              corev1.ConditionTrue,
 		hyperv1.NodePoolUpdateManagementEnabledConditionType: corev1.ConditionTrue,
 		hyperv1.NodePoolValidArchPlatform:                    corev1.ConditionTrue,
+		hyperv1.NodePoolSupportedVersionSkewConditionType:    corev1.ConditionTrue,
 
 		hyperv1.NodePoolUpdatingVersionConditionType:                 corev1.ConditionFalse,
 		hyperv1.NodePoolUpdatingConfigConditionType:                  corev1.ConditionFalse,

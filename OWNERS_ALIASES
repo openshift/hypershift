@@ -39,6 +39,13 @@ aliases:
     - rtheis
     - ryan-cradick
     - twodcube
+  gcp-reviewers:
+    - apahim
+    - cblecker
+    - ckandag
+    - cristianoveiga
+    - jimdaga
+    - patjlm
   openstack-approvers:
     - mandre
     - stephenfin

@@ -162,6 +162,10 @@ func TestOutput(t *testing.T) {
 					ProviderID: "my-cluster-infra-k8s-provider",
 					Audience:   "//iam.googleapis.com/projects/987654321/locations/global/workloadIdentityPools/my-cluster-infra-wi-pool/providers/my-cluster-infra-k8s-provider",
 				},
+				ServiceAccounts: map[string]string{
+					"nodepool-mgmt": "my-cluster-infra-nodepool-mgmt@my-gcp-project.iam.gserviceaccount.com",
+					"ctrlplane-op":  "my-cluster-infra-ctrlplane-op@my-gcp-project.iam.gserviceaccount.com",
+				},
 			},
 			validateJSON: true,
 		},
@@ -227,6 +231,29 @@ func TestOutput(t *testing.T) {
 				}
 				if output.WorkloadIdentityPool.PoolID != tt.results.WorkloadIdentityPool.PoolID {
 					t.Errorf("expected PoolID %q, got %q", tt.results.WorkloadIdentityPool.PoolID, output.WorkloadIdentityPool.PoolID)
+				}
+				if output.WorkloadIdentityPool.ProviderID != tt.results.WorkloadIdentityPool.ProviderID {
+					t.Errorf("expected ProviderID %q, got %q", tt.results.WorkloadIdentityPool.ProviderID, output.WorkloadIdentityPool.ProviderID)
+				}
+				if output.WorkloadIdentityPool.Audience != tt.results.WorkloadIdentityPool.Audience {
+					t.Errorf("expected Audience %q, got %q", tt.results.WorkloadIdentityPool.Audience, output.WorkloadIdentityPool.Audience)
+				}
+
+				// Validate ServiceAccounts if present
+				if tt.results.ServiceAccounts != nil {
+					if output.ServiceAccounts == nil {
+						t.Errorf("expected ServiceAccounts to be non-nil")
+					} else if len(output.ServiceAccounts) != len(tt.results.ServiceAccounts) {
+						t.Errorf("expected %d service accounts, got %d", len(tt.results.ServiceAccounts), len(output.ServiceAccounts))
+					} else {
+						for name, expectedEmail := range tt.results.ServiceAccounts {
+							if actualEmail, exists := output.ServiceAccounts[name]; !exists {
+								t.Errorf("expected service account %q to exist", name)
+							} else if actualEmail != expectedEmail {
+								t.Errorf("expected service account %q to have email %q, got %q", name, expectedEmail, actualEmail)
+							}
+						}
+					}
 				}
 			}
 		})

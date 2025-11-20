@@ -7,6 +7,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/utils/ptr"
 )
 
 func BuildContainer(container *corev1.Container, buildFn func(*corev1.Container)) corev1.Container {
@@ -138,4 +139,50 @@ func WithOptions(opts *AvailabilityProberOpts) AvailabilityProberOpt {
 		o.WaitForLabeledPodsGone = opts.WaitForLabeledPodsGone
 		o.WaitForClusterRolebinding = opts.WaitForClusterRolebinding
 	}
+}
+
+// enforceRestrictedSecurityContext enforces restricted security context settings on a single container.
+// Per Kubernetes restricted pod security standards, only NET_BIND_SERVICE is allowed.
+// See: https://kubernetes.io/docs/concepts/security/pod-security-standards/#restricted
+func enforceRestrictedSecurityContext(container *corev1.Container) error {
+	if container.SecurityContext == nil {
+		container.SecurityContext = &corev1.SecurityContext{}
+	}
+	container.SecurityContext.AllowPrivilegeEscalation = ptr.To(false)
+	container.SecurityContext.RunAsNonRoot = ptr.To(true)
+
+	var existingAdd []corev1.Capability
+	if container.SecurityContext.Capabilities != nil {
+		existingAdd = container.SecurityContext.Capabilities.Add
+		// Validate capabilities against restricted pod security standards
+		for _, cap := range existingAdd {
+			if cap != "NET_BIND_SERVICE" {
+				return fmt.Errorf("container %q: capability %q is not allowed by restricted pod security standards (only NET_BIND_SERVICE is permitted)", container.Name, cap)
+			}
+		}
+	}
+	container.SecurityContext.Capabilities = &corev1.Capabilities{
+		Drop: []corev1.Capability{"ALL"},
+		Add:  existingAdd,
+	}
+	return nil
+}
+
+// EnforceRestrictedSecurityContextToContainers enforces restricted pod security standards
+// on all containers and init containers in a PodSpec. Only NET_BIND_SERVICE capability is allowed.
+func EnforceRestrictedSecurityContextToContainers(podSpec *corev1.PodSpec) error {
+	// Apply to init containers
+	for i := range podSpec.InitContainers {
+		if err := enforceRestrictedSecurityContext(&podSpec.InitContainers[i]); err != nil {
+			return err
+		}
+	}
+
+	// Apply to containers
+	for i := range podSpec.Containers {
+		if err := enforceRestrictedSecurityContext(&podSpec.Containers[i]); err != nil {
+			return err
+		}
+	}
+	return nil
 }

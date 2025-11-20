@@ -141,6 +141,19 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 		}
 	}
 
+	// Apply GCP-specific container security context for GKE PodSecurity compliance.
+	// This is applied here (after sidecars are injected) to ensure all containers,
+	// including availability-prober and konnectivity-proxy sidecars, have the
+	// required security context fields set.
+	//
+	// Containers that need specific capabilities (e.g., NET_BIND_SERVICE for haproxy)
+	// should declare them in their deployment templates, and they will be preserved.
+	if hcp.Spec.Platform.Type == hyperv1.GCPPlatform {
+		if err := util.EnforceRestrictedSecurityContextToContainers(&podTemplateSpec.Spec); err != nil {
+			return fmt.Errorf("failed to enforce restricted security context: %w", err)
+		}
+	}
+
 	// preserve existing resource requirements.
 	for idx, container := range podTemplateSpec.Spec.Containers {
 		if res, exist := existingResources[container.Name]; exist {

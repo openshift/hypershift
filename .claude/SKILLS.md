@@ -78,12 +78,40 @@ This directory contains Claude Code skills that are automatically applied when w
 - Promotes best practices for concurrency and error handling
 - Provides quick reference during code reviews
 
+### Debug Cluster
+
+**Location:** `.claude/skills/debug-cluster/`
+
+**Description:** Provides systematic debugging approaches for HyperShift hosted-cluster issues.
+
+**Auto-applies when:**
+- Debugging hosted-cluster problems
+- Investigating stuck deletions
+- Troubleshooting control plane issues
+- Analyzing NodePool lifecycle issues
+- Reviewing operator logs for cluster problems
+
+**Covers:**
+- Hosted-cluster deletion debugging workflow
+- NodePool, HostedControlPlane, and namespace cleanup
+- CAPI resource troubleshooting
+- Finalizer inspection and removal
+- Operator log analysis (HO and CPO)
+- Common issues and resolutions
+
+**Benefits:**
+- Systematic approach to debugging cluster issues
+- Reduces time spent investigating stuck resources
+- Provides ready-to-use kubectl commands
+- Covers common scenarios and resolutions
+
 ## How Skills Work
 
 Skills are automatically invoked by Claude based on context. You don't need to do anything special - just ask Claude to:
 - Write or review Go code → Code Formatting + Effective Go apply automatically
 - Create commits → Git Commit Format applies automatically
 - Create tests → Code Formatting ("When...it should..." convention) applies
+- Debug hosted-cluster issues → Debug Cluster applies automatically
 
 ## Adding New Skills
 

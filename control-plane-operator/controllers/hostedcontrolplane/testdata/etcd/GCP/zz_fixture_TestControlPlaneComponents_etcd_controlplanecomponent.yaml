@@ -1,0 +1,34 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: etcd
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: 'StatefulSet etcd is not available: 0/3 replicas ready'
+    reason: WaitingForAvailable
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: 'Waiting for statefulset etcd rollout to finish: 0 out of 3 new replicas
+      have been updated'
+    reason: WaitingForRolloutComplete
+    status: "False"
+    type: RolloutComplete
+  resources:
+  - group: ""
+    kind: Service
+    name: etcd-discovery
+  - group: policy
+    kind: PodDisruptionBudget
+    name: etcd
+  - group: ""
+    kind: Service
+    name: etcd-client
+  - group: monitoring.coreos.com
+    kind: ServiceMonitor
+    name: etcd

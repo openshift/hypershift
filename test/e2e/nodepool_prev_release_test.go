@@ -4,26 +4,29 @@
 package e2e
 
 import (
+	"testing"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
-	"testing"
 )
 
 type NodePoolPrevReleaseCreateTest struct {
 	DummyInfraSetup
-	hostedCluster *hyperv1.HostedCluster
-	release       string
-	clusterOpts   e2eutil.PlatformAgnosticOptions
+	hostedCluster                *hyperv1.HostedCluster
+	release                      string
+	clusterOpts                  e2eutil.PlatformAgnosticOptions
+	expectedSupportedVersionSkew bool
 }
 
-func NewNodePoolPrevReleaseCreateTest(hostedCluster *hyperv1.HostedCluster, release string, clusterOpts e2eutil.PlatformAgnosticOptions) *NodePoolPrevReleaseCreateTest {
+func NewNodePoolPrevReleaseCreateTest(hostedCluster *hyperv1.HostedCluster, release string, clusterOpts e2eutil.PlatformAgnosticOptions, expectedSupportedVersionSkew bool) *NodePoolPrevReleaseCreateTest {
 	return &NodePoolPrevReleaseCreateTest{
-		hostedCluster: hostedCluster,
-		release:       release,
-		clusterOpts:   clusterOpts,
+		hostedCluster:                hostedCluster,
+		release:                      release,
+		clusterOpts:                  clusterOpts,
+		expectedSupportedVersionSkew: expectedSupportedVersionSkew,
 	}
 }
 
@@ -56,4 +59,8 @@ func (npPrevTest *NodePoolPrevReleaseCreateTest) Run(t *testing.T, nodePool hype
 
 	t.Logf("Validating all Nodes have the synced labels and taints")
 	e2eutil.EnsureNodesLabelsAndTaints(t, nodePool, nodes)
+}
+
+func (npPrevTest *NodePoolPrevReleaseCreateTest) ExpectedSupportedVersionSkew() bool {
+	return npPrevTest.expectedSupportedVersionSkew
 }
