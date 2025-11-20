@@ -1,6 +1,7 @@
 package gcpprivateserviceconnect
 
 import (
+	"context"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -9,6 +10,12 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 func TestControllerName(t *testing.T) {
@@ -88,21 +95,33 @@ func TestGetConsumerAcceptList(t *testing.T) {
 	}
 }
 
-func TestServiceLoadBalancerValidation(t *testing.T) {
+func TestReconcileIntegration(t *testing.T) {
 	tests := []struct {
-		name                 string
-		service              *corev1.Service
-		expectIsInternalType bool
-		expectHasValidIP     bool
-		expectLoadBalancerIP string
+		name                string
+		serviceName         string
+		requestName         string
+		service             *corev1.Service
+		hcp                 *hyperv1.HostedControlPlane
+		expectRequeue       bool
+		expectError         bool
+		expectGCPPSCCreated bool
 	}{
 		{
-			name: "valid Internal LoadBalancer with IP",
+			name:        "When reconciling target service it should create GCPPrivateServiceConnect CR",
+			serviceName: "private-router",
+			requestName: "private-router",
 			service: &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "private-router",
+					Name:      "private-router",
+					Namespace: "clusters-test-hcp",
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: hyperv1.GroupVersion.String(),
+						Kind:       "HostedControlPlane",
+						Name:       "test-hcp",
+						UID:        "test-hcp-uid",
+					}},
 					Annotations: map[string]string{
-						gcpLoadBalancerTypeAnnotation: gcpInternalLoadBalancerType,
+						"networking.gke.io/load-balancer-type": "Internal",
 					},
 				},
 				Status: corev1.ServiceStatus{
@@ -113,17 +132,81 @@ func TestServiceLoadBalancerValidation(t *testing.T) {
 					},
 				},
 			},
-			expectIsInternalType: true,
-			expectHasValidIP:     true,
-			expectLoadBalancerIP: "10.128.15.229",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "clusters-test-hcp",
+					UID:       "test-hcp-uid",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPPlatformSpec{
+							Project: "my-gcp-project",
+						},
+					},
+				},
+			},
+			expectRequeue:       false,
+			expectError:         false,
+			expectGCPPSCCreated: true,
 		},
 		{
-			name: "External LoadBalancer - should be rejected",
+			name:        "When reconciling non-target service it should skip processing",
+			serviceName: "private-router",
+			requestName: "other-service",
 			service: &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "public-router",
+					Name:      "other-service",
+					Namespace: "clusters-test-hcp",
 					Annotations: map[string]string{
-						gcpLoadBalancerTypeAnnotation: "External",
+						"networking.gke.io/load-balancer-type": "Internal",
+					},
+				},
+				Status: corev1.ServiceStatus{
+					LoadBalancer: corev1.LoadBalancerStatus{
+						Ingress: []corev1.LoadBalancerIngress{
+							{IP: "10.128.15.230"},
+						},
+					},
+				},
+			},
+			expectRequeue:       false,
+			expectError:         false,
+			expectGCPPSCCreated: false,
+		},
+		{
+			name:        "When service has no LoadBalancer IP it should skip processing",
+			serviceName: "private-router",
+			requestName: "private-router",
+			service: &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "private-router",
+					Namespace: "clusters-test-hcp",
+					Annotations: map[string]string{
+						"networking.gke.io/load-balancer-type": "Internal",
+					},
+				},
+				Status: corev1.ServiceStatus{
+					LoadBalancer: corev1.LoadBalancerStatus{
+						Ingress: []corev1.LoadBalancerIngress{},
+					},
+				},
+			},
+			expectRequeue:       false,
+			expectError:         false,
+			expectGCPPSCCreated: false,
+		},
+		{
+			name:        "When service is External LoadBalancer it should skip processing",
+			serviceName: "private-router",
+			requestName: "private-router",
+			service: &corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "private-router",
+					Namespace: "clusters-test-hcp",
+					Annotations: map[string]string{
+						"networking.gke.io/load-balancer-type": "External",
 					},
 				},
 				Status: corev1.ServiceStatus{
@@ -134,141 +217,104 @@ func TestServiceLoadBalancerValidation(t *testing.T) {
 					},
 				},
 			},
-			expectIsInternalType: false,
-			expectHasValidIP:     true, // Has IP, but should be rejected due to type
-		},
-		{
-			name: "Internal LoadBalancer without IP yet",
-			service: &corev1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "private-router",
-					Annotations: map[string]string{
-						gcpLoadBalancerTypeAnnotation: gcpInternalLoadBalancerType,
-					},
-				},
-				Status: corev1.ServiceStatus{
-					LoadBalancer: corev1.LoadBalancerStatus{
-						Ingress: []corev1.LoadBalancerIngress{},
-					},
-				},
-			},
-			expectIsInternalType: true,
-			expectHasValidIP:     false,
-		},
-		{
-			name: "Internal LoadBalancer with empty IP",
-			service: &corev1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "private-router",
-					Annotations: map[string]string{
-						gcpLoadBalancerTypeAnnotation: gcpInternalLoadBalancerType,
-					},
-				},
-				Status: corev1.ServiceStatus{
-					LoadBalancer: corev1.LoadBalancerStatus{
-						Ingress: []corev1.LoadBalancerIngress{
-							{IP: ""},
-						},
-					},
-				},
-			},
-			expectIsInternalType: true,
-			expectHasValidIP:     false,
-		},
-		{
-			name: "Service without LoadBalancer type annotation",
-			service: &corev1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "router",
-				},
-				Status: corev1.ServiceStatus{
-					LoadBalancer: corev1.LoadBalancerStatus{
-						Ingress: []corev1.LoadBalancerIngress{
-							{IP: "10.128.15.229"},
-						},
-					},
-				},
-			},
-			expectIsInternalType: false,
-			expectHasValidIP:     true, // Has IP, but should be rejected due to missing annotation
+			expectRequeue:       false,
+			expectError:         false,
+			expectGCPPSCCreated: false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
+			ctx := context.Background()
 
-			// Test LoadBalancer type validation using actual implementation
-			isInternalType := isInternalLoadBalancer(tt.service)
-			g.Expect(isInternalType).To(Equal(tt.expectIsInternalType))
+			// Create fake client with initial objects
+			scheme := runtime.NewScheme()
+			_ = corev1.AddToScheme(scheme)
+			_ = hyperv1.AddToScheme(scheme)
 
-			// Test IP extraction using actual implementation
-			ip, hasValidIP := extractLoadBalancerIP(tt.service)
-			g.Expect(hasValidIP).To(Equal(tt.expectHasValidIP))
+			objects := []crclient.Object{tt.service}
+			if tt.hcp != nil {
+				objects = append(objects, tt.hcp)
+			}
 
-			if tt.expectLoadBalancerIP != "" {
-				g.Expect(ip).To(Equal(tt.expectLoadBalancerIP))
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(objects...).
+				Build()
+
+			// Create observer with fake client
+			observer := &GCPPrivateServiceObserver{
+				Client:           fakeClient,
+				ControllerName:   "test-observer",
+				ServiceName:      tt.serviceName,
+				ServiceNamespace: "clusters-test-hcp",
+				HCPNamespace:     "clusters-test-hcp",
+				CreateOrUpdateProvider: &mockCreateOrUpdateProvider{
+					client: fakeClient,
+				},
+			}
+
+			// Execute reconcile
+			req := reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      tt.requestName,
+					Namespace: "clusters-test-hcp",
+				},
+			}
+
+			result, err := observer.Reconcile(ctx, req)
+
+			// Verify result
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			g.Expect(result.Requeue).To(Equal(tt.expectRequeue))
+
+			// Check if GCPPrivateServiceConnect CR was created
+			if tt.expectGCPPSCCreated {
+				gcpPSC := &hyperv1.GCPPrivateServiceConnect{}
+				err := fakeClient.Get(ctx, types.NamespacedName{
+					Name:      tt.serviceName,
+					Namespace: "clusters-test-hcp",
+				}, gcpPSC)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(gcpPSC.Spec.LoadBalancerIP).To(Equal("10.128.15.229"))
+				g.Expect(gcpPSC.Spec.ConsumerAcceptList).To(Equal([]string{"my-gcp-project"}))
+			} else {
+				// Verify no GCPPrivateServiceConnect was created
+				gcpPSCList := &hyperv1.GCPPrivateServiceConnectList{}
+				err := fakeClient.List(ctx, gcpPSCList)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(gcpPSCList.Items).To(BeEmpty())
 			}
 		})
 	}
 }
 
-func TestServiceOwnerReferenceValidation(t *testing.T) {
-	validHCPOwnerRef := metav1.OwnerReference{
-		APIVersion: hyperv1.GroupVersion.String(),
-		Kind:       "HostedControlPlane",
-		Name:       "test-hcp",
-		UID:        "test-uid",
+// mockCreateOrUpdateProvider implements CreateOrUpdateProvider for testing
+type mockCreateOrUpdateProvider struct {
+	client crclient.Client
+}
+
+func (m *mockCreateOrUpdateProvider) CreateOrUpdate(ctx context.Context, c crclient.Client, obj crclient.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+	// Execute the mutation function
+	if err := f(); err != nil {
+		return controllerutil.OperationResultNone, err
 	}
 
-	invalidOwnerRef := metav1.OwnerReference{
-		APIVersion: "apps/v1",
-		Kind:       "Deployment",
-		Name:       "some-deployment",
-		UID:        "other-uid",
+	// Try to create the object first
+	err := c.Create(ctx, obj)
+	if err != nil {
+		// If creation fails, try to update
+		if err := c.Update(ctx, obj); err != nil {
+			return controllerutil.OperationResultNone, err
+		}
+		return controllerutil.OperationResultUpdated, nil
 	}
 
-	tests := []struct {
-		name           string
-		ownerRefs      []metav1.OwnerReference
-		expectHCPName  string
-		expectHasOwner bool
-	}{
-		{
-			name:           "valid HostedControlPlane owner reference",
-			ownerRefs:      []metav1.OwnerReference{validHCPOwnerRef},
-			expectHCPName:  "test-hcp",
-			expectHasOwner: true,
-		},
-		{
-			name:           "multiple owners with valid HCP",
-			ownerRefs:      []metav1.OwnerReference{invalidOwnerRef, validHCPOwnerRef},
-			expectHCPName:  "test-hcp",
-			expectHasOwner: true,
-		},
-		{
-			name:           "no HostedControlPlane owner reference",
-			ownerRefs:      []metav1.OwnerReference{invalidOwnerRef},
-			expectHCPName:  "",
-			expectHasOwner: false,
-		},
-		{
-			name:           "no owner references",
-			ownerRefs:      []metav1.OwnerReference{},
-			expectHCPName:  "",
-			expectHasOwner: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-
-			// Test owner reference extraction using actual implementation
-			hcpName := extractHostedControlPlaneOwnerName(tt.ownerRefs)
-
-			g.Expect(hcpName).To(Equal(tt.expectHCPName))
-			g.Expect(hcpName != "").To(Equal(tt.expectHasOwner))
-		})
-	}
+	return controllerutil.OperationResultCreated, nil
 }

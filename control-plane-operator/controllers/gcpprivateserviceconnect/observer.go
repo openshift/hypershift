@@ -12,24 +12,18 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/informers"
-	kubeclient "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/go-logr/logr"
 )
 
 const (
-	defaultResync                 = 10 * time.Hour
 	gcpInternalLoadBalancerType   = "Internal"
 	gcpLoadBalancerTypeAnnotation = "networking.gke.io/load-balancer-type"
 )
@@ -39,8 +33,7 @@ const (
 type GCPPrivateServiceObserver struct {
 	client.Client
 
-	clientset *kubeclient.Clientset
-	log       logr.Logger
+	log logr.Logger
 
 	ControllerName   string
 	ServiceNamespace string
@@ -49,66 +42,32 @@ type GCPPrivateServiceObserver struct {
 	upsert.CreateOrUpdateProvider
 }
 
-func nameMapper(names []string) handler.MapFunc {
-	nameSet := sets.NewString(names...)
-	return func(ctx context.Context, obj client.Object) []reconcile.Request {
-		if !nameSet.Has(obj.GetName()) {
-			return nil
-		}
-		return []reconcile.Request{
-			{
-				NamespacedName: types.NamespacedName{
-					Namespace: obj.GetNamespace(),
-					Name:      obj.GetName(),
-				},
-			},
-		}
-	}
-}
-
-func namedResourceHandler(names ...string) handler.EventHandler {
-	return handler.EnqueueRequestsFromMapFunc(nameMapper(names))
-}
-
 func ControllerName(name string) string {
 	return fmt.Sprintf("%s-observer", name)
 }
 
 func (r *GCPPrivateServiceObserver) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	r.log = ctrl.Log.WithName(r.ControllerName).WithValues("name", r.ServiceName, "namespace", r.ServiceNamespace)
-	var err error
-	r.clientset, err = kubeclient.NewForConfig(mgr.GetConfig())
-	if err != nil {
-		return err
-	}
-	informerFactory := informers.NewSharedInformerFactoryWithOptions(r.clientset, defaultResync, informers.WithNamespace(r.ServiceNamespace))
-	services := informerFactory.Core().V1().Services()
-	c, err := controller.New(r.ControllerName, mgr, controller.Options{Reconciler: r})
-	if err != nil {
-		return err
-	}
-	if err := c.Watch(&source.Informer{
-		Informer: services.Informer(),
-		Handler:  namedResourceHandler(r.ServiceName),
-	}); err != nil {
-		return err
-	}
-	err = mgr.Add(manager.RunnableFunc(func(ctx context.Context) error {
-		informerFactory.Start(ctx.Done())
-		return nil
-	}))
-	if err != nil {
-		return err
-	}
-	return nil
+
+	return ctrl.NewControllerManagedBy(mgr).
+		Named(r.ControllerName).
+		For(&corev1.Service{}).
+		WithOptions(controller.Options{
+			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](3*time.Second, 30*time.Second),
+		}).
+		Complete(r)
 }
 
 func (r *GCPPrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	if req.Name != r.ServiceName {
+		return ctrl.Result{}, nil
+	}
+
 	r.log.Info("reconciling")
 
 	// Fetch the Service
-	svc, err := r.clientset.CoreV1().Services(req.Namespace).Get(ctx, req.Name, metav1.GetOptions{})
-	if err != nil {
+	svc := &corev1.Service{}
+	if err := r.Get(ctx, req.NamespacedName, svc); err != nil {
 		if apierrors.IsNotFound(err) {
 			r.log.Info("service not found")
 			return ctrl.Result{}, nil
