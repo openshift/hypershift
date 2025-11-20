@@ -20,10 +20,12 @@ func ReconcileAuthenticationConfiguration(authentication *configv1.Authenticatio
 	if config != nil && config.Authentication != nil {
 		authentication.Spec = *config.Authentication
 	} else {
-		// When configuration or authentication is removed, explicitly clear the spec
-		// to ensure the Authentication resource is reset to default state.
-		// Only preserve the ServiceAccountIssuer which is set below.
-		authentication.Spec = configv1.AuthenticationSpec{}
+		// When configuration or authentication is removed, explicitly reset the spec
+		// to default state (IntegratedOAuth). This ensures the authentication-operator
+		// properly clears OIDC configuration and falls back to OAuth.
+		authentication.Spec = configv1.AuthenticationSpec{
+			Type: configv1.AuthenticationTypeIntegratedOAuth,
+		}
 	}
 	authentication.Spec.ServiceAccountIssuer = issuerURL
 	return nil
