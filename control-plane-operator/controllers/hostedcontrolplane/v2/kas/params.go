@@ -22,6 +22,7 @@ const (
 	defaultMaxRequestsInflight         = 3000
 	defaultMaxMutatingRequestsInflight = 1000
 	defaultGoAwayChance                = 0.001
+	defaultEventTTL                   = "3h"
 )
 
 type KubeAPIServerConfigParams struct {
@@ -50,6 +51,7 @@ type KubeAPIServerConfigParams struct {
 	MaxRequestsInflight          string
 	MaxMutatingRequestsInflight  string
 	GoAwayChance                 string
+	EventTTL                     string
 }
 
 func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
@@ -120,6 +122,12 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 	}
 	if goAwayChance := hcp.Annotations[hyperv1.KubeAPIServerGoAwayChance]; goAwayChance != "" {
 		kasConfig.GoAwayChance = hcp.Annotations[hyperv1.KubeAPIServerGoAwayChance]
+	}
+
+	kasConfig.EventTTL = defaultEventTTL
+	if eventTTLMinutes := hcp.Annotations[hyperv1.KubeAPIServerEventTTLMinutes]; eventTTLMinutes != "" {
+		// Convert minutes to duration format (e.g., "180" -> "180m", "60" -> "60m")
+		kasConfig.EventTTL = fmt.Sprintf("%sm", eventTTLMinutes)
 	}
 
 	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
