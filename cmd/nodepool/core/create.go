@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/supportedversion"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -194,8 +195,7 @@ func validateHostedClusterPayloadSupportsNodePoolCPUArch(ctx context.Context, cl
 }
 
 // validMinorVersionCompatibility validates that the NodePool version is compatible with the HostedCluster version.
-// For 4.even versions, it allows y-2 difference.
-// For 4.odd versions, it allows y-1 difference.
+// All 4.y versions now support n-3 version skew.
 // NodePool version cannot be higher than control plane version.
 func validMinorVersionCompatibility(ctx context.Context, client crclient.Client, name, namespace, nodePoolReleaseImage string, releaseProvider releaseinfo.Provider) error {
 	if nodePoolReleaseImage == "" {
@@ -224,9 +224,10 @@ func validMinorVersionCompatibility(ctx context.Context, client crclient.Client,
 		controlPlaneVersionStr = hcluster.Status.Version.Desired.Version
 	} else {
 		// If the cluster is installed or upgrading
-		// Start with the most recent version from history as the default
-		controlPlaneVersionStr = hcluster.Status.Version.History[len(hcluster.Status.Version.History)-1].Version
-		// Update with any more recent Completed version if found
+		// History is ordered by recency with the newest update first (History[0])
+		// Use the most recent version from history as the default
+		controlPlaneVersionStr = hcluster.Status.Version.History[0].Version
+		// If the most recent version is not Completed, find the most recent Completed version
 		for _, history := range hcluster.Status.Version.History {
 			if history.State == "Completed" {
 				controlPlaneVersionStr = history.Version
@@ -259,28 +260,6 @@ func validMinorVersionCompatibility(ctx context.Context, client crclient.Client,
 		return fmt.Errorf("parsing NodePool version (%s): %w", releaseImage.Version(), err)
 	}
 
-	// NodePool version cannot be higher than control plane version
-	if nodePoolVersion.GT(controlPlaneVersion) {
-		return fmt.Errorf("NodePool version %s cannot be higher than the HostedCluster version %s",
-			nodePoolVersion, controlPlaneVersion)
-	}
-
-	// Calculate minor version difference
-	versionDiff := int64(controlPlaneVersion.Minor - nodePoolVersion.Minor)
-
-	// For 4.even versions, allow y-2 difference
-	// For 4.odd versions, allow y-1 difference
-	maxAllowedDiff := int64(2)
-	if controlPlaneVersion.Minor%2 == 1 {
-		maxAllowedDiff = 1
-	}
-
-	if versionDiff > maxAllowedDiff {
-		return fmt.Errorf("NodePool minor version %d.%d is not compatible with the HostedCluster minor version %d.%d (max allowed difference: %d)",
-			nodePoolVersion.Major, nodePoolVersion.Minor,
-			controlPlaneVersion.Major, controlPlaneVersion.Minor,
-			maxAllowedDiff)
-	}
-
-	return nil
+	// Validate version skew using the centralized validation logic
+	return supportedversion.ValidateVersionSkew(&controlPlaneVersion, &nodePoolVersion)
 }

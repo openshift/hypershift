@@ -157,39 +157,39 @@ func TestValidMinorVersionCompatibility(t *testing.T) {
 			expectedError:        "NodePool version 4.18.5 cannot be higher than the HostedCluster version 4.17.0",
 		},
 		{
-			name:                 "when nodePool version is one minor version lower than control plane (odd version) it should not return error",
-			controlPlaneVersion:  "4.17.0",
-			nodePoolReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.37-x86_64",
-			nodePoolVersion:      "4.16.37",
+			name:                 "when nodePool version is one minor version lower (n-1) it should not return error",
+			controlPlaneVersion:  "4.18.0",
+			nodePoolReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.17.37-x86_64",
+			nodePoolVersion:      "4.17.37",
 			expectedError:        "",
 		},
 		{
-			name:                 "when nodePool version is two minor versions lower than control plane (odd version) it should return error",
-			controlPlaneVersion:  "4.17.0",
-			nodePoolReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.15.47-x86_64",
-			nodePoolVersion:      "4.15.47",
-			expectedError:        "NodePool minor version 4.15 is not compatible with the HostedCluster minor version 4.17 (max allowed difference: 1)",
-		},
-		{
-			name:                 "when nodePool version is two minor versions lower than control plane (even version) it should not return error",
+			name:                 "when nodePool version is two minor versions lower (n-2) it should not return error",
 			controlPlaneVersion:  "4.18.0",
 			nodePoolReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64",
 			nodePoolVersion:      "4.16.0",
 			expectedError:        "",
 		},
 		{
-			name:                 "when nodePool version is three minor versions lower than control plane (even version) it should return error",
+			name:                 "when nodePool version is three minor versions lower (n-3) it should not return error",
 			controlPlaneVersion:  "4.18.0",
 			nodePoolReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.15.0-x86_64",
 			nodePoolVersion:      "4.15.0",
-			expectedError:        "NodePool minor version 4.15 is not compatible with the HostedCluster minor version 4.18 (max allowed difference: 2)",
+			expectedError:        "",
+		},
+		{
+			name:                 "when nodePool version is four minor versions lower (n-4) it should return error",
+			controlPlaneVersion:  "4.18.0",
+			nodePoolReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.14.0-x86_64",
+			nodePoolVersion:      "4.14.0",
+			expectedError:        "NodePool minor version 4.14 is less than 4.15, which is the minimum NodePool version compatible with the 4.18 HostedCluster",
 		},
 		{
 			name:                 "when nodePool major version is higher than control plane version it should return error",
 			controlPlaneVersion:  "4.18.0",
 			nodePoolReleaseImage: "quay.io/openshift-release-dev/ocp-release:5.0.0-x86_64",
 			nodePoolVersion:      "5.0.0",
-			expectedError:        "NodePool version 5.0.0 cannot be higher than the HostedCluster version 4.18.0",
+			expectedError:        "NodePool major version 5 must match HostedCluster major version 4",
 		},
 	}
 
@@ -229,4 +229,36 @@ func TestValidMinorVersionCompatibility(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("when multiple history entries exist it should use History[0] as the control plane version", func(t *testing.T) {
+		g := NewWithT(t)
+
+		hc := baseHC.DeepCopy()
+		hc.Status.Version.History = []configv1.UpdateHistory{
+			{
+				State:   configv1.CompletedUpdate,
+				Version: "4.18.0", // Newest - should be used
+			},
+			{
+				State:   configv1.CompletedUpdate,
+				Version: "4.17.5",
+			},
+			{
+				State:   configv1.CompletedUpdate,
+				Version: "4.17.0", // Oldest - should NOT be used
+			},
+		}
+
+		objs := []client.Object{hc, basePullSecret}
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
+
+		releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
+			Version: "4.14.0",
+		}
+
+		err := validMinorVersionCompatibility(t.Context(), c, "test-cluster", "test-namespace", "quay.io/openshift-release-dev/ocp-release:4.14.0-x86_64", releaseProvider)
+
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(Equal("NodePool minor version 4.14 is less than 4.15, which is the minimum NodePool version compatible with the 4.18 HostedCluster"))
+	})
 }
