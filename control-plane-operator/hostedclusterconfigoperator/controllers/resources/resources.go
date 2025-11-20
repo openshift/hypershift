@@ -153,7 +153,12 @@ type reconciler struct {
 }
 
 func getPodLogs(ctx context.Context, clientSet *clientset.Clientset, namespace, name, container string) ([]byte, error) {
-	return clientSet.CoreV1().Pods(namespace).GetLogs(name, &corev1.PodLogOptions{Container: container}).DoRaw(ctx)
+	limit := int64(1024)
+	opts := &corev1.PodLogOptions{
+		Container:  container,
+		LimitBytes: &limit,
+	}
+	return clientSet.CoreV1().Pods(namespace).GetLogs(name, opts).DoRaw(ctx)
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -1414,6 +1419,7 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 const (
 	ControlPlaneToDataplaneReasonNoKonnectivityAgentPodsFound = "NoKonnectivityAgentPodsFound"
 	ControlPlaneToDataPlaneReasonConnectivityOK               = "ControlPlaneToDataPlaneConnectivityOK"
+	ControlPlaneToDataPlaneReasonLogAccessFailed              = "ControlPlaneToDataPlaneLogAccessFailed"
 )
 
 func (r *reconciler) updateControlPlaneDatapPlaneConnectivityConditions(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -1435,6 +1441,9 @@ func (r *reconciler) updateControlPlaneDatapPlaneConnectivityConditions(ctx cont
 		err := func() error {
 			data, err := r.GetPodLogs(ctx, r.clientSet, pod.Namespace, pod.Name, "konnectivity-agent")
 			if err != nil {
+				condition.Status = metav1.ConditionFalse
+				condition.Reason = ControlPlaneToDataPlaneReasonLogAccessFailed
+				condition.Message = "konnectivity-agent PODs are running but no Logs accessible"
 				return err
 			}
 			if len(data) > 0 { // found something
@@ -1445,7 +1454,7 @@ func (r *reconciler) updateControlPlaneDatapPlaneConnectivityConditions(ctx cont
 		if err == nil {
 			condition.Status = metav1.ConditionTrue
 			condition.Reason = ControlPlaneToDataPlaneReasonConnectivityOK
-			condition.Message = "At least a konnectivity-agent is running on data plane"
+			condition.Message = "At least a konnectivity-agent is running on data plane and logs are accessible"
 			break
 		}
 	}

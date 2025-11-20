@@ -91,7 +91,6 @@ var initialObjects = []client.Object{
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameMirror)),
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameICSP)),
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameInfra)),
-	&corev1.Pod{},
 	fakeOperatorHub(),
 }
 
@@ -2393,19 +2392,39 @@ func Test_reconciler_updateControlPlaneDatapPlaneConnectivityConditions(t *testi
 			expectedCondition: initCondition(string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy),
 				metav1.ConditionFalse, ControlPlaneToDataplaneReasonNoKonnectivityAgentPodsFound, "Couldn't find an konnectivity-agent running in data plane"),
 			pods: []corev1.Pod{},
+			mockedGetPodLogs: func(context context.Context,
+				clientet *clientset.Clientset,
+				namespace, name,
+				container string) ([]byte, error) {
+				return nil, nil
+			},
 		},
 		{
 			name:    "one konnectivity-agent PODs running condition OK",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: initCondition(string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy),
-				metav1.ConditionTrue, ControlPlaneToDataPlaneReasonConnectivityOK, "At least a konnectivity-agent is running on data plane"),
+				metav1.ConditionTrue, ControlPlaneToDataPlaneReasonConnectivityOK, "At least a konnectivity-agent is running on data plane and logs are accessible"),
 			pods: []corev1.Pod{initKonnectivyAgentRunningPod()},
 			mockedGetPodLogs: func(context context.Context,
 				clientet *clientset.Clientset,
 				namespace, name,
 				container string) ([]byte, error) {
 				return []byte("this is the log my friend"), nil
+			},
+		},
+		{
+			name:    "one konnectivity-agent PODs running bad since no LOG",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: initCondition(string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy),
+				metav1.ConditionFalse, ControlPlaneToDataPlaneReasonLogAccessFailed, "konnectivity-agent PODs are running but no Logs accessible"),
+			pods: []corev1.Pod{initKonnectivyAgentRunningPod()},
+			mockedGetPodLogs: func(context context.Context,
+				clientet *clientset.Clientset,
+				namespace, name,
+				container string) ([]byte, error) {
+				return nil, fmt.Errorf("this time we fail")
 			},
 		},
 	}
@@ -2420,9 +2439,7 @@ func Test_reconciler_updateControlPlaneDatapPlaneConnectivityConditions(t *testi
 				return []string{"Running"}
 			}
 			r.client = fake.NewClientBuilder().WithLists(podList).WithIndex(&corev1.Pod{}, "status.phase", indexFunc).Build()
-
 			r.cpClient = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
-
 			r.GetPodLogs = tt.mockedGetPodLogs
 
 			gotErr := r.updateControlPlaneDatapPlaneConnectivityConditions(context.Background(), tt.hcp)
