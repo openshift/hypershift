@@ -149,13 +149,10 @@ func TestReconcileErrorHandling(t *testing.T) {
 	errorExceptions := []string{
 		"global pull secret syncer signaled to shutdown",
 	}
-	indexFunc := func(obj client.Object) []string {
-		return []string{"Running"}
-	}
 	var totalCreates int
 	{
 		fakeClient := &testClient{
-			Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).WithIndex(&corev1.Pod{}, "status.phase", indexFunc).WithStatusSubresource(&configv1.Infrastructure{}).Build(),
+			Client: fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).WithStatusSubresource(&configv1.Infrastructure{}).Build(),
 		}
 		uncachedClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build()
 
@@ -1644,10 +1641,7 @@ func TestReconcileOcmConfigChange(t *testing.T) {
 			g := NewWithT(t)
 			// Create a context with a logger for the test
 			ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
-			indexFunc := func(obj client.Object) []string {
-				return []string{"Running"}
-			}
-			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(initialObjects, registryConfig)...).WithIndex(&corev1.Pod{}, "status.phase", indexFunc).WithStatusSubresource(&configv1.Infrastructure{}).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(initialObjects, registryConfig)...).WithStatusSubresource(&configv1.Infrastructure{}).Build()
 			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(cpObjects, initialOcmConfigMap)...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 			r := &reconciler{
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
@@ -2390,7 +2384,7 @@ func Test_reconciler_updateControlPlaneDatapPlaneConnectivityConditions(t *testi
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: initCondition(string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy),
-				metav1.ConditionFalse, ControlPlaneToDataplaneReasonNoKonnectivityAgentPodsFound, "Couldn't find an konnectivity-agent running in data plane"),
+				metav1.ConditionFalse, hyperv1.ControlPlaneToDataplaneReasonNoKonnectivityAgentPodsFound, "Couldn't find an konnectivity-agent running in data plane"),
 			pods: []corev1.Pod{},
 			mockedGetPodLogs: func(context context.Context,
 				clientet *clientset.Clientset,
@@ -2404,7 +2398,7 @@ func Test_reconciler_updateControlPlaneDatapPlaneConnectivityConditions(t *testi
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: initCondition(string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy),
-				metav1.ConditionTrue, ControlPlaneToDataPlaneReasonConnectivityOK, "At least a konnectivity-agent is running on data plane and logs are accessible"),
+				metav1.ConditionTrue, hyperv1.ControlPlaneToDataPlaneReasonConnectivityOK, "At least a konnectivity-agent is running on data plane and logs are accessible"),
 			pods: []corev1.Pod{initKonnectivyAgentRunningPod()},
 			mockedGetPodLogs: func(context context.Context,
 				clientet *clientset.Clientset,
@@ -2418,7 +2412,7 @@ func Test_reconciler_updateControlPlaneDatapPlaneConnectivityConditions(t *testi
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: initCondition(string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy),
-				metav1.ConditionFalse, ControlPlaneToDataPlaneReasonLogAccessFailed, "konnectivity-agent PODs are running but no Logs accessible"),
+				metav1.ConditionFalse, hyperv1.ControlPlaneToDataPlaneReasonLogAccessFailed, "konnectivity-agent PODs are running but no Logs accessible"),
 			pods: []corev1.Pod{initKonnectivyAgentRunningPod()},
 			mockedGetPodLogs: func(context context.Context,
 				clientet *clientset.Clientset,
@@ -2435,10 +2429,7 @@ func Test_reconciler_updateControlPlaneDatapPlaneConnectivityConditions(t *testi
 			podList := &corev1.PodList{
 				Items: tt.pods,
 			}
-			indexFunc := func(obj client.Object) []string {
-				return []string{"Running"}
-			}
-			r.client = fake.NewClientBuilder().WithLists(podList).WithIndex(&corev1.Pod{}, "status.phase", indexFunc).Build()
+			r.client = fake.NewClientBuilder().WithLists(podList).Build()
 			r.cpClient = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 			r.GetPodLogs = tt.mockedGetPodLogs
 
