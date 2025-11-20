@@ -1,14 +1,15 @@
 #!/bin/bash
+set -o nounset
 set -x
 
 # Prerequisites.
-HYPERSHIFT_BINARY_PATH="${HYPERSHIFT_BINARY_PATH:-}"
-MGMT_DNS_ZONE_NAME="${MGMT_DNS_ZONE_NAME:-}"
-PULL_SECRET="${PULL_SECRET:-}"
-EXTERNAL_DNS_SERVICE_PRINCIPAL_FILEPATH="${EXTERNAL_DNS_SERVICE_PRINCIPAL_FILEPATH:-}"
-HYPERSHIFT_IMAGE="${HYPERSHIFT_IMAGE:-}"
-AKS_RG="${AKS_RG:-}"
-AKS_CLUSTER_NAME="${AKS_CLUSTER_NAME:-}"
+HYPERSHIFT_BINARY_PATH=${HYPERSHIFT_BINARY_PATH:?"Provide hypershift binary path"}
+MGMT_DNS_ZONE_NAME=${MGMT_DNS_ZONE_NAME:?"Provide management DNS zone name"}
+PULL_SECRET=${PULL_SECRET:?"Provide pull secret"}
+EXTERNAL_DNS_SERVICE_PRINCIPAL_FILEPATH=${EXTERNAL_DNS_SERVICE_PRINCIPAL_FILEPATH:?"Provide external DNS service principal file path"}
+HYPERSHIFT_IMAGE=${HYPERSHIFT_IMAGE:?"Provide hypershift image"}
+AKS_RG=${AKS_RG:?"Provide AKS resource group name"}
+AKS_CLUSTER_NAME=${AKS_CLUSTER_NAME:?"Provide AKS cluster name"}
 AZURE_KEY_VAULT_AUTHORIZED_USER_ID=$(az aks show -n ${AKS_CLUSTER_NAME} -g ${AKS_RG} | jq .addonProfiles.azureKeyvaultSecretsProvider.identity.clientId -r)
 
 # Apply some CRDs that are missing

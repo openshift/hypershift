@@ -16,11 +16,15 @@ This guide provides both automated script-based setup and manual step-by-step in
 
 ## Automated Setup (Recommended)
 
-For the quickest setup, you can use the automated scripts. First, create your configuration:
+For the quickest setup, you can use the automated scripts:
 
 ### Quick Start with Automation Scripts
 
-1. **Create your user configuration file**:
+1. **Create and enter a dev directory in the root of the Hypershift project**:
+   ```sh
+   mkdir dev && cd dev
+   ```
+2. **Create your user configuration file**:
    ```sh
    cat <<EOF > user-vars.sh
    # User variables.
@@ -36,9 +40,9 @@ For the quickest setup, you can use the automated scripts. First, create your co
    EOF
    ```
 
-2. **Create Azure credentials file** (see Manual Setup Step 2 below for details)
+3. **Create Azure credentials file** (see Manual Setup Step 2 below for details)
 
-3. **Run the complete automated setup** (authentication is automatic):
+4. **Run the complete automated setup** (authentication is automatic):
    
    For your **first cluster** (includes one-time resource setup):
    ```sh
@@ -65,6 +69,7 @@ For the quickest setup, you can use the automated scripts. First, create your co
 
 The automated setup runs these scripts in sequence:
 
+- [vars.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/vars.sh) - Sources variables from user-vars.sh and sets up a few more required env variables such as PERSISTENT_RG_NAME
 - [setup_MIv3_kv.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_MIv3_kv.sh) - Sets up control plane identities and Key Vault
 - [setup_aks_cluster.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_aks_cluster.sh) - Creates the AKS management cluster  
 - [setup_external_dns.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_external_dns.sh) - Configures DNS zones and external DNS
@@ -104,7 +109,7 @@ SP_DETAILS=$(az ad sp create-for-rbac --name "$PERSONAL_SP_NAME" --role Contribu
 CLIENT_ID=$(echo "$SP_DETAILS" | jq -r '.appId')
 CLIENT_SECRET=$(echo "$SP_DETAILS" | jq -r '.password')
 
-cat <<EOF > $SP_AKS_CREDS
+cat <<EOF > azure-creds.json
 {
   "subscriptionId": "$SUBSCRIPTION_ID",
   "tenantId": "$TENANT_ID",

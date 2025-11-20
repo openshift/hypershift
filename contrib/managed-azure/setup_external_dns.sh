@@ -1,16 +1,18 @@
 #!/bin/bash
+set -o nounset
 set -x
 
 # Prerequisites.
-LOCATION="${LOCATION:-}"
-PARENT_DNS_RG_NAME="${PERSISTENT_RG_NAME:-}"
-PARENT_DNS_ZONE="${PARENT_DNS_ZONE:-}"
-RG="${PERSISTENT_RG_NAME:-}"
+LOCATION=${LOCATION:?"Provide location"}
+PARENT_DNS_RG_NAME=${PERSISTENT_RG_NAME:?"Provide parent DNS resource group name"}
+PARENT_DNS_ZONE=${PARENT_DNS_ZONE:?"Provide parent DNS zone name"}
+RG=${PERSISTENT_RG_NAME:?"Provide resource group name"}
 
 # Local.
+DNS_RECORD_NAME=${PREFIX:?"Provide prefix"}
 MGMT_DNS_ZONE_NAME="${DNS_RECORD_NAME}.${PARENT_DNS_ZONE}"
 EXTERNAL_DNS_NEW_SP_NAME="${PREFIX}-ExternalDnsServicePrincipal"
-EXTERNAL_DNS_SERVICE_PRINCIPAL_FILEPATH="${EXTERNAL_DNS_SERVICE_PRINCIPAL_FILEPATH:-}"
+EXTERNAL_DNS_SERVICE_PRINCIPAL_FILEPATH=${EXTERNAL_DNS_SERVICE_PRINCIPAL_FILEPATH:?"Provide external DNS service principal file path"}
 
 # Create DNS Zone.
 az network dns zone create --resource-group $RG --name $MGMT_DNS_ZONE_NAME

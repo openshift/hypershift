@@ -1,4 +1,5 @@
 #!/bin/bash
+set -o nounset
 set -x
 
 # This step sets up your Azure environment to give access to the SecretProviderClasses to mount the certificates
@@ -15,10 +16,11 @@ if [[ -f "${CP_OUTPUT_FILE}" ]]; then
 fi
 
 # Prerequisites.
-PREFIX="${PREFIX:-}"
-SUBSCRIPTION_ID=${SUBSCRIPTION_ID:-}
-PERSISTENT_RG_NAME=${PERSISTENT_RG_NAME:-}
-LOCATION=${LOCATION:-}
+PREFIX=${PREFIX:?"Provide prefix"}
+SUBSCRIPTION_ID=${SUBSCRIPTION_ID:?"Provide subscription ID"}
+PERSISTENT_RG_NAME=${PERSISTENT_RG_NAME:?"Provide persistent resource group name"}
+LOCATION=${LOCATION:?"Provide location"}
+CP_OUTPUT_FILE=${CP_OUTPUT_FILE:?"Provide cloud provider output file path"}
 
 # Local.
 KV_NAME="${PREFIX}"
@@ -33,7 +35,6 @@ CNCC_SP_NAME="cncc-$PREFIX"
 
 NODEPOOL_MGMT="nodepool-mgmt-$PREFIX"
 VELERO_SP_NAME="velero-$PREFIX"
-CP_OUTPUT_FILE=${CP_OUTPUT_FILE:-}
 
 # Create Key Vault
 USER_ACCOUNT_ID=$(az ad signed-in-user show | jq -r .id)

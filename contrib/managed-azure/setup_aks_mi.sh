@@ -1,9 +1,10 @@
 #!/bin/bash
+set -o nounset
 set -x
 
 # Prerequisites.
-PREFIX="${PREFIX:-}"
-PERSISTENT_RG_NAME="${PERSISTENT_RG_NAME:-}"
+PREFIX=${PREFIX:?"Provide prefix"}
+PERSISTENT_RG_NAME=${PERSISTENT_RG_NAME:?"Provide persistent resource group name"}
 
 # Local.
 AKS_CP_MI_NAME="${PREFIX}-aks-mi"
