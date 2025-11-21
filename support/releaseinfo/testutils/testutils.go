@@ -70,6 +70,9 @@ func InitReleaseImageOrDie(version string) *releaseinfo.ReleaseImage {
 								},
 							},
 						},
+						GCP: releaseinfo.CoreOSGCPImages{
+							Image: "projects/rhcos-cloud/global/images/rhcos-x86-64-test",
+						},
 					},
 				},
 				"aarch64": {
@@ -85,6 +88,9 @@ func InitReleaseImageOrDie(version string) *releaseinfo.ReleaseImage {
 									Image:   "",
 								},
 							},
+						},
+						GCP: releaseinfo.CoreOSGCPImages{
+							Image: "projects/rhcos-cloud/global/images/rhcos-aarch64-test",
 						},
 					},
 				},

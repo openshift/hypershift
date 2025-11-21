@@ -67,6 +67,7 @@ type CoreOSFormat struct {
 
 type CoreOSImages struct {
 	AWS      CoreOSAWSImages      `json:"aws"`
+	GCP      CoreOSGCPImages      `json:"gcp"`
 	PowerVS  CoreOSPowerVSImages  `json:"powervs"`
 	Kubevirt CoreOSKubevirtImages `json:"kubevirt"`
 }
@@ -122,6 +123,10 @@ type CoreOSAWSImages struct {
 type CoreOSAWSImage struct {
 	Release string `json:"release"`
 	Image   string `json:"image"`
+}
+
+type CoreOSGCPImages struct {
+	Image string `json:"image"`
 }
 
 type CoreOSKubevirtImages struct {

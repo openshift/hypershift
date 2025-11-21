@@ -81,6 +81,9 @@ func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) 
 								},
 							},
 						},
+						GCP: releaseinfo.CoreOSGCPImages{
+							Image: "projects/rhcos-cloud/global/images/rhcos-x86-64-fake",
+						},
 					},
 				},
 				"aarch64": {
@@ -96,6 +99,9 @@ func (f *FakeReleaseProvider) Lookup(_ context.Context, image string, _ []byte) 
 									Image:   "",
 								},
 							},
+						},
+						GCP: releaseinfo.CoreOSGCPImages{
+							Image: "projects/rhcos-cloud/global/images/rhcos-aarch64-fake",
 						},
 					},
 				},
