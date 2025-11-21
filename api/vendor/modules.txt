@@ -116,7 +116,7 @@ github.com/munnerz/goautoneg
 ## explicit; go 1.23.0
 # github.com/onsi/gomega v1.38.2
 ## explicit; go 1.23.0
-# github.com/openshift/api v0.0.0-20251121192034-fc06468fb461 => github.com/tkashem/api v0.0.0-20251120170915-d0a162aa04d3
+# github.com/openshift/api v0.0.0-20251121192034-fc06468fb461 => github.com/sairameshv/api v0.0.0-20251121202815-bb45b132744b
 ## explicit; go 1.24.0
 github.com/openshift/api/config/v1
 # github.com/pkg/errors v0.9.1
@@ -751,4 +751,4 @@ sigs.k8s.io/structured-merge-diff/v6/value
 ## explicit; go 1.22
 sigs.k8s.io/yaml
 # github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
-# github.com/openshift/api => github.com/tkashem/api v0.0.0-20251120170915-d0a162aa04d3
+# github.com/openshift/api => github.com/sairameshv/api v0.0.0-20251121202815-bb45b132744b

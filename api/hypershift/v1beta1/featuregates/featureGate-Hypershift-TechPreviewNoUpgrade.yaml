@@ -23,9 +23,6 @@
                         "name": "ExternalOIDC"
                     },
                     {
-                        "name": "DynamicResourceAllocation"
-                    },
-                    {
                         "name": "HyperShiftOnlyDynamicResourceAllocation"
                     },
                     {

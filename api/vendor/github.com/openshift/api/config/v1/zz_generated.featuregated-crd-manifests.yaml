@@ -575,7 +575,6 @@ schedulers.config.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates:
-  - DynamicResourceAllocation
   - HyperShiftOnlyDynamicResourceAllocation
   FilenameOperatorName: config-operator
   FilenameOperatorOrdering: "01"

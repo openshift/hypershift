@@ -88,4 +88,4 @@ require (
 // Use our openshift version of karpenter instead of upstream
 replace github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
 
-replace github.com/openshift/api => github.com/tkashem/api v0.0.0-20251120170915-d0a162aa04d3
+replace github.com/openshift/api => github.com/sairameshv/api v0.0.0-20251121202815-bb45b132744b

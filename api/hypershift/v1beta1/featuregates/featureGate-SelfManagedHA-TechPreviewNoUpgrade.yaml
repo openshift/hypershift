@@ -38,9 +38,6 @@
                         "name": "ExternalOIDCWithUIDAndExtraClaimMappings"
                     },
                     {
-                        "name": "DynamicResourceAllocation"
-                    },
-                    {
                         "name": "HyperShiftOnlyDynamicResourceAllocation"
                     },
                     {
