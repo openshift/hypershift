@@ -98,7 +98,7 @@ type NodePool struct {
 
 // NodePoolSpec is the desired behavior of a NodePool.
 // +kubebuilder:validation:XValidation:rule="!has(oldSelf.arch) || has(self.arch)", message="Arch is required once set"
-// +kubebuilder:validation:XValidation:rule="self.arch != 'arm64' || has(self.platform.aws) || has(self.platform.azure) || has(self.platform.agent) || self.platform.type == 'None'", message="Setting Arch to arm64 is only supported for AWS, Azure, Agent and None"
+// +kubebuilder:validation:XValidation:rule="self.arch != 'arm64' || has(self.platform.aws) || has(self.platform.azure) || has(self.platform.agent) || has(self.platform.gcp) || self.platform.type == 'None'", message="Setting Arch to arm64 is only supported for AWS, Azure, Agent, GCP and None"
 // +kubebuilder:validation:XValidation:rule="!has(self.replicas) || !has(self.autoScaling)", message="Both replicas or autoScaling should not be set"
 // +kubebuilder:validation:XValidation:rule="self.arch != 's390x' || has(self.platform.kubevirt)", message="s390x is only supported on KubeVirt platform"
 // +kubebuilder:validation:XValidation:rule="(has(self.platform.aws) && has(self.platform.aws.imageType) && self.platform.aws.imageType == 'Windows') ? self.arch == 'amd64' : true", message="ImageType 'Windows' requires arch 'amd64' (AWS only)"
@@ -469,6 +469,8 @@ type NodePoolPlatform struct {
 	// +immutable
 	// +openshift:validation:FeatureGateAwareEnum:featureGate="",enum=AWS;Azure;IBMCloud;KubeVirt;Agent;PowerVS;None
 	// +openshift:validation:FeatureGateAwareEnum:featureGate=OpenStack,enum=AWS;Azure;IBMCloud;KubeVirt;Agent;PowerVS;None;OpenStack
+	// +openshift:validation:FeatureGateAwareEnum:featureGate=GCPPlatform,enum=AWS;Azure;IBMCloud;KubeVirt;Agent;PowerVS;None;GCP
+	// +openshift:validation:FeatureGateAwareEnum:featureGate="OpenStack,GCPPlatform",enum=AWS;Azure;IBMCloud;KubeVirt;Agent;PowerVS;None;OpenStack;GCP
 	// +required
 	Type PlatformType `json:"type"`
 
@@ -506,6 +508,11 @@ type NodePoolPlatform struct {
 	// +optional
 	// +openshift:enable:FeatureGate=OpenStack
 	OpenStack *OpenStackNodePoolPlatform `json:"openstack,omitempty"`
+
+	// gcp specifies the configuration used when operating on GCP.
+	// +optional
+	// +openshift:enable:FeatureGate=GCPPlatform
+	GCP *GCPNodePoolPlatform `json:"gcp,omitempty"`
 }
 
 // We define our own condition type since metav1.Condition has validation
