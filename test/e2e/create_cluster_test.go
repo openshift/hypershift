@@ -2271,6 +2271,51 @@ func TestOnCreateAPIUX(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "when AWS resource tags have duplicate keys, it should fail",
+				file: "nodepool-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.NodePool)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when duplicate tag keys are provided, it should reject with appropriate error",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AWSPlatform
+							np.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
+								InstanceType: "m5.large",
+								Subnet: hyperv1.AWSResourceReference{
+									ID: ptr.To("subnet-12345"),
+								},
+								ResourceTags: []hyperv1.AWSResourceTag{
+									{Key: "environment", Value: "production"},
+									{Key: "environment", Value: "staging"},
+								},
+							}
+						},
+						expectedErrorSubstring: "invalid tags, user tag keys must be unique",
+					},
+					{
+						name: "when valid unique tags are provided, it should succeed",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AWSPlatform
+							np.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
+								InstanceType: "m5.large",
+								Subnet: hyperv1.AWSResourceReference{
+									ID: ptr.To("subnet-12345"),
+								},
+								ResourceTags: []hyperv1.AWSResourceTag{
+									{Key: "environment", Value: "production"},
+									{Key: "team", Value: "platform"},
+									{Key: "cost-center", Value: "engineering"},
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
 		}
 
 		for _, tc := range testCases {

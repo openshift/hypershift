@@ -61,6 +61,7 @@ type AWSNodePoolPlatform struct {
 	// for the user.
 	//
 	// +kubebuilder:validation:MaxItems=25
+	// +kubebuilder:validation:XValidation:rule="self.all(t, self.filter(x, x.key == t.key).size() == 1)", message="invalid tags, user tag keys must be unique"
 	// +optional
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 

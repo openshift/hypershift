@@ -562,6 +562,10 @@ spec:
                           type: object
                         maxItems: 25
                         type: array
+                        x-kubernetes-validations:
+                        - message: invalid tags, user tag keys must be unique
+                          rule: self.all(t, self.filter(x, x.key == t.key).size()
+                            == 1)
                       rootVolume:
                         description: rootVolume specifies configuration for the root
                           volume of node instances.
