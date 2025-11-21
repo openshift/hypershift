@@ -32,6 +32,7 @@ import (
 	apiserverconfigv1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 	kasv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
 	auditv1 "k8s.io/apiserver/pkg/apis/audit/v1"
+	autoscalingv1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 
@@ -140,6 +141,7 @@ func init() {
 		_ = kcpv1.AddToScheme(scheme)
 		_ = orcv1alpha1.AddToScheme(scheme)
 		_ = batchv1.AddToScheme(scheme)
+		_ = autoscalingv1.AddToScheme(scheme)
 		karpenterGroupVersion := schema.GroupVersion{Group: karpenterapis.Group, Version: "v1"}
 		metav1.AddToGroupVersion(scheme, karpenterGroupVersion)
 		scheme.AddKnownTypes(karpenterGroupVersion,

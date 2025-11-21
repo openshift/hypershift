@@ -81,6 +81,22 @@ spec:
                   workloads per zone.
                 pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                 x-kubernetes-int-or-string: true
+              resourceBasedAutoscaling:
+                description: resourceBasedAutoscaling contains configuration related
+                  to resource based autoscaling of control planes
+                properties:
+                  kubeAPIServerMemoryFraction:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      kubeAPIServerMemoryFraction is a number between 0 and 1 that determines how much
+                      of a machine's total memory is available for the Kube API server container. This fraction
+                      is used to determine whether a Kube API server container can fit within a particular cluster size.
+                      If not specified, a default fraction of 0.65 is used.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
+                type: object
               sizes:
                 description: |-
                   Sizes holds the different t-shirt size classes into which guest clusters will be sorted.
@@ -90,6 +106,27 @@ spec:
                   description: SizeConfiguration holds options for clusters of a given
                     size.
                   properties:
+                    capacity:
+                      description: capacity specifies the resources available for
+                        instances of this specific size.
+                      properties:
+                        cpu:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: cpu is the amount of CPU available for a specific
+                            size
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        memory:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: memory is the amount of memory available at
+                            a specific size
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                      type: object
                     criteria:
                       description: Criteria defines the node count range for clusters
                         to fall into this t-shirt size class.

@@ -351,6 +351,14 @@ const (
 	// of workers associated with the HostedCluster. The value should be the desired size label.
 	ClusterSizeOverrideAnnotation = "hypershift.openshift.io/cluster-size-override"
 
+	// ResourceBasedControlPlaneAutoscalingAnnotation, if "true", enables setting the size label of a cluster based on actual Kube API server
+	// resource usage as opposed to node count of the cluster. It only takes effect if size tagging is enabled.
+	ResourceBasedControlPlaneAutoscalingAnnotation = "hypershift.openshift.io/resource-based-cp-auto-scaling"
+
+	// RecommendedClusterSizeAnnotation is the annotation used by the control plane autoscaler to recommend a size
+	// for the hosted cluster.
+	RecommendedClusterSizeAnnotation = "hypershift.openshift.io/recommended-cluster-size"
+
 	// KubeAPIServerVerbosityLevelAnnotation allows specifying the log verbosity of kube-apiserver.
 	KubeAPIServerVerbosityLevelAnnotation = "hypershift.openshift.io/kube-apiserver-verbosity-level"
 

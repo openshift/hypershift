@@ -24,6 +24,7 @@ type SizeConfigurationApplyConfiguration struct {
 	Criteria   *NodeCountCriteriaApplyConfiguration `json:"criteria,omitempty"`
 	Effects    *EffectsApplyConfiguration           `json:"effects,omitempty"`
 	Management *ManagementApplyConfiguration        `json:"management,omitempty"`
+	Capacity   *SizeCapacityApplyConfiguration      `json:"capacity,omitempty"`
 }
 
 // SizeConfigurationApplyConfiguration constructs a declarative configuration of the SizeConfiguration type for use with
@@ -61,5 +62,13 @@ func (b *SizeConfigurationApplyConfiguration) WithEffects(value *EffectsApplyCon
 // If called multiple times, the Management field is set to the value of the last call.
 func (b *SizeConfigurationApplyConfiguration) WithManagement(value *ManagementApplyConfiguration) *SizeConfigurationApplyConfiguration {
 	b.Management = value
+	return b
+}
+
+// WithCapacity sets the Capacity field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Capacity field is set to the value of the last call.
+func (b *SizeConfigurationApplyConfiguration) WithCapacity(value *SizeCapacityApplyConfiguration) *SizeConfigurationApplyConfiguration {
+	b.Capacity = value
 	return b
 }

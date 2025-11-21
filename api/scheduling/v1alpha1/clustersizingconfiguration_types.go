@@ -62,6 +62,10 @@ type ClusterSizingConfigurationSpec struct {
 	// NonRequestServingNodesBufferPerZone is the number of extra nodes to allocate for non request serving
 	// workloads per zone.
 	NonRequestServingNodesBufferPerZone *resource.Quantity `json:"nonRequestServingNodesBufferPerZone,omitempty"`
+
+	// resourceBasedAutoscaling contains configuration related to resource based autoscaling of control planes
+	// +optional
+	ResourceBasedAutoscaling ResourceBasedAutoscalingConfiguration `json:"resourceBasedAutoscaling,omitempty"`
 }
 
 // SizeConfiguration holds options for clusters of a given size.
@@ -85,6 +89,10 @@ type SizeConfiguration struct {
 
 	// Management configures the management aspects of this size class on the management plane.
 	Management *Management `json:"management,omitempty"`
+
+	// capacity specifies the resources available for instances of this specific size.
+	// +optional
+	Capacity *SizeCapacity `json:"capacity,omitempty"`
 }
 
 // +kubebuilder:validation:XValidation:rule="!has(self.to) || self.from <= self.to", message="lower limit must be less than or equal to the upper limit"
@@ -225,6 +233,28 @@ type ResourceRequest struct {
 	// +kubebuilder:validation:Optional
 	// CPU is the amount of CPU to request for the container.
 	CPU *resource.Quantity `json:"cpu,omitempty"`
+}
+
+// SizeCapacity specifies resource capacity for a given size configuration
+type SizeCapacity struct {
+	// memory is the amount of memory available at a specific size
+	// +optional
+	Memory *resource.Quantity `json:"memory,omitempty"`
+
+	// cpu is the amount of CPU available for a specific size
+	// +optional
+	CPU *resource.Quantity `json:"cpu,omitempty"`
+}
+
+// ResourceBasedAutoscalingConfiguration specifies configuration for the
+// resource based autoscaler.
+type ResourceBasedAutoscalingConfiguration struct {
+	// kubeAPIServerMemoryFraction is a number between 0 and 1 that determines how much
+	// of a machine's total memory is available for the Kube API server container. This fraction
+	// is used to determine whether a Kube API server container can fit within a particular cluster size.
+	// If not specified, a default fraction of 0.65 is used.
+	// +optional
+	KubeAPIServerMemoryFraction *resource.Quantity `json:"kubeAPIServerMemoryFraction,omitempty"`
 }
 
 // ClusterSizingConfigurationStatus defines the observed state of ClusterSizingConfiguration

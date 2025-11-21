@@ -32,6 +32,7 @@ import (
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/resourcebasedcpautoscaler"
 	awsscheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/aws"
 	azurescheduler "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/azure"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
@@ -476,6 +477,9 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			nonRequestServingNodeAutoscaler := awsscheduler.NonRequestServingNodeAutoscaler{}
 			if err := nonRequestServingNodeAutoscaler.SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create non request serving node autoscaler controller: %w", err)
+			}
+			if err := resourcebasedcpautoscaler.SetupWithManager(mgr); err != nil {
+				return fmt.Errorf("unable to setup control plane autoscaler controller: %w", err)
 			}
 		} else {
 			nodeReaper := awsscheduler.DedicatedServingComponentNodeReaper{
