@@ -561,7 +561,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("update control-Plane to data-Plane status conditions")
-	if err := r.updateControlPlaneDatapPlaneConnectivityConditions(ctx, hcp); err != nil {
+	if err := r.updateControlPlaneDatapPlaneConnectivityConditions(ctx, hcp, log); err != nil {
 		errs = append(errs, fmt.Errorf("failed to update ControlPlaneToDataPlaneConnectivity condition: %w", err))
 	}
 
@@ -1415,17 +1415,17 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	return nil
 }
 
-func (r *reconciler) updateControlPlaneDatapPlaneConnectivityConditions(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *reconciler) updateControlPlaneDatapPlaneConnectivityConditions(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
 	var podList corev1.PodList
 	if err := r.client.List(ctx, &podList,
-		&client.ListOptions{LabelSelector: labels.SelectorFromValidatedSet(labels.Set{"app": "konnectivity-agent"}),
-			Namespace: "kube-system"}); err != nil {
+		client.MatchingLabels{"app": "konnectivity-agent"}, client.InNamespace("kube-system")); err != nil {
+		log.Error(err, "unable to list konnectivity-agent PODs in kube-system namespace")
 		return fmt.Errorf("unable to list konnectivity-agent PODs in kube-system namespace: %w", err)
 	}
 	condition := &metav1.Condition{
 		Type:    string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy),
 		Status:  metav1.ConditionFalse,
-		Reason:  hyperv1.ControlPlaneToDataplaneReasonNoKonnectivityAgentPodsFound,
+		Reason:  hyperv1.ControlPlaneToDataPlaneReasonNoKonnectivityAgentPodsFound,
 		Message: "Couldn't find an konnectivity-agent running in data plane",
 	}
 
@@ -1439,12 +1439,13 @@ func (r *reconciler) updateControlPlaneDatapPlaneConnectivityConditions(ctx cont
 				condition.Status = metav1.ConditionFalse
 				condition.Reason = hyperv1.ControlPlaneToDataPlaneReasonLogAccessFailed
 				condition.Message = "konnectivity-agent PODs are running but no Logs accessible"
+				log.Error(err, "onnectivity-agent PODs are running but no Logs accessible")
 				return err
 			}
 			if len(data) > 0 { // found something
 				return nil
 			}
-			return fmt.Errorf("no logs for %s/%s container %s", pod.Namespace, pod.Name, "konnectivity-agen")
+			return fmt.Errorf("no logs for %s/%s container %s", pod.Namespace, pod.Name, "konnectivity-agent")
 		}()
 		if err == nil {
 			condition.Status = metav1.ConditionTrue
@@ -1455,13 +1456,15 @@ func (r *reconciler) updateControlPlaneDatapPlaneConnectivityConditions(ctx cont
 	}
 
 	originalHCP := hcp.DeepCopy()
-	if set := meta.SetStatusCondition(&hcp.Status.Conditions, *condition); !set {
+	if !meta.SetStatusCondition(&hcp.Status.Conditions, *condition) {
 		return nil // No status change; avoid unnecessary API call.
 	}
 
 	if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFrom(originalHCP)); err != nil {
+		log.Error(err, "failed to update HostedControlPlane status with "+condition.Type)
 		return fmt.Errorf("failed to update HostedControlPlane status with %s condition: %w", condition.Type, err)
 	}
+	log.Info(string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy) + " updated")
 
 	return nil
 

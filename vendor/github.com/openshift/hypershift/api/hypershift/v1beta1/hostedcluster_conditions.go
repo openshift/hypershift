@@ -252,7 +252,7 @@ const (
 
 	CloudResourcesCleanupSkippedReason = "CloudResourcesCleanupSkipped"
 
-	ControlPlaneToDataplaneReasonNoKonnectivityAgentPodsFound = "NoKonnectivityAgentPodsFound"
+	ControlPlaneToDataPlaneReasonNoKonnectivityAgentPodsFound = "NoKonnectivityAgentPodsFound"
 
 	ControlPlaneToDataPlaneReasonConnectivityOK = "ControlPlaneToDataPlaneConnectivityOK"
 
