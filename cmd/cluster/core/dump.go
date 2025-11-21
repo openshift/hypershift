@@ -399,14 +399,10 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	optionalResources := append(featureGatedResources, ocpResources...)
 	optionalResources = append(optionalResources, monitoringResources...)
 	for _, resource := range optionalResources {
-		// Try to get GVK from the scheme. If the type is not registered in the scheme
-		// (e.g., SecretProviderClass when MANAGED_SERVICE != ARO-HCP), skip it.
-		gvks, _, err := hyperapi.Scheme.ObjectKinds(resource)
-		if err != nil || len(gvks) == 0 {
-			// Type not registered in scheme, skip it
-			continue
+		gvk, err := c.GroupVersionKindFor(resource)
+		if err != nil {
+			return err
 		}
-		gvk := gvks[0]
 		resourceRegistered, err := isResourceRegistered(kubeDiscoveryClient, gvk)
 		if err != nil {
 			return err

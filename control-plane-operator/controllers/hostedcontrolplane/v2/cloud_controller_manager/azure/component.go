@@ -37,6 +37,7 @@ func (c *azureOptions) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &azureOptions{}).
 		WithAdaptFunction(adaptDeployment).
+		WithPlatformPredicate(predicate).
 		WithPredicate(predicate).
 		WithManifestAdapter(
 			"serviceaccount.yaml",

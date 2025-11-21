@@ -136,11 +136,7 @@ func init() {
 		_ = machinev1beta1.AddToScheme(scheme)
 		_ = capiopenstackv1alpha1.AddToScheme(scheme)
 		_ = capiopenstackv1beta1.AddToScheme(scheme)
-		// SecretProviderClass is only used by ARO-HCP managed service
-		// Conditionally register to prevent informer creation on other platforms
-		if os.Getenv("MANAGED_SERVICE") == "ARO-HCP" {
-			_ = secretsstorev1.AddToScheme(scheme)
-		}
+		_ = secretsstorev1.AddToScheme(scheme)
 		_ = kcpv1.AddToScheme(scheme)
 		_ = orcv1alpha1.AddToScheme(scheme)
 		_ = batchv1.AddToScheme(scheme)
