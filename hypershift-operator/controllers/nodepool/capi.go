@@ -26,6 +26,7 @@ import (
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -441,6 +442,13 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 		}
 	}
 
+	// The CAPI provider for GCP uses the FailureDomain field to set the zone.
+	if c.nodePool.Spec.Platform.Type == hyperv1.GCPPlatform && c.nodePool.Spec.Platform.GCP != nil {
+		if c.nodePool.Spec.Platform.GCP.Zone != "" {
+			machineDeployment.Spec.Template.Spec.FailureDomain = ptr.To(c.nodePool.Spec.Platform.GCP.Zone)
+		}
+	}
+
 	// After a MachineDeployment is created we propagate label/taints directly into Machines.
 	// This is to avoid a NodePool label/taints to trigger a rolling upgrade.
 	// TODO(Alberto): drop this an rely on core in-place propagation once CAPI 1.4.0 https://github.com/kubernetes-sigs/cluster-api/releases comes through the payload.
@@ -760,6 +768,8 @@ func (c *CAPI) machineTemplateBuilders(ctx context.Context) (client.Object, erro
 		template, err = c.ibmPowerVSMachineTemplate(templateNameGenerator)
 	case hyperv1.OpenStackPlatform:
 		template, err = c.openstackMachineTemplate(templateNameGenerator)
+	case hyperv1.GCPPlatform:
+		template, err = c.gcpMachineTemplate(ctx, templateNameGenerator)
 	default:
 		// TODO(alberto): Consider signal in a condition.
 		err = fmt.Errorf("unsupported platform type: %s", c.nodePool.Spec.Platform.Type)
@@ -1142,6 +1152,11 @@ func (c *CAPI) listMachineTemplates() ([]client.Object, error) {
 		}
 	case hyperv1.OpenStackPlatform:
 		gvk, err = apiutil.GVKForObject(&capiopenstackv1beta1.OpenStackMachineTemplate{}, api.Scheme)
+		if err != nil {
+			return nil, err
+		}
+	case hyperv1.GCPPlatform:
+		gvk, err = apiutil.GVKForObject(&capigcp.GCPMachineTemplate{}, api.Scheme)
 		if err != nil {
 			return nil, err
 		}
