@@ -3873,6 +3873,11 @@ func EnsureCNOOperatorConfiguration(t *testing.T, ctx context.Context, mgmtClien
 	t.Run("EnsureCNOOperatorConfiguration", func(t *testing.T) {
 		AtLeast(t, Version420)
 		g := NewWithT(t)
+		// Skip test if network type is not OVNKubernetes
+		if hostedCluster.Spec.Networking.NetworkType != hyperv1.OVNKubernetes {
+			t.Skipf("Skipping EnsureCNOOperatorConfiguration test because network type is %s, not OVNKubernetes", hostedCluster.Spec.Networking.NetworkType)
+		}
+
 		const newJoinSubnet = "100.99.0.0/16"
 		const newTransitSwitchSubnet = "100.100.0.0/16"
 		// Update the HostedCluster to configure CNO settings
