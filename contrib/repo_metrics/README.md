@@ -16,6 +16,66 @@ uv sync --dev
 
 ## Tools
 
+### Weekly PR Report Generator
+
+Generates comprehensive weekly PR reports for openshift/hypershift and openshift-eng/ai-helpers repositories.
+
+**Features:**
+- Fetches all repository contributors (194 total)
+- Uses GitHub GraphQL API for efficient PR fetching
+- Parallel async API calls with aiohttp
+- Filters PRs by merge date
+- Extracts complete PR timeline (draft→ready→merge)
+- Identifies reviewers and approvers
+- Groups PRs by OCPSTRAT parent
+- Generates timing metrics and statistics
+- Auto-generates OCPSTRAT impact statements
+
+**Performance:** ~2 seconds (90-180x faster than previous agent-based approach)
+
+**Usage:**
+
+```bash
+# Install aiohttp dependency
+pip install aiohttp
+
+# Run with default (7 days ago)
+python3 weekly_pr_report.py
+
+# Generate report since specific date
+python3 weekly_pr_report.py 2025-11-13
+```
+
+**Via Claude slash command:**
+
+```bash
+# From repository root
+/weekly-pr-report 2025-11-13
+```
+
+**Output:**
+
+```text
+Generating PR report since: 2025-11-13
+Using async (aiohttp) mode
+
+Fetching HyperShift contributors...
+Found 194 HyperShift contributors
+Fetching PRs from repositories...
+Found 27 PRs (24 hypershift, 3 ai-helpers)
+Fetching Jira hierarchy...
+Found 2 unique Jira tickets
+Generating report...
+Report written to /tmp/weekly_pr_report_fast.md
+Raw data saved to /tmp/hypershift_pr_details_fast.json
+
+Done in 2.02 seconds!
+```
+
+**Files generated:**
+- `/tmp/weekly_pr_report_fast.md` - Comprehensive markdown report
+- `/tmp/hypershift_pr_details_fast.json` - Raw PR data in JSON format
+
 ### AI-Assisted Commits Analyzer
 
 Analyzes git commits to identify those assisted by AI tools (Claude, GPT, etc.).
