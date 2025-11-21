@@ -1008,6 +1008,173 @@ spec:
                     - subnetID
                     - vmSize
                     type: object
+                  gcp:
+                    description: gcp specifies the configuration used when operating
+                      on GCP.
+                    properties:
+                      bootDisk:
+                        description: bootDisk specifies the configuration for the
+                          boot disk of node instances.
+                        properties:
+                          diskSizeGB:
+                            default: 64
+                            description: |-
+                              diskSizeGB specifies the size of the boot disk in gigabytes.
+                              Must be at least 20 GB for RHCOS images.
+                            format: int64
+                            maximum: 65536
+                            minimum: 20
+                            type: integer
+                          diskType:
+                            default: pd-balanced
+                            description: |-
+                              diskType specifies the disk type for the boot disk.
+                              Valid values include:
+                                - "pd-standard" - Standard persistent disk (magnetic)
+                                - "pd-ssd" - SSD persistent disk
+                                - "pd-balanced" - Balanced persistent disk (recommended)
+                              If not specified, defaults to "pd-balanced".
+                            enum:
+                            - pd-standard
+                            - pd-ssd
+                            - pd-balanced
+                            type: string
+                          encryptionKey:
+                            description: |-
+                              encryptionKey specifies customer-managed encryption key (CMEK) configuration.
+                              If not specified, Google-managed encryption keys are used.
+                            properties:
+                              kmsKeyName:
+                                description: |-
+                                  kmsKeyName is the resource name of the Cloud KMS key used for disk encryption.
+                                  Format: projects/{project}/locations/{location}/keyRings/{keyRing}/cryptoKeys/{key}
+                                maxLength: 2048
+                                minLength: 1
+                                pattern: ^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/locations\/[a-z0-9-]+\/keyRings\/[a-zA-Z0-9_-]+\/cryptoKeys\/[a-zA-Z0-9_-]+$
+                                type: string
+                            required:
+                            - kmsKeyName
+                            type: object
+                        type: object
+                      image:
+                        description: |-
+                          image specifies the boot image for node instances.
+                          If unspecified, the default RHCOS image will be used based on the NodePool release payload.
+                          Can be:
+                            - A family name: projects/rhel-cloud/global/images/family/rhel-8
+                            - A specific image: projects/rhel-cloud/global/images/rhel-8-v20231010
+                            - A full resource URL: https://www.googleapis.com/compute/v1/projects/rhel-cloud/global/images/rhel-8-v20231010
+                        maxLength: 2048
+                        type: string
+                      machineType:
+                        description: |-
+                          machineType is the GCP machine type for node instances (e.g. n2-standard-4).
+                          Must follow GCP machine type naming conventions as documented at:
+                          https://cloud.google.com/compute/docs/machine-resource#machine_type_comparison
+
+                          Valid machine type formats:
+                            - predefined: n1-standard-1, n2-highmem-4, c2-standard-8, etc.
+                            - custom: custom-{cpus}-{memory} (e.g. custom-4-8192)
+                            - custom with extended memory: custom-{cpus}-{memory}-ext (e.g. custom-2-13312-ext)
+                        maxLength: 255
+                        minLength: 1
+                        pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
+                        type: string
+                      networkTags:
+                        description: |-
+                          networkTags is an optional list of network tags to apply to node instances.
+                          These tags are used by GCP firewall rules to control network access.
+                          Tags must conform to GCP naming conventions:
+                            - 1-63 characters
+                            - Lowercase letters, numbers, and hyphens only
+                            - Must start with lowercase letter
+                            - Cannot end with hyphen
+                        items:
+                          maxLength: 63
+                          minLength: 1
+                          pattern: ^[a-z][a-z0-9-]*[a-z0-9]$|^[a-z]$
+                          type: string
+                        maxItems: 64
+                        type: array
+                        x-kubernetes-list-type: set
+                      onHostMaintenance:
+                        description: |-
+                          onHostMaintenance specifies the behavior when host maintenance occurs.
+                          For preemptible instances, this must be "TERMINATE".
+                          For standard instances, can be "MIGRATE" (live migrate) or "TERMINATE".
+                          If not specified, defaults to "MIGRATE" for standard instances and "TERMINATE" for preemptible.
+                        enum:
+                        - MIGRATE
+                        - TERMINATE
+                        type: string
+                      preemptible:
+                        default: false
+                        description: |-
+                          preemptible specifies whether node instances should be preemptible.
+                          Preemptible instances cost less but can be terminated by GCP with 30 seconds notice.
+                          Default is false (standard instances).
+                        type: boolean
+                      resourceLabels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          resourceLabels is an optional list of additional labels to apply to GCP node
+                          instances and their associated resources (disks, etc.).
+                          Labels will be merged with cluster-level resource labels, with NodePool labels
+                          taking precedence in case of conflicts.
+
+                          Keys and values must conform to GCP labeling requirements:
+                            - Keys: 1–63 chars, must start with a lowercase letter; allowed [a-z0-9_-]
+                            - Values: empty or 1–63 chars; allowed [a-z0-9_-]
+                            - Maximum 60 user labels per resource (GCP limit is 64 total, with ~4 reserved)
+                        maxProperties: 60
+                        type: object
+                      serviceAccount:
+                        description: |-
+                          serviceAccount configures the Google Service Account attached to node instances.
+                          If not specified, uses the default compute service account for the project.
+                        properties:
+                          email:
+                            description: |-
+                              email specifies the email address of the Google Service Account to use for node instances.
+                              If not specified, uses the default compute service account for the project.
+                              The service account must have the necessary permissions for the node to function:
+                                - Logging writer
+                                - Monitoring metric writer
+                                - Storage object viewer (for pulling container images)
+                            maxLength: 254
+                            pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$
+                            type: string
+                          scopes:
+                            description: |-
+                              scopes specifies the access scopes for the service account.
+                              If not specified, defaults to standard compute scopes.
+                              Common scopes include:
+                                - "https://www.googleapis.com/auth/devstorage.read_only" - Storage read-only
+                                - "https://www.googleapis.com/auth/logging.write" - Logging write
+                                - "https://www.googleapis.com/auth/monitoring.write" - Monitoring write
+                                - "https://www.googleapis.com/auth/cloud-platform" - Full access (use with caution)
+                            items:
+                              maxLength: 512
+                              type: string
+                            maxItems: 50
+                            type: array
+                            x-kubernetes-list-type: set
+                        type: object
+                      zone:
+                        description: |-
+                          zone is the GCP zone where node instances will be created.
+                          Must be a valid zone within the cluster's region.
+                          Format: {region}-{zone} (e.g. us-central1-a, europe-west2-b)
+                          See https://cloud.google.com/compute/docs/regions-zones for available zones.
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z]+(?:-[a-z0-9]+)*-[a-z]$
+                        type: string
+                    required:
+                    - machineType
+                    - zone
+                    type: object
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components
                     properties:
@@ -1512,6 +1679,7 @@ spec:
                     - PowerVS
                     - None
                     - OpenStack
+                    - GCP
                     maxLength: 100
                     type: string
                     x-kubernetes-validations:
@@ -1642,10 +1810,11 @@ spec:
             x-kubernetes-validations:
             - message: Arch is required once set
               rule: '!has(oldSelf.arch) || has(self.arch)'
-            - message: Setting Arch to arm64 is only supported for AWS, Azure, Agent
-                and None
+            - message: Setting Arch to arm64 is only supported for AWS, Azure, Agent,
+                GCP and None
               rule: self.arch != 'arm64' || has(self.platform.aws) || has(self.platform.azure)
-                || has(self.platform.agent) || self.platform.type == 'None'
+                || has(self.platform.agent) || has(self.platform.gcp) || self.platform.type
+                == 'None'
             - message: Both replicas or autoScaling should not be set
               rule: '!has(self.replicas) || !has(self.autoScaling)'
             - message: s390x is only supported on KubeVirt platform

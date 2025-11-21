@@ -2,7 +2,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    feature-gate.release.openshift.io/OpenStack: "true"
+    feature-gate.release.openshift.io/GCPPlatform: "true"
   name: nodepools.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
@@ -1005,6 +1005,173 @@ spec:
                     - subnetID
                     - vmSize
                     type: object
+                  gcp:
+                    description: gcp specifies the configuration used when operating
+                      on GCP.
+                    properties:
+                      bootDisk:
+                        description: bootDisk specifies the configuration for the
+                          boot disk of node instances.
+                        properties:
+                          diskSizeGB:
+                            default: 64
+                            description: |-
+                              diskSizeGB specifies the size of the boot disk in gigabytes.
+                              Must be at least 20 GB for RHCOS images.
+                            format: int64
+                            maximum: 65536
+                            minimum: 20
+                            type: integer
+                          diskType:
+                            default: pd-balanced
+                            description: |-
+                              diskType specifies the disk type for the boot disk.
+                              Valid values include:
+                                - "pd-standard" - Standard persistent disk (magnetic)
+                                - "pd-ssd" - SSD persistent disk
+                                - "pd-balanced" - Balanced persistent disk (recommended)
+                              If not specified, defaults to "pd-balanced".
+                            enum:
+                            - pd-standard
+                            - pd-ssd
+                            - pd-balanced
+                            type: string
+                          encryptionKey:
+                            description: |-
+                              encryptionKey specifies customer-managed encryption key (CMEK) configuration.
+                              If not specified, Google-managed encryption keys are used.
+                            properties:
+                              kmsKeyName:
+                                description: |-
+                                  kmsKeyName is the resource name of the Cloud KMS key used for disk encryption.
+                                  Format: projects/{project}/locations/{location}/keyRings/{keyRing}/cryptoKeys/{key}
+                                maxLength: 2048
+                                minLength: 1
+                                pattern: ^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/locations\/[a-z0-9-]+\/keyRings\/[a-zA-Z0-9_-]+\/cryptoKeys\/[a-zA-Z0-9_-]+$
+                                type: string
+                            required:
+                            - kmsKeyName
+                            type: object
+                        type: object
+                      image:
+                        description: |-
+                          image specifies the boot image for node instances.
+                          If unspecified, the default RHCOS image will be used based on the NodePool release payload.
+                          Can be:
+                            - A family name: projects/rhel-cloud/global/images/family/rhel-8
+                            - A specific image: projects/rhel-cloud/global/images/rhel-8-v20231010
+                            - A full resource URL: https://www.googleapis.com/compute/v1/projects/rhel-cloud/global/images/rhel-8-v20231010
+                        maxLength: 2048
+                        type: string
+                      machineType:
+                        description: |-
+                          machineType is the GCP machine type for node instances (e.g. n2-standard-4).
+                          Must follow GCP machine type naming conventions as documented at:
+                          https://cloud.google.com/compute/docs/machine-resource#machine_type_comparison
+
+                          Valid machine type formats:
+                            - predefined: n1-standard-1, n2-highmem-4, c2-standard-8, etc.
+                            - custom: custom-{cpus}-{memory} (e.g. custom-4-8192)
+                            - custom with extended memory: custom-{cpus}-{memory}-ext (e.g. custom-2-13312-ext)
+                        maxLength: 255
+                        minLength: 1
+                        pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
+                        type: string
+                      networkTags:
+                        description: |-
+                          networkTags is an optional list of network tags to apply to node instances.
+                          These tags are used by GCP firewall rules to control network access.
+                          Tags must conform to GCP naming conventions:
+                            - 1-63 characters
+                            - Lowercase letters, numbers, and hyphens only
+                            - Must start with lowercase letter
+                            - Cannot end with hyphen
+                        items:
+                          maxLength: 63
+                          minLength: 1
+                          pattern: ^[a-z][a-z0-9-]*[a-z0-9]$|^[a-z]$
+                          type: string
+                        maxItems: 64
+                        type: array
+                        x-kubernetes-list-type: set
+                      onHostMaintenance:
+                        description: |-
+                          onHostMaintenance specifies the behavior when host maintenance occurs.
+                          For preemptible instances, this must be "TERMINATE".
+                          For standard instances, can be "MIGRATE" (live migrate) or "TERMINATE".
+                          If not specified, defaults to "MIGRATE" for standard instances and "TERMINATE" for preemptible.
+                        enum:
+                        - MIGRATE
+                        - TERMINATE
+                        type: string
+                      preemptible:
+                        default: false
+                        description: |-
+                          preemptible specifies whether node instances should be preemptible.
+                          Preemptible instances cost less but can be terminated by GCP with 30 seconds notice.
+                          Default is false (standard instances).
+                        type: boolean
+                      resourceLabels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          resourceLabels is an optional list of additional labels to apply to GCP node
+                          instances and their associated resources (disks, etc.).
+                          Labels will be merged with cluster-level resource labels, with NodePool labels
+                          taking precedence in case of conflicts.
+
+                          Keys and values must conform to GCP labeling requirements:
+                            - Keys: 1–63 chars, must start with a lowercase letter; allowed [a-z0-9_-]
+                            - Values: empty or 1–63 chars; allowed [a-z0-9_-]
+                            - Maximum 60 user labels per resource (GCP limit is 64 total, with ~4 reserved)
+                        maxProperties: 60
+                        type: object
+                      serviceAccount:
+                        description: |-
+                          serviceAccount configures the Google Service Account attached to node instances.
+                          If not specified, uses the default compute service account for the project.
+                        properties:
+                          email:
+                            description: |-
+                              email specifies the email address of the Google Service Account to use for node instances.
+                              If not specified, uses the default compute service account for the project.
+                              The service account must have the necessary permissions for the node to function:
+                                - Logging writer
+                                - Monitoring metric writer
+                                - Storage object viewer (for pulling container images)
+                            maxLength: 254
+                            pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$
+                            type: string
+                          scopes:
+                            description: |-
+                              scopes specifies the access scopes for the service account.
+                              If not specified, defaults to standard compute scopes.
+                              Common scopes include:
+                                - "https://www.googleapis.com/auth/devstorage.read_only" - Storage read-only
+                                - "https://www.googleapis.com/auth/logging.write" - Logging write
+                                - "https://www.googleapis.com/auth/monitoring.write" - Monitoring write
+                                - "https://www.googleapis.com/auth/cloud-platform" - Full access (use with caution)
+                            items:
+                              maxLength: 512
+                              type: string
+                            maxItems: 50
+                            type: array
+                            x-kubernetes-list-type: set
+                        type: object
+                      zone:
+                        description: |-
+                          zone is the GCP zone where node instances will be created.
+                          Must be a valid zone within the cluster's region.
+                          Format: {region}-{zone} (e.g. us-central1-a, europe-west2-b)
+                          See https://cloud.google.com/compute/docs/regions-zones for available zones.
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z]+(?:-[a-z0-9]+)*-[a-z]$
+                        type: string
+                    required:
+                    - machineType
+                    - zone
+                    type: object
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components
                     properties:
@@ -1204,191 +1371,6 @@ spec:
                         type: object
                     required:
                     - rootVolume
-                    type: object
-                  openstack:
-                    description: openstack specifies the configuration used when using
-                      OpenStack platform.
-                    properties:
-                      additionalPorts:
-                        description: additionalPorts is a list of additional ports
-                          to create on the node instances.
-                        items:
-                          description: PortSpec specifies the options for creating
-                            a port.
-                          properties:
-                            allowedAddressPairs:
-                              description: |-
-                                allowedAddressPairs is a list of address pairs which Neutron will
-                                allow the port to send traffic from in addition to the port's
-                                addresses. If not specified, the MAC Address will be the MAC Address
-                                of the port. Depending on the configuration of Neutron, it may be
-                                supported to specify a CIDR instead of a specific IP address.
-                              items:
-                                properties:
-                                  ipAddress:
-                                    description: |-
-                                      ipAddress is the IP address of the allowed address pair. Depending on
-                                      the configuration of Neutron, it may be supported to specify a CIDR
-                                      instead of a specific IP address.
-                                    maxLength: 255
-                                    type: string
-                                required:
-                                - ipAddress
-                                type: object
-                              maxItems: 10
-                              type: array
-                            description:
-                              description: description is a human-readable description
-                                for the port.
-                              maxLength: 255
-                              type: string
-                            network:
-                              description: |-
-                                network is a query for an openstack network that the port will be created or discovered on.
-                                This will fail if the query returns more than one network.
-                              maxProperties: 1
-                              minProperties: 1
-                              properties:
-                                filter:
-                                  description: filter specifies a filter to select
-                                    an OpenStack network. If provided, cannot be empty.
-                                  minProperties: 1
-                                  properties:
-                                    description:
-                                      description: description is the description
-                                        of the network to filter by.
-                                      maxLength: 255
-                                      type: string
-                                    name:
-                                      description: name is the name of the network
-                                        to filter by.
-                                      maxLength: 255
-                                      type: string
-                                    notTags:
-                                      description: |-
-                                        notTags is a list of tags to filter by. If specified, resources which
-                                        contain all of the given tags will be excluded from the result.
-                                      items:
-                                        description: |-
-                                          NeutronTag represents a tag on a Neutron resource.
-                                          It may not be empty and may not contain commas.
-                                        maxLength: 255
-                                        minLength: 1
-                                        pattern: ^[^,]+$
-                                        type: string
-                                      maxItems: 50
-                                      type: array
-                                      x-kubernetes-list-type: set
-                                    notTagsAny:
-                                      description: |-
-                                        notTagsAny is a list of tags to filter by. If specified, resources
-                                        which contain any of the given tags will be excluded from the result.
-                                      items:
-                                        description: |-
-                                          NeutronTag represents a tag on a Neutron resource.
-                                          It may not be empty and may not contain commas.
-                                        maxLength: 255
-                                        minLength: 1
-                                        pattern: ^[^,]+$
-                                        type: string
-                                      maxItems: 50
-                                      type: array
-                                      x-kubernetes-list-type: set
-                                    projectID:
-                                      description: projectID is the project ID of
-                                        the network to filter by.
-                                      maxLength: 255
-                                      type: string
-                                    tags:
-                                      description: |-
-                                        tags is a list of tags to filter by. If specified, the resource must
-                                        have all of the tags specified to be included in the result.
-                                      items:
-                                        description: |-
-                                          NeutronTag represents a tag on a Neutron resource.
-                                          It may not be empty and may not contain commas.
-                                        maxLength: 255
-                                        minLength: 1
-                                        pattern: ^[^,]+$
-                                        type: string
-                                      maxItems: 50
-                                      type: array
-                                      x-kubernetes-list-type: set
-                                    tagsAny:
-                                      description: |-
-                                        tagsAny is a list of tags to filter by. If specified, the resource
-                                        must have at least one of the tags specified to be included in the
-                                        result.
-                                      items:
-                                        description: |-
-                                          NeutronTag represents a tag on a Neutron resource.
-                                          It may not be empty and may not contain commas.
-                                        maxLength: 255
-                                        minLength: 1
-                                        pattern: ^[^,]+$
-                                        type: string
-                                      maxItems: 50
-                                      type: array
-                                      x-kubernetes-list-type: set
-                                  type: object
-                                id:
-                                  description: id is the ID of the network to use.
-                                    If ID is provided, the other filters cannot be
-                                    provided. Must be in UUID format.
-                                  format: uuid
-                                  maxLength: 36
-                                  type: string
-                              type: object
-                            portSecurityPolicy:
-                              description: |-
-                                portSecurityPolicy specifies whether or not to enable port security on the port.
-                                Allowed values are "Enabled", "Disabled" and omitted.
-                                When not set, it takes the value of the corresponding field at the network level.
-                              enum:
-                              - Enabled
-                              - Disabled
-                              - ""
-                              type: string
-                            vnicType:
-                              description: |-
-                                vnicType specifies the type of vNIC which this port should be
-                                attached to. This is used to determine which mechanism driver(s) to
-                                be used to bind the port. The valid values are normal, macvtap,
-                                direct, baremetal, direct-physical, virtio-forwarder, smart-nic and
-                                remote-managed, although these values will not be validated in this
-                                API to ensure compatibility with future neutron changes or custom
-                                implementations. What type of vNIC is actually available depends on
-                                deployments. If not specified, the Neutron default value is used.
-                              maxLength: 255
-                              type: string
-                          type: object
-                        maxItems: 10
-                        type: array
-                      availabilityZone:
-                        description: |-
-                          availabilityZone is the nova availability zone in which the provider will create the VM.
-                          If not specified, the VM will be created in the default availability zone specified in the nova configuration.
-                          Availability zone names must NOT contain : since it is used by admin users to specify hosts where instances
-                          are launched in server creation. Also, it must not contain spaces otherwise it will lead to node that belongs
-                          to this availability zone register failure, see kubernetes/cloud-provider-openstack#1379 for further information.
-                          The maximum length of availability zone name is 63 as per labels limits.
-                        maxLength: 63
-                        minLength: 1
-                        pattern: '^[^: ]*$'
-                        type: string
-                      flavor:
-                        description: flavor is the OpenStack flavor to use for the
-                          node instances.
-                        maxLength: 255
-                        type: string
-                      imageName:
-                        description: |-
-                          imageName is the OpenStack Glance image name to use for node instances. If unspecified, the default
-                          is chosen based on the NodePool release payload image.
-                        maxLength: 255
-                        type: string
-                    required:
-                    - flavor
                     type: object
                   powervs:
                     description: powervs specifies the configuration used when using

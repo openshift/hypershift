@@ -9,7 +9,6 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	supportutil "github.com/openshift/hypershift/support/util"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
@@ -109,6 +108,11 @@ func gcpMachineTemplateSpec(
 	// Configure maintenance behavior
 	onHostMaintenance := configureGCPMaintenanceBehavior(gcpPlatform.OnHostMaintenance, gcpPlatform.Preemptible)
 
+	preemptible := false
+	if gcpPlatform.Preemptible != nil {
+		preemptible = *gcpPlatform.Preemptible
+	}
+
 	spec := &capigcp.GCPMachineSpec{
 		InstanceType:          gcpPlatform.MachineType,
 		Subnet:                &subnet,
@@ -118,7 +122,7 @@ func gcpMachineTemplateSpec(
 		ServiceAccount:        serviceAccounts,
 		AdditionalLabels:      labels,
 		AdditionalNetworkTags: networkTags,
-		Preemptible:           gcpPlatform.Preemptible,
+		Preemptible:           preemptible,
 		OnHostMaintenance:     &onHostMaintenance,
 		RootDiskEncryptionKey: bootDisk.EncryptionKey,
 		// Additional metadata for ignition and identification
@@ -137,8 +141,8 @@ func resolveGCPImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.Relea
 	gcpPlatform := nodePool.Spec.Platform.GCP
 
 	// If user specified a custom image, use it
-	if gcpPlatform.Image != "" {
-		return gcpPlatform.Image, nil
+	if gcpPlatform.Image != nil && *gcpPlatform.Image != "" {
+		return *gcpPlatform.Image, nil
 	}
 
 	// Resolve image from release metadata
@@ -150,16 +154,16 @@ func resolveGCPImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.Relea
 	return image, nil
 }
 
-
 // resolveGCPSubnet configures the subnet for node placement using PSC subnet.
 func resolveGCPSubnet(hcGCPPlatform *hyperv1.GCPPlatformSpec) (string, error) {
 	// If PrivateServiceConnectSubnet is configured, use it
 	if hcGCPPlatform.NetworkConfig.PrivateServiceConnectSubnet.Name != "" {
-		// For now, just return the subnet name - CAPG will construct the full path
+		// CAPG will automatically prepend "projects/{project}/regions/{region}/subnetworks/"
+		// so we only provide the subnet name
 		return hcGCPPlatform.NetworkConfig.PrivateServiceConnectSubnet.Name, nil
 	}
 
-	// Default to using the default subnet if no PSC subnet is configured
+	// Default to using the default subnet name - CAPG will construct the full path
 	return "default", nil
 }
 
@@ -193,8 +197,12 @@ func configureGCPServiceAccount(saConfig *hyperv1.GCPNodeServiceAccount) *capigc
 		}
 	}
 
+	email := ""
+	if saConfig.Email != nil {
+		email = *saConfig.Email
+	}
 	return &capigcp.ServiceAccount{
-		Email:  saConfig.Email,
+		Email:  email,
 		Scopes: scopes,
 	}
 }
@@ -212,11 +220,11 @@ func configureGCPBootDisk(bootDiskConfig *hyperv1.GCPBootDisk) GCPBootDiskConfig
 	diskType := capigcp.PdStandardDiskType // Default type
 
 	if bootDiskConfig != nil {
-		if bootDiskConfig.DiskSizeGB > 0 {
-			diskSizeGB = bootDiskConfig.DiskSizeGB
+		if bootDiskConfig.DiskSizeGB != nil && *bootDiskConfig.DiskSizeGB > 0 {
+			diskSizeGB = *bootDiskConfig.DiskSizeGB
 		}
-		if bootDiskConfig.DiskType != "" {
-			diskType = capigcp.DiskType(bootDiskConfig.DiskType)
+		if bootDiskConfig.DiskType != nil && *bootDiskConfig.DiskType != "" {
+			diskType = capigcp.DiskType(*bootDiskConfig.DiskType)
 		}
 	}
 
@@ -283,16 +291,16 @@ func configureGCPNetworkTags(userTags []string, infraID string) []string {
 }
 
 // configureGCPMaintenanceBehavior determines the host maintenance behavior.
-func configureGCPMaintenanceBehavior(userMaintenance string, preemptible bool) capigcp.HostMaintenancePolicy {
-	if userMaintenance != "" {
-		if userMaintenance == "TERMINATE" {
+func configureGCPMaintenanceBehavior(userMaintenance *string, preemptible *bool) capigcp.HostMaintenancePolicy {
+	if userMaintenance != nil && *userMaintenance != "" {
+		if *userMaintenance == "TERMINATE" {
 			return capigcp.HostMaintenancePolicyTerminate
 		}
 		return capigcp.HostMaintenancePolicyMigrate
 	}
 
 	// For preemptible instances, must use TERMINATE
-	if preemptible {
+	if preemptible != nil && *preemptible {
 		return capigcp.HostMaintenancePolicyTerminate
 	}
 
@@ -321,88 +329,4 @@ func toGCPLabel(label string) string {
 	}
 
 	return result
-}
-
-// setGCPConditions sets GCP-specific conditions on the NodePool.
-func (r *NodePoolReconciler) setGCPConditions(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string, releaseImage *releaseinfo.ReleaseImage) error {
-	// For now, we'll implement basic validation conditions
-	// More specific conditions can be added as needed
-
-	// Validate GCP platform configuration
-	if err := r.validateGCPPlatformConfig(ctx, nodePool, hcluster); err != nil {
-		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-			Type:               hyperv1.NodePoolValidPlatformConfigConditionType,
-			Status:             corev1.ConditionFalse,
-			Reason:             "GCPConfigurationInvalid",
-			Message:            fmt.Sprintf("GCP platform configuration is invalid: %v", err),
-			ObservedGeneration: nodePool.Generation,
-		})
-		return nil // Don't return error as this is a config issue
-	}
-
-	// Set valid platform config condition
-	SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
-		Type:               hyperv1.NodePoolValidPlatformConfigConditionType,
-		Status:             corev1.ConditionTrue,
-		Reason:             hyperv1.AsExpectedReason,
-		Message:            "GCP platform configuration is valid",
-		ObservedGeneration: nodePool.Generation,
-	})
-
-	// TODO: Add more GCP-specific conditions:
-	// - Image availability validation
-	// - Zone and region compatibility
-	// - Service account permissions check
-	// - Network connectivity validation
-
-	return nil
-}
-
-// validateGCPPlatformConfig validates the GCP platform configuration.
-func (r *NodePoolReconciler) validateGCPPlatformConfig(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) error {
-	gcpPlatform := nodePool.Spec.Platform.GCP
-	if gcpPlatform == nil {
-		return fmt.Errorf("GCP platform configuration is missing")
-	}
-
-	hcGCPPlatform := hcluster.Spec.Platform.GCP
-	if hcGCPPlatform == nil {
-		return fmt.Errorf("HostedCluster GCP platform configuration is missing")
-	}
-
-	// Validate machine type format
-	if gcpPlatform.MachineType == "" {
-		return fmt.Errorf("machine type is required")
-	}
-
-	// Validate zone is within the cluster's region
-	if gcpPlatform.Zone == "" {
-		return fmt.Errorf("zone is required")
-	}
-
-	// Check if zone belongs to the cluster's region
-	expectedRegionPrefix := hcGCPPlatform.Region + "-"
-	if !strings.HasPrefix(gcpPlatform.Zone, expectedRegionPrefix) {
-		return fmt.Errorf("zone %q is not valid for region %q", gcpPlatform.Zone, hcGCPPlatform.Region)
-	}
-
-	// Validate preemptible and maintenance configuration
-	if gcpPlatform.Preemptible && gcpPlatform.OnHostMaintenance != "" && gcpPlatform.OnHostMaintenance != "TERMINATE" {
-		return fmt.Errorf("preemptible instances must use TERMINATE for onHostMaintenance, got: %s", gcpPlatform.OnHostMaintenance)
-	}
-
-	// Additional validations can be added here
-
-	return nil
-}
-
-// gcpFailureDomain returns the GCP zone to use as failure domain for the NodePool machines.
-func gcpFailureDomain(nodePool *hyperv1.NodePool) *string {
-	if nodePool.Spec.Platform.GCP == nil {
-		return nil
-	}
-	if nodePool.Spec.Platform.GCP.Zone == "" {
-		return nil
-	}
-	return &nodePool.Spec.Platform.GCP.Zone
 }

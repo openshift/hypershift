@@ -148,8 +148,8 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 			if gcpCluster.Spec.AdditionalLabels == nil {
 				gcpCluster.Spec.AdditionalLabels = make(map[string]string)
 			}
-			for _, label := range gcpSpec.ResourceLabels {
-				gcpCluster.Spec.AdditionalLabels[label.Key] = ptr.Deref(label.Value, "")
+			for key, value := range gcpSpec.ResourceLabels {
+				gcpCluster.Spec.AdditionalLabels[key] = value
 			}
 		}
 

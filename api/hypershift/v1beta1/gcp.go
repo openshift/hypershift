@@ -17,38 +17,6 @@ type GCPResourceReference struct {
 	Name string `json:"name"`
 }
 
-// GCPResourceLabel is a label to apply to GCP resources created for the cluster.
-// Labels are key-value pairs used for organizing and managing GCP resources.
-// See https://cloud.google.com/compute/docs/labeling-resources for GCP labeling guidance.
-type GCPResourceLabel struct {
-	// key is the key part of the label. A label key can have a maximum of 63 characters and cannot be empty.
-	// For Compute Engine resources (VMs, disks, networks created by CAPG), keys must:
-	// - Start with a lowercase letter
-	// - Contain only lowercase letters, digits, or hyphens
-	// - End with a lowercase letter or digit (not a hyphen)
-	// - Be 1-63 characters long
-	// GCP reserves the 'goog' prefix for system labels.
-	// See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
-	//
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$`
-	// +kubebuilder:validation:XValidation:rule="!self.startsWith('goog')",message="Label keys starting with the reserved 'goog' prefix are not allowed"
-	Key string `json:"key,omitempty"`
-
-	// value is the value part of the label. A label value can have a maximum of 63 characters.
-	// Empty values are allowed by GCP. If non-empty, it must start with a lowercase letter,
-	// contain only lowercase letters, digits, or hyphens, and end with a lowercase letter or digit.
-	// See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
-	//
-	// +optional
-	// +kubebuilder:validation:MinLength=0
-	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^$|^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$`
-	Value *string `json:"value,omitempty"`
-}
-
 // GCPEndpointAccessType defines the endpoint access type for GCP clusters.
 // Equivalent to AWS EndpointAccessType but adapted for GCP networking model.
 type GCPEndpointAccessType string
@@ -280,7 +248,7 @@ type GCPNodePoolPlatform struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]+(-[a-z0-9]+)*$`
-	MachineType string `json:"machineType"`
+	MachineType string `json:"machineType,omitempty"`
 
 	// zone is the GCP zone where node instances will be created.
 	// Must be a valid zone within the cluster's region.
@@ -291,7 +259,7 @@ type GCPNodePoolPlatform struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	// +kubebuilder:validation:Pattern=`^[a-z]+(?:-[a-z0-9]+)*-[a-z]$`
-	Zone string `json:"zone"`
+	Zone string `json:"zone,omitempty"`
 
 	// image specifies the boot image for node instances.
 	// If unspecified, the default RHCOS image will be used based on the NodePool release payload.
@@ -302,7 +270,7 @@ type GCPNodePoolPlatform struct {
 	//
 	// +optional
 	// +kubebuilder:validation:MaxLength=2048
-	Image string `json:"image,omitempty"`
+	Image *string `json:"image,omitempty"`
 
 	// bootDisk specifies the configuration for the boot disk of node instances.
 	//
@@ -338,6 +306,7 @@ type GCPNodePoolPlatform struct {
 	//   - Cannot end with hyphen
 	//
 	// +optional
+	// +listType=set
 	// +kubebuilder:validation:MaxItems=64
 	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=63
@@ -350,7 +319,7 @@ type GCPNodePoolPlatform struct {
 	//
 	// +optional
 	// +kubebuilder:default=false
-	Preemptible bool `json:"preemptible,omitempty"`
+	Preemptible *bool `json:"preemptible,omitempty"`
 
 	// onHostMaintenance specifies the behavior when host maintenance occurs.
 	// For preemptible instances, this must be "TERMINATE".
@@ -359,7 +328,7 @@ type GCPNodePoolPlatform struct {
 	//
 	// +optional
 	// +kubebuilder:validation:Enum=MIGRATE;TERMINATE
-	OnHostMaintenance string `json:"onHostMaintenance,omitempty"`
+	OnHostMaintenance *string `json:"onHostMaintenance,omitempty"`
 }
 
 // GCPBootDisk specifies configuration for the boot disk of GCP node instances.
@@ -371,7 +340,7 @@ type GCPBootDisk struct {
 	// +kubebuilder:default=64
 	// +kubebuilder:validation:Minimum=20
 	// +kubebuilder:validation:Maximum=65536
-	DiskSizeGB int64 `json:"diskSizeGB,omitempty"`
+	DiskSizeGB *int64 `json:"diskSizeGB,omitempty"`
 
 	// diskType specifies the disk type for the boot disk.
 	// Valid values include:
@@ -383,7 +352,7 @@ type GCPBootDisk struct {
 	// +optional
 	// +kubebuilder:default="pd-balanced"
 	// +kubebuilder:validation:Enum=pd-standard;pd-ssd;pd-balanced
-	DiskType string `json:"diskType,omitempty"`
+	DiskType *string `json:"diskType,omitempty"`
 
 	// encryptionKey specifies customer-managed encryption key (CMEK) configuration.
 	// If not specified, Google-managed encryption keys are used.
@@ -401,7 +370,7 @@ type GCPDiskEncryptionKey struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
 	// +kubebuilder:validation:Pattern=`^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/locations\/[a-z0-9-]+\/keyRings\/[a-zA-Z0-9_-]+\/cryptoKeys\/[a-zA-Z0-9_-]+$`
-	KMSKeyName string `json:"kmsKeyName"`
+	KMSKeyName string `json:"kmsKeyName,omitempty"`
 }
 
 // GCPNodeServiceAccount specifies the Google Service Account configuration for node instances.
@@ -416,7 +385,7 @@ type GCPNodeServiceAccount struct {
 	// +optional
 	// +kubebuilder:validation:MaxLength=254
 	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`
-	Email string `json:"email,omitempty"`
+	Email *string `json:"email,omitempty"`
 
 	// scopes specifies the access scopes for the service account.
 	// If not specified, defaults to standard compute scopes.
@@ -427,6 +396,7 @@ type GCPNodeServiceAccount struct {
 	//   - "https://www.googleapis.com/auth/cloud-platform" - Full access (use with caution)
 	//
 	// +optional
+	// +listType=set
 	// +kubebuilder:validation:MaxItems=50
 	// +kubebuilder:validation:items:MaxLength=512
 	Scopes []string `json:"scopes,omitempty"`

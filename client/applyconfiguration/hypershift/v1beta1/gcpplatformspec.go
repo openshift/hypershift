@@ -28,7 +28,7 @@ type GCPPlatformSpecApplyConfiguration struct {
 	Region           *string                                      `json:"region,omitempty"`
 	NetworkConfig    *GCPNetworkConfigApplyConfiguration          `json:"networkConfig,omitempty"`
 	EndpointAccess   *hypershiftv1beta1.GCPEndpointAccessType     `json:"endpointAccess,omitempty"`
-	ResourceLabels   []GCPResourceLabelApplyConfiguration         `json:"resourceLabels,omitempty"`
+	ResourceLabels   map[string]string                            `json:"resourceLabels,omitempty"`
 	WorkloadIdentity *GCPWorkloadIdentityConfigApplyConfiguration `json:"workloadIdentity,omitempty"`
 }
 
@@ -70,15 +70,16 @@ func (b *GCPPlatformSpecApplyConfiguration) WithEndpointAccess(value hypershiftv
 	return b
 }
 
-// WithResourceLabels adds the given value to the ResourceLabels field in the declarative configuration
+// WithResourceLabels puts the entries into the ResourceLabels field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, values provided by each call will be appended to the ResourceLabels field.
-func (b *GCPPlatformSpecApplyConfiguration) WithResourceLabels(values ...*GCPResourceLabelApplyConfiguration) *GCPPlatformSpecApplyConfiguration {
-	for i := range values {
-		if values[i] == nil {
-			panic("nil value passed to WithResourceLabels")
-		}
-		b.ResourceLabels = append(b.ResourceLabels, *values[i])
+// If called multiple times, the entries provided by each call will be put on the ResourceLabels field,
+// overwriting an existing map entries in ResourceLabels field with the same key.
+func (b *GCPPlatformSpecApplyConfiguration) WithResourceLabels(entries map[string]string) *GCPPlatformSpecApplyConfiguration {
+	if b.ResourceLabels == nil && len(entries) > 0 {
+		b.ResourceLabels = make(map[string]string, len(entries))
+	}
+	for k, v := range entries {
+		b.ResourceLabels[k] = v
 	}
 	return b
 }

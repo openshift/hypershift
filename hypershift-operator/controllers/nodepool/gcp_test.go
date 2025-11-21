@@ -11,6 +11,7 @@ import (
 	imageapi "github.com/openshift/api/image/v1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 )
@@ -66,7 +67,7 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 			validator: func(t *testing.T, spec *capigcp.GCPMachineSpec) {
 				g := NewWithT(t)
 				g.Expect(spec.InstanceType).To(Equal("n1-standard-2"))
-				g.Expect(*spec.Subnet).To(Equal("regions/us-central1/subnetworks/test-psc-subnet"))
+				g.Expect(*spec.Subnet).To(Equal("test-psc-subnet"))
 				g.Expect(spec.RootDeviceSize).To(Equal(int64(64))) // Default size
 				g.Expect(*spec.RootDeviceType).To(Equal(capigcp.PdStandardDiskType))
 				g.Expect(spec.Preemptible).To(BeFalse())
@@ -88,8 +89,8 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 							MachineType: "n1-standard-2",
 							Zone:        "us-central1-a",
 							BootDisk: &hyperv1.GCPBootDisk{
-								DiskSizeGB: 100,
-								DiskType:   "pd-ssd",
+								DiskSizeGB: ptr.To[int64](100),
+								DiskType:   ptr.To("pd-ssd"),
 							},
 						},
 					},
@@ -137,7 +138,7 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 						GCP: &hyperv1.GCPNodePoolPlatform{
 							MachineType: "n1-standard-2",
 							Zone:        "us-central1-a",
-							Preemptible: true,
+							Preemptible: ptr.To(true),
 						},
 					},
 				},
@@ -184,7 +185,7 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 						GCP: &hyperv1.GCPNodePoolPlatform{
 							MachineType: "n1-standard-2",
 							Zone:        "us-central1-a",
-							Image:       "projects/my-project/global/images/custom-rhcos-image",
+							Image:       ptr.To("projects/my-project/global/images/custom-rhcos-image"),
 						},
 					},
 				},
@@ -290,8 +291,8 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 							MachineType: "n1-standard-2",
 							Zone:        "us-central1-a",
 							BootDisk: &hyperv1.GCPBootDisk{
-								DiskSizeGB: 64,
-								DiskType:   "pd-standard",
+								DiskSizeGB: ptr.To[int64](64),
+								DiskType:   ptr.To("pd-standard"),
 								EncryptionKey: &hyperv1.GCPDiskEncryptionKey{
 									KMSKeyName: "projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key",
 								},
@@ -345,7 +346,7 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 							MachineType: "n1-standard-2",
 							Zone:        "us-central1-a",
 							ServiceAccount: &hyperv1.GCPNodeServiceAccount{
-								Email: "test-nodepool@test-project.iam.gserviceaccount.com",
+								Email: ptr.To("test-nodepool@test-project.iam.gserviceaccount.com"),
 								Scopes: []string{
 									"https://www.googleapis.com/auth/cloud-platform",
 								},
@@ -610,32 +611,32 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 func TestConfigureGCPMaintenanceBehavior(t *testing.T) {
 	testCases := []struct {
 		name             string
-		userMaintenance  string
-		preemptible      bool
+		userMaintenance  *string
+		preemptible      *bool
 		expectedBehavior capigcp.HostMaintenancePolicy
 	}{
 		{
 			name:             "When user specifies TERMINATE maintenance, it should return terminate policy",
-			userMaintenance:  "TERMINATE",
-			preemptible:      false,
+			userMaintenance:  ptr.To("TERMINATE"),
+			preemptible:      ptr.To(false),
 			expectedBehavior: capigcp.HostMaintenancePolicyTerminate,
 		},
 		{
 			name:             "When user specifies MIGRATE maintenance, it should return migrate policy",
-			userMaintenance:  "MIGRATE",
-			preemptible:      false,
+			userMaintenance:  ptr.To("MIGRATE"),
+			preemptible:      ptr.To(false),
 			expectedBehavior: capigcp.HostMaintenancePolicyMigrate,
 		},
 		{
 			name:             "When instance is preemptible with no user setting, it should return terminate policy",
-			userMaintenance:  "",
-			preemptible:      true,
+			userMaintenance:  ptr.To(""),
+			preemptible:      ptr.To(true),
 			expectedBehavior: capigcp.HostMaintenancePolicyTerminate,
 		},
 		{
 			name:             "When instance is not preemptible with no user setting, it should return migrate policy",
-			userMaintenance:  "",
-			preemptible:      false,
+			userMaintenance:  ptr.To(""),
+			preemptible:      ptr.To(false),
 			expectedBehavior: capigcp.HostMaintenancePolicyMigrate,
 		},
 	}

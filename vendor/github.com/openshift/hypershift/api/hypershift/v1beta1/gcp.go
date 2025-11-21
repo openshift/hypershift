@@ -17,38 +17,6 @@ type GCPResourceReference struct {
 	Name string `json:"name"`
 }
 
-// GCPResourceLabel is a label to apply to GCP resources created for the cluster.
-// Labels are key-value pairs used for organizing and managing GCP resources.
-// See https://cloud.google.com/compute/docs/labeling-resources for GCP labeling guidance.
-type GCPResourceLabel struct {
-	// key is the key part of the label. A label key can have a maximum of 63 characters and cannot be empty.
-	// For Compute Engine resources (VMs, disks, networks created by CAPG), keys must:
-	// - Start with a lowercase letter
-	// - Contain only lowercase letters, digits, or hyphens
-	// - End with a lowercase letter or digit (not a hyphen)
-	// - Be 1-63 characters long
-	// GCP reserves the 'goog' prefix for system labels.
-	// See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
-	//
-	// +required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$`
-	// +kubebuilder:validation:XValidation:rule="!self.startsWith('goog')",message="Label keys starting with the reserved 'goog' prefix are not allowed"
-	Key string `json:"key,omitempty"`
-
-	// value is the value part of the label. A label value can have a maximum of 63 characters.
-	// Empty values are allowed by GCP. If non-empty, it must start with a lowercase letter,
-	// contain only lowercase letters, digits, or hyphens, and end with a lowercase letter or digit.
-	// See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
-	//
-	// +optional
-	// +kubebuilder:validation:MinLength=0
-	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^$|^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$`
-	Value *string `json:"value,omitempty"`
-}
-
 // GCPEndpointAccessType defines the endpoint access type for GCP clusters.
 // Equivalent to AWS EndpointAccessType but adapted for GCP networking model.
 type GCPEndpointAccessType string
@@ -132,10 +100,8 @@ type GCPPlatformSpec struct {
 	// For GCP labeling guidance, see https://cloud.google.com/compute/docs/labeling-resources
 	//
 	// +optional
-	// +listType=map
-	// +listMapKey=key
-	// +kubebuilder:validation:MaxItems=60
-	ResourceLabels []GCPResourceLabel `json:"resourceLabels,omitempty"`
+	// +kubebuilder:validation:MaxProperties=60
+	ResourceLabels map[string]string `json:"resourceLabels,omitempty"`
 
 	// workloadIdentity configures Workload Identity Federation for the cluster.
 	// This enables secure, short-lived token-based authentication without storing
@@ -264,4 +230,174 @@ type GCPServiceAccountsEmails struct {
 	// +kubebuilder:validation:MaxLength=100
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ControlPlane is immutable"
 	ControlPlane string `json:"controlPlane,omitempty"`
+}
+
+// GCPNodePoolPlatform specifies the configuration of a NodePool when operating on GCP.
+// This follows the AWS and Azure patterns for platform-specific NodePool configuration.
+type GCPNodePoolPlatform struct {
+	// machineType is the GCP machine type for node instances (e.g. n2-standard-4).
+	// Must follow GCP machine type naming conventions as documented at:
+	// https://cloud.google.com/compute/docs/machine-resource#machine_type_comparison
+	//
+	// Valid machine type formats:
+	//   - predefined: n1-standard-1, n2-highmem-4, c2-standard-8, etc.
+	//   - custom: custom-{cpus}-{memory} (e.g. custom-4-8192)
+	//   - custom with extended memory: custom-{cpus}-{memory}-ext (e.g. custom-2-13312-ext)
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]+(-[a-z0-9]+)*$`
+	MachineType string `json:"machineType,omitempty"`
+
+	// zone is the GCP zone where node instances will be created.
+	// Must be a valid zone within the cluster's region.
+	// Format: {region}-{zone} (e.g. us-central1-a, europe-west2-b)
+	// See https://cloud.google.com/compute/docs/regions-zones for available zones.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z]+(?:-[a-z0-9]+)*-[a-z]$`
+	Zone string `json:"zone,omitempty"`
+
+	// image specifies the boot image for node instances.
+	// If unspecified, the default RHCOS image will be used based on the NodePool release payload.
+	// Can be:
+	//   - A family name: projects/rhel-cloud/global/images/family/rhel-8
+	//   - A specific image: projects/rhel-cloud/global/images/rhel-8-v20231010
+	//   - A full resource URL: https://www.googleapis.com/compute/v1/projects/rhel-cloud/global/images/rhel-8-v20231010
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=2048
+	Image *string `json:"image,omitempty"`
+
+	// bootDisk specifies the configuration for the boot disk of node instances.
+	//
+	// +optional
+	BootDisk *GCPBootDisk `json:"bootDisk,omitempty"`
+
+	// serviceAccount configures the Google Service Account attached to node instances.
+	// If not specified, uses the default compute service account for the project.
+	//
+	// +optional
+	ServiceAccount *GCPNodeServiceAccount `json:"serviceAccount,omitempty"`
+
+	// resourceLabels is an optional list of additional labels to apply to GCP node
+	// instances and their associated resources (disks, etc.).
+	// Labels will be merged with cluster-level resource labels, with NodePool labels
+	// taking precedence in case of conflicts.
+	//
+	// Keys and values must conform to GCP labeling requirements:
+	//   - Keys: 1–63 chars, must start with a lowercase letter; allowed [a-z0-9_-]
+	//   - Values: empty or 1–63 chars; allowed [a-z0-9_-]
+	//   - Maximum 60 user labels per resource (GCP limit is 64 total, with ~4 reserved)
+	//
+	// +optional
+	// +kubebuilder:validation:MaxProperties=60
+	ResourceLabels map[string]string `json:"resourceLabels,omitempty"`
+
+	// networkTags is an optional list of network tags to apply to node instances.
+	// These tags are used by GCP firewall rules to control network access.
+	// Tags must conform to GCP naming conventions:
+	//   - 1-63 characters
+	//   - Lowercase letters, numbers, and hyphens only
+	//   - Must start with lowercase letter
+	//   - Cannot end with hyphen
+	//
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=64
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=63
+	// +kubebuilder:validation:items:Pattern=`^[a-z][a-z0-9-]*[a-z0-9]$|^[a-z]$`
+	NetworkTags []string `json:"networkTags,omitempty"`
+
+	// preemptible specifies whether node instances should be preemptible.
+	// Preemptible instances cost less but can be terminated by GCP with 30 seconds notice.
+	// Default is false (standard instances).
+	//
+	// +optional
+	// +kubebuilder:default=false
+	Preemptible *bool `json:"preemptible,omitempty"`
+
+	// onHostMaintenance specifies the behavior when host maintenance occurs.
+	// For preemptible instances, this must be "TERMINATE".
+	// For standard instances, can be "MIGRATE" (live migrate) or "TERMINATE".
+	// If not specified, defaults to "MIGRATE" for standard instances and "TERMINATE" for preemptible.
+	//
+	// +optional
+	// +kubebuilder:validation:Enum=MIGRATE;TERMINATE
+	OnHostMaintenance *string `json:"onHostMaintenance,omitempty"`
+}
+
+// GCPBootDisk specifies configuration for the boot disk of GCP node instances.
+type GCPBootDisk struct {
+	// diskSizeGB specifies the size of the boot disk in gigabytes.
+	// Must be at least 20 GB for RHCOS images.
+	//
+	// +optional
+	// +kubebuilder:default=64
+	// +kubebuilder:validation:Minimum=20
+	// +kubebuilder:validation:Maximum=65536
+	DiskSizeGB *int64 `json:"diskSizeGB,omitempty"`
+
+	// diskType specifies the disk type for the boot disk.
+	// Valid values include:
+	//   - "pd-standard" - Standard persistent disk (magnetic)
+	//   - "pd-ssd" - SSD persistent disk
+	//   - "pd-balanced" - Balanced persistent disk (recommended)
+	// If not specified, defaults to "pd-balanced".
+	//
+	// +optional
+	// +kubebuilder:default="pd-balanced"
+	// +kubebuilder:validation:Enum=pd-standard;pd-ssd;pd-balanced
+	DiskType *string `json:"diskType,omitempty"`
+
+	// encryptionKey specifies customer-managed encryption key (CMEK) configuration.
+	// If not specified, Google-managed encryption keys are used.
+	//
+	// +optional
+	EncryptionKey *GCPDiskEncryptionKey `json:"encryptionKey,omitempty"`
+}
+
+// GCPDiskEncryptionKey specifies configuration for customer-managed encryption keys.
+type GCPDiskEncryptionKey struct {
+	// kmsKeyName is the resource name of the Cloud KMS key used for disk encryption.
+	// Format: projects/{project}/locations/{location}/keyRings/{keyRing}/cryptoKeys/{key}
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	// +kubebuilder:validation:Pattern=`^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/locations\/[a-z0-9-]+\/keyRings\/[a-zA-Z0-9_-]+\/cryptoKeys\/[a-zA-Z0-9_-]+$`
+	KMSKeyName string `json:"kmsKeyName,omitempty"`
+}
+
+// GCPNodeServiceAccount specifies the Google Service Account configuration for node instances.
+type GCPNodeServiceAccount struct {
+	// email specifies the email address of the Google Service Account to use for node instances.
+	// If not specified, uses the default compute service account for the project.
+	// The service account must have the necessary permissions for the node to function:
+	//   - Logging writer
+	//   - Monitoring metric writer
+	//   - Storage object viewer (for pulling container images)
+	//
+	// +optional
+	// +kubebuilder:validation:MaxLength=254
+	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`
+	Email *string `json:"email,omitempty"`
+
+	// scopes specifies the access scopes for the service account.
+	// If not specified, defaults to standard compute scopes.
+	// Common scopes include:
+	//   - "https://www.googleapis.com/auth/devstorage.read_only" - Storage read-only
+	//   - "https://www.googleapis.com/auth/logging.write" - Logging write
+	//   - "https://www.googleapis.com/auth/monitoring.write" - Monitoring write
+	//   - "https://www.googleapis.com/auth/cloud-platform" - Full access (use with caution)
+	//
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:items:MaxLength=512
+	Scopes []string `json:"scopes,omitempty"`
 }

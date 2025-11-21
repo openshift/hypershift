@@ -5863,6 +5863,99 @@ which contain any of the given tags will be excluded from the result.</p>
 </tr>
 </tbody>
 </table>
+###GCPBootDisk { #hypershift.openshift.io/v1beta1.GCPBootDisk }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>)
+</p>
+<p>
+<p>GCPBootDisk specifies configuration for the boot disk of GCP node instances.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>diskSizeGB</code></br>
+<em>
+int64
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>diskSizeGB specifies the size of the boot disk in gigabytes.
+Must be at least 20 GB for RHCOS images.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>diskType</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>diskType specifies the disk type for the boot disk.
+Valid values include:
+- &ldquo;pd-standard&rdquo; - Standard persistent disk (magnetic)
+- &ldquo;pd-ssd&rdquo; - SSD persistent disk
+- &ldquo;pd-balanced&rdquo; - Balanced persistent disk (recommended)
+If not specified, defaults to &ldquo;pd-balanced&rdquo;.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>encryptionKey</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPDiskEncryptionKey">
+GCPDiskEncryptionKey
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>encryptionKey specifies customer-managed encryption key (CMEK) configuration.
+If not specified, Google-managed encryption keys are used.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPDiskEncryptionKey { #hypershift.openshift.io/v1beta1.GCPDiskEncryptionKey }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPBootDisk">GCPBootDisk</a>)
+</p>
+<p>
+<p>GCPDiskEncryptionKey specifies configuration for customer-managed encryption keys.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>kmsKeyName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>kmsKeyName is the resource name of the Cloud KMS key used for disk encryption.
+Format: projects/{project}/locations/{location}/keyRings/{keyRing}/cryptoKeys/{key}</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###GCPEndpointAccessType { #hypershift.openshift.io/v1beta1.GCPEndpointAccessType }
 <p>
 (<em>Appears on:</em>
@@ -5929,6 +6022,221 @@ GCPResourceReference
 </td>
 <td>
 <p>privateServiceConnectSubnet is the subnet for Private Service Connect endpoints</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPNodePoolPlatform { #hypershift.openshift.io/v1beta1.GCPNodePoolPlatform }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolPlatform">NodePoolPlatform</a>)
+</p>
+<p>
+<p>GCPNodePoolPlatform specifies the configuration of a NodePool when operating on GCP.
+This follows the AWS and Azure patterns for platform-specific NodePool configuration.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>machineType</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>machineType is the GCP machine type for node instances (e.g. n2-standard-4).
+Must follow GCP machine type naming conventions as documented at:
+<a href="https://cloud.google.com/compute/docs/machine-resource#machine_type_comparison">https://cloud.google.com/compute/docs/machine-resource#machine_type_comparison</a></p>
+<p>Valid machine type formats:
+- predefined: n1-standard-1, n2-highmem-4, c2-standard-8, etc.
+- custom: custom-{cpus}-{memory} (e.g. custom-4-8192)
+- custom with extended memory: custom-{cpus}-{memory}-ext (e.g. custom-2-13312-ext)</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>zone</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>zone is the GCP zone where node instances will be created.
+Must be a valid zone within the cluster&rsquo;s region.
+Format: {region}-{zone} (e.g. us-central1-a, europe-west2-b)
+See <a href="https://cloud.google.com/compute/docs/regions-zones">https://cloud.google.com/compute/docs/regions-zones</a> for available zones.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>image</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>image specifies the boot image for node instances.
+If unspecified, the default RHCOS image will be used based on the NodePool release payload.
+Can be:
+- A family name: projects/rhel-cloud/global/images/family/rhel-8
+- A specific image: projects/rhel-cloud/global/images/rhel-8-v20231010
+- A full resource URL: <a href="https://www.googleapis.com/compute/v1/projects/rhel-cloud/global/images/rhel-8-v20231010">https://www.googleapis.com/compute/v1/projects/rhel-cloud/global/images/rhel-8-v20231010</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>bootDisk</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPBootDisk">
+GCPBootDisk
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>bootDisk specifies the configuration for the boot disk of node instances.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceAccount</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodeServiceAccount">
+GCPNodeServiceAccount
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>serviceAccount configures the Google Service Account attached to node instances.
+If not specified, uses the default compute service account for the project.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourceLabels</code></br>
+<em>
+map[string]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>resourceLabels is an optional list of additional labels to apply to GCP node
+instances and their associated resources (disks, etc.).
+Labels will be merged with cluster-level resource labels, with NodePool labels
+taking precedence in case of conflicts.</p>
+<p>Keys and values must conform to GCP labeling requirements:
+- Keys: 1–63 chars, must start with a lowercase letter; allowed [a-z0-9<em>-]
+- Values: empty or 1–63 chars; allowed [a-z0-9</em>-]
+- Maximum 60 user labels per resource (GCP limit is 64 total, with ~4 reserved)</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>networkTags</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>networkTags is an optional list of network tags to apply to node instances.
+These tags are used by GCP firewall rules to control network access.
+Tags must conform to GCP naming conventions:
+- 1-63 characters
+- Lowercase letters, numbers, and hyphens only
+- Must start with lowercase letter
+- Cannot end with hyphen</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>preemptible</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>preemptible specifies whether node instances should be preemptible.
+Preemptible instances cost less but can be terminated by GCP with 30 seconds notice.
+Default is false (standard instances).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>onHostMaintenance</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>onHostMaintenance specifies the behavior when host maintenance occurs.
+For preemptible instances, this must be &ldquo;TERMINATE&rdquo;.
+For standard instances, can be &ldquo;MIGRATE&rdquo; (live migrate) or &ldquo;TERMINATE&rdquo;.
+If not specified, defaults to &ldquo;MIGRATE&rdquo; for standard instances and &ldquo;TERMINATE&rdquo; for preemptible.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPNodeServiceAccount { #hypershift.openshift.io/v1beta1.GCPNodeServiceAccount }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>)
+</p>
+<p>
+<p>GCPNodeServiceAccount specifies the Google Service Account configuration for node instances.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>email</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>email specifies the email address of the Google Service Account to use for node instances.
+If not specified, uses the default compute service account for the project.
+The service account must have the necessary permissions for the node to function:
+- Logging writer
+- Monitoring metric writer
+- Storage object viewer (for pulling container images)</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>scopes</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>scopes specifies the access scopes for the service account.
+If not specified, defaults to standard compute scopes.
+Common scopes include:
+- &ldquo;<a href="https://www.googleapis.com/auth/devstorage.read_only&quot;">https://www.googleapis.com/auth/devstorage.read_only&rdquo;</a> - Storage read-only
+- &ldquo;<a href="https://www.googleapis.com/auth/logging.write&quot;">https://www.googleapis.com/auth/logging.write&rdquo;</a> - Logging write
+- &ldquo;<a href="https://www.googleapis.com/auth/monitoring.write&quot;">https://www.googleapis.com/auth/monitoring.write&rdquo;</a> - Monitoring write
+- &ldquo;<a href="https://www.googleapis.com/auth/cloud-platform&quot;">https://www.googleapis.com/auth/cloud-platform&rdquo;</a> - Full access (use with caution)</p>
 </td>
 </tr>
 </tbody>
@@ -6015,9 +6323,7 @@ Allowed values: &ldquo;Private&rdquo;, &ldquo;PublicAndPrivate&rdquo;. Defaults 
 <td>
 <code>resourceLabels</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1beta1.GCPResourceLabel">
-[]GCPResourceLabel
-</a>
+map[string]string
 </em>
 </td>
 <td>
@@ -6213,59 +6519,6 @@ string
 <td>
 <em>(Optional)</em>
 <p>dnsRecords lists the created DNS A records</p>
-</td>
-</tr>
-</tbody>
-</table>
-###GCPResourceLabel { #hypershift.openshift.io/v1beta1.GCPResourceLabel }
-<p>
-(<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
-</p>
-<p>
-<p>GCPResourceLabel is a label to apply to GCP resources created for the cluster.
-Labels are key-value pairs used for organizing and managing GCP resources.
-See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a> for GCP labeling guidance.</p>
-</p>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Description</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>
-<code>key</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>key is the key part of the label. A label key can have a maximum of 63 characters and cannot be empty.
-For Compute Engine resources (VMs, disks, networks created by CAPG), keys must:
-- Start with a lowercase letter
-- Contain only lowercase letters, digits, or hyphens
-- End with a lowercase letter or digit (not a hyphen)
-- Be 1-63 characters long
-GCP reserves the &lsquo;goog&rsquo; prefix for system labels.
-See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a> for Compute Engine label requirements.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>value</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>value is the value part of the label. A label value can have a maximum of 63 characters.
-Empty values are allowed by GCP. If non-empty, it must start with a lowercase letter,
-contain only lowercase letters, digits, or hyphens, and end with a lowercase letter or digit.
-See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a> for Compute Engine label requirements.</p>
 </td>
 </tr>
 </tbody>
@@ -10385,6 +10638,20 @@ OpenStackNodePoolPlatform
 <td>
 <em>(Optional)</em>
 <p>openstack specifies the configuration used when using OpenStack platform.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>gcp</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">
+GCPNodePoolPlatform
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>gcp specifies the configuration used when operating on GCP.</p>
 </td>
 </tr>
 </tbody>

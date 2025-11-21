@@ -226,6 +226,7 @@ nodepools.hypershift.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates:
+  - GCPPlatform
   - OpenStack
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
