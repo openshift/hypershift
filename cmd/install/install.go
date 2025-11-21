@@ -107,6 +107,7 @@ type Options struct {
 	ExternalDNSDomainFilter                   string
 	ExternalDNSTxtOwnerId                     string
 	ExternalDNSImage                          string
+	ExternalDNSGoogleProject                  string
 	AdditionalOperatorEnvVars                 map[string]string
 	EnableAdminRBACGeneration                 bool
 	EnableUWMTelemetryRemoteWrite             bool
@@ -158,7 +159,9 @@ func (o *Options) Validate() error {
 	}
 
 	if len(o.ExternalDNSProvider) > 0 {
-		if len(o.ExternalDNSCredentials) == 0 && len(o.ExternalDNSCredentialsSecret) == 0 {
+		// Credentials are optional for GCP when using Workload Identity
+		credentialsRequired := o.ExternalDNSProvider != "google"
+		if credentialsRequired && len(o.ExternalDNSCredentials) == 0 && len(o.ExternalDNSCredentialsSecret) == 0 {
 			errs = append(errs, fmt.Errorf("--external-dns-credentials or --external-dns-credentials-secret are required with --external-dns-provider"))
 		}
 		if len(o.ExternalDNSCredentials) != 0 && len(o.ExternalDNSCredentialsSecret) != 0 {
@@ -254,6 +257,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specified domain.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerId, "external-dns-txt-owner-id", "", "external-dns TXT registry owner ID.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSImage, "external-dns-image", opts.ExternalDNSImage, "Image to use for external-dns")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSGoogleProject, "external-dns-google-project", "", "Google Cloud project ID for DNS zone (required for GCP provider)")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", opts.EnableAdminRBACGeneration, "Generate RBAC manifests for hosted cluster admins")
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
@@ -897,6 +901,7 @@ func setupExternalDNS(opts Options, operatorNamespace *corev1.Namespace) ([]crcl
 		CredentialsSecret: externalDNSSecret,
 		TxtOwnerId:        opts.ExternalDNSTxtOwnerId,
 		Proxy:             proxy,
+		GoogleProject:     opts.ExternalDNSGoogleProject,
 	}.Build()
 	objects = append(objects, externalDNSDeployment)
 
