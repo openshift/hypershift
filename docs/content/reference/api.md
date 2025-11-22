@@ -8061,6 +8061,55 @@ the update is at least 70% of desired nodes.</p>
 </tr>
 </tbody>
 </table>
+###IngressOperatorSpec { #hypershift.openshift.io/v1beta1.IngressOperatorSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OperatorConfiguration">OperatorConfiguration</a>)
+</p>
+<p>
+<p>IngressOperatorSpec is the specification of the desired behavior of the Ingress Operator.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>endpointPublishingStrategy</code></br>
+<em>
+github.com/openshift/api/operator/v1.EndpointPublishingStrategy
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>endpointPublishingStrategy is used to publish the default ingress controller endpoints.</p>
+<p>The endpoint publishing strategy is determined by the following precedence order:
+1. User-specified endpointPublishingStrategy (highest priority) - if this field is set,
+it takes precedence over all other configuration methods
+2. Platform-specific defaults with annotation overrides - if no user strategy is set,
+the platform type determines the default strategy, which can be further modified by:
+- hypershift.openshift.io/private-ingress-controller annotation (sets PrivateStrategyType)
+- hypershift.openshift.io/ingress-controller-load-balancer-scope annotation (sets LoadBalancerScope)
+3. Generic LoadBalancer fallback - if the platform is not recognized, defaults to
+LoadBalancerService with External scope</p>
+<p>Platform-specific defaults when endpointPublishingStrategy is not set:
+- AWS: LoadBalancerService with External scope (or NLB if configured)
+- Azure, GCP: LoadBalancerService with External scope
+- IBMCloud: LoadBalancerService with External scope (or NodePort for UPI)
+- None: HostNetwork
+- KubeVirt: NodePortService
+- OpenStack: LoadBalancerService with External scope and optional FloatingIP
+- Other platforms: LoadBalancerService with External scope</p>
+<p>See the OpenShift Ingress Operator EndpointPublishingStrategy type for the full specification:
+<a href="https://github.com/openshift/api/blob/master/operator/v1/types_ingress.go">https://github.com/openshift/api/blob/master/operator/v1/types_ingress.go</a></p>
+</td>
+</tr>
+</tbody>
+</table>
 ###InstanceType { #hypershift.openshift.io/v1beta1.InstanceType }
 <p>
 </p>
@@ -10910,6 +10959,21 @@ ClusterNetworkOperatorSpec
 <td>
 <em>(Optional)</em>
 <p>clusterNetworkOperator specifies the configuration for the Cluster Network Operator in the hosted cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>ingressOperator</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.IngressOperatorSpec">
+IngressOperatorSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>ingressOperator specifies the configuration for the Ingress Operator in the hosted cluster.
+This allows configuring how the default ingress controller endpoints are published.</p>
 </td>
 </tr>
 </tbody>

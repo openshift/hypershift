@@ -1976,6 +1976,12 @@ type OperatorConfiguration struct {
 	//
 	// +optional
 	ClusterNetworkOperator *ClusterNetworkOperatorSpec `json:"clusterNetworkOperator,omitempty"`
+
+	// ingressOperator specifies the configuration for the Ingress Operator in the hosted cluster.
+	// This allows configuring how the default ingress controller endpoints are published.
+	//
+	// +optional
+	IngressOperator *IngressOperatorSpec `json:"ingressOperator,omitempty"`
 }
 
 // +genclient

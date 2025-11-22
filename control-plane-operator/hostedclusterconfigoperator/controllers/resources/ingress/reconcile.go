@@ -13,66 +13,100 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
-func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32, isIBMCloudUPI bool, isPrivate bool, useNLB bool, loadBalancerScope operatorv1.LoadBalancerScope, loadBalancerIP string) error {
+func ReconcileDefaultIngressController(ingressController *operatorv1.IngressController, ingressSubdomain string, platformType hyperv1.PlatformType, replicas int32, isIBMCloudUPI bool, isPrivate bool, useNLB bool, loadBalancerScope operatorv1.LoadBalancerScope, loadBalancerIP string, endpointPublishingStrategy *operatorv1.EndpointPublishingStrategy) error {
 	// If ingress controller already exists, skip reconciliation to allow day-2 configuration
 	if ingressController.ResourceVersion != "" {
 		return nil
 	}
 
 	ingressController.Spec.Domain = ingressSubdomain
-	ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
-		Type: operatorv1.LoadBalancerServiceStrategyType,
-	}
 	if replicas > 0 {
 		ingressController.Spec.Replicas = &(replicas)
 	}
-	switch platformType {
-	case hyperv1.NonePlatform:
-		ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
-			Type: operatorv1.HostNetworkStrategyType,
-		}
-		ingressController.Spec.DefaultCertificate = &corev1.LocalObjectReference{
-			Name: manifests.IngressDefaultIngressControllerCert().Name,
-		}
-	case hyperv1.KubevirtPlatform:
-		ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
-			Type: operatorv1.NodePortServiceStrategyType,
-		}
-		ingressController.Spec.DefaultCertificate = &corev1.LocalObjectReference{
-			Name: manifests.IngressDefaultIngressControllerCert().Name,
-		}
-	case hyperv1.AWSPlatform:
-		if useNLB {
-			ingressController.Spec.EndpointPublishingStrategy.LoadBalancer = &operatorv1.LoadBalancerStrategy{
-				Scope: loadBalancerScope,
-				ProviderParameters: &operatorv1.ProviderLoadBalancerParameters{
-					Type: operatorv1.AWSLoadBalancerProvider,
-					AWS: &operatorv1.AWSLoadBalancerParameters{
-						Type:                          operatorv1.AWSNetworkLoadBalancer,
-						NetworkLoadBalancerParameters: &operatorv1.AWSNetworkLoadBalancerParameters{},
-					},
-				},
+
+	// If endpointPublishingStrategy is provided via configuration, use it directly
+	if endpointPublishingStrategy != nil {
+		ingressController.Spec.EndpointPublishingStrategy = endpointPublishingStrategy
+	} else {
+		// Otherwise, use platform-specific defaults
+		switch platformType {
+		case hyperv1.NonePlatform:
+			ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+				Type: operatorv1.HostNetworkStrategyType,
 			}
-		}
-		ingressController.Spec.DefaultCertificate = &corev1.LocalObjectReference{
-			Name: manifests.IngressDefaultIngressControllerCert().Name,
-		}
-	case hyperv1.IBMCloudPlatform:
-		if isIBMCloudUPI {
+		case hyperv1.KubevirtPlatform:
 			ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
 				Type: operatorv1.NodePortServiceStrategyType,
-				NodePort: &operatorv1.NodePortStrategy{
-					Protocol: operatorv1.TCPProtocol,
-				},
 			}
-		} else {
+		case hyperv1.AWSPlatform:
+			ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+				Type: operatorv1.LoadBalancerServiceStrategyType,
+			}
+			if useNLB {
+				ingressController.Spec.EndpointPublishingStrategy.LoadBalancer = &operatorv1.LoadBalancerStrategy{
+					Scope: loadBalancerScope,
+					ProviderParameters: &operatorv1.ProviderLoadBalancerParameters{
+						Type: operatorv1.AWSLoadBalancerProvider,
+						AWS: &operatorv1.AWSLoadBalancerParameters{
+							Type:                          operatorv1.AWSNetworkLoadBalancer,
+							NetworkLoadBalancerParameters: &operatorv1.AWSNetworkLoadBalancerParameters{},
+						},
+					},
+				}
+			}
+		case hyperv1.IBMCloudPlatform:
+			if isIBMCloudUPI {
+				ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+					Type: operatorv1.NodePortServiceStrategyType,
+					NodePort: &operatorv1.NodePortStrategy{
+						Protocol: operatorv1.TCPProtocol,
+					},
+				}
+			} else {
+				ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+					Type: operatorv1.LoadBalancerServiceStrategyType,
+					LoadBalancer: &operatorv1.LoadBalancerStrategy{
+						Scope: loadBalancerScope,
+					},
+				}
+			}
+		case hyperv1.OpenStackPlatform:
 			ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
 				Type: operatorv1.LoadBalancerServiceStrategyType,
 				LoadBalancer: &operatorv1.LoadBalancerStrategy{
 					Scope: loadBalancerScope,
+					ProviderParameters: &operatorv1.ProviderLoadBalancerParameters{
+						Type: operatorv1.OpenStackLoadBalancerProvider,
+						OpenStack: &operatorv1.OpenStackLoadBalancerParameters{
+							FloatingIP: loadBalancerIP,
+						},
+					},
 				},
 			}
+		default:
+			ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+				Type: operatorv1.LoadBalancerServiceStrategyType,
+			}
 		}
+
+		// Override with Private strategy if isPrivate annotation is set
+		if isPrivate {
+			ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+				Type:    operatorv1.PrivateStrategyType,
+				Private: &operatorv1.PrivateStrategy{},
+			}
+		}
+	}
+
+	// Set default certificate for platforms that need it
+	if platformType != hyperv1.IBMCloudPlatform {
+		ingressController.Spec.DefaultCertificate = &corev1.LocalObjectReference{
+			Name: manifests.IngressDefaultIngressControllerCert().Name,
+		}
+	}
+
+	// Set node placement for IBM Cloud
+	if platformType == hyperv1.IBMCloudPlatform {
 		ingressController.Spec.NodePlacement = &operatorv1.NodePlacement{
 			Tolerations: []corev1.Toleration{
 				{
@@ -81,36 +115,8 @@ func ReconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 				},
 			},
 		}
-	case hyperv1.OpenStackPlatform:
-		ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
-			Type: operatorv1.LoadBalancerServiceStrategyType,
-			LoadBalancer: &operatorv1.LoadBalancerStrategy{
-				Scope: loadBalancerScope,
-				ProviderParameters: &operatorv1.ProviderLoadBalancerParameters{
-					Type: operatorv1.OpenStackLoadBalancerProvider,
-					OpenStack: &operatorv1.OpenStackLoadBalancerParameters{
-						FloatingIP: loadBalancerIP,
-					},
-				},
-			},
-		}
-		ingressController.Spec.DefaultCertificate = &corev1.LocalObjectReference{
-			Name: manifests.IngressDefaultIngressControllerCert().Name,
-		}
-	default:
-		ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
-			Type: operatorv1.LoadBalancerServiceStrategyType,
-		}
-		ingressController.Spec.DefaultCertificate = &corev1.LocalObjectReference{
-			Name: manifests.IngressDefaultIngressControllerCert().Name,
-		}
 	}
-	if isPrivate {
-		ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
-			Type:    operatorv1.PrivateStrategyType,
-			Private: &operatorv1.PrivateStrategy{},
-		}
-	}
+
 	return nil
 }
 
