@@ -163,13 +163,28 @@ GCPPrivateServiceConnectSpec
 <table>
 <tr>
 <td>
+<code>loadBalancerIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>loadBalancerIP is the IP address of the Internal Load Balancer
+Populated by the observer from service status
+This value must be a valid IPv4 or IPv6 address.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>forwardingRuleName</code></br>
 <em>
 string
 </em>
 </td>
 <td>
-<p>forwardingRuleName is the name of the Internal Load Balancer forwarding rule</p>
+<em>(Optional)</em>
+<p>forwardingRuleName is the name of the Internal Load Balancer forwarding rule
+Populated by the reconciler via GCP API lookup</p>
 </td>
 </tr>
 <tr>
@@ -5997,13 +6012,28 @@ Allowed values: &ldquo;Private&rdquo;, &ldquo;PublicAndPrivate&rdquo;. Defaults 
 <tbody>
 <tr>
 <td>
+<code>loadBalancerIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>loadBalancerIP is the IP address of the Internal Load Balancer
+Populated by the observer from service status
+This value must be a valid IPv4 or IPv6 address.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>forwardingRuleName</code></br>
 <em>
 string
 </em>
 </td>
 <td>
-<p>forwardingRuleName is the name of the Internal Load Balancer forwarding rule</p>
+<em>(Optional)</em>
+<p>forwardingRuleName is the name of the Internal Load Balancer forwarding rule
+Populated by the reconciler via GCP API lookup</p>
 </td>
 </tr>
 <tr>
@@ -6098,7 +6128,8 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>endpointIP is the reserved IP address for the PSC endpoint</p>
+<p>endpointIP is the reserved IP address for the PSC endpoint
+This value must be a valid IPv4 or IPv6 address.</p>
 </td>
 </tr>
 <tr>

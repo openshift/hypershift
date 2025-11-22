@@ -20,6 +20,7 @@ package v1beta1
 // GCPPrivateServiceConnectSpecApplyConfiguration represents a declarative configuration of the GCPPrivateServiceConnectSpec type for use
 // with apply.
 type GCPPrivateServiceConnectSpecApplyConfiguration struct {
+	LoadBalancerIP     *string  `json:"loadBalancerIP,omitempty"`
 	ForwardingRuleName *string  `json:"forwardingRuleName,omitempty"`
 	ConsumerAcceptList []string `json:"consumerAcceptList,omitempty"`
 	NATSubnet          *string  `json:"natSubnet,omitempty"`
@@ -29,6 +30,14 @@ type GCPPrivateServiceConnectSpecApplyConfiguration struct {
 // apply.
 func GCPPrivateServiceConnectSpec() *GCPPrivateServiceConnectSpecApplyConfiguration {
 	return &GCPPrivateServiceConnectSpecApplyConfiguration{}
+}
+
+// WithLoadBalancerIP sets the LoadBalancerIP field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the LoadBalancerIP field is set to the value of the last call.
+func (b *GCPPrivateServiceConnectSpecApplyConfiguration) WithLoadBalancerIP(value string) *GCPPrivateServiceConnectSpecApplyConfiguration {
+	b.LoadBalancerIP = &value
+	return b
 }
 
 // WithForwardingRuleName sets the ForwardingRuleName field in the declarative configuration to the given value

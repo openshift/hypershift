@@ -12,6 +12,7 @@ import (
 	availabilityprober "github.com/openshift/hypershift/availability-prober"
 	hyperclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/gcpprivateserviceconnect"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/healthcheck"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
@@ -516,6 +517,23 @@ func NewStartCommand() *cobra.Command {
 				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
 			}).SetupWithManager(mgr); err != nil {
 				setupLog.Error(err, "unable to create controller", "controller", "aws-endpoint-service")
+				os.Exit(1)
+			}
+		}
+
+		if hcp.Spec.Platform.Type == hyperv1.GCPPlatform && util.IsPrivateHCP(hcp) && mgmtClusterCaps.Has(capabilities.CapabilityRoute) {
+			controllerName := "GCPPrivateServiceObserver"
+
+			if err = (&gcpprivateserviceconnect.GCPPrivateServiceObserver{
+				Client:                 mgr.GetClient(),
+				ControllerName:         controllerName,
+				ServiceNamespace:       namespace,
+				ServiceName:            manifests.PrivateRouterService("").Name,
+				HCPNamespace:           namespace,
+				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+			}).SetupWithManager(ctx, mgr); err != nil {
+				controllerName = gcpprivateserviceconnect.ControllerName(manifests.PrivateRouterService("").Name)
+				setupLog.Error(err, "unable to create controller", "controller", controllerName)
 				os.Exit(1)
 			}
 		}
