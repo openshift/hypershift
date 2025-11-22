@@ -597,6 +597,8 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 	}
 
 	// Finally, run the MCS to generate a payload.
+	// Create buffers to capture MCS process output for better error diagnostics
+	var mcsStdout, mcsStderr bytes.Buffer
 	payload, err := func() ([]byte, error) {
 		start := time.Now()
 
@@ -647,10 +649,28 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		// the function returns
 		mcsCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
+
 		cmd := exec.CommandContext(mcsCtx, filepath.Join(binDir, "machine-config-server"), args...)
+		cmd.Stdout = &mcsStdout
+		cmd.Stderr = &mcsStderr
+
+		// Start the process
+		if err := cmd.Start(); err != nil {
+			return nil, fmt.Errorf("failed to start machine-config-server: %w", err)
+		}
+
+		// Monitor the process in a goroutine
 		go func() {
-			out, err := cmd.CombinedOutput()
-			log.Info("machine-config-server process exited", "output", string(out), "error", err)
+			err := cmd.Wait()
+			if err != nil {
+				log.Error(err, "machine-config-server process exited with error",
+					"stdout", mcsStdout.String(),
+					"stderr", mcsStderr.String())
+			} else {
+				log.Info("machine-config-server process exited successfully",
+					"stdout", mcsStdout.String(),
+					"stderr", mcsStderr.String())
+			}
 		}()
 
 		// Try connecting to the server until we get a response or the context is
@@ -671,11 +691,16 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 			req.Header.Add("Accept", "application/vnd.coreos.ignition+json;version=3.2.0, */*;q=0.1")
 			res, err := httpclient.Do(req)
 			if err != nil {
-				log.Error(err, "mcs request failed")
+				log.Error(err, "mcs request failed",
+					"mcs-stdout", mcsStdout.String(),
+					"mcs-stderr", mcsStderr.String())
 				return false, nil
 			}
 			if res.StatusCode != http.StatusOK {
-				log.Error(err, "mcs returned unexpected response code", "code", res.StatusCode)
+				log.Error(err, "mcs returned unexpected response code",
+					"code", res.StatusCode,
+					"mcs-stdout", mcsStdout.String(),
+					"mcs-stderr", mcsStderr.String())
 				return false, nil
 			}
 
@@ -696,7 +721,16 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		return payload, err
 	}()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get payload from mcs: %w", err)
+		// Enhance the error message with MCS process output
+		mcsError := fmt.Errorf("failed to get payload from mcs: %w\nMCS stdout: %s\nMCS stderr: %s",
+			err, mcsStdout.String(), mcsStderr.String())
+
+		// Set the IgnitionServerValidReleaseInfo condition to False with error details
+		if condErr := p.reconcileMCSFailureCondition(ctx, mcsError); condErr != nil {
+			log.Error(condErr, "failed to reconcile IgnitionServerValidReleaseInfo condition for MCS failure")
+		}
+
+		return nil, mcsError
 	}
 
 	return payload, nil
@@ -730,6 +764,30 @@ func (r *LocalIgnitionProvider) reconcileValidReleaseInfoCondition(ctx context.C
 			ObservedGeneration: hostedControlPlane.Generation,
 		})
 	}
+
+	return r.Client.Status().Update(ctx, &hostedControlPlane)
+}
+
+// reconcileMCSFailureCondition sets the IgnitionServerValidReleaseInfo condition to False
+// when the Machine Config Server fails to generate a payload.
+func (r *LocalIgnitionProvider) reconcileMCSFailureCondition(ctx context.Context, mcsError error) error {
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := r.Client.List(ctx, hcpList, client.InNamespace(r.Namespace)); err != nil {
+		return err
+	}
+	if len(hcpList.Items) == 0 {
+		return fmt.Errorf("failed to find HostedControlPlane in namespace %s", r.Namespace)
+	}
+
+	hostedControlPlane := hcpList.Items[0]
+
+	meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, metav1.Condition{
+		Type:               string(hyperv1.IgnitionServerValidReleaseInfo),
+		Status:             metav1.ConditionFalse,
+		Reason:             "MCSFailure",
+		Message:            fmt.Sprintf("Machine Config Server failed: %v", mcsError),
+		ObservedGeneration: hostedControlPlane.Generation,
+	})
 
 	return r.Client.Status().Update(ctx, &hostedControlPlane)
 }
