@@ -17,6 +17,7 @@ func NewCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(oadp.NewCreateBackupCommand())
+	cmd.AddCommand(oadp.NewCreateRestoreCommand())
 	cmd.AddCommand(cluster.NewCreateCommands())
 	cmd.AddCommand(kubeconfig.NewCreateCommand())
 	cmd.AddCommand(nodepool.NewCreateCommand())
