@@ -38,6 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
+	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/utils/ptr"
 
 	controllerruntime "sigs.k8s.io/controller-runtime"
@@ -90,7 +91,6 @@ var initialObjects = []client.Object{
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameMirror)),
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameICSP)),
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameInfra)),
-
 	fakeOperatorHub(),
 }
 
@@ -149,7 +149,6 @@ func TestReconcileErrorHandling(t *testing.T) {
 	errorExceptions := []string{
 		"global pull secret syncer signaled to shutdown",
 	}
-
 	var totalCreates int
 	{
 		fakeClient := &testClient{
@@ -163,7 +162,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 			CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			platformType:           hyperv1.NonePlatform,
 			clusterSignerCA:        "foobar",
-			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).Build(),
+			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build(),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
@@ -1642,7 +1641,6 @@ func TestReconcileOcmConfigChange(t *testing.T) {
 			g := NewWithT(t)
 			// Create a context with a logger for the test
 			ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
-
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(initialObjects, registryConfig)...).WithStatusSubresource(&configv1.Infrastructure{}).Build()
 			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(cpObjects, initialOcmConfigMap)...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 			r := &reconciler{
@@ -2344,6 +2342,121 @@ func TestReconcileAuthOIDC(t *testing.T) {
 			for _, secret := range secretList.Items {
 				if !expectedSecrets.Has(secret.Name) {
 					t.Errorf("unexpected OIDC client secret copied: %s", secret.Name)
+				}
+			}
+		})
+	}
+}
+
+func newCondition(conditionType string, status metav1.ConditionStatus, reason, message string) *metav1.Condition {
+	return &metav1.Condition{
+		Type:    conditionType,
+		Reason:  reason,
+		Status:  status,
+		Message: message,
+	}
+}
+
+func Test_reconciler_updateControlPlaneDatapPlaneConnectivityConditions(t *testing.T) {
+	newKonnectivityAgentRunningPod := func() corev1.Pod {
+		return corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "konnectivity-agent-rdax",
+				Namespace: "kube-system",
+				Labels:    map[string]string{"app": "konnectivity-agent"},
+			},
+			Status: corev1.PodStatus{
+				Phase: corev1.PodRunning,
+			},
+		}
+	}
+
+	tests := []struct {
+		name              string
+		hcp               *hyperv1.HostedControlPlane
+		wantErr           bool
+		expectedCondition *metav1.Condition
+		pods              []corev1.Pod
+		mockedGetPodLogs  func(context context.Context, clientet *clientset.Clientset, namespace, name, container string) ([]byte, error)
+	}{
+		{
+			name:    "no konnectivity-agent PODs condition False",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: newCondition(string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy),
+				metav1.ConditionFalse, hyperv1.ControlPlaneToDataPlaneReasonNoKonnectivityAgentPodsFound, "Couldn't find an konnectivity-agent running in data plane"),
+			pods: []corev1.Pod{},
+			mockedGetPodLogs: func(context context.Context,
+				clientet *clientset.Clientset,
+				namespace, name,
+				container string) ([]byte, error) {
+				return nil, nil
+			},
+		},
+		{
+			name:    "one konnectivity-agent PODs running condition OK",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: newCondition(string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy),
+				metav1.ConditionTrue, hyperv1.ControlPlaneToDataPlaneReasonConnectivityOK, "At least a konnectivity-agent is running on data plane and logs are accessible"),
+			pods: []corev1.Pod{newKonnectivityAgentRunningPod()},
+			mockedGetPodLogs: func(context context.Context,
+				clientet *clientset.Clientset,
+				namespace, name,
+				container string) ([]byte, error) {
+				return []byte("this is the log my friend"), nil
+			},
+		},
+		{
+			name:    "one konnectivity-agent PODs running bad since no LOG",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: newCondition(string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy),
+				metav1.ConditionFalse, hyperv1.ControlPlaneToDataPlaneReasonLogAccessFailed, "konnectivity-agent PODs are running but no Logs accessible"),
+			pods: []corev1.Pod{newKonnectivityAgentRunningPod()},
+			mockedGetPodLogs: func(context context.Context,
+				clientet *clientset.Clientset,
+				namespace, name,
+				container string) ([]byte, error) {
+				return nil, fmt.Errorf("this time we fail")
+			},
+		},
+	}
+	log := zapr.NewLogger(zaptest.NewLogger(t))
+	ctx := logr.NewContext(context.Background(), log)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var r reconciler
+
+			podList := &corev1.PodList{
+				Items: tt.pods,
+			}
+			r.client = fake.NewClientBuilder().WithLists(podList).Build()
+			r.cpClient = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+			r.GetPodLogs = tt.mockedGetPodLogs
+
+			gotErr := r.updateControlPlaneDatapPlaneConnectivityConditions(ctx, tt.hcp, log)
+			if gotErr != nil {
+				if !tt.wantErr {
+					t.Errorf("updateControlPlaneDatapPlaneConnectivityConditions() failed: %v", gotErr)
+				}
+				return
+			}
+			if tt.wantErr {
+				t.Fatal("updateControlPlaneDatapPlaneConnectivityConditions() succeeded unexpectedly")
+			}
+			if tt.expectedCondition != nil {
+				found := false
+				for _, c := range tt.hcp.Status.Conditions {
+					if tt.expectedCondition.Type == c.Type &&
+						tt.expectedCondition.Message == c.Message &&
+						tt.expectedCondition.Status == c.Status &&
+						tt.expectedCondition.Reason == c.Reason {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatal("couldn't find expected condition")
 				}
 			}
 		})

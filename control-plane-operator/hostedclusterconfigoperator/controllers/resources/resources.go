@@ -71,6 +71,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
+	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"k8s.io/utils/ptr"
@@ -127,6 +128,7 @@ exec /bin/azure-cloud-node-manager \
 type reconciler struct {
 	client         client.Client
 	uncachedClient client.Client
+	clientSet      *clientset.Clientset
 	upsert.CreateOrUpdateProvider
 	platformType              hyperv1.PlatformType
 	rootCA                    string
@@ -144,6 +146,18 @@ type reconciler struct {
 	operateOnReleaseImage     string
 	ImageMetaDataProvider     util.ImageMetadataProvider
 	cleanupTracker            *util.CleanupTracker
+
+	// exposed for unit test since GetLogs looks hard to be mocked
+	GetPodLogs func(context context.Context, clientset *clientset.Clientset, namespace, name, container string) ([]byte, error)
+}
+
+func getPodLogs(ctx context.Context, clientSet *clientset.Clientset, namespace, name, container string) ([]byte, error) {
+	limit := int64(1024)
+	opts := &corev1.PodLogOptions{
+		Container:  container,
+		LimitBytes: &limit,
+	}
+	return clientSet.CoreV1().Pods(namespace).GetLogs(name, opts).DoRaw(ctx)
 }
 
 // eventHandler is the handler used throughout. As this controller reconciles all kind of different resources
@@ -181,9 +195,15 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to create kubevirt infra uncached client: %w", err)
 	}
 
+	clientset, err := clientset.NewForConfig(opts.Manager.GetConfig())
+	if err != nil {
+		return fmt.Errorf("failed to initialize kubeClient from config: %w", err)
+	}
+
 	c, err := controller.New(ControllerName, opts.Manager, controller.Options{Reconciler: &reconciler{
 		client:                    opts.Manager.GetClient(),
 		uncachedClient:            uncachedClient,
+		clientSet:                 clientset,
 		CreateOrUpdateProvider:    opts.TargetCreateOrUpdateProvider,
 		platformType:              opts.PlatformType,
 		rootCA:                    opts.InitialCA,
@@ -201,6 +221,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		operateOnReleaseImage:     opts.OperateOnReleaseImage,
 		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
 		cleanupTracker:            util.NewCleanupTracker(),
+		GetPodLogs:                getPodLogs,
 	}})
 	if err != nil {
 		return fmt.Errorf("failed to construct controller: %w", err)
@@ -537,6 +558,11 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	log.Info("reconciling konnectivity agent")
 	if err := r.reconcileKonnectivityAgent(ctx, hcp, releaseImage); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent: %w", err))
+	}
+
+	log.Info("update control-Plane to data-Plane status conditions")
+	if err := r.updateControlPlaneDatapPlaneConnectivityConditions(ctx, hcp, log); err != nil {
+		errs = append(errs, fmt.Errorf("failed to update ControlPlaneToDataPlaneConnectivity condition: %w", err))
 	}
 
 	log.Info("reconciling openshift apiserver apiservices")
@@ -1387,6 +1413,61 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	}
 
 	return nil
+}
+
+func (r *reconciler) updateControlPlaneDatapPlaneConnectivityConditions(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
+	var podList corev1.PodList
+	if err := r.client.List(ctx, &podList,
+		client.MatchingLabels{"app": "konnectivity-agent"}, client.InNamespace("kube-system")); err != nil {
+		log.Error(err, "unable to list konnectivity-agent PODs in kube-system namespace")
+		return fmt.Errorf("unable to list konnectivity-agent PODs in kube-system namespace: %w", err)
+	}
+	condition := &metav1.Condition{
+		Type:    string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy),
+		Status:  metav1.ConditionFalse,
+		Reason:  hyperv1.ControlPlaneToDataPlaneReasonNoKonnectivityAgentPodsFound,
+		Message: "Couldn't find an konnectivity-agent running in data plane",
+	}
+
+	for _, pod := range podList.Items {
+		if pod.Status.Phase != corev1.PodRunning {
+			continue
+		}
+		err := func() error {
+			data, err := r.GetPodLogs(ctx, r.clientSet, pod.Namespace, pod.Name, "konnectivity-agent")
+			if err != nil {
+				condition.Status = metav1.ConditionFalse
+				condition.Reason = hyperv1.ControlPlaneToDataPlaneReasonLogAccessFailed
+				condition.Message = "konnectivity-agent PODs are running but no Logs accessible"
+				log.Error(err, "onnectivity-agent PODs are running but no Logs accessible")
+				return err
+			}
+			if len(data) > 0 { // found something
+				return nil
+			}
+			return fmt.Errorf("no logs for %s/%s container %s", pod.Namespace, pod.Name, "konnectivity-agent")
+		}()
+		if err == nil {
+			condition.Status = metav1.ConditionTrue
+			condition.Reason = hyperv1.ControlPlaneToDataPlaneReasonConnectivityOK
+			condition.Message = "At least a konnectivity-agent is running on data plane and logs are accessible"
+			break
+		}
+	}
+
+	originalHCP := hcp.DeepCopy()
+	if !meta.SetStatusCondition(&hcp.Status.Conditions, *condition) {
+		return nil // No status change; avoid unnecessary API call.
+	}
+
+	if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFrom(originalHCP)); err != nil {
+		log.Error(err, "failed to update HostedControlPlane status with "+condition.Type)
+		return fmt.Errorf("failed to update HostedControlPlane status with %s condition: %w", condition.Type, err)
+	}
+	log.Info(string(hyperv1.ControlPlaneToDataPlaneConnectivityHealthy) + " updated")
+
+	return nil
+
 }
 
 func (r *reconciler) reconcileOpenshiftAPIServerAPIServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {

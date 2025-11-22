@@ -251,6 +251,12 @@ const (
 	RecoveryFinishedReason = "RecoveryFinished"
 
 	CloudResourcesCleanupSkippedReason = "CloudResourcesCleanupSkipped"
+
+	ControlPlaneToDataPlaneReasonNoKonnectivityAgentPodsFound = "NoKonnectivityAgentPodsFound"
+
+	ControlPlaneToDataPlaneReasonConnectivityOK = "ControlPlaneToDataPlaneConnectivityOK"
+
+	ControlPlaneToDataPlaneReasonLogAccessFailed = "ControlPlaneToDataPlaneLogAccessFailed"
 )
 
 // Messages.
