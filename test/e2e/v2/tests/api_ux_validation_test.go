@@ -1,3 +1,4 @@
+//go:build e2ev2
 // +build e2ev2
 
 /*
@@ -417,16 +418,6 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 		})
 
 		Context("Networking validation", Label("Networking"), func() {
-			It("should reject when networkType is not one of OpenShiftSDN;Calico;OVNKubernetes;Other", func() {
-				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
-					hc.Spec.Networking = hyperv1.ClusterNetworking{
-						NetworkType: "foo",
-					}
-				})
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("Unsupported value: \"foo\": supported values: \"OpenShiftSDN\", \"Calico\", \"OVNKubernetes\", \"Other\""))
-			})
-
 			It("should reject when the cidr is not valid", func() {
 				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
 					hc.Spec.Networking = hyperv1.ClusterNetworking{
@@ -1095,10 +1086,10 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 				Expect(err).NotTo(HaveOccurred())
 			})
 
-			It("should accept when disableMultiNetwork is true and networkType is Other", func() {
+			It("should accept when disableMultiNetwork is true and networkType is third-party CNI", func() {
 				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
 					hc.Spec.Networking = hyperv1.ClusterNetworking{
-						NetworkType: hyperv1.Other,
+						NetworkType: "Cilium", //choose arbitrary value for third-party network provider
 					}
 					hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
 						ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
@@ -1109,7 +1100,7 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 				Expect(err).NotTo(HaveOccurred())
 			})
 
-			It("should reject when disableMultiNetwork is true and networkType is not Other", func() {
+			It("should reject when disableMultiNetwork is true and networkType is OVNKubernetes", func() {
 				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
 					hc.Spec.Networking = hyperv1.ClusterNetworking{
 						NetworkType: hyperv1.OVNKubernetes,

@@ -3077,11 +3077,8 @@ spec:
                       Defaults to OVNKubernetes.
                       This field is required and immutable.
                       kubebuilder:validation:XValidation:rule="self == oldSelf", message="networkType is immutable"
-                    enum:
-                    - OpenShiftSDN
-                    - Calico
-                    - OVNKubernetes
-                    - Other
+                    maxLength: 255
+                    minLength: 1
                     type: string
                   serviceNetwork:
                     default:
@@ -3166,8 +3163,8 @@ spec:
                           guest cluster and the multus-admission-controller in the management cluster.
                           Default is false (Multus is enabled).
                           This field is immutable.
-                          This field can only be set to true when NetworkType is "Other". Setting it to true
-                          with any other NetworkType will result in a validation error during cluster creation.
+                          This field can only be set to true when NetworkType is third-party. Setting it to true
+                          with NetworkType OpenShiftSDN or OVNKubernetes will result in a validation error during cluster creation.
                         type: boolean
                         x-kubernetes-validations:
                         - message: disableMultiNetwork is immutable
@@ -5626,12 +5623,13 @@ spec:
                 && s.servicePublishingStrategy.loadBalancer.hostname != "" && has(self.configuration)
                 && has(self.configuration.apiServer) && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert,
                 cert.names.exists(n, n == s.servicePublishingStrategy.loadBalancer.hostname)))'
-            - message: disableMultiNetwork can only be set to true when networkType
-                is 'Other'
+            - message: disableMultiNetwork can only be true when networking.networkType
+                is neither 'OpenShiftSDN' nor 'OVNKubernetes'
               rule: '!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator)
                 || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork)
                 || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork
-                || self.networking.networkType == ''Other'''
+                || (has(self.networking) && has(self.networking.networkType) && !(self.networking.networkType
+                in [''OpenShiftSDN'',''OVNKubernetes'']))'
             - message: ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes
               rule: self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration)
                 || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)
