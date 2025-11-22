@@ -18,6 +18,7 @@ limitations under the License.
 package fake
 
 import (
+	auditlogpersistencev1alpha1 "github.com/openshift/hypershift/api/auditlogpersistence/v1alpha1"
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	karpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
@@ -33,6 +34,7 @@ var scheme = runtime.NewScheme()
 var codecs = serializer.NewCodecFactory(scheme)
 
 var localSchemeBuilder = runtime.SchemeBuilder{
+	auditlogpersistencev1alpha1.AddToScheme,
 	certificatesv1alpha1.AddToScheme,
 	hypershiftv1beta1.AddToScheme,
 	karpenterv1beta1.AddToScheme,

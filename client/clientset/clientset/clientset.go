@@ -21,6 +21,7 @@ import (
 	fmt "fmt"
 	http "net/http"
 
+	auditlogpersistencev1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/auditlogpersistence/v1alpha1"
 	certificatesv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/certificates/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1"
 	karpenterv1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/karpenter/v1beta1"
@@ -32,6 +33,7 @@ import (
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
+	AuditlogpersistenceV1alpha1() auditlogpersistencev1alpha1.AuditlogpersistenceV1alpha1Interface
 	CertificatesV1alpha1() certificatesv1alpha1.CertificatesV1alpha1Interface
 	HypershiftV1beta1() hypershiftv1beta1.HypershiftV1beta1Interface
 	KarpenterV1beta1() karpenterv1beta1.KarpenterV1beta1Interface
@@ -41,10 +43,16 @@ type Interface interface {
 // Clientset contains the clients for groups.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	certificatesV1alpha1 *certificatesv1alpha1.CertificatesV1alpha1Client
-	hypershiftV1beta1    *hypershiftv1beta1.HypershiftV1beta1Client
-	karpenterV1beta1     *karpenterv1beta1.KarpenterV1beta1Client
-	schedulingV1alpha1   *schedulingv1alpha1.SchedulingV1alpha1Client
+	auditlogpersistenceV1alpha1 *auditlogpersistencev1alpha1.AuditlogpersistenceV1alpha1Client
+	certificatesV1alpha1        *certificatesv1alpha1.CertificatesV1alpha1Client
+	hypershiftV1beta1           *hypershiftv1beta1.HypershiftV1beta1Client
+	karpenterV1beta1            *karpenterv1beta1.KarpenterV1beta1Client
+	schedulingV1alpha1          *schedulingv1alpha1.SchedulingV1alpha1Client
+}
+
+// AuditlogpersistenceV1alpha1 retrieves the AuditlogpersistenceV1alpha1Client
+func (c *Clientset) AuditlogpersistenceV1alpha1() auditlogpersistencev1alpha1.AuditlogpersistenceV1alpha1Interface {
+	return c.auditlogpersistenceV1alpha1
 }
 
 // CertificatesV1alpha1 retrieves the CertificatesV1alpha1Client
@@ -111,6 +119,10 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 
 	var cs Clientset
 	var err error
+	cs.auditlogpersistenceV1alpha1, err = auditlogpersistencev1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
+	if err != nil {
+		return nil, err
+	}
 	cs.certificatesV1alpha1, err = certificatesv1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
 		return nil, err
@@ -148,6 +160,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 // New creates a new Clientset for the given RESTClient.
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
+	cs.auditlogpersistenceV1alpha1 = auditlogpersistencev1alpha1.New(c)
 	cs.certificatesV1alpha1 = certificatesv1alpha1.New(c)
 	cs.hypershiftV1beta1 = hypershiftv1beta1.New(c)
 	cs.karpenterV1beta1 = karpenterv1beta1.New(c)

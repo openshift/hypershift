@@ -191,6 +191,7 @@ hypershift-api: $(CONTROLLER_GEN) $(CODE_GEN)
 	# Generate additional CRDs.
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/scheduling/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/certificates/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/auditlogpersistence/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator
 
 .PHONY: cluster-api
 cluster-api: $(CONTROLLER_GEN)

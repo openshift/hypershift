@@ -3,6 +3,7 @@ package api
 import (
 	"os"
 
+	auditlogpersistencev1alpha1 "github.com/openshift/hypershift/api/auditlogpersistence/v1alpha1"
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
@@ -102,6 +103,7 @@ func init() {
 		_ = apiregistrationv1.AddToScheme(scheme)
 		_ = hyperv1beta1.AddToScheme(scheme)
 		_ = schedulingv1alpha1.AddToScheme(scheme)
+		_ = auditlogpersistencev1alpha1.AddToScheme(scheme)
 		_ = certificatesv1alpha1.AddToScheme(scheme)
 		_ = capiv1.AddToScheme(scheme)
 		_ = ipamv1.AddToScheme(scheme)

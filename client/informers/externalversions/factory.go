@@ -23,6 +23,7 @@ import (
 	time "time"
 
 	clientset "github.com/openshift/hypershift/client/clientset/clientset"
+	auditlogpersistence "github.com/openshift/hypershift/client/informers/externalversions/auditlogpersistence"
 	certificates "github.com/openshift/hypershift/client/informers/externalversions/certificates"
 	hypershift "github.com/openshift/hypershift/client/informers/externalversions/hypershift"
 	internalinterfaces "github.com/openshift/hypershift/client/informers/externalversions/internalinterfaces"
@@ -256,10 +257,15 @@ type SharedInformerFactory interface {
 	// client.
 	InformerFor(obj runtime.Object, newFunc internalinterfaces.NewInformerFunc) cache.SharedIndexInformer
 
+	Auditlogpersistence() auditlogpersistence.Interface
 	Certificates() certificates.Interface
 	Hypershift() hypershift.Interface
 	Karpenter() karpenter.Interface
 	Scheduling() scheduling.Interface
+}
+
+func (f *sharedInformerFactory) Auditlogpersistence() auditlogpersistence.Interface {
+	return auditlogpersistence.New(f, f.namespace, f.tweakListOptions)
 }
 
 func (f *sharedInformerFactory) Certificates() certificates.Interface {

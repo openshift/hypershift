@@ -20,6 +20,8 @@ package fake
 import (
 	applyconfiguration "github.com/openshift/hypershift/client/applyconfiguration"
 	clientset "github.com/openshift/hypershift/client/clientset/clientset"
+	auditlogpersistencev1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/auditlogpersistence/v1alpha1"
+	fakeauditlogpersistencev1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/auditlogpersistence/v1alpha1/fake"
 	certificatesv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/certificates/v1alpha1"
 	fakecertificatesv1alpha1 "github.com/openshift/hypershift/client/clientset/clientset/typed/certificates/v1alpha1/fake"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/clientset/clientset/typed/hypershift/v1beta1"
@@ -120,6 +122,11 @@ var (
 	_ clientset.Interface = &Clientset{}
 	_ testing.FakeClient  = &Clientset{}
 )
+
+// AuditlogpersistenceV1alpha1 retrieves the AuditlogpersistenceV1alpha1Client
+func (c *Clientset) AuditlogpersistenceV1alpha1() auditlogpersistencev1alpha1.AuditlogpersistenceV1alpha1Interface {
+	return &fakeauditlogpersistencev1alpha1.FakeAuditlogpersistenceV1alpha1{Fake: &c.Fake}
+}
 
 // CertificatesV1alpha1 retrieves the CertificatesV1alpha1Client
 func (c *Clientset) CertificatesV1alpha1() certificatesv1alpha1.CertificatesV1alpha1Interface {
