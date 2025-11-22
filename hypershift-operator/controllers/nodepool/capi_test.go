@@ -144,6 +144,118 @@ func TestSetMachineSetReplicas(t *testing.T) {
 				autoscalerMaxAnnotation: "5",
 			},
 		},
+		{
+			name: "it allows min=0 for AWS platform (scale-from-zero)",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+					AutoScaling: &hyperv1.NodePoolAutoScaling{
+						Min: 0,
+						Max: 5,
+					},
+				},
+			},
+			machineSet: &capiv1.MachineSet{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.Now(),
+				},
+				Spec: capiv1.MachineSetSpec{
+					Replicas: nil,
+				},
+			},
+			expectReplicas: 0,
+			expectAutoscalerAnnotations: map[string]string{
+				autoscalerMinAnnotation: "0",
+				autoscalerMaxAnnotation: "5",
+			},
+		},
+		{
+			name: "it enforces min=1 for Azure platform even when NodePool specifies min=0",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+					},
+					AutoScaling: &hyperv1.NodePoolAutoScaling{
+						Min: 0,
+						Max: 5,
+					},
+				},
+			},
+			machineSet: &capiv1.MachineSet{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.Now(),
+				},
+				Spec: capiv1.MachineSetSpec{
+					Replicas: nil,
+				},
+			},
+			expectReplicas: 1,
+			expectAutoscalerAnnotations: map[string]string{
+				autoscalerMinAnnotation: "1",
+				autoscalerMaxAnnotation: "5",
+			},
+		},
+		{
+			name: "it enforces min=1 for KubeVirt platform even when NodePool specifies min=0",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+					},
+					AutoScaling: &hyperv1.NodePoolAutoScaling{
+						Min: 0,
+						Max: 5,
+					},
+				},
+			},
+			machineSet: &capiv1.MachineSet{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.Now(),
+				},
+				Spec: capiv1.MachineSetSpec{
+					Replicas: ptr.To[int32](0),
+				},
+			},
+			expectReplicas: 1,
+			expectAutoscalerAnnotations: map[string]string{
+				autoscalerMinAnnotation: "1",
+				autoscalerMaxAnnotation: "5",
+			},
+		},
+		{
+			name: "it enforces min=1 for Agent platform even when NodePool specifies min=0",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AgentPlatform,
+					},
+					AutoScaling: &hyperv1.NodePoolAutoScaling{
+						Min: 0,
+						Max: 5,
+					},
+				},
+			},
+			machineSet: &capiv1.MachineSet{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.Now(),
+				},
+				Spec: capiv1.MachineSetSpec{
+					Replicas: ptr.To[int32](0),
+				},
+			},
+			expectReplicas: 1,
+			expectAutoscalerAnnotations: map[string]string{
+				autoscalerMinAnnotation: "1",
+				autoscalerMaxAnnotation: "5",
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -354,6 +466,118 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			expectReplicas: 5,
 			expectAutoscalerAnnotations: map[string]string{
 				autoscalerMinAnnotation: "2",
+				autoscalerMaxAnnotation: "5",
+			},
+		},
+		{
+			name: "it allows min=0 for AWS platform (scale-from-zero)",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+					AutoScaling: &hyperv1.NodePoolAutoScaling{
+						Min: 0,
+						Max: 5,
+					},
+				},
+			},
+			machineDeployment: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.Now(),
+				},
+				Spec: capiv1.MachineDeploymentSpec{
+					Replicas: nil,
+				},
+			},
+			expectReplicas: 0,
+			expectAutoscalerAnnotations: map[string]string{
+				autoscalerMinAnnotation: "0",
+				autoscalerMaxAnnotation: "5",
+			},
+		},
+		{
+			name: "it enforces min=1 for Azure platform even when NodePool specifies min=0",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+					},
+					AutoScaling: &hyperv1.NodePoolAutoScaling{
+						Min: 0,
+						Max: 5,
+					},
+				},
+			},
+			machineDeployment: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.Now(),
+				},
+				Spec: capiv1.MachineDeploymentSpec{
+					Replicas: nil,
+				},
+			},
+			expectReplicas: 1,
+			expectAutoscalerAnnotations: map[string]string{
+				autoscalerMinAnnotation: "1",
+				autoscalerMaxAnnotation: "5",
+			},
+		},
+		{
+			name: "it enforces min=1 for KubeVirt platform even when NodePool specifies min=0",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+					},
+					AutoScaling: &hyperv1.NodePoolAutoScaling{
+						Min: 0,
+						Max: 5,
+					},
+				},
+			},
+			machineDeployment: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.Now(),
+				},
+				Spec: capiv1.MachineDeploymentSpec{
+					Replicas: ptr.To[int32](0),
+				},
+			},
+			expectReplicas: 1,
+			expectAutoscalerAnnotations: map[string]string{
+				autoscalerMinAnnotation: "1",
+				autoscalerMaxAnnotation: "5",
+			},
+		},
+		{
+			name: "it enforces min=1 for Agent platform even when NodePool specifies min=0",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AgentPlatform,
+					},
+					AutoScaling: &hyperv1.NodePoolAutoScaling{
+						Min: 0,
+						Max: 5,
+					},
+				},
+			},
+			machineDeployment: &capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{
+					CreationTimestamp: metav1.Now(),
+				},
+				Spec: capiv1.MachineDeploymentSpec{
+					Replicas: ptr.To[int32](0),
+				},
+			},
+			expectReplicas: 1,
+			expectAutoscalerAnnotations: map[string]string{
+				autoscalerMinAnnotation: "1",
 				autoscalerMaxAnnotation: "5",
 			},
 		},

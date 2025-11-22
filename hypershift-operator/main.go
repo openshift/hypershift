@@ -28,6 +28,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/machinedeployment"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
@@ -42,6 +43,7 @@ import (
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	sharedingressconfiggenerator "github.com/openshift/hypershift/sharedingress-config-generator"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/awsclient"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
@@ -121,6 +123,8 @@ type StartOptions struct {
 	EnableUWMTelemetryRemoteWrite          bool
 	EnableValidatingWebhook                bool
 	EnableDedicatedRequestServingIsolation bool
+	EnableScaleFromZero                    bool
+	AWSCreds                               string // Path to mounted credentials file (set by deployment)
 }
 
 func NewStartCommand() *cobra.Command {
@@ -157,6 +161,8 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, enables a controller that ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 	cmd.Flags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
 	cmd.Flags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
+	cmd.Flags().BoolVar(&opts.EnableScaleFromZero, "enable-scale-from-zero", false, "If true, enables the MachineDeployment annotation controller for scale-from-zero autoscaling")
+	cmd.Flags().StringVar(&opts.AWSCreds, "aws-creds", opts.AWSCreds, "Path to AWS credentials file for EC2 instance type queries (set by deployment when scale-from-zero is enabled)")
 
 	// Attempt to determine featureset prior to adding featuregate flags.
 	// It is safe to get the empty string from this as the empty string is the default featureset.
@@ -396,6 +402,21 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		EC2Client:               ec2Client,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
+	}
+
+	// Setup MachineDeployment controller for scale-from-zero
+	if opts.EnableScaleFromZero {
+		log.Info("Scale-from-zero enabled, setting up MachineDeployment controller")
+		mdReconciler := &machinedeployment.Reconciler{
+			Client:             mgr.GetClient(),
+			Log:                log.WithName("machinedeployment"),
+			CredentialsFile:    opts.AWSCreds, // Path to mounted credentials file from deployment
+			RegionCache:        awsclient.NewRegionCache(),
+			InstanceTypesCache: machinedeployment.NewInstanceTypesCache(),
+		}
+		if err := mdReconciler.SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create MachineDeployment controller: %w", err)
+		}
 	}
 
 	if mgmtClusterCaps.Has(capabilities.CapabilityProxy) {
