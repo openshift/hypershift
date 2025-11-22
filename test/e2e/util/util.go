@@ -31,7 +31,6 @@ import (
 	"github.com/openshift/hypershift/support/conditions"
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
-	"github.com/openshift/hypershift/support/util"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -65,7 +64,6 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/go-logr/logr"
@@ -1831,7 +1829,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Skip("Skip GlobalPullSecret test for TestCreateClusterCustomConfig to avoid issues with OVN")
 	}
 
-	if !util.IsPublicHC(entryHostedCluster) {
+	if !hyperutil.IsPublicHC(entryHostedCluster) {
 		t.Skip("test only supported on public clusters")
 	}
 
@@ -1864,7 +1862,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 
 	// Get the first NodePool
 	np := &hyperv1.NodePool{}
-	err = mgmtClient.Get(ctx, client.ObjectKey{Name: npList.Items[0].Name, Namespace: npList.Items[0].Namespace}, np)
+	err = mgmtClient.Get(ctx, crclient.ObjectKey{Name: npList.Items[0].Name, Namespace: npList.Items[0].Namespace}, np)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
 	g.Expect(np.Spec.Replicas).NotTo(BeNil(), "NodePool replicas are not set")
 
@@ -1889,7 +1887,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 	t.Run("Check if GlobalPullSecret secret is in the right place at Dataplane", func(t *testing.T) {
 		globalPullSecret := hccomanifests.GlobalPullSecret()
 		g.Eventually(func() error {
-			if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+			if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
 				return err
 			}
 			g.Expect(globalPullSecret.Data).NotTo(BeEmpty(), "global-pull-secret secret is empty")
@@ -1903,7 +1901,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 	t.Run("Check if the DaemonSet is present in the DataPlane", func(t *testing.T) {
 		g.Eventually(func() error {
 			daemonSet := hccomanifests.GlobalPullSecretDaemonSet()
-			if err := guestClient.Get(ctx, client.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet); err != nil {
+			if err := guestClient.Get(ctx, crclient.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet); err != nil {
 				return err
 			}
 			dsImage = daemonSet.Spec.Template.Spec.Containers[0].Image
@@ -1931,7 +1929,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 	// Modify the additional-pull-secret secret in the DataPlane
 	t.Run("Modify the additional-pull-secret secret in the DataPlane by adding the valid pull secret", func(t *testing.T) {
 		additionalPullSecret := hccomanifests.AdditionalPullSecret()
-		err := guestClient.Get(ctx, client.ObjectKey{Name: additionalPullSecret.Name, Namespace: additionalPullSecret.Namespace}, additionalPullSecret)
+		err := guestClient.Get(ctx, crclient.ObjectKey{Name: additionalPullSecret.Name, Namespace: additionalPullSecret.Namespace}, additionalPullSecret)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to get additional-pull-secret secret")
 		additionalPullSecret.Data[corev1.DockerConfigJsonKey] = additionalPullSecretReadOnlyE2EData
 		err = guestClient.Update(ctx, additionalPullSecret)
@@ -1942,7 +1940,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 	t.Run("Check if GlobalPullSecret secret is updated in the DataPlane", func(t *testing.T) {
 		globalPullSecret := hccomanifests.GlobalPullSecret()
 		g.Eventually(func() error {
-			if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+			if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
 				return err
 			}
 			g.Expect(globalPullSecret.Data[corev1.DockerConfigJsonKey]).NotTo(BeEmpty(), "global-pull-secret secret is empty")
@@ -1979,7 +1977,7 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 	t.Run("Check if the GlobalPullSecret secret is deleted in the DataPlane", func(t *testing.T) {
 		g.Eventually(func() error {
 			globalPullSecret := hccomanifests.GlobalPullSecret()
-			if err := guestClient.Get(ctx, client.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+			if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
 				if !apierrors.IsNotFound(err) {
 					return err
 				}

@@ -113,7 +113,8 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	}
 
 	// Reconcile private-router Network Policy
-	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform || hcluster.Spec.Platform.Type == hyperv1.AzurePlatform || hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
+	switch hcluster.Spec.Platform.Type {
+	case hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.GCPPlatform:
 		policy = networkpolicy.PrivateRouterNetworkPolicy(controlPlaneNamespaceName)
 		// TODO: Network policy code should move to the control plane operator. For now,
 		// only setup ingress rules (and not egress rules) when version is < 4.14
@@ -123,7 +124,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router network policy: %w", err)
 		}
-	} else if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+	case hyperv1.KubevirtPlatform:
 		if hcluster.Spec.Platform.Kubevirt.Credentials == nil {
 			// network policy is being set on centralized infra only, not on external infra
 			policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)

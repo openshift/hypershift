@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
-	"go/types"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -40,33 +39,26 @@ var Analyzer = &analysis.Analyzer{
 	Requires: []*analysis.Analyzer{inspector.Analyzer},
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	inspect, ok := pass.ResultOf[inspector.Analyzer].(inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
 	}
 
-	inspect.InspectFields(func(field *ast.Field, stack []ast.Node, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markers.Markers) {
-		checkField(pass, field, jsonTagInfo)
+	inspect.InspectFields(func(field *ast.Field, jsonTagInfo extractjsontags.FieldTagInfo, _ markers.Markers, qualifiedFieldName string) {
+		checkField(pass, field, jsonTagInfo, qualifiedFieldName)
 	})
 
 	return nil, nil //nolint:nilnil
 }
 
-func checkField(pass *analysis.Pass, field *ast.Field, tagInfo extractjsontags.FieldTagInfo) {
+func checkField(pass *analysis.Pass, field *ast.Field, tagInfo extractjsontags.FieldTagInfo, qualifiedFieldName string) {
 	if tagInfo.Name == "" {
 		return
 	}
 
-	var fieldName string
-	if len(field.Names) > 0 {
-		fieldName = field.Names[0].Name
-	} else {
-		fieldName = types.ExprString(field.Type)
-	}
-
 	if field.Doc == nil {
-		pass.Reportf(field.Pos(), "field %s is missing godoc comment", fieldName)
+		pass.Reportf(field.Pos(), "field %s is missing godoc comment", qualifiedFieldName)
 		return
 	}
 
@@ -76,7 +68,7 @@ func checkField(pass *analysis.Pass, field *ast.Field, tagInfo extractjsontags.F
 			// The comment start is correct, apart from the casing, we can fix that.
 			pass.Report(analysis.Diagnostic{
 				Pos:     firstLine.Pos(),
-				Message: fmt.Sprintf("godoc for field %s should start with '%s ...'", fieldName, tagInfo.Name),
+				Message: fmt.Sprintf("godoc for field %s should start with '%s ...'", qualifiedFieldName, tagInfo.Name),
 				SuggestedFixes: []analysis.SuggestedFix{
 					{
 						Message: fmt.Sprintf("should replace first word with `%s`", tagInfo.Name),
@@ -91,7 +83,7 @@ func checkField(pass *analysis.Pass, field *ast.Field, tagInfo extractjsontags.F
 				},
 			})
 		} else {
-			pass.Reportf(field.Doc.List[0].Pos(), "godoc for field %s should start with '%s ...'", fieldName, tagInfo.Name)
+			pass.Reportf(field.Doc.List[0].Pos(), "godoc for field %s should start with '%s ...'", qualifiedFieldName, tagInfo.Name)
 		}
 	}
 }

@@ -23,7 +23,6 @@ import (
 	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -324,10 +323,10 @@ func checkEtcdStatus(ctx context.Context, opts options, etcdClient *etcdclient.C
 				continue
 			}
 			if containerStatus.State.Waiting != nil && containerStatus.RestartCount > 0 {
-				log.Info("pod is unhealthy", "pod", client.ObjectKeyFromObject(&pod).String())
+				log.Info("pod is unhealthy", "pod", crclient.ObjectKeyFromObject(&pod).String())
 				failingPods = append(failingPods, pod)
 			} else {
-				log.Info("pod is healthy", "pod", client.ObjectKeyFromObject(&pod).String())
+				log.Info("pod is healthy", "pod", crclient.ObjectKeyFromObject(&pod).String())
 			}
 		}
 	}

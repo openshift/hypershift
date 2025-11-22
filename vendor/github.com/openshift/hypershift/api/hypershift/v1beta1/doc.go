@@ -11,4 +11,5 @@ enables "hosted control plane as a service" use cases.
 */
 // +kubebuilder:object:generate=true
 // +groupName=hypershift.openshift.io
+// +openshift:featuregated-schema-gen=true
 package v1beta1

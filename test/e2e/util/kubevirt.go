@@ -10,7 +10,6 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
@@ -64,7 +63,7 @@ func (k KubeVirtInfra) DiscoverClient() (crclient.Client, error) {
 	return clusterClient.GetInfraClient(), nil
 }
 
-func (k KubeVirtInfra) ComposeOVNKLayer2NAD(namespace string) (client.Object, error) {
+func (k KubeVirtInfra) ComposeOVNKLayer2NAD(namespace string) (crclient.Object, error) {
 	nadYAML := fmt.Sprintf(`
 apiVersion: "k8s.cni.cncf.io/v1"
 kind: NetworkAttachmentDefinition

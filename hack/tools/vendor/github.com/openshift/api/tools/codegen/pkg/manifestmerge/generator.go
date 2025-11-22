@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 
@@ -632,6 +633,18 @@ func mergeAllPertinentCRDsInDir(resourcePath string, filter ManifestFilter, star
 		errs = append(errs, err)
 		return nil, errs
 	}
+
+	// Sort the manifests such that any combination of feature gates is applied after the gates that it combines.
+	// This means that if we have a file that is "foo+bar" and a file that is "foo", the "foo+bar" file will be applied last.
+	// This enables more speicfic handling for combinations of feature gates that affect the same field.
+	sort.Slice(partialManifestFiles, func(i, j int) bool {
+		// Get the name of the files without the ".yaml" suffix.
+		// This should be the name of the feature gate, or, a list of feature gates separated by `+`.
+		iBase := strings.TrimSuffix(filepath.Base(partialManifestFiles[i].Name()), ".yaml")
+		jBase := strings.TrimSuffix(filepath.Base(partialManifestFiles[j].Name()), ".yaml")
+
+		return strings.Contains(jBase, "+") && strings.Contains(jBase, iBase)
+	})
 
 	foundAFile := false
 	for _, partialManifest := range partialManifestFiles {

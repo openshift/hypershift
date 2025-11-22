@@ -276,7 +276,7 @@ func InsecureHTTPClient() *http.Client {
 // HashSimple takes a value, typically a string, and returns a 32-bit FNV-1a hashed version of the value as a string
 func HashSimple(o interface{}) string {
 	hash := fnv.New32a()
-	_, _ = hash.Write([]byte(fmt.Sprintf("%v", o)))
+	_, _ = fmt.Fprintf(hash, "%v", o)
 	intHash := hash.Sum32()
 	return fmt.Sprintf("%08x", intHash)
 }
