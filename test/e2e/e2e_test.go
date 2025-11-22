@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
 	"github.com/openshift/hypershift/test/e2e/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -226,6 +227,16 @@ func main(m *testing.M) int {
 	if err != nil {
 		log.Error(err, "failed to set release image version")
 		return -1
+	}
+
+	// If TEST_CPO_OVERRIDE=1 is set, skip all tests if override tests not enabled for this platform
+	if os.Getenv("TEST_CPO_OVERRIDE") == "1" {
+		if !controlplaneoperatoroverrides.ShouldRunOverrideTests(string(globalOpts.Platform)) {
+			log.Info("TEST_CPO_OVERRIDE=1 but override tests not enabled for this platform, skipping all tests", "platform", globalOpts.Platform)
+			return 0
+		}
+		latest, previous := controlplaneoperatoroverrides.LatestOverrideTestReleases(string(globalOpts.Platform))
+		log.Info("TEST_CPO_OVERRIDE=1 and override tests enabled, proceeding with tests", "platform", globalOpts.Platform, "latest", latest, "previous", previous)
 	}
 
 	// Everything's okay to run tests

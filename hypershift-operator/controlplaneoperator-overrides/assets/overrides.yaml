@@ -9,6 +9,14 @@ platforms:
         cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:88c55ea554f7e62a64e34ff8d3be45ef85ef6b80fe4e9b0240b9a1aa226f9d98
       - version: 4.19.10
         cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:88c55ea554f7e62a64e34ff8d3be45ef85ef6b80fe4e9b0240b9a1aa226f9d98
+    testing:
+      # Update the image refs below to indicate which images should be used for CPO override
+      # testing. Currently, we only test one latest/previous combination. In the future, we
+      # may be able to test multiple combinations at a time. To test more than one, update
+      # the referenced images before each e2e test run.
+      latest: quay.io/openshift-release-dev/ocp-release:4.19.10-x86_64
+      previous: quay.io/openshift-release-dev/ocp-release:4.19.9-x86_64
+      runTests: true
   aws:
     overrides:
     # Beginning of OCPBUGS-48519 overrides 4.15 section
@@ -223,8 +231,9 @@ platforms:
     # End of OCPBUGS-58837 overrides
     testing:
     # Update the image refs below to indicate which images should be used for CPO override
-    # testing. Currently, we only test one latest/previous combination. In the future, we 
+    # testing. Currently, we only test one latest/previous combination. In the future, we
     # may be able to test multiple combinations at a time. To test more than one, update
     # the referenced images before each e2e test run.
       latest: quay.io/openshift-release-dev/ocp-release:4.15.53-x86_64
       previous: quay.io/openshift-release-dev/ocp-release:4.15.52-x86_64
+      runTests: false
