@@ -328,7 +328,7 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 		return &ctrl.Result{}, nil
 	}
 
-	haproxyRawConfig, err := r.generateHAProxyRawConfig(ctx, hcluster, releaseImage)
+	haproxyRawConfig, err := r.generateHAProxyRawConfig(ctx, nodePool, hcluster, releaseImage)
 	if err != nil {
 		return &ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
