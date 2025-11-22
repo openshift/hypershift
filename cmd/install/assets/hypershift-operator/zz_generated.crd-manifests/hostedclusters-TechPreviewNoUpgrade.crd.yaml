@@ -5256,6 +5256,103 @@ spec:
                     x-kubernetes-validations:
                     - message: Kubevirt GenerateID is required once set
                       rule: '!has(oldSelf.generateID) || has(self.generateID)'
+                  oci:
+                    description: oci specifies configuration for clusters running
+                      on Oracle Cloud Infrastructure.
+                    properties:
+                      compartment:
+                        description: |-
+                          compartment is the OCI compartment OCID where cluster resources will be created.
+                          A compartment is a logical container for organizing and isolating cloud resources.
+                          The OCID must be in the format: ocid1.compartment.oc1..<unique_id>
+                        maxLength: 255
+                        minLength: 1
+                        pattern: ^ocid1\.(tenancy|compartment)\.oc1\.\.[a-z0-9]+$
+                        type: string
+                        x-kubernetes-validations:
+                        - message: Compartment is immutable
+                          rule: self == oldSelf
+                      endpointAccess:
+                        default: Private
+                        description: |-
+                          endpointAccess controls API endpoint accessibility for the HostedControlPlane on OCI.
+                          Allowed values: "Private", "PublicAndPrivate". Defaults to "Private".
+                        enum:
+                        - PublicAndPrivate
+                        - Private
+                        type: string
+                      networkConfig:
+                        description: |-
+                          networkConfig specifies VCN configuration for Service Gateway connectivity.
+                          Required for VPC configuration and private connectivity to the hosted control plane.
+                        properties:
+                          serviceGatewaySubnet:
+                            description: |-
+                              serviceGatewaySubnet is the subnet in the management VCN for Service Gateway endpoints.
+                              This subnet is used for private connectivity between customer VCNs and the hosted control plane.
+                            properties:
+                              ocid:
+                                description: |-
+                                  ocid is the Oracle Cloud Identifier (OCID) for the resource.
+                                  OCIDs follow the format: ocid1.<resource_type>.<realm>.[region][.future_use].<unique_id>
+                                maxLength: 255
+                                minLength: 1
+                                pattern: ^ocid1\.[a-z0-9]+\.(oc[0-9]+|region)\.[a-z0-9.-]*\.[a-z0-9]+$
+                                type: string
+                            required:
+                            - ocid
+                            type: object
+                          vcn:
+                            description: vcn is the Virtual Cloud Network (VCN) for
+                              the cluster.
+                            properties:
+                              ocid:
+                                description: |-
+                                  ocid is the Oracle Cloud Identifier (OCID) for the resource.
+                                  OCIDs follow the format: ocid1.<resource_type>.<realm>.[region][.future_use].<unique_id>
+                                maxLength: 255
+                                minLength: 1
+                                pattern: ^ocid1\.[a-z0-9]+\.(oc[0-9]+|region)\.[a-z0-9.-]*\.[a-z0-9]+$
+                                type: string
+                            required:
+                            - ocid
+                            type: object
+                        required:
+                        - vcn
+                        type: object
+                      region:
+                        description: |-
+                          region is the OCI region in which the cluster resides.
+                          A valid region must satisfy the following rules:
+                            format: Must be in the form `<location>-<city>-<number>`
+                            characters: Only lowercase letters (`a-z`), digits (`0-9`), and hyphens (`-`)
+                            valid examples: "us-ashburn-1", "uk-london-1", "ap-tokyo-1"
+                          For a full list of valid regions, see: https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm.
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z]+-[a-z]+-[0-9]+$
+                        type: string
+                        x-kubernetes-validations:
+                        - message: Region is immutable
+                          rule: self == oldSelf
+                      tenancy:
+                        description: |-
+                          tenancy is the OCI tenancy OCID.
+                          A tenancy is the root compartment that contains all cloud resources.
+                          The OCID must be in the format: ocid1.tenancy.oc1..<unique_id>
+                        maxLength: 255
+                        minLength: 1
+                        pattern: ^ocid1\.tenancy\.oc1\.\.[a-z0-9]+$
+                        type: string
+                        x-kubernetes-validations:
+                        - message: Tenancy is immutable
+                          rule: self == oldSelf
+                    required:
+                    - compartment
+                    - networkConfig
+                    - region
+                    - tenancy
+                    type: object
                   openstack:
                     description: openstack specifies configuration for clusters running
                       on OpenStack.
@@ -6009,6 +6106,7 @@ spec:
                     - None
                     - OpenStack
                     - GCP
+                    - OCI
                     maxLength: 100
                     type: string
                     x-kubernetes-validations:
