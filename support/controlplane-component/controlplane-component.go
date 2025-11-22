@@ -131,6 +131,9 @@ type controlPlaneWorkload[T client.Object] struct {
 	manifestsAdapters map[string]genericAdapter
 	// predicate is called at the beginning, the component is disabled if it returns false.
 	predicate func(cpContext WorkloadContext) (bool, error)
+	// platformPredicate determines if this component is applicable to the current platform.
+	// If it returns false, the component is completely skipped (no API calls, no deletion attempts).
+	platformPredicate func(cpContext WorkloadContext) (bool, error)
 
 	// if provided, konnectivity proxy container and required volumes will be injected into the deployment/statefulset.
 	konnectivityContainerOpts *KonnectivityContainerOptions
@@ -155,13 +158,29 @@ func (c *controlPlaneWorkload[T]) Name() string {
 func (c *controlPlaneWorkload[T]) Reconcile(cpContext ControlPlaneContext) error {
 	workloadContext := cpContext.workloadContext()
 
-	if !cpContext.SkipPredicate && c.predicate != nil {
-		isEnabled, err := c.predicate(workloadContext)
-		if err != nil {
-			return err
+	if !cpContext.SkipPredicate {
+		// Check platformPredicate first - if false, completely skip this component
+		// This prevents any API calls for platform-specific components on the wrong platform
+		if c.platformPredicate != nil {
+			isApplicable, err := c.platformPredicate(workloadContext)
+			if err != nil {
+				return err
+			}
+			if !isApplicable {
+				return nil
+			}
 		}
-		if !isEnabled {
-			return c.delete(cpContext)
+
+		// Check regular predicate - if false, attempt cleanup
+		// This handles configuration-based enabling/disabling
+		if c.predicate != nil {
+			isEnabled, err := c.predicate(workloadContext)
+			if err != nil {
+				return err
+			}
+			if !isEnabled {
+				return c.delete(cpContext)
+			}
 		}
 	}
 
@@ -202,16 +221,29 @@ func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 	}
 
 	// delete all resources.
-	if err := assets.ForEachManifest(c.name, func(manifestName string) error {
-		obj, _, err := assets.LoadManifest(c.name, manifestName)
-		if err != nil {
-			return err
-		}
-		obj.SetNamespace(cpContext.HCP.Namespace)
+	if err := assets.ForEachManifest(c.name,
+		// manifestFilter: Same filter as update() - skip platform-specific manifests on wrong platform
+		func(manifestName string) bool {
+			adapter, exist := c.manifestsAdapters[manifestName]
+			if !exist {
+				return true
+			}
+			if adapter.platformPredicate == nil {
+				return true
+			}
+			return adapter.platformPredicate(cpContext.workloadContext())
+		},
+		// action: Delete the manifest
+		func(manifestName string) error {
+			obj, _, err := assets.LoadManifest(c.name, manifestName)
+			if err != nil {
+				return err
+			}
+			obj.SetNamespace(cpContext.HCP.Namespace)
 
-		_, err = util.DeleteIfNeeded(cpContext, cpContext.Client, obj)
-		return err
-	}); err != nil {
+			_, err = util.DeleteIfNeeded(cpContext, cpContext.Client, obj)
+			return err
+		}); err != nil {
 		return err
 	}
 
@@ -230,38 +262,53 @@ func (c *controlPlaneWorkload[T]) update(cpContext ControlPlaneContext) error {
 	hcp := cpContext.HCP
 	ownerRef := config.OwnerRefFrom(hcp)
 	// reconcile resources such as ConfigMaps and Secrets first, as the deployment might depend on them.
-	if err := assets.ForEachManifest(c.name, func(manifestName string) error {
-		obj, _, err := assets.LoadManifest(c.name, manifestName)
-		if err != nil {
-			return err
-		}
-		obj.SetNamespace(hcp.Namespace)
-		if !cpContext.OmitOwnerReference {
-			ownerRef.ApplyTo(obj)
-		}
-
-		switch typedObj := obj.(type) {
-		case *rbacv1.RoleBinding:
-			for i := range typedObj.Subjects {
-				if typedObj.Subjects[i].Kind == "ServiceAccount" {
-					typedObj.Subjects[i].Namespace = hcp.Namespace
-				}
+	if err := assets.ForEachManifest(c.name,
+		// manifestFilter: Check platformPredicate BEFORE loading manifest
+		// This prevents LoadManifest from being called, avoiding informer creation
+		func(manifestName string) bool {
+			adapter, exist := c.manifestsAdapters[manifestName]
+			if !exist {
+				return true // No adapter = not platform-specific, include it
 			}
-		case *corev1.ServiceAccount:
-			util.EnsurePullSecret(typedObj, common.PullSecret("").Name)
-		}
+			if adapter.platformPredicate == nil {
+				return true // No platformPredicate = include it
+			}
+			// Only include manifest if platformPredicate returns true
+			return adapter.platformPredicate(cpContext.workloadContext())
+		},
+		// action: Load and reconcile the manifest
+		func(manifestName string) error {
+			obj, _, err := assets.LoadManifest(c.name, manifestName)
+			if err != nil {
+				return err
+			}
+			obj.SetNamespace(hcp.Namespace)
+			if !cpContext.OmitOwnerReference {
+				ownerRef.ApplyTo(obj)
+			}
 
-		adapter, exist := c.manifestsAdapters[manifestName]
-		if exist {
-			return adapter.reconcile(cpContext, obj)
-		}
+			switch typedObj := obj.(type) {
+			case *rbacv1.RoleBinding:
+				for i := range typedObj.Subjects {
+					if typedObj.Subjects[i].Kind == "ServiceAccount" {
+						typedObj.Subjects[i].Namespace = hcp.Namespace
+					}
+				}
+			case *corev1.ServiceAccount:
+				util.EnsurePullSecret(typedObj, common.PullSecret("").Name)
+			}
 
-		if _, err := cpContext.ApplyManifest(cpContext, cpContext.Client, obj); err != nil {
-			return err
-		}
+			adapter, exist := c.manifestsAdapters[manifestName]
+			if exist {
+				return adapter.reconcile(cpContext, obj)
+			}
 
-		return nil
-	}); err != nil {
+			if _, err := cpContext.ApplyManifest(cpContext, cpContext.Client, obj); err != nil {
+				return err
+			}
+
+			return nil
+		}); err != nil {
 		return err
 	}
 
