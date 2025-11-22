@@ -7,7 +7,7 @@
 # cel.dev/expr v0.19.0
 ## explicit; go 1.21.1
 cel.dev/expr
-# dario.cat/mergo v1.0.0
+# dario.cat/mergo v1.0.2
 ## explicit; go 1.13
 dario.cat/mergo
 # github.com/4meepo/tagalign v1.4.2
