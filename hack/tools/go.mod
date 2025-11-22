@@ -5,7 +5,7 @@ go 1.24.4
 require (
 	github.com/ahmetb/gen-crd-api-reference-docs v0.3.0
 	github.com/golangci/golangci-lint v1.64.8
-	github.com/openshift/api/tools v0.0.0-20250402150121-50cb52d04f83
+	github.com/openshift/api/tools 88cca31a44c9
 	go.uber.org/mock v0.5.1
 	gotest.tools/gotestsum v1.12.0
 	honnef.co/go/tools v0.6.1
