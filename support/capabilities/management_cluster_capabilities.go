@@ -5,6 +5,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	imagestreamv1 "github.com/openshift/api/image/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 	routev1 "github.com/openshift/api/route/v1"
 	securityv1 "github.com/openshift/api/security/v1"
@@ -69,6 +70,11 @@ const (
 	// CapabilityImageStream indicates if the cluster supports ImageStream
 	// image.openshift.io
 	CapabilityImageStream
+
+	// CapabilityKubeAPIServer indicates if the cluster supports the
+	// kubeapiservers.operator.openshift.io api, which is managed by
+	// cluster-kube-apiserver-operator on OpenShift clusters
+	CapabilityKubeAPIServer
 )
 
 // ManagementClusterCapabilities holds all information about optional capabilities of
@@ -211,6 +217,15 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 	}
 	if hasImageStreamCap {
 		discoveredCapabilities[CapabilityImageStream] = struct{}{}
+	}
+
+	// check for KubeAPIServer capability
+	hasKubeAPIServerCap, err := isAPIResourceRegistered(client, operatorv1.GroupVersion, "kubeapiservers")
+	if err != nil {
+		return nil, err
+	}
+	if hasKubeAPIServerCap {
+		discoveredCapabilities[CapabilityKubeAPIServer] = struct{}{}
 	}
 
 	return &ManagementClusterCapabilities{capabilities: discoveredCapabilities}, nil

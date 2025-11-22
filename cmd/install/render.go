@@ -3,6 +3,8 @@ package install
 import (
 	"fmt"
 
+	"github.com/openshift/hypershift/support/capabilities/fake"
+
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -70,7 +72,9 @@ func hyperShiftOperatorTemplateManifest(opts *Options, templateParamConfig Templ
 
 	// create manifests
 	opts.RenderNamespace = templateParamConfig.TemplateNamespace
-	crds, objects, err := hyperShiftOperatorManifests(*opts)
+	// For template rendering, assume no capabilities (vanilla Kubernetes) as the safest default
+	mgmtClusterCaps := &fake.FakeSupportNoCapabilities{}
+	crds, objects, err := hyperShiftOperatorManifests(*opts, mgmtClusterCaps)
 	if err != nil {
 		return nil, nil, err
 	}

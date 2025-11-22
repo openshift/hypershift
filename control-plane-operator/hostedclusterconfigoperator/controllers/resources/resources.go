@@ -1103,7 +1103,7 @@ func (r *reconciler) reconcileRBAC(ctx context.Context, hcp *hyperv1.HostedContr
 
 		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.IngressToRouteControllerRoleBinding, reconcile: rbac.ReconcileIngressToRouteControllerRoleBinding},
 
-		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.AuthenticatedReaderForAuthenticatedUserRolebinding, reconcile: rbac.ReconcileAuthenticatedReaderForAuthenticatedUserRolebinding},
+		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.ExtensionAPIServerAuthenticationReaderRoleBinding, reconcile: rbac.ReconcileExtensionAPIServerAuthenticationReaderRoleBinding},
 
 		manifestAndReconcile[*rbacv1.Role]{manifest: manifests.KCMLeaderElectionRole, reconcile: rbac.ReconcileKCMLeaderElectionRole},
 		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.KCMLeaderElectionRoleBinding, reconcile: rbac.ReconcileKCMLeaderElectionRoleBinding},

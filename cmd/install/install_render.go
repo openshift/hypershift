@@ -6,6 +6,7 @@ import (
 	"os"
 
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/config"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -109,7 +110,9 @@ func RenderHyperShiftOperator(cmdOut io.Writer, opts *Options) error {
 		}
 		objects = []crclient.Object{templateObject}
 	} else {
-		crds, objects, err = hyperShiftOperatorManifests(*opts)
+		// For rendering, assume no capabilities (vanilla Kubernetes) as the safest default
+		mgmtClusterCaps := &fake.FakeSupportNoCapabilities{}
+		crds, objects, err = hyperShiftOperatorManifests(*opts, mgmtClusterCaps)
 		if err != nil {
 			return err
 		}

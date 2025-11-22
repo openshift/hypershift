@@ -2004,18 +2004,28 @@ func (o HyperShiftPullSecret) Build() *corev1.Secret {
 	}
 }
 
-type KubeSystemRoleBinding struct {
+// ExtensionAPIServerAuthenticationReaderRoleBinding creates a RoleBinding that grants
+// service accounts read access to the extension-apiserver-authentication-reader Role
+// in the kube-system namespace.
+//
+// This RoleBinding provides access to the client CA bundle used to verify client-certificates
+// for authentication. Any component of HyperShift that serves metrics needs this information
+// to properly authenticate requests.
+//
+// On OpenShift clusters, cluster-kube-apiserver-operator automatically creates this RoleBinding.
+// On non-OpenShift clusters (e.g., vanilla Kubernetes, AKS, GKE), HyperShift must create it.
+type ExtensionAPIServerAuthenticationReaderRoleBinding struct {
 	Namespace string
 }
 
-func (o KubeSystemRoleBinding) Build() *rbacv1.RoleBinding {
+func (o ExtensionAPIServerAuthenticationReaderRoleBinding) Build() *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "RoleBinding",
 			APIVersion: "rbac.authorization.k8s.io/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "authentication-reader-for-authenticated-users",
+			Name:      "extension-apiserver-authentication-reader-for-serviceaccounts",
 			Namespace: o.Namespace,
 		},
 		RoleRef: rbacv1.RoleRef{
@@ -2027,7 +2037,7 @@ func (o KubeSystemRoleBinding) Build() *rbacv1.RoleBinding {
 			{
 				Kind:     "Group",
 				APIGroup: "rbac.authorization.k8s.io",
-				Name:     "system:authenticated",
+				Name:     "system:serviceaccounts",
 			},
 		},
 	}

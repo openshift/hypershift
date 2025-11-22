@@ -28,6 +28,7 @@ import (
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/util"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -45,6 +46,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
+	"k8s.io/client-go/discovery"
 	"k8s.io/utils/ptr"
 	"k8s.io/utils/set"
 
@@ -299,7 +301,21 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 		return err
 	}
 
-	crds, objects, err := hyperShiftOperatorManifests(opts)
+	// Detect management cluster capabilities
+	cfg, err := util.GetConfig()
+	if err != nil {
+		return err
+	}
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(cfg)
+	if err != nil {
+		return err
+	}
+	mgmtClusterCaps, err := capabilities.DetectManagementClusterCapabilities(discoveryClient)
+	if err != nil {
+		return fmt.Errorf("failed to detect management cluster capabilities: %w", err)
+	}
+
+	crds, objects, err := hyperShiftOperatorManifests(opts, mgmtClusterCaps)
 	if err != nil {
 		return err
 	}
@@ -526,7 +542,7 @@ func fetchImageRefs(file string) (map[string]string, error) {
 	return result, nil
 }
 
-func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Object, error) {
+func hyperShiftOperatorManifests(opts Options, mgmtClusterCaps capabilities.CapabiltyChecker) ([]crclient.Object, []crclient.Object, error) {
 	var crds []crclient.Object
 	var objects []crclient.Object
 
@@ -553,7 +569,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 	}
 
 	// Setup RBAC resources
-	operatorServiceAccount, rbacObjs := setupRBAC(opts, operatorNamespace)
+	operatorServiceAccount, rbacObjs := setupRBAC(opts, operatorNamespace, mgmtClusterCaps)
 	objects = append(objects, rbacObjs...)
 
 	if opts.EnableDefaultingWebhook {
@@ -959,7 +975,7 @@ func setupCA(opts Options, operatorNamespace *corev1.Namespace) (*corev1.ConfigM
 // - Client and Reader RBAC (if admin RBAC is enabled)
 //
 // Returns the HO ServiceAccount and a list of resources to apply
-func setupRBAC(opts Options, operatorNamespace *corev1.Namespace) (*corev1.ServiceAccount, []crclient.Object) {
+func setupRBAC(opts Options, operatorNamespace *corev1.Namespace, mgmtClusterCaps capabilities.CapabiltyChecker) (*corev1.ServiceAccount, []crclient.Object) {
 	objects := []crclient.Object{}
 	operatorServiceAccount := assets.HyperShiftOperatorServiceAccount{
 		Namespace: operatorNamespace,
@@ -989,10 +1005,13 @@ func setupRBAC(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Servi
 	}.Build()
 	objects = append(objects, operatorRoleBinding)
 
-	// In OpenShift management clusters, this RoleBinding is brought in through openshift/cluster-kube-apiserver-operator.
-	// In ARO HCP, Hosted Clusters are running on AKS management clusters, so we need to provide this through the HO.
-	if opts.ManagedService == hyperv1.AroHCP {
-		roleBinding := assets.KubeSystemRoleBinding{
+	// On OpenShift management clusters, cluster-kube-apiserver-operator automatically creates
+	// the extension-apiserver-authentication-reader RoleBinding in kube-system namespace.
+	// On non-OpenShift clusters (e.g., vanilla Kubernetes, AKS, GKE), this operator doesn't exist,
+	// so HyperShift must create the RoleBinding to provide metrics-serving components with access
+	// to the client CA bundle for authentication.
+	if !mgmtClusterCaps.Has(capabilities.CapabilityKubeAPIServer) {
+		roleBinding := assets.ExtensionAPIServerAuthenticationReaderRoleBinding{
 			Namespace: "kube-system",
 		}.Build()
 		objects = append(objects, roleBinding)
