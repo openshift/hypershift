@@ -4944,7 +4944,7 @@ spec:
                 items:
                   description: |-
                     ServicePublishingStrategyMapping specifies how individual control plane services endpoints are published for consumption.
-                    This includes APIServer;OAuthServer;Konnectivity;Ignition.
+                    This includes APIServer;OAuthServer;Konnectivity at minimum. Ignition is required for most platforms.
                     If a given service is not present in this list, it will be exposed publicly by default.
                   properties:
                     service:
