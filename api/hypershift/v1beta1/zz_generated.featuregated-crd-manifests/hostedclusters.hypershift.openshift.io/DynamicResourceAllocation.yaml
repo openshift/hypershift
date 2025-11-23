@@ -555,9 +555,8 @@ spec:
                         description: |-
                           tlsSecurityProfile specifies settings for TLS connections for externally exposed servers.
 
-                          If unset, a default (which may change between releases) is chosen. Note that only Old,
-                          Intermediate and Custom profiles are currently supported, and the maximum available
-                          minTLSVersion is VersionTLS12.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                          The current default is the Intermediate profile.
                         properties:
                           custom:
                             description: |-
@@ -2237,27 +2236,6 @@ spec:
                         - HighNodeUtilization
                         - NoScoring
                         type: string
-                      profileCustomizations:
-                        description: profileCustomizations contains configuration
-                          for modifying the default behavior of existing scheduler
-                          profiles.
-                        properties:
-                          dynamicResourceAllocation:
-                            description: |-
-                              dynamicResourceAllocation allows to enable or disable dynamic resource allocation within the scheduler.
-                              Dynamic resource allocation is an API for requesting and sharing resources between pods and containers inside a pod.
-                              Third-party resource drivers are responsible for tracking and allocating resources.
-                              Different kinds of resources support arbitrary parameters for defining requirements and initialization.
-                              Valid values are Enabled, Disabled and omitted.
-                              When omitted, this means no opinion and the platform is left to choose a reasonable default,
-                              which is subject to change over time.
-                              The current default is Disabled.
-                            enum:
-                            - ""
-                            - Enabled
-                            - Disabled
-                            type: string
-                        type: object
                     type: object
                 type: object
               controlPlaneRelease:
@@ -5840,7 +5818,7 @@ spec:
                           description: |-
                             acceptedRisks records risks which were accepted to initiate the update.
                             For example, it may menition an Upgradeable=False or missing signature
-                            that was overriden via desiredUpdate.force, or an update that was
+                            that was overridden via desiredUpdate.force, or an update that was
                             initiated despite not being in the availableUpdates set of recommended
                             update targets.
                           type: string
