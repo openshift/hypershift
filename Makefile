@@ -267,6 +267,7 @@ NUM_CORES := $(shell uname | grep -q 'Darwin' && sysctl -n hw.ncpu || nproc)
 test: generate
 	echo "Running tests with $(NUM_CORES) parallel jobs..."
 	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
+	@echo "✅ All tests completed successfully!"
 
 .PHONY: e2e
 e2e: reqserving-e2e e2ev2
