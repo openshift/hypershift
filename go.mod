@@ -290,7 +290,7 @@ replace github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 replace sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.7
 
 // Use our openshift version of karpenter instead of upstream
-replace github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
+replace github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws 3fcdd6f905e5
 
 // replace (
 // 	k8s.io/api => k8s.io/api v0.32.3
