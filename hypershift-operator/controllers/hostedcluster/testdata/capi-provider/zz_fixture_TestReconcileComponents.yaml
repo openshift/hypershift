@@ -4,6 +4,8 @@ metadata:
   annotations:
     hypershift.openshift.io/cluster: ""
   creationTimestamp: null
+  finalizers:
+  - hypershift.openshift.io/control-plane-workload-finalizer
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: capi-provider

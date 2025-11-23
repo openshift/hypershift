@@ -5,6 +5,8 @@ metadata:
     image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.initContainers[?(@.name==\"extract-content\")].image"},
       {"from":{"kind":"ImageStreamTag","name":"catalogs:certified-operators"},"fieldPath":"spec.template.spec.containers[?(@.name==\"registry\")].image"}]'
   creationTimestamp: null
+  finalizers:
+  - hypershift.openshift.io/control-plane-workload-finalizer
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: certified-operators-catalog

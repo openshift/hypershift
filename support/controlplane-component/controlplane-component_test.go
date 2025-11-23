@@ -18,6 +18,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -316,4 +317,246 @@ func componentsFakeObjects() ([]client.Object, error) {
 		csrSigner,
 	}
 	return fakeObjects, nil
+}
+
+func TestWorkloadFinalizer(t *testing.T) {
+	tests := []struct {
+		name            string
+		existingDeploy  *appsv1.Deployment
+		expectFinalizer bool
+	}{
+		{
+			name:            "When creating deployment it should add finalizer",
+			existingDeploy:  nil,
+			expectFinalizer: true,
+		},
+		{
+			name: "When deployment exists without finalizer it should add it",
+			existingDeploy: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testComponentName,
+					Namespace: testComponentNamespace,
+				},
+			},
+			expectFinalizer: true,
+		},
+	}
+
+	scheme := runtime.NewScheme()
+	_ = hyperv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			fakeObjects, err := componentsFakeObjects()
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.existingDeploy != nil {
+				fakeObjects = append(fakeObjects, tc.existingDeploy)
+			}
+
+			cpContext := ControlPlaneContext{
+				Context:                  t.Context(),
+				ApplyProvider:            upsert.NewApplyProvider(false),
+				ReleaseImageProvider:     testutil.FakeImageProvider(),
+				UserReleaseImageProvider: testutil.FakeImageProvider(),
+				ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+					Result:   &dockerv1client.DockerImageConfig{},
+					Manifest: fakeimagemetadataprovider.FakeManifest{},
+				},
+				HCP: &hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: testComponentNamespace,
+						Annotations: map[string]string{
+							"hypershift.openshift.io/cluster": "test-cluster",
+						},
+					},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Labels: map[string]string{
+							"test-label": "test",
+						},
+					},
+				},
+				Client: fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(fakeObjects...).Build(),
+			}
+
+			c := NewComponent()
+			err = c.Reconcile(cpContext)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			deploy := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testComponentName,
+					Namespace: testComponentNamespace,
+				},
+			}
+
+			err = cpContext.Client.Get(t.Context(), client.ObjectKeyFromObject(deploy), deploy)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			if tc.expectFinalizer {
+				g.Expect(deploy.Finalizers).To(ContainElement(WorkloadFinalizer))
+			} else {
+				g.Expect(deploy.Finalizers).ToNot(ContainElement(WorkloadFinalizer))
+			}
+		})
+	}
+}
+
+func TestWorkloadDeletion(t *testing.T) {
+	tests := []struct {
+		name                   string
+		existingPods           []*corev1.Pod
+		expectFinalizerRemoved bool
+		expectError            bool
+	}{
+		{
+			name:                   "When deployment is deleted and no pods exist it should remove finalizer",
+			existingPods:           nil,
+			expectFinalizerRemoved: true,
+			expectError:            false,
+		},
+		{
+			name: "When deployment is deleted with running pods it should not remove finalizer",
+			existingPods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod-1",
+						Namespace: testComponentNamespace,
+						Labels: map[string]string{
+							"app": testComponentName,
+						},
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodRunning,
+					},
+				},
+			},
+			expectFinalizerRemoved: false,
+			expectError:            true, // Should return error to requeue
+		},
+		{
+			name: "When deployment is deleted with terminated pods it should remove finalizer",
+			existingPods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-pod-1",
+						Namespace: testComponentNamespace,
+						Labels: map[string]string{
+							"app": testComponentName,
+						},
+					},
+					Status: corev1.PodStatus{
+						Phase: corev1.PodSucceeded,
+					},
+				},
+			},
+			expectFinalizerRemoved: true,
+			expectError:            false,
+		},
+	}
+
+	scheme := runtime.NewScheme()
+	_ = hyperv1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = appsv1.AddToScheme(scheme)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			fakeObjects, err := componentsFakeObjects()
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// Create deployment with finalizer and deletion timestamp
+			now := metav1.Now()
+			deploy := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              testComponentName,
+					Namespace:         testComponentNamespace,
+					Finalizers:        []string{WorkloadFinalizer},
+					DeletionTimestamp: &now,
+				},
+				Spec: appsv1.DeploymentSpec{
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app": testComponentName,
+						},
+					},
+					Template: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{
+								"app": testComponentName,
+							},
+						},
+					},
+				},
+			}
+			fakeObjects = append(fakeObjects, deploy)
+
+			// Add existing pods if any
+			for _, pod := range tc.existingPods {
+				fakeObjects = append(fakeObjects, pod)
+			}
+
+			cpContext := ControlPlaneContext{
+				Context:                  t.Context(),
+				ApplyProvider:            upsert.NewApplyProvider(false),
+				ReleaseImageProvider:     testutil.FakeImageProvider(),
+				UserReleaseImageProvider: testutil.FakeImageProvider(),
+				ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+					Result:   &dockerv1client.DockerImageConfig{},
+					Manifest: fakeimagemetadataprovider.FakeManifest{},
+				},
+				HCP: &hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: testComponentNamespace,
+						Annotations: map[string]string{
+							"hypershift.openshift.io/cluster": "test-cluster",
+						},
+					},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Labels: map[string]string{
+							"test-label": "test",
+						},
+					},
+				},
+				Client: fake.NewClientBuilder().WithScheme(scheme).
+					WithObjects(fakeObjects...).Build(),
+			}
+
+			c := NewComponent()
+			err = c.Reconcile(cpContext)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+
+			// Get the deployment to check finalizer status
+			updatedDeploy := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testComponentName,
+					Namespace: testComponentNamespace,
+				},
+			}
+
+			err = cpContext.Client.Get(t.Context(), client.ObjectKeyFromObject(updatedDeploy), updatedDeploy)
+
+			if tc.expectFinalizerRemoved {
+				// When finalizer is removed and deployment has deletion timestamp,
+				// the deployment should be gone (not found)
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "deployment should be deleted when finalizer is removed")
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(updatedDeploy.Finalizers).To(ContainElement(WorkloadFinalizer))
+			}
+		})
+	}
 }
