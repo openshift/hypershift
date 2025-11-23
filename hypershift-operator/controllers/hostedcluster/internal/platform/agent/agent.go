@@ -128,6 +128,9 @@ func (p Agent) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hy
 								corev1.ResourceMemory: resource.MustParse("20Mi"),
 							},
 						},
+						SecurityContext: &corev1.SecurityContext{
+							ReadOnlyRootFilesystem: ptr.To(true),
+						},
 					},
 				},
 			},
