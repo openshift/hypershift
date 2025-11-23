@@ -79,7 +79,6 @@ func TestCreateCluster(t *testing.T) {
 			args: []string{
 				"--azure-creds=" + credentialsFile,
 				"--infra-json=" + infraFile,
-				"--rhcos-image=whatever",
 				"--render-sensitive",
 				"--name=example",
 				"--pull-secret=" + pullSecretFile,
@@ -92,7 +91,6 @@ func TestCreateCluster(t *testing.T) {
 			args: []string{
 				"--azure-creds=" + credentialsFile,
 				"--infra-json=" + infraFile,
-				"--rhcos-image=whatever",
 				"--name=bryans-cluster",
 				"--location=eastus",
 				"--node-pool-replicas=312",
@@ -134,7 +132,6 @@ func TestCreateCluster(t *testing.T) {
 			args: []string{
 				"--azure-creds=" + credentialsFile,
 				"--infra-json=" + infraFile,
-				"--rhcos-image=whatever",
 				"--render-sensitive",
 				"--availability-zones=1,2",
 				"--name=example",
@@ -150,7 +147,6 @@ func TestCreateCluster(t *testing.T) {
 				"--pull-secret=" + pullSecretFile,
 				"--azure-creds=" + credentialsFile,
 				"--infra-json=" + infraFile,
-				"--rhcos-image=whatever",
 				"--render-sensitive",
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
@@ -164,7 +160,6 @@ func TestCreateCluster(t *testing.T) {
 				"--pull-secret=" + pullSecretFile,
 				"--azure-creds=" + credentialsFile,
 				"--infra-json=" + infraFile,
-				"--rhcos-image=whatever",
 				"--render-sensitive",
 				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
 				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),

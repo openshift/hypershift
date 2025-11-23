@@ -47,7 +47,6 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool. If not provided, a new Network Security Group will be created.")
 	cmd.Flags().StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed. If not provided, a new subnet will be created.")
 	cmd.Flags().StringVar(&opts.VnetID, "vnet-id", opts.VnetID, "The VNet ID to use. If not provided, a new VNet will be created.")
-	cmd.Flags().StringVar(&opts.RHCOSImage, "rhcos-image", opts.RHCOSImage, `RHCOS image to be used for the NodePool. Could be obtained using podman run --rm -it --entrypoint cat $RELEASE_IMAGE release-manifests/0000_50_installer_coreos-bootimages.yaml | yq .data.stream -r | yq '.architectures.x86_64["rhel-coreos-extensions"]["azure-disk"].url'`)
 	cmd.Flags().StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
 	cmd.Flags().StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to file containing ARO HCP managed identities JSON")
 	cmd.Flags().StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.DataPlaneIdentitiesFile, "Path to file containing ARO HCP data plane identities JSON")
@@ -100,7 +99,6 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	// Initialize managers
 	rgMgr := NewResourceGroupManager(subscriptionID, azureCreds, o.Cloud)
 	netMgr := NewNetworkManager(subscriptionID, azureCreds, o.Cloud)
-	imgMgr := NewImageManager(subscriptionID, azureCreds)
 	rbacMgr := NewRBACManager(subscriptionID, azureCreds)
 	identityMgr := NewIdentityManager(subscriptionID, azureCreds)
 
@@ -267,14 +265,6 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		return nil, err
 	}
 	l.Info("Successfully created guest cluster egress load balancer")
-
-	// Create RHCOS image if needed
-	if o.RHCOSImage != "" {
-		result.BootImageID, err = imgMgr.CreateRHCOSImages(ctx, l, o, resourceGroupName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create RHCOS image: %w", err)
-		}
-	}
 
 	// Serialize the result to the output file if it was provided
 	if o.OutputFile != "" {

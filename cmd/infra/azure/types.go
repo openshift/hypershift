@@ -13,7 +13,6 @@ type CreateInfraOptions struct {
 	CredentialsFile              string
 	Credentials                  *util.AzureCreds
 	OutputFile                   string
-	RHCOSImage                   string
 	ResourceGroupName            string
 	VnetID                       string
 	NetworkSecurityGroupID       string

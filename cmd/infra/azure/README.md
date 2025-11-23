@@ -150,7 +150,6 @@ When creating full infrastructure, the command outputs information to the specif
 - `resourceGroupName`: Main resource group name
 - `vnetID`: Virtual network ID
 - `subnetID`: Subnet ID
-- `bootImageID`: RHCOS boot image ID (if `--rhcos-image` provided)
 - `infraID`: Infrastructure ID
 - `securityGroupID`: Network security group ID
 - `controlPlaneMIs`: Control plane managed identities (ARO HCP only)

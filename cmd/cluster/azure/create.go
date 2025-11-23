@@ -105,9 +105,6 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 // BindDeveloperOptions binds developer/development only options for the Azure create cluster command
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	bindCoreOptions(opts, flags)
-
-	// TODO CNTRLPLANE-1387 - this should be removed since we are using Azure Marketplace images
-	flags.StringVar(&opts.RHCOSImage, "rhcos-image", opts.RHCOSImage, "The RHCOS image to use.")
 }
 
 // Validate validates the Azure create cluster command options
