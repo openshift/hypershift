@@ -17,6 +17,42 @@ type GCPResourceReference struct {
 	Name string `json:"name"`
 }
 
+// GCPResourceLabel is a label to apply to GCP resources created for the cluster.
+// Labels are key-value pairs used for organizing and managing GCP resources.
+// See https://cloud.google.com/compute/docs/labeling-resources for GCP labeling guidance.
+type GCPResourceLabel struct {
+	// key is the key part of the label. A label key can have a maximum of 63 characters and cannot be empty.
+	// For Compute Engine resources (VMs, disks, networks created by CAPG), keys must follow RFC1035-style rules:
+	// - Start with a lowercase letter
+	// - Contain only lowercase letters, digits, or hyphens
+	// - Cannot end with a hyphen
+	// GCP reserves the 'goog' prefix for system labels.
+	// Note: Other GCP services may allow a broader character set (e.g., underscores); consult service-specific documentation.
+	// See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z]([0-9a-z-]{0,61}[0-9a-z])?$`
+	// +kubebuilder:validation:XValidation:rule="!self.startsWith('goog')",message="Label keys starting with the reserved 'goog' prefix are not allowed"
+	Key string `json:"key"`
+
+	// value is the value part of the label. A label value can have a maximum of 63 characters.
+	// Empty values are allowed by GCP.
+	// For Compute Engine resources (VMs, disks, networks created by CAPG), values must follow RFC1035-style rules:
+	// - Contain only lowercase letters, digits, or hyphens
+	// - If non-empty, must start with a lowercase letter or digit
+	// - If non-empty, cannot end with a hyphen
+	// Note: Other GCP services may allow a broader character set (e.g., underscores); consult service-specific documentation.
+	// See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=0
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^$|^[0-9a-z]([0-9a-z-]{0,61}[0-9a-z])?$`
+	Value string `json:"value"`
+}
+
 // GCPEndpointAccessType defines the endpoint access type for GCP clusters.
 // Equivalent to AWS EndpointAccessType but adapted for GCP networking model.
 type GCPEndpointAccessType string
@@ -65,17 +101,18 @@ type GCPPlatformSpec struct {
 
 	// region is the GCP region in which the cluster resides.
 	// A valid region must satisfy the following rules:
-	//   format: Must be in the form `<letters>-<segment1>-<segment2>-...<digit>`
+	//   format: Must be in the form `<letters>-<segment>...` and must end with one or more digits
 	//   characters: Only lowercase letters (`a-z`), digits (`0-9`), and hyphens (`-`) as separators
-	//   valid examples: "us-central1", "europe-west2", "northamerica-northeast1"
-	//   region must not include zone suffixes (e.g., "-a").
+	//   requirements: Must contain at least one hyphen; must end with digits
+	//   valid examples: "us-central1", "europe-west2", "europe-west12", "northamerica-northeast1"
+	//   invalid examples: "us1" (no hyphen), "us-central" (no trailing digits), "us-central1-a" (zone suffix)
 	// For a full list of valid regions, see: https://cloud.google.com/compute/docs/regions-zones.
 	//
 	// +required
 	// +immutable
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-z]+(?:-[a-z0-9]+)*[0-9]$`
+	// +kubebuilder:validation:Pattern=`^[a-z]+(-[a-z0-9]+)+[0-9]+$`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Region is immutable"
 	Region string `json:"region"`
 
@@ -92,21 +129,14 @@ type GCPPlatformSpec struct {
 	EndpointAccess GCPEndpointAccessType `json:"endpointAccess,omitempty"`
 
 	// resourceLabels are applied to all GCP resources created for the cluster.
-	// These labels help with resource organization, cost tracking, and management.
-	// Keys and values must conform to GCP label requirements:
-	//   - Keys: 1-63 characters, must start with lowercase letter or international character
-	//   - Values: 0-63 characters (may be empty)
-	//   - Characters: lowercase letters, numeric characters, underscores, dashes, UTF-8 encoding
-	//   - Maximum 64 labels per resource
-	// See https://cloud.google.com/compute/docs/labeling-resources
+	// Labels are key-value pairs used for organizing and managing GCP resources.
+	// Changes to this field will be propagated in-place to GCP resources where supported.
+	// GCP supports a maximum of 64 labels per resource. HyperShift reserves approximately 4 labels for system use.
+	// For GCP labeling guidance, see https://cloud.google.com/compute/docs/labeling-resources
 	//
 	// +optional
-	// +kubebuilder:validation:MaxProperties=64
-	// +kubebuilder:validation:XValidation:rule="keys(self).all(k, size(k) >= 1 && size(k) <= 63)", message="All label keys must be 1-63 characters"
-	// +kubebuilder:validation:XValidation:rule="keys(self).all(k, size(self[k]) <= 63)", message="All label values must be at most 63 characters"
-	// +kubebuilder:validation:XValidation:rule="keys(self).all(k, k.matches('^[a-z][a-z0-9_-]{0,62}$'))", message="Label keys must start with lowercase letter and contain only lowercase letters, numbers, underscores, and dashes"
-	// +kubebuilder:validation:XValidation:rule="keys(self).all(k, self[k] == '' || self[k].matches('^[a-z][a-z0-9_-]{0,62}$'))", message="Label values must be empty or start with lowercase letter and contain only lowercase letters, numbers, underscores, and dashes"
-	ResourceLabels map[string]string `json:"resourceLabels,omitempty"`
+	// +kubebuilder:validation:MaxItems=64
+	ResourceLabels []GCPResourceLabel `json:"resourceLabels,omitempty"`
 
 	// workloadIdentity configures Workload Identity Federation for the cluster.
 	// This enables secure, short-lived token-based authentication without storing
@@ -144,8 +174,14 @@ type GCPWorkloadIdentityConfig struct {
 
 	// poolID is the workload identity pool identifier within the project.
 	// This pool is used to manage external identity mappings.
-	// Must be 4-32 characters, lowercase letters, numbers, and hyphens only.
+	// Must be 4-32 characters; allowed: lowercase letters (a-z), digits (0-9), hyphens (-).
 	// Cannot start or end with a hyphen.
+	// The prefix "gcp-" is reserved by Google and cannot be used.
+	//
+	// Note: HyperShift generates this value. Validation is intentionally stricter
+	// than Google's minimum (e.g., disallow leading/trailing hyphens) because we
+	// fully control the ID format. If we later allow user-provided IDs, consider
+	// relaxing to ^[a-z0-9-]{4,32}$ and keep the 'gcp-' reserved-prefix check.
 	//
 	// +required
 	// +immutable
@@ -158,8 +194,11 @@ type GCPWorkloadIdentityConfig struct {
 
 	// providerID is the workload identity provider identifier within the pool.
 	// This provider handles the token exchange between external and GCP identities.
-	// Must be 4-32 characters, lowercase letters, numbers, and hyphens only.
+	// Must be 4-32 characters; allowed: lowercase letters (a-z), digits (0-9), hyphens (-).
 	// Cannot start or end with a hyphen.
+	// The prefix "gcp-" is reserved by Google and cannot be used.
+	//
+	// Note: See poolID above regarding intentionally stricter validation for generated IDs.
 	//
 	// +required
 	// +immutable
