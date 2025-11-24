@@ -2775,6 +2775,29 @@ string
 </tr>
 </tbody>
 </table>
+###AllocateNodeCIDRsMode { #hypershift.openshift.io/v1beta1.AllocateNodeCIDRsMode }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ClusterNetworking">ClusterNetworking</a>)
+</p>
+<p>
+<p>AllocateNodeCIDRsMode specifies whether the KCM manages node CIDR allocation.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Disabled&#34;</p></td>
+<td><p>AllocateNodeCIDRsDisabled disables node CIDR allocation by the KCM</p>
+</td>
+</tr><tr><td><p>&#34;Enabled&#34;</p></td>
+<td><p>AllocateNodeCIDRsEnabled enables node CIDR allocation by the KCM</p>
+</td>
+</tr></tbody>
+</table>
 ###AllocationPool { #hypershift.openshift.io/v1beta1.AllocationPool }
 <p>
 (<em>Appears on:</em>
@@ -4650,6 +4673,25 @@ APIServerNetworking
 <em>(Optional)</em>
 <p>apiServer contains advanced network settings for the API server that affect
 how the APIServer is exposed inside a hosted cluster node.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>allocateNodeCIDRs</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AllocateNodeCIDRsMode">
+AllocateNodeCIDRsMode
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>allocateNodeCIDRs controls whether the kube-controller-manager manages node CIDR allocation.
+When using networkType=Other, it is recommended to set this field to &ldquo;Enabled&rdquo;
+if Flannel is used as the CNI, as it relies on this behavior.
+Default is &ldquo;Disabled&rdquo;.
+This field can only be set to &ldquo;Enabled&rdquo; when NetworkType is &ldquo;Other&rdquo;. Setting it to &ldquo;Enabled&rdquo;
+with any other NetworkType will result in a validation error during cluster creation.</p>
 </td>
 </tr>
 </tbody>
