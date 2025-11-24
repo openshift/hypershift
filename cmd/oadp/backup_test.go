@@ -62,47 +62,6 @@ func TestCreateOptionsDefaults(t *testing.T) {
 	}
 }
 
-// TestBackupNameGeneration tests the naming pattern for backup objects using the real production code.
-// Verifies that backup names follow the expected format: {hc-name}-{hc-namespace}-{random-hash}.
-func TestBackupNameGeneration(t *testing.T) {
-	hcName := "test-cluster"
-	hcNamespace := "test-cluster-ns"
-
-	// Create a deterministic random string generator for testing
-	deterministicRandomGen := func(length int) string {
-		return "abc123"
-	}
-
-	expectedName := "test-cluster-test-cluster-ns-abc123"
-
-	// Test the actual production code path with deterministic input
-	actualName := generateBackupName(hcName, hcNamespace, deterministicRandomGen)
-
-	if actualName != expectedName {
-		t.Errorf("Expected backup name %s, got %s", expectedName, actualName)
-	}
-
-	// Test with different inputs to ensure the pattern is correct
-	testCases := []struct {
-		hcName      string
-		hcNamespace string
-		expected    string
-	}{
-		{"prod-cluster", "prod-cluster-ns", "prod-cluster-prod-cluster-ns-abc123"},
-		{"my-cluster", "my-cluster-ns", "my-cluster-my-cluster-ns-abc123"},
-		{"dev", "dev-ns", "dev-dev-ns-abc123"},
-	}
-
-	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%s-%s", tc.hcName, tc.hcNamespace), func(t *testing.T) {
-			actual := generateBackupName(tc.hcName, tc.hcNamespace, deterministicRandomGen)
-			if actual != tc.expected {
-				t.Errorf("Expected backup name %s, got %s", tc.expected, actual)
-			}
-		})
-	}
-}
-
 // TestGenerateBackupObject validates the basic structure and metadata of generated backup objects.
 // This test focuses on the fundamental properties like APIVersion, Kind, ObjectMeta, and IncludedNamespaces.
 // It serves as a structural validation test for the core backup object generation functionality.
@@ -123,18 +82,15 @@ func TestGenerateBackupObject(t *testing.T) {
 		return
 	}
 
-	// Check backup name format
-	if len(backupName) == 0 {
-		t.Errorf("Expected backup name to be generated, got empty string")
+	// Check backup name is auto-generated since no custom name was provided
+	// Format should be: {hcName}-{hcNamespace}-{randomSuffix}
+	expectedPattern := "test-cluster-test-cluster-ns-"
+	if !strings.HasPrefix(backupName, expectedPattern) {
+		t.Errorf("Expected backup name to start with '%s', got '%s'", expectedPattern, backupName)
 	}
-
-	// Check that backup name contains hc-name and hc-namespace
-	if !strings.Contains(backupName, opts.HCName) {
-		t.Errorf("Expected backup name to contain hc-name '%s', got %s", opts.HCName, backupName)
-	}
-
-	if !strings.Contains(backupName, opts.HCNamespace) {
-		t.Errorf("Expected backup name to contain hc-namespace '%s', got %s", opts.HCNamespace, backupName)
+	// Check that the name has the random suffix (should be 6 characters)
+	if len(backupName) != len(expectedPattern)+6 {
+		t.Errorf("Expected backup name length to be %d, got %d", len(expectedPattern)+6, len(backupName))
 	}
 
 	// Check backup object structure
@@ -447,5 +403,327 @@ func TestGetDefaultResourcesForPlatform(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestValidateBackupName verifies that backup name validation works correctly
+// for the --name flag, including 63-character limit and Kubernetes naming rules.
+func TestValidateBackupName(t *testing.T) {
+	tests := []struct {
+		name        string
+		backupName  string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "Valid short name",
+			backupName:  "test-backup",
+			expectError: false,
+		},
+		{
+			name:        "Valid name with numbers",
+			backupName:  "test-backup-123",
+			expectError: false,
+		},
+		{
+			name:        "Valid 63 character name",
+			backupName:  "a1234567890123456789012345678901234567890123456789012345678901b",
+			expectError: false,
+		},
+		{
+			name:        "Name too long (64 characters)",
+			backupName:  "a12345678901234567890123456789012345678901234567890123456789012b",
+			expectError: true,
+			errorMsg:    "too long (64 characters)",
+		},
+		{
+			name:        "Name with uppercase letters",
+			backupName:  "Test-backup",
+			expectError: true,
+			errorMsg:    "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
+		},
+		{
+			name:        "Name starting with hyphen",
+			backupName:  "-test-backup",
+			expectError: true,
+			errorMsg:    "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
+		},
+		{
+			name:        "Name ending with hyphen",
+			backupName:  "test-backup-",
+			expectError: true,
+			errorMsg:    "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
+		},
+		{
+			name:        "Name with invalid characters",
+			backupName:  "test_backup",
+			expectError: true,
+			errorMsg:    "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
+		},
+		{
+			name:        "Empty name should be valid (auto-generation)",
+			backupName:  "",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := &CreateOptions{
+				BackupCustomName: tt.backupName,
+			}
+
+			err := opts.ValidateBackupName()
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error for backup name '%s', but got none", tt.backupName)
+					return
+				}
+				if !strings.Contains(err.Error(), tt.errorMsg) {
+					t.Errorf("Expected error message to contain '%s', got '%s'", tt.errorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error for backup name '%s', but got: %v", tt.backupName, err)
+				}
+			}
+		})
+	}
+}
+
+// TestGenerateBackupObjectWithCustomName verifies that custom backup names
+// are used when provided via the --name flag, and auto-generated names are
+// used when no custom name is specified.
+func TestGenerateBackupObjectWithCustomName(t *testing.T) {
+	tests := []struct {
+		name              string
+		backupCustomName  string
+		hcName            string
+		hcNamespace       string
+		expectedNameCheck func(string) bool
+		expectAutoGen     bool
+	}{
+		{
+			name:             "Custom name is used when provided",
+			backupCustomName: "my-custom-backup",
+			hcName:           "test-cluster",
+			hcNamespace:      "test-ns",
+			expectedNameCheck: func(name string) bool {
+				return name == "my-custom-backup"
+			},
+			expectAutoGen: false,
+		},
+		{
+			name:             "Auto-generated name when no custom name",
+			backupCustomName: "",
+			hcName:           "test-cluster",
+			hcNamespace:      "test-ns",
+			expectedNameCheck: func(name string) bool {
+				// Should be auto-generated: {hcName}-{hcNamespace}-{randomSuffix}
+				expectedPrefix := "test-cluster-test-ns-"
+				return strings.HasPrefix(name, expectedPrefix) && len(name) == len(expectedPrefix)+6
+			},
+			expectAutoGen: true,
+		},
+		{
+			name:             "Custom name with valid characters",
+			backupCustomName: "backup-123-test",
+			hcName:           "prod-cluster",
+			hcNamespace:      "production",
+			expectedNameCheck: func(name string) bool {
+				return name == "backup-123-test"
+			},
+			expectAutoGen: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := &CreateOptions{
+				HCName:           tt.hcName,
+				HCNamespace:      tt.hcNamespace,
+				BackupCustomName: tt.backupCustomName,
+				OADPNamespace:    "openshift-adp",
+				StorageLocation:  "default",
+				TTL:              2 * time.Hour,
+			}
+
+			backup, backupName, err := opts.GenerateBackupObjectWithPlatform("AWS")
+			if err != nil {
+				t.Fatalf("GenerateBackupObjectWithPlatform() failed: %v", err)
+			}
+
+			// Verify the backup name matches expected pattern
+			if !tt.expectedNameCheck(backupName) {
+				t.Errorf("Backup name '%s' does not match expected pattern", backupName)
+			}
+
+			// Verify the name is set correctly in the backup object
+			actualName := backup.GetName()
+			if actualName != backupName {
+				t.Errorf("Expected backup object name '%s', got '%s'", backupName, actualName)
+			}
+
+			// Basic object validation
+			if backup.GetAPIVersion() != "velero.io/v1" {
+				t.Errorf("Expected APIVersion 'velero.io/v1', got '%s'", backup.GetAPIVersion())
+			}
+
+			if backup.GetKind() != "Backup" {
+				t.Errorf("Expected Kind 'Backup', got '%s'", backup.GetKind())
+			}
+
+			if backup.GetNamespace() != "openshift-adp" {
+				t.Errorf("Expected namespace 'openshift-adp', got '%s'", backup.GetNamespace())
+			}
+		})
+	}
+}
+
+// TestGenerateBackupObjectWithIncludedNamespaces verifies that the --include-additional-namespaces flag
+// works correctly in backup generation, adding additional namespaces to the default HC and HCP namespaces.
+func TestGenerateBackupObjectWithIncludedNamespaces(t *testing.T) {
+	tests := []struct {
+		name               string
+		hcName             string
+		hcNamespace        string
+		includeNamespaces  []string
+		expectedNamespaces []string
+	}{
+		{
+			name:               "Default namespaces when none specified",
+			hcName:             "test-cluster",
+			hcNamespace:        "clusters-ns",
+			includeNamespaces:  nil,
+			expectedNamespaces: []string{"clusters-ns", "clusters-ns-test-cluster"},
+		},
+		{
+			name:               "Default namespaces when empty slice specified",
+			hcName:             "prod-cluster",
+			hcNamespace:        "production",
+			includeNamespaces:  []string{},
+			expectedNamespaces: []string{"production", "production-prod-cluster"},
+		},
+		{
+			name:               "Additional namespaces added to defaults",
+			hcName:             "dev-cluster",
+			hcNamespace:        "development",
+			includeNamespaces:  []string{"custom-ns1", "custom-ns2"},
+			expectedNamespaces: []string{"development", "development-dev-cluster", "custom-ns1", "custom-ns2"},
+		},
+		{
+			name:               "Single additional namespace",
+			hcName:             "test-cluster",
+			hcNamespace:        "test",
+			includeNamespaces:  []string{"only-namespace"},
+			expectedNamespaces: []string{"test", "test-test-cluster", "only-namespace"},
+		},
+		{
+			name:               "Multiple additional namespaces",
+			hcName:             "multi-cluster",
+			hcNamespace:        "multi",
+			includeNamespaces:  []string{"ns1", "ns2", "ns3", "ns4"},
+			expectedNamespaces: []string{"multi", "multi-multi-cluster", "ns1", "ns2", "ns3", "ns4"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := &CreateOptions{
+				HCName:            tt.hcName,
+				HCNamespace:       tt.hcNamespace,
+				OADPNamespace:     "openshift-adp",
+				StorageLocation:   "default",
+				TTL:               2 * time.Hour,
+				IncludeNamespaces: tt.includeNamespaces,
+			}
+
+			backup, _, err := opts.GenerateBackupObjectWithPlatform("AWS")
+			if err != nil {
+				t.Fatalf("GenerateBackupObjectWithPlatform() failed: %v", err)
+			}
+
+			// Extract included namespaces from the generated backup
+			includedNamespacesInterface, found, err := unstructured.NestedFieldNoCopy(backup.Object, "spec", "includedNamespaces")
+			if err != nil || !found {
+				t.Error("includedNamespaces not found in backup spec")
+				return
+			}
+
+			// Convert interface{} to string slice
+			var includedNamespaces []string
+			if namespaceSlice, ok := includedNamespacesInterface.([]string); ok {
+				includedNamespaces = namespaceSlice
+			} else if namespaceInterfaceSlice, ok := includedNamespacesInterface.([]interface{}); ok {
+				for _, ns := range namespaceInterfaceSlice {
+					includedNamespaces = append(includedNamespaces, ns.(string))
+				}
+			} else {
+				t.Errorf("Expected includedNamespaces to be []string or []interface{}, got %T", includedNamespacesInterface)
+				return
+			}
+
+			// Verify the namespaces match expected
+			if len(includedNamespaces) != len(tt.expectedNamespaces) {
+				t.Errorf("Expected %d namespaces, got %d", len(tt.expectedNamespaces), len(includedNamespaces))
+				return
+			}
+
+			for i, expected := range tt.expectedNamespaces {
+				if i >= len(includedNamespaces) || includedNamespaces[i] != expected {
+					t.Errorf("Expected namespace %d to be '%s', got '%s'", i, expected, includedNamespaces[i])
+				}
+			}
+		})
+	}
+}
+
+// TestBackupCommandIncludedNamespacesFlag verifies that the --include-additional-namespaces flag
+// is properly configured in the CLI command and accessible for testing.
+func TestBackupCommandIncludedNamespacesFlag(t *testing.T) {
+	cmd := NewCreateBackupCommand()
+
+	// Test that the flag exists and has proper configuration
+	flag := cmd.Flags().Lookup("include-additional-namespaces")
+	if flag == nil {
+		t.Fatal("--include-additional-namespaces flag not found")
+	}
+
+	// Test flag default value (should be nil/empty)
+	defaultValue, err := cmd.Flags().GetStringSlice("include-additional-namespaces")
+	if err != nil {
+		t.Fatalf("Failed to get default value: %v", err)
+	}
+	if len(defaultValue) > 0 {
+		t.Errorf("Expected default value to be nil/empty, got %v", defaultValue)
+	}
+
+	// Test setting the flag value
+	testNamespaces := []string{"ns1", "ns2", "ns3"}
+	args := append([]string{"--hc-name", "test", "--hc-namespace", "test"},
+		"--include-additional-namespaces", strings.Join(testNamespaces, ","))
+	cmd.SetArgs(args)
+
+	err = cmd.ParseFlags(args)
+	if err != nil {
+		t.Fatalf("Failed to parse flags: %v", err)
+	}
+
+	// Verify the parsed value
+	parsedNamespaces, err := cmd.Flags().GetStringSlice("include-additional-namespaces")
+	if err != nil {
+		t.Fatalf("Failed to get parsed value: %v", err)
+	}
+
+	if len(parsedNamespaces) != len(testNamespaces) {
+		t.Errorf("Expected %d namespaces, got %d", len(testNamespaces), len(parsedNamespaces))
+		return
+	}
+
+	for i, expected := range testNamespaces {
+		if parsedNamespaces[i] != expected {
+			t.Errorf("Expected namespace %d to be '%s', got '%s'", i, expected, parsedNamespaces[i])
+		}
 	}
 }

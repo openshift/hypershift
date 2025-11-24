@@ -41,16 +41,15 @@ func TestGenerateRestoreObjectBasic(t *testing.T) {
 		t.Errorf("Expected namespace 'openshift-adp', got '%s'", restore.GetNamespace())
 	}
 
-	if restoreName == "" {
-		t.Error("restore name should not be empty")
+	// Test restore name should be auto-generated since no custom name was provided
+	// Format should be: {hcName}-{hcNamespace}-{randomSuffix}
+	expectedPattern := "test-cluster-test-cluster-ns-"
+	if !strings.HasPrefix(restoreName, expectedPattern) {
+		t.Errorf("Expected restore name to start with '%s', got '%s'", expectedPattern, restoreName)
 	}
-
-	if !strings.Contains(restoreName, "test-backup-123") {
-		t.Errorf("restore name should contain backup name, got: %s", restoreName)
-	}
-
-	if !strings.Contains(restoreName, "test-cluster") {
-		t.Errorf("restore name should contain cluster name, got: %s", restoreName)
+	// Check that the name has the random suffix (should be 6 characters)
+	if len(restoreName) != len(expectedPattern)+6 {
+		t.Errorf("Expected restore name length to be %d, got %d", len(expectedPattern)+6, len(restoreName))
 	}
 
 	// Test spec fields
@@ -118,9 +117,15 @@ func TestGenerateRestoreObjectWithSchedule(t *testing.T) {
 		t.Errorf("Expected empty backupName when using schedule, got '%s'", backupName)
 	}
 
-	// Test restore name contains schedule
-	if !strings.Contains(restoreName, "test-schedule-123") {
-		t.Errorf("restore name should contain schedule name, got: %s", restoreName)
+	// Test restore name should be auto-generated since no custom name was provided
+	// Format should be: {hcName}-{hcNamespace}-{randomSuffix}
+	expectedPattern := "test-cluster-test-cluster-ns-"
+	if !strings.HasPrefix(restoreName, expectedPattern) {
+		t.Errorf("Expected restore name to start with '%s', got '%s'", expectedPattern, restoreName)
+	}
+	// Check that the name has the random suffix (should be 6 characters)
+	if len(restoreName) != len(expectedPattern)+6 {
+		t.Errorf("Expected restore name length to be %d, got %d", len(expectedPattern)+6, len(restoreName))
 	}
 }
 
@@ -185,12 +190,12 @@ func TestBuildIncludedNamespaces(t *testing.T) {
 		t.Errorf("buildIncludedNamespaces() = %v, want %v", namespaces, expected)
 	}
 
-	// Test custom namespaces override
+	// Test additional namespaces are added to defaults
 	opts.IncludeNamespaces = []string{"custom-ns1", "custom-ns2"}
 	namespaces = buildIncludedNamespaces(opts.HCNamespace, opts.HCName, opts.IncludeNamespaces)
-	expected = []string{"custom-ns1", "custom-ns2"}
-	if len(namespaces) != 2 || namespaces[0] != expected[0] || namespaces[1] != expected[1] {
-		t.Errorf("buildIncludedNamespaces() with custom = %v, want %v", namespaces, expected)
+	expected = []string{"test-cluster-ns", "test-cluster-ns-test-cluster", "custom-ns1", "custom-ns2"}
+	if len(namespaces) != 4 || namespaces[0] != expected[0] || namespaces[1] != expected[1] || namespaces[2] != expected[2] || namespaces[3] != expected[3] {
+		t.Errorf("buildIncludedNamespaces() with additional = %v, want %v", namespaces, expected)
 	}
 }
 
@@ -277,5 +282,91 @@ func TestValidateBackupExistsNotFound(t *testing.T) {
 		if !strings.Contains(err.Error(), "not found") {
 			t.Errorf("error should mention 'not found', got: %v", err)
 		}
+	}
+}
+
+// TestValidateRestoreName verifies that restore name validation works correctly
+// for custom names (--name flag), including 63-character limit and Kubernetes naming rules.
+func TestValidateRestoreName(t *testing.T) {
+	tests := []struct {
+		name        string
+		restoreName string
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name:        "Valid short name",
+			restoreName: "test-restore",
+			expectError: false,
+		},
+		{
+			name:        "Valid name with numbers",
+			restoreName: "test-restore-123",
+			expectError: false,
+		},
+		{
+			name:        "Valid 63 character name",
+			restoreName: "a1234567890123456789012345678901234567890123456789012345678901b",
+			expectError: false,
+		},
+		{
+			name:        "Name too long (64 characters)",
+			restoreName: "a12345678901234567890123456789012345678901234567890123456789012b",
+			expectError: true,
+			errorMsg:    "too long (64 characters)",
+		},
+		{
+			name:        "Name with uppercase letters",
+			restoreName: "Test-restore",
+			expectError: true,
+			errorMsg:    "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
+		},
+		{
+			name:        "Name starting with hyphen",
+			restoreName: "-test-restore",
+			expectError: true,
+			errorMsg:    "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
+		},
+		{
+			name:        "Name ending with hyphen",
+			restoreName: "test-restore-",
+			expectError: true,
+			errorMsg:    "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
+		},
+		{
+			name:        "Name with invalid characters",
+			restoreName: "test_restore",
+			expectError: true,
+			errorMsg:    "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
+		},
+		{
+			name:        "Empty name should be valid",
+			restoreName: "",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := &CreateOptions{
+				RestoreName: tt.restoreName,
+			}
+
+			err := opts.ValidateRestoreName()
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error for restore name '%s', but got none", tt.restoreName)
+					return
+				}
+				if !strings.Contains(err.Error(), tt.errorMsg) {
+					t.Errorf("Expected error message to contain '%s', got '%s'", tt.errorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error for restore name '%s', but got: %v", tt.restoreName, err)
+				}
+			}
+		})
 	}
 }

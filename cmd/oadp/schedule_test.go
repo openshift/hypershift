@@ -77,47 +77,6 @@ func TestCreateScheduleOptionsDefaults(t *testing.T) {
 	}
 }
 
-// TestScheduleNameGeneration tests the naming pattern for schedule objects using the real production code.
-// Verifies that schedule names follow the expected format: {hc-name}-{hc-namespace}-schedule-{random-hash}.
-func TestScheduleNameGeneration(t *testing.T) {
-	hcName := "test-cluster"
-	hcNamespace := "test-cluster-ns"
-
-	// Create a deterministic random string generator for testing
-	deterministicRandomGen := func(length int) string {
-		return "abc123"
-	}
-
-	expectedName := "test-cluster-test-cluster-ns-schedule-abc123"
-
-	// Test the actual production code path with deterministic input
-	actualName := generateScheduleName(hcName, hcNamespace, deterministicRandomGen)
-
-	if actualName != expectedName {
-		t.Errorf("Expected schedule name %s, got %s", expectedName, actualName)
-	}
-
-	// Test with different inputs to ensure the pattern is correct
-	testCases := []struct {
-		hcName      string
-		hcNamespace string
-		expected    string
-	}{
-		{"prod-cluster", "prod-cluster-ns", "prod-cluster-prod-cluster-ns-schedule-abc123"},
-		{"my-cluster", "my-cluster-ns", "my-cluster-my-cluster-ns-schedule-abc123"},
-		{"dev", "dev-ns", "dev-dev-ns-schedule-abc123"},
-	}
-
-	for _, tc := range testCases {
-		t.Run(fmt.Sprintf("%s-%s", tc.hcName, tc.hcNamespace), func(t *testing.T) {
-			actual := generateScheduleName(tc.hcName, tc.hcNamespace, deterministicRandomGen)
-			if actual != tc.expected {
-				t.Errorf("Expected schedule name %s, got %s", tc.expected, actual)
-			}
-		})
-	}
-}
-
 // TestGenerateScheduleObject validates the basic structure and metadata of generated schedule objects.
 // This test focuses on the fundamental properties like APIVersion, Kind, ObjectMeta, and template settings.
 // It serves as a structural validation test for the core schedule object generation functionality.
@@ -142,22 +101,15 @@ func TestGenerateScheduleObject(t *testing.T) {
 		return
 	}
 
-	// Check schedule name format
-	if len(scheduleName) == 0 {
-		t.Errorf("Expected schedule name to be generated, got empty string")
+	// Check schedule name format - should be auto-generated since no custom name was provided
+	// Format should be: {hcName}-{hcNamespace}-{randomSuffix}
+	expectedPattern := "test-cluster-test-cluster-ns-"
+	if !strings.HasPrefix(scheduleName, expectedPattern) {
+		t.Errorf("Expected schedule name to start with '%s', got '%s'", expectedPattern, scheduleName)
 	}
-
-	// Check that schedule name contains hc-name and hc-namespace and "schedule"
-	if !strings.Contains(scheduleName, opts.HCName) {
-		t.Errorf("Expected schedule name to contain hc-name '%s', got %s", opts.HCName, scheduleName)
-	}
-
-	if !strings.Contains(scheduleName, opts.HCNamespace) {
-		t.Errorf("Expected schedule name to contain hc-namespace '%s', got %s", opts.HCNamespace, scheduleName)
-	}
-
-	if !strings.Contains(scheduleName, "schedule") {
-		t.Errorf("Expected schedule name to contain 'schedule', got %s", scheduleName)
+	// Check that the name has the random suffix (should be 6 characters)
+	if len(scheduleName) != len(expectedPattern)+6 {
+		t.Errorf("Expected schedule name length to be %d, got %d", len(expectedPattern)+6, len(scheduleName))
 	}
 
 	// Check schedule object structure
@@ -463,12 +415,12 @@ func TestGenerateScheduleObjectComprehensive(t *testing.T) {
 	}
 }
 
-// TestValidateSchedule verifies that the cron schedule validation works correctly.
+// TestValidateSchedulePace verifies that the cron schedule validation works correctly.
 // This test ensures that:
 // - Valid cron expressions are accepted
 // - Invalid cron expressions are rejected with appropriate error messages
 // - Empty schedule expressions are rejected
-func TestValidateSchedule(t *testing.T) {
+func TestValidateSchedulePace(t *testing.T) {
 	tests := []struct {
 		name      string
 		schedule  string
@@ -601,7 +553,7 @@ func TestValidateSchedule(t *testing.T) {
 				Schedule: tt.schedule,
 			}
 
-			err := opts.validateSchedule()
+			err := opts.ValidateSchedulePace()
 
 			if tt.expectErr {
 				if err == nil {
@@ -686,8 +638,8 @@ func TestNormalizeScheduleExpression(t *testing.T) {
 	}
 }
 
-// TestGenerateScheduleObjectWithIncludedNamespaces verifies that the --included-namespaces flag
-// works correctly in schedule generation, both with custom namespaces and defaults.
+// TestGenerateScheduleObjectWithIncludedNamespaces verifies that the --include-additional-namespaces flag
+// works correctly in schedule generation, adding additional namespaces to the default HC and HCP namespaces.
 func TestGenerateScheduleObjectWithIncludedNamespaces(t *testing.T) {
 	tests := []struct {
 		name               string
@@ -711,25 +663,25 @@ func TestGenerateScheduleObjectWithIncludedNamespaces(t *testing.T) {
 			expectedNamespaces: []string{"production", "production-prod-cluster"},
 		},
 		{
-			name:               "Custom namespaces override defaults",
+			name:               "Additional namespaces added to defaults",
 			hcName:             "dev-cluster",
 			hcNamespace:        "development",
 			includeNamespaces:  []string{"custom-ns1", "custom-ns2"},
-			expectedNamespaces: []string{"custom-ns1", "custom-ns2"},
+			expectedNamespaces: []string{"development", "development-dev-cluster", "custom-ns1", "custom-ns2"},
 		},
 		{
-			name:               "Single custom namespace",
+			name:               "Single additional namespace",
 			hcName:             "test-cluster",
 			hcNamespace:        "test",
 			includeNamespaces:  []string{"only-namespace"},
-			expectedNamespaces: []string{"only-namespace"},
+			expectedNamespaces: []string{"test", "test-test-cluster", "only-namespace"},
 		},
 		{
-			name:               "Multiple custom namespaces",
+			name:               "Multiple additional namespaces",
 			hcName:             "multi-cluster",
 			hcNamespace:        "multi",
 			includeNamespaces:  []string{"ns1", "ns2", "ns3", "ns4"},
-			expectedNamespaces: []string{"ns1", "ns2", "ns3", "ns4"},
+			expectedNamespaces: []string{"multi", "multi-multi-cluster", "ns1", "ns2", "ns3", "ns4"},
 		},
 	}
 
@@ -775,19 +727,19 @@ func TestGenerateScheduleObjectWithIncludedNamespaces(t *testing.T) {
 	}
 }
 
-// TestScheduleCommandIncludedNamespacesFlag verifies that the --included-namespaces flag
+// TestScheduleCommandIncludedNamespacesFlag verifies that the --include-additional-namespaces flag
 // is properly configured in the CLI command and accessible for testing.
 func TestScheduleCommandIncludedNamespacesFlag(t *testing.T) {
 	cmd := NewCreateScheduleCommand()
 
 	// Test that the flag exists and has proper configuration
-	flag := cmd.Flags().Lookup("included-namespaces")
+	flag := cmd.Flags().Lookup("include-additional-namespaces")
 	if flag == nil {
-		t.Fatal("--included-namespaces flag not found")
+		t.Fatal("--include-additional-namespaces flag not found")
 	}
 
 	// Test flag default value (should be nil/empty)
-	defaultValue, err := cmd.Flags().GetStringSlice("included-namespaces")
+	defaultValue, err := cmd.Flags().GetStringSlice("include-additional-namespaces")
 	if err != nil {
 		t.Fatalf("Failed to get default value: %v", err)
 	}
@@ -798,7 +750,7 @@ func TestScheduleCommandIncludedNamespacesFlag(t *testing.T) {
 	// Test setting the flag value
 	testNamespaces := []string{"ns1", "ns2", "ns3"}
 	args := append([]string{"--hc-name", "test", "--hc-namespace", "test", "--schedule", "daily"},
-		"--included-namespaces", strings.Join(testNamespaces, ","))
+		"--include-additional-namespaces", strings.Join(testNamespaces, ","))
 	cmd.SetArgs(args)
 
 	err = cmd.ParseFlags(args)
@@ -807,7 +759,7 @@ func TestScheduleCommandIncludedNamespacesFlag(t *testing.T) {
 	}
 
 	// Verify the parsed value
-	parsedNamespaces, err := cmd.Flags().GetStringSlice("included-namespaces")
+	parsedNamespaces, err := cmd.Flags().GetStringSlice("include-additional-namespaces")
 	if err != nil {
 		t.Fatalf("Failed to get parsed value: %v", err)
 	}
@@ -843,11 +795,11 @@ func TestBuildIncludedNamespacesForSchedule(t *testing.T) {
 			expectedNamespaces: []string{"schedule-ns", "schedule-ns-schedule-cluster"},
 		},
 		{
-			name:               "Schedule custom namespaces",
+			name:               "Schedule additional namespaces",
 			hcNamespace:        "schedule-ns",
 			hcName:             "schedule-cluster",
 			customNamespaces:   []string{"custom-schedule-ns1", "custom-schedule-ns2"},
-			expectedNamespaces: []string{"custom-schedule-ns1", "custom-schedule-ns2"},
+			expectedNamespaces: []string{"schedule-ns", "schedule-ns-schedule-cluster", "custom-schedule-ns1", "custom-schedule-ns2"},
 		},
 	}
 
@@ -863,6 +815,93 @@ func TestBuildIncludedNamespacesForSchedule(t *testing.T) {
 			for i, expected := range tt.expectedNamespaces {
 				if result[i] != expected {
 					t.Errorf("Expected namespace %d to be '%s', got '%s'", i, expected, result[i])
+				}
+			}
+		})
+	}
+}
+
+// TestScheduleNameValidation verifies that schedule name validation works correctly
+// for custom names (--name flag), including 63-character limit and Kubernetes naming rules.
+func TestScheduleNameValidation(t *testing.T) {
+	tests := []struct {
+		name         string
+		scheduleName string
+		expectError  bool
+		errorMsg     string
+	}{
+		{
+			name:         "Valid short name",
+			scheduleName: "test-schedule",
+			expectError:  false,
+		},
+		{
+			name:         "Valid name with numbers",
+			scheduleName: "test-schedule-123",
+			expectError:  false,
+		},
+		{
+			name:         "Valid 63 character name",
+			scheduleName: "a1234567890123456789012345678901234567890123456789012345678901b",
+			expectError:  false,
+		},
+		{
+			name:         "Name too long (64 characters)",
+			scheduleName: "a12345678901234567890123456789012345678901234567890123456789012b",
+			expectError:  true,
+			errorMsg:     "too long (64 characters)",
+		},
+		{
+			name:         "Name with uppercase letters",
+			scheduleName: "Test-schedule",
+			expectError:  true,
+			errorMsg:     "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
+		},
+		{
+			name:         "Name starting with hyphen",
+			scheduleName: "-test-schedule",
+			expectError:  true,
+			errorMsg:     "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
+		},
+		{
+			name:         "Name ending with hyphen",
+			scheduleName: "test-schedule-",
+			expectError:  true,
+			errorMsg:     "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
+		},
+		{
+			name:         "Name with invalid characters",
+			scheduleName: "test_schedule",
+			expectError:  true,
+			errorMsg:     "a lowercase RFC 1123 subdomain must consist of lower case alphanumeric characters",
+		},
+		{
+			name:         "Empty name should be valid",
+			scheduleName: "",
+			expectError:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test custom name validation
+			opts := &CreateOptions{
+				ScheduleName: tt.scheduleName,
+			}
+
+			err := opts.ValidateScheduleName()
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("Expected error for schedule name '%s', but got none", tt.scheduleName)
+					return
+				}
+				if !strings.Contains(err.Error(), tt.errorMsg) {
+					t.Errorf("Expected error message to contain '%s', got '%s'", tt.errorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error for schedule name '%s', but got: %v", tt.scheduleName, err)
 				}
 			}
 		})

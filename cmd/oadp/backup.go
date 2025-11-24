@@ -4,14 +4,17 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/oadp"
+	utilroute "github.com/openshift/hypershift/support/util"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/spf13/cobra"
 )
@@ -57,6 +60,7 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	cmd.Flags().StringVar(&opts.HCNamespace, "hc-namespace", "", "Namespace of the hosted cluster to backup (required)")
 
 	// Optional flags with defaults
+	cmd.Flags().StringVar(&opts.BackupCustomName, "name", "", "Custom name for the backup (auto-generated if not provided)")
 	cmd.Flags().StringVar(&opts.OADPNamespace, "oadp-namespace", "openshift-adp", "Namespace where OADP operator is installed")
 	cmd.Flags().StringVar(&opts.StorageLocation, "storage-location", "default", "Storage location for the backup")
 	cmd.Flags().DurationVar(&opts.TTL, "ttl", 2*time.Hour, "Time to live for the backup")
@@ -64,6 +68,7 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	cmd.Flags().BoolVar(&opts.DefaultVolumesToFsBackup, "default-volumes-to-fs-backup", false, "Use filesystem backup for volumes by default")
 	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render the backup object to STDOUT instead of creating it")
 	cmd.Flags().StringSliceVar(&opts.IncludedResources, "included-resources", nil, "Comma-separated list of resources to include in backup (overrides defaults)")
+	cmd.Flags().StringSliceVar(&opts.IncludeNamespaces, "include-additional-namespaces", nil, "Additional namespaces to include (HC and HCP namespaces are always included)")
 
 	// Mark required flags
 	_ = cmd.MarkFlagRequired("hc-name")
@@ -73,6 +78,11 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 }
 
 func (o *CreateOptions) RunBackup(ctx context.Context) error {
+	// Validate backup name length
+	if err := o.ValidateBackupName(); err != nil {
+		return err
+	}
+
 	// Client is needed for validations and actual creation
 	if o.Client == nil {
 		var err error
@@ -154,6 +164,11 @@ func (o *CreateOptions) RunBackup(ctx context.Context) error {
 		return nil
 	} else {
 		// Normal mode: create the backup
+		// Validate that client is available for creation
+		if o.Client == nil {
+			return fmt.Errorf("kubernetes client is required for resource creation (not in render mode)")
+		}
+
 		o.Log.Info("Creating backup...")
 		if err := o.Client.Create(ctx, backup); err != nil {
 			return fmt.Errorf("failed to create backup resource: %w", err)
@@ -167,9 +182,27 @@ func (o *CreateOptions) RunBackup(ctx context.Context) error {
 // Note: randomStringGenerator type is now in types.go
 
 // generateBackupName creates a backup name using the format: {hcName}-{hcNamespace}-{randomSuffix}
-func generateBackupName(hcName, hcNamespace string, randomGen randomStringGenerator) string {
-	randomSuffix := randomGen(6)
-	return fmt.Sprintf("%s-%s-%s", hcName, hcNamespace, randomSuffix)
+// If the name is too long, it uses utils.ShortenName to ensure it doesn't exceed 63 characters
+func generateBackupName(hcName, hcNamespace string) string {
+	randomSuffix := utilrand.String(6)
+	baseName := fmt.Sprintf("%s-%s", hcName, hcNamespace)
+	// Use ShortenName to ensure it doesn't exceed DNS1123 subdomain max length (63 chars)
+	return utilroute.ShortenName(baseName, randomSuffix, validation.DNS1123LabelMaxLength)
+}
+
+// ValidateBackupName validates the custom backup name if provided
+func (o *CreateOptions) ValidateBackupName() error {
+	if o.BackupCustomName != "" {
+		// Kubernetes resource names must be 63 characters or less
+		if len(o.BackupCustomName) > 63 {
+			return fmt.Errorf("backup name '%s' is too long (%d characters). Kubernetes resource names must be 63 characters or less. Use --name to specify a shorter custom name", o.BackupCustomName, len(o.BackupCustomName))
+		}
+		// Use Kubernetes official DNS subdomain validation
+		if errs := validation.IsDNS1123Subdomain(o.BackupCustomName); len(errs) > 0 {
+			return fmt.Errorf("backup name '%s' is invalid: %s", o.BackupCustomName, strings.Join(errs, "; "))
+		}
+	}
+	return nil
 }
 
 func (o *CreateOptions) GenerateBackupObjectWithPlatform(platform string) (*unstructured.Unstructured, string, error) {
@@ -184,8 +217,11 @@ func (o *CreateOptions) GenerateBackupObjectWithPlatform(platform string) (*unst
 		o.OADPNamespace = "openshift-adp"
 	}
 
-	// Generate backup name with random suffix
-	backupName := generateBackupName(o.HCName, o.HCNamespace, utilrand.String)
+	// Use the name from flag, or generate if empty
+	backupName := o.BackupCustomName
+	if backupName == "" {
+		backupName = generateBackupName(o.HCName, o.HCNamespace)
+	}
 
 	var includedResources []string
 	if o.IncludedResources != nil {
@@ -208,7 +244,7 @@ func (o *CreateOptions) GenerateBackupObjectWithPlatform(platform string) (*unst
 				},
 			},
 			"spec": map[string]interface{}{
-				"includedNamespaces": buildIncludedNamespaces(o.HCNamespace, o.HCName, nil),
+				"includedNamespaces":       buildIncludedNamespaces(o.HCNamespace, o.HCName, o.IncludeNamespaces),
 				"includedResources":        includedResources,
 				"storageLocation":          o.StorageLocation,
 				"ttl":                      o.TTL.String(),

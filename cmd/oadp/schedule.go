@@ -3,14 +3,18 @@ package oadp
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/oadp"
+	utilroute "github.com/openshift/hypershift/support/util"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/spf13/cobra"
 )
@@ -72,14 +76,14 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	cmd.Flags().StringVar(&opts.Schedule, "schedule", "", "Cron schedule expression for backup frequency (required)")
 
 	// Optional flags
-	cmd.Flags().StringVar(&opts.ScheduleName, "name", "", "Custom name for the schedule (auto-generated if not specified)")
+	cmd.Flags().StringVar(&opts.ScheduleName, "name", "", "Custom name for the schedule (auto-generated if not provided)")
 	cmd.Flags().StringVar(&opts.OADPNamespace, "oadp-namespace", "openshift-adp", "Namespace where OADP operator is installed")
 	cmd.Flags().StringVar(&opts.StorageLocation, "storage-location", "default", "Backup storage location")
-	cmd.Flags().DurationVar(&opts.TTL, "ttl", 2*time.Hour, "Backup retention time (e.g., '24h', '7d', '30d')")
+	cmd.Flags().DurationVar(&opts.TTL, "ttl", 2*time.Hour, "Backup retention time (e.g., '24h', '168h' for 7 days, '720h' for 30 days)")
 	cmd.Flags().BoolVar(&opts.SnapshotMoveData, "snapshot-move-data", false, "Enable snapshot data movement")
 	cmd.Flags().BoolVar(&opts.DefaultVolumesToFsBackup, "default-volumes-to-fs-backup", false, "Enable file system backup for volumes")
 	cmd.Flags().StringSliceVar(&opts.IncludedResources, "included-resources", nil, "Override included resources (by default includes platform-specific resources)")
-	cmd.Flags().StringSliceVar(&opts.IncludeNamespaces, "included-namespaces", nil, "Override included namespaces (by default includes hc-namespace and hc-namespace-hc-name)")
+	cmd.Flags().StringSliceVar(&opts.IncludeNamespaces, "include-additional-namespaces", nil, "Additional namespaces to include (HC and HCP namespaces are always included)")
 	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render the schedule object to STDOUT instead of creating it")
 	cmd.Flags().BoolVar(&opts.Paused, "paused", false, "Create schedule in paused state")
 	cmd.Flags().BoolVar(&opts.UseOwnerReferences, "use-owner-references", false, "Use owner references in backup objects")
@@ -93,13 +97,36 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	return cmd
 }
 
+// generateScheduleName creates a schedule name using the format: {hcName}-{hcNamespace}-{randomSuffix}
+// If the name is too long, it uses utils.ShortenName to ensure it doesn't exceed 63 characters
+func generateScheduleName(hcName, hcNamespace string) string {
+	randomSuffix := utilrand.String(6)
+	baseName := fmt.Sprintf("%s-%s", hcName, hcNamespace)
+	// Use ShortenName to ensure it doesn't exceed DNS1123 subdomain max length (63 chars)
+	return utilroute.ShortenName(baseName, randomSuffix, validation.DNS1123LabelMaxLength)
+}
+
 func (o *CreateOptions) RunSchedule(ctx context.Context) error {
 	// Step 1: Validate the schedule expression
-	if err := o.validateSchedule(); err != nil {
+	if err := o.ValidateSchedulePace(); err != nil {
 		return fmt.Errorf("schedule validation failed: %w", err)
 	}
 
-	// Step 2: Detect platform (with proper render mode handling)
+	// Step 2: Validate schedule name if provided
+	if err := o.ValidateScheduleName(); err != nil {
+		return err
+	}
+
+	// Step 3: Create kubernetes client if not already created
+	if o.Client == nil {
+		var err error
+		o.Client, err = util.GetClient()
+		if err != nil {
+			return fmt.Errorf("failed to create kubernetes client for schedule validation: %w", err)
+		}
+	}
+
+	// Step 4: Detect platform (with proper render mode handling)
 	var platform string
 	if o.Client != nil {
 		// Validate HostedCluster exists and get platform
@@ -118,13 +145,13 @@ func (o *CreateOptions) RunSchedule(ctx context.Context) error {
 		}
 
 		if !o.Render {
-			// Step 3: Validate OADP components (only in non-render mode)
+			// Step 4: Validate OADP components (only in non-render mode)
 			o.Log.Info("Validating OADP components...")
 			if err := oadp.ValidateOADPComponents(ctx, o.Client, o.OADPNamespace); err != nil {
 				return fmt.Errorf("OADP validation failed: %w", err)
 			}
 
-			// Step 4: Verify DPA configuration includes HyperShift plugin
+			// Step 5: Verify DPA configuration includes HyperShift plugin
 			o.Log.Info("Verifying DPA configuration...")
 			if err := oadp.VerifyDPAStatus(ctx, o.Client, o.OADPNamespace); err != nil {
 				return fmt.Errorf("DPA verification failed: %w", err)
@@ -146,16 +173,21 @@ func (o *CreateOptions) RunSchedule(ctx context.Context) error {
 		platform = "AWS"
 	}
 
-	// Step 5: Generate schedule object
+	// Step 6: Generate schedule object
 	schedule, scheduleName, err := o.GenerateScheduleObject(platform)
 	if err != nil {
 		return fmt.Errorf("failed to generate schedule object: %w", err)
 	}
 
-	// Step 6: Create or render the schedule
+	// Step 7: Create or render the schedule
 	if o.Render {
 		return renderYAMLObject(schedule)
 	} else {
+		// Validate that client is available for creation
+		if o.Client == nil {
+			return fmt.Errorf("kubernetes client is required for resource creation (not in render mode)")
+		}
+
 		o.Log.Info("Creating schedule...")
 		if err := o.Client.Create(ctx, schedule); err != nil {
 			return fmt.Errorf("failed to create schedule resource: %w", err)
@@ -167,12 +199,10 @@ func (o *CreateOptions) RunSchedule(ctx context.Context) error {
 }
 
 func (o *CreateOptions) GenerateScheduleObject(platform string) (*unstructured.Unstructured, string, error) {
-	// Generate schedule name with random suffix
-	var scheduleName string
-	if o.ScheduleName != "" {
-		scheduleName = o.ScheduleName
-	} else {
-		scheduleName = generateScheduleName(o.HCName, o.HCNamespace, utilrand.String)
+	// Use the name from flag, or generate if empty
+	scheduleName := o.ScheduleName
+	if scheduleName == "" {
+		scheduleName = generateScheduleName(o.HCName, o.HCNamespace)
 	}
 
 	// Determine which resources to include
@@ -241,7 +271,7 @@ func (o *CreateOptions) GenerateScheduleObject(platform string) (*unstructured.U
 	return schedule, scheduleName, nil
 }
 
-func (o *CreateOptions) validateSchedule() error {
+func (o *CreateOptions) ValidateSchedulePace() error {
 	if o.Schedule == "" {
 		return fmt.Errorf("schedule expression is required")
 	}
@@ -258,13 +288,179 @@ func (o *CreateOptions) validateSchedule() error {
 		return fmt.Errorf("invalid cron schedule '%s'. Must be in format 'minute hour day month weekday' (e.g., '0 2 * * *' for daily at 2 AM), or use common verbs like 'daily', 'weekly', '@daily', '@weekly'", o.Schedule)
 	}
 
-	// Additional basic field validation
+	// Additional field validation with range checks
 	for i, field := range fields {
 		if field == "" {
 			return fmt.Errorf("invalid cron schedule '%s'. Field %d is empty", o.Schedule, i+1)
 		}
+
+		if err := validateCronField(field, i); err != nil {
+			return fmt.Errorf("invalid cron schedule '%s'. %w", o.Schedule, err)
+		}
 	}
 
+	return nil
+}
+
+// validateCronField validates a single cron field according to its position and allowed ranges
+func validateCronField(field string, position int) error {
+	// Define field names and ranges for better error messages
+	fieldSpecs := []struct {
+		name string
+		min  int
+		max  int
+	}{
+		{"minute", 0, 59},
+		{"hour", 0, 23},
+		{"day", 1, 31},
+		{"month", 1, 12},
+		{"weekday", 0, 6},
+	}
+
+	spec := fieldSpecs[position]
+
+	// Skip validation for wildcard
+	if field == "*" {
+		return nil
+	}
+
+	// Handle ranges (e.g., "1-5")
+	if strings.Contains(field, "-") {
+		return validateRange(field, spec.name, spec.min, spec.max)
+	}
+
+	// Handle lists (e.g., "1,3,5")
+	if strings.Contains(field, ",") {
+		return validateList(field, spec.name, spec.min, spec.max)
+	}
+
+	// Handle step values (e.g., "*/5" or "1-10/2")
+	if strings.Contains(field, "/") {
+		return validateStep(field, spec.name, spec.min, spec.max)
+	}
+
+	// Handle simple numeric values
+	return validateNumber(field, spec.name, spec.min, spec.max)
+}
+
+// validateNumber checks if a field is a valid number within range
+func validateNumber(field, fieldName string, min, max int) error {
+	num, err := strconv.Atoi(field)
+	if err != nil {
+		return fmt.Errorf("%s field '%s' must be a number", fieldName, field)
+	}
+	// Use Kubernetes validation utilities for range checking
+	if errs := validation.IsInRange(num, min, max); len(errs) > 0 {
+		return fmt.Errorf("%s field '%s': %s", fieldName, field, strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+// validateRange validates range expressions like "1-5"
+func validateRange(field, fieldName string, min, max int) error {
+	parts := strings.Split(field, "-")
+	if len(parts) != 2 {
+		return fmt.Errorf("%s field '%s' has invalid range format", fieldName, field)
+	}
+
+	start, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return fmt.Errorf("%s field '%s' range start must be a number", fieldName, field)
+	}
+	end, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return fmt.Errorf("%s field '%s' range end must be a number", fieldName, field)
+	}
+
+	// Use Kubernetes validation for range checking
+	if errs := validation.IsInRange(start, min, max); len(errs) > 0 {
+		return fmt.Errorf("%s field '%s' range start: %s", fieldName, field, strings.Join(errs, "; "))
+	}
+	if errs := validation.IsInRange(end, min, max); len(errs) > 0 {
+		return fmt.Errorf("%s field '%s' range end: %s", fieldName, field, strings.Join(errs, "; "))
+	}
+	if start > end {
+		return fmt.Errorf("%s field '%s' range start cannot be greater than end", fieldName, field)
+	}
+
+	return nil
+}
+
+// validateList validates comma-separated lists like "1,3,5"
+func validateList(field, fieldName string, min, max int) error {
+	parts := strings.Split(field, ",")
+	if len(parts) == 0 {
+		return fmt.Errorf("%s field '%s' has invalid list format", fieldName, field)
+	}
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return fmt.Errorf("%s field '%s' has empty list element", fieldName, field)
+		}
+
+		// Each part can be a number, range, or step
+		if strings.Contains(part, "-") {
+			if err := validateRange(part, fieldName, min, max); err != nil {
+				return err
+			}
+		} else if strings.Contains(part, "/") {
+			if err := validateStep(part, fieldName, min, max); err != nil {
+				return err
+			}
+		} else {
+			if err := validateNumber(part, fieldName, min, max); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// validateStep validates step expressions like "*/5" or "1-10/2"
+func validateStep(field, fieldName string, min, max int) error {
+	parts := strings.Split(field, "/")
+	if len(parts) != 2 {
+		return fmt.Errorf("%s field '%s' has invalid step format", fieldName, field)
+	}
+
+	stepValue, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return fmt.Errorf("%s field '%s' step value must be a number", fieldName, field)
+	}
+	if stepValue <= 0 {
+		return fmt.Errorf("%s field '%s' step value must be positive", fieldName, field)
+	}
+
+	// Validate the base part (before the slash)
+	basePart := parts[0]
+	if basePart == "*" {
+		// */5 is valid
+		return nil
+	}
+
+	// Handle range with step like "1-10/2"
+	if strings.Contains(basePart, "-") {
+		return validateRange(basePart, fieldName, min, max)
+	}
+
+	// Handle simple number with step like "5/2" (though this is unusual)
+	return validateNumber(basePart, fieldName, min, max)
+}
+
+// ValidateScheduleName validates the custom schedule name if provided
+func (o *CreateOptions) ValidateScheduleName() error {
+	if o.ScheduleName != "" {
+		// Kubernetes resource names must be 63 characters or less
+		if len(o.ScheduleName) > 63 {
+			return fmt.Errorf("schedule name '%s' is too long (%d characters). Kubernetes resource names must be 63 characters or less. Use --name to specify a shorter custom name", o.ScheduleName, len(o.ScheduleName))
+		}
+		// Use Kubernetes official DNS subdomain validation
+		if errs := validation.IsDNS1123Subdomain(o.ScheduleName); len(errs) > 0 {
+			return fmt.Errorf("schedule name '%s' is invalid: %s", o.ScheduleName, strings.Join(errs, "; "))
+		}
+	}
 	return nil
 }
 
@@ -276,34 +472,34 @@ func normalizeScheduleExpression(schedule string) string {
 	// Map of common schedule verbs to cron expressions
 	scheduleVerbs := map[string]string{
 		// Standard @ verbs (commonly used in Velero)
-		"@yearly":    "0 0 1 1 *",     // January 1st at midnight
-		"@annually":  "0 0 1 1 *",     // Same as @yearly
-		"@monthly":   "0 0 1 * *",     // 1st day of month at midnight
-		"@weekly":    "0 0 * * 0",     // Sunday at midnight
-		"@daily":     "0 0 * * *",     // Every day at midnight
-		"@midnight":  "0 0 * * *",     // Same as @daily
-		"@hourly":    "0 * * * *",     // Every hour at minute 0
+		"@yearly":   "0 0 1 1 *", // January 1st at midnight
+		"@annually": "0 0 1 1 *", // Same as @yearly
+		"@monthly":  "0 0 1 * *", // 1st day of month at midnight
+		"@weekly":   "0 0 * * 0", // Sunday at midnight
+		"@daily":    "0 0 * * *", // Every day at midnight
+		"@midnight": "0 0 * * *", // Same as @daily
+		"@hourly":   "0 * * * *", // Every hour at minute 0
 
 		// Simple verbs (user-friendly)
-		"yearly":     "0 0 1 1 *",     // January 1st at midnight
-		"annually":   "0 0 1 1 *",     // Same as yearly
-		"monthly":    "0 0 1 * *",     // 1st day of month at midnight
-		"weekly":     "0 0 * * 0",     // Sunday at midnight
-		"daily":      "0 0 * * *",     // Every day at midnight
-		"hourly":     "0 * * * *",     // Every hour at minute 0
+		"yearly":   "0 0 1 1 *", // January 1st at midnight
+		"annually": "0 0 1 1 *", // Same as yearly
+		"monthly":  "0 0 1 * *", // 1st day of month at midnight
+		"weekly":   "0 0 * * 0", // Sunday at midnight
+		"daily":    "0 0 * * *", // Every day at midnight
+		"hourly":   "0 * * * *", // Every hour at minute 0
 
 		// Alternative daily schedules with different times
-		"daily-1am":  "0 1 * * *",     // Every day at 1 AM
-		"daily-2am":  "0 2 * * *",     // Every day at 2 AM
-		"daily-3am":  "0 3 * * *",     // Every day at 3 AM
-		"daily-6am":  "0 6 * * *",     // Every day at 6 AM
-		"daily-noon": "0 12 * * *",    // Every day at noon
+		"daily-1am":  "0 1 * * *",  // Every day at 1 AM
+		"daily-2am":  "0 2 * * *",  // Every day at 2 AM
+		"daily-3am":  "0 3 * * *",  // Every day at 3 AM
+		"daily-6am":  "0 6 * * *",  // Every day at 6 AM
+		"daily-noon": "0 12 * * *", // Every day at noon
 
 		// Alternative weekly schedules
-		"weekly-sunday":    "0 0 * * 0",  // Sunday at midnight
-		"weekly-monday":    "0 0 * * 1",  // Monday at midnight
-		"weekly-friday":    "0 0 * * 5",  // Friday at midnight
-		"weekly-saturday":  "0 0 * * 6",  // Saturday at midnight
+		"weekly-sunday":   "0 0 * * 0", // Sunday at midnight
+		"weekly-monday":   "0 0 * * 1", // Monday at midnight
+		"weekly-friday":   "0 0 * * 5", // Friday at midnight
+		"weekly-saturday": "0 0 * * 6", // Saturday at midnight
 	}
 
 	// Look up the normalized input in our map
@@ -313,10 +509,4 @@ func normalizeScheduleExpression(schedule string) string {
 
 	// If not found in map, return original schedule (might be a valid cron expression)
 	return schedule
-}
-
-// generateScheduleName creates a schedule name using the format: {hcName}-{hcNamespace}-schedule-{randomSuffix}
-func generateScheduleName(hcName, hcNamespace string, randomGen func(int) string) string {
-	randomSuffix := randomGen(6)
-	return fmt.Sprintf("%s-%s-schedule-%s", hcName, hcNamespace, randomSuffix)
 }

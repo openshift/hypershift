@@ -29,6 +29,7 @@ type CreateOptions struct {
 	Render        bool
 
 	// Backup-specific optional flags
+	BackupCustomName         string
 	StorageLocation          string
 	TTL                      time.Duration
 	SnapshotMoveData         bool
@@ -51,9 +52,6 @@ type CreateOptions struct {
 	Log    logr.Logger
 	Client client.Client
 }
-
-// randomStringGenerator is a function type for generating random strings
-type randomStringGenerator func(int) string
 
 var (
 	// Base resources common to all platforms

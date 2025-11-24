@@ -131,10 +131,10 @@ func TestScheduleCLIConfiguration(t *testing.T) {
 				TTL:                      24 * time.Hour,
 				SnapshotMoveData:         false,
 				DefaultVolumesToFsBackup: true,
-				Schedule:                 "0 1 * * 0",   // Weekly on Sunday at 1 AM
-				Paused:                   true,          // Start paused
-				UseOwnerReferences:       true,          // Use owner references
-				SkipImmediately:          true,          // Skip immediate backup
+				Schedule:                 "0 1 * * 0", // Weekly on Sunday at 1 AM
+				Paused:                   true,        // Start paused
+				UseOwnerReferences:       true,        // Use owner references
+				SkipImmediately:          true,        // Skip immediate backup
 			},
 			wantErr: false,
 			validate: func(g Gomega, schedule map[string]interface{}) {
@@ -434,4 +434,174 @@ func validateScheduleBackupTemplate(t *testing.T, obj map[string]interface{}, pl
 	dataMover, exists := templateMap["dataMover"]
 	g.Expect(exists).To(BeTrue(), "dataMover should exist in template")
 	g.Expect(dataMover).To(Equal("velero"), "dataMover should be 'velero'")
+}
+
+// TestScheduleVeleroVerbsIntegration validates that Velero schedule verbs are correctly converted to cron expressions
+func TestScheduleVeleroVerbsIntegration(t *testing.T) {
+	tests := []struct {
+		name             string
+		scheduleInput    string
+		expectedCronExpr string
+	}{
+		{
+			name:             "Daily verb",
+			scheduleInput:    "daily",
+			expectedCronExpr: "0 0 * * *",
+		},
+		{
+			name:             "Weekly verb",
+			scheduleInput:    "weekly",
+			expectedCronExpr: "0 0 * * 0",
+		},
+		{
+			name:             "@hourly verb",
+			scheduleInput:    "@hourly",
+			expectedCronExpr: "0 * * * *",
+		},
+		{
+			name:             "daily-2am verb",
+			scheduleInput:    "daily-2am",
+			expectedCronExpr: "0 2 * * *",
+		},
+		{
+			name:             "weekly-friday verb",
+			scheduleInput:    "weekly-friday",
+			expectedCronExpr: "0 0 * * 5",
+		},
+		{
+			name:             "Case insensitive DAILY",
+			scheduleInput:    "DAILY",
+			expectedCronExpr: "0 0 * * *",
+		},
+		{
+			name:             "Direct cron expression",
+			scheduleInput:    "30 14 * * 1-5",
+			expectedCronExpr: "30 14 * * 1-5",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			opts := &oadp.CreateOptions{
+				HCName:          "test-cluster",
+				HCNamespace:     "test-cluster-ns",
+				Schedule:        tt.scheduleInput,
+				OADPNamespace:   "openshift-adp",
+				StorageLocation: "default",
+				TTL:             2 * time.Hour,
+			}
+
+			// Test schedule normalization and validation
+			err := opts.ValidateSchedulePace()
+			g.Expect(err).ToNot(HaveOccurred(), "Schedule validation should succeed for %s", tt.scheduleInput)
+
+			// Verify the schedule was normalized to the expected cron expression
+			g.Expect(opts.Schedule).To(Equal(tt.expectedCronExpr),
+				"Schedule '%s' should be normalized to '%s'", tt.scheduleInput, tt.expectedCronExpr)
+
+			// Generate the schedule object and verify the cron expression is used
+			schedule, _, err := opts.GenerateScheduleObject("AWS")
+			g.Expect(err).ToNot(HaveOccurred(), "Failed to generate schedule object")
+
+			// Extract schedule from the generated object
+			spec, exists := schedule.Object["spec"].(map[string]interface{})
+			g.Expect(exists).To(BeTrue(), "Schedule should have spec field")
+
+			actualSchedule, exists := spec["schedule"]
+			g.Expect(exists).To(BeTrue(), "Schedule spec should have schedule field")
+			g.Expect(actualSchedule).To(Equal(tt.expectedCronExpr),
+				"Generated schedule should contain the correct cron expression")
+
+			t.Logf("✅ Schedule verb '%s' correctly normalized to '%s'", tt.scheduleInput, tt.expectedCronExpr)
+		})
+	}
+}
+
+// TestScheduleIncludedNamespacesIntegration validates that the --include-additional-namespaces flag works correctly for schedules
+func TestScheduleIncludedNamespacesIntegration(t *testing.T) {
+	tests := []struct {
+		name               string
+		hcName             string
+		hcNamespace        string
+		includeNamespaces  []string
+		expectedNamespaces []string
+	}{
+		{
+			name:               "Default namespaces for schedule",
+			hcName:             "prod-cluster",
+			hcNamespace:        "production-ns",
+			includeNamespaces:  nil,
+			expectedNamespaces: []string{"production-ns", "production-ns-prod-cluster"},
+		},
+		{
+			name:               "Additional namespaces added to defaults for schedule",
+			hcName:             "test-cluster",
+			hcNamespace:        "test-ns",
+			includeNamespaces:  []string{"custom-app-ns", "custom-data-ns"},
+			expectedNamespaces: []string{"test-ns", "test-ns-test-cluster", "custom-app-ns", "custom-data-ns"},
+		},
+		{
+			name:               "Single additional namespace for schedule",
+			hcName:             "demo-cluster",
+			hcNamespace:        "demo-ns",
+			includeNamespaces:  []string{"demo-app"},
+			expectedNamespaces: []string{"demo-ns", "demo-ns-demo-cluster", "demo-app"},
+		},
+		{
+			name:               "Multiple additional namespaces for schedule",
+			hcName:             "multi-cluster",
+			hcNamespace:        "multi-ns",
+			includeNamespaces:  []string{"ns1", "ns2", "ns3"},
+			expectedNamespaces: []string{"multi-ns", "multi-ns-multi-cluster", "ns1", "ns2", "ns3"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			opts := &oadp.CreateOptions{
+				HCName:            tt.hcName,
+				HCNamespace:       tt.hcNamespace,
+				Schedule:          "0 2 * * *", // Daily at 2 AM
+				IncludeNamespaces: tt.includeNamespaces,
+				OADPNamespace:     "openshift-adp",
+				StorageLocation:   "default",
+				TTL:               2 * time.Hour,
+			}
+
+			schedule, _, err := opts.GenerateScheduleObject("AWS")
+			g.Expect(err).ToNot(HaveOccurred(), "Failed to generate schedule object")
+
+			// Extract included namespaces from schedule backup template
+			spec, exists := schedule.Object["spec"].(map[string]interface{})
+			g.Expect(exists).To(BeTrue(), "Schedule should have spec field")
+
+			template, exists := spec["template"].(map[string]interface{})
+			g.Expect(exists).To(BeTrue(), "Schedule spec should have template field")
+
+			includedNamespacesInterface, exists := template["includedNamespaces"]
+			g.Expect(exists).To(BeTrue(), "Schedule template should have includedNamespaces field")
+
+			// Convert to string slice
+			var includedNamespaces []string
+			if nsSlice, ok := includedNamespacesInterface.([]string); ok {
+				includedNamespaces = nsSlice
+			} else if nsInterfaceSlice, ok := includedNamespacesInterface.([]interface{}); ok {
+				for _, ns := range nsInterfaceSlice {
+					includedNamespaces = append(includedNamespaces, ns.(string))
+				}
+			} else {
+				t.Fatalf("includedNamespaces has unexpected type: %T", includedNamespacesInterface)
+			}
+
+			// Verify namespaces match expected
+			g.Expect(includedNamespaces).To(Equal(tt.expectedNamespaces),
+				"Schedule included namespaces should match expected for test case: %s", tt.name)
+
+			t.Logf("✅ Schedule included namespaces validated: %v", includedNamespaces)
+		})
+	}
 }
