@@ -3,6 +3,7 @@ package karpenter
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -17,13 +18,15 @@ import (
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
@@ -41,6 +44,16 @@ import (
 
 const (
 	karpenterFinalizer = "hypershift.openshift.io/karpenter-finalizer"
+
+	// NodeClaimDeletionTimeout is the timeout for the deletion of a NodeClaim during cluster deletion.
+	// If the timeout is reached, the underlying node instance will be deleted directly without waiting for graceful termination.
+	NodeClaimDeletionTimeout = 3 * time.Minute
+
+	// KarpenterDeletionRequeueInterval is the interval at which the controller will requeue deletion of Karpenter resources during a hosted cluster deletion.
+	KarpenterDeletionRequeueInterval = 15 * time.Second
+
+	// KarpenterInstanceTerminationAttemptedAnnotation is a tracking annotation to prevent repeated calls to terminate the underlying node instance.
+	KarpenterInstanceTerminationAttemptedAnnotation = "hypershift.openshift.io/karpenter-instance-termination-attempted"
 )
 
 var (
@@ -59,6 +72,10 @@ type Reconciler struct {
 	ControlPlaneContext       controlplanecomponent.ControlPlaneContext
 	ReleaseProvider           releaseinfo.Provider
 	upsert.CreateOrUpdateProvider
+
+	EC2ClientFactory func(region string) (ec2iface.EC2API, error)
+	// Cached EC2 client
+	ec2Client ec2iface.EC2API
 }
 
 func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, managementCluster cluster.Cluster) error {
@@ -178,45 +195,74 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	if hcp.DeletionTimestamp != nil {
 		if controllerutil.ContainsFinalizer(hcp, karpenterFinalizer) {
+			// The deletion flow is:
+			// 1. Delete all NodePools (NodeClaims will be marked for deletion from deleting the NodePools due to ownerReferences)
+			// 2. Make sure all NodeClaims are actually gone (gracefully first)
+			// 3. If graceful timeout, forcefully terminate the underlying instance to bypass PDBs, preStop hooks, etc.
+			// 4. Remove the finalizer from the HostedControlPlane to allow the rest of the HCP deletion to complete
+
+			// Karpenter itself will make sure Nodes objects are deleted (and underlying instances are terminated) before finalizing the NodeClaims
 			nodePoolList := &karpenterv1.NodePoolList{}
 			if err := r.GuestClient.List(ctx, nodePoolList); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to list NodePools: %w", err)
+				return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to list NodePools: %w", err)
 			}
 
-			for _, nodePool := range nodePoolList.Items {
-				// If we still get the NodePool, but it's already marked as terminating, we don't need to call Delete again
-				if !nodePool.GetDeletionTimestamp().IsZero() {
-					continue
-				}
-				if err := r.GuestClient.Delete(ctx, &nodePool, &client.DeleteOptions{
-					PropagationPolicy: ptr.To(metav1.DeletePropagationForeground),
-				}); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to delete NodePool: %w", err)
-				}
-			}
-			// Wait until all NodePools are deleted before removing the finalizer
+			// Delete all NodePools first
 			if len(nodePoolList.Items) > 0 {
-				log.Info("Waiting for NodePools to be deleted, requeueing...", "count", len(nodePoolList.Items))
-				return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+				for _, nodePool := range nodePoolList.Items {
+					// If we still get the NodePool, but it's already marked as terminating, we don't need to call Delete again
+					if !nodePool.GetDeletionTimestamp().IsZero() {
+						continue
+					}
+					if err := r.GuestClient.Delete(ctx, &nodePool, &client.DeleteOptions{
+						GracePeriodSeconds: ptr.To(int64(0)),
+					}); err != nil {
+						return ctrl.Result{}, fmt.Errorf("failed to delete NodePool: %w", err)
+					}
+				}
+				return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, nil
 			}
 
+			// Make sure all NodeClaims are actually gone (gracefully first)
 			nodeClaimList := &karpenterv1.NodeClaimList{}
-			// Make sure all NodeClaims are actually gone
 			if err := r.GuestClient.List(ctx, nodeClaimList); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to list NodeClaims: %w", err)
+				return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to list NodeClaims: %w", err)
 			}
 			if len(nodeClaimList.Items) > 0 {
-				log.Info("Waiting for NodeClaims to be deleted, requeueing...", "count", len(nodeClaimList.Items))
-				return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-			}
+				var elapsed time.Duration
+				for _, nodeClaim := range nodeClaimList.Items {
+					if nodeClaim.DeletionTimestamp == nil {
+						// This should not happen; log and explicitly delete to avoid HCP deletion getting stuck.
+						log.Info("NodeClaim has no deletion timestamp during HostedControlPlane deletion, deleting explicitly",
+							"nodeClaim", nodeClaim.Name)
+						if err := r.GuestClient.Delete(ctx, &nodeClaim, &client.DeleteOptions{
+							GracePeriodSeconds: ptr.To(int64(0)),
+						}); err != nil && !apierrors.IsNotFound(err) {
+							log.Error(err, "Failed to delete NodeClaim without deletion timestamp", "nodeClaim", nodeClaim.Name)
+						}
+						continue
+					}
+					elapsed = time.Since(nodeClaim.DeletionTimestamp.Time)
+					if elapsed < NodeClaimDeletionTimeout {
+						continue
+					}
 
-			originalHCP := hcp.DeepCopy()
-			controllerutil.RemoveFinalizer(hcp, karpenterFinalizer)
-			if err := r.ManagementClient.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
+					if err := r.handleNodeClaimTimeout(ctx, hcp, &nodeClaim); err != nil {
+						log.Error(err, "Failed to handle NodeClaim timeout", "nodeClaim", nodeClaim.Name)
+					}
+				}
+				// All NodeClaims should have similar deletion timestamps
+				log.Info("Waiting for NodeClaims to be deleted, requeueing...", "nodeClaimCount", len(nodeClaimList.Items), "elapsed", elapsed)
+				return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, nil
 			}
-			log.Info("Successfully removed all Karpenter NodePools and NodeClaims")
 		}
+
+		originalHCP := hcp.DeepCopy()
+		controllerutil.RemoveFinalizer(hcp, karpenterFinalizer)
+		if err := r.ManagementClient.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+			return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
+		}
+		log.Info("Successfully removed all Karpenter NodePools and NodeClaims")
 		return ctrl.Result{}, nil
 	}
 	if !controllerutil.ContainsFinalizer(hcp, karpenterFinalizer) {
@@ -328,4 +374,111 @@ func (r *Reconciler) getHCP(ctx context.Context) (*hyperv1.HostedControlPlane, e
 	}
 
 	return &hcpList.Items[0], nil
+}
+
+// handleNodeClaimTimeout handles the timeout of a NodeClaim during cluster deletion.
+func (r *Reconciler) handleNodeClaimTimeout(ctx context.Context, hcp *hyperv1.HostedControlPlane, nodeClaim *karpenterv1.NodeClaim) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	// Check if we've already attempted termination
+	if nodeClaim.Annotations[KarpenterInstanceTerminationAttemptedAnnotation] == "true" {
+		log.Info("Instance termination already attempted, skipping", "nodeClaim", nodeClaim.Name)
+		return nil
+	}
+
+	log.Info("NodeClaim deletion timeout exceeded, terminating instance", "nodeClaim", nodeClaim.Name, "platformType", hcp.Spec.Platform.Type)
+
+	// We terminate the underlying cloud instance directly, because we emulate Karpenter deletion behavior.
+	// Through its own control flow, Karpenter terminates instances directly by through the cloudprovider API when a NodeClaim terminationGracePeriod is reached.
+	// If a terminationGracePeriod is not set, Nodes and instances will be hung indefinitely if there are problems like blocking PDBs or volumes not being detached.
+
+	// Since we can't hook into Karpenter itself nor set a default terminationGracePeriod, instead we terminate the instance directly here.
+	// Karpenter will then notice the instance is deleted because the corresponding Node will have a NotReady condition, and then delete the Node API object.
+	if err := r.terminateInstance(ctx, hcp, nodeClaim); err != nil {
+		return fmt.Errorf("failed to terminate instance: %w", err)
+	}
+
+	if err := r.markTerminationAttempted(ctx, nodeClaim); err != nil {
+		log.Error(err, "Failed to mark termination attempted", "nodeClaim", nodeClaim.Name)
+	}
+
+	return nil
+}
+
+// getOrCreateEC2Client returns a cached EC2 client, or creates one if not yet initialized.
+func (r *Reconciler) getOrCreateEC2Client(region string) (ec2iface.EC2API, error) {
+	if r.ec2Client != nil {
+		return r.ec2Client, nil
+	}
+
+	client, err := r.EC2ClientFactory(region)
+	if err != nil {
+		return nil, err
+	}
+
+	r.ec2Client = client
+	return client, nil
+}
+
+// terminateInstance terminates underlying node machine instances depending on the platform type
+func (r *Reconciler) terminateInstance(ctx context.Context, hcp *hyperv1.HostedControlPlane, nodeClaim *karpenterv1.NodeClaim) error {
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		return r.terminateInstanceAWS(ctx, hcp, nodeClaim)
+	default:
+		return fmt.Errorf("unsupported platform type: %s", hcp.Spec.Platform.Type)
+	}
+}
+
+func (r *Reconciler) terminateInstanceAWS(ctx context.Context, hcp *hyperv1.HostedControlPlane, nodeClaim *karpenterv1.NodeClaim) error {
+	ec2Client, err := r.getOrCreateEC2Client(hcp.Spec.Platform.AWS.Region)
+	if err != nil {
+		return fmt.Errorf("failed to get EC2 client: %w", err)
+	}
+
+	instanceID := parseEC2InstanceIDFromProviderID(nodeClaim.Status.ProviderID)
+	if instanceID == "" {
+		return fmt.Errorf("failed to parse instance ID from providerID: %s", nodeClaim.Status.ProviderID)
+	}
+
+	_, err = ec2Client.TerminateInstancesWithContext(ctx, &ec2.TerminateInstancesInput{
+		InstanceIds: []*string{aws.String(instanceID)},
+	})
+	return err
+}
+
+func parseEC2InstanceIDFromProviderID(providerID string) string {
+	// providerID format: aws:///<availability-zone>/<instance-id>
+	// Example: aws:///us-east-1a/i-0123456789abcdef0
+
+	// Validate scheme
+	if !strings.HasPrefix(providerID, "aws://") {
+		return ""
+	}
+
+	// Split and validate structure
+	parts := strings.Split(providerID, "/")
+	// Expected format: ["aws:", "", "", "<zone>", "<instance-id>"]
+	// Minimum valid length is 5 (scheme + 2 empty parts + zone + instance-id)
+	if len(parts) < 5 {
+		return ""
+	}
+
+	instanceID := parts[len(parts)-1]
+
+	// Validate instance ID format (must start with "i-")
+	if !strings.HasPrefix(instanceID, "i-") {
+		return ""
+	}
+
+	return instanceID
+}
+
+func (r *Reconciler) markTerminationAttempted(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) error {
+	patch := client.MergeFrom(nodeClaim.DeepCopy())
+	if nodeClaim.Annotations == nil {
+		nodeClaim.Annotations = make(map[string]string)
+	}
+	nodeClaim.Annotations[KarpenterInstanceTerminationAttemptedAnnotation] = "true"
+	return r.GuestClient.Patch(ctx, nodeClaim, patch)
 }
