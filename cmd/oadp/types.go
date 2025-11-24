@@ -21,6 +21,9 @@ type CreateOptions struct {
 	BackupName   string
 	ScheduleName string
 
+	// Schedule-specific required flags
+	Schedule string
+
 	// Optional flags with defaults (common)
 	OADPNamespace string
 	Render        bool
@@ -38,6 +41,11 @@ type CreateOptions struct {
 	IncludeNamespaces      []string
 	RestorePVs             *bool
 	PreserveNodePorts      *bool
+
+	// Schedule-specific optional flags
+	Paused             bool
+	UseOwnerReferences bool
+	SkipImmediately    bool
 
 	// Client context (common)
 	Log    logr.Logger

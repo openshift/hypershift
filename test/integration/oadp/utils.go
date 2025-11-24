@@ -24,6 +24,11 @@ func downloadRestoreCRD() (*apiextensionsv1.CustomResourceDefinition, error) {
 	return downloadCRDWithTimeout("https://raw.githubusercontent.com/vmware-tanzu/velero/v1.14.1/config/crd/v1/bases/velero.io_restores.yaml")
 }
 
+// downloadScheduleCRD downloads the Velero Schedule CRD with timeout protection
+func downloadScheduleCRD() (*apiextensionsv1.CustomResourceDefinition, error) {
+	return downloadCRDWithTimeout("https://raw.githubusercontent.com/vmware-tanzu/velero/v1.14.1/config/crd/v1/bases/velero.io_schedules.yaml")
+}
+
 // downloadCRDWithTimeout downloads a CRD from the given URL with timeout protection
 // Network timeout for CRD downloads is set to 10 seconds
 func downloadCRDWithTimeout(url string) (*apiextensionsv1.CustomResourceDefinition, error) {

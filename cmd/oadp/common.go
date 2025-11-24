@@ -45,3 +45,18 @@ func getDefaultResourcesForPlatform(platform string) []string {
 
 	return result
 }
+
+// buildIncludedNamespaces builds the list of namespaces to include in backup/schedule/restore operations
+// If customNamespaces is provided, it uses those; otherwise it generates default namespaces
+func buildIncludedNamespaces(hcNamespace, hcName string, customNamespaces []string) []string {
+	// If user specified custom namespaces, use those instead of defaults
+	if len(customNamespaces) > 0 {
+		return customNamespaces
+	}
+
+	// Otherwise use default namespaces for hosted cluster
+	return []string{
+		hcNamespace,
+		fmt.Sprintf("%s-%s", hcNamespace, hcName),
+	}
+}

@@ -179,7 +179,7 @@ func TestBuildIncludedNamespaces(t *testing.T) {
 		HCName:      "test-cluster",
 		HCNamespace: "test-cluster-ns",
 	}
-	namespaces := opts.buildIncludedNamespaces()
+	namespaces := buildIncludedNamespaces(opts.HCNamespace, opts.HCName, nil)
 	expected := []string{"test-cluster-ns", "test-cluster-ns-test-cluster"}
 	if len(namespaces) != 2 || namespaces[0] != expected[0] || namespaces[1] != expected[1] {
 		t.Errorf("buildIncludedNamespaces() = %v, want %v", namespaces, expected)
@@ -187,7 +187,7 @@ func TestBuildIncludedNamespaces(t *testing.T) {
 
 	// Test custom namespaces override
 	opts.IncludeNamespaces = []string{"custom-ns1", "custom-ns2"}
-	namespaces = opts.buildIncludedNamespaces()
+	namespaces = buildIncludedNamespaces(opts.HCNamespace, opts.HCName, opts.IncludeNamespaces)
 	expected = []string{"custom-ns1", "custom-ns2"}
 	if len(namespaces) != 2 || namespaces[0] != expected[0] || namespaces[1] != expected[1] {
 		t.Errorf("buildIncludedNamespaces() with custom = %v, want %v", namespaces, expected)

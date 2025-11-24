@@ -320,7 +320,7 @@ func (o *CreateOptions) GenerateRestoreObject() (*unstructured.Unstructured, str
 	}
 
 	// Build included namespaces list
-	includedNamespaces := o.buildIncludedNamespaces()
+	includedNamespaces := buildIncludedNamespaces(o.HCNamespace, o.HCName, o.IncludeNamespaces)
 
 	// Convert string slices to interface slices for unstructured objects
 	includedNamespacesInterface := make([]interface{}, len(includedNamespaces))
@@ -365,15 +365,3 @@ func (o *CreateOptions) GenerateRestoreObject() (*unstructured.Unstructured, str
 	return restore, restoreName, nil
 }
 
-func (o *CreateOptions) buildIncludedNamespaces() []string {
-	// If user specified custom namespaces, use those instead of defaults
-	if len(o.IncludeNamespaces) > 0 {
-		return o.IncludeNamespaces
-	}
-
-	// Otherwise use default namespaces for hosted cluster
-	return []string{
-		o.HCNamespace,
-		fmt.Sprintf("%s-%s", o.HCNamespace, o.HCName),
-	}
-}

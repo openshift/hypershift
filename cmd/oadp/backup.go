@@ -208,10 +208,7 @@ func (o *CreateOptions) GenerateBackupObjectWithPlatform(platform string) (*unst
 				},
 			},
 			"spec": map[string]interface{}{
-				"includedNamespaces": []string{
-					o.HCNamespace,
-					fmt.Sprintf("%s-%s", o.HCNamespace, o.HCName),
-				},
+				"includedNamespaces": buildIncludedNamespaces(o.HCNamespace, o.HCName, nil),
 				"includedResources":        includedResources,
 				"storageLocation":          o.StorageLocation,
 				"ttl":                      o.TTL.String(),
