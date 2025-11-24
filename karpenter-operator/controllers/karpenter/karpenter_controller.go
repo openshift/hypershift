@@ -23,7 +23,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
@@ -41,6 +40,13 @@ import (
 
 const (
 	karpenterFinalizer = "hypershift.openshift.io/karpenter-finalizer"
+
+	// NodeClaimDeletionTimeout is the timeout for the deletion of a NodeClaim during cluster deletion.
+	// If the timeout is reached, the NodeClaim will be forcefully deleted by setting the termination timestamp annotation.
+	NodeClaimDeletionTimeout = 3 * time.Minute
+
+	// KarpenterDeletionRequeueInterval is the interval at which the controller will requeue deletion of Karpenter resources during a hosted cluster deletion.
+	KarpenterDeletionRequeueInterval = 15 * time.Second
 )
 
 var (
@@ -143,10 +149,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	hcp, err := r.getHCP(ctx)
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
-		}
 		return ctrl.Result{}, err
+	}
+	if hcp == nil {
+		log.Info("HostedControlPlane not found")
+		return ctrl.Result{}, nil
 	}
 
 	// Setup for ControlPlaneContext and the Karpenter control plane v2 component.
@@ -177,46 +184,75 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	if hcp.DeletionTimestamp != nil {
+		// TODO(maxcao13): if supporting disablement, we don't want to force delete immediately.
+		// When force=true, we skip the graceful timeout and immediately trigger forceful deletion.
+		// When force=false, we wait for NodeClaimDeletionTimeout before triggering forceful deletion.
+		force := true
 		if controllerutil.ContainsFinalizer(hcp, karpenterFinalizer) {
+			// The deletion flow is:
+			// 1. Delete all NodePools (NodeClaims will be marked for deletion from deleting the NodePools due to ownerReferences)
+			// 2. Make sure all NodeClaims are actually gone (gracefully first, unless force=true)
+			// 3. If graceful timeout or force=true, set the termination timestamp annotation to trigger Karpenter's forceful deletion
+			// 4. Remove the finalizer from the HostedControlPlane to allow the rest of the HCP deletion to complete
+
+			// Karpenter itself will make sure Nodes objects are deleted (and underlying instances are terminated) before finalizing the NodeClaims
 			nodePoolList := &karpenterv1.NodePoolList{}
 			if err := r.GuestClient.List(ctx, nodePoolList); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to list NodePools: %w", err)
+				return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to list NodePools: %w", err)
 			}
 
-			for _, nodePool := range nodePoolList.Items {
-				// If we still get the NodePool, but it's already marked as terminating, we don't need to call Delete again
-				if !nodePool.GetDeletionTimestamp().IsZero() {
-					continue
-				}
-				if err := r.GuestClient.Delete(ctx, &nodePool, &client.DeleteOptions{
-					PropagationPolicy: ptr.To(metav1.DeletePropagationForeground),
-				}); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to delete NodePool: %w", err)
-				}
-			}
-			// Wait until all NodePools are deleted before removing the finalizer
+			// Delete all NodePools first
 			if len(nodePoolList.Items) > 0 {
-				log.Info("Waiting for NodePools to be deleted, requeueing...", "count", len(nodePoolList.Items))
-				return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
+				for _, nodePool := range nodePoolList.Items {
+					// If we still get the NodePool, but it's already marked as terminating, we don't need to call Delete again
+					if !nodePool.GetDeletionTimestamp().IsZero() {
+						continue
+					}
+					if err := r.GuestClient.Delete(ctx, &nodePool, &client.DeleteOptions{
+						GracePeriodSeconds: ptr.To(int64(0)),
+					}); err != nil {
+						return ctrl.Result{}, fmt.Errorf("failed to delete NodePool: %w", err)
+					}
+				}
+				return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, nil
 			}
 
+			// Make sure all NodeClaims are actually gone (gracefully first)
 			nodeClaimList := &karpenterv1.NodeClaimList{}
-			// Make sure all NodeClaims are actually gone
 			if err := r.GuestClient.List(ctx, nodeClaimList); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to list NodeClaims: %w", err)
+				return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to list NodeClaims: %w", err)
 			}
 			if len(nodeClaimList.Items) > 0 {
-				log.Info("Waiting for NodeClaims to be deleted, requeueing...", "count", len(nodeClaimList.Items))
-				return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
-			}
+				var elapsed time.Duration
+				for _, nodeClaim := range nodeClaimList.Items {
+					if nodeClaim.DeletionTimestamp == nil {
+						// This could happen if a NodeClaim has been orphaned without a NodePool owner ref
+						log.Info("NodeClaim has no deletion timestamp during deletion, deleting explicitly", "nodeClaim", nodeClaim.Name)
+						if err := r.GuestClient.Delete(ctx, &nodeClaim, &client.DeleteOptions{GracePeriodSeconds: ptr.To(int64(0))}); err != nil {
+							return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to delete NodeClaim: %w", err)
+						}
+						continue
+					}
+					elapsed = time.Since(nodeClaim.DeletionTimestamp.Time)
+					if !force && elapsed < NodeClaimDeletionTimeout {
+						continue
+					}
 
-			originalHCP := hcp.DeepCopy()
-			controllerutil.RemoveFinalizer(hcp, karpenterFinalizer)
-			if err := r.ManagementClient.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
+					if err := r.handleForcefulNodeClaimDeletion(ctx, &nodeClaim); err != nil {
+						return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to handle forceful NodeClaim deletion: %w", err)
+					}
+				}
+				log.Info("Waiting for NodeClaims to be deleted, requeueing...", "nodeClaimCount", len(nodeClaimList.Items), "elapsed", elapsed)
+				return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, nil
 			}
-			log.Info("Successfully removed all Karpenter NodePools and NodeClaims")
 		}
+
+		originalHCP := hcp.DeepCopy()
+		controllerutil.RemoveFinalizer(hcp, karpenterFinalizer)
+		if err := r.ManagementClient.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+			return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
+		}
+		log.Info("Successfully removed all Karpenter NodePools and NodeClaims")
 		return ctrl.Result{}, nil
 	}
 	if !controllerutil.ContainsFinalizer(hcp, karpenterFinalizer) {
@@ -324,8 +360,35 @@ func (r *Reconciler) getHCP(ctx context.Context) (*hyperv1.HostedControlPlane, e
 		return nil, err
 	}
 	if len(hcpList.Items) == 0 {
-		return nil, fmt.Errorf("failed to find HostedControlPlane in namespace %s", r.Namespace)
+		return nil, nil
 	}
 
 	return &hcpList.Items[0], nil
+}
+
+// handleForcefulNodeClaimDeletion handles the timeout of a NodeClaim during cluster deletion.
+func (r *Reconciler) handleForcefulNodeClaimDeletion(ctx context.Context, nodeClaim *karpenterv1.NodeClaim) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	// Check if we've already attempted termination
+	if nodeClaim.Annotations[karpenterv1.NodeClaimTerminationTimestampAnnotationKey] != "" {
+		log.Info("NodeClaim termination already attempted, skipping", "nodeClaim", nodeClaim.Name)
+		return nil
+	}
+
+	log.Info("Allowing Karpenter to forcefully delete the NodeClaim", "nodeClaim", nodeClaim.Name)
+
+	// TODO(maxcao13): upstream has a escape hatch to forcefully delete NodeClaims using this annotation
+	// there is an upstream issue to enable forceful deletion through a better interface: https://github.com/kubernetes-sigs/karpenter/issues/2815
+	// we should come back later to fix this when that is resolved: https://issues.redhat.com/browse/AUTOSCALE-527
+	patch := client.MergeFrom(nodeClaim.DeepCopy())
+	if nodeClaim.Annotations == nil {
+		nodeClaim.Annotations = make(map[string]string)
+	}
+	nodeClaim.Annotations[karpenterv1.NodeClaimTerminationTimestampAnnotationKey] = nodeClaim.GetDeletionTimestamp().Format(time.RFC3339)
+	if err := r.GuestClient.Patch(ctx, nodeClaim, patch); err != nil {
+		return fmt.Errorf("failed to apply nodeClaim termination annotation: %w", err)
+	}
+
+	return nil
 }
