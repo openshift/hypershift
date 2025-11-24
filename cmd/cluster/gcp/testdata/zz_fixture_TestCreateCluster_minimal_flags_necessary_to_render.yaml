@@ -44,6 +44,12 @@ spec:
           name: ""
       project: test-project-123
       region: us-central1
+      workloadIdentity:
+        poolID: ""
+        projectNumber: ""
+        providerID: ""
+        serviceAccountsRef:
+          nodePoolEmail: ""
     type: GCP
   pullSecret:
     name: example-pull-secret
