@@ -40,6 +40,27 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			c.Args = append(c.Args, fmt.Sprintf("--cloud-provider=%s", "external"))
 		}
 
+		// Enable node CIDR allocation for Flannel CNI
+		if hcp.Spec.Networking.AllocateNodeCidrs != nil && *hcp.Spec.Networking.AllocateNodeCidrs {
+			// Check if --allocate-node-cidrs already exists
+			found := false
+			for i, arg := range c.Args {
+				if strings.HasPrefix(arg, "--allocate-node-cidrs=") {
+					// If it's false, change it to true
+					if arg == "--allocate-node-cidrs=false" {
+						c.Args[i] = "--allocate-node-cidrs=true"
+					}
+					// If it's already true, keep it as is
+					found = true
+					break
+				}
+			}
+			// If not found, add it
+			if !found {
+				c.Args = append(c.Args, "--allocate-node-cidrs=true")
+			}
+		}
+
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 			c.Args = append(c.Args, "--node-monitor-grace-period=55s")
 		} else {

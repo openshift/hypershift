@@ -2523,6 +2523,20 @@ spec:
                   networking specifies network configuration for the cluster.
                   Temporarily optional for backward compatibility, required in future releases.
                 properties:
+                  allocateNodeCidrs:
+                    default: false
+                    description: |-
+                      allocateNodeCidrs is a flag that controls whether the KCM manages node CIDR
+                      allocation. When using networkType=Other, it is recommended to set this field
+                      to "true" if Flannel is used as the CNI, as it relies on this behavior.
+                      Default is false.
+                      This field can only be set to true when NetworkType is "Other". Setting it to true
+                      with any other NetworkType will result in a validation error during cluster creation.
+                    type: boolean
+                    x-kubernetes-validations:
+                    - message: allocateNodeCidrs is immutable and cannot be modified
+                        once set.
+                      rule: self == oldSelf
                   apiServer:
                     description: |-
                       apiServer contains advanced network settings for the API server that affect
@@ -5644,6 +5658,11 @@ spec:
                 || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork)
                 || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork
                 || self.networking.networkType == ''Other'''
+            - message: allocateNodeCidrs can only be set to true when networkType
+                is 'Other'
+              rule: '!has(self.networking) || !has(self.networking.allocateNodeCidrs)
+                || !self.networking.allocateNodeCidrs || self.networking.networkType
+                == ''Other'''
           status:
             description: status is the status of the HostedControlPlane.
             properties:

@@ -491,6 +491,7 @@ type Capabilities struct {
 // +kubebuilder:validation:XValidation:rule=`!self.services.exists(s, s.service == 'APIServer' && has(s.servicePublishingStrategy.loadBalancer) && s.servicePublishingStrategy.loadBalancer.hostname != "" && has(self.configuration) && has(self.configuration.apiServer) && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert, cert.names.exists(n, n == s.servicePublishingStrategy.loadBalancer.hostname)))`, message="APIServer loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates[]"
 // +kubebuilder:validation:XValidation:rule="!has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork) || !self.operatorConfiguration.clusterNetworkOperator.disableMultiNetwork || self.networking.networkType == 'Other'",message="disableMultiNetwork can only be set to true when networkType is 'Other'"
 // +kubebuilder:validation:XValidation:rule="self.networking.networkType == 'OVNKubernetes' || !has(self.operatorConfiguration) || !has(self.operatorConfiguration.clusterNetworkOperator) || !has(self.operatorConfiguration.clusterNetworkOperator.ovnKubernetesConfig)", message="ovnKubernetesConfig is forbidden when networkType is not OVNKubernetes"
+// +kubebuilder:validation:XValidation:rule="!has(self.networking) || !has(self.networking.allocateNodeCidrs) || !self.networking.allocateNodeCidrs || self.networking.networkType == 'Other'",message="allocateNodeCidrs can only be set to true when networkType is 'Other'"
 type HostedClusterSpec struct {
 	// release specifies the desired OCP release payload for all the hosted cluster components.
 	// This includes those components running management side like the Kube API Server and the CVO but also the operands which land in the hosted cluster data plane like the ingress controller, ovn agents, etc.
@@ -1080,6 +1081,18 @@ type ClusterNetworking struct {
 	//
 	// +optional
 	APIServer *APIServerNetworking `json:"apiServer,omitempty"`
+
+	// allocateNodeCidrs is a flag that controls whether the KCM manages node CIDR
+	// allocation. When using networkType=Other, it is recommended to set this field
+	// to "true" if Flannel is used as the CNI, as it relies on this behavior.
+	// Default is false.
+	// This field can only be set to true when NetworkType is "Other". Setting it to true
+	// with any other NetworkType will result in a validation error during cluster creation.
+	//
+	// +optional
+	// +kubebuilder:default:=false
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="allocateNodeCidrs is immutable and cannot be modified once set."
+	AllocateNodeCidrs *bool `json:"allocateNodeCidrs,omitempty"` // nolint:kubeapilinter
 }
 
 // MachineNetworkEntry is a single IP address block for node IP blocks.

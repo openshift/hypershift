@@ -780,6 +780,35 @@ func TestOnCreateAPIUX(t *testing.T) {
 						},
 						expectedErrorSubstring: "CIDR ranges in machineNetwork, clusterNetwork, and serviceNetwork must be unique and non-overlapping",
 					},
+					{
+						name: "when allocateNodeCidrs is set to false it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								AllocateNodeCidrs: ptr.To(false),
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when allocateNodeCidrs is true and networkType is Other it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								AllocateNodeCidrs: ptr.To(true),
+								NetworkType:       hyperv1.Other,
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when allocateNodeCidrs is true and networkType is not Other it should fail",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								AllocateNodeCidrs: ptr.To(true),
+								NetworkType:       hyperv1.OVNKubernetes,
+							}
+						},
+						expectedErrorSubstring: "allocateNodeCidrs can only be set to true when networkType is 'Other'",
+					},
 				},
 			},
 			{

@@ -113,6 +113,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.KubeAPIServerDNSName, "kas-dns-name", opts.KubeAPIServerDNSName, "The custom DNS name for the kube-apiserver service. Make sure the DNS name is valid and addressable.")
 	flags.BoolVar(&opts.DisableMultiNetwork, "disable-multi-network", opts.DisableMultiNetwork, "Disables the Multus CNI plugin and related components in the hosted cluster")
 	flags.BoolVar(&opts.VersionCheck, "version-check", opts.VersionCheck, "Checks version of CLI and Hypershift operator and blocks create if mismatched")
+	flags.BoolVar(&opts.AllocateNodeCidrs, "allocate-node-cidrs", opts.AllocateNodeCidrs, "When networkType=Other, it’s recommended to set this field to ‘true’ when using Flannel as the CNI.")
 }
 
 // BindDeveloperOptions binds options that should only be exposed to developers in the `hypershift` CLI
@@ -178,6 +179,7 @@ type RawCreateOptions struct {
 	DisableMultiNetwork              bool
 	VersionCheck                     bool
 	RedactBaseDomain                 bool
+	AllocateNodeCidrs                bool
 
 	// BeforeApply is called immediately before resources are applied to the
 	// server, giving the user an opportunity to inspect or mutate the resources.
@@ -470,6 +472,10 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 			prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator = &hyperv1.ClusterNetworkOperatorSpec{}
 		}
 		prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork = &opts.DisableMultiNetwork
+	}
+
+	if opts.AllocateNodeCidrs {
+		prototype.Cluster.Spec.Networking.AllocateNodeCidrs = &opts.AllocateNodeCidrs
 	}
 
 	if opts.NodeSelector != nil {
@@ -770,6 +776,10 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 
 	if opts.DisableMultiNetwork && opts.NetworkType != "Other" {
 		return nil, fmt.Errorf("disableMultiNetwork is only allowed when networkType is 'Other' (got '%s')", opts.NetworkType)
+	}
+
+	if opts.AllocateNodeCidrs && opts.NetworkType != "Other" {
+		return nil, fmt.Errorf("allocateNodeCidrs is only allowed when networkType is 'Other' (got '%s')", opts.NetworkType)
 	}
 
 	return &ValidatedCreateOptions{
