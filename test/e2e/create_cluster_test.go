@@ -16,6 +16,7 @@ import (
 
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
+	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/support/assets"
@@ -1680,7 +1681,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 				client.Delete(ctx, hostedCluster)
 			}
 		}
-
 	})
 
 	t.Run("NodePool creation", func(t *testing.T) {
@@ -2543,7 +2543,6 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	}
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-
 		switch globalOpts.Platform {
 		case hyperv1.AWSPlatform:
 			g.Expect(hostedCluster.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN).To(Equal(*kmsKeyArn))
@@ -2587,6 +2586,45 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		// ensure CNO operator configuration changes are properly handled
 		e2eutil.EnsureCNOOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
+}
+
+func TestCreateClusterIngressOperatorConfiguration(t *testing.T) {
+	if globalOpts.Platform != hyperv1.AWSPlatform && globalOpts.Platform != hyperv1.AzurePlatform {
+		t.Skip("test only supported on platform AWS, Azure")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+
+	// Configure Ingress Operator with custom endpointPublishingStrategy before cluster creation
+	clusterOpts.BeforeApply = func(o crclient.Object) {
+		switch hc := o.(type) {
+		case *hyperv1.HostedCluster:
+			if hc.Spec.OperatorConfiguration == nil {
+				hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
+			}
+			if hc.Spec.OperatorConfiguration.IngressOperator == nil {
+				hc.Spec.OperatorConfiguration.IngressOperator = &hyperv1.IngressOperatorSpec{}
+			}
+			// Set a custom endpoint publishing strategy (Internal LoadBalancer for testing)
+			hc.Spec.OperatorConfiguration.IngressOperator.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+				Type: operatorv1.LoadBalancerServiceStrategyType,
+				LoadBalancer: &operatorv1.LoadBalancerStrategy{
+					Scope: operatorv1.InternalLoadBalancer,
+				},
+			}
+		}
+	}
+
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		guestClient := e2eutil.WaitForGuestClient(t, testContext, mgtClient, hostedCluster)
+
+		// ensure Ingress Operator configuration is properly applied
+		e2eutil.EnsureIngressOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "ingress-config", globalOpts.ServiceAccountSigningKey)
 }
 
 func TestNoneCreateCluster(t *testing.T) {
@@ -2701,5 +2739,4 @@ func testSwitchEndpointAccess(ctx context.Context, client crclient.Client, hoste
 			e2eutil.WaitForGuestKubeconfigHostResolutionUpdate(t, ctx, host, endpointAccess)
 		}
 	}
-
 }
