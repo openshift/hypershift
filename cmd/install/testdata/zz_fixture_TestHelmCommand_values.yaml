@@ -6,6 +6,12 @@ aws:
 azure:
   keyVault:
     clientId: ""
+externaldns:
+  credsSecret: ""
+  domainFilter: ""
+  googleProject: ""
+  image: ""
+  txtOwnerId: ""
 image: ""
 imagetag: ""
 oidc:

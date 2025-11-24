@@ -22,6 +22,7 @@ type TemplateParams struct {
 	ExternalDNSDomainFilter     string
 	ExternalDNSTxtOwnerID       string
 	ExternalDNSImage            string
+	ExternalDNSGoogleProject    string
 	RegistryOverrides           string
 	AROHCPKeyVaultUsersClientID string
 	TemplateNamespace           bool
@@ -58,8 +59,15 @@ func hyperShiftOperatorTemplateManifest(opts *Options, templateParamConfig Templ
 	if opts.ExternalDNSProvider != "" {
 		opts.ExternalDNSImage = templateParamConfig.TemplateParamWrapper(templateParamConfig.ExternalDNSImage)
 		opts.ExternalDNSDomainFilter = templateParamConfig.TemplateParamWrapper(templateParamConfig.ExternalDNSDomainFilter)
-		opts.ExternalDNSCredentialsSecret = templateParamConfig.TemplateParamWrapper(templateParamConfig.ExternalDNSCredsSecret)
-		opts.ExternalDNSTxtOwnerId = templateParamConfig.TemplateParamWrapper(templateParamConfig.ExternalDNSTxtOwnerID)
+		if opts.ExternalDNSCredentialsSecret != "" {
+			opts.ExternalDNSCredentialsSecret = templateParamConfig.TemplateParamWrapper(templateParamConfig.ExternalDNSCredsSecret)
+		}
+		if opts.ExternalDNSTxtOwnerId != "" {
+			opts.ExternalDNSTxtOwnerId = templateParamConfig.TemplateParamWrapper(templateParamConfig.ExternalDNSTxtOwnerID)
+		}
+		if opts.ExternalDNSGoogleProject != "" {
+			opts.ExternalDNSGoogleProject = templateParamConfig.TemplateParamWrapper(templateParamConfig.ExternalDNSGoogleProject)
+		}
 	}
 
 	// registry overrides
