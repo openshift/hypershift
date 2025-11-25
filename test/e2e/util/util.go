@@ -4062,3 +4062,40 @@ func ValidateConfigurationStatus(t *testing.T, ctx context.Context, mgmtClient c
 		t.Logf("Successfully validated configuration authentication status consistency across HCP, HC, and guest cluster")
 	})
 }
+
+// WaitForHealthyHostedCluster waits for a HostedCluster to reach a healthy, stable state
+// after operations that may trigger rollouts (e.g., NodePool configuration changes, upgrades).
+//
+// This function is designed to be used when tests are aware that a rollout might be in progress
+// and need to wait for the HostedCluster to stabilize. Prefer using this over calling
+// ValidateHostedClusterConditions directly in such cases, as the test name will clearly indicate
+// that a rollout was expected and help identify whether the failure occurred during stabilization.
+//
+// The function validates that the HostedCluster meets all expected conditions:
+//   - HostedClusterAvailable = True
+//   - HostedClusterProgressing = False
+//   - ClusterVersionAvailable = True (if hasWorkerNodes)
+//   - ClusterVersionSucceeding = True (if hasWorkerNodes)
+//   - ClusterVersionProgressing = False (if hasWorkerNodes)
+//   - Plus other platform/version-specific conditions
+//
+// Parameters:
+//   - t: Test context
+//   - ctx: Context for cancellation and timeout
+//   - client: Kubernetes client for accessing the management cluster
+//   - hostedCluster: The HostedCluster resource to wait for
+//   - hasWorkerNodes: Whether the cluster has worker nodes. This affects expected conditions:
+//     With workers: CVO conditions expected to be healthy
+//     Without workers: CVO conditions expected to show ongoing progress
+//
+// Timeout: 30 minutes - generous enough to accommodate:
+//   - NodePool configuration rollouts
+//   - Image/version updates
+//   - Cluster operator stabilization
+//
+// The test will fail if conditions are not met within the timeout.
+func WaitForHealthyHostedCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool) {
+	t.Run("WaitForHealthyHostedCluster", func(t *testing.T) {
+		ValidateHostedClusterConditions(t, ctx, client, hostedCluster, hasWorkerNodes, 30*time.Minute)
+	})
+}

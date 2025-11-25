@@ -236,6 +236,12 @@ func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []Host
 						executeNodePoolTest(t, ctx, mgtClient, hostedCluster, hostedClusterClient, *defaultNodepool, testCase.test, testCase.manifestBuilder)
 					})
 				}
+				// Wait for HostedCluster to stabilize if test potentially triggered rollouts.
+				// Some tests modify NodePools' configuration in Run() (e.g., removing kubeletconfig),
+				// which triggers rollouts that might affect cluster operators and CVO conditions.
+				//
+				// We're assuming this test will not end up with a 0 workers cluster.
+				e2eutil.WaitForHealthyHostedCluster(t, ctx, mgtClient, hostedCluster, true)
 			}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "node-pool", globalOpts.ServiceAccountSigningKey)
 		})
 	}
