@@ -39,7 +39,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
-	securityv1 "github.com/openshift/api/security/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned"
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/library-go/test/library/metrics"
@@ -87,22 +86,13 @@ var (
 )
 
 const (
-	// Cilium installation timeouts
-	CiliumOLMDeploymentTimeout        = 10 * time.Minute
-	CiliumOLMDeploymentPollInterval   = 10 * time.Second
-	CiliumConfigVerifyTimeout         = 2 * time.Minute
-	CiliumConfigVerifyPollInterval    = 5 * time.Second
-	CiliumDaemonSetCreateTimeout      = 5 * time.Minute
-	CiliumDaemonSetCreatePollInterval = 10 * time.Second
-	CiliumDaemonSetReadyTimeout       = 20 * time.Minute
-	CiliumDaemonSetReadyPollInterval  = 15 * time.Second
-
-	// Cilium connectivity test timeouts
-	CiliumPodsReadyTimeout                 = 10 * time.Minute
-	CiliumPodsReadyPollInterval            = 10 * time.Second
-	CiliumConnectivityTestPodsTimeout      = 10 * time.Minute
-	CiliumConnectivityTestPodsPollInterval = 15 * time.Second
-	CiliumConnectivityTestDuration         = 60 * time.Second
+	// Generic timeouts and intervals for Cilium tests
+	CiliumDefaultTimeout           = 10 * time.Minute
+	CiliumLongTimeout              = 20 * time.Minute
+	CiliumShortTimeout             = 2 * time.Minute
+	CiliumDefaultPollInterval      = 10 * time.Second
+	CiliumLongPollInterval         = 15 * time.Second
+	CiliumConnectivityWaitDuration = 60 * time.Second
 )
 
 var (
@@ -199,6 +189,36 @@ func UpdateObject[T crclient.Object](t *testing.T, ctx context.Context, client c
 
 		return true, nil
 	})
+}
+
+// WaitForDeploymentAvailable waits for a deployment to be ready.
+func WaitForDeploymentAvailable(ctx context.Context, t *testing.T, client crclient.Client, name, namespace string, timeout, interval time.Duration) {
+	g := NewWithT(t)
+	t.Logf("Waiting for deployment %s/%s to be ready", namespace, name)
+	g.Eventually(func() bool {
+		deployment := &appsv1.Deployment{}
+		err := client.Get(ctx, crclient.ObjectKey{Name: name, Namespace: namespace}, deployment)
+		if err != nil {
+			t.Logf("Failed to get deployment %s/%s: %v", namespace, name, err)
+			return false
+		}
+		return deployment.Status.ReadyReplicas > 0
+	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("deployment %s/%s should be ready", namespace, name))
+}
+
+// WaitForDaemonSetReady waits for a DaemonSet to be ready.
+func WaitForDaemonSetReady(ctx context.Context, t *testing.T, client crclient.Client, name, namespace string, timeout, interval time.Duration) {
+	g := NewWithT(t)
+	t.Logf("Waiting for DaemonSet %s/%s to be ready", namespace, name)
+	g.Eventually(func() bool {
+		ds := &appsv1.DaemonSet{}
+		err := client.Get(ctx, crclient.ObjectKey{Name: name, Namespace: namespace}, ds)
+		if err != nil {
+			t.Logf("Failed to get DaemonSet %s/%s: %v", namespace, name, err)
+			return false
+		}
+		return ds.Status.NumberReady > 0
+	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("DaemonSet %s/%s should be ready", namespace, name))
 }
 
 // DeleteNamespace deletes and finalizes the given namespace, logging any failures
@@ -1209,17 +1229,12 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 			ciliumNs := &corev1.Namespace{}
 			err := guestClient.Get(ctx, crclient.ObjectKey{Name: "cilium"}, ciliumNs)
 
+			manifest := CiliumNamespaceManifest()
+
 			if apierrors.IsNotFound(err) {
 				// Namespace doesn't exist, create it with labels
 				t.Log("Creating cilium namespace")
-				ciliumNs = &corev1.Namespace{}
-				ciliumNs.Name = "cilium"
-				ciliumNs.Labels = map[string]string{
-					"security.openshift.io/scc.podSecurityLabelSync": "false",
-					"pod-security.kubernetes.io/enforce":             "privileged",
-					"pod-security.kubernetes.io/audit":               "privileged",
-					"pod-security.kubernetes.io/warn":                "privileged",
-				}
+				ciliumNs = manifest
 				err = guestClient.Create(ctx, ciliumNs)
 				g.Expect(err).ToNot(HaveOccurred(), "failed to create cilium namespace")
 			} else {
@@ -1230,10 +1245,9 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 				if ciliumNs.Labels == nil {
 					ciliumNs.Labels = make(map[string]string)
 				}
-				ciliumNs.Labels["security.openshift.io/scc.podSecurityLabelSync"] = "false"
-				ciliumNs.Labels["pod-security.kubernetes.io/enforce"] = "privileged"
-				ciliumNs.Labels["pod-security.kubernetes.io/audit"] = "privileged"
-				ciliumNs.Labels["pod-security.kubernetes.io/warn"] = "privileged"
+				for k, v := range manifest.Labels {
+					ciliumNs.Labels[k] = v
+				}
 
 				err = guestClient.Update(ctx, ciliumNs)
 				g.Expect(err).ToNot(HaveOccurred(), "failed to update cilium namespace labels")
@@ -1246,38 +1260,7 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 
 			t.Log("Creating SecurityContextConstraints for Cilium")
 			// Create SCC for Cilium namespace
-			ciliumSCC := &securityv1.SecurityContextConstraints{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "cilium-scc",
-				},
-				AllowHostPorts:           true,
-				AllowHostNetwork:         true,
-				AllowHostDirVolumePlugin: true,
-				AllowHostIPC:             false,
-				AllowHostPID:             false,
-				AllowPrivilegeEscalation: ptr.To(true),
-				AllowPrivilegedContainer: true,
-				ReadOnlyRootFilesystem:   false,
-				RequiredDropCapabilities: []corev1.Capability{},
-				AllowedCapabilities: []corev1.Capability{
-					"CHOWN", "KILL", "NET_ADMIN", "NET_RAW", "IPC_LOCK",
-					"SYS_MODULE", "SYS_ADMIN", "SYS_RESOURCE", "DAC_OVERRIDE",
-					"FOWNER", "SETGID", "SETUID", "SYS_CHROOT", "SYS_PTRACE",
-				},
-				RunAsUser:      securityv1.RunAsUserStrategyOptions{Type: securityv1.RunAsUserStrategyRunAsAny},
-				SELinuxContext: securityv1.SELinuxContextStrategyOptions{Type: securityv1.SELinuxStrategyRunAsAny},
-				Volumes: []securityv1.FSType{
-					securityv1.FSTypeHostPath,
-					securityv1.FSTypeEmptyDir,
-					securityv1.FSTypeSecret,
-					securityv1.FSTypeConfigMap,
-					securityv1.FSProjected,
-				},
-				Users: []string{
-					"system:serviceaccount:cilium:cilium",
-					"system:serviceaccount:cilium:cilium-operator",
-				},
-			}
+			ciliumSCC := CiliumSCCManifest()
 
 			err := guestClient.Create(ctx, ciliumSCC)
 			if err != nil && !apierrors.IsAlreadyExists(err) {
@@ -1291,21 +1274,7 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 			g := NewWithT(t)
 			t.Logf("Installing Cilium operator version %s", CiliumVersion)
 			// Install Cilium operator manifests
-			manifestURLs := []string{
-				fmt.Sprintf("https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v%s/cluster-network-03-cilium-ciliumconfigs-crd.yaml", CiliumVersion),
-				fmt.Sprintf("https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v%s/cluster-network-06-cilium-00000-cilium-namespace.yaml", CiliumVersion),
-				fmt.Sprintf("https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v%s/cluster-network-06-cilium-00001-cilium-olm-serviceaccount.yaml", CiliumVersion),
-				fmt.Sprintf("https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v%s/cluster-network-06-cilium-00002-cilium-olm-deployment.yaml", CiliumVersion),
-				fmt.Sprintf("https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v%s/cluster-network-06-cilium-00003-cilium-olm-service.yaml", CiliumVersion),
-				fmt.Sprintf("https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v%s/cluster-network-06-cilium-00004-cilium-olm-leader-election-role.yaml", CiliumVersion),
-				fmt.Sprintf("https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v%s/cluster-network-06-cilium-00005-cilium-olm-role.yaml", CiliumVersion),
-				fmt.Sprintf("https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v%s/cluster-network-06-cilium-00006-leader-election-rolebinding.yaml", CiliumVersion),
-				fmt.Sprintf("https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v%s/cluster-network-06-cilium-00007-cilium-olm-rolebinding.yaml", CiliumVersion),
-				fmt.Sprintf("https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v%s/cluster-network-06-cilium-00008-cilium-cilium-olm-clusterrole.yaml", CiliumVersion),
-				fmt.Sprintf("https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v%s/cluster-network-06-cilium-00009-cilium-cilium-clusterrole.yaml", CiliumVersion),
-				fmt.Sprintf("https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v%s/cluster-network-06-cilium-00010-cilium-cilium-olm-clusterrolebinding.yaml", CiliumVersion),
-				fmt.Sprintf("https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v%s/cluster-network-06-cilium-00011-cilium-cilium-clusterrolebinding.yaml", CiliumVersion),
-			}
+			manifestURLs := CiliumManifestURLs(CiliumVersion)
 
 			for _, url := range manifestURLs {
 				t.Logf("Applying manifest from %s", url)
@@ -1322,16 +1291,7 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 				t.Logf("Failed to get Deployment cilium-olm: %v", err)
 			}
 			// Wait for cilium-olm deployment to be ready
-			t.Log("Waiting for cilium-olm deployment to be ready")
-			g.Eventually(func() bool {
-				deployment := &appsv1.Deployment{}
-				err := guestClient.Get(ctx, crclient.ObjectKey{Name: "cilium-olm", Namespace: "cilium"}, deployment)
-				if err != nil {
-					t.Logf("Failed to get cilium-olm deployment: %v", err)
-					return false
-				}
-				return deployment.Status.ReadyReplicas > 0
-			}, CiliumOLMDeploymentTimeout, CiliumOLMDeploymentPollInterval).Should(BeTrue(), "cilium-olm deployment should be ready")
+			WaitForDeploymentAvailable(ctx, t, guestClient, "cilium-olm", "cilium", CiliumDefaultTimeout, CiliumDefaultPollInterval)
 
 			// Get cluster network configuration from guest cluster
 			podCIDR, hostPrefix := getCiliumNetworkConfig(ctx, guestClient)
@@ -1413,7 +1373,7 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 
 				t.Logf("CiliumConfig has correct clusterPoolIPv4MaskSize: %d", maskSize)
 				return true
-			}, CiliumConfigVerifyTimeout, CiliumConfigVerifyPollInterval).Should(BeTrue(), "CiliumConfig should have correct configuration")
+			}, CiliumShortTimeout, CiliumDefaultPollInterval).Should(BeTrue(), "CiliumConfig should have correct configuration")
 
 			// Wait for operator to create DaemonSet
 			t.Log("Waiting for Cilium DaemonSet to be created by operator")
@@ -1439,27 +1399,11 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 
 				t.Log("Cilium DaemonSet not created by operator yet")
 				return false
-			}, CiliumDaemonSetCreateTimeout, CiliumDaemonSetCreatePollInterval).Should(BeTrue(), "cilium-olm operator should create Cilium DaemonSet")
+			}, CiliumDefaultTimeout, CiliumDefaultPollInterval).Should(BeTrue(), "cilium-olm operator should create Cilium DaemonSet")
 
 			// Now wait for DaemonSet pods to be ready
 			t.Log("Waiting for Cilium agent pods from DaemonSet to be ready")
-			g.Eventually(func() bool {
-				// Refresh DaemonSet status
-				err := guestClient.Get(ctx, crclient.ObjectKey{
-					Name:      ciliumDaemonSet.Name,
-					Namespace: ciliumDaemonSet.Namespace,
-				}, ciliumDaemonSet)
-				if err != nil {
-					t.Logf("Failed to get DaemonSet status: %v", err)
-					return false
-				}
-
-				// Check if at least one pod is ready
-				if ciliumDaemonSet.Status.NumberReady > 0 {
-					return true
-				}
-				return false
-			}, CiliumDaemonSetReadyTimeout, CiliumDaemonSetReadyPollInterval)
+			WaitForDaemonSetReady(ctx, t, guestClient, ciliumDaemonSet.Name, ciliumDaemonSet.Namespace, CiliumLongTimeout, CiliumLongPollInterval)
 
 			t.Log("Cilium installation completed successfully")
 		})
