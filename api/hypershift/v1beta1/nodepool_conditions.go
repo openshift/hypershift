@@ -18,13 +18,6 @@ const (
 	// NodePoolValidTuningConfigConditionType signals if the content within nodePool.spec.tuningConfig is valid.
 	// A failure here is unlikely to resolve without changing user input.
 	NodePoolValidTuningConfigConditionType = "ValidTuningConfig"
-	// NodePoolSupportedVersionSkewConditionType signals if the NodePool points to a version that falls within the supported skew policy with the HostedCluster.
-	// NodePool version cannot be higher than the HostedCluster version.
-	// For 4.y versions, all versions now support up to 3 minor version differences (n-3).
-	// For example, a 4.18 HostedCluster supports NodePools running 4.17, 4.16, and 4.15.
-	// When false, the NodePool will keep trying to operate as usual even though there are no guarantees.
-	// A failure here is unlikely to resolve without changing spec.release.image to a compatible version.
-	NodePoolSupportedVersionSkewConditionType = "SupportedVersionSkew"
 
 	// NodePoolValidPlatformConfigConditionType signals if the content within nodePool.spec.platform is valid.
 	// Image type validation is reported in 'NodePoolValidPlatformImageType' condition.
@@ -128,5 +121,4 @@ const (
 	InvalidOpenStackMachineTemplate       = "InvalidOpenStackMachineTemplate"
 	CIDRConflictReason                    = "CIDRConflict"
 	NodePoolKubeVirtLiveMigratableReason  = "KubeVirtNodesNotLiveMigratable"
-	NodePoolUnsupportedSkewReason         = "UnsupportedSkew"
 )

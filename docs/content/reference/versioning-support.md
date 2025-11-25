@@ -132,57 +132,7 @@ Running the following command will show the commit sha the HyperShift CLI was bu
 ```
 
 ### HCP CLI
-The HCP CLI is the productized version of the HyperShift CLI. This CLI is available through download from MCE.
+The HCP CLI is the productized version of the HyperShift CLI. This CLI is available through download from MCE. 
 
-Similar to the HyperShift CLI, running the `hcp version` command will show the latest OCP version the CLI supports
+Similar to the HyperShift CLI, running the `hcp version` command will show the latest OCP version the CLI supports 
 against your KUBECONFIG. Running the `hcp version --commit-only` will show the commit sha the HCP CLI was built from.
-
-## HostedCluster and NodePool Version Compatibility
-
-HyperShift validates version compatibility between HostedClusters and their NodePools. While the system reports version incompatibilities, existing NodePools with unsupported version skews will continue to operate without guarantees of stability or support.
-
-### Version Skew Policy
-
-The following rules apply to NodePool version compatibility:
-
-1. **NodePool version cannot be higher than the HostedCluster version**
-   - A NodePool must run the same version or an older version than its HostedCluster
-   - This applies to both minor and patch versions (e.g., NodePool 4.18.6 is not allowed with HostedCluster 4.18.5)
-
-2. **N-3 version skew support**
-   - For all 4.y OpenShift versions, NodePools can run up to 3 minor versions behind the HostedCluster
-   - For example, a 4.18 HostedCluster supports NodePools running 4.18, 4.17, 4.16, and 4.15
-
-### Examples
-
-**HostedCluster version 4.18.5:**
-
-Supported NodePool versions:
-- Same minor, same or lower patch: `4.18.5`, `4.18.4`, `4.18.3`, etc.
-- N-1 minor (any patch): `4.17.z` (e.g., `4.17.0`, `4.17.10`, `4.17.25`)
-- N-2 minor (any patch): `4.16.z` (e.g., `4.16.0`, `4.16.15`)
-- N-3 minor (any patch): `4.15.z` (e.g., `4.15.0`, `4.15.20`)
-
-Unsupported NodePool versions:
-- Higher patch in same minor: `4.18.6`, `4.18.10` (NodePool patch cannot exceed HostedCluster patch)
-- Higher minor version: `4.19.0`, `4.19.z`, `4.20.0` and above
-- Beyond N-3 minor version: `4.14.z`, `4.13.z` and below 
-
-### Version Compatibility Validation
-
-The NodePool controller automatically validates version compatibility and reports the status through the `SupportedVersionSkew` condition:
-
-- **Status: True** - NodePool version is compatible with the HostedCluster version
-- **Status: False** - Version incompatibility detected; the condition message provides details about the specific incompatibility
-
-**Behavior when incompatibility is detected:**
-
-- **Existing NodePools**: Will continue to operate despite the incompatibility, but without stability or support guarantees. The condition serves as a warning to administrators.
-- **CLI (`hypershift` command)**: Will prevent creation of new NodePools with incompatible versions by returning an error.
-
-**Recommendations:**
-
-- Monitor the `SupportedVersionSkew` condition regularly to identify version compatibility issues
-- When upgrading HostedClusters, verify that all NodePools remain within the supported version skew window
-- If a NodePool becomes incompatible, upgrade it to a compatible version as soon as operationally feasible
-- When creating new NodePools, the CLI will enforce compatibility checks to prevent misconfiguration

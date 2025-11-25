@@ -119,19 +119,11 @@ func TestNodePool(t *testing.T) {
 					},
 					{
 						name: "TestNodePoolPrevReleaseN1",
-						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N1MinorReleaseImage, clusterOpts, true),
+						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N1MinorReleaseImage, clusterOpts),
 					},
 					{
 						name: "TestNodePoolPrevReleaseN2",
-						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N2MinorReleaseImage, clusterOpts, true),
-					},
-					{
-						name: "TestNodePoolPrevReleaseN3",
-						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N3MinorReleaseImage, clusterOpts, true),
-					},
-					{
-						name: "TestNodePoolPrevReleaseN4",
-						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N4MinorReleaseImage, clusterOpts, false),
+						test: NewNodePoolPrevReleaseCreateTest(hostedCluster, globalOpts.N2MinorReleaseImage, clusterOpts),
 					},
 					{
 						name: "TestMirrorConfigs",
@@ -288,10 +280,6 @@ type InfraSetup interface {
 	TeardownInfra(t *testing.T) error
 }
 
-type SupportedVersionSkewChecker interface {
-	ExpectedSupportedVersionSkew() bool
-}
-
 type DummyInfraSetup struct{}
 
 func (i *DummyInfraSetup) SetupInfra(*testing.T) error {
@@ -337,25 +325,10 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 		g.Expect(nodePoolTest.TeardownInfra(t)).To(Succeed(), "should succeed cleaning up infra customizations")
 	}()
 
-	// Determine if this version is expected to be supported
-	expectedSupportedVersionSkew := true
-	if checker, ok := nodePoolTest.(SupportedVersionSkewChecker); ok {
-		expectedSupportedVersionSkew = checker.ExpectedSupportedVersionSkew()
-	}
-
-	// For unsupported versions, only validate the condition is set correctly
-	// Skip node readiness checks as nodes may not become ready for incompatible versions
-	if !expectedSupportedVersionSkew {
-		t.Logf("NodePool version is outside supported skew, validating condition only (skipping node readiness check)")
-		validateNodePoolConditions(t, ctx, mgmtClient, nodePool, expectedSupportedVersionSkew)
-		return
-	}
-
-	// For supported versions, run full validation including node readiness
 	nodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, hcClient, nodePool, hostedCluster.Spec.Platform.Type)
 	// We want to make sure all conditions are met and in a deterministic known state before running the tests to avoid false positives.
 	// https://issues.redhat.com/browse/OCPBUGS-52983.
-	validateNodePoolConditions(t, ctx, mgmtClient, nodePool, expectedSupportedVersionSkew)
+	validateNodePoolConditions(t, ctx, mgmtClient, nodePool)
 
 	// TestNTOPerformanceProfile fails on 4.16 and older if we don't wait for the rollout here with
 	// ValidationFailed(ConfigMap "pp-test" not found)
@@ -369,22 +342,11 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 	// run test validations
 	nodePoolTest.Run(t, *nodePool, nodes)
 
-	validateNodePoolConditions(t, ctx, mgmtClient, nodePool, expectedSupportedVersionSkew)
+	validateNodePoolConditions(t, ctx, mgmtClient, nodePool)
 }
 
-func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool, expectedSupportedVersionSkew bool) {
-	var expectedConditions map[string]corev1.ConditionStatus
-
-	if !expectedSupportedVersionSkew {
-		// For unsupported versions, only validate the SupportedVersionSkew condition
-		expectedConditions = map[string]corev1.ConditionStatus{
-			hyperv1.NodePoolSupportedVersionSkewConditionType: corev1.ConditionFalse,
-		}
-	} else {
-		// For supported versions, validate all conditions
-		expectedConditions = conditions.ExpectedNodePoolConditions(nodePool)
-	}
-
+func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclient.Client, nodePool *hyperv1.NodePool) {
+	expectedConditions := conditions.ExpectedNodePoolConditions(nodePool)
 	var predicates []e2eutil.Predicate[*hyperv1.NodePool]
 	for conditionType, conditionStatus := range expectedConditions {
 		predicates = append(predicates, e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
