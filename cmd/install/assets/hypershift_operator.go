@@ -2004,30 +2004,40 @@ func (o HyperShiftPullSecret) Build() *corev1.Secret {
 	}
 }
 
-type KubeSystemRoleBinding struct {
-	Namespace string
-}
+// HyperShiftExtensionAPIServerAuthenticationReaderRoleBinding creates a RoleBinding in the
+// kube-system namespace that grants service accounts read access to the
+// extension-apiserver-authentication-reader Role.
+//
+// This RoleBinding provides access to the client CA bundle used to verify client certificates
+// for authentication. HyperShift components that serve metrics endpoints need this information
+// to properly authenticate requests.
+//
+// The subject is system:serviceaccounts because HyperShift instantiates multiple metrics-serving
+// operators dynamically across many namespaces as hosted clusters are created. This is safe because
+// the Role only grants read access to authentication configuration metadata, not write permissions.
+// OpenShift clusters include this RoleBinding out of the box via cluster-kube-apiserver-operator.
+type HyperShiftExtensionAPIServerAuthenticationReaderRoleBinding struct{}
 
-func (o KubeSystemRoleBinding) Build() *rbacv1.RoleBinding {
+func (o HyperShiftExtensionAPIServerAuthenticationReaderRoleBinding) Build() *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "RoleBinding",
-			APIVersion: "rbac.authorization.k8s.io/v1",
+			APIVersion: rbacv1.SchemeGroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "authentication-reader-for-authenticated-users",
-			Namespace: o.Namespace,
+			Name:      "hypershift:extension-apiserver-authentication-reader",
+			Namespace: metav1.NamespaceSystem,
 		},
 		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
+			APIGroup: rbacv1.GroupName,
 			Kind:     "Role",
 			Name:     "extension-apiserver-authentication-reader",
 		},
 		Subjects: []rbacv1.Subject{
 			{
 				Kind:     "Group",
-				APIGroup: "rbac.authorization.k8s.io",
-				Name:     "system:authenticated",
+				APIGroup: rbacv1.GroupName,
+				Name:     "system:serviceaccounts",
 			},
 		},
 	}
