@@ -527,6 +527,11 @@ func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crc
 	// waitTimeout for nodes to become Ready
 	waitTimeout := 30 * time.Minute
 	switch platform {
+	case hyperv1.AzurePlatform:
+		// Azure VMs are experiencing slow provisioning (30+ minutes instead of 10-15 minutes).
+		// Azure platform has a hardcoded 20-minute timeout that marks VMs as failed,
+		// but VMs often succeed eventually. Give them 45 minutes to complete.
+		waitTimeout = 45 * time.Minute
 	case hyperv1.KubevirtPlatform:
 		waitTimeout = 45 * time.Minute
 	case hyperv1.PowerVSPlatform:
