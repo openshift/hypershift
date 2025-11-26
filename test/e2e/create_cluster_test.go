@@ -334,6 +334,30 @@ func TestOnCreateAPIUX(t *testing.T) {
 						},
 						expectedErrorSubstring: "",
 					},
+					{
+						name: "when GCP createDnsZones is true it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project:        "my-project-123",
+								Region:         "us-central1",
+								CreateDnsZones: true,
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when GCP createDnsZones is false it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform.Type = hyperv1.GCPPlatform
+							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+								Project:        "my-project-123",
+								Region:         "us-central1",
+								CreateDnsZones: false,
+							}
+						},
+						expectedErrorSubstring: "",
+					},
 				},
 			},
 			{
