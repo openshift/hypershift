@@ -204,7 +204,9 @@ func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []Host
 			if nodePoolTestCases.setup != nil {
 				nodePoolTestCases.setup(t)
 			}
-			t.Parallel()
+			// Run serially instead of in parallel as autoSizingReserved
+			// requires higher system reserved resources for each node.
+			// t.Parallel()
 			clusterOpts := globalOpts.DefaultClusterOptions(t)
 			// We set replicas to 0 in order to allow the inner tests to
 			// create their own NodePools with the proper replicas
