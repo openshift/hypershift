@@ -81,4 +81,11 @@ type GCPPlatformSpec struct {
 	// +kubebuilder:default=Private
 	// +optional
 	EndpointAccess GCPEndpointAccessType `json:"endpointAccess,omitempty"`
+
+	// createDnsZones enables automatic DNS zone creation in the customer project.
+	// When true, the control-plane-operator creates Cloud DNS zones for cluster ingress
+	// and internal communication (hypershift.local). Defaults to false.
+	// +kubebuilder:default=false
+	// +optional
+	CreateDnsZones bool `json:"createDnsZones,omitempty"`
 }

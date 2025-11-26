@@ -5977,6 +5977,20 @@ GCPEndpointAccessType
 Allowed values: &ldquo;Private&rdquo;, &ldquo;PublicAndPrivate&rdquo;. Defaults to &ldquo;Private&rdquo;.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>createDnsZones</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>createDnsZones enables automatic DNS zone creation in the customer project.
+When true, the control-plane-operator creates Cloud DNS zones for cluster ingress
+and internal communication (hypershift.local). Defaults to false.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###GCPPrivateServiceConnectSpec { #hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectSpec }

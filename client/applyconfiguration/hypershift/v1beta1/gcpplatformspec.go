@@ -28,6 +28,7 @@ type GCPPlatformSpecApplyConfiguration struct {
 	Region         *string                                  `json:"region,omitempty"`
 	NetworkConfig  *GCPNetworkConfigApplyConfiguration      `json:"networkConfig,omitempty"`
 	EndpointAccess *hypershiftv1beta1.GCPEndpointAccessType `json:"endpointAccess,omitempty"`
+	CreateDnsZones *bool                                    `json:"createDnsZones,omitempty"`
 }
 
 // GCPPlatformSpecApplyConfiguration constructs a declarative configuration of the GCPPlatformSpec type for use with
@@ -65,5 +66,13 @@ func (b *GCPPlatformSpecApplyConfiguration) WithNetworkConfig(value *GCPNetworkC
 // If called multiple times, the EndpointAccess field is set to the value of the last call.
 func (b *GCPPlatformSpecApplyConfiguration) WithEndpointAccess(value hypershiftv1beta1.GCPEndpointAccessType) *GCPPlatformSpecApplyConfiguration {
 	b.EndpointAccess = &value
+	return b
+}
+
+// WithCreateDnsZones sets the CreateDnsZones field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the CreateDnsZones field is set to the value of the last call.
+func (b *GCPPlatformSpecApplyConfiguration) WithCreateDnsZones(value bool) *GCPPlatformSpecApplyConfiguration {
+	b.CreateDnsZones = &value
 	return b
 }
