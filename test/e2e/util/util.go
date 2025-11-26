@@ -66,6 +66,7 @@ import (
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
@@ -1007,6 +1008,29 @@ func EnsureFeatureGateStatus(t *testing.T, ctx context.Context, guestClient crcl
 			}
 		}
 		g.Expect(versionFound).To(BeTrue(), "current version %s from ClusterVersion not found in FeatureGate status", currentVersion)
+	})
+}
+
+func EnsureCAPIFinalizers(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureCAPIFinalizers", func(t *testing.T) {
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+		for _, name := range hcc.CAPIComponents {
+			deployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: hcpNamespace,
+				},
+			}
+
+			if err := client.Get(ctx, crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
+				t.Fatalf("failed to get CAPI deployment: %v", err)
+			}
+
+			if !controllerutil.ContainsFinalizer(deployment, hcc.ControlPlaneComponentFinalizer) {
+				t.Fatalf("CAPI deployment '%s' is expected to have finalizer: %s", name, hcc.ControlPlaneComponentFinalizer)
+			}
+		}
 	})
 }
 

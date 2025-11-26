@@ -115,6 +115,7 @@ import (
 
 const (
 	HostedClusterFinalizer              = "hypershift.openshift.io/finalizer"
+	ControlPlaneComponentFinalizer      = "hypershift.openshift.io/component-finalizer"
 	clusterDeletionRequeueDuration      = 5 * time.Second
 	ReportingGracePeriodRequeueDuration = 25 * time.Second
 
@@ -122,7 +123,6 @@ const (
 	ImageStreamAutoscalerImage = "cluster-autoscaler"
 
 	controlPlaneOperatorSubcommandsLabel                 = "io.openshift.hypershift.control-plane-operator-subcommands"
-	ignitionServerHealthzHandlerLabel                    = "io.openshift.hypershift.ignition-server-healthz-handler"
 	controlPlaneOperatorSupportsKASCustomKubeconfigLabel = "io.openshift.hypershift.control-plane-operator-supports-kas-custom-kubeconfig"
 
 	controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel = "io.openshift.hypershift.control-plane-operator-applies-management-kas-network-policy-label"
@@ -130,8 +130,7 @@ const (
 	useRestrictedPodSecurityLabel                              = "io.openshift.hypershift.restricted-psa"
 	defaultToControlPlaneV2Label                               = "io.openshift.hypershift.control-plane-operator.v2-isdefault"
 
-	etcdEncKeyPostfix    = "-etcd-encryption-key"
-	managedServiceEnvVar = "MANAGED_SERVICE"
+	etcdEncKeyPostfix = "-etcd-encryption-key"
 
 	jobHostedClusterNameLabel      = "hypershift.openshift.io/cluster-name"
 	jobHostedClusterNamespaceLabel = "hypershift.openshift.io/cluster-namespace"
@@ -423,7 +422,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Bubble up AWSDefaultSecurityGroupDeleted condition from the hostedControlPlane.
 	// We set this condition even if the HC is being deleted, so we can report blocking objects on deletion.
 	{
-		if hcp != nil && hcp.DeletionTimestamp != nil {
+		if hcp != nil && !hcp.DeletionTimestamp.IsZero() {
 			freshCondition := &metav1.Condition{
 				Type:               string(hyperv1.AWSDefaultSecurityGroupDeleted),
 				Status:             metav1.ConditionUnknown,
@@ -489,7 +488,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Bubble up CloudResourcesDestroyed condition from the hostedControlPlane.
 	// We set this condition even if the HC is being deleted, so we can construct SLIs for deletion times.
 	{
-		if hcp != nil && hcp.DeletionTimestamp != nil {
+		if hcp != nil && !hcp.DeletionTimestamp.IsZero() {
 			freshCondition := &metav1.Condition{
 				Type:               string(hyperv1.CloudResourcesDestroyed),
 				Status:             metav1.ConditionUnknown,
@@ -1206,6 +1205,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			}
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to cluster: %w", err)
 		}
+	}
+
+	// Ensure the CAPI deployments have finalizers
+	if err := r.reconcileCAPIFinalizers(ctx, hcluster, false); err != nil {
+		return ctrl.Result{}, fmt.Errorf("error adding finalizers to CAPI deployments: %w", err)
 	}
 
 	// if paused: ensure associated HostedControlPlane (if it exists) is also paused and stop reconciliation
@@ -2469,7 +2473,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 		}
 	}
 	if err == nil {
-		if capiProviderDeployment.Spec.Template.ObjectMeta.Labels["hypershift.openshift.io/control-plane-component"] != "capi-provider" {
+		if capiProviderDeployment.Spec.Template.ObjectMeta.Labels[hyperv1.ControlPlaneComponentLabel] != "capi-provider" {
 			_, err = hyperutil.DeleteIfNeeded(cpContext, cpContext.Client, capiProviderDeployment)
 			// Always return an error so we can retry when the cache is updated
 			return fmt.Errorf("provider with outdated labels exists, delete result: %w", err)
@@ -3214,6 +3218,11 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		if exists {
 			log.Info("Waiting for cluster deletion", "clusterName", hc.Spec.InfraID, "controlPlaneNamespace", controlPlaneNamespace)
 			return false, nil
+		} else {
+			// once infra is deleted remove finalizers.
+			if err := r.reconcileCAPIFinalizers(ctx, hc, true); err != nil {
+				return false, fmt.Errorf("failed to remove finalizer from managed deployments: %w", err)
+			}
 		}
 	}
 
@@ -4862,6 +4871,57 @@ func (r *HostedClusterReconciler) reconcileAdditionalTrustBundle(ctx context.Con
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane AdditionalTrustBundle configmap: %w", err)
+	}
+
+	return nil
+}
+
+// reconcileCAPIFinalizers adds or removes finalizers from CAPI deployments managed by the controller.
+func (r *HostedClusterReconciler) reconcileCAPIFinalizers(ctx context.Context, hc *hyperv1.HostedCluster, remove bool) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	if _, exists := hc.Annotations[hyperv1.DisableMachineManagement]; exists {
+		log.Info("hosted cluster has machine management disabled, skipping CAPI finalizers")
+		return nil
+	}
+
+	capiComponents := []string{capimanagerv2.ComponentName, capiproviderv2.ComponentName}
+	namespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+
+	for _, name := range capiComponents {
+		deployment := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+			},
+		}
+
+		if err := r.Get(ctx, client.ObjectKeyFromObject(deployment), deployment); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to get CAPI deployment: %w", err)
+			}
+			// if the deployment is not found, skip it.
+			continue
+		}
+
+		update := false
+		if remove {
+			if controllerutil.ContainsFinalizer(deployment, ControlPlaneComponentFinalizer) {
+				log.Info("Removing finalizer from CAPI deployment", "deployment", deployment.Name)
+				update = controllerutil.RemoveFinalizer(deployment, ControlPlaneComponentFinalizer)
+			}
+		} else {
+			if !controllerutil.ContainsFinalizer(deployment, ControlPlaneComponentFinalizer) {
+				log.Info("adding finalizer to CAPI deployment")
+				update = controllerutil.AddFinalizer(deployment, ControlPlaneComponentFinalizer)
+			}
+		}
+
+		if update {
+			if err := r.Update(ctx, deployment); err != nil {
+				return fmt.Errorf("error adding finalizer to CAPI deployment: %w", err)
+			}
+		}
 	}
 
 	return nil
