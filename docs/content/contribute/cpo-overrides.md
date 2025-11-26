@@ -53,6 +53,7 @@ Configuration for automated testing:
 
 - **`latest`** (string): The latest OpenShift release image for testing
 - **`previous`** (string): The previous OpenShift release image for testing
+- **`runTests`** (boolean): Whether to run override tests for this platform when TEST_CPO_OVERRIDE=1 is set. Only one platform should have this set to `true` at a time
 
 ## Configuration Examples
 
@@ -137,8 +138,57 @@ The override configuration files are embedded in the binary at build time:
 - Document the purpose of each override in comments
 
 ### Testing
-- The test section allows specifying a pair of release images to use for a single hypershift e2e test run. Currently only a single pair can be specified per platform. If multiple releases need to be tested, create a clone of your override PR and specify a different pair of images to test in the clone. The clone shouldn't be merged, it should
-only be used for testing.
+- The test section allows specifying a pair of release images to use for a single hypershift e2e test run and controlling which platform's override tests should run
+- The `runTests` field controls whether override tests run for each platform when `TEST_CPO_OVERRIDE=1` is set
+- **CI Resource Optimization**: Typically, only one platform should have `runTests: true` at a time to avoid wasting CI resources
+  - If a PR only updates AWS overrides, set `runTests: true` for AWS and `runTests: false` for Azure
+  - If a PR only updates Azure overrides, set `runTests: true` for Azure and `runTests: false` for AWS
+- **Testing Multiple Platforms**: Both platforms can have `runTests: true` simultaneously if your changes affect both platforms (e.g., structural changes to the override system itself)
+
+#### Running Override Tests
+
+The `TEST_CPO_OVERRIDE` environment variable enables override testing across the e2e test suite.
+
+**What TEST_CPO_OVERRIDE does:**
+1. Configures all e2e tests to use the release images specified in the `testing` section of `overrides.yaml` instead of the default latest/previous releases
+2. In CI environments, automatically enables CPO overrides in the HyperShift operator (`--enable-cpo-overrides` flag)
+3. Triggers verification in `TestCreateCluster` that validates the CPO pod is running with the expected override image
+
+**How override verification works:**
+When `TEST_CPO_OVERRIDE=1` is set, the `TestCreateCluster` test automatically verifies that the control-plane-operator pod is running with the correct override image from `overrides.yaml`. This verification happens for all platforms during the standard cluster creation test, so no dedicated override test is needed.
+
+To run override tests:
+
+1. Set the `TEST_CPO_OVERRIDE` environment variable:
+   ```bash
+   export TEST_CPO_OVERRIDE=1
+   ```
+
+2. Configure the testing release images in `overrides.yaml` and set which platform(s) to test:
+   ```yaml
+   platforms:
+     aws:
+       testing:
+         latest: "quay.io/openshift-release-dev/ocp-release:4.19.10-x86_64"
+         previous: "quay.io/openshift-release-dev/ocp-release:4.19.9-x86_64"
+         runTests: true  # Set to true to test this platform's overrides
+     azure:
+       testing:
+         latest: "quay.io/openshift-release-dev/ocp-release:4.19.10-x86_64"
+         previous: "quay.io/openshift-release-dev/ocp-release:4.19.9-x86_64"
+         runTests: false  # Set to false to skip this platform's tests (saves CI resources)
+   ```
+
+   Note: Both platforms can have `runTests: true` if your changes affect both platforms.
+
+3. When running locally, ensure CPO overrides are enabled when installing the operator:
+   ```bash
+   bin/hypershift install --enable-cpo-overrides ...
+   ```
+
+4. Run the e2e tests on the desired platform:
+   - All tests will use the configured override test releases
+   - `TestCreateCluster` will automatically verify the CPO override image is correctly applied
 
 ## Troubleshooting
 

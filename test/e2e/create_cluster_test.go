@@ -19,6 +19,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/azureutil"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -2355,6 +2356,13 @@ func TestCreateCluster(t *testing.T) {
 
 		if globalOpts.Platform == hyperv1.AzurePlatform {
 			e2eutil.EnsureKubeAPIServerAllowedCIDRs(t, ctx, mgtClient, guestConfig, hostedCluster)
+		}
+		e2eutil.EnsureGlobalPullSecret(t, ctx, mgtClient, hostedCluster)
+
+		// Verify CPO override image if TEST_CPO_OVERRIDE=1 is set
+		if os.Getenv("TEST_CPO_OVERRIDE") == "1" {
+			controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+			e2eutil.VerifyCPOOverrideImage(t, ctx, mgtClient, controlPlaneNamespace, clusterOpts.ReleaseImage, string(globalOpts.Platform))
 		}
 	}).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster", globalOpts.ServiceAccountSigningKey)
