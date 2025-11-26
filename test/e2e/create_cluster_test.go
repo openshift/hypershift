@@ -341,7 +341,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
 								Project:        "my-project-123",
 								Region:         "us-central1",
-								CreateDnsZones: true,
+								CreateDNSZones: true,
 							}
 						},
 						expectedErrorSubstring: "",
@@ -353,7 +353,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
 								Project:        "my-project-123",
 								Region:         "us-central1",
-								CreateDnsZones: false,
+								CreateDNSZones: false,
 							}
 						},
 						expectedErrorSubstring: "",

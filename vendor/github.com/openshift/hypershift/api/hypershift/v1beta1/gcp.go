@@ -87,5 +87,5 @@ type GCPPlatformSpec struct {
 	// and internal communication (hypershift.local). Defaults to false.
 	// +kubebuilder:default=false
 	// +optional
-	CreateDnsZones bool `json:"createDnsZones,omitempty"`
+	CreateDNSZones bool `json:"createDnsZones,omitempty"`
 }

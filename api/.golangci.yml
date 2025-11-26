@@ -120,7 +120,7 @@ issues:
       linters:
         - kubeapilinter
     - path: "hypershift/v1beta1/gcp.go"
-      text: "nobools: field CreateDnsZones should not use a bool. Use a string type with meaningful constant values as an enum."
+      text: "nobools: field CreateDNSZones should not use a bool. Use a string type with meaningful constant values as an enum."
       linters:
         - kubeapilinter
     - path: "hypershift/v1beta1/hostedcluster_types.go"
