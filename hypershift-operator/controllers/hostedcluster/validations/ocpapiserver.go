@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"slices"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -15,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -31,6 +33,7 @@ func ValidateOCPAPIServerSANs(ctx context.Context, hc *hyperv1.HostedCluster, cl
 		entryCertIPs      = make([]string, 0)
 		kasNames          = make([]string, 0)
 		kasIPs            = make([]string, 0)
+		log               = ctrl.LoggerFrom(ctx)
 	)
 
 	// At this point, maybe the HCP is not there yet
@@ -50,6 +53,17 @@ func ValidateOCPAPIServerSANs(ctx context.Context, hc *hyperv1.HostedCluster, cl
 					return errs
 				}
 			}
+		}
+
+		if _, exists := hc.Annotations[hyperv1.SkipKASConflicSANValidation]; exists {
+			log.Info("Skipping KAS certificate SANs validation due to annotation", "annotation", hyperv1.SkipKASConflicSANValidation)
+			return errs
+		}
+
+		// This is the ROSA case, the case when the provider uses privateLink. The api-int will use by default the local address to reach the API internally meanwhile being only public could cause issues with the certificates.
+		if hc.Spec.Platform.AWS != nil && (hc.Spec.Platform.AWS.EndpointAccess == hyperv1.Private || hc.Spec.Platform.AWS.EndpointAccess == hyperv1.PublicAndPrivate) {
+			log.Info("Skipping KAS certificate SANs validation due to AWS endpoint access value", "endpointAccess", hc.Spec.Platform.AWS.EndpointAccess)
+			return errs
 		}
 
 		kasNames, kasIPs, err = supportpki.GetKASServerCertificatesSANs("", fmt.Sprintf("api.%s.hypershift.local", hc.Name), []string{}, "")
@@ -145,10 +159,62 @@ func appendEntriesIfNotExists(slice []string, entries []string) []string {
 	return slice
 }
 
+// isDNSNameMatch checks if a DNS name matches a pattern, supporting wildcards.
+// Wildcards are only allowed at the beginning of a domain and can only match one label.
+// Examples:
+// - "*.example.com" matches "sub.example.com" but not "sub.sub.example.com"
+// - "*.foo.bar.com" matches "baz.foo.bar.com" but not "qux.baz.foo.bar.com"
+func isDNSNameMatch(name, pattern string) bool {
+	// Early return for exact matches
+	if name == pattern {
+		return true
+	}
+
+	// Early return for non-wildcard patterns
+	if !strings.HasPrefix(pattern, "*.") {
+		return false
+	}
+
+	// Extract the domain part after the wildcard
+	wildcardDomain := pattern[2:] // Remove "*."
+
+	// Early return if name doesn't end with the wildcard domain
+	if !strings.HasSuffix(name, wildcardDomain) {
+		return false
+	}
+
+	// Split both names into labels for comparison
+	nameLabels := strings.Split(name, ".")
+	wildcardLabels := strings.Split(wildcardDomain, ".")
+
+	// Wildcard can only match one label, so name must have exactly one more label
+	if len(nameLabels) != len(wildcardLabels)+1 {
+		return false
+	}
+
+	// Verify that all wildcard labels match the corresponding name labels
+	// Skip the first name label (which is what the wildcard matches)
+	return slices.Equal(nameLabels[1:], wildcardLabels)
+}
+
+// isDNSNameConflicting checks if two DNS names conflict, considering wildcards.
+// A conflict occurs if either name matches the other pattern.
+func isDNSNameConflicting(name1, name2 string) bool {
+	return isDNSNameMatch(name1, name2) || isDNSNameMatch(name2, name1)
+}
+
 func checkConflictingSANs(customEntries []string, kasSANEntries []string, entryType string) error {
 	for _, customEntry := range customEntries {
+		// Check for exact matches first
 		if slices.Contains(kasSANEntries, customEntry) {
-			return fmt.Errorf("conflicting %s found in KAS SANs. Configuration is invalid", entryType)
+			return fmt.Errorf("conflicting %s found in KAS SANs. kasEntries: %s, customEntry: %s. The configuration is invalid because the custom %s is conflicting with the KAS SANs", entryType, kasSANEntries, customEntry, entryType)
+		}
+
+		// Check for wildcard matches
+		for _, kasEntry := range kasSANEntries {
+			if isDNSNameConflicting(customEntry, kasEntry) {
+				return fmt.Errorf("conflicting %s found in KAS SANs. kasEntry: %s, customEntry: %s. The configuration is invalid because the custom %s is conflicting with the KAS SANs", entryType, kasEntry, customEntry, entryType)
+			}
 		}
 	}
 	return nil
