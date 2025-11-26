@@ -453,6 +453,21 @@ func WaitForReadyNodesByLabels(t *testing.T, ctx context.Context, client crclien
 }
 
 func WaitForNodePoolConfigUpdateComplete(t *testing.T, ctx context.Context, client crclient.Client, np *hyperv1.NodePool) {
+	WaitForNodePoolConfigUpdateCompleteWithPlatform(t, ctx, client, np, hyperv1.NonePlatform)
+}
+
+func WaitForNodePoolConfigUpdateCompleteWithPlatform(t *testing.T, ctx context.Context, client crclient.Client, np *hyperv1.NodePool, platform hyperv1.PlatformType) {
+	// configUpdateTimeout for config updates to complete
+	configUpdateTimeout := 25 * time.Minute
+	switch platform {
+	case hyperv1.AzurePlatform:
+		// Azure VMs are experiencing slow provisioning and upgrade times.
+		// Extend timeout to account for Azure's slower platform operations.
+		configUpdateTimeout = 45 * time.Minute
+	case hyperv1.KubevirtPlatform:
+		// KubeVirt also tends to be slower for config updates
+		configUpdateTimeout = 45 * time.Minute
+	}
 	EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to start config update", np.Namespace, np.Name),
 		func(ctx context.Context) (*hyperv1.NodePool, error) {
 			nodePool := &hyperv1.NodePool{}
@@ -481,7 +496,7 @@ func WaitForNodePoolConfigUpdateComplete(t *testing.T, ctx context.Context, clie
 				Status: metav1.ConditionFalse,
 			}),
 		},
-		WithTimeout(25*time.Minute),
+		WithTimeout(configUpdateTimeout),
 		WithInterval(20*time.Second), // Increased from 15 seconds to reduce API calls and prevent rate limiting
 	)
 }

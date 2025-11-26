@@ -43,6 +43,24 @@ func (k *RollingUpgradeTest) Setup(t *testing.T) {
 	}
 }
 
+func (k *RollingUpgradeTest) getRollingUpgradeTimeout() time.Duration {
+	// Default timeout for rolling upgrades
+	upgradeTimeout := 30 * time.Minute
+
+	// Platform-specific timeouts
+	switch k.hostedCluster.Spec.Platform.Type {
+	case hyperv1.AzurePlatform:
+		// Azure VMs are experiencing slow provisioning and upgrade times.
+		// Extend timeout to account for Azure's slower platform operations.
+		upgradeTimeout = 45 * time.Minute
+	case hyperv1.KubevirtPlatform:
+		// KubeVirt also tends to be slower for upgrades
+		upgradeTimeout = 45 * time.Minute
+	}
+
+	return upgradeTimeout
+}
+
 func (k *RollingUpgradeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
 	nodePool := &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
@@ -111,7 +129,7 @@ func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 				Status: metav1.ConditionFalse,
 			}),
 		},
-		e2eutil.WithTimeout(30*time.Minute),
+		e2eutil.WithTimeout(k.getRollingUpgradeTimeout()),
 	)
 
 	switch globalOpts.Platform {
