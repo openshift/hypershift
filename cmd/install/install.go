@@ -996,14 +996,11 @@ func setupRBAC(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Servi
 	}.Build()
 	objects = append(objects, operatorRoleBinding)
 
-	// In OpenShift management clusters, this RoleBinding is brought in through openshift/cluster-kube-apiserver-operator.
-	// In ARO HCP, Hosted Clusters are running on AKS management clusters, so we need to provide this through the HO.
-	if opts.ManagedService == hyperv1.AroHCP {
-		roleBinding := assets.KubeSystemRoleBinding{
-			Namespace: "kube-system",
-		}.Build()
-		objects = append(objects, roleBinding)
-	}
+	// HyperShift components that serve metrics need access to the client CA bundle
+	// for request authentication. This RoleBinding grants service accounts read access
+	// to the extension-apiserver-authentication-reader Role in kube-system namespace.
+	roleBinding := assets.HyperShiftExtensionAPIServerAuthenticationReaderRoleBinding{}.Build()
+	objects = append(objects, roleBinding)
 
 	if opts.EnableAdminRBACGeneration {
 		clientObjs := setupAdminRBAC(operatorNamespace)
