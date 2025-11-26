@@ -1515,6 +1515,7 @@ gomodules.xyz/jsonpatch/v2
 # google.golang.org/api v0.224.0
 ## explicit; go 1.23.0
 google.golang.org/api/cloudresourcemanager/v1
+google.golang.org/api/compute/v1
 google.golang.org/api/googleapi
 google.golang.org/api/googleapi/transport
 google.golang.org/api/iam/v1
