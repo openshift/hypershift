@@ -218,7 +218,7 @@ func (o *CompletedAzurePlatformCreateOptions) NodePoolPlatform(nodePool *hyperv1
 		// Aligning with Azure IPI instance type defaults
 		switch nodePool.Spec.Arch {
 		case hyperv1.ArchitectureAMD64:
-			instanceType = "Standard_D4s_v3"
+			instanceType = "Standard_D4s_v5"
 		case hyperv1.ArchitectureARM64:
 			instanceType = "Standard_D4ps_v5"
 		}

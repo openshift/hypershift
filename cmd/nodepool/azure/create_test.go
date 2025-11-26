@@ -19,7 +19,7 @@ const (
 	testMarketplaceOffer     = "aro4"
 	testMarketplaceSKU       = "aro_414"
 	testMarketplaceVersion   = "414.1.20240101"
-	testInstanceType         = "Standard_D4s_v3"
+	testInstanceType         = "Standard_D4s_v5"
 	testDiskStorageType      = "Premium_LRS"
 )
 

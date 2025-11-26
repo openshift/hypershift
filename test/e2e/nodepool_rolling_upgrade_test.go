@@ -73,7 +73,7 @@ func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 	case hyperv1.AWSPlatform:
 		instanceType = "m5.xlarge"
 	case hyperv1.AzurePlatform:
-		vmSize = "Standard_D4s_v3"
+		vmSize = "Standard_D4s_v5"
 	}
 	// change instance type to trigger a rolling upgrade
 	err := e2eutil.UpdateObject(t, k.ctx, k.mgmtClient, &nodePool, func(obj *hyperv1.NodePool) {

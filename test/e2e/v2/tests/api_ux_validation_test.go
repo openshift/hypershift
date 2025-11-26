@@ -1465,7 +1465,7 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 				err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
 					np.Spec.Platform.Type = hyperv1.AzurePlatform
 					np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-						VMSize: "Standard_D4s_v3",
+						VMSize: "Standard_D4s_v5",
 						Image: hyperv1.AzureVMImage{
 							Type: hyperv1.AzureMarketplace,
 							AzureMarketplace: &hyperv1.AzureMarketplaceImage{
@@ -1489,7 +1489,7 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 				err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
 					np.Spec.Platform.Type = hyperv1.AzurePlatform
 					np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-						VMSize: "Standard_D4s_v3",
+						VMSize: "Standard_D4s_v5",
 						Image: hyperv1.AzureVMImage{
 							Type: hyperv1.AzureMarketplace,
 							AzureMarketplace: &hyperv1.AzureMarketplaceImage{
@@ -1512,7 +1512,7 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 				err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
 					np.Spec.Platform.Type = hyperv1.AzurePlatform
 					np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-						VMSize: "Standard_D4s_v3",
+						VMSize: "Standard_D4s_v5",
 						Image: hyperv1.AzureVMImage{
 							Type: hyperv1.AzureMarketplace,
 							AzureMarketplace: &hyperv1.AzureMarketplaceImage{
@@ -1532,7 +1532,7 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 				err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
 					np.Spec.Platform.Type = hyperv1.AzurePlatform
 					np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-						VMSize: "Standard_D4s_v3",
+						VMSize: "Standard_D4s_v5",
 						Image: hyperv1.AzureVMImage{
 							Type:             hyperv1.AzureMarketplace,
 							AzureMarketplace: nil, // nil signals the controller to populate marketplace details from release payload
@@ -1550,7 +1550,7 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 				err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
 					np.Spec.Platform.Type = hyperv1.AzurePlatform
 					np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-						VMSize: "Standard_D4s_v3",
+						VMSize: "Standard_D4s_v5",
 						Image: hyperv1.AzureVMImage{
 							Type: hyperv1.AzureMarketplace,
 							AzureMarketplace: &hyperv1.AzureMarketplaceImage{
@@ -1572,7 +1572,7 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 				err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
 					np.Spec.Platform.Type = hyperv1.AzurePlatform
 					np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-						VMSize: "Standard_D4s_v3",
+						VMSize: "Standard_D4s_v5",
 						Image: hyperv1.AzureVMImage{
 							Type: hyperv1.AzureMarketplace,
 							AzureMarketplace: &hyperv1.AzureMarketplaceImage{
@@ -1593,7 +1593,7 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 				err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
 					np.Spec.Platform.Type = hyperv1.AzurePlatform
 					np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-						VMSize: "Standard_D4s_v3",
+						VMSize: "Standard_D4s_v5",
 						Image: hyperv1.AzureVMImage{
 							Type: hyperv1.AzureMarketplace,
 							AzureMarketplace: &hyperv1.AzureMarketplaceImage{

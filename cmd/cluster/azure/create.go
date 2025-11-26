@@ -379,7 +379,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		// Aligning with Azure IPI instance type defaults
 		switch azureNodePool.Spec.Arch {
 		case hyperv1.ArchitectureAMD64:
-			instanceType = "Standard_D4s_v3"
+			instanceType = "Standard_D4s_v5"
 		case hyperv1.ArchitectureARM64:
 			instanceType = "Standard_D4ps_v5"
 		}

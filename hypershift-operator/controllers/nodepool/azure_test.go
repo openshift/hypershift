@@ -552,7 +552,7 @@ func TestAzureMachineTemplate(t *testing.T) {
 								ImageID: ptr.To("test-image-id"),
 							},
 							SubnetID: "/subscriptions/sub-123/resourceGroups/rg-test/providers/Microsoft.Network/virtualNetworks/vnet-test/subnets/subnet-worker",
-							VMSize:   "Standard_D4s_v3",
+							VMSize:   "Standard_D4s_v5",
 							OSDisk: hyperv1.AzureNodePoolOSDisk{
 								SizeGiB:                120,
 								DiskStorageAccountType: "Premium_LRS",
@@ -567,7 +567,7 @@ func TestAzureMachineTemplate(t *testing.T) {
 			expectedTemplateName:   "azure-machine-template-test",
 			expectedErr:            false,
 			validateTemplateSpec:   true,
-			expectedVMSize:         "Standard_D4s_v3",
+			expectedVMSize:         "Standard_D4s_v5",
 			expectedSubnetName:     "subnet-worker",
 			expectedImageID:        ptr.To("test-image-id"),
 			expectedDiskSizeGB:     ptr.To[int32](120),
