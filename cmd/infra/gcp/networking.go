@@ -193,47 +193,6 @@ func (n *NetworkManager) CreateNAT(ctx context.Context, routerName, subnetSelfLi
 	return natName, nil
 }
 
-// CreateEgressFirewall creates a firewall rule allowing egress traffic.
-func (n *NetworkManager) CreateEgressFirewall(ctx context.Context, networkSelfLink string) (*compute.Firewall, error) {
-	firewallName := n.formatFirewallName()
-	n.logger.Info("Creating egress firewall rule", "name", firewallName)
-
-	firewall := &compute.Firewall{
-		Name:        firewallName,
-		Network:     networkSelfLink,
-		Direction:   "EGRESS",
-		Priority:    1000,
-		Description: fmt.Sprintf("HyperShift egress firewall for cluster %s", n.infraID),
-		Allowed: []*compute.FirewallAllowed{
-			{
-				IPProtocol: "tcp",
-				Ports:      []string{"0-65535"},
-			},
-			{
-				IPProtocol: "udp",
-				Ports:      []string{"0-65535"},
-			},
-		},
-		DestinationRanges: []string{"0.0.0.0/0"},
-	}
-
-	op, err := n.computeService.Firewalls.Insert(n.projectID, firewall).Context(ctx).Do()
-	if err != nil {
-		if isAlreadyExistsError(err) {
-			n.logger.Info("Using existing egress firewall rule", "name", firewallName)
-			return n.getFirewall(ctx, firewallName)
-		}
-		return nil, fmt.Errorf("failed to create egress firewall rule: %w", err)
-	}
-
-	if err := n.waitForGlobalOperation(ctx, op.Name); err != nil {
-		return nil, fmt.Errorf("failed waiting for egress firewall rule creation: %w", err)
-	}
-
-	n.logger.Info("Created egress firewall rule", "name", firewallName)
-	return n.getFirewall(ctx, firewallName)
-}
-
 // getNetwork retrieves a VPC network by name.
 func (n *NetworkManager) getNetwork(ctx context.Context, name string) (*compute.Network, error) {
 	return n.computeService.Networks.Get(n.projectID, name).Context(ctx).Do()
@@ -247,11 +206,6 @@ func (n *NetworkManager) getSubnet(ctx context.Context, name string) (*compute.S
 // getRouter retrieves a Cloud Router by name.
 func (n *NetworkManager) getRouter(ctx context.Context, name string) (*compute.Router, error) {
 	return n.computeService.Routers.Get(n.projectID, n.region, name).Context(ctx).Do()
-}
-
-// getFirewall retrieves a firewall rule by name.
-func (n *NetworkManager) getFirewall(ctx context.Context, name string) (*compute.Firewall, error) {
-	return n.computeService.Firewalls.Get(n.projectID, name).Context(ctx).Do()
 }
 
 // DeleteNetwork deletes the VPC network.
@@ -367,28 +321,6 @@ func (n *NetworkManager) DeleteNAT(ctx context.Context) error {
 	return nil
 }
 
-// DeleteEgressFirewall deletes the egress firewall rule.
-func (n *NetworkManager) DeleteEgressFirewall(ctx context.Context) error {
-	firewallName := n.formatFirewallName()
-	n.logger.Info("Deleting egress firewall rule", "name", firewallName)
-
-	op, err := n.computeService.Firewalls.Delete(n.projectID, firewallName).Context(ctx).Do()
-	if err != nil {
-		if isNotFoundError(err) {
-			n.logger.Info("Egress firewall rule not found, skipping", "name", firewallName)
-			return nil
-		}
-		return fmt.Errorf("failed to delete egress firewall rule: %w", err)
-	}
-
-	if err := n.waitForGlobalOperation(ctx, op.Name); err != nil {
-		return fmt.Errorf("failed waiting for egress firewall rule deletion: %w", err)
-	}
-
-	n.logger.Info("Deleted egress firewall rule", "name", firewallName)
-	return nil
-}
-
 // waitForGlobalOperation polls a global operation until completion or timeout.
 func (n *NetworkManager) waitForGlobalOperation(ctx context.Context, opName string) error {
 	deadline := time.Now().Add(defaultOperationTimeout)
@@ -485,9 +417,4 @@ func (n *NetworkManager) formatRouterName() string {
 // formatNATName returns the Cloud NAT name for this infrastructure.
 func (n *NetworkManager) formatNATName() string {
 	return fmt.Sprintf("%s-nat", n.infraID)
-}
-
-// formatFirewallName returns the egress firewall rule name for this infrastructure.
-func (n *NetworkManager) formatFirewallName() string {
-	return fmt.Sprintf("%s-egress-allow", n.infraID)
 }

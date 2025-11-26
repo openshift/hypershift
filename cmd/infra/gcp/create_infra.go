@@ -30,17 +30,16 @@ type CreateInfraOptions struct {
 
 // CreateInfraOutput contains the output from infrastructure creation
 type CreateInfraOutput struct {
-	Region           string `json:"region"`
-	ProjectID        string `json:"projectId"`
-	InfraID          string `json:"infraId"`
-	NetworkName      string `json:"networkName"`
-	NetworkSelfLink  string `json:"networkSelfLink"`
-	SubnetName       string `json:"subnetName"`
-	SubnetSelfLink   string `json:"subnetSelfLink"`
-	SubnetCIDR       string `json:"subnetCidr"`
-	RouterName       string `json:"routerName"`
-	NATName          string `json:"natName"`
-	FirewallRuleName string `json:"firewallRuleName"`
+	Region          string `json:"region"`
+	ProjectID       string `json:"projectId"`
+	InfraID         string `json:"infraId"`
+	NetworkName     string `json:"networkName"`
+	NetworkSelfLink string `json:"networkSelfLink"`
+	SubnetName      string `json:"subnetName"`
+	SubnetSelfLink  string `json:"subnetSelfLink"`
+	SubnetCIDR      string `json:"subnetCidr"`
+	RouterName      string `json:"routerName"`
+	NATName         string `json:"natName"`
 }
 
 // NewCreateCommand creates a new cobra command for creating GCP infrastructure
@@ -174,13 +173,6 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, logger logr.Logger
 		return nil, fmt.Errorf("failed to create Cloud NAT: %w", err)
 	}
 	result.NATName = natName
-
-	// Create egress firewall rule
-	firewall, err := networkManager.CreateEgressFirewall(ctx, network.SelfLink)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create egress firewall rule: %w", err)
-	}
-	result.FirewallRuleName = firewall.Name
 
 	return result, nil
 }

@@ -77,12 +77,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 	}
 
 	// Delete resources in reverse order of creation (dependencies first)
-	// Order: Firewall -> NAT -> Router -> Subnet -> Network
-
-	// Delete egress firewall rule
-	if err := networkManager.DeleteEgressFirewall(ctx); err != nil {
-		return fmt.Errorf("failed to delete egress firewall rule: %w", err)
-	}
+	// Order: NAT -> Router -> Subnet -> Network
 
 	// Delete Cloud NAT (by updating router to remove NAT config)
 	if err := networkManager.DeleteNAT(ctx); err != nil {

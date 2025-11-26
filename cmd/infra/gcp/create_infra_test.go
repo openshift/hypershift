@@ -93,17 +93,16 @@ func TestCreateInfraOptionsOutput(t *testing.T) {
 			name:       "When output file is specified it should write JSON to file",
 			outputFile: "output.json",
 			result: &CreateInfraOutput{
-				Region:           "us-central1",
-				ProjectID:        "test-project",
-				InfraID:          "test-infra",
-				NetworkName:      "test-infra-network",
-				NetworkSelfLink:  "https://www.googleapis.com/compute/v1/projects/test-project/global/networks/test-infra-network",
-				SubnetName:       "test-infra-subnet",
-				SubnetSelfLink:   "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/test-infra-subnet",
-				SubnetCIDR:       "10.0.0.0/24",
-				RouterName:       "test-infra-router",
-				NATName:          "test-infra-nat",
-				FirewallRuleName: "test-infra-egress-allow",
+				Region:          "us-central1",
+				ProjectID:       "test-project",
+				InfraID:         "test-infra",
+				NetworkName:     "test-infra-network",
+				NetworkSelfLink: "https://www.googleapis.com/compute/v1/projects/test-project/global/networks/test-infra-network",
+				SubnetName:      "test-infra-subnet",
+				SubnetSelfLink:  "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/test-infra-subnet",
+				SubnetCIDR:      "10.0.0.0/24",
+				RouterName:      "test-infra-router",
+				NATName:         "test-infra-nat",
 			},
 			validateJSON: true,
 		},
@@ -198,9 +197,6 @@ func TestCreateInfraOptionsOutput(t *testing.T) {
 				if output.NATName != tt.result.NATName {
 					t.Errorf("expected NATName %q, got %q", tt.result.NATName, output.NATName)
 				}
-				if output.FirewallRuleName != tt.result.FirewallRuleName {
-					t.Errorf("expected FirewallRuleName %q, got %q", tt.result.FirewallRuleName, output.FirewallRuleName)
-				}
 			}
 		})
 	}
@@ -214,7 +210,6 @@ func TestNetworkManagerFormatNames(t *testing.T) {
 		expectedSub string
 		expectedRtr string
 		expectedNAT string
-		expectedFW  string
 	}{
 		{
 			name:        "When infraID is simple it should format names correctly",
@@ -223,7 +218,6 @@ func TestNetworkManagerFormatNames(t *testing.T) {
 			expectedSub: "my-cluster-subnet",
 			expectedRtr: "my-cluster-router",
 			expectedNAT: "my-cluster-nat",
-			expectedFW:  "my-cluster-egress-allow",
 		},
 		{
 			name:        "When infraID has numbers it should format names correctly",
@@ -232,7 +226,6 @@ func TestNetworkManagerFormatNames(t *testing.T) {
 			expectedSub: "cluster-12345-subnet",
 			expectedRtr: "cluster-12345-router",
 			expectedNAT: "cluster-12345-nat",
-			expectedFW:  "cluster-12345-egress-allow",
 		},
 	}
 
@@ -253,9 +246,6 @@ func TestNetworkManagerFormatNames(t *testing.T) {
 			}
 			if got := nm.formatNATName(); got != tt.expectedNAT {
 				t.Errorf("formatNATName() = %q, want %q", got, tt.expectedNAT)
-			}
-			if got := nm.formatFirewallName(); got != tt.expectedFW {
-				t.Errorf("formatFirewallName() = %q, want %q", got, tt.expectedFW)
 			}
 		})
 	}
