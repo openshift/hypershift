@@ -2,13 +2,27 @@ package gcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
 	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
+
+// isNotFoundError checks if an error is a GCP 404 Not Found error.
+func isNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var apiErr *googleapi.Error
+	if errors.As(err, &apiErr) {
+		return apiErr.Code == 404
+	}
+	return false
+}
 
 // NetworkManager encapsulates all GCP Compute API interactions for network infrastructure.
 type NetworkManager struct {
@@ -240,6 +254,141 @@ func (n *NetworkManager) getFirewall(ctx context.Context, name string) (*compute
 	return n.computeService.Firewalls.Get(n.projectID, name).Context(ctx).Do()
 }
 
+// DeleteNetwork deletes the VPC network.
+func (n *NetworkManager) DeleteNetwork(ctx context.Context) error {
+	networkName := n.formatNetworkName()
+	n.logger.Info("Deleting VPC network", "name", networkName)
+
+	op, err := n.computeService.Networks.Delete(n.projectID, networkName).Context(ctx).Do()
+	if err != nil {
+		if isNotFoundError(err) {
+			n.logger.Info("VPC network not found, skipping", "name", networkName)
+			return nil
+		}
+		return fmt.Errorf("failed to delete VPC network: %w", err)
+	}
+
+	if err := n.waitForGlobalOperation(ctx, op.Name); err != nil {
+		return fmt.Errorf("failed waiting for VPC network deletion: %w", err)
+	}
+
+	n.logger.Info("Deleted VPC network", "name", networkName)
+	return nil
+}
+
+// DeleteSubnet deletes the subnet.
+func (n *NetworkManager) DeleteSubnet(ctx context.Context) error {
+	subnetName := n.formatSubnetName()
+	n.logger.Info("Deleting subnet", "name", subnetName)
+
+	op, err := n.computeService.Subnetworks.Delete(n.projectID, n.region, subnetName).Context(ctx).Do()
+	if err != nil {
+		if isNotFoundError(err) {
+			n.logger.Info("Subnet not found, skipping", "name", subnetName)
+			return nil
+		}
+		return fmt.Errorf("failed to delete subnet: %w", err)
+	}
+
+	if err := n.waitForRegionOperation(ctx, op.Name); err != nil {
+		return fmt.Errorf("failed waiting for subnet deletion: %w", err)
+	}
+
+	n.logger.Info("Deleted subnet", "name", subnetName)
+	return nil
+}
+
+// DeleteRouter deletes the Cloud Router.
+func (n *NetworkManager) DeleteRouter(ctx context.Context) error {
+	routerName := n.formatRouterName()
+	n.logger.Info("Deleting Cloud Router", "name", routerName)
+
+	op, err := n.computeService.Routers.Delete(n.projectID, n.region, routerName).Context(ctx).Do()
+	if err != nil {
+		if isNotFoundError(err) {
+			n.logger.Info("Cloud Router not found, skipping", "name", routerName)
+			return nil
+		}
+		return fmt.Errorf("failed to delete Cloud Router: %w", err)
+	}
+
+	if err := n.waitForRegionOperation(ctx, op.Name); err != nil {
+		return fmt.Errorf("failed waiting for Cloud Router deletion: %w", err)
+	}
+
+	n.logger.Info("Deleted Cloud Router", "name", routerName)
+	return nil
+}
+
+// DeleteNAT deletes the Cloud NAT configuration from the router.
+func (n *NetworkManager) DeleteNAT(ctx context.Context) error {
+	routerName := n.formatRouterName()
+	natName := n.formatNATName()
+	n.logger.Info("Deleting Cloud NAT", "name", natName, "router", routerName)
+
+	// Get the current router configuration
+	router, err := n.getRouter(ctx, routerName)
+	if err != nil {
+		if isNotFoundError(err) {
+			n.logger.Info("Cloud Router not found, skipping NAT deletion", "router", routerName)
+			return nil
+		}
+		return fmt.Errorf("failed to get router for NAT deletion: %w", err)
+	}
+
+	// Find and remove the NAT configuration
+	var updatedNats []*compute.RouterNat
+	found := false
+	for _, nat := range router.Nats {
+		if nat.Name == natName {
+			found = true
+			continue
+		}
+		updatedNats = append(updatedNats, nat)
+	}
+
+	if !found {
+		n.logger.Info("Cloud NAT not found, skipping", "name", natName)
+		return nil
+	}
+
+	router.Nats = updatedNats
+
+	op, err := n.computeService.Routers.Patch(n.projectID, n.region, routerName, router).Context(ctx).Do()
+	if err != nil {
+		return fmt.Errorf("failed to delete Cloud NAT: %w", err)
+	}
+
+	if err := n.waitForRegionOperation(ctx, op.Name); err != nil {
+		return fmt.Errorf("failed waiting for Cloud NAT deletion: %w", err)
+	}
+
+	n.logger.Info("Deleted Cloud NAT", "name", natName)
+	return nil
+}
+
+// DeleteEgressFirewall deletes the egress firewall rule.
+func (n *NetworkManager) DeleteEgressFirewall(ctx context.Context) error {
+	firewallName := n.formatFirewallName()
+	n.logger.Info("Deleting egress firewall rule", "name", firewallName)
+
+	op, err := n.computeService.Firewalls.Delete(n.projectID, firewallName).Context(ctx).Do()
+	if err != nil {
+		if isNotFoundError(err) {
+			n.logger.Info("Egress firewall rule not found, skipping", "name", firewallName)
+			return nil
+		}
+		return fmt.Errorf("failed to delete egress firewall rule: %w", err)
+	}
+
+	if err := n.waitForGlobalOperation(ctx, op.Name); err != nil {
+		return fmt.Errorf("failed waiting for egress firewall rule deletion: %w", err)
+	}
+
+	n.logger.Info("Deleted egress firewall rule", "name", firewallName)
+	return nil
+}
+
 // waitForGlobalOperation polls a global operation until completion or timeout.
 func (n *NetworkManager) waitForGlobalOperation(ctx context.Context, opName string) error {
 	deadline := time.Now().Add(defaultOperationTimeout)
@@ -258,7 +407,7 @@ func (n *NetworkManager) waitForGlobalOperation(ctx context.Context, opName stri
 
 		if op.Status == "DONE" {
 			if op.Error != nil {
-				return fmt.Errorf("operation failed: %v", op.Error.Errors)
+				return fmt.Errorf("operation failed: %s", formatOperationErrors(op.Error.Errors))
 			}
 			return nil
 		}
@@ -285,13 +434,37 @@ func (n *NetworkManager) waitForRegionOperation(ctx context.Context, opName stri
 
 		if op.Status == "DONE" {
 			if op.Error != nil {
-				return fmt.Errorf("operation failed: %v", op.Error.Errors)
+				return fmt.Errorf("operation failed: %s", formatOperationErrors(op.Error.Errors))
 			}
 			return nil
 		}
 
 		time.Sleep(defaultPollingInterval)
 	}
+}
+
+// formatOperationErrors formats GCP operation errors into a readable string.
+func formatOperationErrors(errors []*compute.OperationErrorErrors) string {
+	if len(errors) == 0 {
+		return "unknown error"
+	}
+	var messages []string
+	for _, e := range errors {
+		messages = append(messages, fmt.Sprintf("%s: %s", e.Code, e.Message))
+	}
+	return fmt.Sprintf("[%s]", joinStrings(messages, ", "))
+}
+
+// joinStrings joins a slice of strings with a separator.
+func joinStrings(strs []string, sep string) string {
+	if len(strs) == 0 {
+		return ""
+	}
+	result := strs[0]
+	for i := 1; i < len(strs); i++ {
+		result += sep + strs[i]
+	}
+	return result
 }
 
 // formatNetworkName returns the VPC network name for this infrastructure.
