@@ -208,31 +208,31 @@ func TestCreateInfraOptionsOutput(t *testing.T) {
 
 func TestNetworkManagerFormatNames(t *testing.T) {
 	tests := []struct {
-		name         string
-		infraID      string
-		expectedNet  string
-		expectedSub  string
-		expectedRtr  string
-		expectedNAT  string
-		expectedFW   string
+		name        string
+		infraID     string
+		expectedNet string
+		expectedSub string
+		expectedRtr string
+		expectedNAT string
+		expectedFW  string
 	}{
 		{
-			name:         "When infraID is simple it should format names correctly",
-			infraID:      "my-cluster",
-			expectedNet:  "my-cluster-network",
-			expectedSub:  "my-cluster-subnet",
-			expectedRtr:  "my-cluster-router",
-			expectedNAT:  "my-cluster-nat",
-			expectedFW:   "my-cluster-egress-allow",
+			name:        "When infraID is simple it should format names correctly",
+			infraID:     "my-cluster",
+			expectedNet: "my-cluster-network",
+			expectedSub: "my-cluster-subnet",
+			expectedRtr: "my-cluster-router",
+			expectedNAT: "my-cluster-nat",
+			expectedFW:  "my-cluster-egress-allow",
 		},
 		{
-			name:         "When infraID has numbers it should format names correctly",
-			infraID:      "cluster-12345",
-			expectedNet:  "cluster-12345-network",
-			expectedSub:  "cluster-12345-subnet",
-			expectedRtr:  "cluster-12345-router",
-			expectedNAT:  "cluster-12345-nat",
-			expectedFW:   "cluster-12345-egress-allow",
+			name:        "When infraID has numbers it should format names correctly",
+			infraID:     "cluster-12345",
+			expectedNet: "cluster-12345-network",
+			expectedSub: "cluster-12345-subnet",
+			expectedRtr: "cluster-12345-router",
+			expectedNAT: "cluster-12345-nat",
+			expectedFW:  "cluster-12345-egress-allow",
 		},
 	}
 
