@@ -41,7 +41,9 @@ type NodePoolTestCase struct {
 }
 
 func TestNodePool(t *testing.T) {
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	nodePoolTestCasesPerHostedCluster := []HostedClusterNodePoolTestCases{
 		{
@@ -172,7 +174,9 @@ func TestNodePool(t *testing.T) {
 }
 
 func TestNodePoolMultiArch(t *testing.T) {
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 	nodePoolTestCasesPerHostedCluster := []HostedClusterNodePoolTestCases{
 		{
 			setup: func(t *testing.T) {
