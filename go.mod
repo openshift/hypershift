@@ -292,6 +292,9 @@ replace sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.7
 // Use our openshift version of karpenter instead of upstream
 replace github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
 
+// Use Kubernetes v1.32.3's version of k8s.io/utils for compatibility
+replace k8s.io/utils => k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
+
 // replace (
 // 	k8s.io/api => k8s.io/api v0.32.3
 // 	k8s.io/apimachinery => k8s.io/apimachinery v0.32.3
