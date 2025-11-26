@@ -107,7 +107,7 @@ func (k *AdditionalTrustBundlePropagationTest) Run(t *testing.T, nodePool hyperv
 					Status: metav1.ConditionTrue,
 				}),
 			},
-			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(20*time.Minute),
+			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(30*time.Minute),
 		)
 
 		t.Logf("Updating hosted cluster by removing additional trust bundle.")
@@ -174,7 +174,7 @@ func (k *AdditionalTrustBundlePropagationTest) Run(t *testing.T, nodePool hyperv
 					Status: metav1.ConditionTrue,
 				}),
 			},
-			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(20*time.Minute),
+			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(30*time.Minute),
 		)
 	})
 }

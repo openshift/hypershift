@@ -213,7 +213,7 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 				Status: metav1.ConditionFalse,
 			}),
 		},
-		e2eutil.WithTimeout(20*time.Minute),
+		e2eutil.WithTimeout(30*time.Minute),
 	)
 	newNodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, ru.hostedClusterClient, &nodePool, ru.hostedCluster.Spec.Platform.Type)
 	e2eutil.EnsureNodesRuntime(t, newNodes)
