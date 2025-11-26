@@ -221,6 +221,14 @@ func TestGetDigest(t *testing.T) {
 			validateCache:  true,
 			expectedDigest: "sha256:e96047c50caf0aaffeaf7ed0fe50bd3f574ad347cd0f588a56b876f79cc29d3e",
 		},
+		{
+			name:           "Image not present in overriden registry, falling back to original imageRef",
+			imageRef:       "quay.io/prometheus/busybox:latest",
+			pullSecret:     pullSecret,
+			expectedErr:    false,
+			validateCache:  true,
+			expectedDigest: "sha256:dfa54ef35e438b9e71ac5549159074576b6382f95ce1a434088e05fd6b730bc4",
+		},
 	}
 
 	for _, tc := range testsCases {
@@ -247,6 +255,7 @@ func TestGetDigest(t *testing.T) {
 		})
 	}
 }
+
 func TestSeekOverride(t *testing.T) {
 	testsCases := []struct {
 		name           string
@@ -408,7 +417,7 @@ func TestSeekOverride(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to read manifests file: %v", err)
 			}
-			imgRef := seekOverride(ctx, tc.overrides, tc.imageRef, pullSecret)
+			imgRef := SeekOverride(ctx, tc.overrides, tc.imageRef, pullSecret)
 			g.Expect(imgRef).To(Equal(tc.expectedImgRef), fmt.Sprintf("Expected image reference to be equal to: %v, \nbut got: %v", tc.expectedImgRef, imgRef))
 		})
 	}
@@ -440,5 +449,270 @@ func fakeOverrides() map[string][]string {
 		"quay.io/prometheus": {
 			"brew.registry.redhat.io/prometheus",
 		},
+	}
+}
+
+func TestTryOnlyNamespaceOverride(t *testing.T) {
+	testsCases := []struct {
+		name           string
+		ref            reference.DockerImageReference
+		sourceRef      reference.DockerImageReference
+		mirrorRef      reference.DockerImageReference
+		expectedImgRef *reference.DockerImageReference
+		overrideFound  bool
+		expectAnErr    bool
+	}{
+		{
+			name: "if namespace override is found",
+			ref: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Registry: "quay.io",
+				Name:     "openshift-release-dev",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry: "myregistry.io",
+				Name:     "openshift-release-dev",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "myregistry.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			overrideFound: true,
+			expectAnErr:   false,
+		},
+		{
+			name: "if namespace override is not found - namespace not empty",
+			ref: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Namespace: "test",
+				Name:      "openshift-release-dev",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry: "myregistry.io",
+			},
+			expectedImgRef: nil,
+			overrideFound:  false,
+			expectAnErr:    false,
+		},
+		{
+			name: "if namespace override is not found - name mismatch",
+			ref: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Name: "different-namespace",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry: "myregistry.io",
+			},
+			expectedImgRef: nil,
+			overrideFound:  false,
+			expectAnErr:    false,
+		},
+	}
+
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			imgRef, overrideFound, err := tryOnlyNamespaceOverride(tc.ref, tc.sourceRef, tc.mirrorRef)
+			g.Expect(imgRef).To(Equal(tc.expectedImgRef))
+			g.Expect(overrideFound).To(Equal(tc.overrideFound))
+			g.Expect(err != nil).To(Equal(tc.expectAnErr))
+		})
+	}
+}
+
+func TestTryExactCoincidenceOverride(t *testing.T) {
+	testsCases := []struct {
+		name           string
+		ref            reference.DockerImageReference
+		sourceRef      reference.DockerImageReference
+		mirrorRef      reference.DockerImageReference
+		expectedImgRef *reference.DockerImageReference
+		overrideFound  bool
+		expectAnErr    bool
+	}{
+		{
+			name: "if exact coincidence override is found",
+			ref: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry:  "myregistry.io",
+				Namespace: "openshift-release-dev",
+				Name:      "ocp-release",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "myregistry.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			overrideFound: true,
+			expectAnErr:   false,
+		},
+		{
+			name: "if exact coincidence override is not found",
+			ref: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "ocp-release",
+				Namespace: "openshift-release-dev",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Registry:  "quay.io",
+				Name:      "different-name",
+				Namespace: "openshift-release-dev",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry: "myregistry.io",
+			},
+			expectedImgRef: nil,
+			overrideFound:  false,
+			expectAnErr:    false,
+		},
+	}
+
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			imgRef, overrideFound, err := tryExactCoincidenceOverride(tc.ref, tc.sourceRef, tc.mirrorRef)
+			if tc.overrideFound {
+				g.Expect(imgRef).To(Equal(tc.expectedImgRef))
+			} else {
+				g.Expect(imgRef).To(BeNil())
+			}
+			g.Expect(overrideFound).To(Equal(tc.overrideFound))
+			g.Expect(err != nil).To(Equal(tc.expectAnErr))
+		})
+	}
+}
+
+func TestTryOnlyRootRegistryOverride(t *testing.T) {
+	testsCases := []struct {
+		name           string
+		ref            reference.DockerImageReference
+		sourceRef      reference.DockerImageReference
+		mirrorRef      reference.DockerImageReference
+		expectedImgRef *reference.DockerImageReference
+		overrideFound  bool
+		expectAnErr    bool
+	}{
+		{
+			name: "if root registry override is found",
+			ref: reference.DockerImageReference{
+				Registry:  "registry.build02.ci.openshift.org",
+				Name:      "release",
+				Namespace: "ocp",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Name: "registry.build02.ci.openshift.org",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Name: "virthost.ostest.test.metalkube.org:5000",
+			},
+			expectedImgRef: &reference.DockerImageReference{
+				Registry:  "virthost.ostest.test.metalkube.org:5000",
+				Name:      "release",
+				Namespace: "ocp",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			overrideFound: true,
+			expectAnErr:   false,
+		},
+		{
+			name: "if root registry override is not found - namespace not empty",
+			ref: reference.DockerImageReference{
+				Registry:  "registry.build02.ci.openshift.org",
+				Name:      "release",
+				Namespace: "ocp",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Namespace: "test",
+				Name:      "registry.build02.ci.openshift.org",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry: "virthost.ostest.test.metalkube.org:5000",
+			},
+			expectedImgRef: nil,
+			overrideFound:  false,
+			expectAnErr:    false,
+		},
+		{
+			name: "if root registry override is not found - registry not empty",
+			ref: reference.DockerImageReference{
+				Registry:  "registry.build02.ci.openshift.org",
+				Name:      "release",
+				Namespace: "ocp",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Registry: "test",
+				Name:     "registry.build02.ci.openshift.org",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry: "virthost.ostest.test.metalkube.org:5000",
+			},
+			expectedImgRef: nil,
+			overrideFound:  false,
+			expectAnErr:    false,
+		},
+		{
+			name: "if root registry override is not found - name mismatch",
+			ref: reference.DockerImageReference{
+				Registry:  "registry.build02.ci.openshift.org",
+				Name:      "release",
+				Namespace: "ocp",
+				Tag:       "4.15.0-rc.0-multi",
+			},
+			sourceRef: reference.DockerImageReference{
+				Name: "different-registry",
+			},
+			mirrorRef: reference.DockerImageReference{
+				Registry: "virthost.ostest.test.metalkube.org:5000",
+			},
+			expectedImgRef: nil,
+			overrideFound:  false,
+			expectAnErr:    false,
+		},
+	}
+
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			imgRef, overrideFound, err := tryOnlyRootRegistryOverride(tc.ref, tc.sourceRef, tc.mirrorRef)
+			if tc.overrideFound {
+				g.Expect(imgRef).To(Equal(tc.expectedImgRef))
+			} else {
+				g.Expect(imgRef).To(BeNil())
+			}
+			g.Expect(overrideFound).To(Equal(tc.overrideFound))
+			g.Expect(err != nil).To(Equal(tc.expectAnErr))
+		})
 	}
 }

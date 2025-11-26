@@ -1,7 +1,6 @@
 package olm
 
 import (
-	"context"
 	"fmt"
 	"math/big"
 	"strings"
@@ -9,7 +8,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/assets"
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -18,7 +16,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 
-	"github.com/blang/semver"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -121,54 +118,12 @@ func findTagReference(tags []imagev1.TagReference, name string) *imagev1.TagRefe
 	return nil
 }
 
-func GetCatalogImages(ctx context.Context, hcp hyperv1.HostedControlPlane, pullSecret []byte, digestLister registryclient.DigestListerFN, imageMetadataProvider util.ImageMetadataProvider) (map[string]string, error) {
-	imageRef := hcp.Spec.ReleaseImage
-	imageConfig, _, _, err := imageMetadataProvider.GetMetadata(ctx, imageRef, pullSecret)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get image metadata: %w", err)
-	}
-
-	version, err := semver.Parse(imageConfig.Config.Labels["io.openshift.release"])
-	if err != nil {
-		return nil, fmt.Errorf("invalid OpenShift release version format: %s", imageConfig.Config.Labels["io.openshift.release"])
-	}
-
-	if hcp.Spec.OLMCatalogPlacement != hyperv1.GuestOLMCatalogPlacement {
-		//check catalogs of last 4 supported version incase new version is not available
-		supportedVersions := 4
-		for i := 0; i < supportedVersions; i++ {
-			_, err = digestLister(ctx, fmt.Sprintf("registry.redhat.io/redhat/certified-operator-index:v%d.%d", version.Major, version.Minor), pullSecret)
-			if err == nil {
-				break
-			}
-			//manifest unknown error is expected if the image is not available.
-			//If the all supported versions are checked and the image is still not available, return the error
-			if !strings.Contains(err.Error(), "manifest unknown") {
-				return nil, err
-			}
-			if i == supportedVersions-1 {
-				return nil, fmt.Errorf("failed to get image digest for 4 previous versions of certified-operator-index: %w", err)
-			}
-			version.Minor--
-		}
-	}
-
-	operators := map[string]string{
-		"certified-operators": fmt.Sprintf("registry.redhat.io/redhat/certified-operator-index:v%d.%d", version.Major, version.Minor),
-		"community-operators": fmt.Sprintf("registry.redhat.io/redhat/community-operator-index:v%d.%d", version.Major, version.Minor),
-		"redhat-marketplace":  fmt.Sprintf("registry.redhat.io/redhat/redhat-marketplace-index:v%d.%d", version.Major, version.Minor),
-		"redhat-operators":    fmt.Sprintf("registry.redhat.io/redhat/redhat-operator-index:v%d.%d", version.Major, version.Minor),
-	}
-
-	return operators, nil
-}
-
-func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef config.OwnerRef, isImageRegistryOverrides map[string][]string, catalogImages map[string]string) error {
+func ReconcileCatalogsImageStream(imageStream *imagev1.ImageStream, ownerRef config.OwnerRef, catalogImages map[string]string) error {
 	imageStream.Spec.LookupPolicy.Local = true
 	if imageStream.Spec.Tags == nil {
 		imageStream.Spec.Tags = []imagev1.TagReference{}
 	}
-	for name, image := range getCatalogToImageWithISImageRegistryOverrides(catalogImages, isImageRegistryOverrides) {
+	for name, image := range catalogImages {
 		tagRef := findTagReference(imageStream.Spec.Tags, name)
 		if tagRef == nil {
 			imageStream.Spec.Tags = append(imageStream.Spec.Tags, imagev1.TagReference{

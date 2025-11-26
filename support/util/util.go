@@ -26,6 +26,7 @@ import (
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -62,9 +63,9 @@ func CopyConfigMap(cm, source *corev1.ConfigMap) {
 	}
 }
 
-func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exists bool, err error) {
+func DeleteIfNeededWithOptions(ctx context.Context, c client.Client, o client.Object, opts ...client.DeleteOption) (exists bool, err error) {
 	if err := c.Get(ctx, client.ObjectKeyFromObject(o), o); err != nil {
-		if apierrors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("error getting %T: %w", o, err)
@@ -72,7 +73,7 @@ func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exis
 	if o.GetDeletionTimestamp() != nil {
 		return true, nil
 	}
-	if err := c.Delete(ctx, o); err != nil {
+	if err := c.Delete(ctx, o, opts...); err != nil {
 		if apierrors.IsNotFound(err) {
 			return false, nil
 		}
@@ -80,6 +81,17 @@ func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exis
 	}
 
 	return true, nil
+}
+
+func DeleteIfNeeded(ctx context.Context, c client.Client, o client.Object) (exists bool, err error) {
+	return DeleteIfNeededWithOptions(ctx, c, o)
+}
+
+func HCControlPlaneReleaseImage(hcluster *hyperv1.HostedCluster) string {
+	if hcluster.Spec.ControlPlaneRelease != nil {
+		return hcluster.Spec.ControlPlaneRelease.Image
+	}
+	return hcluster.Spec.Release.Image
 }
 
 func HCPControlPlaneReleaseImage(hcp *hyperv1.HostedControlPlane) string {

@@ -10,7 +10,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -68,6 +67,7 @@ import (
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/catalogs"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/conditions"
 	"github.com/openshift/hypershift/support/config"
@@ -122,8 +122,7 @@ const (
 )
 
 var (
-	olmCatalogImagesOnce sync.Once
-	catalogImages        map[string]string
+	catalogImages map[string]string
 )
 
 type InfrastructureStatus struct {
@@ -3800,23 +3799,16 @@ func (r *HostedControlPlaneReconciler) reconcileOperatorLifecycleManager(ctx con
 				return fmt.Errorf("failed to get pull secret for namespace %s: %w", hcp.Namespace, err)
 			}
 
-			var getCatalogImagesErr error
-			olmCatalogImagesOnce.Do(func() {
-				catalogImages, err = olm.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], registryclient.GetListDigest, r.ImageMetadataProvider)
-				if err != nil {
-					getCatalogImagesErr = err
-					return
-				}
-			})
-			if getCatalogImagesErr != nil {
-				return fmt.Errorf("failed to get catalog images: %w", getCatalogImagesErr)
+			catalogImages, err = catalogs.GetCatalogImages(ctx, *hcp, pullSecret.Data[corev1.DockerConfigJsonKey], r.ImageMetadataProvider, isImageRegistryOverrides)
+			if err != nil {
+				return fmt.Errorf("failed to get catalog images: %w", err)
 			}
 
 			if r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream) {
 				catalogsImageStream := manifests.CatalogsImageStream(hcp.Namespace)
 				if !overrideImages {
 					if _, err := createOrUpdate(ctx, r, catalogsImageStream, func() error {
-						return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, isImageRegistryOverrides, catalogImages)
+						return olm.ReconcileCatalogsImageStream(catalogsImageStream, p.OwnerRef, catalogImages)
 					}); err != nil {
 						return fmt.Errorf("failed to reconcile catalogs image stream: %w", err)
 					}
