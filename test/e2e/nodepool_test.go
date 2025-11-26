@@ -309,7 +309,9 @@ func (i *DummyInfraSetup) TeardownInfra(*testing.T) error {
 
 func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hcClient crclient.Client,
 	defaultNodepool hyperv1.NodePool, nodePoolTest NodePoolTest, manifestBuilder NodePoolManifestBuilder) {
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	nodePoolTest.Setup(t)
 	g := NewWithT(t)
