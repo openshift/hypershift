@@ -33,7 +33,9 @@ import (
 )
 
 func TestOnCreateAPIUX(t *testing.T) {
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
@@ -2296,7 +2298,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 // TestCreateCluster implements a test that creates a cluster with the code under test
 // vs upgrading to the code under test as TestUpgradeControlPlane does.
 func TestCreateCluster(t *testing.T) {
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
@@ -2363,7 +2367,9 @@ func TestCreateCluster(t *testing.T) {
 // TODO(alberto): rename this e2e to drop TestCreateCluster prefix after merging https://github.com/openshift/release/pull/66655
 // Without the prefix, this e2e wouldn't run now.
 func TestCreateClusterDefaultSecurityContextUID(t *testing.T) {
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 	if globalOpts.Platform != hyperv1.AzurePlatform {
 		t.Skip("test only supported on platform Azure")
 	}
@@ -2436,7 +2442,9 @@ func TestCreateClusterRequestServingIsolation(t *testing.T) {
 	if globalOpts.Platform != hyperv1.AWSPlatform {
 		t.Skip("Request serving isolation test requires the AWS platform")
 	}
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
@@ -2471,7 +2479,9 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	if globalOpts.Platform != hyperv1.AWSPlatform && globalOpts.Platform != hyperv1.AzurePlatform {
 		t.Skip("test only supported on platform AWS and Azure")
 	}
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
@@ -2592,7 +2602,9 @@ func TestCreateClusterIngressOperatorConfiguration(t *testing.T) {
 	if globalOpts.Platform != hyperv1.AWSPlatform && globalOpts.Platform != hyperv1.AzurePlatform {
 		t.Skip("test only supported on platform AWS, Azure")
 	}
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
@@ -2628,7 +2640,9 @@ func TestCreateClusterIngressOperatorConfiguration(t *testing.T) {
 }
 
 func TestNoneCreateCluster(t *testing.T) {
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	if globalOpts.Platform == hyperv1.AzurePlatform {
 		t.Skip("test not supported on platform Azure")
@@ -2656,7 +2670,9 @@ func TestCreateClusterProxy(t *testing.T) {
 	if globalOpts.Platform != hyperv1.AWSPlatform {
 		t.Skip("test only supported on platform AWS")
 	}
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
@@ -2683,7 +2699,9 @@ func testCreateClusterPrivate(t *testing.T, enableExternalDNS bool) {
 	if globalOpts.Platform != hyperv1.AWSPlatform {
 		t.Skip("test only supported on platform AWS")
 	}
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()

@@ -36,7 +36,9 @@ func TestOLM(t *testing.T) {
 	// Skip test until https://issues.redhat.com/browse/OCPBUGS-4600 is fixed
 	// Pod restarts are already ignored for *-catalog pods
 	t.SkipNow()
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()

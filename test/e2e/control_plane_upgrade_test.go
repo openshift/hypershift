@@ -14,7 +14,9 @@ import (
 )
 
 func TestUpgradeControlPlane(t *testing.T) {
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	if globalOpts.Platform == hyperv1.AzurePlatform && e2eutil.IsLessThan(e2eutil.Version420) {
 		t.Skip("TODO: Enable this test for Azure in 4.19. Skipping for now to let the 4.20 suite be covered.")
