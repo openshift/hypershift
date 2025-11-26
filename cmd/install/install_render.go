@@ -46,6 +46,7 @@ var openshiftTemplateParams = TemplateParams{
 	ExternalDNSDomainFilter:     "EXTERNAL_DNS_DOMAIN_FILTER",
 	ExternalDNSTxtOwnerID:       "EXTERNAL_DNS_TXT_OWNER_ID",
 	ExternalDNSImage:            "EXTERNAL_DNS_IMAGE",
+	ExternalDNSGoogleProject:    "EXTERNAL_DNS_GOOGLE_PROJECT",
 	RegistryOverrides:           "REGISTRY_OVERRIDES",
 	AROHCPKeyVaultUsersClientID: "AZURE_KEYVAULT_CLIENT_ID",
 	TemplateNamespace:           true,
@@ -174,16 +175,30 @@ func openshiftTemplate(opts *Options) (crclient.Object, error) {
 	}
 
 	// external DNS
-	if opts.ExternalDNSProvider != "" && opts.ExternalDNSDomainFilter != "" && opts.ExternalDNSCredentialsSecret != "" {
+	// Credentials are optional for GCP with Workload Identity
+	hasCredentials := opts.ExternalDNSCredentialsSecret != ""
+	isGCP := opts.ExternalDNSProvider == "google"
+	if opts.ExternalDNSProvider != "" && opts.ExternalDNSDomainFilter != "" && (hasCredentials || isGCP) {
 		templateParameters = append(
 			templateParameters,
 			map[string]string{"name": openshiftTemplateParams.ExternalDNSDomainFilter, "value": opts.ExternalDNSDomainFilter},
-			map[string]string{"name": openshiftTemplateParams.ExternalDNSCredsSecret, "value": opts.ExternalDNSCredentialsSecret},
 		)
+		if hasCredentials {
+			templateParameters = append(
+				templateParameters,
+				map[string]string{"name": openshiftTemplateParams.ExternalDNSCredsSecret, "value": opts.ExternalDNSCredentialsSecret},
+			)
+		}
 		if opts.ExternalDNSTxtOwnerId != "" {
 			templateParameters = append(
 				templateParameters,
 				map[string]string{"name": openshiftTemplateParams.ExternalDNSTxtOwnerID, "value": opts.ExternalDNSTxtOwnerId},
+			)
+		}
+		if opts.ExternalDNSGoogleProject != "" {
+			templateParameters = append(
+				templateParameters,
+				map[string]string{"name": openshiftTemplateParams.ExternalDNSGoogleProject, "value": opts.ExternalDNSGoogleProject},
 			)
 		}
 	}

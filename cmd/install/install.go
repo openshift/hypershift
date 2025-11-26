@@ -107,6 +107,7 @@ type Options struct {
 	ExternalDNSDomainFilter                   string
 	ExternalDNSTxtOwnerId                     string
 	ExternalDNSImage                          string
+	ExternalDNSGoogleProject                  string
 	AdditionalOperatorEnvVars                 map[string]string
 	EnableAdminRBACGeneration                 bool
 	EnableUWMTelemetryRemoteWrite             bool
@@ -140,9 +141,11 @@ func (o *Options) Validate() error {
 		if (len(o.AWSPrivateCreds) == 0 && len(o.AWSPrivateCredentialsSecret) == 0) || len(o.AWSPrivateRegion) == 0 {
 			errs = append(errs, fmt.Errorf("--aws-private-region and --aws-private-creds or --aws-private-secret are required with --private-platform=%s", hyperv1.AWSPlatform))
 		}
+	case hyperv1.GCPPlatform:
+		// GCP uses Workload Identity Federation, no credentials or region required
 	case hyperv1.NonePlatform:
 	default:
-		errs = append(errs, fmt.Errorf("--private-platform must be either %s or %s", hyperv1.AWSPlatform, hyperv1.NonePlatform))
+		errs = append(errs, fmt.Errorf("--private-platform must be either %s, %s, or %s", hyperv1.AWSPlatform, hyperv1.GCPPlatform, hyperv1.NonePlatform))
 	}
 
 	if len(o.OIDCStorageProviderS3CredentialsSecret) > 0 && len(o.OIDCStorageProviderS3Credentials) > 0 {
@@ -158,7 +161,9 @@ func (o *Options) Validate() error {
 	}
 
 	if len(o.ExternalDNSProvider) > 0 {
-		if len(o.ExternalDNSCredentials) == 0 && len(o.ExternalDNSCredentialsSecret) == 0 {
+		// Credentials are optional for GCP when using Workload Identity
+		credentialsRequired := o.ExternalDNSProvider != "google"
+		if credentialsRequired && len(o.ExternalDNSCredentials) == 0 && len(o.ExternalDNSCredentialsSecret) == 0 {
 			errs = append(errs, fmt.Errorf("--external-dns-credentials or --external-dns-credentials-secret are required with --external-dns-provider"))
 		}
 		if len(o.ExternalDNSCredentials) != 0 && len(o.ExternalDNSCredentialsSecret) != 0 {
@@ -238,7 +243,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", opts.ExcludeEtcdManifests, "Leave out etcd manifests")
 	cmd.PersistentFlags().Var(&opts.PlatformMonitoring, "platform-monitoring", "Select an option for enabling platform cluster monitoring. Valid values are: None, OperatorOnly, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
-	cmd.PersistentFlags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\" or \"None\")")
+	cmd.PersistentFlags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\", \"GCP\", or \"None\")")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCreds, "aws-private-creds", opts.AWSPrivateCreds, "Path to an AWS credentials file with privileges sufficient to manage private cluster resources")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecret, "aws-private-secret", "", "Name of an existing secret containing the AWS private link credentials.")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecretKey, "aws-private-secret-key", opts.AWSPrivateCredentialsSecretKey, "Name of the secret key containing the AWS private link credentials.")
@@ -254,6 +259,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specified domain.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerId, "external-dns-txt-owner-id", "", "external-dns TXT registry owner ID.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSImage, "external-dns-image", opts.ExternalDNSImage, "Image to use for external-dns")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSGoogleProject, "external-dns-google-project", "", "Google Cloud project ID for DNS zone (optional for GCP provider; falls back to EXTERNAL_DNS_GOOGLE_PROJECT env var or GCP metadata server)")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", opts.EnableAdminRBACGeneration, "Generate RBAC manifests for hosted cluster admins")
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
@@ -897,6 +903,7 @@ func setupExternalDNS(opts Options, operatorNamespace *corev1.Namespace) ([]crcl
 		CredentialsSecret: externalDNSSecret,
 		TxtOwnerId:        opts.ExternalDNSTxtOwnerId,
 		Proxy:             proxy,
+		GoogleProject:     opts.ExternalDNSGoogleProject,
 	}.Build()
 	objects = append(objects, externalDNSDeployment)
 

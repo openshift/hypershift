@@ -83,6 +83,33 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
+		"when external-dns GCP provider is set without credentials it succeeds (Workload Identity)": {
+			inputOptions: Options{
+				PrivatePlatform:          string(hyperv1.GCPPlatform),
+				ExternalDNSProvider:      "google",
+				ExternalDNSDomainFilter:  "test.com",
+				ExternalDNSGoogleProject: "my-project",
+			},
+			expectError: false,
+		},
+		"when external-dns GCP provider is set with credentials it succeeds": {
+			inputOptions: Options{
+				PrivatePlatform:          string(hyperv1.GCPPlatform),
+				ExternalDNSProvider:      "google",
+				ExternalDNSDomainFilter:  "test.com",
+				ExternalDNSGoogleProject: "my-project",
+				ExternalDNSCredentials:   "/path/to/credentials",
+			},
+			expectError: false,
+		},
+		"when external-dns GCP provider is set without google-project it succeeds": {
+			inputOptions: Options{
+				PrivatePlatform:         string(hyperv1.GCPPlatform),
+				ExternalDNSProvider:     "google",
+				ExternalDNSDomainFilter: "test.com",
+			},
+			expectError: false,
+		},
 		"when all data specified there is no error": {
 			inputOptions: Options{
 				PrivatePlatform:                           string(hyperv1.NonePlatform),

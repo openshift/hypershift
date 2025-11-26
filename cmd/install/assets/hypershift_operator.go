@@ -180,6 +180,7 @@ type ExternalDNSProvider string
 const (
 	AWSExternalDNSProvider   ExternalDNSProvider = "aws"
 	AzureExternalDNSProvider ExternalDNSProvider = "azure"
+	GCPExternalDNSProvider   ExternalDNSProvider = "google"
 )
 
 type ExternalDNSDeployment struct {
@@ -191,6 +192,7 @@ type ExternalDNSDeployment struct {
 	CredentialsSecret *corev1.Secret
 	TxtOwnerId        string
 	Proxy             *configv1.Proxy
+	GoogleProject     string
 }
 
 func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
@@ -270,12 +272,6 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 								Privileged:             &privileged,
 							},
 							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "credentials",
-									MountPath: "/etc/provider",
-								},
-							},
 						},
 					},
 					ImagePullSecrets: []corev1.LocalObjectReference{
@@ -283,19 +279,32 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 							Name: PullSecretName,
 						},
 					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "credentials",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName: o.CredentialsSecret.Name,
-								},
-							},
-						},
-					},
 				},
 			},
 		},
+	}
+
+	// Add credentials volume and mount only if credentials secret is provided
+	// For GCP with Workload Identity, no credentials secret is needed
+	if o.CredentialsSecret != nil {
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(
+			deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+			corev1.VolumeMount{
+				Name:      "credentials",
+				MountPath: "/etc/provider",
+			},
+		)
+		deployment.Spec.Template.Spec.Volumes = append(
+			deployment.Spec.Template.Spec.Volumes,
+			corev1.Volume{
+				Name: "credentials",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: o.CredentialsSecret.Name,
+					},
+				},
+			},
+		)
 	}
 
 	// Add platform specific settings
@@ -321,6 +330,13 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
 			"--azure-config-file=/etc/provider/credentials",
 		)
+	case GCPExternalDNSProvider:
+		if len(o.GoogleProject) > 0 {
+			deployment.Spec.Template.Spec.Containers[0].Args = append(
+				deployment.Spec.Template.Spec.Containers[0].Args,
+				fmt.Sprintf("--google-project=%s", o.GoogleProject),
+			)
+		}
 	}
 
 	// Add proxy settings if cluster has a proxy

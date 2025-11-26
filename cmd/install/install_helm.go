@@ -28,6 +28,7 @@ var helmTemplateParams = TemplateParams{
 	ExternalDNSDomainFilter:     ".Values.externaldns.domainFilter",
 	ExternalDNSTxtOwnerID:       ".Values.externaldns.txtOwnerId",
 	ExternalDNSImage:            ".Values.externaldns.image",
+	ExternalDNSGoogleProject:    ".Values.externaldns.googleProject",
 	RegistryOverrides:           ".Values.registryOverrides",
 	AROHCPKeyVaultUsersClientID: ".Values.azure.keyVault.clientId",
 	TemplateNamespace:           false,
@@ -114,6 +115,13 @@ func WriteValuesFile(dir string) error {
 				"credsSecret":    "",
 				"credsSecretKey": "",
 			},
+		},
+		"externaldns": map[string]interface{}{
+			"credsSecret":   "",
+			"domainFilter":  "",
+			"txtOwnerId":    "",
+			"image":         "",
+			"googleProject": "",
 		},
 	}
 	return writeYamlFile(fmt.Sprintf("%s/values.yaml", dir), data)
