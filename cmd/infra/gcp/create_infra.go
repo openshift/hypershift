@@ -131,6 +131,11 @@ func (o *CreateInfraOptions) Output(result *CreateInfraOutput) error {
 func (o *CreateInfraOptions) CreateInfra(ctx context.Context, logger logr.Logger) (*CreateInfraOutput, error) {
 	logger.Info("Creating GCP infrastructure", "projectID", o.ProjectID, "region", o.Region, "infraID", o.InfraID)
 
+	// Ensure a sensible default for programmatic callers that don't go through NewCreateCommand
+	if o.VPCCidr == "" {
+		o.VPCCidr = DefaultSubnetCIDR
+	}
+
 	// Initialize network manager
 	networkManager, err := NewNetworkManager(ctx, o.ProjectID, o.InfraID, o.Region, logger)
 	if err != nil {
