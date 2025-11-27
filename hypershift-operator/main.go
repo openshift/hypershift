@@ -445,7 +445,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		log.Info("UWM telemetry remote write controller disabled")
 	}
 
-	if sharedingress.UseSharedIngress() {
+	if azureutil.IsAroHCP() {
 		sharedIngress := sharedingress.SharedIngressReconciler{
 			Namespace:                     opts.Namespace,
 			ManagementClusterCapabilities: mgmtClusterCaps,

@@ -1617,7 +1617,7 @@ func TestResolveHAProxyImage(t *testing.T) {
 			g.Expect(releaseImage).ToNot(BeNil())
 
 			// Call resolveHAProxyImage
-			image, err := resolveHAProxyImage(nodePool, releaseImage)
+			image, err := resolveHAProxyImage(nodePool, hc, releaseImage)
 
 			// Verify no error and correct image
 			g.Expect(err).ToNot(HaveOccurred())

@@ -2235,6 +2235,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperkarpenterv1.KarpenterProviderAWSImage,
 		hyperv1.KubeAPIServerGoAwayChance,
 		hyperv1.HostedClusterRestoredFromBackupAnnotation,
+		hyperv1.SwiftPodNetworkInstanceAnnotation,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
