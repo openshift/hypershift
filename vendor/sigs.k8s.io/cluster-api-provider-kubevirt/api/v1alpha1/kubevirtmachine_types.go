@@ -55,6 +55,11 @@ type KubevirtMachineSpec struct {
 	// When nil, this defaults to the value present in the KubevirtCluster object's spec associated with this machine.
 	// +optional
 	InfraClusterSecretRef *corev1.ObjectReference `json:"infraClusterSecretRef,omitempty"`
+
+	// NetworkData contains inline cloud-init network data configuration.
+	// When specified, the cloud-init volume will use NoCloud instead of ConfigDrive.
+	// +optional
+	NetworkData *string `json:"networkData,omitempty"`
 }
 
 // VirtualMachineBootstrapCheckSpec defines how the controller will remotely check CAPI Sentinel file content.

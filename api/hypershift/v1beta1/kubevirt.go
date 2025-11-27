@@ -191,6 +191,13 @@ type KubevirtNodePoolPlatform struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	KubevirtHostDevices []KubevirtHostDevice `json:"hostDevices,omitempty"`
+
+	// networkData is inline cloud-init network data configuration for VMs in this NodePool.
+	// When specified, cloud-init volume changes from ConfigDrive to NoCloud.
+	// This allows for static network configuration of VMs.
+	// +kubebuilder:validation:MaxLength=2048
+	// +optional
+	NetworkData *string `json:"networkData,omitempty"`
 }
 
 // KubevirtNetwork specifies the configuration for a virtual machine

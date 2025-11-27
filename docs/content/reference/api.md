@@ -8716,6 +8716,20 @@ Selector which must match a node&rsquo;s labels for the VM to be scheduled on th
 from the management cluster, to the nodepool nodes</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>networkData</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>networkData is inline cloud-init network data configuration for VMs in this NodePool.
+When specified, cloud-init volume changes from ConfigDrive to NoCloud.
+This allows for static network configuration of VMs.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###KubevirtPersistentVolume { #hypershift.openshift.io/v1beta1.KubevirtPersistentVolume }

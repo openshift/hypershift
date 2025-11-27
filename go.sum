@@ -605,6 +605,8 @@ github.com/prometheus/procfs v0.0.2/go.mod h1:TjEm7ze935MbeOT/UhFTIMYKhuLP4wbCsT
 github.com/prometheus/procfs v0.0.3/go.mod h1:4A/X28fw3Fc593LaREMrKMqOKvUAntwMDaekg4FpcdQ=
 github.com/prometheus/procfs v0.16.1 h1:hZ15bTNuirocR6u0JZ6BAHHmwS1p8B4P6MRqxtzMyRg=
 github.com/prometheus/procfs v0.16.1/go.mod h1:teAbpZRB1iIAJYREa1LsoWUXykVXA1KlTmWl8x/U+Is=
+github.com/qinqon/cluster-api-provider-kubevirt v0.1.0-rc.0.0.20251127145124-f47c5db784fd h1:deKohERu8G86J3IlzdBG2QoEsQIaVRG0/awTlKY8MJQ=
+github.com/qinqon/cluster-api-provider-kubevirt v0.1.0-rc.0.0.20251127145124-f47c5db784fd/go.mod h1:RlF7CASVT4vaBRLu45Y2dprAnEPoDGvMaImXz13Ntks=
 github.com/robfig/cron v1.2.0 h1:ZjScXvvxeQ63Dbyxy76Fj3AT3Ut0aKsyd2/tl3DTMuQ=
 github.com/robfig/cron v1.2.0/go.mod h1:JGuDeoQd7Z6yL4zQhZ3OPEVHB7fL6Ka6skscFHfmt2k=
 github.com/robfig/cron/v3 v3.0.1 h1:WdRxkvbJztn8LMz/QEvLN5sBU+xKpSqwwUO1Pjr4qDs=
@@ -1033,8 +1035,6 @@ sigs.k8s.io/cluster-api-provider-azure v1.21.0 h1:8SYwQX4ANgy2CAa2NEk41mqBZrmyAH
 sigs.k8s.io/cluster-api-provider-azure v1.21.0/go.mod h1:NJMrRzRf/Ua5Uhm9qmuK4M/4Jl/f74jBpkgPqJN0vQQ=
 sigs.k8s.io/cluster-api-provider-ibmcloud v0.11.0 h1:aunR3nnDzQ5x1Qj1hJbR3Xq4SCZth4XyTWAyUCN46kE=
 sigs.k8s.io/cluster-api-provider-ibmcloud v0.11.0/go.mod h1:9yPLATyiqLx4crMzbX11YQU+GuR5txjtiCt8z9sxDfM=
-sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9 h1:hQO7Y5GP7FMnH6Aono9WVE90I3vRLBxw/48iKHerjtg=
-sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9/go.mod h1:RlF7CASVT4vaBRLu45Y2dprAnEPoDGvMaImXz13Ntks=
 sigs.k8s.io/cluster-api-provider-openstack v0.12.1 h1:IK8GRmQKTwgft6PwaLC4r69O5hV7ykr4l7eJ8pQ3EIU=
 sigs.k8s.io/cluster-api-provider-openstack v0.12.1/go.mod h1:lm2AXy1bfJEVKU4RfxwPdJgPbJDNiUAfva+IIf8Gqzo=
 sigs.k8s.io/cluster-api-provider-openstack/orc v0.0.0-20250113192833-e4f56a2b4f32 h1:AkFSgi+dAnPLtg+SXjtCf3rDzjI/mskDiJ1PWHZoRno=
