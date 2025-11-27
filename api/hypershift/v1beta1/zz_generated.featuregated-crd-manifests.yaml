@@ -111,8 +111,8 @@ gcpprivateserviceconnects.hypershift.openshift.io:
     jsonPath: .status.endpointIP
     name: Endpoint IP
     type: string
-  - description: Overall PSC availability status
-    jsonPath: .status.conditions[?(@.type=="GCPPrivateServiceConnectAvailable")].status
+  - description: PSC endpoint availability status
+    jsonPath: .status.conditions[?(@.type=="GCPEndpointAvailable")].status
     name: Available
     type: string
   - jsonPath: .metadata.creationTimestamp

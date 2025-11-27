@@ -27,8 +27,8 @@ spec:
       jsonPath: .status.endpointIP
       name: Endpoint IP
       type: string
-    - description: Overall PSC availability status
-      jsonPath: .status.conditions[?(@.type=="GCPPrivateServiceConnectAvailable")].status
+    - description: PSC endpoint availability status
+      jsonPath: .status.conditions[?(@.type=="GCPEndpointAvailable")].status
       name: Available
       type: string
     - jsonPath: .metadata.creationTimestamp
@@ -73,12 +73,22 @@ spec:
                 minItems: 1
                 type: array
               forwardingRuleName:
-                description: forwardingRuleName is the name of the Internal Load Balancer
-                  forwarding rule
+                description: |-
+                  forwardingRuleName is the name of the Internal Load Balancer forwarding rule
+                  Populated by the reconciler via GCP API lookup
                 maxLength: 63
-                minLength: 1
                 pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
                 type: string
+              loadBalancerIP:
+                description: |-
+                  loadBalancerIP is the IP address of the Internal Load Balancer
+                  Populated by the observer from service status
+                  This value must be a valid IPv4 or IPv6 address.
+                maxLength: 45
+                type: string
+                x-kubernetes-validations:
+                - message: loadBalancerIP must be a valid IPv4 or IPv6 address
+                  rule: self.matches('^((\\d{1,3}\\.){3}\\d{1,3})$') || self.matches('^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$')
               natSubnet:
                 description: |-
                   natSubnet is the subnet used for NAT by the Service Attachment
@@ -88,7 +98,7 @@ spec:
                 type: string
             required:
             - consumerAcceptList
-            - forwardingRuleName
+            - loadBalancerIP
             type: object
           status:
             description: status is the status of the GCPPrivateServiceConnect.
@@ -168,10 +178,15 @@ spec:
                 maxLength: 253
                 type: string
               endpointIP:
-                description: endpointIP is the reserved IP address for the PSC endpoint
-                maxLength: 15
-                pattern: ^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$
+                description: |-
+                  endpointIP is the reserved IP address for the PSC endpoint
+                  This value must be a valid IPv4 or IPv6 address.
+                maxLength: 45
                 type: string
+                x-kubernetes-validations:
+                - message: endpointIP must be a valid IPv4 or IPv6 address
+                  rule: self == '' || self.matches('^((\\d{1,3}\\.){3}\\d{1,3})$')
+                    || self.matches('^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$')
               serviceAttachmentName:
                 description: serviceAttachmentName is the name of the created Service
                   Attachment
