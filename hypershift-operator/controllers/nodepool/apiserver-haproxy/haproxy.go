@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
@@ -155,7 +156,7 @@ func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, hcluster *
 		clusterNetworkCIDR = hcluster.Spec.Networking.ClusterNetwork[0].CIDR.String()
 	}
 
-	if sharedingress.UseSharedIngress() {
+	if sharedingress.UseSharedIngressByHC(hcluster) {
 		sharedIngressRouteSVC := &corev1.Service{
 			TypeMeta: metav1.TypeMeta{},
 			ObjectMeta: metav1.ObjectMeta{
@@ -173,10 +174,19 @@ func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, hcluster *
 		apiServerExternalPort = sharedingress.KASSVCLBPort
 	}
 
+	if azureutil.IsAroSwiftEnabledByHC(hcluster) {
+		kasPublishStrategy := util.ServicePublishingStrategyByTypeByHC(hcluster, hyperv1.APIServer)
+		if kasPublishStrategy == nil || kasPublishStrategy.Route == nil {
+			return "", fmt.Errorf("APIServer service publishing strategy not found, or is not a Route")
+		}
+		apiServerExternalAddress = kasPublishStrategy.Route.Hostname
+		apiServerExternalPort = 443
+	}
+
 	serializedConfig, err := apiServerProxyConfig(r.HAProxyImage, controlPlaneOperatorImage, hcluster.Spec.ClusterID,
 		apiServerExternalAddress, apiServerInternalAddress,
 		apiServerExternalPort, apiServerInternalPort,
-		apiserverProxy, noProxy, serviceNetworkCIDR, clusterNetworkCIDR, hcluster.Spec.Platform.Type)
+		apiserverProxy, noProxy, serviceNetworkCIDR, clusterNetworkCIDR, hcluster)
 	if err != nil {
 		return "", fmt.Errorf("failed to create apiserver haproxy config: %w", err)
 	}
@@ -245,12 +255,12 @@ var (
 func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 	externalAPIAddress, internalAPIAddress string,
 	externalAPIPort, internalAPIPort int32,
-	proxyAddr, noProxy, serviceNetwork, clusterNetwork string, platform hyperv1.PlatformType) ([]byte, error) {
+	proxyAddr, noProxy, serviceNetwork, clusterNetwork string, hcluster *hyperv1.HostedCluster) ([]byte, error) {
 	config := &ignitionapi.Config{}
 	config.Ignition.Version = ignitionapi.MaxVersion.String()
 	livenessProbeEndpoint := "/version"
 
-	if platform == hyperv1.IBMCloudPlatform {
+	if hcluster.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		livenessProbeEndpoint = "/livez?exclude=etcd&exclude=log"
 	}
 
@@ -290,7 +300,7 @@ func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 					"ExternalAPIAddress":    externalAPIAddress,
 					"ExternalAPIPort":       externalAPIPort,
 					"LivenessProbeEndpoint": livenessProbeEndpoint,
-					"UseProxyProtocol":      sharedingress.UseSharedIngress(),
+					"UseProxyProtocol":      sharedingress.UseSharedIngressByHC(hcluster),
 					"ClusterID":             clusterID,
 				},
 			},

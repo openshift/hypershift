@@ -12,6 +12,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 
@@ -83,6 +84,10 @@ func generateRouterConfig(ctx context.Context, client crclient.Client, w io.Writ
 	}
 	for _, hc := range hostedClusters {
 		if !hc.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if azureutil.IsAroSwiftEnabledByHC(&hc) {
+			logger.Info("skipping shared ingress config generation for hosted cluster", "hosted_cluster", crclient.ObjectKeyFromObject(&hc), "reason", "Swift networking is enabled")
 			continue
 		}
 

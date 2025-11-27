@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/testutil"
@@ -11,6 +12,7 @@ import (
 
 	routev1 "github.com/openshift/api/route/v1"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
@@ -70,7 +72,14 @@ func TestGenerateRouterConfig(t *testing.T) {
 		i++
 	}
 
-	cfg, err := generateRouterConfig(routeList, svcsNameToIP)
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hcp",
+			Namespace: testNS,
+		},
+	}
+
+	cfg, err := generateRouterConfig(routeList, svcsNameToIP, hcp)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}

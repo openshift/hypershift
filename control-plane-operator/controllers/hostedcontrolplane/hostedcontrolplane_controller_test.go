@@ -21,6 +21,7 @@ import (
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
+	routerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router"
 	"github.com/openshift/hypershift/support/api"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/certs"
@@ -2352,7 +2353,7 @@ func TestUseHCPRouter(t *testing.T) {
 	}
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.expectedResult, useHCPRouter(tc.hcp))
+			assert.Equal(t, tc.expectedResult, routerv2.UseHCPRouter(tc.hcp))
 		})
 	}
 }
