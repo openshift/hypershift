@@ -1218,7 +1218,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			{
 				APIGroups: []string{"ipam.cluster.x-k8s.io"},
 				Resources: []string{"ipaddresses", "ipaddresses/status"},
-				Verbs:     []string{"create", "delete", "get", "list", "update", "watch"},
+				Verbs:     []string{"create", "delete", "get", "list", "patch", "update", "watch"},
 			},
 			// This allows hypershift operator to grant RBAC permissions for ORC to the capi-provider.
 			{
