@@ -27,7 +27,7 @@ import (
 //   - the HypershiftOperator running with size tagging enabled.
 //   - the HostedCluster is running on Azure.
 //   - the HostedCluster has a NodePool with 2 replicas.
-//   - the NodePool is using Standard_D4s_v3 VMs.
+//   - the NodePool is using Standard_D4s_v5 VMs.
 func TestAzureScheduler(t *testing.T) {
 	t.Parallel()
 

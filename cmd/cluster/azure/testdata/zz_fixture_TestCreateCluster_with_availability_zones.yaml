@@ -167,7 +167,7 @@ spec:
         diskStorageAccountType: Premium_LRS
         sizeGiB: 120
       subnetID: fakeSubnetID
-      vmSize: Standard_D4s_v3
+      vmSize: Standard_D4s_v5
     type: Azure
   release:
     image: ""
@@ -199,7 +199,7 @@ spec:
         diskStorageAccountType: Premium_LRS
         sizeGiB: 120
       subnetID: fakeSubnetID
-      vmSize: Standard_D4s_v3
+      vmSize: Standard_D4s_v5
     type: Azure
   release:
     image: ""

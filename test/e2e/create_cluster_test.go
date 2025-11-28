@@ -2003,7 +2003,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.Platform.Type = hyperv1.AzurePlatform
 							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-								VMSize: "Standard_D4s_v3",
+								VMSize: "Standard_D4s_v5",
 								Image: hyperv1.AzureVMImage{
 									Type: hyperv1.AzureMarketplace,
 									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
@@ -2027,7 +2027,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.Platform.Type = hyperv1.AzurePlatform
 							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-								VMSize: "Standard_D4s_v3",
+								VMSize: "Standard_D4s_v5",
 								Image: hyperv1.AzureVMImage{
 									Type: hyperv1.AzureMarketplace,
 									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
@@ -2050,7 +2050,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.Platform.Type = hyperv1.AzurePlatform
 							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-								VMSize: "Standard_D4s_v3",
+								VMSize: "Standard_D4s_v5",
 								Image: hyperv1.AzureVMImage{
 									Type: hyperv1.AzureMarketplace,
 									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
@@ -2070,7 +2070,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.Platform.Type = hyperv1.AzurePlatform
 							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-								VMSize: "Standard_D4s_v3",
+								VMSize: "Standard_D4s_v5",
 								Image: hyperv1.AzureVMImage{
 									Type: hyperv1.AzureMarketplace,
 									// AzureMarketplace can be nil or empty - will be defaulted by the controller
@@ -2089,7 +2089,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.Platform.Type = hyperv1.AzurePlatform
 							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-								VMSize: "Standard_D4s_v3",
+								VMSize: "Standard_D4s_v5",
 								Image: hyperv1.AzureVMImage{
 									Type: hyperv1.AzureMarketplace,
 									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
@@ -2110,7 +2110,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.Platform.Type = hyperv1.AzurePlatform
 							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-								VMSize: "Standard_D4s_v3",
+								VMSize: "Standard_D4s_v5",
 								Image: hyperv1.AzureVMImage{
 									Type: hyperv1.AzureMarketplace,
 									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
@@ -2130,7 +2130,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.Platform.Type = hyperv1.AzurePlatform
 							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
-								VMSize: "Standard_D4s_v3",
+								VMSize: "Standard_D4s_v5",
 								Image: hyperv1.AzureVMImage{
 									Type: hyperv1.AzureMarketplace,
 									AzureMarketplace: &hyperv1.AzureMarketplaceImage{
