@@ -43,10 +43,10 @@ func (c *Ec2ClientMock) DescribeInstanceTypes(input *ec2.DescribeInstanceTypesIn
 			var vCpusCount *int64
 
 			switch *instanceType {
-			case "m5.xlarge":
-				vCpusCount = ptr.To[int64](4)
 			case "m5.2xlarge":
 				vCpusCount = ptr.To[int64](8)
+			case "m5.4xlarge":
+				vCpusCount = ptr.To[int64](16)
 			}
 
 			instanceTypesInfo = append(instanceTypesInfo, &ec2.InstanceTypeInfo{
@@ -75,21 +75,21 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			expectedVCpusCount: 0,
 		},
 		{
-			name: "When there is one nodePool with no m5.xlarge nodes available, the total number of worker vCpus is 0",
+			name: "When there is one nodePool with no m5.2xlarge nodes available, the total number of worker vCpus is 0",
 			npsParams: []nodePoolParams{
-				{availableNodesCount: 0, ec2InstanceType: "m5.xlarge"},
+				{availableNodesCount: 0, ec2InstanceType: "m5.2xlarge"},
 			},
 			expectedVCpusCount: 0,
 		},
 		{
-			name: "When there is one nodePool with 2 m5.xlarge nodes available, the total number of worker vCpus is 4",
+			name: "When there is one nodePool with 2 m5.2xlarge nodes available, the total number of worker vCpus is 8",
 			npsParams: []nodePoolParams{
-				{availableNodesCount: 2, ec2InstanceType: "m5.xlarge"},
+				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},
 			},
-			expectedVCpusCount: 8,
+			expectedVCpusCount: 16,
 		},
 		{
-			name: "When there is two nodePools with 2 m5.2xlarge nodes available each, the total number of worker vCpus is 16",
+			name: "When there is two nodePools with 2 m5.2xlarge nodes available each, the total number of worker vCpus is 32",
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},
 				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},

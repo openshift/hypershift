@@ -192,7 +192,7 @@ func TestCreateCluster(t *testing.T) {
 				"--iam-json=" + iamFile,
 				"--role-arn=fakeRoleARN",
 				"--pull-secret=" + pullSecretFile,
-				"--instance-type=m5.large",
+				"--instance-type=m5.xlarge",
 				"--region=us-east-2",
 				"--auto-repair",
 				"--name=cesar",

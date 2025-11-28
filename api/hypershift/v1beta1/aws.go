@@ -3,7 +3,7 @@ package v1beta1
 // AWSNodePoolPlatform specifies the configuration of a NodePool when operating
 // on AWS.
 type AWSNodePoolPlatform struct {
-	// instanceType is an ec2 instance type for node instances (e.g. m5.large).
+	// instanceType is an ec2 instance type for node instances (e.g. m5.xlarge).
 	// +required
 	// +kubebuilder:validation:MaxLength=255
 	InstanceType string `json:"instanceType"`
