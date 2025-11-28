@@ -24,7 +24,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token,tmp-dir
         component.hypershift.openshift.io/config-hash: 741638a5741638a5741638a5741638a5
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
@@ -111,6 +111,8 @@ spec:
         volumeMounts:
         - mountPath: /etc/kubernetes
           name: service-account-kubeconfig
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
         - mountPath: /tmp
           name: tmp-dir
       - args:
@@ -143,6 +145,37 @@ spec:
           name: konnectivity-proxy-cert
         - mountPath: /etc/konnectivity/proxy-ca
           name: konnectivity-proxy-ca
+        - mountPath: /tmp
+          name: tmp-dir
+      - args:
+        - --token-audience=openshift
+        - --service-account-namespace=openshift-ingress-operator
+        - --service-account-name=ingress-operator
+        - --token-file=/var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig=/etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        name: cloud-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
+        - mountPath: /etc/kubernetes
+          name: admin-kubeconfig
         - mountPath: /tmp
           name: tmp-dir
       initContainers:
@@ -193,6 +226,9 @@ spec:
       - configMap:
           name: konnectivity-ca-bundle
         name: konnectivity-proxy-ca
+      - emptyDir:
+          medium: Memory
+        name: cloud-token
       - emptyDir: {}
         name: tmp-dir
 status: {}
