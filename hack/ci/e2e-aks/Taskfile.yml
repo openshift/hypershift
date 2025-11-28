@@ -1,0 +1,260 @@
+version: "3"
+
+vars:
+  # The hardcoded JSON configuration
+  SECRETS_JSON:
+    sh: cat managed-identities.json
+  # Global extraction of the Vault Name (used by all tasks)
+  GLOBAL_KV_NAME:
+    sh: echo '{{.SECRETS_JSON}}' | jq -r '.managedIdentitiesKeyVault.name'
+
+tasks:
+  # ============================================
+  # Orchestrator Tasks
+  # ============================================
+
+  default:
+    desc: "Show available tasks"
+    cmds:
+      - task --list
+
+  rotate-all:
+    desc: "Generate all credentials locally (does NOT store to vault)"
+    vars:
+      COMPONENT_KEYS:
+        sh: echo '{{.SECRETS_JSON}}' | jq -r 'del(.managedIdentitiesKeyVault) | keys[]'
+    cmds:
+      - echo "Target Vault {{.GLOBAL_KV_NAME}}"
+      - echo "Generating credentials for all components..."
+      - for:
+          var: COMPONENT_KEYS
+        task: extract-and-generate
+        vars:
+          COMPONENT: "{{.ITEM}}"
+      - echo ""
+      - echo "All credentials generated. Files saved in ./creds-tmp/"
+      - echo "Next step  Run 'task store-all' to store to vault"
+
+  store-all:
+    desc: "Store all local credentials to vault"
+    vars:
+      COMPONENT_KEYS:
+        sh: echo '{{.SECRETS_JSON}}' | jq -r 'del(.managedIdentitiesKeyVault) | keys[]'
+    cmds:
+      - echo "Target Vault  {{.GLOBAL_KV_NAME}}"
+      - echo "Storing all credentials to vault..."
+      - for:
+          var: COMPONENT_KEYS
+        task: extract-and-store
+        vars:
+          COMPONENT: "{{.ITEM}}"
+          KV_NAME: "{{.GLOBAL_KV_NAME}}"
+      - echo ""
+      - echo "All credentials stored in vault."
+      - echo "Next step  Run 'task verify-all' to verify, then 'task cleanup-creds' to remove local files"
+
+  verify-all:
+    desc: "Verify all vault credentials match local files"
+    silent: true
+    vars:
+      COMPONENT_KEYS:
+        sh: echo '{{.SECRETS_JSON}}' | jq -r 'del(.managedIdentitiesKeyVault) | keys[]'
+    cmds:
+      - echo "Target Vault  {{.GLOBAL_KV_NAME}}"
+      - echo "Verifying all credentials..."
+      - for:
+          var: COMPONENT_KEYS
+        task: extract-and-verify
+        vars:
+          COMPONENT: "{{.ITEM}}"
+          KV_NAME: "{{.GLOBAL_KV_NAME}}"
+      - echo ""
+      - echo "All credentials verified successfully."
+      - echo "You can now safely run 'task cleanup-creds' to remove local files"
+
+  # ============================================
+  # Middle-Layer Tasks (variable extraction)
+  # ============================================
+
+  extract-and-generate:
+    desc: "Middle-layer: Extract variables and generate credentials"
+    internal: true
+    requires:
+      vars: [COMPONENT]
+    vars:
+      CLIENT_ID:
+        sh: echo '{{.SECRETS_JSON}}' | jq -r '.{{.COMPONENT}}.clientID'
+      SECRET_NAME:
+        sh: echo '{{.SECRETS_JSON}}' | jq -r '.{{.COMPONENT}}.credentialsSecretName'
+      CERT_NAME:
+        sh: echo '{{.SECRETS_JSON}}' | jq -r '.{{.COMPONENT}}.certificateName'
+    cmds:
+      - task: generate-creds
+        vars:
+          APP_ID: "{{.CLIENT_ID}}"
+          SECRET_NAME: "{{.SECRET_NAME}}"
+          CERT_NAME: "{{.CERT_NAME}}"
+
+  extract-and-store:
+    desc: "Middle-layer: Extract variables and store to vault"
+    internal: true
+    requires:
+      vars: [COMPONENT, KV_NAME]
+    vars:
+      SECRET_NAME:
+        sh: echo '{{.SECRETS_JSON}}' | jq -r '.{{.COMPONENT}}.credentialsSecretName'
+    cmds:
+      - task: store-to-vault
+        vars:
+          SECRET_NAME: "{{.SECRET_NAME}}"
+          KV_NAME: "{{.KV_NAME}}"
+
+  extract-and-verify:
+    desc: "Middle-layer: Extract variables and verify credentials"
+    internal: true
+    silent: true
+    requires:
+      vars: [COMPONENT, KV_NAME]
+    vars:
+      SECRET_NAME:
+        sh: echo '{{.SECRETS_JSON}}' | jq -r '.{{.COMPONENT}}.credentialsSecretName'
+    cmds:
+      - task: verify-creds
+        vars:
+          SECRET_NAME: "{{.SECRET_NAME}}"
+          KV_NAME: "{{.KV_NAME}}"
+
+  # ============================================
+  # Worker Tasks (actual Azure CLI operations)
+  # ============================================
+
+  reset-app-credential:
+    desc: "Reset app credential and save raw output"
+    requires:
+      vars: [APP_ID, SECRET_NAME, CERT_NAME]
+    cmds:
+      - mkdir -p ./creds-tmp
+      - echo "Resetting credential for {{.SECRET_NAME}} (App {{.APP_ID}})..."
+      - |
+        az ad app credential reset \
+          --id {{.APP_ID}} \
+          --create-cert \
+          --display-name "{{.CERT_NAME}}" \
+          -o json > ./creds-tmp/{{.SECRET_NAME}}.reset-output.json
+      - echo "Reset output saved to ./creds-tmp/{{.SECRET_NAME}}.reset-output.json"
+
+  convert-pem-to-json:
+    desc: "Convert PEM to JSON credentials format"
+    requires:
+      vars: [SECRET_NAME]
+    preconditions:
+      - sh: test -f ./creds-tmp/{{.SECRET_NAME}}.reset-output.json
+        msg: "Reset output not found. Run reset-app-credential first."
+    cmds:
+      - echo "Converting PEM to JSON for {{.SECRET_NAME}}..."
+      - |
+        # Extract values from reset output
+        PEM_FILE=$(jq -r '.fileWithCertAndPrivateKey' ./creds-tmp/{{.SECRET_NAME}}.reset-output.json)
+        TENANT_ID=$(jq -r '.tenant' ./creds-tmp/{{.SECRET_NAME}}.reset-output.json)
+        CLIENT_ID=$(jq -r '.appId' ./creds-tmp/{{.SECRET_NAME}}.reset-output.json)
+
+        # Convert PEM to PKCS12/PFX (with private key) and base64 encode
+        # Use -legacy because Go's crypto/pkcs12 only supports legacy algorithms (SHA1+3DES).
+        # OpenSSL 3.x defaults to modern algorithms (SHA256+AES) which cause:
+        #   "pkcs12: unknown digest algorithm: 2.16.840.1.101.3.4.2.1"
+        # If -legacy fails, use explicit flags instead:
+        #   openssl pkcs12 -export -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1 ...
+        CLIENT_SECRET=$(openssl pkcs12 -export -legacy -in "$PEM_FILE" -out /dev/stdout -passout pass: 2>/dev/null | base64 -w 0)
+
+        # Get certificate validity dates from the PEM
+        NOT_BEFORE=$(openssl x509 -in "$PEM_FILE" -noout -startdate | cut -d= -f2)
+        NOT_AFTER=$(openssl x509 -in "$PEM_FILE" -noout -enddate | cut -d= -f2)
+
+        # Convert dates to ISO 8601 UTC format (with Z suffix to match Key Vault format)
+        NOT_BEFORE_ISO=$(date -u -d "$NOT_BEFORE" +"%Y-%m-%dT%H:%M:%SZ")
+        NOT_AFTER_ISO=$(date -u -d "$NOT_AFTER" +"%Y-%m-%dT%H:%M:%SZ")
+
+        # Build the JSON credentials file
+        jq -n \
+          --arg auth_endpoint "https://login.microsoftonline.com/" \
+          --arg client_id "$CLIENT_ID" \
+          --arg client_secret "$CLIENT_SECRET" \
+          --arg tenant_id "$TENANT_ID" \
+          --arg not_before "$NOT_BEFORE_ISO" \
+          --arg not_after "$NOT_AFTER_ISO" \
+          '{
+            authentication_endpoint: $auth_endpoint,
+            client_id: $client_id,
+            client_secret: $client_secret,
+            tenant_id: $tenant_id,
+            not_before: $not_before,
+            not_after: $not_after
+          }' > ./creds-tmp/{{.SECRET_NAME}}.json
+      - echo "JSON saved to ./creds-tmp/{{.SECRET_NAME}}.json"
+
+  generate-creds:
+    desc: "Generate credentials (reset + convert)"
+    requires:
+      vars: [APP_ID, SECRET_NAME, CERT_NAME]
+    cmds:
+      - task: reset-app-credential
+        vars:
+          APP_ID: "{{.APP_ID}}"
+          SECRET_NAME: "{{.SECRET_NAME}}"
+          CERT_NAME: "{{.CERT_NAME}}"
+      - task: convert-pem-to-json
+        vars:
+          SECRET_NAME: "{{.SECRET_NAME}}"
+
+  store-to-vault:
+    desc: "Store local credentials to vault"
+    requires:
+      vars: [SECRET_NAME, KV_NAME]
+    preconditions:
+      - sh: test -f ./creds-tmp/{{.SECRET_NAME}}.json
+        msg: "Credentials file not found: ./creds-tmp/{{.SECRET_NAME}}.json. Run generate-creds first."
+    cmds:
+      - echo "Storing {{.SECRET_NAME}} to vault {{.KV_NAME}}..."
+      - |
+        az keyvault secret set \
+          --vault-name {{.KV_NAME}} \
+          --name {{.SECRET_NAME}} \
+          --file ./creds-tmp/{{.SECRET_NAME}}.json > /dev/null
+      - echo "{{.SECRET_NAME}} stored in vault {{.KV_NAME}}"
+
+  verify-creds:
+    desc: "Verify vault contents match local file"
+    silent: true
+    requires:
+      vars: [SECRET_NAME, KV_NAME]
+    preconditions:
+      - sh: test -f ./creds-tmp/{{.SECRET_NAME}}.json
+        msg: "Local credentials file not found: ./creds-tmp/{{.SECRET_NAME}}.json"
+    cmds:
+      - echo "Verifying {{.SECRET_NAME}}..."
+      - |
+        vault_value=$(az keyvault secret show \
+          --vault-name {{.KV_NAME}} \
+          --name {{.SECRET_NAME}} \
+          --query value -o tsv)
+        local_value=$(cat ./creds-tmp/{{.SECRET_NAME}}.json)
+        if [ "$vault_value" = "$local_value" ]; then
+          echo "✅ PASS  {{.SECRET_NAME}} matches"
+        else
+          echo "❌ FAIL  {{.SECRET_NAME}} mismatch!"
+          exit 1
+        fi
+
+  cleanup-creds:
+    desc: "Remove all local credential files"
+    cmds:
+      - rm -rf ./creds-tmp
+      - echo "Local credentials cleaned up"
+
+  cleanup-component-creds:
+    desc: "Remove specific component's credential file"
+    requires:
+      vars: [SECRET_NAME]
+    cmds:
+      - rm -f ./creds-tmp/{{.SECRET_NAME}}.json
+      - echo "Removed ./creds-tmp/{{.SECRET_NAME}}.json"
