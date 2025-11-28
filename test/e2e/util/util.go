@@ -24,6 +24,7 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	hcc "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
@@ -2136,7 +2137,6 @@ func waitForDaemonSetsReady(t *testing.T, ctx context.Context, guestClient crcli
 				return true, nil
 			}
 		})
-
 		if err != nil {
 			return fmt.Errorf("failed to wait for DaemonSet %s to be ready: %w", dsName, err)
 		}

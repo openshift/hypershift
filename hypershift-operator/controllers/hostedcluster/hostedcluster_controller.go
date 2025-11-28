@@ -144,8 +144,11 @@ const (
 	referencedResourceAnnotationPrefix    = "referenced-resource.hypershift.openshift.io/"
 )
 
-// NoopReconcile is just a default mutation function that does nothing.
-var NoopReconcile controllerutil.MutateFn = func() error { return nil }
+var (
+	// NoopReconcile is just a default mutation function that does nothing.
+	NoopReconcile  controllerutil.MutateFn = func() error { return nil }
+	CAPIComponents                         = []string{capimanagerv2.ComponentName, capiproviderv2.ComponentName}
+)
 
 // HostedClusterReconciler reconciles a HostedCluster object
 type HostedClusterReconciler struct {
@@ -4885,10 +4888,9 @@ func (r *HostedClusterReconciler) reconcileCAPIFinalizers(ctx context.Context, h
 		return nil
 	}
 
-	capiComponents := []string{capimanagerv2.ComponentName, capiproviderv2.ComponentName}
 	namespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 
-	for _, name := range capiComponents {
+	for _, name := range CAPIComponents {
 		deployment := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      name,
