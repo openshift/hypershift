@@ -379,7 +379,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 		// Aligning with AWS IPI instance type defaults
 		switch o.arch {
 		case hyperv1.ArchitectureAMD64:
-			instanceType = "m5.xlarge"
+			instanceType = "m5.large"
 		case hyperv1.ArchitectureARM64:
 			instanceType = "m6g.large"
 		}

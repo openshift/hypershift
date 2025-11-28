@@ -69,7 +69,7 @@ func (o *AWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, nodePool 
 		// Aligning with AWS IPI instance type defaults
 		switch nodePool.Spec.Arch {
 		case "amd64":
-			instanceType = "m5.xlarge"
+			instanceType = "m5.large"
 		case "arm64":
 			instanceType = "m6g.large"
 		}

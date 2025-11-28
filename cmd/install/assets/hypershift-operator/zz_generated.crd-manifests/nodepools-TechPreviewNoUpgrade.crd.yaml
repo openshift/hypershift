@@ -430,7 +430,7 @@ spec:
                         type: string
                       instanceType:
                         description: instanceType is an ec2 instance type for node
-                          instances (e.g. m5.xlarge).
+                          instances (e.g. m5.large).
                         maxLength: 255
                         type: string
                       placement:

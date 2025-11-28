@@ -379,7 +379,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 					Management: hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace},
 					Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
 						AMI:          amiName,
-						InstanceType: "m5.2xlarge", // Structural change
+						InstanceType: "m5.xlarge", // Structural change
 						ResourceTags: []hyperv1.AWSResourceTag{{Key: "version", Value: "new"}},
 					}},
 				},
@@ -391,7 +391,7 @@ func TestAWSMachineTemplate(t *testing.T) {
 			expectedName: func() string {
 				// The new name is based on a spec with the new instance type and no tags.
 				template := defaultAWSMachineTemplate(func(template *capiaws.AWSMachineTemplate) {
-					template.Spec.Template.Spec.InstanceType = "m5.2xlarge"
+					template.Spec.Template.Spec.InstanceType = "m5.xlarge"
 					template.Spec.Template.Spec.AdditionalTags = nil
 				})
 				name, _ := mockTemplateNameGenerator(template.Spec)

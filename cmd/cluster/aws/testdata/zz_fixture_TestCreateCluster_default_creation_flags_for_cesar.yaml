@@ -130,7 +130,7 @@ spec:
   platform:
     aws:
       instanceProfile: fakeProfileName
-      instanceType: m5.xlarge
+      instanceType: m5.large
       rootVolume:
         size: 120
         type: gp3
