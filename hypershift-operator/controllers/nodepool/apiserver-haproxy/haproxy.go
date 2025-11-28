@@ -18,7 +18,6 @@ import (
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	api "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
-	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/util"
 
@@ -253,11 +252,6 @@ func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 
 	if platform == hyperv1.IBMCloudPlatform {
 		livenessProbeEndpoint = "/livez?exclude=etcd&exclude=log"
-	}
-
-	if sharedingress.UseSharedIngress() {
-		// proxy protocol v2 with TLV support (custom proxy protocol header) requires haproxy v2.9+, see: https://www.haproxy.com/blog/announcing-haproxy-2-9#proxy-protocol-tlv-fields
-		haProxyImage = images.GetSharedIngressHAProxyImage()
 	}
 
 	filesToAdd := []fileToAdd{

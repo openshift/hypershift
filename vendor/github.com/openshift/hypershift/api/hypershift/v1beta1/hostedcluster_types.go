@@ -50,6 +50,10 @@ const (
 	// KonnectivityAgentImageAnnotation is a temporary annotation that allows the specification of the konnectivity agent image.
 	// This will be removed when Konnectivity is added to the Openshift release payload
 	KonnectivityAgentImageAnnotation = "hypershift.openshift.io/konnectivity-agent-image"
+	// NodePoolHAProxyImageAnnotation can be set on a NodePool to override the HAProxy image
+	// used for worker node API server proxy. This takes precedence over the environment
+	// variable IMAGE_SHARED_INGRESS_HAPROXY and the default shared ingress image.
+	NodePoolHAProxyImageAnnotation = "hypershift.openshift.io/haproxy-image"
 	// ControlPlaneOperatorImageAnnotation is an annotation that allows the specification of the control plane operator image.
 	// This is used for development and e2e workflows
 	ControlPlaneOperatorImageAnnotation = "hypershift.openshift.io/control-plane-operator-image"

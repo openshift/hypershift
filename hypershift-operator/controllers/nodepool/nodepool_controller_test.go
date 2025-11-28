@@ -11,6 +11,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
@@ -1485,6 +1486,142 @@ func Test_validateHCPayloadSupportsNodePoolCPUArch(t *testing.T) {
 			} else {
 				g.Expect(err).NotTo(HaveOccurred())
 			}
+		})
+	}
+}
+func TestResolveHAProxyImage(t *testing.T) {
+	const (
+		testAnnotationImage    = "quay.io/test/haproxy:custom"
+		testSharedIngressImage = "quay.io/test/haproxy:shared-ingress"
+		testReleaseImage       = "registry.test.io/openshift/haproxy-router:v4.16"
+	)
+
+	testCases := []struct {
+		name                string
+		nodePoolAnnotations map[string]string
+		useSharedIngress    bool
+		envVarImage         string
+		expectedImage       string
+	}{
+		{
+			name: "When NodePool annotation is set it should use annotation image",
+			nodePoolAnnotations: map[string]string{
+				hyperv1.NodePoolHAProxyImageAnnotation: testAnnotationImage,
+			},
+			useSharedIngress: false,
+			expectedImage:    testAnnotationImage,
+		},
+		{
+			name: "When NodePool annotation is set it should override shared ingress image",
+			nodePoolAnnotations: map[string]string{
+				hyperv1.NodePoolHAProxyImageAnnotation: testAnnotationImage,
+			},
+			useSharedIngress: true,
+			envVarImage:      testSharedIngressImage,
+			expectedImage:    testAnnotationImage,
+		},
+		{
+			name: "When NodePool annotation is empty it should use shared ingress image",
+			nodePoolAnnotations: map[string]string{
+				hyperv1.NodePoolHAProxyImageAnnotation: "",
+			},
+			useSharedIngress: true,
+			envVarImage:      testSharedIngressImage,
+			expectedImage:    testSharedIngressImage,
+		},
+		{
+			name:             "When no annotation and shared ingress enabled it should use shared ingress image",
+			useSharedIngress: true,
+			envVarImage:      testSharedIngressImage,
+			expectedImage:    testSharedIngressImage,
+		},
+		{
+			name:             "When no annotation and shared ingress disabled it should use release payload image",
+			useSharedIngress: false,
+			expectedImage:    testReleaseImage,
+		},
+		{
+			name: "When annotation is empty and shared ingress disabled it should use release payload image",
+			nodePoolAnnotations: map[string]string{
+				hyperv1.NodePoolHAProxyImageAnnotation: "",
+			},
+			useSharedIngress: false,
+			expectedImage:    testReleaseImage,
+		},
+		{
+			name: "When annotation is whitespace and shared ingress disabled it should use release payload image",
+			nodePoolAnnotations: map[string]string{
+				hyperv1.NodePoolHAProxyImageAnnotation: "  ",
+			},
+			useSharedIngress: false,
+			expectedImage:    testReleaseImage,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Set up environment variables for shared ingress
+			if tc.useSharedIngress {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+				if tc.envVarImage != "" {
+					t.Setenv("IMAGE_SHARED_INGRESS_HAPROXY", tc.envVarImage)
+				}
+			}
+
+			// Create test NodePool
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-nodepool",
+					Namespace:   "clusters",
+					Annotations: tc.nodePoolAnnotations,
+				},
+			}
+
+			// Create fake pull secret
+			pullSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "pull-secret",
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: []byte(`{"auths":{"test":{"auth":"dGVzdDp0ZXN0"}}}`),
+				},
+			}
+
+			// Create fake client
+			c := fake.NewClientBuilder().WithObjects(pullSecret).Build()
+
+			// Create fake release provider with component images
+			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
+				Components: map[string]string{
+					haproxy.HAProxyRouterImageName: testReleaseImage,
+				},
+			}
+
+			// Create test HostedCluster
+			hc := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Release: hyperv1.Release{
+						Image: "test-release:latest",
+					},
+				},
+			}
+
+			// Get release image using the fake provider
+			ctx := t.Context()
+			releaseImage := fakereleaseprovider.GetReleaseImage(ctx, hc, c, releaseProvider)
+			g.Expect(releaseImage).ToNot(BeNil())
+
+			// Call resolveHAProxyImage
+			image, err := resolveHAProxyImage(nodePool, releaseImage)
+
+			// Verify no error and correct image
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(image).To(Equal(tc.expectedImage))
 		})
 	}
 }
