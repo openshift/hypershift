@@ -66,6 +66,7 @@ nav:
   - how-to/distribute-hosted-cluster-workloads.md
   - how-to/upgrades.md
   - how-to/restart-control-plane-components.md
+  - how-to/resource-based-control-plane-autoscaling.md
   - how-to/pause-reconciliation.md
   - how-to/per-hostedcluster-dashboard.md
   - how-to/metrics-sets.md
