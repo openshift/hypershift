@@ -32,6 +32,7 @@ const (
 	PowerVSCAPIProvider         = "ibmcloud-cluster-api-controllers"
 	OpenStackCAPIProvider       = "openstack-cluster-api-controllers"
 	OpenStackResourceController = "openstack-resource-controller"
+	GCPCAPIProvider             = "gcp-cluster-api-controllers"
 )
 
 var _ Platform = aws.AWS{}
@@ -169,7 +170,17 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 		}
 		platform = openstack.New(capiImageProvider, orcImage, payloadVersion)
 	case hyperv1.GCPPlatform:
-		platform = gcp.New()
+		if pullSecretBytes != nil {
+			capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, GCPCAPIProvider, pullSecretBytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
+			}
+			payloadVersion, err = imgUtil.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
+			}
+		}
+		platform = gcp.New(utilitiesImage, capiImageProvider, payloadVersion)
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}
