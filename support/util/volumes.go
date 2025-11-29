@@ -1,6 +1,8 @@
 package util
 
 import (
+	"slices"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 )
@@ -38,4 +40,10 @@ func UpdateVolume(name string, volumes []corev1.Volume, update func(v *corev1.Vo
 			update(&volumes[i])
 		}
 	}
+}
+
+func RemovePodVolume(name string, podSpec *corev1.PodSpec) {
+	podSpec.Volumes = slices.DeleteFunc(podSpec.Volumes, func(v corev1.Volume) bool {
+		return v.Name == name
+	})
 }
