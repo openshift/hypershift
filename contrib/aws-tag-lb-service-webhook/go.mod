@@ -1,8 +1,8 @@
 module github.com/openshift/hypershift/aws-tag-lb-service-webhook
 
-go 1.21
+go 1.24
 
-toolchain go1.21.6
+toolchain go1.24.9
 
 require (
 	github.com/google/go-cmp v0.6.0

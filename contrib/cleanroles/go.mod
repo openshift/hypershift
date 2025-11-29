@@ -1,6 +1,6 @@
 module github.com/openshift/hypershift/contrib/cleanroles
 
-go 1.24.4
+go 1.24.9
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.30.3
