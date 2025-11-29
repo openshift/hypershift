@@ -2101,8 +2101,8 @@ mvdan.cc/gofumpt/internal/govendor/go/doc/comment
 mvdan.cc/gofumpt/internal/govendor/go/format
 mvdan.cc/gofumpt/internal/govendor/go/printer
 mvdan.cc/gofumpt/internal/version
-# mvdan.cc/unparam v0.0.0-20250301125049-0df0534333a4
-## explicit; go 1.23
+# mvdan.cc/unparam v0.0.0-20251027182757-5beb8c8f8f15
+## explicit; go 1.24.0
 mvdan.cc/unparam/check
 # sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.0
 ## explicit; go 1.21
