@@ -19,6 +19,13 @@ func AuthenticationConfiguration() *configv1.Authentication {
 func ReconcileAuthenticationConfiguration(authentication *configv1.Authentication, config *hyperv1.ClusterConfiguration, issuerURL string) error {
 	if config != nil && config.Authentication != nil {
 		authentication.Spec = *config.Authentication
+	} else {
+		// When configuration or authentication is removed, explicitly reset the spec
+		// to default state (IntegratedOAuth). This ensures the authentication-operator
+		// properly clears OIDC configuration and falls back to OAuth.
+		authentication.Spec = configv1.AuthenticationSpec{
+			Type: configv1.AuthenticationTypeIntegratedOAuth,
+		}
 	}
 	authentication.Spec.ServiceAccountIssuer = issuerURL
 	return nil
