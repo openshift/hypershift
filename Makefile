@@ -262,7 +262,7 @@ delegating_client:
 .PHONY: test
 
 # Determine the number of CPU cores
-NUM_CORES := $(shell uname | grep -q 'Darwin' && sysctl -n hw.ncpu || nproc)
+NUM_CORES := $(shell getconf _NPROCESSORS_ONLN || echo 1)
 
 test: generate
 	echo "Running tests with $(NUM_CORES) parallel jobs..."
