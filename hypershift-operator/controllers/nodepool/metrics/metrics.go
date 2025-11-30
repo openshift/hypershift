@@ -445,10 +445,11 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			{
 				var pathToReplicasCount *map[string]int32
 
-				if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
+				switch nodePool.Spec.Management.UpgradeType {
+				case hyperv1.UpgradeTypeInPlace:
 					// we use machineSet.Spec.Replicas because .Spec.Replicas will not be set if autoscaling is enabled
 					pathToReplicasCount = &machineSetPathToReplicasCount
-				} else if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeReplace {
+				case hyperv1.UpgradeTypeReplace:
 					// we use machineDeployment.Spec.Replicas because .Spec.Replicas will not be set if autoscaling is enabled
 					pathToReplicasCount = &machineDeploymentPathToReplicasCount
 				}

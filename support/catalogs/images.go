@@ -132,10 +132,10 @@ func computeCatalogImages(releaseVersion func() (*semver.Version, error), imageE
 
 	if len(registryOverrides) > 0 {
 		for registrySource, registryDest := range registryOverrides {
-			switch {
-			case registrySource == defaultRegistry:
+			switch registrySource {
+			case defaultRegistry:
 				registries = registryDest
-			case registrySource == defaultRegistryURL:
+			case defaultRegistryURL:
 				for _, dest := range registryDest {
 					if strings.Contains(dest, "/") {
 						registries = append(registries, dest)
