@@ -1,64 +1,77 @@
+version: "2"
 run:
-  timeout: 10m
   allow-parallel-runners: true
-output:
-  sort-results: true
-severity:
-  default-severity: error
-issues:
-  exclude-rules:
-    - linters:
-        - staticcheck
-      text: "SA1019: src.Spec.NodeCount is deprecated: Use Replicas instead. NodeCount will be dropped in the next api release"
-    - linters:
-        - staticcheck
-      text: "SA1019: in.Spec.NodeCount is deprecated: Use Replicas instead. NodeCount will be dropped in the next api release."
-    - linters:
-        - staticcheck
-      text: "SA1019: hcp.Status.Version is deprecated: Use versionStatus.desired.version instead."
-    - linters:
-        - staticcheck
-      text: "SA1019: hcp.Status.ReleaseImage is deprecated: Use versionStatus.desired.image instead."
-    - linters:
-        - staticcheck
-      text: "SA1019: hcp.Status.LastReleaseImageTransitionTime is deprecated"
-    - linters:
-        - staticcheck
-      text: "SA1019: in.Status.DNSName is deprecated"
-    - linters:
-        - staticcheck
-      text: "SA1019: infra.Status.Platform is deprecated: Use platformStatus.type instead"
-    - linters:
-        - unused
-      text: "const `tuningConfigKey` is unused"
 linters:
   enable:
-    - errcheck
-    - gci
-    - gosimple
-    - govet
-    - ineffassign
     - misspell
-    - staticcheck
-    - unused
-linters-settings:
-  gci:
-    sections:
-      - standard
-      - dot
-      - prefix(github.com/openshift/hypershift)
-      - prefix(github.com/openshift)
-      - prefix(github.com/aws)
-      - prefix(github.com/Azure)
-      - prefix(k8s.io)
-      - prefix(sigs.k8s.io)
-      - default
-    custom-order: true
-  misspell:
-    # The use of US spelling over other English spellings, like UK, is inline with the OpenShift conventions:
-    # https://github.com/openshift/enhancements/blob/master/CONVENTIONS.md#terminology-grammar-and-spelling
-    locale: US
-    # Typos to ignore.
-    # Should be in lower case.
-    ignore-words:
-      - nto
+  settings:
+    misspell:
+      # The use of US spelling over other English spellings, like UK, is inline with the OpenShift conventions:
+      # https://github.com/openshift/enhancements/blob/master/CONVENTIONS.md#terminology-grammar-and-spelling
+      locale: US
+      # Typos to ignore.
+      # Should be in lower case.
+      ignore-rules:
+        - nto
+  exclusions:
+    warn-unused: true
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - staticcheck
+        text: 'SA1019: src.Spec.NodeCount is deprecated: Use Replicas instead. NodeCount will be dropped in the next api release'
+      - linters:
+          - staticcheck
+        text: 'SA1019: in.Spec.NodeCount is deprecated: Use Replicas instead. NodeCount will be dropped in the next api release.'
+      - linters:
+          - staticcheck
+        text: 'SA1019: hcp.Status.Version is deprecated: Use versionStatus.desired.version instead.'
+      - linters:
+          - staticcheck
+        text: 'SA1019: hcp.Status.ReleaseImage is deprecated: Use versionStatus.desired.image instead.'
+      - linters:
+          - staticcheck
+        text: 'SA1019: hcp.Status.LastReleaseImageTransitionTime is deprecated'
+      - linters:
+          - staticcheck
+        text: 'SA1019: in.Status.DNSName is deprecated'
+      - linters:
+          - staticcheck
+        text: 'SA1019: infra.Status.Platform is deprecated: Use platformStatus.type instead'
+      - linters:
+          - unused
+        text: const `tuningConfigKey` is unused
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+severity:
+  default: error
+formatters:
+  enable:
+    - gci
+  settings:
+    gci:
+      sections:
+        - standard
+        - dot
+        - prefix(github.com/openshift/hypershift)
+        - prefix(github.com/openshift)
+        - prefix(github.com/aws)
+        - prefix(github.com/Azure)
+        - prefix(k8s.io)
+        - prefix(sigs.k8s.io)
+        - default
+      custom-order: true
+  exclusions:
+    warn-unused: true
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
