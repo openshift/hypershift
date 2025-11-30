@@ -4916,6 +4916,15 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 </tr><tr><td><p>&#34;RolloutComplete&#34;</p></td>
 <td><p>ControlPlaneComponentRolloutComplete indicates whether the ControlPlaneComponent has completed its rollout.</p>
 </td>
+</tr><tr><td><p>&#34;DataPlaneConnectionAvailable&#34;</p></td>
+<td><p>DataPlaneConnectionAvailable indicates whether the control plane has a successful
+network connection to the data plane components.
+<strong>True</strong> means the control plane can successfully reach the data plane nodes.
+<strong>False</strong> means there are network connection issues preventing the control plane from reaching the data plane.
+A failure here suggests potential issues such as: network policy restrictions,
+firewall rules, missing data plane nodes, or problems with infrastructure
+components like the konnectivity-agent workload.</p>
+</td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
 A failure here often means a software bug or a non-stable cluster.</p>
