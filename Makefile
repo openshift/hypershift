@@ -180,9 +180,9 @@ hypershift-api: $(CONTROLLER_GEN) $(CODE_GEN)
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
 
 	# These consolidate with the 3 steps used to generate CRDs by openshift/api.
-	$(CODE_GEN) empty-partial-schemas --base-dir ./api/hypershift/v1beta1
-	$(CODE_GEN) schemapatch --base-dir ./api/hypershift/v1beta1
-	$(CODE_GEN) crd-manifest-merge --manifest-merge:payload-manifest-path ./api/hypershift/v1beta1/featuregates --base-dir ./api/hypershift/v1beta1
+	(cd ./api && $(CODE_GEN) empty-partial-schemas)
+	(cd ./api && $(CODE_GEN) schemapatch)
+	(cd ./api && $(CODE_GEN) crd-manifest-merge --manifest-merge:payload-manifest-path ./hypershift/v1beta1/featuregates)
 
 	# Move final CRDs to the install folder.
 	mv ./api/hypershift/v1beta1/zz_generated.crd-manifests cmd/install/assets/hypershift-operator/
