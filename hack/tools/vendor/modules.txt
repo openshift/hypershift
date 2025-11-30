@@ -299,8 +299,8 @@ github.com/fzipp/gocyclo
 # github.com/ghodss/yaml v1.0.0
 ## explicit
 github.com/ghodss/yaml
-# github.com/ghostiam/protogetter v0.3.9
-## explicit; go 1.22.0
+# github.com/ghostiam/protogetter v0.3.17
+## explicit; go 1.24.0
 github.com/ghostiam/protogetter
 # github.com/go-critic/go-critic v0.12.0
 ## explicit; go 1.22.0
