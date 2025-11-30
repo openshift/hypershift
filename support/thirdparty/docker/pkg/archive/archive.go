@@ -84,7 +84,7 @@ func DecompressStream(archive io.Reader) (io.ReadCloser, error) {
 		readBufWrapper := p.NewReadCloserWrapper(buf, xzReader)
 		return wrapReadCloser(readBufWrapper, cancel), nil
 	default:
-		return nil, fmt.Errorf("Unsupported compression format %s", (&compression).Extension())
+		return nil, fmt.Errorf("unsupported compression format %s", (&compression).Extension())
 	}
 }
 
