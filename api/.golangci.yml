@@ -112,6 +112,1999 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/aws.go
         text: 'nobools: field MultiArch should not use a bool. Use a string type with meaningful constant values as an enum.'
+      # TODO(kubeapilinter): Review and fix these linting errors
+      # These exceptions were added to allow the linter to pass while
+      # marking API issues for future review. Each should be evaluated
+      # to determine if it should be fixed or permanently excepted.
+
+      # arrayofstruct (4 issues)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'arrayofstruct: AWSNodePoolPlatform.SecurityGroups is an array of structs, but the struct has no required fields. At least one field should be marked as required to prevent ambiguous YAML configurations'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'arrayofstruct: OpenStackNodePoolPlatform.AdditionalPorts is an array of structs, but the struct has no required fields. At least one field should be marked as required to prevent ambiguous YAML configurations'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'arrayofstruct: OpenStackPlatformSpec.ManagedSubnets is an array of structs, but the struct has no required fields. At least one field should be marked as required to prevent ambiguous YAML configurations'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'arrayofstruct: OpenStackPlatformSpec.Subnets is an array of structs, but the struct has no required fields. At least one field should be marked as required to prevent ambiguous YAML configurations'
+
+      # conditions (1 issue)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'conditions: Conditions field in NodePoolStatus must be a slice of metav1.Condition'
+
+      # defaultorrequired (8 issues)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'defaultorrequired: field AzurePlatformSpec.ResourceGroupName has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'defaultorrequired: field ManagedIdentity.ObjectEncoding has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'defaultorrequired: field HostedControlPlaneStatus.Initialized has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'defaultorrequired: field HostedControlPlaneStatus.Ready has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaultorrequired: field HostedClusterSpec.Etcd has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaultorrequired: field HostedClusterSpec.Networking has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaultorrequired: field KubevirtCachingStrategy.Type has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaultorrequired: field KubevirtNodePoolPlatform.RootVolume has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
+
+      # duplicatemarkers (4 issues)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'duplicatemarkers: Diagnostics.StorageAccountType has duplicated markers kubebuilder:validation:Enum'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'duplicatemarkers: ManagedIdentity.ObjectEncoding has duplicated markers kubebuilder:default'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'duplicatemarkers: ManagedIdentity.ObjectEncoding has duplicated markers kubebuilder:validation:Enum'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'duplicatemarkers: ProvisionerConfig.Name has duplicated markers kubebuilder:validation:Enum'
+
+      # integers (6 issues)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'integers: field NodeCount pointer should not use an int, int8 or int16. Use int32 or int64 depending on bounding requirements'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'integers: field KeyVersion should not use an int, int8 or int16. Use int32 or int64 depending on bounding requirements'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'integers: field Cores pointer should not use unsigned integers, use only int32 or int64 and apply validation to ensure the value is positive'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'integers: field Count should not use an int, int8 or int16. Use int32 or int64 depending on bounding requirements'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'integers: field IPVersion should not use an int, int8 or int16. Use int32 or int64 depending on bounding requirements'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'integers: field NetworkMTU pointer should not use an int, int8 or int16. Use int32 or int64 depending on bounding requirements'
+
+      # maxlength (1 issue)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'maxlength: field ClusterVersionStatus.History must have a maximum items, add kubebuilder:validation:MaxItems marker'
+
+      # nobools (11 issues)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'nobools: field Encrypted pointer should not use a bool. Use a string type with meaningful constant values as an enum'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'nobools: field MultiArch should not use a bool. Use a string type with meaningful constant values as an enum.'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'nobools: field ExternalManagedControlPlane pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'nobools: field FIPS should not use a bool. Use a string type with meaningful constant values as an enum.'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'nobools: field Initialized should not use a bool. Use a string type with meaningful constant values as an enum.'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'nobools: field Ready should not use a bool. Use a string type with meaningful constant values as an enum.'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'nobools: field FIPS should not use a bool. Use a string type with meaningful constant values as an enum.'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'nobools: field AttachDefaultNetwork pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'nobools: field BaseDomainPassthrough pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'nobools: field AutoRepair should not use a bool. Use a string type with meaningful constant values as an enum.'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'nobools: field DisableExternalNetwork pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+
+      # nodurations (2 issues)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'nodurations: field NodePoolSpec.NodeDrainTimeout pointer should not use a Duration. Use an integer type with units in the name to avoid the need for clients to implement Go style duration parsing'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'nodurations: field NodePoolSpec.NodeVolumeDetachTimeout pointer should not use a Duration. Use an integer type with units in the name to avoid the need for clients to implement Go style duration parsing'
+
+      # nonullable (1 issue)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'nonullable: field ClusterVersionStatus.AvailableUpdates has forbidden marker "nullable"'
+
+      # optionalfields (138 issues)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field AMI should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field DefaultWorkerSecurityGroupID should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field EncryptionKey should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field EndpointAccess should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field IOPS should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field ImageType should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field InstanceProfile should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field MarketType should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field MultiArch should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field MultiArch should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field Preference should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field Tenancy should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field Zone should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field AvailabilityZone should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field ClientID should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field Cloud should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field DiskStorageAccountType should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field EncryptionAtHost should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field EncryptionSetID should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field ImageRegistry should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field ImageRegistry should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field Offer should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field Persistence should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field Publisher should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field SKU should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field SizeGiB should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field StorageAccountType should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field Version should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/certificatesigningrequestapproval_types.go
+        text: 'optionalfields: field Spec should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/certificatesigningrequestapproval_types.go
+        text: 'optionalfields: field Status should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'optionalfields: field Spec should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'optionalfields: field Status should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'optionalfields: field Version should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'optionalfields: field DNSZoneID should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'optionalfields: field EndpointID should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'optionalfields: field EndpointServiceName should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'optionalfields: field SecurityGroupID should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'optionalfields: field Spec should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'optionalfields: field Status should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'optionalfields: field EndpointAccess should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'optionalfields: field DNSZoneName should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'optionalfields: field EndpointIP should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'optionalfields: field NATSubnet should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'optionalfields: field ServiceAttachmentName should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'optionalfields: field ServiceAttachmentURI should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'optionalfields: field Spec should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'optionalfields: field Status should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field Autoscaling should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field Channel should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field ClusterID should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field ControlPlaneEndpoint should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field ControllerAvailabilityPolicy should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field FIPS should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field FIPS should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field InfrastructureAvailabilityPolicy should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field KubeAPIServerDNSName should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field Networking should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field OAuthCallbackURLTemplate should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field OLMCatalogPlacement should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field ReleaseImage should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field Spec should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field Status should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field UpdateService should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field Version should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field Authentication should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field Autoscaling should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field Channel should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field ClusterID should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field ControlPlaneEndpoint should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field ControllerAvailabilityPolicy should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field DNS should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field FIPS should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field FIPS should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostPrefix should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field Hostname should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field IgnitionEndpoint should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field InfraID should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field InfrastructureAvailabilityPolicy should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field IssuerURL should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field KubeAPIServerDNSName should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field MaxNodeProvisionTime should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field NetworkType should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field OAuthCallbackURLTemplate should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field OLMCatalogPlacement should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field PayloadArch should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field Port should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field PrivateZoneID should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field ProviderType should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field PublicZoneID should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field SSHKey should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field SSHKey should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field Scaling should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field Spec should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field Status should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field UpdateService should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'optionalfields: field CacheName should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'optionalfields: field Count should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'optionalfields: field GenerateID should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'optionalfields: field Group should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'optionalfields: field Type should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field Arch should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field AutoRepair should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field AutoRepair should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field Message should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field ObservedGeneration should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field Reason should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field Replicas should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field Replicas should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field Severity should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field Spec should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field Status should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field Strategy should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field Value should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field Version should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field AvailabilityZone should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field CIDR should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field Description should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field GatewayIP should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field IPVersion should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field IPv6AddressMode should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field IPv6RAMode should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field ImageName should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field IngressFloatingIP should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field Name should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field PortSecurityPolicy should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field ProjectID should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field VNICType should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/operator.go
+        text: 'optionalfields: field InternalJoinSubnet should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/operator.go
+        text: 'optionalfields: field InternalTransitSwitchSubnet should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/operator.go
+        text: 'optionalfields: field OperatorLogLevel should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'optionalfields: field ImageDeletePolicy should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'optionalfields: field MemoryGiB should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'optionalfields: field ProcessorType should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'optionalfields: field Processors should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'optionalfields: field StorageType should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'optionalfields: field Subnet should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'optionalfields: field SystemType should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'optionalfields: field Zone should be a pointer'
+
+      # requiredfields (265 issues)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/agent.go
+        text: 'requiredfields: field AgentNamespace has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/agent.go
+        text: 'requiredfields: field AgentNamespace should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field ARN has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field ARN should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSKMSRoleARN has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSKMSRoleARN should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field ActiveKey has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field ActiveKey should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Auth has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Auth should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field ControlPlaneARN has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field ControlPlaneARN should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field ControlPlaneOperatorARN has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field ControlPlaneOperatorARN should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field ImageRegistryARN has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field ImageRegistryARN should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field IngressARN has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field IngressARN should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field InstanceType has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field InstanceType should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Key should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field KubeCloudControllerARN has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field KubeCloudControllerARN should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field LocalZoneID has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field LocalZoneID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Name has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Name should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Namespace has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Namespace should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field NetworkARN has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field NetworkARN should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field NodePoolManagementARN has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field NodePoolManagementARN should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Region has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Region should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field RolesRef has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field RolesRef should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Size should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field StorageARN has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field StorageARN should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Subnet has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Subnet should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Type has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Type should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field URL has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field URL should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field VPC has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field VPC should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Value should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Values should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ActiveKey has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ActiveKey should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureAuthenticationConfig does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureAuthenticationConfigType should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ClientID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field CloudProvider does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ControlPlane does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ControlPlaneOperator does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field CredentialsSecretName should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field DataPlane has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field DataPlane should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field Disk does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field DiskMSIClientID has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field DiskMSIClientID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field File does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field FileMSIClientID has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field FileMSIClientID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field Image does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ImageRegistry does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ImageRegistryMSIClientID has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ImageRegistryMSIClientID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field Ingress does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field KMS does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field KeyName has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field KeyName should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field KeyVaultName has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field KeyVaultName should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field KeyVersion has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field KeyVersion should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field Location has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field Location should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ManagedIdentitiesKeyVault has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ManagedIdentitiesKeyVault should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field Name has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field Name should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field Network does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field NodePoolManagement does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field OSDisk has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field OSDisk should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ObjectEncoding should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ResourceGroupName has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ResourceGroupName should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field SecurityGroupID has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field SecurityGroupID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field StorageAccountURI has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field StorageAccountURI should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field SubnetID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field SubscriptionID has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field SubscriptionID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field TenantID has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field TenantID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field Type should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field VMSize has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field VMSize should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field VnetID has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field VnetID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'requiredfields: field Group has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'requiredfields: field Group should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'requiredfields: field Kind has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'requiredfields: field Kind should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'requiredfields: field Name has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'requiredfields: field Name should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'requiredfields: field NetworkLoadBalancerName has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'requiredfields: field NetworkLoadBalancerName should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'requiredfields: field Name should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'requiredfields: field Network does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'requiredfields: field NetworkConfig does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'requiredfields: field PrivateServiceConnectSubnet does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'requiredfields: field Project should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'requiredfields: field Region has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'requiredfields: field Region should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'requiredfields: field ConsumerAcceptList should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'requiredfields: field ForwardingRuleName should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'requiredfields: field LoadBalancerIP has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'requiredfields: field LoadBalancerIP should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field DNS has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field DNS should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Etcd does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Host has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Host should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field InfraID has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field InfraID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Initialized has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Initialized should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field IssuerURL has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field IssuerURL should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Key has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Key should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Name has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Name should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Platform has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Platform should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Port has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Port should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field PullSecret should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Ready has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Ready should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field ReleaseImage has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field ReleaseImage should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field SSHKey should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field Services should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ActiveKey should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Address should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field AvailableUpdates should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field BaseDomain has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field BaseDomain should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field CIDR should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ClientSecret should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Desired should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Endpoint has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Endpoint should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Etcd does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Image should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ManagementType should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Name should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Networking has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Networking should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ObservedGeneration has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ObservedGeneration should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Platform has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Platform should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Provider should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Provisioner does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Provisioner does not allow the zero value. The field does not need to be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field PullSecret should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Release does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field RoleARN has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field RoleARN should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Service should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Services should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Source has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Source should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Storage does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field TLS does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Type has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Type should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field Auth does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field CRKID has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field CRKID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field CorrelationID has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field CorrelationID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field Credentials should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field InstanceID has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field InstanceID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field KeyList should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field KeyVersion has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field KeyVersion should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field Region has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field Region should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field Type should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field URL has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field URL should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field DeviceName has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field DeviceName should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field GuestStorageClassName has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field GuestStorageClassName should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field GuestVolumeSnapshotClassName has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field GuestVolumeSnapshotClassName should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field InfraNamespace has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field InfraNamespace should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field InfraStorageClassName has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field InfraStorageClassName should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field InfraVolumeSnapshotClassName has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field InfraVolumeSnapshotClassName should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field Name has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field Name should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field RootVolume should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field Type should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field ClusterName should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field Effect should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field Key should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field LastTransitionTime should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field Management does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field Max should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field Min should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field Platform has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field Platform should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field Release does not allow the zero value. It must have the omitzero tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field Status should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field Type has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field Type should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field UpgradeType should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field CloudName has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field CloudName should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field End has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field End should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field Flavor has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field Flavor should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field IPAddress has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field IPAddress should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field IdentityRef has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field IdentityRef should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field Name has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field Name should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field Start has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field Start should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field AccountID has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field AccountID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field CISInstanceCRN has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field CISInstanceCRN should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field ImageRegistryOperatorCloudCreds should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field IngressOperatorCloudCreds should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field KubeCloudControllerCreds should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field Name has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field Name should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field NodePoolManagementCreds should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field Region has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field Region should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field ResourceGroup has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field ResourceGroup should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field ServiceInstanceID has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field ServiceInstanceID should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field StorageOperatorCloudCreds should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field Subnet should have the omitempty tag.'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field VPC should have the omitempty tag.'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field Zone has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field Zone should have the omitempty tag'
+
+      # ssatags (40 issues)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'ssatags: AWSNodePoolPlatform.ResourceTags should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'ssatags: AWSNodePoolPlatform.SecurityGroups should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'ssatags: AWSPlatformSpec.AdditionalAllowedPrincipals should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'ssatags: AWSPlatformSpec.ResourceTags should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'ssatags: AWSPlatformSpec.ServiceEndpoints should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'ssatags: AWSResourceReference.Filters should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'ssatags: Filter.Values should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'ssatags: ControlPlaneComponentStatus.Resources should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'ssatags: AWSEndpointServiceSpec.ResourceTags should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'ssatags: AWSEndpointServiceSpec.SubnetIDs should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'ssatags: AWSEndpointServiceStatus.DNSNames should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'ssatags: GCPPrivateServiceConnectSpec.ConsumerAcceptList should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'optionalfields: field ForwardingRuleName should be a pointer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'ssatags: GCPPrivateServiceConnectStatus.DNSRecords should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'ssatags: HostedControlPlaneSpec.ImageContentSources should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'ssatags: HostedControlPlaneSpec.Services should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'ssatags: HostedControlPlaneSpec.Tolerations should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: ClusterAutoscaling.BalancingIgnoredLabels should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: ClusterAutoscaling.Expanders should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: ClusterNetworking.ClusterNetwork should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: ClusterNetworking.MachineNetwork should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: ClusterNetworking.ServiceNetwork should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: ClusterVersionStatus.AvailableUpdates should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: ClusterVersionStatus.History should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: HostedClusterSpec.ImageContentSources should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: HostedClusterSpec.Services should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: HostedClusterSpec.Tolerations should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'ssatags: IBMCloudKMSSpec.KeyList should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'ssatags: KubevirtManualStorageDriverConfig.StorageClassMapping should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'ssatags: KubevirtManualStorageDriverConfig.VolumeSnapshotClassMapping should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'ssatags: KubevirtNodePoolPlatform.AdditionalNetworks should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'ssatags: KubevirtNodePoolPlatform.KubevirtHostDevices should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'ssatags: KubevirtPersistentVolume.AccessModes should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'ssatags: NodePoolSpec.Config should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'ssatags: NodePoolSpec.Taints should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'ssatags: NodePoolSpec.TuningConfig should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'ssatags: NodePoolStatus.Conditions should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'ssatags: OpenStackNodePoolPlatform.AdditionalPorts should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'ssatags: PortSpec.AllowedAddressPairs should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'ssatags: SubnetSpec.AllocationPools should have a listType marker for proper Server-Side Apply behavior'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'ssatags: SubnetSpec.DNSNameservers should have a listType marker for proper Server-Side Apply behavior'
+
+      # statusoptional (2 issues)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'statusoptional: status field "Initialized" must be marked as optional, not required'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'statusoptional: status field "Ready" must be marked as optional, not required'
+
+      # uniquemarkers (3 issues)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'uniquemarkers: field Diagnostics.StorageAccountType has multiple definitions of marker kubebuilder:validation:Enum when only a single definition should exist'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'uniquemarkers: field ManagedIdentity.ObjectEncoding has multiple definitions of marker kubebuilder:default when only a single definition should exist'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'uniquemarkers: field ManagedIdentity.ObjectEncoding has multiple definitions of marker kubebuilder:validation:Enum when only a single definition should exist'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'uniquemarkers: field ProvisionerConfig.Name has multiple definitions of marker kubebuilder:validation:Enum when only a single definition should exist'
+
     paths:
       - third_party$
       - builtin$
