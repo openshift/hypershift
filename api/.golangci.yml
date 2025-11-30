@@ -66,16 +66,8 @@ linters:
         text: 'nobools: field FIPS should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
-        path: hypershift/v1beta1/hostedcluster_types.go
-        text: 'requiredfields: field Provisioner is marked as required, should not be a pointer'
-      - linters:
-          - kubeapilinter
         path: hypershift/v1beta1/kubevirt.go
         text: 'integers: field Cores pointer should not use unsigned integers, use only int32 or int64 and apply validation to ensure the value is positive'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/kubevirt.go
-        text: 'requiredfields: field RootVolume is marked as required, should not be a pointer'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/kubevirt.go
@@ -84,10 +76,6 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/kubevirt.go
         text: 'nobools: field BaseDomainPassthrough pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/nodepool_types.go
-        text: 'conditions: Conditions field must be a slice of metav1.Condition'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/nodepool_types.go
@@ -124,10 +112,6 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/aws.go
         text: 'nobools: field MultiArch should not use a bool. Use a string type with meaningful constant values as an enum.'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/hostedcluster_types.go
-        text: 'maxlength: field History must have a maximum items, add kubebuilder:validation:MaxItems marker'
     paths:
       - third_party$
       - builtin$
