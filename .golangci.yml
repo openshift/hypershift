@@ -24,12 +24,6 @@ linters:
     rules:
       - linters:
           - staticcheck
-        text: 'SA1019: src.Spec.NodeCount is deprecated: Use Replicas instead. NodeCount will be dropped in the next api release'
-      - linters:
-          - staticcheck
-        text: 'SA1019: in.Spec.NodeCount is deprecated: Use Replicas instead. NodeCount will be dropped in the next api release.'
-      - linters:
-          - staticcheck
         text: 'SA1019: hcp.Status.Version is deprecated: Use versionStatus.desired.version instead.'
       - linters:
           - staticcheck
@@ -39,13 +33,26 @@ linters:
         text: 'SA1019: hcp.Status.LastReleaseImageTransitionTime is deprecated'
       - linters:
           - staticcheck
-        text: 'SA1019: in.Status.DNSName is deprecated'
-      - linters:
-          - staticcheck
         text: 'SA1019: infra.Status.Platform is deprecated: Use platformStatus.type instead'
       - linters:
           - unused
-        text: const `tuningConfigKey` is unused
+        text: const tuningConfigKey is unused
+      - linters:
+          - staticcheck
+        text: 'ST1001: should not use dot imports'
+        source: 'github.com/onsi/gomega'
+      - linters:
+          - staticcheck
+        text: 'ST1005: error strings should not be capitalized'
+        source: 'Konnectivity'
+      - linters:
+          - staticcheck
+        text: 'ST1019'
+        path: 'test/e2e/util/(util|kubevirt)\.go$'
+      - linters:
+          - staticcheck
+        text: 'ST1019'
+        path: 'support/util/util_test\.go$'
     paths:
       - third_party$
       - builtin$
