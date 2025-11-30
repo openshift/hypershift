@@ -35,7 +35,11 @@ aliases:
     - qinqon
   ibm-reviewers:
     - hasueki
+    - mihivagyok
+    - pamelachristie
     - rtheis
+    - ryan-cradick
+    - twodcube
   gcp-reviewers:
     - apahim
     - cblecker
