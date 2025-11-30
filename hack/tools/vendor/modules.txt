@@ -499,8 +499,8 @@ github.com/golangci/dupl/printer
 github.com/golangci/dupl/suffixtree
 github.com/golangci/dupl/syntax
 github.com/golangci/dupl/syntax/golang
-# github.com/golangci/go-printf-func-name v0.1.0
-## explicit; go 1.22.0
+# github.com/golangci/go-printf-func-name v0.1.1
+## explicit; go 1.23.0
 github.com/golangci/go-printf-func-name/pkg/analyzer
 # github.com/golangci/gofmt v0.0.0-20250106114630-d62b90e6713d
 ## explicit; go 1.22.0
