@@ -13,58 +13,23 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
+// Package kubeapilinter is a golangci-lint plugin for the Kube API Linter (KAL).
+// It is built as a module to be used with golangci-lint.
+// See https://golangci-lint.run/plugins/module-plugins/ for more information.
 package kubeapilinter
 
 import (
-	"fmt"
+	pluginbase "sigs.k8s.io/kube-api-linter/pkg/plugin/base"
 
-	"github.com/golangci/plugin-module-register/register"
-	"golang.org/x/tools/go/analysis"
-	"k8s.io/apimachinery/pkg/util/validation/field"
-	kalanalysis "sigs.k8s.io/kube-api-linter/pkg/analysis"
-	"sigs.k8s.io/kube-api-linter/pkg/config"
-	"sigs.k8s.io/kube-api-linter/pkg/validation"
+	// Import the default linters.
+	// DO NOT ADD DIRECTLY TO THIS FILE.
+	_ "sigs.k8s.io/kube-api-linter/pkg/registration"
 )
 
-func init() {
-	register.Plugin("kubeapilinter", New)
-}
-
-// New creates a new golangci-lint plugin based on the KAL analyzers.
-func New(settings any) (register.LinterPlugin, error) {
-	s, err := register.DecodeSettings[config.GolangCIConfig](settings)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding settings: %w", err)
-	}
-
-	return &GolangCIPlugin{config: s}, nil
-}
-
-// GolangCIPlugin constructs a new plugin for the golangci-lint
-// plugin pattern.
-// This allows golangci-lint to build a version of itself, containing
-// all of the anaylzers included in KAL.
-type GolangCIPlugin struct {
-	config config.GolangCIConfig
-}
-
-// BuildAnalyzers returns all of the analyzers to run, based on the configuration.
-func (f *GolangCIPlugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
-	if err := validation.ValidateGolangCIConfig(f.config, field.NewPath("")); err != nil {
-		return nil, fmt.Errorf("error in KAL configuration: %w", err)
-	}
-
-	registry := kalanalysis.NewRegistry()
-
-	analyzers, err := registry.InitializeLinters(f.config.Linters, f.config.LintersConfig)
-	if err != nil {
-		return nil, fmt.Errorf("error initializing analyzers: %w", err)
-	}
-
-	return analyzers, nil
-}
-
-// GetLoadMode implements the golangci-lint plugin interface.
-func (f *GolangCIPlugin) GetLoadMode() string {
-	return register.LoadModeTypesInfo
-}
+// New is the entrypoint for the plugin.
+// We import the base plugin here so that custom implementations do not need to import
+// this file, but can easily create their own plugin with their own custom set of analyzers.
+//
+//nolint:gochecknoglobals
+var New = pluginbase.New

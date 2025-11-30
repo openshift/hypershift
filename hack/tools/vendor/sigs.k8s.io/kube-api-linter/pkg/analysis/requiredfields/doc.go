@@ -15,13 +15,14 @@ limitations under the License.
 */
 
 /*
-requiredFields is a linter to check that fields that are marked as required are not pointers, and do not have the omitempty tag.
+requiredfields is a linter to check that fields that are marked as required are marshalled properly.
 The linter will check for fields that are marked as required using the +required marker, or the +kubebuilder:validation:Required marker.
 
-The linter will suggest to remove the omitempty tag from fields that are marked as required, but have the omitempty tag.
-The linter will suggest to remove the pointer type from fields that are marked as required.
+Required fields should have omitempty or omitzero tags to prevent "mess" in the encoded object.
+omitzero is handled only for fields with struct type.
 
-If you have a large, existing codebase, you may not want to automatically fix all of the pointer issues.
-In this case, you can configure the linter not to suggest fixing the pointer issues by setting the `pointerPolicy` option to `Warn`.
+Fields are not typically pointers.
+A field doesn't need to be a pointer if its zero value is not a valid value, as this zero value could never be accepted.
+However, if the zero value is valid, the field should be a pointer to differentiate between an unset state and a valid zero value.
 */
 package requiredfields

@@ -17,6 +17,7 @@ import (
 	kyaml "sigs.k8s.io/yaml"
 
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 )
 
@@ -95,6 +96,13 @@ func (g *generator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.
 	errs := []error{}
 
 	comparatorOptions := options.NewComparatorOptions()
+
+	// Remove specific comparators from the default enabled list.
+	// These are all enabled by KAL now.
+	toRemove := []string{"NoBools", "NoFloats", "NoUints", "NoMaps", "ConditionsMustHaveProperSSATags"}
+	defaultSet := sets.NewString(comparatorOptions.DefaultEnabledComparators...)
+	comparatorOptions.DefaultEnabledComparators = defaultSet.Delete(toRemove...).List()
+
 	comparatorOptions.EnabledComparators = g.enabledComparators
 	comparatorOptions.DisabledComparators = g.disabledComparators
 

@@ -26,7 +26,6 @@ import (
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/inspector"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
-	"sigs.k8s.io/kube-api-linter/pkg/config"
 )
 
 const (
@@ -34,12 +33,16 @@ const (
 )
 
 type analyzer struct {
-	policy config.NoMapsPolicy
+	policy NoMapsPolicy
 }
 
 // newAnalyzer creates a new analyzer.
-func newAnalyzer(cfg config.NoMapsConfig) *analysis.Analyzer {
-	defaultConfig(&cfg)
+func newAnalyzer(cfg *NoMapsConfig) *analysis.Analyzer {
+	if cfg == nil {
+		cfg = &NoMapsConfig{}
+	}
+
+	defaultConfig(cfg)
 
 	a := &analyzer{
 		policy: cfg.Policy,
@@ -59,16 +62,14 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 		return nil, kalerrors.ErrCouldNotGetInspector
 	}
 
-	inspect.InspectFields(func(field *ast.Field, stack []ast.Node, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markers.Markers) {
-		a.checkField(pass, field)
+	inspect.InspectFields(func(field *ast.Field, _ extractjsontags.FieldTagInfo, _ markers.Markers, qualifiedFieldName string) {
+		a.checkField(pass, field, qualifiedFieldName)
 	})
 
 	return nil, nil //nolint:nilnil
 }
 
-func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field) {
-	stringToStringMapType := types.NewMap(types.Typ[types.String], types.Typ[types.String])
-
+func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, qualifiedFieldName string) {
 	underlyingType := pass.TypesInfo.TypeOf(field.Type).Underlying()
 
 	if ptr, ok := underlyingType.(*types.Pointer); ok {
@@ -80,20 +81,21 @@ func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field) {
 		return
 	}
 
-	if a.policy == config.NoMapsEnforce {
-		report(pass, field.Pos(), field.Names[0].Name)
+	if a.policy == NoMapsEnforce {
+		report(pass, field.Pos(), qualifiedFieldName)
 		return
 	}
 
-	if a.policy == config.NoMapsAllowStringToStringMaps {
-		if types.Identical(m, stringToStringMapType) {
+	if a.policy == NoMapsAllowStringToStringMaps {
+		if types.AssignableTo(m.Elem().Underlying(), types.Typ[types.String]) &&
+			types.AssignableTo(m.Key().Underlying(), types.Typ[types.String]) {
 			return
 		}
 
-		report(pass, field.Pos(), field.Names[0].Name)
+		report(pass, field.Pos(), qualifiedFieldName)
 	}
 
-	if a.policy == config.NoMapsIgnore {
+	if a.policy == NoMapsIgnore {
 		key := m.Key().Underlying()
 		_, ok := key.(*types.Basic)
 
@@ -104,7 +106,7 @@ func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field) {
 			return
 		}
 
-		report(pass, field.Pos(), field.Names[0].Name)
+		report(pass, field.Pos(), qualifiedFieldName)
 	}
 }
 
@@ -115,8 +117,8 @@ func report(pass *analysis.Pass, pos token.Pos, fieldName string) {
 	})
 }
 
-func defaultConfig(cfg *config.NoMapsConfig) {
+func defaultConfig(cfg *NoMapsConfig) {
 	if cfg.Policy == "" {
-		cfg.Policy = config.NoMapsAllowStringToStringMaps
+		cfg.Policy = NoMapsAllowStringToStringMaps
 	}
 }

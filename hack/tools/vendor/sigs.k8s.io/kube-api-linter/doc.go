@@ -25,25 +25,26 @@ The custom golangci-lint binary can be run with the `run` command, and the Kube 
 
 Example `.golangci.yml` configuration file:
 
-	linters-settings:
-	custom:
-	  kubeapilinter::
-	    type: "module"
-	    description: Kube API Linter lints Kube like APIs based on API conventions and best practices.
-	    settings:
-	      linters:
-	        enabled: []
-	        disabled: []
-	      lintersConfig:
-	        jsonTags:
-	          jsonTagRegex: ""
-	        optionalOrRequired:
-	          preferredOptionalMarker: ""
-	          preferredRequiredMarker: ""
 	linters:
-	  disable-all: true
-	  enable:
-	    - kubeapilinter
+		default: none
+		enable:
+			- kubeapilinter
+
+	settings:
+		custom:
+			kubeapilinter::
+				type: "module"
+				description: Kube API Linter lints Kube like APIs based on API conventions and best practices.
+				settings:
+					linters:
+						enabled: []
+						disabled: []
+					lintersConfig:
+						jsonTags:
+							jsonTagRegex: ""
+						optionalOrRequired:
+							preferredOptionalMarker: ""
+							preferredRequiredMarker: ""
 
 New linters can be added in the [sigs.k8s.io/kube-api-linter/pkg/analysis] package.
 */
