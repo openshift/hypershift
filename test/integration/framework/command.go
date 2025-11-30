@@ -97,16 +97,16 @@ func setupCommand(opts *Options, logPath string, cmd *exec.Cmd) (*os.File, *exec
 	}
 
 	for _, env := range cmd.Env {
-		if _, err := logFile.WriteString(fmt.Sprintf("$ export %s\n", env)); err != nil {
+		if _, err := fmt.Fprintf(logFile, "$ export %s\n", env); err != nil {
 			return nil, nil, "", err
 		}
 	}
 	if cmd.Dir != "" {
-		if _, err := logFile.WriteString(fmt.Sprintf("$ cd %s\n", cmd.Dir)); err != nil {
+		if _, err := fmt.Fprintf(logFile, "$ cd %s\n", cmd.Dir); err != nil {
 			return nil, nil, "", err
 		}
 	}
-	if _, err := logFile.WriteString(fmt.Sprintf("$ %s\n", formattedCommand)); err != nil {
+	if _, err := fmt.Fprintf(logFile, "$ %s\n", formattedCommand); err != nil {
 		return nil, nil, "", err
 	}
 	return logFile, cmd, formattedCommand, nil
