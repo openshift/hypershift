@@ -819,8 +819,8 @@ github.com/kunwardeep/paralleltest/pkg/paralleltest
 # github.com/lasiar/canonicalheader v1.1.2
 ## explicit; go 1.22.0
 github.com/lasiar/canonicalheader
-# github.com/ldez/exptostd v0.4.2
-## explicit; go 1.22.0
+# github.com/ldez/exptostd v0.4.5
+## explicit; go 1.24.0
 github.com/ldez/exptostd
 # github.com/ldez/gomoddirectives v0.6.1
 ## explicit; go 1.22.0
