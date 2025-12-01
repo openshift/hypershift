@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -56,6 +57,8 @@ const LoadMode = packages.NeedName |
 const externalSuppressionJustification = "Globally suppressed."
 
 const aliasOfAllRules = "*"
+
+var directiveRegexp = regexp.MustCompile("^//gosec:disable(?: (.+))?$")
 
 type ignore struct {
 	start        int
@@ -411,7 +414,17 @@ func (gosec *Analyzer) CheckRules(pkg *packages.Package) {
 func (gosec *Analyzer) CheckAnalyzers(pkg *packages.Package) {
 	ssaResult, err := gosec.buildSSA(pkg)
 	if err != nil || ssaResult == nil {
-		gosec.logger.Printf("Error building the SSA representation of the package %q: %s", pkg.Name, err)
+		errMessage := "Error building the SSA representation of the package " + pkg.Name + ": "
+		if err != nil {
+			errMessage += err.Error()
+		}
+		if ssaResult == nil {
+			if err != nil {
+				errMessage += ", "
+			}
+			errMessage += "no ssa result"
+		}
+		gosec.logger.Print(errMessage)
 		return
 	}
 
@@ -483,7 +496,10 @@ func (gosec *Analyzer) generatedFiles(pkg *packages.Package) map[string]bool {
 func (gosec *Analyzer) buildSSA(pkg *packages.Package) (interface{}, error) {
 	defer func() {
 		if r := recover(); r != nil {
-			gosec.logger.Printf("Panic when running SSA analyser on package: %s", pkg.Name)
+			gosec.logger.Printf(
+				"Panic when running SSA analyzer on package: %s. Panic: %v\nStack trace:\n%s",
+				pkg.Name, r, debug.Stack(),
+			)
 		}
 	}()
 	ssaPass := &analysis.Pass{
@@ -582,51 +598,75 @@ func (gosec *Analyzer) ignore(n ast.Node) map[string]issue.SuppressionInfo {
 	}
 
 	for _, group := range groups {
-		comment := strings.TrimSpace(group.Text())
-		foundDefaultTag := strings.HasPrefix(comment, noSecDefaultTag) || regexp.MustCompile("\n *"+noSecDefaultTag).MatchString(comment)
-		foundAlternativeTag := strings.HasPrefix(comment, noSecAlternativeTag) || regexp.MustCompile("\n *"+noSecAlternativeTag).MatchString(comment)
-
-		if foundDefaultTag || foundAlternativeTag {
-			gosec.stats.NumNosec++
-
-			// Discard what's in front of the nosec tag.
-			if foundDefaultTag {
-				comment = strings.SplitN(comment, noSecDefaultTag, 2)[1]
-			} else {
-				comment = strings.SplitN(comment, noSecAlternativeTag, 2)[1]
-			}
-
-			// Extract the directive and the justification.
-			justification := ""
-			commentParts := regexp.MustCompile(`-{2,}`).Split(comment, 2)
-			directive := commentParts[0]
-			if len(commentParts) > 1 {
-				justification = strings.TrimSpace(strings.TrimRight(commentParts[1], "\n"))
-			}
-
-			// Pull out the specific rules that are listed to be ignored.
-			re := regexp.MustCompile(`(G\d{3})`)
-			matches := re.FindAllStringSubmatch(directive, -1)
-
-			suppression := issue.SuppressionInfo{
-				Kind:          "inSource",
-				Justification: justification,
-			}
-
-			// Find the rule IDs to ignore.
-			ignores := make(map[string]issue.SuppressionInfo)
-			for _, v := range matches {
-				ignores[v[1]] = suppression
-			}
-
-			// If no specific rules were given, ignore everything.
-			if len(matches) == 0 {
-				ignores[aliasOfAllRules] = suppression
-			}
-			return ignores
+		found, args := findNoSecDirective(group, noSecDefaultTag, noSecAlternativeTag)
+		if !found {
+			continue
 		}
+
+		gosec.stats.NumNosec++
+
+		// Extract the directive and the justification.
+		justification := ""
+		commentParts := regexp.MustCompile(`-{2,}`).Split(args, 2)
+		directive := commentParts[0]
+		if len(commentParts) > 1 {
+			justification = strings.TrimSpace(strings.TrimRight(commentParts[1], "\n"))
+		}
+
+		// Pull out the specific rules that are listed to be ignored.
+		re := regexp.MustCompile(`(G\d{3})`)
+		matches := re.FindAllStringSubmatch(directive, -1)
+
+		suppression := issue.SuppressionInfo{
+			Kind:          "inSource",
+			Justification: justification,
+		}
+
+		// Find the rule IDs to ignore.
+		ignores := make(map[string]issue.SuppressionInfo)
+		for _, v := range matches {
+			ignores[v[1]] = suppression
+		}
+
+		// If no specific rules were given, ignore everything.
+		if len(matches) == 0 {
+			ignores[aliasOfAllRules] = suppression
+		}
+		return ignores
 	}
 	return nil
+}
+
+// findNoSecDirective checks if the comment group contains `#nosec` or `//gosec:disable` directive.
+// If found, it returns true and the directive's arguments.
+func findNoSecDirective(group *ast.CommentGroup, noSecDefaultTag, noSecAlternativeTag string) (bool, string) {
+	// Check if the comment grounp has a nosec comment.
+	for _, tag := range []string{noSecDefaultTag, noSecAlternativeTag} {
+		if found, args := findNoSecTag(group, tag); found {
+			return true, args
+		}
+	}
+
+	// Check if the comment group has a directive comment.
+	for _, c := range group.List {
+		match := directiveRegexp.FindStringSubmatch(c.Text)
+		if len(match) > 0 {
+			return true, match[0]
+		}
+	}
+
+	return false, ""
+}
+
+func findNoSecTag(group *ast.CommentGroup, tag string) (bool, string) {
+	comment := strings.TrimSpace(group.Text())
+
+	if strings.HasPrefix(comment, tag) || regexp.MustCompile("\n *"+tag).MatchString(comment) {
+		// Discard what's in front of the nosec tag.
+		return true, strings.SplitN(comment, tag, 2)[1]
+	}
+
+	return false, ""
 }
 
 // Visit runs the gosec visitor logic over an AST created by parsing go code.
