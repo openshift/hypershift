@@ -381,7 +381,7 @@ func TestBuildGCPWorkloadIdentityCredentials(t *testing.T) {
 		},
 	}
 
-	credentials, err := buildGCPWorkloadIdentityCredentials(wif)
+	credentials, err := buildGCPWorkloadIdentityCredentials(wif, wif.ServiceAccountsEmails.NodePool)
 	g.Expect(err).To(BeNil())
 	g.Expect(credentials).To(ContainSubstring(`"type":"external_account"`))
 	g.Expect(credentials).To(ContainSubstring("123456789012"))
@@ -394,9 +394,10 @@ func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
 	g := NewWithT(t)
 
 	tests := []struct {
-		name        string
-		wif         hyperv1.GCPWorkloadIdentityConfig
-		expectError bool
+		name                string
+		wif                 hyperv1.GCPWorkloadIdentityConfig
+		serviceAccountEmail string
+		expectError         bool
 	}{
 		{
 			name: "valid configuration",
@@ -409,7 +410,8 @@ func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
 					ControlPlane: "cp-test-capg-sa@test-project.iam.gserviceaccount.com",
 				},
 			},
-			expectError: false,
+			serviceAccountEmail: "test-capg-sa@test-project.iam.gserviceaccount.com",
+			expectError:         false,
 		},
 		{
 			name: "missing project number",
@@ -421,7 +423,8 @@ func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
 					ControlPlane: "cp-test-capg-sa@test-project.iam.gserviceaccount.com",
 				},
 			},
-			expectError: true,
+			serviceAccountEmail: "test-capg-sa@test-project.iam.gserviceaccount.com",
+			expectError:         true,
 		},
 		{
 			name: "missing pool ID",
@@ -433,7 +436,8 @@ func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
 					ControlPlane: "cp-test-capg-sa@test-project.iam.gserviceaccount.com",
 				},
 			},
-			expectError: true,
+			serviceAccountEmail: "test-capg-sa@test-project.iam.gserviceaccount.com",
+			expectError:         true,
 		},
 		{
 			name: "missing provider ID",
@@ -445,7 +449,8 @@ func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
 					ControlPlane: "cp-test-capg-sa@test-project.iam.gserviceaccount.com",
 				},
 			},
-			expectError: true,
+			serviceAccountEmail: "test-capg-sa@test-project.iam.gserviceaccount.com",
+			expectError:         true,
 		},
 		{
 			name: "missing service account email",
@@ -458,13 +463,14 @@ func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
 					ControlPlane: "cp-",
 				},
 			},
-			expectError: true,
+			serviceAccountEmail: "",
+			expectError:         true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := buildGCPWorkloadIdentityCredentials(tt.wif)
+			_, err := buildGCPWorkloadIdentityCredentials(tt.wif, tt.serviceAccountEmail)
 			if tt.expectError {
 				g.Expect(err).ToNot(BeNil())
 			} else {
