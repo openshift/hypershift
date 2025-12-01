@@ -626,7 +626,6 @@ func TestReconcileAPIServerService(t *testing.T) {
 						TargetPort: intstr.FromString(kasPort),
 					},
 				},
-				LoadBalancerSourceRanges: allowCIDRString,
 				Selector: map[string]string{
 					"app": "kube-apiserver",
 					"hypershift.openshift.io/control-plane-component": "kube-apiserver",
@@ -646,12 +645,13 @@ func TestReconcileAPIServerService(t *testing.T) {
 			s.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
 
 			s.Labels = nil
-
-			s.Spec.LoadBalancerSourceRanges = nil
 		})...)
 	}
 	withCrossZoneAnnotation := func(svc *corev1.Service) {
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+	}
+	withLoadBalancerSourceRanges := func(svc *corev1.Service) {
+		svc.Spec.LoadBalancerSourceRanges = allowCIDRString
 	}
 	kasExternalPublicRoute := routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
@@ -738,7 +738,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 			},
 
 			expectedServices: []corev1.Service{
-				kasPublicService(),
+				kasPublicService(withLoadBalancerSourceRanges),
 			},
 		},
 		{
@@ -752,7 +752,7 @@ func TestReconcileAPIServerService(t *testing.T) {
 			},
 
 			expectedServices: []corev1.Service{
-				kasPublicService(withCrossZoneAnnotation),
+				kasPublicService(withCrossZoneAnnotation, withLoadBalancerSourceRanges),
 				kasPrivateService(withCrossZoneAnnotation),
 			},
 		},
