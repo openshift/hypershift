@@ -18,11 +18,13 @@ limitations under the License.
 package applyconfiguration
 
 import (
-	v1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
+	v1alpha1 "github.com/openshift/hypershift/api/auditlogpersistence/v1alpha1"
+	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	karpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
-	certificatesv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
+	auditlogpersistencev1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/auditlogpersistence/v1alpha1"
+	applyconfigurationcertificatesv1alpha1 "github.com/openshift/hypershift/client/applyconfiguration/certificates/v1alpha1"
 	hypershiftv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 	internal "github.com/openshift/hypershift/client/applyconfiguration/internal"
 	applyconfigurationkarpenterv1beta1 "github.com/openshift/hypershift/client/applyconfiguration/karpenter/v1beta1"
@@ -36,15 +38,29 @@ import (
 // apply configuration type exists for the given GroupVersionKind.
 func ForKind(kind schema.GroupVersionKind) interface{} {
 	switch kind {
-	// Group=certificates.hypershift.openshift.io, Version=v1alpha1
-	case v1alpha1.SchemeGroupVersion.WithKind("CertificateRevocationRequest"):
-		return &certificatesv1alpha1.CertificateRevocationRequestApplyConfiguration{}
-	case v1alpha1.SchemeGroupVersion.WithKind("CertificateRevocationRequestSpec"):
-		return &certificatesv1alpha1.CertificateRevocationRequestSpecApplyConfiguration{}
-	case v1alpha1.SchemeGroupVersion.WithKind("CertificateRevocationRequestStatus"):
-		return &certificatesv1alpha1.CertificateRevocationRequestStatusApplyConfiguration{}
-	case v1alpha1.SchemeGroupVersion.WithKind("CertificateSigningRequestApproval"):
-		return &certificatesv1alpha1.CertificateSigningRequestApprovalApplyConfiguration{}
+	// Group=auditlogpersistence.hypershift.openshift.io, Version=v1alpha1
+	case v1alpha1.SchemeGroupVersion.WithKind("AuditLogConfig"):
+		return &auditlogpersistencev1alpha1.AuditLogConfigApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("AuditLogPersistenceConfig"):
+		return &auditlogpersistencev1alpha1.AuditLogPersistenceConfigApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("AuditLogPersistenceConfigSpec"):
+		return &auditlogpersistencev1alpha1.AuditLogPersistenceConfigSpecApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("AuditLogPersistenceConfigStatus"):
+		return &auditlogpersistencev1alpha1.AuditLogPersistenceConfigStatusApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("SnapshotConfig"):
+		return &auditlogpersistencev1alpha1.SnapshotConfigApplyConfiguration{}
+	case v1alpha1.SchemeGroupVersion.WithKind("StorageConfig"):
+		return &auditlogpersistencev1alpha1.StorageConfigApplyConfiguration{}
+
+		// Group=certificates.hypershift.openshift.io, Version=v1alpha1
+	case certificatesv1alpha1.SchemeGroupVersion.WithKind("CertificateRevocationRequest"):
+		return &applyconfigurationcertificatesv1alpha1.CertificateRevocationRequestApplyConfiguration{}
+	case certificatesv1alpha1.SchemeGroupVersion.WithKind("CertificateRevocationRequestSpec"):
+		return &applyconfigurationcertificatesv1alpha1.CertificateRevocationRequestSpecApplyConfiguration{}
+	case certificatesv1alpha1.SchemeGroupVersion.WithKind("CertificateRevocationRequestStatus"):
+		return &applyconfigurationcertificatesv1alpha1.CertificateRevocationRequestStatusApplyConfiguration{}
+	case certificatesv1alpha1.SchemeGroupVersion.WithKind("CertificateSigningRequestApproval"):
+		return &applyconfigurationcertificatesv1alpha1.CertificateSigningRequestApprovalApplyConfiguration{}
 
 		// Group=hypershift.openshift.io, Version=v1beta1
 	case v1beta1.SchemeGroupVersion.WithKind("AddressPair"):

@@ -20,7 +20,8 @@ package externalversions
 import (
 	fmt "fmt"
 
-	v1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
+	v1alpha1 "github.com/openshift/hypershift/api/auditlogpersistence/v1alpha1"
+	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
 	v1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	karpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
@@ -54,10 +55,14 @@ func (f *genericInformer) Lister() cache.GenericLister {
 // TODO extend this to unknown resources with a client pool
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
-	// Group=certificates.hypershift.openshift.io, Version=v1alpha1
-	case v1alpha1.SchemeGroupVersion.WithResource("certificaterevocationrequests"):
+	// Group=auditlogpersistence.hypershift.openshift.io, Version=v1alpha1
+	case v1alpha1.SchemeGroupVersion.WithResource("auditlogpersistenceconfigs"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Auditlogpersistence().V1alpha1().AuditLogPersistenceConfigs().Informer()}, nil
+
+		// Group=certificates.hypershift.openshift.io, Version=v1alpha1
+	case certificatesv1alpha1.SchemeGroupVersion.WithResource("certificaterevocationrequests"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Certificates().V1alpha1().CertificateRevocationRequests().Informer()}, nil
-	case v1alpha1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals"):
+	case certificatesv1alpha1.SchemeGroupVersion.WithResource("certificatesigningrequestapprovals"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Certificates().V1alpha1().CertificateSigningRequestApprovals().Informer()}, nil
 
 		// Group=hypershift.openshift.io, Version=v1beta1

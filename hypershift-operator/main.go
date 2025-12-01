@@ -25,6 +25,7 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
 	etcdrecovery "github.com/openshift/hypershift/etcd-recovery"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/auditlogpersistence"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
@@ -72,6 +73,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -544,6 +546,41 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	if err := setupOperatorInfoMetric(mgr); err != nil {
 		return fmt.Errorf("failed to setup metrics: %w", err)
+	}
+
+	// Setup audit log persistence webhooks and controller if enabled
+	enableAuditLogPersistence := os.Getenv("ENABLE_AUDIT_LOG_PERSISTENCE") == "true"
+	if enableAuditLogPersistence && opts.CertDir != "" {
+		// Register pod mutating webhook
+		hookServer := mgr.GetWebhookServer()
+		hookServer.Register("/mutate-kas-audit-logs", &webhook.Admission{
+			Handler: auditlogpersistence.NewPodWebhookHandler(
+				mgr.GetLogger(),
+				mgr.GetClient(),
+				admission.NewDecoder(mgr.GetScheme()),
+			),
+		})
+
+		// Register ConfigMap mutating webhook
+		hookServer.Register("/mutate-kas-audit-log-config", &webhook.Admission{
+			Handler: auditlogpersistence.NewConfigMapWebhookHandler(
+				mgr.GetLogger(),
+				mgr.GetClient(),
+				admission.NewDecoder(mgr.GetScheme()),
+			),
+		})
+
+		log.Info("Audit log persistence webhooks registered")
+	}
+
+	if enableAuditLogPersistence {
+		// Setup snapshot controller
+		if err := auditlogpersistence.SetupSnapshotController(mgr); err != nil {
+			return fmt.Errorf("failed to set up snapshot controller: %w", err)
+		}
+		log.Info("Audit log persistence snapshot controller enabled")
+	} else {
+		log.Info("Audit log persistence feature disabled")
 	}
 
 	// Start the controllers
