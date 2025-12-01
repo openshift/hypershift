@@ -345,37 +345,11 @@ func (r *GCPPrivateServiceConnectReconciler) constructServiceAttachmentURI(servi
 		r.ProjectID, r.Region, serviceAttachmentName)
 }
 
-// constructServiceAttachmentName builds a unique Service Attachment name using PSC name + cluster ID + cluster name
-// Format: {pscName}-{clusterID}-{clusterName}-psc-sa (truncated to fit GCP 63-char limit)
+// constructServiceAttachmentName builds a unique Service Attachment name using the cluster ID
+// Format: {clusterID}-psc-sa
 func (r *GCPPrivateServiceConnectReconciler) constructServiceAttachmentName(gcpPSC *hyperv1.GCPPrivateServiceConnect, hc *hyperv1.HostedCluster) string {
-	// Extract cluster ID (first 8 chars for brevity)
-	clusterID := hc.Spec.ClusterID
-	if len(clusterID) > 8 {
-		clusterID = clusterID[:8]
-	}
-
-	// Use cluster name (truncate if needed)
-	clusterName := hc.Name
-	if len(clusterName) > 20 {
-		clusterName = clusterName[:20]
-	}
-
-	// PSC name (truncate if needed)
-	pscName := gcpPSC.Name
-	if len(pscName) > 15 {
-		pscName = pscName[:15]
-	}
-
-	// Construct name: {pscName}-{clusterID}-{clusterName}-psc-sa
-	// Total format: up to 15 + 1 + 8 + 1 + 20 + 7 = 52 chars (well within 63 limit)
-	serviceAttachmentName := fmt.Sprintf("%s-%s-%s-psc-sa", pscName, clusterID, clusterName)
-
-	// Ensure we don't exceed GCP's 63-character limit
-	if len(serviceAttachmentName) > 63 {
-		serviceAttachmentName = serviceAttachmentName[:63]
-	}
-
-	return serviceAttachmentName
+	// Use cluster ID which is already unique
+	return fmt.Sprintf("%s-psc-sa", hc.Spec.ClusterID)
 }
 
 // buildConsumerAcceptLists builds the consumer accept list for Service Attachment
