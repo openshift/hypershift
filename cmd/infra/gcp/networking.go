@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/go-logr/logr"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // isNotFoundError checks if an error is a GCP 404 Not Found error.
@@ -321,58 +321,44 @@ func (n *NetworkManager) DeleteNAT(ctx context.Context) error {
 	return nil
 }
 
-// waitForGlobalOperation polls a global operation until completion or timeout.
+// waitForGlobalOperation waits for a global operation until completion or timeout.
+// It uses the GCP Wait API which does server-side long-polling, reducing API calls.
 func (n *NetworkManager) waitForGlobalOperation(ctx context.Context, opName string) error {
-	deadline := time.Now().Add(defaultOperationTimeout)
-	for {
-		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("operation canceled: %w", err)
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("operation timed out: %s", opName)
-		}
-
-		op, err := n.computeService.GlobalOperations.Get(n.projectID, opName).Context(ctx).Do()
+	return wait.PollUntilContextTimeout(ctx, defaultPollingInterval, defaultOperationTimeout, true, func(ctx context.Context) (bool, error) {
+		op, err := n.computeService.GlobalOperations.Wait(n.projectID, opName).Context(ctx).Do()
 		if err != nil {
-			return fmt.Errorf("failed to get operation status: %w", err)
+			return false, fmt.Errorf("failed to wait for operation: %w", err)
 		}
 
 		if op.Status == "DONE" {
 			if op.Error != nil {
-				return fmt.Errorf("operation failed: %s", formatOperationErrors(op.Error.Errors))
+				return false, fmt.Errorf("operation failed: %s", formatOperationErrors(op.Error.Errors))
 			}
-			return nil
+			return true, nil
 		}
 
-		time.Sleep(defaultPollingInterval)
-	}
+		return false, nil
+	})
 }
 
-// waitForRegionOperation polls a regional operation until completion or timeout.
+// waitForRegionOperation waits for a regional operation until completion or timeout.
+// It uses the GCP Wait API which does server-side long-polling, reducing API calls.
 func (n *NetworkManager) waitForRegionOperation(ctx context.Context, opName string) error {
-	deadline := time.Now().Add(defaultOperationTimeout)
-	for {
-		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("operation canceled: %w", err)
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("operation timed out: %s", opName)
-		}
-
-		op, err := n.computeService.RegionOperations.Get(n.projectID, n.region, opName).Context(ctx).Do()
+	return wait.PollUntilContextTimeout(ctx, defaultPollingInterval, defaultOperationTimeout, true, func(ctx context.Context) (bool, error) {
+		op, err := n.computeService.RegionOperations.Wait(n.projectID, n.region, opName).Context(ctx).Do()
 		if err != nil {
-			return fmt.Errorf("failed to get operation status: %w", err)
+			return false, fmt.Errorf("failed to wait for operation: %w", err)
 		}
 
 		if op.Status == "DONE" {
 			if op.Error != nil {
-				return fmt.Errorf("operation failed: %s", formatOperationErrors(op.Error.Errors))
+				return false, fmt.Errorf("operation failed: %s", formatOperationErrors(op.Error.Errors))
 			}
-			return nil
+			return true, nil
 		}
 
-		time.Sleep(defaultPollingInterval)
-	}
+		return false, nil
+	})
 }
 
 // formatOperationErrors formats GCP operation errors into a readable string.
