@@ -1,6 +1,8 @@
 module github.com/openshift/hypershift
 
-go 1.24.4
+go 1.24.6
+
+toolchain go1.24.10
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.2
@@ -105,7 +107,7 @@ require (
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9
 	sigs.k8s.io/cluster-api-provider-openstack v0.12.1
 	sigs.k8s.io/controller-runtime v0.20.4
-	sigs.k8s.io/karpenter v1.2.1-0.20250212185021-45f73ec7a790
+	sigs.k8s.io/karpenter v1.4.1
 	sigs.k8s.io/secrets-store-csi-driver v1.4.8
 	sigs.k8s.io/structured-merge-diff/v4 v4.6.0
 	sigs.k8s.io/yaml v1.4.0
@@ -134,7 +136,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.233.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/eks v1.64.0 // indirect
 	github.com/aws/smithy-go v1.22.5 // indirect
-	github.com/awslabs/operatorpkg v0.0.0-20241205163410-0fff9f28d115 // indirect
+	github.com/awslabs/operatorpkg v0.0.0-20250325071853-9b4e36db18ce // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.2 // indirect
@@ -216,6 +218,7 @@ require (
 	github.com/opencontainers/runc v1.1.14 // indirect
 	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
+	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/profile v1.7.0 // indirect
@@ -264,6 +267,8 @@ require (
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
+	k8s.io/cloud-provider v0.32.3 // indirect
+	k8s.io/csi-translation-lib v0.32.3 // indirect
 	k8s.io/kms v0.32.3 // indirect
 	k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff // indirect
 	k8s.io/kubelet v0.31.1 // indirect
@@ -288,7 +293,9 @@ replace github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 replace sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.7
 
 // Use our openshift version of karpenter instead of upstream
-replace github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
+replace github.com/aws/karpenter-provider-aws => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20251203051350-ff9c8d4e8fdc
+
+replace github.com/kubernetes-sigs/karpenter => github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20251202202636-c2c71efdd55f
 
 // Use Kubernetes v1.32.3's version of k8s.io/utils for compatibility
 replace k8s.io/utils => k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
