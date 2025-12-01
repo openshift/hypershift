@@ -565,7 +565,12 @@ func enforceImagePullPolicy(containers []corev1.Container) error {
 		if containers[i].Image == "" {
 			return fmt.Errorf("container %s has no image key specified", containers[i].Name)
 		}
-		containers[i].ImagePullPolicy = corev1.PullIfNotPresent
+		// Use Always for :latest tag to ensure we get the most recent image
+		if strings.HasSuffix(containers[i].Image, ":latest") {
+			containers[i].ImagePullPolicy = corev1.PullAlways
+		} else {
+			containers[i].ImagePullPolicy = corev1.PullIfNotPresent
+		}
 	}
 	return nil
 }
