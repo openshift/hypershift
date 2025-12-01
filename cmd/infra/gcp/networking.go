@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/go-logr/logr"
 	"google.golang.org/api/compute/v1"
@@ -370,19 +371,7 @@ func formatOperationErrors(errors []*compute.OperationErrorErrors) string {
 	for _, e := range errors {
 		messages = append(messages, fmt.Sprintf("%s: %s", e.Code, e.Message))
 	}
-	return fmt.Sprintf("[%s]", joinStrings(messages, ", "))
-}
-
-// joinStrings joins a slice of strings with a separator.
-func joinStrings(strs []string, sep string) string {
-	if len(strs) == 0 {
-		return ""
-	}
-	result := strs[0]
-	for i := 1; i < len(strs); i++ {
-		result += sep + strs[i]
-	}
-	return result
+	return fmt.Sprintf("[%s]", strings.Join(messages, ", "))
 }
 
 // formatNetworkName returns the VPC network name for this infrastructure.
