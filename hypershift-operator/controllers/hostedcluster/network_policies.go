@@ -128,7 +128,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 			// network policy is being set on centralized infra only, not on external infra
 			policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
 			if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-				return reconcileVirtLauncherNetworkPolicy(log, policy, hcluster, managementClusterNetwork)
+				return reconcileVirtLauncherNetworkPolicy(log, policy, hcluster, managementClusterNetwork, hcluster.Spec.CustomIngressControllerName)
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
 			}
@@ -517,7 +517,7 @@ func addToBlockedNetworks(network string, blockedIPv4Networks []string, blockedI
 	return blockedIPv4Networks, blockedIPv6Networks
 }
 
-func reconcileVirtLauncherNetworkPolicy(log logr.Logger, policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, managementClusterNetwork *configv1.Network) error {
+func reconcileVirtLauncherNetworkPolicy(log logr.Logger, policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, managementClusterNetwork *configv1.Network, ingressControllerName string) error {
 	protocolTCP := corev1.ProtocolTCP
 	protocolUDP := corev1.ProtocolUDP
 	protocolSCTP := corev1.ProtocolSCTP
@@ -617,7 +617,7 @@ func reconcileVirtLauncherNetworkPolicy(log logr.Logger, policy *networkingv1.Ne
 					// Allow access to the management cluster ingress (for ignition server)
 					PodSelector: &metav1.LabelSelector{
 						MatchLabels: map[string]string{
-							"ingresscontroller.operator.openshift.io/deployment-ingresscontroller": "default",
+							"ingresscontroller.operator.openshift.io/deployment-ingresscontroller": ingressControllerName,
 						},
 					},
 					NamespaceSelector: &metav1.LabelSelector{
