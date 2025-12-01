@@ -341,7 +341,7 @@ func TestConstructServiceAttachmentName(t *testing.T) {
 		description string
 	}{
 		{
-			name: "When given normal names it should construct valid service attachment name",
+			name: "When given a cluster ID it should construct valid service attachment name",
 			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-psc"},
 			},
@@ -351,22 +351,8 @@ func TestConstructServiceAttachmentName(t *testing.T) {
 					ClusterID: "12345678-abcd-1234-abcd-123456789012",
 				},
 			},
-			expected:    "test-psc-12345678-test-cluster-psc-sa",
-			description: "Should use first 8 chars of cluster ID",
-		},
-		{
-			name: "When given very long names it should truncate properly",
-			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
-				ObjectMeta: metav1.ObjectMeta{Name: "very-long-psc-resource-name-that-exceeds-limits"},
-			},
-			hc: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{Name: "very-long-cluster-name-that-would-exceed-gcp-limits-if-not-truncated"},
-				Spec: hyperv1.HostedClusterSpec{
-					ClusterID: "12345678-abcd-1234-abcd-123456789012",
-				},
-			},
-			expected:    "very-long-psc-r-12345678-very-long-cluster-na-psc-sa",
-			description: "Should truncate PSC name to 15 chars and cluster name to 20 chars",
+			expected:    "12345678-abcd-1234-abcd-123456789012-psc-sa",
+			description: "Should use full cluster ID with -psc-sa suffix",
 		},
 	}
 
