@@ -308,6 +308,7 @@ func (n *NetworkManager) DeleteNAT(ctx context.Context) error {
 	}
 
 	router.Nats = updatedNats
+	router.ForceSendFields = []string{"Nats"}
 
 	op, err := n.computeService.Routers.Patch(n.projectID, n.region, routerName, router).Context(ctx).Do()
 	if err != nil {
