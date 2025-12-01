@@ -286,6 +286,22 @@ func TestNewConfigParams(t *testing.T) {
 			},
 		},
 		{
+			name: "with service account token max expiration annotation",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := createDefaultHostedControlPlane()
+				hcp.Annotations = map[string]string{
+					hyperv1.KubeAPIServerServiceAccountTokenMaxExpiration: "24h",
+				}
+				return hcp
+			}(),
+			expected: func(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
+				params := defaultKubeAPIServerConfigParams()
+				params.FeatureGates = featureGates
+				params.ServiceAccountMaxTokenExpiration = "24h"
+				return params
+			},
+		},
+		{
 			name: "with full configuration",
 			hcp: func() *hyperv1.HostedControlPlane {
 				hcp := createDefaultHostedControlPlane()
