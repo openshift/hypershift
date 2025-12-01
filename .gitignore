@@ -33,6 +33,7 @@ tools/bin
 
 # ignore util binaries
 /contrib/cleanzones/cleanzones
+/contrib/cleanzones-azure/cleanzones-azure
 /contrib/cleanroles/cleanroles
 /contrib/admission-tracer/admission-tracer
 
