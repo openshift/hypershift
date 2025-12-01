@@ -36,11 +36,6 @@ type NetworkManager struct {
 
 // NewNetworkManager creates a new NetworkManager for GCP network operations.
 func NewNetworkManager(ctx context.Context, projectID, infraID, region string, logger logr.Logger) (*NetworkManager, error) {
-	computeService, err := compute.NewService(ctx, option.WithScopes(compute.CloudPlatformScope))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create compute service client: %w", err)
-	}
-
 	if projectID == "" {
 		return nil, fmt.Errorf("projectID is required")
 	}
@@ -49,6 +44,11 @@ func NewNetworkManager(ctx context.Context, projectID, infraID, region string, l
 	}
 	if region == "" {
 		return nil, fmt.Errorf("region is required")
+	}
+
+	computeService, err := compute.NewService(ctx, option.WithScopes(compute.CloudPlatformScope))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create compute service client: %w", err)
 	}
 
 	return &NetworkManager{
