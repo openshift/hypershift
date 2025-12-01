@@ -25,31 +25,32 @@ const (
 )
 
 type KubeAPIServerConfigParams struct {
-	ExternalIPConfig             *configv1.ExternalIPConfig
-	ClusterNetwork               []string
-	ServiceNetwork               []string
-	NamedCertificates            []configv1.APIServerNamedServingCert
-	KASPodPort                   int32
-	TLSSecurityProfile           *configv1.TLSSecurityProfile
-	AdditionalCORSAllowedOrigins []string
-	InternalRegistryHostName     string
-	ExternalRegistryHostNames    []string
-	DefaultNodeSelector          string
-	AdvertiseAddress             string
-	ServiceAccountIssuerURL      string
-	CloudProvider                string
-	CloudProviderConfigRef       *corev1.LocalObjectReference
-	EtcdURL                      string
-	FeatureGates                 []string
-	NodePortRange                string
-	AuditWebhookEnabled          bool
-	ConsolePublicURL             string
-	DisableProfiling             bool
-	APIServerSTSDirectives       string
-	Authentication               *configv1.AuthenticationSpec
-	MaxRequestsInflight          string
-	MaxMutatingRequestsInflight  string
-	GoAwayChance                 string
+	ExternalIPConfig                 *configv1.ExternalIPConfig
+	ClusterNetwork                   []string
+	ServiceNetwork                   []string
+	NamedCertificates                []configv1.APIServerNamedServingCert
+	KASPodPort                       int32
+	TLSSecurityProfile               *configv1.TLSSecurityProfile
+	AdditionalCORSAllowedOrigins     []string
+	InternalRegistryHostName         string
+	ExternalRegistryHostNames        []string
+	DefaultNodeSelector              string
+	AdvertiseAddress                 string
+	ServiceAccountIssuerURL          string
+	ServiceAccountMaxTokenExpiration string
+	CloudProvider                    string
+	CloudProviderConfigRef           *corev1.LocalObjectReference
+	EtcdURL                          string
+	FeatureGates                     []string
+	NodePortRange                    string
+	AuditWebhookEnabled              bool
+	ConsolePublicURL                 string
+	DisableProfiling                 bool
+	APIServerSTSDirectives           string
+	Authentication                   *configv1.AuthenticationSpec
+	MaxRequestsInflight              string
+	MaxMutatingRequestsInflight      string
+	GoAwayChance                     string
 }
 
 func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
@@ -120,6 +121,10 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 	}
 	if goAwayChance := hcp.Annotations[hyperv1.KubeAPIServerGoAwayChance]; goAwayChance != "" {
 		kasConfig.GoAwayChance = hcp.Annotations[hyperv1.KubeAPIServerGoAwayChance]
+	}
+
+	if maxTokenExpiration := hcp.Annotations[hyperv1.KubeAPIServerServiceAccountTokenMaxExpiration]; maxTokenExpiration != "" {
+		kasConfig.ServiceAccountMaxTokenExpiration = maxTokenExpiration
 	}
 
 	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
