@@ -66,7 +66,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/vincent-petithory/dataurl v1.0.0
 	go.etcd.io/etcd/api/v3 v3.5.20
-	go.etcd.io/etcd/client/pkg/v3 v3.5.20
+	go.etcd.io/etcd/client/pkg/v3 v3.5.25
 	go.etcd.io/etcd/client/v3 v3.5.20
 	go.etcd.io/etcd/server/v3 v3.5.19
 	go.etcd.io/etcd/tests/v3 v3.5.19
@@ -235,7 +235,7 @@ require (
 	go.etcd.io/bbolt v1.3.11 // indirect
 	go.etcd.io/etcd/client/v2 v2.305.19 // indirect
 	go.etcd.io/etcd/pkg/v3 v3.5.19 // indirect
-	go.etcd.io/etcd/raft/v3 v3.5.19 // indirect
+	go.etcd.io/etcd/raft/v3 v3.5.25 // indirect
 	go.mongodb.org/mongo-driver v1.17.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.59.0 // indirect
