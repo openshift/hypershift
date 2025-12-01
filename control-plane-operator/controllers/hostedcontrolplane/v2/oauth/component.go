@@ -1,9 +1,11 @@
 package oauth
 
 import (
+	"fmt"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
+	appsv1 "k8s.io/api/apps/v1"
 
 	"k8s.io/utils/ptr"
 )
@@ -35,7 +37,20 @@ func (k *oauthServer) NeedsManagementKASAccess() bool {
 }
 
 func NewComponent() component.ControlPlaneComponent {
-	return component.NewDeploymentComponent(ComponentName, &oauthServer{}).
+	return newComponent(nil)
+}
+
+func RenderDeployment(cpContext component.ControlPlaneContext, existingDeployment *appsv1.Deployment) (*appsv1.Deployment, error) {
+	deploymentComponent := newComponent(component.NewWrappedDeploymentProvider(existingDeployment))
+	deploymentComponentRenderer, ok := deploymentComponent.(component.ControlPlaneComponentRenderer[*appsv1.Deployment])
+	if !ok {
+		return nil, fmt.Errorf("%T is not a ControlPlaneComponentRenderer for Deployment", deploymentComponent)
+	}
+	return deploymentComponentRenderer.Render(cpContext)
+}
+
+func newComponent(customWorkloadProviderWrapper component.WorkloadProviderWrapper[*appsv1.Deployment]) component.ControlPlaneComponent {
+	deploymentComponent := component.NewDeploymentComponent(ComponentName, &oauthServer{}).
 		WithAdaptFunction(adaptDeployment).
 		WithPredicate(isOAuthEnabled).
 		WithManifestAdapter(
@@ -78,8 +93,11 @@ func NewComponent() component.ControlPlaneComponent {
 				ConnectDirectlyToCloudAPIs: ptr.To(true),
 			},
 		}).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
-		Build()
+		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{})
+	if customWorkloadProviderWrapper != nil {
+		deploymentComponent.WithWrappedWorkloadProvider(customWorkloadProviderWrapper)
+	}
+	return deploymentComponent.Build()
 }
 
 func isOAuthEnabled(cpContext component.WorkloadContext) (bool, error) {
