@@ -18,3 +18,7 @@ status:
     reason: WaitingForRolloutComplete
     status: "False"
     type: RolloutComplete
+  resources:
+  - group: ""
+    kind: ServiceAccount
+    name: konnectivity-agent
