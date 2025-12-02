@@ -176,8 +176,8 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileGCPPrivateServiceConnectSp
 func (r *GCPPrivateServiceConnectReconciler) lookupForwardingRuleName(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) (string, error) {
 	log := r.Log.WithValues("gcpprivateserviceconnect", gcpPSC.Name, "loadBalancerIP", gcpPSC.Spec.LoadBalancerIP)
 
-	// Use GCP Compute API filter syntax to find the forwarding rule by IP
-	filter := fmt.Sprintf("IPAddress eq %s", gcpPSC.Spec.LoadBalancerIP)
+	// Use AIP-160 filter syntax for exact string matching
+	filter := fmt.Sprintf(`IPAddress = "%s"`, gcpPSC.Spec.LoadBalancerIP)
 
 	apiCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer cancel()
