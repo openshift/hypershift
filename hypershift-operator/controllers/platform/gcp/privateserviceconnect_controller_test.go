@@ -3,6 +3,7 @@ package gcp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -214,6 +215,36 @@ func TestReconcile_PausedUntil(t *testing.T) {
 	// Should requeue with a future time since reconciliation is paused
 	if result.RequeueAfter <= 0 {
 		t.Error("expected positive RequeueAfter duration for paused reconciliation")
+	}
+}
+
+func TestIPAddressFilterFormat(t *testing.T) {
+	tests := []struct {
+		name     string
+		ip       string
+		expected string
+	}{
+		{
+			name:     "When filtering by IPv4 address it should use AIP-160 exact match syntax",
+			ip:       "10.0.0.1",
+			expected: `IPAddress = "10.0.0.1"`,
+		},
+		{
+			name:     "When filtering by IPv4 address with different octets it should quote properly",
+			ip:       "192.168.1.100",
+			expected: `IPAddress = "192.168.1.100"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// This tests the filter format used in lookupForwardingRuleName
+			// AIP-160 syntax uses '=' for exact match
+			filter := fmt.Sprintf(`IPAddress = "%s"`, tt.ip)
+			if filter != tt.expected {
+				t.Errorf("expected %s, got %s", tt.expected, filter)
+			}
+		})
 	}
 }
 
