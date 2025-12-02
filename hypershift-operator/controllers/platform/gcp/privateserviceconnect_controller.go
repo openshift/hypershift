@@ -47,8 +47,8 @@ type GCPPrivateServiceConnectReconciler struct {
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *GCPPrivateServiceConnectReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	// Initialize GCP Compute Service client (similar to AWS pattern)
-	gcpComputeService, err := InitGCPComputeService(context.TODO())
+	// Initialize GCP Compute Service client
+	gcpComputeService, err := InitGCPComputeService(context.Background())
 	if err != nil {
 		return fmt.Errorf("failed to initialize GCP Compute service: %w", err)
 	}
