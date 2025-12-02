@@ -315,7 +315,14 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileServiceAttachment(ctx cont
 		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
-	return ctrl.Result{}, nil
+	// 5. Operation completed - fetch the created Service Attachment and update status
+	createdServiceAttachment, err := r.GcpClient.ServiceAttachments.Get(r.ProjectID, r.Region, serviceAttachmentName).Context(ctx).Do()
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get newly created Service Attachment: %w", err)
+	}
+
+	log.Info("Service Attachment created successfully", "name", serviceAttachmentName)
+	return r.updateStatusFromServiceAttachment(ctx, gcpPSC, createdServiceAttachment)
 }
 
 // constructForwardingRuleURL builds the full GCP ForwardingRule URL
