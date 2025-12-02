@@ -16,80 +16,51 @@ limitations under the License.
 package nophase
 
 import (
-	"go/ast"
-	"strings"
+	"errors"
+	"fmt"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
-	kalerrors "sigs.k8s.io/kube-api-linter/pkg/analysis/errors"
-	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
+	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/initializer"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/namingconventions"
 )
 
-const name = "nophase"
+const (
+	name = "nophase"
+	doc  = "phase fields are deprecated and conditions should be preferred, avoid phase like enum fields"
+)
 
-// Analyzer is the analyzer for the nophase package.
-// It checks that no struct fields named 'phase', or that contain phase as a
-// substring are present.
-var Analyzer = &analysis.Analyzer{
-	Name:     name,
-	Doc:      "phase fields are deprecated and conditions should be preferred, avoid phase like enum fields",
-	Run:      run,
-	Requires: []*analysis.Analyzer{inspect.Analyzer, extractjsontags.Analyzer},
-}
+var errUnexpectedInitializerType = errors.New("expected namingconventions.Initializer() to be of type initializer.ConfigurableAnalyzerInitializer, but was not")
 
-func run(pass *analysis.Pass) (interface{}, error) {
-	inspect, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+func newAnalyzer() *analysis.Analyzer {
+	cfg := &namingconventions.Config{
+		Conventions: []namingconventions.Convention{
+			{
+				Name:             "nophase",
+				ViolationMatcher: "(?i)phase",
+				Operation:        namingconventions.OperationInform,
+				Message:          "phase fields are deprecated and conditions should be preferred, avoid phase like enum fields",
+			},
+		},
+	}
+
+	configInit, ok := namingconventions.Initializer().(initializer.ConfigurableAnalyzerInitializer)
 	if !ok {
-		return nil, kalerrors.ErrCouldNotGetInspector
+		panic(fmt.Errorf("getting initializer: %w", errUnexpectedInitializerType))
 	}
 
-	jsonTags, ok := pass.ResultOf[extractjsontags.Analyzer].(extractjsontags.StructFieldTags)
-	if !ok {
-		return nil, kalerrors.ErrCouldNotGetJSONTags
+	errs := configInit.ValidateConfig(cfg, field.NewPath("nophase"))
+	if err := errs.ToAggregate(); err != nil {
+		panic(fmt.Errorf("nophase linter has an invalid namingconventions configuration: %w", err))
 	}
 
-	// Filter to fields so that we can iterate over fields in a struct.
-	nodeFilter := []ast.Node{
-		(*ast.Field)(nil),
+	analyzer, err := configInit.Init(cfg)
+	if err != nil {
+		panic(fmt.Errorf("nophase linter encountered an error initializing wrapped namingconventions analyzer: %w", err))
 	}
 
-	// Preorder visits all the nodes of the AST in depth-first order. It calls
-	// f(n) for each node n before it visits n's children.
-	//
-	// We use the filter defined above, ensuring we only look at struct fields.
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		field, ok := n.(*ast.Field)
-		if !ok {
-			return
-		}
+	analyzer.Name = name
+	analyzer.Doc = doc
 
-		if field == nil || len(field.Names) == 0 {
-			return
-		}
-
-		fieldName := field.Names[0].Name
-
-		// First check if the struct field name contains 'phase'
-		if strings.Contains(strings.ToLower(fieldName), "phase") {
-			pass.Reportf(field.Pos(),
-				"field %s: phase fields are deprecated and conditions should be preferred, avoid phase like enum fields",
-				fieldName,
-			)
-
-			return
-		}
-
-		// Then check if the json serialization of the field contains 'phase'
-		tagInfo := jsonTags.FieldTags(field)
-
-		if strings.Contains(strings.ToLower(tagInfo.Name), "phase") {
-			pass.Reportf(field.Pos(),
-				"field %s: phase fields are deprecated and conditions should be preferred, avoid phase like enum fields",
-				fieldName,
-			)
-		}
-	})
-
-	return nil, nil //nolint:nilnil
+	return analyzer
 }

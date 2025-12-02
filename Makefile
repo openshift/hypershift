@@ -14,8 +14,6 @@ BIN_DIR=bin
 TOOLS_BIN_DIR := $(TOOLS_DIR)/$(BIN_DIR)
 CONTROLLER_GEN := $(abspath $(TOOLS_BIN_DIR)/controller-gen)
 CODE_GEN := $(abspath $(TOOLS_BIN_DIR)/codegen)
-GOLANGCI_LINT := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
-GOLANGCI_KUBEAPILINTER := $(abspath $(TOOLS_BIN_DIR)/golangci-kube-api-linter)
 STATICCHECK := $(abspath $(TOOLS_BIN_DIR)/staticcheck)
 GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
 MOCKGEN := $(abspath $(TOOLS_BIN_DIR)/mockgen)
@@ -68,19 +66,21 @@ build: hypershift-operator control-plane-operator control-plane-pki-operator kar
 .PHONY: update
 update: api-deps workspace-sync deps api api-docs clients
 
-$(GOLANGCI_LINT):$(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
-	# Hack to install kuibe api linter plugin until https://github.com/kubernetes-sigs/kube-api-linter/pull/78 is merged
-	@echo 'package main; import (_ "sigs.k8s.io/kube-api-linter")' > hack/tools/vendor/github.com/golangci/golangci-lint/cmd/golangci-lint/plugins.go
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(GOLANGCI_LINT) github.com/golangci/golangci-lint/cmd/golangci-lint
-	git checkout hack/tools/vendor/github.com/golangci/golangci-lint/cmd/golangci-lint/plugins.go
+GOLANGCI_LINT := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
+$(GOLANGCI_LINT): $(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(GOLANGCI_LINT) github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+
+KUBEAPILINTER_PLUGIN := $(abspath $(TOOLS_BIN_DIR)/kube-api-linter.so)
+$(KUBEAPILINTER_PLUGIN): $(TOOLS_DIR)/go.mod # Build kube-api-linter as Go plugin
+	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -buildmode=plugin -o $(KUBEAPILINTER_PLUGIN) sigs.k8s.io/kube-api-linter/pkg/plugin
 
 .PHONY: lint
-lint: $(GOLANGCI_LINT)
-	$(GOLANGCI_LINT) run --config ./.golangci.yml -v
-	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml -v
+lint: generate $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
+	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v
+	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v
 
 .PHONY: lint-fix
-lint-fix: $(GOLANGCI_LINT)
+lint-fix: generate $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
 
@@ -93,25 +93,24 @@ verify: generate update staticcheck fmt vet verify-codespell lint cpo-container-
 	$(if $(strip $(STATUS)),$(error untracked files detected: ${STATUS}))
 
 $(CONTROLLER_GEN): $(TOOLS_DIR)/go.mod # Build controller-gen from tools folder.
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(BIN_DIR)/controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen
 
 $(CODE_GEN): $(TOOLS_DIR)/go.mod # Build code-gen from tools folder.
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(BIN_DIR)/codegen github.com/openshift/api/tools/codegen/cmd
-
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/codegen github.com/openshift/api/tools/codegen/cmd
 
 $(STATICCHECK): $(TOOLS_DIR)/go.mod # Build staticcheck from tools folder.
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(BIN_DIR)/staticcheck honnef.co/go/tools/cmd/staticcheck
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/staticcheck honnef.co/go/tools/cmd/staticcheck
 
 $(GENAPIDOCS): $(TOOLS_DIR)/go.mod
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
 
 $(MOCKGEN): ${TOOLS_DIR}/go.mod
-	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(BIN_DIR)/mockgen go.uber.org/mock/mockgen
+	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/mockgen go.uber.org/mock/mockgen
 
 
 #.PHONY: generate
 generate: $(MOCKGEN)
-	GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go generate ./...
+	$(GO) generate ./...
 
 # Compile all tests
 .PHONY: tests
@@ -181,9 +180,9 @@ hypershift-api: $(CONTROLLER_GEN) $(CODE_GEN)
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
 
 	# These consolidate with the 3 steps used to generate CRDs by openshift/api.
-	$(CODE_GEN) empty-partial-schemas --base-dir ./api/hypershift/v1beta1
-	$(CODE_GEN) schemapatch --base-dir ./api/hypershift/v1beta1
-	$(CODE_GEN) crd-manifest-merge --manifest-merge:payload-manifest-path ./api/hypershift/v1beta1/featuregates --base-dir ./api/hypershift/v1beta1
+	(cd ./api && $(CODE_GEN) empty-partial-schemas)
+	(cd ./api && $(CODE_GEN) schemapatch)
+	(cd ./api && $(CODE_GEN) crd-manifest-merge --manifest-merge:payload-manifest-path ./hypershift/v1beta1/featuregates)
 
 	# Move final CRDs to the install folder.
 	mv ./api/hypershift/v1beta1/zz_generated.crd-manifests cmd/install/assets/hypershift-operator/

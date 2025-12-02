@@ -17,7 +17,6 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	fakekubeclient "k8s.io/client-go/kubernetes/fake"
 
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -987,7 +986,7 @@ func TestCountAvailableNodes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			objects := make([]client.Object, len(tt.nodes))
+			objects := make([]crclient.Object, len(tt.nodes))
 			for i := range tt.nodes {
 				objects[i] = &tt.nodes[i]
 			}

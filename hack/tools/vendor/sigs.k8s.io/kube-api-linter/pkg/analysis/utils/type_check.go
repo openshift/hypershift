@@ -62,11 +62,11 @@ func (t *typeChecker) CheckNode(pass *analysis.Pass, node ast.Node) {
 }
 
 func (t *typeChecker) checkField(pass *analysis.Pass, field *ast.Field) {
-	if field == nil || len(field.Names) == 0 || field.Names[0] == nil {
+	fieldName := FieldName(field)
+	if fieldName == "" {
 		return
 	}
 
-	fieldName := field.Names[0].Name
 	prefix := fmt.Sprintf("field %s", fieldName)
 
 	t.checkTypeExpr(pass, field.Type, field, prefix)
@@ -100,13 +100,13 @@ func (t *typeChecker) checkTypeExpr(pass *analysis.Pass, typeExpr ast.Expr, node
 // checkIdent calls the checkFunc with the ident, when we have hit a built-in type.
 // If the ident is not a built in, we look at the underlying type until we hit a built-in type.
 func (t *typeChecker) checkIdent(pass *analysis.Pass, ident *ast.Ident, node ast.Node, prefix string) {
-	if ident.Obj == nil || ident.Obj.Decl == nil {
+	if IsBasicType(pass, ident) {
 		// We've hit a built-in type, no need to check further.
 		t.checkFunc(pass, ident, node, prefix)
 		return
 	}
 
-	tSpec, ok := ident.Obj.Decl.(*ast.TypeSpec)
+	tSpec, ok := LookupTypeSpec(pass, ident)
 	if !ok {
 		return
 	}

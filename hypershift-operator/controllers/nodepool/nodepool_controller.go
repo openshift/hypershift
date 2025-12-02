@@ -1046,7 +1046,7 @@ func aggregateMachineReasonsAndMessages(messageMap map[string][]string, numMachi
 	msgBuilder := &strings.Builder{}
 	reasons := make([]string, len(messageMap))
 
-	msgBuilder.WriteString(fmt.Sprintf("%d of %d machines are not %s\n", numNotReady, numMachines, state))
+	fmt.Fprintf(msgBuilder, "%d of %d machines are not %s\n", numNotReady, numMachines, state)
 
 	// as map order is not deterministic, we must sort the reasons in order to get deterministic reason and message, so
 	// we won't need to update the nodepool condition just because we've got different order from the map, the machine
