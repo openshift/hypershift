@@ -157,9 +157,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileGCPPrivateServiceConnectSp
 		if err != nil {
 			return fmt.Errorf("failed to lookup ForwardingRule: %w", err)
 		}
-		if forwardingRuleName != "" {
-			gcpPSC.Spec.ForwardingRuleName = forwardingRuleName
-		}
+		gcpPSC.Spec.ForwardingRuleName = forwardingRuleName
 	}
 
 	// Set NAT Subnet if not already populated
