@@ -245,17 +245,8 @@ func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Conte
 		return "", fmt.Errorf("failed to list subnets: %w", err)
 	}
 
-	// 3. Find first available PRIVATE_SERVICE_CONNECT subnet that's not already in use
-	// We want subnet isolation between different Service Attachments for security
-	//
-	// Note: This approach still allows race conditions if multiple controllers
-	// are creating Service Attachments simultaneously (especially across different
-	// management clusters). Future improvements could include GCP-native subnet
-	// reservation mechanisms or external coordination systems.
-	//
-	// GCP subnet labels are not suitable for coordination as they are intended
-	// for static metadata/billing, not dynamic state management, and label updates
-	// are not atomic with Service Attachment creation operations.
+	// Find first available PRIVATE_SERVICE_CONNECT subnet not already in use.
+	// Race conditions are not a concern since we use a single management cluster per GCP project.
 	for _, subnet := range resp.Items {
 		if subnet.Purpose == "PRIVATE_SERVICE_CONNECT" {
 			// Check if this subnet is already in use by another Service Attachment
