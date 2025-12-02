@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/util/wait"
+
 	"github.com/go-logr/logr"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
-	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // isNotFoundError checks if an error is a GCP 404 Not Found error.
