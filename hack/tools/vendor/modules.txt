@@ -2119,7 +2119,7 @@ k8s.io/component-base/metrics/prometheusextension
 k8s.io/component-base/tracing
 k8s.io/component-base/tracing/api/v1
 k8s.io/component-base/version
-# k8s.io/gengo v0.0.0-20250704022524-ddb642e17a28
+# k8s.io/gengo v0.0.0-20250922181213-ec3ebc5fd46b
 ## explicit; go 1.13
 k8s.io/gengo/args
 k8s.io/gengo/generator
