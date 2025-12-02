@@ -296,7 +296,15 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileServiceAttachment(ctx cont
 		return r.updateStatusFromServiceAttachment(ctx, gcpPSC, existingServiceAttachment)
 	}
 
-	// 3. Create new Service Attachment
+	// 3. Validate required spec fields before creating Service Attachment
+	if gcpPSC.Spec.ForwardingRuleName == "" || gcpPSC.Spec.NATSubnet == "" {
+		log.Info("Required spec fields not yet populated, waiting for next reconciliation",
+			"forwardingRuleName", gcpPSC.Spec.ForwardingRuleName,
+			"natSubnet", gcpPSC.Spec.NATSubnet)
+		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
+	}
+
+	// 4. Create new Service Attachment
 	serviceAttachment := &compute.ServiceAttachment{
 		Name:                 serviceAttachmentName,
 		Description:          fmt.Sprintf("Service Attachment for HyperShift cluster %s", gcpPSC.Name),
@@ -316,7 +324,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileServiceAttachment(ctx cont
 		return r.handleGCPError(ctx, gcpPSC, "ServiceAttachmentCreationFailed", err)
 	}
 
-	// 4. Check operation status - check for errors first, then check if still running
+	// 5. Check operation status - check for errors first, then check if still running
 	if op.Error != nil && len(op.Error.Errors) > 0 {
 		opErr := fmt.Errorf("operation failed: %s", op.Error.Errors[0].Message)
 		return r.handleGCPError(ctx, gcpPSC, "ServiceAttachmentCreationFailed", opErr)
@@ -327,7 +335,7 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileServiceAttachment(ctx cont
 		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
-	// 5. Operation completed - fetch the created Service Attachment and update status
+	// 6. Operation completed - fetch the created Service Attachment and update status
 	fetchCtx, fetchCancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer fetchCancel()
 
