@@ -444,8 +444,8 @@ func (r *GCPPrivateServiceConnectReconciler) delete(ctx context.Context, gcpPSC 
 		if op.Error != nil && len(op.Error.Errors) > 0 {
 			return false, fmt.Errorf("delete Service Attachment operation failed: %s", op.Error.Errors[0].Message)
 		}
-		if op.Status == "RUNNING" {
-			log.Info("Service Attachment deletion in progress", "operation", op.Name)
+		if op.Status != "DONE" {
+			log.Info("Service Attachment deletion in progress", "operation", op.Name, "status", op.Status)
 			return false, nil // Not completed yet
 		}
 	}
