@@ -283,9 +283,8 @@ func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Conte
 func (r *GCPPrivateServiceConnectReconciler) reconcileServiceAttachment(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hc *hyperv1.HostedCluster) (ctrl.Result, error) {
 	log := r.Log.WithValues("gcpprivateserviceconnect", gcpPSC.Name)
 
-	// 1. Construct unique Service Attachment name using PSC name + cluster ID + cluster name
-	// This prevents conflicts when multiple clusters have the same PSC resource name
-	serviceAttachmentName := r.constructServiceAttachmentName(gcpPSC, hc)
+	// 1. Construct unique Service Attachment name using cluster ID
+	serviceAttachmentName := r.constructServiceAttachmentName(hc)
 
 	// 2. Check if Service Attachment already exists
 	getCtx, getCancel := context.WithTimeout(ctx, gcpAPITimeout)
@@ -365,8 +364,7 @@ func (r *GCPPrivateServiceConnectReconciler) constructServiceAttachmentURI(servi
 
 // constructServiceAttachmentName builds a unique Service Attachment name using the cluster ID
 // Format: {clusterID}-psc-sa
-func (r *GCPPrivateServiceConnectReconciler) constructServiceAttachmentName(gcpPSC *hyperv1.GCPPrivateServiceConnect, hc *hyperv1.HostedCluster) string {
-	// Use cluster ID which is already unique
+func (r *GCPPrivateServiceConnectReconciler) constructServiceAttachmentName(hc *hyperv1.HostedCluster) string {
 	return fmt.Sprintf("%s-psc-sa", hc.Spec.ClusterID)
 }
 
