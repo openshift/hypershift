@@ -28,6 +28,10 @@ import (
 
 const (
 	finalizer = "hypershift.openshift.io/gcp-private-service-connect"
+
+	// gcpAPITimeout is the timeout for individual GCP API calls to prevent hung reconcilers.
+	// GCP SDK has connection-level timeouts (dial: 30s, TLS: 10s) but no overall request timeout.
+	gcpAPITimeout = 30 * time.Second
 )
 
 // RBAC permissions for GCPPrivateServiceConnect controller (documentation only - not used for code generation)
@@ -179,8 +183,11 @@ func (r *GCPPrivateServiceConnectReconciler) lookupForwardingRuleName(ctx contex
 	// Use GCP Compute API filter syntax to find the forwarding rule by IP
 	filter := fmt.Sprintf("IPAddress eq %s", gcpPSC.Spec.LoadBalancerIP)
 
+	apiCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer cancel()
+
 	req := r.GcpClient.ForwardingRules.List(r.ProjectID, r.Region).Filter(filter)
-	resp, err := req.Context(ctx).Do()
+	resp, err := req.Context(apiCtx).Do()
 	if err != nil {
 		return "", fmt.Errorf("failed to list forwarding rules: %w", err)
 	}
@@ -204,9 +211,12 @@ func (r *GCPPrivateServiceConnectReconciler) lookupForwardingRuleName(ctx contex
 
 // isSubnetInUse checks if a subnet is already being used by existing Service Attachments
 func (r *GCPPrivateServiceConnectReconciler) isSubnetInUse(ctx context.Context, subnetName string) (bool, error) {
+	apiCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer cancel()
+
 	// List all Service Attachments in the region
 	req := r.GcpClient.ServiceAttachments.List(r.ProjectID, r.Region)
-	resp, err := req.Context(ctx).Do()
+	resp, err := req.Context(apiCtx).Do()
 	if err != nil {
 		return false, fmt.Errorf("failed to list service attachments: %w", err)
 	}
@@ -237,8 +247,11 @@ func (r *GCPPrivateServiceConnectReconciler) discoverNATSubnet(ctx context.Conte
 	}
 
 	// 2. List subnets with PRIVATE_SERVICE_CONNECT purpose
+	apiCtx, cancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer cancel()
+
 	req := r.GcpClient.Subnetworks.List(r.ProjectID, r.Region)
-	resp, err := req.Context(ctx).Do()
+	resp, err := req.Context(apiCtx).Do()
 	if err != nil {
 		return "", fmt.Errorf("failed to list subnets: %w", err)
 	}
@@ -275,7 +288,10 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileServiceAttachment(ctx cont
 	serviceAttachmentName := r.constructServiceAttachmentName(gcpPSC, hc)
 
 	// 2. Check if Service Attachment already exists
-	existingServiceAttachment, err := r.GcpClient.ServiceAttachments.Get(r.ProjectID, r.Region, serviceAttachmentName).Context(ctx).Do()
+	getCtx, getCancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer getCancel()
+
+	existingServiceAttachment, err := r.GcpClient.ServiceAttachments.Get(r.ProjectID, r.Region, serviceAttachmentName).Context(getCtx).Do()
 	if err != nil && !isNotFoundError(err) {
 		return ctrl.Result{}, fmt.Errorf("failed to get Service Attachment: %w", err)
 	}
@@ -297,7 +313,10 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileServiceAttachment(ctx cont
 	}
 
 	log.Info("Creating Service Attachment", "name", serviceAttachmentName)
-	op, err := r.GcpClient.ServiceAttachments.Insert(r.ProjectID, r.Region, serviceAttachment).Context(ctx).Do()
+	insertCtx, insertCancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer insertCancel()
+
+	op, err := r.GcpClient.ServiceAttachments.Insert(r.ProjectID, r.Region, serviceAttachment).Context(insertCtx).Do()
 	if err != nil {
 		return r.handleGCPError(ctx, gcpPSC, "ServiceAttachmentCreationFailed", err)
 	}
@@ -314,7 +333,10 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileServiceAttachment(ctx cont
 	}
 
 	// 5. Operation completed - fetch the created Service Attachment and update status
-	createdServiceAttachment, err := r.GcpClient.ServiceAttachments.Get(r.ProjectID, r.Region, serviceAttachmentName).Context(ctx).Do()
+	fetchCtx, fetchCancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer fetchCancel()
+
+	createdServiceAttachment, err := r.GcpClient.ServiceAttachments.Get(r.ProjectID, r.Region, serviceAttachmentName).Context(fetchCtx).Do()
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get newly created Service Attachment: %w", err)
 	}
@@ -411,7 +433,10 @@ func (r *GCPPrivateServiceConnectReconciler) delete(ctx context.Context, gcpPSC 
 	}
 
 	log.Info("Deleting Service Attachment", "name", serviceAttachmentName)
-	op, err := r.GcpClient.ServiceAttachments.Delete(r.ProjectID, r.Region, serviceAttachmentName).Context(ctx).Do()
+	deleteCtx, deleteCancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer deleteCancel()
+
+	op, err := r.GcpClient.ServiceAttachments.Delete(r.ProjectID, r.Region, serviceAttachmentName).Context(deleteCtx).Do()
 	if err != nil {
 		if isNotFoundError(err) {
 			// Service Attachment already deleted, consider it completed
