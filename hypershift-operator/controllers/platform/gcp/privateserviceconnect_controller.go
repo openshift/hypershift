@@ -330,8 +330,8 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileServiceAttachment(ctx cont
 		return r.handleGCPError(ctx, gcpPSC, "ServiceAttachmentCreationFailed", opErr)
 	}
 
-	if op.Status == "RUNNING" {
-		log.Info("Service Attachment creation in progress", "operation", op.Name)
+	if op.Status != "DONE" {
+		log.Info("Service Attachment creation in progress", "operation", op.Name, "status", op.Status)
 		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
