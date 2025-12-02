@@ -15,6 +15,7 @@ import (
 
 var (
 	// y-stream versions supported by e2e in main
+	Version422 = semver.MustParse("4.22.0")
 	Version421 = semver.MustParse("4.21.0")
 	Version420 = semver.MustParse("4.20.0")
 	Version419 = semver.MustParse("4.19.0")
@@ -22,7 +23,6 @@ var (
 	Version417 = semver.MustParse("4.17.0")
 	Version416 = semver.MustParse("4.16.0")
 	Version415 = semver.MustParse("4.15.0")
-	Version414 = semver.MustParse("4.14.0")
 
 	releaseVersion semver.Version
 )
@@ -31,6 +31,7 @@ func init() {
 	// Ensure that the version constants are valid semver versions
 	// This is a compile-time check to ensure that the versions are valid
 	// semver versions.
+	_ = Version422
 	_ = Version421
 	_ = Version420
 	_ = Version419
@@ -38,7 +39,6 @@ func init() {
 	_ = Version417
 	_ = Version416
 	_ = Version415
-	_ = Version414
 }
 
 func SetReleaseImageVersion(ctx context.Context, latestReleaseImage string, pullSecretFile string) error {
