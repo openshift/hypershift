@@ -294,6 +294,9 @@ func TestReconcile_PausedUntil(t *testing.T) {
 			Name:       "test-psc",
 			Namespace:  "test-namespace",
 			Finalizers: []string{"hypershift.openshift.io/gcp-private-service-connect"}, // Add finalizer so it gets past initial checks
+			Annotations: map[string]string{
+				supportutil.HostedClusterAnnotation: "test-namespace/test-cluster",
+			},
 		},
 		Spec: hyperv1.GCPPrivateServiceConnectSpec{
 			LoadBalancerIP: "10.0.0.1",
