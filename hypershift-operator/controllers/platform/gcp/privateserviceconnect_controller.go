@@ -126,12 +126,8 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 		return ctrl.Result{}, r.Update(ctx, gcpPSC)
 	}
 
-	// 4. Find the hosted control plane and cluster (for normal reconciliation)
-	hcp, err := r.hostedControlPlane(ctx, gcpPSC.Namespace)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	hc, err := r.hostedCluster(ctx, hcp)
+	// 4. Find the hosted cluster using annotation (set by customer-side controller)
+	hc, err := r.hostedClusterFromAnnotation(ctx, gcpPSC)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get hosted cluster: %w", err)
 	}
@@ -529,48 +525,21 @@ func (r *GCPPrivateServiceConnectReconciler) extractGCPRegionFromEnv() (string, 
 	return region, nil
 }
 
-// hostedControlPlane retrieves the HostedControlPlane for a given namespace
-func (r *GCPPrivateServiceConnectReconciler) hostedControlPlane(ctx context.Context, namespace string) (*hyperv1.HostedControlPlane, error) {
-	hcpList := &hyperv1.HostedControlPlaneList{}
-	if err := r.List(ctx, hcpList, client.InNamespace(namespace)); err != nil {
-		return nil, fmt.Errorf("failed to list hosted control planes in namespace %s: %w", namespace, err)
-	}
-
-	if len(hcpList.Items) == 0 {
-		return nil, fmt.Errorf("no hosted control plane found in namespace %s", namespace)
-	}
-
-	if len(hcpList.Items) > 1 {
-		return nil, fmt.Errorf("multiple hosted control planes found in namespace %s", namespace)
-	}
-
-	return &hcpList.Items[0], nil
-}
-
-// hostedClusterNamespaceAndName gets the HostedCluster namespace and name from HostedControlPlane annotations
-func hostedClusterNamespaceAndName(hcp *hyperv1.HostedControlPlane) (string, string) {
-	hcNamespaceName, exists := hcp.Annotations[supportutil.HostedClusterAnnotation]
+// hostedClusterFromAnnotation retrieves the HostedCluster using the annotation on GCPPrivateServiceConnect
+func (r *GCPPrivateServiceConnectReconciler) hostedClusterFromAnnotation(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) (*hyperv1.HostedCluster, error) {
+	hcNamespaceName, exists := gcpPSC.Annotations[supportutil.HostedClusterAnnotation]
 	if !exists {
-		return "", ""
+		return nil, fmt.Errorf("GCPPrivateServiceConnect %s/%s missing %s annotation", gcpPSC.Namespace, gcpPSC.Name, supportutil.HostedClusterAnnotation)
 	}
+
 	parts := strings.SplitN(hcNamespaceName, "/", 2)
 	if len(parts) != 2 {
-		return "", ""
+		return nil, fmt.Errorf("invalid %s annotation format: %s", supportutil.HostedClusterAnnotation, hcNamespaceName)
 	}
-	return parts[0], parts[1]
-}
 
-// hostedCluster retrieves the HostedCluster that owns the given HostedControlPlane
-func (r *GCPPrivateServiceConnectReconciler) hostedCluster(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*hyperv1.HostedCluster, error) {
-	namespace, name := hostedClusterNamespaceAndName(hcp)
-	if namespace == "" || name == "" {
-		return nil, fmt.Errorf("cannot determine hosted cluster name/namespace from HostedControlPlane %s", client.ObjectKeyFromObject(hcp).String())
-	}
 	hc := &hyperv1.HostedCluster{}
-	hc.Namespace = namespace
-	hc.Name = name
-	if err := r.Get(ctx, client.ObjectKeyFromObject(hc), hc); err != nil {
-		return nil, fmt.Errorf("failed to get hosted cluster %s: %w", client.ObjectKeyFromObject(hc).String(), err)
+	if err := r.Get(ctx, client.ObjectKey{Namespace: parts[0], Name: parts[1]}, hc); err != nil {
+		return nil, fmt.Errorf("failed to get hosted cluster %s/%s: %w", parts[0], parts[1], err)
 	}
 	return hc, nil
 }
