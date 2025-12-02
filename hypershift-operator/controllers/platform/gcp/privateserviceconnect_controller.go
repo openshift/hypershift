@@ -30,7 +30,7 @@ const (
 	finalizer = "hypershift.openshift.io/gcp-private-service-connect"
 )
 
-// RBAC permissions for GCPPrivateServiceConnect controller
+// RBAC permissions for GCPPrivateServiceConnect controller (documentation only - not used for code generation)
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=gcpprivateserviceconnects,verbs=get;list;watch;update;patch
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=gcpprivateserviceconnects/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch
