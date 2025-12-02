@@ -532,8 +532,7 @@ func (r *GCPPrivateServiceConnectReconciler) extractGCPProjectFromEnv() (string,
 func (r *GCPPrivateServiceConnectReconciler) extractGCPRegionFromEnv() (string, error) {
 	region := os.Getenv("GCP_REGION")
 	if region == "" {
-		// Default to us-central1 if not set
-		return "us-central1", nil
+		return "", fmt.Errorf("GCP_REGION environment variable is required")
 	}
 	return region, nil
 }
