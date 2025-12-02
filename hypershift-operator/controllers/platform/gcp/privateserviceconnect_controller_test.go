@@ -335,16 +335,12 @@ func TestReconcile_PausedUntil(t *testing.T) {
 func TestConstructServiceAttachmentName(t *testing.T) {
 	tests := []struct {
 		name        string
-		gcpPSC      *hyperv1.GCPPrivateServiceConnect
 		hc          *hyperv1.HostedCluster
 		expected    string
 		description string
 	}{
 		{
 			name: "When given a cluster ID it should construct valid service attachment name",
-			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-psc"},
-			},
 			hc: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster"},
 				Spec: hyperv1.HostedClusterSpec{
@@ -359,7 +355,7 @@ func TestConstructServiceAttachmentName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := &GCPPrivateServiceConnectReconciler{}
-			result := r.constructServiceAttachmentName(tt.gcpPSC, tt.hc)
+			result := r.constructServiceAttachmentName(tt.hc)
 			if result != tt.expected {
 				t.Errorf("expected %s, got %s - %s", tt.expected, result, tt.description)
 			}
