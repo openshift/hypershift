@@ -350,8 +350,8 @@ func TestConstructServiceAttachmentName(t *testing.T) {
 					ClusterID: "12345678-abcd-1234-abcd-123456789012",
 				},
 			},
-			expected:    "12345678-abcd-1234-abcd-123456789012-psc-sa",
-			description: "Should use full cluster ID with -psc-sa suffix",
+			expected:    "psc-12345678-abcd-1234-abcd-123456789012",
+			description: "Should use psc- prefix with cluster ID (prefix ensures GCP naming compliance)",
 		},
 	}
 

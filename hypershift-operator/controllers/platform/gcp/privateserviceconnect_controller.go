@@ -359,9 +359,9 @@ func (r *GCPPrivateServiceConnectReconciler) constructServiceAttachmentURI(servi
 }
 
 // constructServiceAttachmentName builds a unique Service Attachment name using the cluster ID
-// Format: {clusterID}-psc-sa
+// Format: psc-{clusterID} (prefix ensures name starts with a letter per GCP naming requirements)
 func (r *GCPPrivateServiceConnectReconciler) constructServiceAttachmentName(hc *hyperv1.HostedCluster) string {
-	return fmt.Sprintf("%s-psc-sa", hc.Spec.ClusterID)
+	return fmt.Sprintf("psc-%s", hc.Spec.ClusterID)
 }
 
 // buildConsumerAcceptLists builds the consumer accept list for Service Attachment
