@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperapi "github.com/openshift/hypershift/support/api"
@@ -262,7 +263,8 @@ func TestReconcile_NotFound(t *testing.T) {
 }
 
 func TestReconcile_PausedUntil(t *testing.T) {
-	pausedUntil := "2026-01-01T00:00:00Z"
+	// Use a dynamically computed future time so the test remains valid over time
+	pausedUntil := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
 
 	// Create a hosted cluster with pause settings
 	hc := &hyperv1.HostedCluster{
@@ -329,7 +331,7 @@ func TestReconcile_PausedUntil(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 
-	// Should requeue with a future time since we're paused until 2026
+	// Should requeue with a future time since reconciliation is paused
 	if result.RequeueAfter <= 0 {
 		t.Error("expected positive RequeueAfter duration for paused reconciliation")
 	}
