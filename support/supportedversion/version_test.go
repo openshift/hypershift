@@ -25,7 +25,7 @@ import (
 
 func TestSupportedVersions(t *testing.T) {
 	g := NewGomegaWithT(t)
-	g.Expect(Supported()).To(Equal([]string{"4.21", "4.20", "4.19", "4.18", "4.17", "4.16", "4.15", "4.14"}))
+	g.Expect(Supported()).To(Equal([]string{"4.22", "4.21", "4.20", "4.19", "4.18", "4.17", "4.16", "4.15", "4.14"}))
 }
 
 func TestIsValidReleaseVersion(t *testing.T) {
@@ -59,7 +59,7 @@ func TestIsValidReleaseVersion(t *testing.T) {
 				Major: LatestSupportedVersion.Major,
 				Minor: LatestSupportedVersion.Minor + 1,
 			},
-			latestVersionSupported: v("4.20.0"),
+			latestVersionSupported: v("4.21.0"),
 			minVersionSupported:    v("4.14.0"),
 			expectError:            true,
 			platform:               hyperv1.NonePlatform,
@@ -266,7 +266,7 @@ func TestGetSupportedOCPVersions(t *testing.T) {
 	// struct is ever refactored, this test will fail to compile, providing an early signal that
 	// the test is out of date. It also allows for a clean, type-safe assertion.
 	validVersions := SupportedVersions{
-		Versions: []string{"4.20", "4.19", "4.18", "4.17", "4.16", "4.15", "4.14"},
+		Versions: []string{"4.21", "4.20", "4.19", "4.18", "4.17", "4.16", "4.15", "4.14"},
 	}
 	validVersionsJSON, err := json.Marshal(validVersions)
 	if err != nil {
