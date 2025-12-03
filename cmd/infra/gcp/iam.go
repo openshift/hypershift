@@ -25,12 +25,6 @@ const (
 	// defaultOIDCAudience is the default audience for OIDC providers.
 	defaultOIDCAudience = "openshift"
 
-	// defaultOperationTimeout is the timeout for waiting on GCP long-running operations.
-	defaultOperationTimeout = 5 * time.Minute
-
-	// defaultPollingInterval is the interval between polling attempts for operation status.
-	defaultPollingInterval = 2 * time.Second
-
 	// iamPropagationTimeout is the maximum time to wait for IAM eventual consistency.
 	// GCP IAM changes typically propagate in 5-30 seconds, we allow 60 seconds to be safe.
 	iamPropagationTimeout = 60 * time.Second
