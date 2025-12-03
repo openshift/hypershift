@@ -1954,7 +1954,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Reconcile the CAPI manager components
-	err = r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster)
+	err = r.reconcileCAPIManager(cpContext, createOrUpdate, hcluster, releaseImageVersion)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile capi manager: %w", err)
 	}
@@ -2396,7 +2396,7 @@ func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hype
 }
 
 // reconcileCAPIManager orchestrates orchestrates of  all CAPI manager components.
-func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, releaseVersion semver.Version) error {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespaceObject(hcluster.Namespace, hcluster.Name)
 	err := r.Client.Get(cpContext, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace)
 	if err != nil {
@@ -2424,6 +2424,14 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecom
 	}
 
 	imageOverride := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
+
+	// temporary override for 4.21 to unblock CAPI bump to 1.11 which introduces a new API version.
+	// used image from multiArch release payload 4.20.5 (quay.io/openshift-release-dev/ocp-release@sha256:1f2c28ac126453a3b9e83b349822b9f1fb7662973a212f936b90fdc40e06eb58)
+	// TODO(https://issues.redhat.com/browse/CNTRLPLANE-1200): Remove this override once Hypershift installs the CAPI v1beta2 API version
+	if imageOverride == "" && releaseVersion.Major == 4 && releaseVersion.Minor == 21 {
+		imageOverride = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:f82ee3586bba6ea0479e3154f959123ef8ebdb2594c4ed9e5899b7ce728a3eb2"
+	}
+
 	capiManager := capimanagerv2.NewComponent(imageOverride)
 	if err := capiManager.Reconcile(cpContext); err != nil {
 		return fmt.Errorf("failed to reconcile capi manager component: %w", err)
