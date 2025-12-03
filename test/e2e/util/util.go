@@ -2064,7 +2064,7 @@ func waitForDaemonSetsReady(t *testing.T, ctx context.Context, guestClient crcli
 		allowPartialNodes := dsManifest.AllowPartialNodes
 
 		if allowPartialNodes {
-			t.Logf("Waiting for %s DaemonSet to be ready with ≤%d available nodes", dsName, nodeCount)
+			t.Logf("Waiting for %s DaemonSet to be ready (using DesiredNumberScheduled)", dsName)
 		} else {
 			t.Logf("Waiting for %s DaemonSet to be ready with %d nodes", dsName, nodeCount)
 		}
@@ -2085,19 +2085,21 @@ func waitForDaemonSetsReady(t *testing.T, ctx context.Context, guestClient crcli
 			actualReady := daemonSet.Status.NumberReady
 
 			if allowPartialNodes {
-				// Check UpdatedNumberScheduled for partial nodes mode
-				if daemonSet.Status.UpdatedNumberScheduled > nodeCount {
-					t.Logf("DaemonSet %s update in flight: %d/%d pods updated (based on available nodes)", dsName, daemonSet.Status.UpdatedNumberScheduled, nodeCount)
+				// Use the DaemonSet's own DesiredNumberScheduled which reflects current cluster state.
+				// This avoids race conditions where nodeCount was captured before additional nodes became available,
+				// which would cause the check to fail indefinitely with "X/Y pods ready" where X > Y.
+				desiredCount := daemonSet.Status.DesiredNumberScheduled
+
+				// For partial nodes mode, we wait for the rollout to complete but don't require
+				// all pods to be ready. This allows for nodes that may be temporarily unavailable.
+				if daemonSet.Status.UpdatedNumberScheduled != desiredCount {
+					t.Logf("DaemonSet %s update in flight: %d/%d pods updated",
+						dsName, daemonSet.Status.UpdatedNumberScheduled, desiredCount)
 					return false, nil
 				}
 
-				// Allow NumberReady to be <= nodeCount
-				if actualReady > nodeCount {
-					t.Logf("DaemonSet %s not ready: %d/%d pods ready (based on available nodes)", dsName, actualReady, nodeCount)
-					return false, nil
-				}
-
-				t.Logf("DaemonSet %s ready: %d/%d pods (based on available nodes)", dsName, actualReady, nodeCount)
+				// Rollout complete - consider ready (partial readiness is acceptable)
+				t.Logf("DaemonSet %s ready: %d/%d pods ready, rollout complete", dsName, actualReady, desiredCount)
 				return true, nil
 			} else {
 				// Exact match for normal mode
