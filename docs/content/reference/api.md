@@ -5059,6 +5059,17 @@ A failure here indicates that the role or the key are invalid, or the role doesn
 <td><p>ValidAzureKMSConfig indicates whether the given KMS input for the Azure platform is valid and operational
 A failure here indicates that the input is invalid, or permissions are missing to use the encryption key.</p>
 </td>
+</tr><tr><td><p>&#34;ValidGCPCredentials&#34;</p></td>
+<td><p>ValidGCPCredentials indicates if GCP credentials are valid and operational
+for the HostedCluster. This includes service account authentication and
+proper IAM permissions for CAPG controllers.
+A failure here may require external user intervention to resolve.</p>
+</td>
+</tr><tr><td><p>&#34;ValidGCPWorkloadIdentity&#34;</p></td>
+<td><p>ValidGCPWorkloadIdentity indicates if GCP Workload Identity Federation
+is properly configured and operational for the cluster.
+A failure here may require external user intervention to resolve.</p>
+</td>
 </tr><tr><td><p>&#34;ValidConfiguration&#34;</p></td>
 <td><p>ValidHostedClusterConfiguration signals if the hostedCluster input is valid and
 supported by the underlying management cluster.
@@ -5951,7 +5962,6 @@ A valid project ID must satisfy the following rules:
 length: Must be between 6 and 30 characters, inclusive
 characters: Only lowercase letters (<code>a-z</code>), digits (<code>0-9</code>), and hyphens (<code>-</code>) are allowed
 start and end: Must begin with a lowercase letter and must not end with a hyphen
-hyphens: No consecutive hyphens are allowed (e.g., &ldquo;my&ndash;project&rdquo; is invalid)
 valid examples: &ldquo;my-project&rdquo;, &ldquo;my-project-1&rdquo;, &ldquo;my-project-123&rdquo;.</p>
 </td>
 </tr>
@@ -5964,11 +5974,11 @@ string
 </td>
 <td>
 <p>region is the GCP region in which the cluster resides.
-A valid region must satisfy the following rules:
-format: Must be in the form <code>&lt;letters&gt;-&lt;lettersOrDigits&gt;&lt;digit&gt;</code>
-characters: Only lowercase letters (<code>a-z</code>), digits (<code>0-9</code>), and a single hyphen (<code>-</code>) separator
-valid examples: &ldquo;us-central1&rdquo;, &ldquo;europe-west2&rdquo;
-region must not include zone suffixes (e.g., &ldquo;-a&rdquo;).
+Must be in the form of <geographic-area>-<location><number> (e.g., us-central1, europe-west12).
+Must contain exactly one hyphen separating the geographic area from the location.
+Must end with one or more digits.
+Valid examples: &ldquo;us-central1&rdquo;, &ldquo;europe-west2&rdquo;, &ldquo;europe-west12&rdquo;, &ldquo;northamerica-northeast1&rdquo;
+Invalid examples: &ldquo;us1&rdquo; (no hyphen), &ldquo;us-central&rdquo; (no trailing digits), &ldquo;us-central1-a&rdquo; (zone suffix)
 For a full list of valid regions, see: <a href="https://cloud.google.com/compute/docs/regions-zones">https://cloud.google.com/compute/docs/regions-zones</a>.</p>
 </td>
 </tr>
@@ -5999,6 +6009,46 @@ GCPEndpointAccessType
 <em>(Optional)</em>
 <p>endpointAccess controls API endpoint accessibility for the HostedControlPlane on GCP.
 Allowed values: &ldquo;Private&rdquo;, &ldquo;PublicAndPrivate&rdquo;. Defaults to &ldquo;Private&rdquo;.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourceLabels</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceLabel">
+[]GCPResourceLabel
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>resourceLabels are applied to all GCP resources created for the cluster.
+Labels are key-value pairs used for organizing and managing GCP resources.
+Changes to this field will be propagated in-place to GCP resources where supported.
+GCP supports a maximum of 64 labels per resource. HyperShift reserves approximately 4 labels for system use.
+For GCP labeling guidance, see <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>workloadIdentity,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPWorkloadIdentityConfig">
+GCPWorkloadIdentityConfig
+</a>
+</em>
+</td>
+<td>
+<p>workloadIdentity configures Workload Identity Federation for the cluster.
+This enables secure, short-lived token-based authentication without storing
+long-term service account keys. These fields are immutable after cluster creation
+to prevent breaking the authentication chain.</p>
+<p>Prerequisites for WIF setup:
+- Workload Identity Pool and Provider must exist in the GCP project
+- Provider must be configured with audience mapping for OpenShift SA tokens
+- Target Google Service Account must have roles/iam.workloadIdentityUser
+granted to the workload pool principal (e.g., principal://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/subject/system:serviceaccount:kube-system:capi-gcp-controller-manager)
+- Attribute mappings on the provider should include google.subject for token subject verification</p>
 </td>
 </tr>
 </tbody>
@@ -6167,6 +6217,59 @@ string
 </tr>
 </tbody>
 </table>
+###GCPResourceLabel { #hypershift.openshift.io/v1beta1.GCPResourceLabel }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
+</p>
+<p>
+<p>GCPResourceLabel is a label to apply to GCP resources created for the cluster.
+Labels are key-value pairs used for organizing and managing GCP resources.
+See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a> for GCP labeling guidance.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>key</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>key is the key part of the label. A label key can have a maximum of 63 characters and cannot be empty.
+For Compute Engine resources (VMs, disks, networks created by CAPG), keys must:
+- Start with a lowercase letter
+- Contain only lowercase letters, digits, or hyphens
+- End with a lowercase letter or digit (not a hyphen)
+- Be 1-63 characters long
+GCP reserves the &lsquo;goog&rsquo; prefix for system labels.
+See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a> for Compute Engine label requirements.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>value</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>value is the value part of the label. A label value can have a maximum of 63 characters.
+Empty values are allowed by GCP. If non-empty, it must start with a lowercase letter,
+contain only lowercase letters, digits, or hyphens, and end with a lowercase letter or digit.
+See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a> for Compute Engine label requirements.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###GCPResourceReference { #hypershift.openshift.io/v1beta1.GCPResourceReference }
 <p>
 (<em>Appears on:</em>
@@ -6193,7 +6296,157 @@ string
 </em>
 </td>
 <td>
-<p>name is the name of the GCP resource</p>
+<p>name is the name of the GCP resource.
+Must conform to GCP resource naming standards: lowercase letters, numbers, and hyphens only.
+Must start with a lowercase letter and end with a lowercase letter or number, max 63 characters.
+Pattern: &ldquo;^<a href="[-a-z0-9]*[a-z0-9]">a-z</a>?$&rdquo; (max 63 chars), per GCP naming requirements.
+See <a href="https://cloud.google.com/compute/docs/naming-resources">https://cloud.google.com/compute/docs/naming-resources</a> for details.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPServiceAccountsEmails { #hypershift.openshift.io/v1beta1.GCPServiceAccountsEmails }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPWorkloadIdentityConfig">GCPWorkloadIdentityConfig</a>)
+</p>
+<p>
+<p>GCPServiceAccountsEmails contains email addresses of Google Service Accounts for different controllers.
+Each service account should have the appropriate IAM permissions for its specific role.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nodePool</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>nodePool is the Google Service Account email for CAPG controllers
+that manage NodePool infrastructure (VMs, networks, disks, etc.).
+This GSA requires the following IAM roles:
+- roles/compute.instanceAdmin.v1 (Compute Instance Admin v1)
+- roles/compute.networkAdmin (Compute Network Admin)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlane</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>controlPlane is the Google Service Account email for the Control Plane Operator
+that manages control plane infrastructure and resources.
+This GSA requires the following IAM roles:
+- roles/storage.admin (Storage Admin)
+- roles/iam.serviceAccountUser (Service Account User)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPWorkloadIdentityConfig { #hypershift.openshift.io/v1beta1.GCPWorkloadIdentityConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
+</p>
+<p>
+<p>GCPWorkloadIdentityConfig configures Workload Identity Federation for GCP clusters.
+This enables secure, short-lived token-based authentication without storing
+long-term service account keys.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>projectNumber</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>projectNumber is the numeric GCP project identifier for WIF configuration.
+This differs from the project ID and is required for workload identity pools.
+Must be a numeric string representing the GCP project number.</p>
+<p>This is a user-provided value obtained from GCP (found in GCP Console or via <code>gcloud projects describe PROJECT_ID</code>).
+Also available in the output of <code>hypershift infra create gcp</code>.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>poolID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>poolID is the workload identity pool identifier within the project.
+This pool is used to manage external identity mappings.
+Must be 4-32 characters and start with a lowercase letter.
+Allowed characters: lowercase letters (a-z), digits (0-9), hyphens (-).
+Cannot start or end with a hyphen.
+The prefix &ldquo;gcp-&rdquo; is reserved by Google and cannot be used.</p>
+<p>This is a user-provided value referencing a pre-created Workload Identity Pool.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the WIF infrastructure and generates appropriate pool IDs.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>providerID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>providerID is the workload identity provider identifier within the pool.
+This provider handles the token exchange between external and GCP identities.
+Must be 4-32 characters and start with a lowercase letter.
+Allowed characters: lowercase letters (a-z), digits (0-9), hyphens (-).
+Cannot start or end with a hyphen.
+The prefix &ldquo;gcp-&rdquo; is reserved by Google and cannot be used.</p>
+<p>This is a user-provided value referencing a pre-created OIDC Provider within the WIF Pool.
+Typically obtained from the output of <code>hypershift infra create gcp</code>.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceAccountsEmails,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountsEmails">
+GCPServiceAccountsEmails
+</a>
+</em>
+</td>
+<td>
+<p>serviceAccountsEmails contains email addresses of various Google Service Accounts
+required to enable integrations for different controllers and operators.
+This follows the AWS pattern of having different roles for different purposes.</p>
 </td>
 </tr>
 </tbody>
