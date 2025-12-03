@@ -162,14 +162,14 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 			// Private clusters may won't be reachable from the test runner; assume workers exist.
 			hasWorkerNodes := true
 			if !util.IsPrivateHC(hostedCluster) {
-				guestClient := WaitForGuestClient(t, t.Context(), h.client, hostedCluster)
+				guestClient := WaitForGuestClient(t, context.Background(), h.client, hostedCluster)
 				var nodeList corev1.NodeList
-				if err := guestClient.List(t.Context(), &nodeList); err != nil {
+				if err := guestClient.List(context.Background(), &nodeList); err != nil {
 					t.Errorf("failed to list nodes in guest cluster: %v", err)
 				}
 				hasWorkerNodes = len(nodeList.Items) > 0
 			}
-			validateHostedClusterConditions(t, t.Context(), h.client, hostedCluster, hasWorkerNodes, 10*time.Minute)
+			validateHostedClusterConditions(t, context.Background(), h.client, hostedCluster, hasWorkerNodes, 10*time.Minute)
 		}
 
 		// Run EnsureGlobalPullSecret at the end to avoid interference with upgrade tests
