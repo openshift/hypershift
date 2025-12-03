@@ -36,6 +36,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
+	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	configv1client "github.com/openshift/client-go/config/clientset/versioned"
@@ -53,7 +54,12 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -72,13 +78,6 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"go.uber.org/zap/zaptest"
-
-	configv1 "github.com/openshift/api/config/v1"
-	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 )
 
 var (
@@ -1201,8 +1200,6 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 	})
 }
 
-
-
 // ApplyYAMLFromURL downloads YAML content from a URL and applies it to the cluster.
 // If defaultNamespace is provided, it will be used for namespaced resources that don't have a namespace set.
 func ApplyYAMLFromURL(ctx context.Context, c crclient.Client, url string, defaultNamespace ...string) error {
@@ -1235,33 +1232,44 @@ func ApplyYAMLFromURL(ctx context.Context, c crclient.Client, url string, defaul
 			return fmt.Errorf("failed to decode YAML: %w", err)
 		}
 
-		if obj.GetKind() == "" {
+		if len(obj.Object) == 0 {
 			continue
 		}
 
 		// Set default namespace if provided and the resource doesn't have one
 		if len(defaultNamespace) > 0 && obj.GetNamespace() == "" {
-			// Check if this is a namespaced resource (not cluster-scoped like ClusterRole)
-			kind := obj.GetKind()
-			isClusterScoped := kind == "ClusterRole" || kind == "ClusterRoleBinding" ||
-				kind == "CustomResourceDefinition" || kind == "Namespace"
+			isNamespaced := false
+			gvk := obj.GroupVersionKind()
 
-			if !isClusterScoped {
+			// Check if the resource is namespaced using RESTMapper
+			mapping, err := c.RESTMapper().RESTMapping(gvk.GroupKind(), gvk.Version)
+			if err != nil {
+				return fmt.Errorf("failed to get mapping for %s: %w", gvk, err)
+			}
+
+			if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+				isNamespaced = true
+			}
+
+			if isNamespaced {
 				obj.SetNamespace(defaultNamespace[0])
 			}
 		}
 
-		// Create the resource
-		err = c.Create(ctx, obj)
-		if err != nil && !apierrors.IsAlreadyExists(err) {
-			return fmt.Errorf("failed to create %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+		// Apply the resource using Server-Side Apply
+		patchOpts := []crclient.PatchOption{
+			crclient.ForceOwnership,
+			crclient.FieldOwner("hypershift-e2e"),
+		}
+
+		err = c.Patch(ctx, obj, crclient.Apply, patchOpts...)
+		if err != nil {
+			return fmt.Errorf("failed to apply %s/%s: %w", obj.GetKind(), obj.GetName(), err)
 		}
 	}
 
 	return nil
 }
-
-
 
 // EnsureNodesRuntime ensures that all nodes in the NodePool have the expected runtime handlers.
 // This is only supported on 4.18+ when the default runtime is changed to crun.

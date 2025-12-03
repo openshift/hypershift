@@ -14,9 +14,9 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
+	configv1 "github.com/openshift/api/config/v1"
 	securityv1 "github.com/openshift/api/security/v1"
 
-	configv1 "github.com/openshift/api/config/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -289,7 +289,9 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 
 				t.Logf("CiliumConfig has correct clusterPoolIPv4MaskSize: %d", maskSize)
 				return true
-			}, CiliumShortTimeout, CiliumDefaultPollInterval).Should(BeTrue(), "CiliumConfig should have correct configuration")			// Wait for operator to create DaemonSet
+			}, CiliumShortTimeout, CiliumDefaultPollInterval).Should(BeTrue(), "CiliumConfig should have correct configuration")
+
+			// Wait for operator to create DaemonSet
 			t.Log("Waiting for Cilium DaemonSet to be created by operator")
 			var ciliumDaemonSet *appsv1.DaemonSet
 			g.Eventually(func() bool {
@@ -459,24 +461,24 @@ func EnsureCiliumConnectivityTestResources(t *testing.T, ctx context.Context, gu
 		for _, pod := range podList.Items {
 			if pod.Status.Phase != corev1.PodRunning {
 				failedPods = append(failedPods, fmt.Sprintf("%s (phase: %s)", pod.Name, pod.Status.Phase))
-			
 			}
 		}
 
-					if len(failedPods) > 0 {
-						t.Errorf("Found %d pods not in Running phase: %v", len(failedPods), failedPods)
-					} else {
-						t.Logf("All %d connectivity test pods are running successfully", len(podList.Items))
-					}
-				}) // Closes the anonymous function for "WaitForConnectivityTestCompletion"
-		
-			t.Log("Cilium connectivity test completed successfully")
-		
-			return func() {
-				CleanupCiliumConnectivityTestResources(ctx, t, guestClient)
-			}
+		if len(failedPods) > 0 {
+			t.Errorf("Found %d pods not in Running phase: %v", len(failedPods), failedPods)
+		} else {
+			t.Logf("All %d connectivity test pods are running successfully", len(podList.Items))
 		}
-// getCiliumNetworkConfig extracts pod CIDR and host prefix from guest cluster
+	}) // Closes the anonymous function for "WaitForConnectivityTestCompletion"
+
+	t.Log("Cilium connectivity test completed successfully")
+
+	return func() {
+		CleanupCiliumConnectivityTestResources(ctx, t, guestClient)
+	}
+}
+
+// GetCiliumNetworkConfig extracts pod CIDR and host prefix from guest cluster
 // In dual-stack environments, this function ensures we return the IPv4 network
 func GetCiliumNetworkConfig(ctx context.Context, guestClient crclient.Client) (podCIDR string, hostPrefix int32) {
 	podCIDR = "10.132.0.0/14"
@@ -527,21 +529,21 @@ func CleanupCiliumConnectivityTestResources(ctx context.Context, t *testing.T, g
 		t.Logf("Warning: failed to delete namespace: %v", err)
 	}
 
-		t.Log("Cleanup completed")
+	t.Log("Cleanup completed")
 }
 
 func ptrBool(b bool) *bool {
 	return &b
 }
 
-// createCiliumConfig creates a CiliumConfig custom resource
+// CreateCiliumConfig creates a CiliumConfig custom resource
 func CreateCiliumConfig(podCIDR string, hostPrefix int32) *unstructured.Unstructured {
 	ciliumConfig := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": fmt.Sprintf("%s/%s", CiliumConfigGroup, CiliumConfigVersion),
-			"kind": CiliumConfigKind,
+			"kind":       CiliumConfigKind,
 			"metadata": map[string]interface{}{
-				"name": CiliumConfigName,
+				"name":      CiliumConfigName,
 				"namespace": CiliumNamespace,
 			},
 			"spec": map[string]interface{}{
