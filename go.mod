@@ -296,3 +296,5 @@ replace github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-
 // 	k8s.io/apiserver => k8s.io/apiserver v0.32.3
 // 	k8s.io/client-go => k8s.io/client-go v0.32.3
 // )
+
+replace sigs.k8s.io/cluster-api-provider-kubevirt => github.com/qinqon/cluster-api-provider-kubevirt v0.1.0-rc.0.0.20251127145124-f47c5db784fd

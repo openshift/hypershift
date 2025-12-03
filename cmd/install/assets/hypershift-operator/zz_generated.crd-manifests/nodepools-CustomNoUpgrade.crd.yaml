@@ -1105,6 +1105,13 @@ spec:
                           type: object
                         maxItems: 10
                         type: array
+                      networkData:
+                        description: |-
+                          networkData is inline cloud-init network data configuration for VMs in this NodePool.
+                          When specified, cloud-init volume changes from ConfigDrive to NoCloud.
+                          This allows for static network configuration of VMs.
+                        maxLength: 2048
+                        type: string
                       networkInterfaceMultiqueue:
                         default: Enable
                         description: |-

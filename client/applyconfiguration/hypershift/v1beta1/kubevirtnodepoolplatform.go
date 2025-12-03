@@ -31,6 +31,7 @@ type KubevirtNodePoolPlatformApplyConfiguration struct {
 	AttachDefaultNetwork       *bool                                  `json:"attachDefaultNetwork,omitempty"`
 	NodeSelector               map[string]string                      `json:"nodeSelector,omitempty"`
 	KubevirtHostDevices        []KubevirtHostDeviceApplyConfiguration `json:"hostDevices,omitempty"`
+	NetworkData                *string                                `json:"networkData,omitempty"`
 }
 
 // KubevirtNodePoolPlatformApplyConfiguration constructs a declarative configuration of the KubevirtNodePoolPlatform type for use with
@@ -108,5 +109,13 @@ func (b *KubevirtNodePoolPlatformApplyConfiguration) WithKubevirtHostDevices(val
 		}
 		b.KubevirtHostDevices = append(b.KubevirtHostDevices, *values[i])
 	}
+	return b
+}
+
+// WithNetworkData sets the NetworkData field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the NetworkData field is set to the value of the last call.
+func (b *KubevirtNodePoolPlatformApplyConfiguration) WithNetworkData(value string) *KubevirtNodePoolPlatformApplyConfiguration {
+	b.NetworkData = &value
 	return b
 }

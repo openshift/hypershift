@@ -2,7 +2,10 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    feature-gate.release.openshift.io/OpenStack: "true"
+    api.openshift.io/merged-by-featuregates: "true"
+    include.release.openshift.io/ibm-cloud-managed: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    release.openshift.io/feature-set: TechPreviewNoUpgrade
   name: nodepools.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
@@ -1107,7 +1110,6 @@ spec:
                           networkData is inline cloud-init network data configuration for VMs in this NodePool.
                           When specified, cloud-init volume changes from ConfigDrive to NoCloud.
                           This allows for static network configuration of VMs.
-                        maxLength: 2048
                         type: string
                       networkInterfaceMultiqueue:
                         default: Enable
@@ -1793,4 +1795,7 @@ spec:
     served: true
     storage: true
     subresources:
+      scale:
+        specReplicasPath: .spec.replicas
+        statusReplicasPath: .status.replicas
       status: {}

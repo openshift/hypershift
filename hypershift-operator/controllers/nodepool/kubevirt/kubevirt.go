@@ -25,18 +25,16 @@ import (
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
-var (
-	LocalStorageVolumes = []string{
-		"private",
-		"public",
-		"sockets",
-		"virt-bin-share-dir",
-		"libvirt-runtime",
-		"ephemeral-disks",
-		"container-disks",
-		"hotplug-disks",
-	}
-)
+var LocalStorageVolumes = []string{
+	"private",
+	"public",
+	"sockets",
+	"virt-bin-share-dir",
+	"libvirt-runtime",
+	"ephemeral-disks",
+	"container-disks",
+	"hotplug-disks",
+}
 
 func defaultImage(nodePoolArch string, releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
 	var archName string
@@ -289,7 +287,6 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 				hostDevices = append(hostDevices, kvHostDevice)
 				deviceCounter++
 			}
-
 		}
 		template.Spec.Template.Spec.Domain.Devices.HostDevices = hostDevices
 	}
@@ -344,6 +341,7 @@ func virtualMachineNetworks(kvPlatform *hyperv1.KubevirtNodePoolPlatform) []kube
 	}
 	return networks
 }
+
 func shouldAttachDefaultNetwork(kvPlatform *hyperv1.KubevirtNodePoolPlatform) bool {
 	return kvPlatform.AttachDefaultNetwork == nil || *kvPlatform.AttachDefaultNetwork
 }
@@ -445,12 +443,21 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 		return nil, err
 	}
 
+	machineSpec := capikubevirt.KubevirtMachineSpec{
+		VirtualMachineTemplate: *vmTemplate,
+		BootstrapCheckSpec:     capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+	}
+
+	kvPlatform := nodePool.Spec.Platform.Kubevirt
+
+	// Propagate NetworkData from NodePool to CAPK machine spec
+	if kvPlatform.NetworkData != nil {
+		machineSpec.NetworkData = kvPlatform.NetworkData
+	}
+
 	return &capikubevirt.KubevirtMachineTemplateSpec{
 		Template: capikubevirt.KubevirtMachineTemplateResource{
-			Spec: capikubevirt.KubevirtMachineSpec{
-				VirtualMachineTemplate: *vmTemplate,
-				BootstrapCheckSpec:     capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
-			},
+			Spec: machineSpec,
 		},
 	}, nil
 }

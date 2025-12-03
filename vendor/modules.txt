@@ -2496,7 +2496,7 @@ sigs.k8s.io/cluster-api-provider-azure/util/webhook
 ## explicit; go 1.23.2
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2
-# sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9
+# sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9 => github.com/qinqon/cluster-api-provider-kubevirt v0.1.0-rc.0.0.20251127145124-f47c5db784fd
 ## explicit; go 1.22.0
 sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1
 # sigs.k8s.io/cluster-api-provider-openstack v0.12.1
@@ -2668,3 +2668,4 @@ sigs.k8s.io/yaml/goyaml.v3
 # github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 # sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.7
 # github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
+# sigs.k8s.io/cluster-api-provider-kubevirt => github.com/qinqon/cluster-api-provider-kubevirt v0.1.0-rc.0.0.20251127145124-f47c5db784fd

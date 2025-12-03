@@ -94,6 +94,11 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              networkData:
+                description: |-
+                  NetworkData contains inline cloud-init network data configuration.
+                  When specified, the cloud-init volume will use NoCloud instead of ConfigDrive.
+                type: string
               providerID:
                 description: ProviderID TBD what to use for Kubevirt
                 type: string
