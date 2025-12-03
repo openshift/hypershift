@@ -211,7 +211,7 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args.Set("etcd-keyfile", cpath(etcdClientCertVolumeName, pki.EtcdClientKeyKey))
 	args.Set("etcd-prefix", "kubernetes.io")
 	args.Set("etcd-servers", p.EtcdURL)
-	args.Set("event-ttl", "3h")
+	args.Set("event-ttl", p.EventTTL)
 	// TODO remove in 4.16 once we're able to have different featuregates for hypershift
 	featureGates := append([]string{}, p.FeatureGates...)
 	featureGates = enforceFeatureGates(featureGates, "ValidatingAdmissionPolicy=true", "StructuredAuthenticationConfiguration=true")

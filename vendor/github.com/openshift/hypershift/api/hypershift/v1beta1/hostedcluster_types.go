@@ -393,6 +393,10 @@ const (
 	// KubeAPIServerGoAwayChance allows the --goaway-chance parameter of the kube-apiserver to be overridden from its default of 0
 	KubeAPIServerGoAwayChance = "hypershift.openshift.io/kube-apiserver-goaway-chance"
 
+	// KubeAPIServerEventTTLMinutes allows the --event-ttl parameter of the kube-apiserver to be overridden from its default of 3h (180 minutes)
+	// The value should be specified in minutes (e.g., "60", "180").
+	KubeAPIServerEventTTLMinutes = "hypershift.openshift.io/event-ttl-minutes"
+
 	// AWSMachinePublicIPs, if set to "true", results in an AWS machine template that creates machines with public IPs
 	// WARNING: This option is for development and testing purposes only
 	AWSMachinePublicIPs = "hypershift.openshift.io/aws-machine-public-ips"
