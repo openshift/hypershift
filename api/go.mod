@@ -87,3 +87,6 @@ require (
 
 // Use our openshift version of karpenter instead of upstream
 replace github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
+
+// Use Kubernetes v1.32.3's version of k8s.io/utils
+replace k8s.io/utils => k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738

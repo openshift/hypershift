@@ -16,8 +16,15 @@ import (
 var _ core.Platform = (*CreateOptions)(nil)
 
 const (
-	flagProject = "project"
-	flagRegion  = "region"
+	flagProject                       = "project"
+	flagRegion                        = "region"
+	flagNetwork                       = "network"
+	flagPrivateServiceConnectSubnet   = "private-service-connect-subnet"
+	flagWorkloadIdentityProjectNumber = "workload-identity-project-number"
+	flagWorkloadIdentityPoolID        = "workload-identity-pool-id"
+	flagWorkloadIdentityProviderID    = "workload-identity-provider-id"
+	flagNodePoolServiceAccount        = "node-pool-service-account"
+	flagControlPlaneServiceAccount    = "control-plane-service-account"
 )
 
 // RawCreateOptions contains the raw command-line options for creating a GCP cluster
@@ -27,12 +34,40 @@ type RawCreateOptions struct {
 
 	// Region is the GCP region where the HostedCluster will be created
 	Region string
+
+	// Network is the VPC network name for the cluster
+	Network string
+
+	// PrivateServiceConnectSubnet is the subnet for Private Service Connect endpoints
+	PrivateServiceConnectSubnet string
+
+	// WorkloadIdentityProjectNumber is the numeric GCP project identifier for WIF configuration
+	WorkloadIdentityProjectNumber string
+
+	// WorkloadIdentityPoolID is the workload identity pool identifier
+	WorkloadIdentityPoolID string
+
+	// WorkloadIdentityProviderID is the workload identity provider identifier
+	WorkloadIdentityProviderID string
+
+	// NodePoolServiceAccount is the Google Service Account email for CAPG controllers
+	NodePoolServiceAccount string
+
+	// ControlPlaneServiceAccount is the Google Service Account email for the Control Plane Operator
+	ControlPlaneServiceAccount string
 }
 
 // BindOptions binds the GCP-specific flags to the provided flag set
 func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.Project, flagProject, opts.Project, "GCP project ID where the HostedCluster will be created")
 	flags.StringVar(&opts.Region, flagRegion, opts.Region, "GCP region where the HostedCluster will be created")
+	flags.StringVar(&opts.Network, flagNetwork, opts.Network, "VPC network name for the cluster")
+	flags.StringVar(&opts.PrivateServiceConnectSubnet, flagPrivateServiceConnectSubnet, opts.PrivateServiceConnectSubnet, "Subnet for Private Service Connect endpoints")
+	flags.StringVar(&opts.WorkloadIdentityProjectNumber, flagWorkloadIdentityProjectNumber, opts.WorkloadIdentityProjectNumber, "Numeric GCP project identifier for Workload Identity Federation (from `hypershift infra create gcp` output)")
+	flags.StringVar(&opts.WorkloadIdentityPoolID, flagWorkloadIdentityPoolID, opts.WorkloadIdentityPoolID, "Workload Identity Pool ID (from `hypershift infra create gcp` output)")
+	flags.StringVar(&opts.WorkloadIdentityProviderID, flagWorkloadIdentityProviderID, opts.WorkloadIdentityProviderID, "Workload Identity Provider ID (from `hypershift infra create gcp` output)")
+	flags.StringVar(&opts.NodePoolServiceAccount, flagNodePoolServiceAccount, opts.NodePoolServiceAccount, "Google Service Account email for NodePool CAPG controllers (from `hypershift infra create gcp` output)")
+	flags.StringVar(&opts.ControlPlaneServiceAccount, flagControlPlaneServiceAccount, opts.ControlPlaneServiceAccount, "Google Service Account email for Control Plane Operator (from `hypershift infra create gcp` output)")
 }
 
 // ValidatedCreateOptions represents validated options for creating a GCP cluster
@@ -53,6 +88,27 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 		return nil, err
 	}
 	if err := util.ValidateRequiredOption(flagRegion, o.Region); err != nil {
+		return nil, err
+	}
+	if err := util.ValidateRequiredOption(flagNetwork, o.Network); err != nil {
+		return nil, err
+	}
+	if err := util.ValidateRequiredOption(flagPrivateServiceConnectSubnet, o.PrivateServiceConnectSubnet); err != nil {
+		return nil, err
+	}
+	if err := util.ValidateRequiredOption(flagWorkloadIdentityProjectNumber, o.WorkloadIdentityProjectNumber); err != nil {
+		return nil, err
+	}
+	if err := util.ValidateRequiredOption(flagWorkloadIdentityPoolID, o.WorkloadIdentityPoolID); err != nil {
+		return nil, err
+	}
+	if err := util.ValidateRequiredOption(flagWorkloadIdentityProviderID, o.WorkloadIdentityProviderID); err != nil {
+		return nil, err
+	}
+	if err := util.ValidateRequiredOption(flagNodePoolServiceAccount, o.NodePoolServiceAccount); err != nil {
+		return nil, err
+	}
+	if err := util.ValidateRequiredOption(flagControlPlaneServiceAccount, o.ControlPlaneServiceAccount); err != nil {
 		return nil, err
 	}
 	return &ValidatedCreateOptions{
@@ -122,6 +178,23 @@ func (o *CreateOptions) ApplyPlatformSpecifics(hostedCluster *hyperv1.HostedClus
 	hostedCluster.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
 		Project: o.Project,
 		Region:  o.Region,
+		NetworkConfig: hyperv1.GCPNetworkConfig{
+			Network: hyperv1.GCPResourceReference{
+				Name: o.Network,
+			},
+			PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
+				Name: o.PrivateServiceConnectSubnet,
+			},
+		},
+		WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+			ProjectNumber: o.WorkloadIdentityProjectNumber,
+			PoolID:        o.WorkloadIdentityPoolID,
+			ProviderID:    o.WorkloadIdentityProviderID,
+			ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+				NodePool:     o.NodePoolServiceAccount,
+				ControlPlane: o.ControlPlaneServiceAccount,
+			},
+		},
 	}
 	// TODO: support for external DNS will be added later after details are defined
 	hostedCluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(hostedCluster.Spec.Networking.NetworkType, false)
