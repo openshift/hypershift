@@ -340,6 +340,337 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 			})
 		})
 
+		Context("GCP Workload Identity Federation validation", Label("GCP", "WIF"), func() {
+			BeforeEach(func() {
+				hasGCPField, err := util.HasFieldInCRDSchema(ctx, mgmtClient, "hostedclusters.hypershift.openshift.io", "spec.platform.gcp")
+				Expect(err).NotTo(HaveOccurred())
+				if !hasGCPField {
+					Skip("GCP platform field is not available in the HostedCluster CRD schema")
+				}
+			})
+
+			It("should accept when all WIF fields are valid", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.GCPPlatform
+					hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network: hyperv1.GCPResourceReference{
+								Name: "my-network",
+							},
+							PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
+								Name: "my-psc-subnet",
+							},
+						},
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "my-wif-pool",
+							ProviderID:    "my-wif-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+							},
+						},
+					}
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("should reject when WIF projectNumber has invalid format (not numeric)", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.GCPPlatform
+					hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+							PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+						},
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "abc123",
+							PoolID:        "my-wif-pool",
+							ProviderID:    "my-wif-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+							},
+						},
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("projectNumber in body should match"))
+			})
+
+			It("should reject when WIF poolID starts with reserved 'gcp-' prefix", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.GCPPlatform
+					hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+							PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+						},
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "gcp-reserved",
+							ProviderID:    "my-wif-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+							},
+						},
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Pool ID cannot start with reserved prefix 'gcp-'"))
+			})
+
+			It("should reject when WIF poolID is too short", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.GCPPlatform
+					hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+							PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+						},
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "abc",
+							ProviderID:    "my-wif-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+							},
+						},
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("poolID in body should be at least 4 chars long"))
+			})
+
+			It("should reject when WIF providerID starts with reserved 'gcp-' prefix", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.GCPPlatform
+					hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+							PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+						},
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "my-wif-pool",
+							ProviderID:    "gcp-reserved",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+							},
+						},
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Provider ID cannot start with reserved prefix 'gcp-'"))
+			})
+
+			It("should reject when NodePool service account has invalid email format", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.GCPPlatform
+					hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+							PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+						},
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "my-wif-pool",
+							ProviderID:    "my-wif-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:     "invalid-email",
+								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+							},
+						},
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("nodePool in body should match"))
+			})
+
+			It("should reject when ControlPlane service account has invalid email format", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.GCPPlatform
+					hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+							PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+						},
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "my-wif-pool",
+							ProviderID:    "my-wif-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane: "not-an-email@format",
+							},
+						},
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("controlPlane in body should match"))
+			})
+
+			It("should accept when GCP resource labels have valid values", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.GCPPlatform
+					hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+							PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+						},
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "my-wif-pool",
+							ProviderID:    "my-wif-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+							},
+						},
+						ResourceLabels: []hyperv1.GCPResourceLabel{
+							{Key: "environment", Value: ptr.To("production")},
+							{Key: "team", Value: ptr.To("platform")},
+						},
+					}
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("should accept when GCP resource label has empty value (explicitly set)", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.GCPPlatform
+					hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+							PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+						},
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "my-wif-pool",
+							ProviderID:    "my-wif-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+							},
+						},
+						ResourceLabels: []hyperv1.GCPResourceLabel{
+							{Key: "optional", Value: ptr.To("")},
+						},
+					}
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("should accept when GCP resource label value is nil (not provided)", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.GCPPlatform
+					hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+							PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+						},
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "my-wif-pool",
+							ProviderID:    "my-wif-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+							},
+						},
+						ResourceLabels: []hyperv1.GCPResourceLabel{
+							{Key: "test"},
+						},
+					}
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("should reject when GCP resource label key starts with reserved 'goog' prefix", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.GCPPlatform
+					hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+							PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+						},
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "my-wif-pool",
+							ProviderID:    "my-wif-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+							},
+						},
+						ResourceLabels: []hyperv1.GCPResourceLabel{
+							{Key: "goog-reserved", Value: ptr.To("value")},
+						},
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Label keys starting with the reserved 'goog' prefix are not allowed"))
+			})
+
+			It("should reject when exceeding maximum resource labels (60)", func() {
+				labels := make([]hyperv1.GCPResourceLabel, 61)
+				for i := 0; i < 61; i++ {
+					labels[i] = hyperv1.GCPResourceLabel{
+						Key:   fmt.Sprintf("label%d", i),
+						Value: ptr.To("value"),
+					}
+				}
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.GCPPlatform
+					hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+							PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+						},
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "my-wif-pool",
+							ProviderID:    "my-wif-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+							},
+						},
+						ResourceLabels: labels,
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("must have at most 60 items"))
+			})
+		})
+
 		Context("Cluster and Infra ID validation", Label("ClusterID", "InfraID"), func() {
 			It("should reject when clusterID is not RFC4122 UUID", func() {
 				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
