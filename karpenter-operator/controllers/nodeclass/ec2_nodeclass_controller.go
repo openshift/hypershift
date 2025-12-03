@@ -229,6 +229,8 @@ func reconcileEC2NodeClass(ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftE
 		AssociatePublicIPAddress: openshiftEC2NodeClass.Spec.AssociatePublicIPAddress,
 		Tags:                     openshiftEC2NodeClass.Spec.Tags,
 		DetailedMonitoring:       openshiftEC2NodeClass.Spec.DetailedMonitoring,
+		Role:                     openshiftEC2NodeClass.Spec.Role,
+		InstanceProfile:          openshiftEC2NodeClass.Spec.InstanceProfile,
 		BlockDeviceMappings:      openshiftEC2NodeClass.Spec.KarpenterBlockDeviceMapping(),
 		InstanceStorePolicy:      openshiftEC2NodeClass.Spec.KarpenterInstanceStorePolicy(),
 	}

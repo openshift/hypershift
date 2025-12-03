@@ -61,6 +61,7 @@ const (
 
 // OpenshiftEC2NodeClassSpec defines the desired state of ClusterSizingConfiguration
 // This will contain configuration necessary to launch instances in AWS.
+// +kubebuilder:validation:XValidation:message="role and instanceProfile are mutually exclusive, specify one or the other",rule="(has(self.role) && !has(self.instanceProfile)) || (!has(self.role) && has(self.instanceProfile)) || (!has(self.role) && !has(self.instanceProfile))"
 type OpenshiftEC2NodeClassSpec struct {
 	// SubnetSelectorTerms is a list of or subnet selector terms. The terms are ORed.
 	// +kubebuilder:validation:XValidation:message="subnetSelectorTerms cannot be empty",rule="self.size() != 0"
@@ -106,6 +107,20 @@ type OpenshiftEC2NodeClassSpec struct {
 	// DetailedMonitoring controls if detailed monitoring is enabled for instances that are launched
 	// +optional
 	DetailedMonitoring *bool `json:"detailedMonitoring,omitempty"`
+
+	// Role is the AWS identity that nodes use.
+	// This field is mutually exclusive from instanceProfile.
+	// +kubebuilder:validation:XValidation:rule="self != ''",message="role cannot be empty"
+	// +optional
+	Role string `json:"role,omitempty"`
+
+	// InstanceProfile is the AWS entity that instances use.
+	// This field is mutually exclusive from role.
+	// The instance profile should already have a role assigned to it that Karpenter
+	// has PassRole permission on for instance launch using this instanceProfile to succeed.
+	// +kubebuilder:validation:XValidation:rule="self != ''",message="instanceProfile cannot be empty"
+	// +optional
+	InstanceProfile *string `json:"instanceProfile,omitempty"`
 }
 
 // SubnetSelectorTerm defines selection logic for a subnet used by Karpenter to launch nodes.

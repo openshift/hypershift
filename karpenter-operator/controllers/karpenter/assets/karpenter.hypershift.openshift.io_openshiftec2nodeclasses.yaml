@@ -158,12 +158,30 @@ spec:
                 description: DetailedMonitoring controls if detailed monitoring is
                   enabled for instances that are launched
                 type: boolean
+              instanceProfile:
+                description: |-
+                  InstanceProfile is the AWS entity that instances use.
+                  This field is mutually exclusive from role.
+                  The instance profile should already have a role assigned to it that Karpenter
+                  has PassRole permission on for instance launch using this instanceProfile to succeed.
+                type: string
+                x-kubernetes-validations:
+                - message: instanceProfile cannot be empty
+                  rule: self != ''
               instanceStorePolicy:
                 description: InstanceStorePolicy specifies how to handle instance-store
                   disks.
                 enum:
                 - RAID0
                 type: string
+              role:
+                description: |-
+                  Role is the AWS identity that nodes use.
+                  This field is mutually exclusive from instanceProfile.
+                type: string
+                x-kubernetes-validations:
+                - message: role cannot be empty
+                  rule: self != ''
               securityGroupSelectorTerms:
                 description: SecurityGroupSelectorTerms is a list of or security group
                   selector terms. The terms are ORed.
@@ -260,6 +278,11 @@ spec:
                 - message: tag contains a restricted tag matching karpenter.k8s.aws/ec2nodeclass
                   rule: self.all(k, k !='karpenter.k8s.aws/ec2nodeclass')
             type: object
+            x-kubernetes-validations:
+            - message: role and instanceProfile are mutually exclusive, specify one
+                or the other
+              rule: (has(self.role) && !has(self.instanceProfile)) || (!has(self.role)
+                && has(self.instanceProfile)) || (!has(self.role) && !has(self.instanceProfile))
           status:
             description: OpenshiftEC2NodeClassStatus defines the observed state of
               OpenshiftEC2NodeClass.
