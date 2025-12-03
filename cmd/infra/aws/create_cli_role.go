@@ -115,7 +115,9 @@ const (
 					"iam:DeleteRolePolicy",
 					"iam:UpdateRole",
 					"iam:DeleteOpenIDConnectProvider",
-					"iam:GetRolePolicy"
+					"iam:GetRolePolicy",
+					"iam:ListAttachedRolePolicies",
+					"iam:DetachRolePolicy"
 				],
 				"Resource": "*"
 			},
