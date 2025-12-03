@@ -4,21 +4,19 @@ metadata:
   annotations:
     build.appstudio.openshift.io/repo: https://github.com/openshift/hypershift?rev={{revision}}
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
-    build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
-    pipelinesascode.tekton.dev/cancel-in-progress: "true"
+    pipelinesascode.tekton.dev/cancel-in-progress: "false"
     pipelinesascode.tekton.dev/max-keep-runs: "3"
     pipelinesascode.tekton.dev/on-cel-expression: |
-      event == "pull_request"
-      && target_branch == "main"
+      event == "push"
+      && target_branch == "ho-hotfix-ocpbugs-61296-0170"
       && files.all.exists(x, !x.matches('^(?:docs|examples|enhancements|contrib)/|\\.md$|^(?:.*/)?(?:\\.gitignore|OWNERS|PROJECT|LICENSE|renovate\\.json)$'))
-    pipelinesascode.tekton.dev/pipeline: ".tekton/pipelines/common-operator-build.yaml"
   creationTimestamp:
   labels:
-    appstudio.openshift.io/application: hypershift-operator
-    appstudio.openshift.io/component: hypershift-operator-main
+    appstudio.openshift.io/application: hypershift-operator-hotfix-ocpbugs-61296-0170
+    appstudio.openshift.io/component: hypershift-operator-hotfix-ocpbugs-61296-0170
     pipelines.appstudio.openshift.io/type: build
-  name: hypershift-operator-main-on-pull-request
+  name: hypershift-operator-hotfix-ocpbugs-61296-0170-on-push
   namespace: crt-redhat-acm-tenant
 spec:
   params:
@@ -27,20 +25,31 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-operator/hypershift-operator-main:on-pr-{{revision}}
-  - name: image-expires-after
-    value: 5d
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-operator-hotfix-ocpbugs-61296-0170:{{revision}}
   - name: build-platforms
     value:
     - linux/x86_64
+    - linux/arm64
+    - linux/ppc64le
   - name: dockerfile
     value: Containerfile.operator
   - name: path-context
     value: .
+  - name: build-source-image
+    value: "true"
+  - name: hermetic
+    value: "true"
   pipelineRef:
-    name: hypershift-common-operator-build
+    resolver: git
+    params:
+      - name: url
+        value: "https://github.com/openshift/hypershift.git"
+      - name: revision
+        value: main
+      - name: pathInRepo
+        value: .tekton/pipelines/common-operator-build.yaml
   taskRunTemplate:
-    serviceAccountName: build-pipeline-hypershift-operator-main
+    serviceAccountName: build-pipeline-hypershift-operator-hotfix-ocpbugs-61296-0170
   workspaces:
   - name: git-auth
     secret:
