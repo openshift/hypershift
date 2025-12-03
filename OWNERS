@@ -10,31 +10,41 @@ filters:
   "^\\.tekton/.*":
     approvers:
     - konflux-approvers
-  # GCP-specific OWNERS
-  "^(cmd|control-plane-operator|hypershift-operator|product-cli)(/.*)?/.*gcp.*/.*":
+  # Platform-specific OWNERS
+  "^(api|cmd|control-plane-operator|docs|hypershift-operator|product-cli|test)/.*aws.*":
+    labels:
+    - area/platform/aws
+  "^(api|cmd|control-plane-operator|docs|hypershift-operator|product-cli|test)/.*azure.*":
+    labels:
+    - area/platform/azure
+  "^(api|cmd|control-plane-operator|docs|hypershift-operator|product-cli|test)/.*gcp.*":
     reviewers:
     - gcp-reviewers
-  "^api/.*gcp.*":
-    reviewers:
-    - gcp-reviewers
-  "^docs/.*gcp.*":
-    reviewers:
-    - gcp-reviewers
-  "^test/.*gcp.*":
-    reviewers:
-    - gcp-reviewers
-  # KubeVirt-specific OWNERS
-  "^(cmd|control-plane-operator|hypershift-operator|product-cli)(/.*)?/.*kubevirt.*/.*":
+    labels:
+    - area/platform/gcp
+  "^(api|cmd|control-plane-operator|docs|hypershift-operator|product-cli|test)/.*ibmcloud.*":
+    labels:
+    - area/platform/ibmcloud
+  "^(api|cmd|control-plane-operator|docs|hypershift-operator|product-cli|test)/.*kubevirt.*":
     approvers:
     - kubevirt-approvers
     reviewers:
     - kubevirt-reviewers
-  # OpenStack-specific OWNERS
-  "^(cmd|control-plane-operator|hypershift-operator|product-cli)(/.*)?/.*openstack.*/.*":
+    labels:
+    - area/platform/kubevirt
+  "^(cmd|docs|hypershift-operator)/.*none.*":
+    labels:
+    - area/platform/none
+  "^(api|cmd|control-plane-operator|docs|hypershift-operator|product-cli|test)/.*openstack.*":
     approvers:
     - openstack-approvers
     reviewers:
     - openstack-reviewers
+    labels:
+    - area/platform/openstack
+  "^(api|cmd|control-plane-operator|docs|hypershift-operator|product-cli|test)/.*powervs.*":
+    labels:
+    - area/platform/powervs
   "^test/integration/.*":
     approvers:
     - tech-leads
