@@ -22,6 +22,7 @@ package v1beta1
 type ManagedEtcdSpecApplyConfiguration struct {
 	Storage *ManagedEtcdStorageSpecApplyConfiguration `json:"storage,omitempty"`
 	Backup  *HCPEtcdBackupConfigApplyConfiguration    `json:"backup,omitempty"`
+	Shards  []ManagedEtcdShardSpecApplyConfiguration  `json:"shards,omitempty"`
 }
 
 // ManagedEtcdSpecApplyConfiguration constructs a declarative configuration of the ManagedEtcdSpec type for use with
@@ -43,5 +44,18 @@ func (b *ManagedEtcdSpecApplyConfiguration) WithStorage(value *ManagedEtcdStorag
 // If called multiple times, the Backup field is set to the value of the last call.
 func (b *ManagedEtcdSpecApplyConfiguration) WithBackup(value *HCPEtcdBackupConfigApplyConfiguration) *ManagedEtcdSpecApplyConfiguration {
 	b.Backup = value
+	return b
+}
+
+// WithShards adds the given value to the Shards field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the Shards field.
+func (b *ManagedEtcdSpecApplyConfiguration) WithShards(values ...*ManagedEtcdShardSpecApplyConfiguration) *ManagedEtcdSpecApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithShards")
+		}
+		b.Shards = append(b.Shards, *values[i])
+	}
 	return b
 }
