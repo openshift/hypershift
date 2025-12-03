@@ -87,9 +87,34 @@ func adaptConfig(cfg *openshiftcpv1.OpenShiftAPIServerConfig, hcp *hyperv1.Hoste
 		cfg.ProjectConfig.ProjectRequestTemplate = configNamespace + "/" + projectConfig.Spec.ProjectRequestTemplate.Name
 	}
 
-	if hcp.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
+	// Configure etcd URLs based on management type
+	switch hcp.Spec.Etcd.ManagementType {
+	case hyperv1.Unmanaged:
 		cfg.StorageConfig.EtcdConnectionInfo.URLs = []string{hcp.Spec.Etcd.Unmanaged.Endpoint}
+	case hyperv1.Managed:
+		// For managed etcd with sharding, find the default shard (with "/" prefix)
+		if hcp.Spec.Etcd.Managed != nil {
+			shards := hcp.Spec.Etcd.Managed.EffectiveShards(hcp)
+			for _, shard := range shards {
+				for _, prefix := range shard.ResourcePrefixes {
+					if prefix == "/" {
+						// Found the default shard - use its client service
+						var serviceName string
+						if shard.Name == "default" {
+							serviceName = "etcd-client"
+						} else {
+							serviceName = fmt.Sprintf("etcd-client-%s", shard.Name)
+						}
+						cfg.StorageConfig.EtcdConnectionInfo.URLs = []string{
+							fmt.Sprintf("https://%s.%s.svc:2379", serviceName, hcp.Namespace),
+						}
+						break
+					}
+				}
+			}
+		}
 	}
+
 
 	if len(featureGates) > 0 {
 		cfg.APIServerArguments["feature-gates"] = featureGates

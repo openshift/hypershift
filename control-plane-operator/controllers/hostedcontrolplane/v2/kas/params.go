@@ -25,32 +25,32 @@ const (
 )
 
 type KubeAPIServerConfigParams struct {
-	ExternalIPConfig                 *configv1.ExternalIPConfig
-	ClusterNetwork                   []string
-	ServiceNetwork                   []string
-	NamedCertificates                []configv1.APIServerNamedServingCert
-	KASPodPort                       int32
-	TLSSecurityProfile               *configv1.TLSSecurityProfile
-	AdditionalCORSAllowedOrigins     []string
-	InternalRegistryHostName         string
-	ExternalRegistryHostNames        []string
-	DefaultNodeSelector              string
-	AdvertiseAddress                 string
-	ServiceAccountIssuerURL          string
-	ServiceAccountMaxTokenExpiration string
-	CloudProvider                    string
-	CloudProviderConfigRef           *corev1.LocalObjectReference
-	EtcdURL                          string
-	FeatureGates                     []string
-	NodePortRange                    string
-	AuditWebhookEnabled              bool
-	ConsolePublicURL                 string
-	DisableProfiling                 bool
-	APIServerSTSDirectives           string
-	Authentication                   *configv1.AuthenticationSpec
-	MaxRequestsInflight              string
-	MaxMutatingRequestsInflight      string
-	GoAwayChance                     string
+	ExternalIPConfig             *configv1.ExternalIPConfig
+	ClusterNetwork               []string
+	ServiceNetwork               []string
+	NamedCertificates            []configv1.APIServerNamedServingCert
+	KASPodPort                   int32
+	TLSSecurityProfile           *configv1.TLSSecurityProfile
+	AdditionalCORSAllowedOrigins []string
+	InternalRegistryHostName     string
+	ExternalRegistryHostNames    []string
+	DefaultNodeSelector          string
+	AdvertiseAddress             string
+	ServiceAccountIssuerURL      string
+	CloudProvider                string
+	CloudProviderConfigRef       *corev1.LocalObjectReference
+	EtcdURL                      string
+	EtcdShardOverrides           map[string]string // maps resource prefix to URL
+	FeatureGates                 []string
+	NodePortRange                string
+	AuditWebhookEnabled          bool
+	ConsolePublicURL             string
+	DisableProfiling             bool
+	APIServerSTSDirectives       string
+	Authentication               *configv1.AuthenticationSpec
+	MaxRequestsInflight          string
+	MaxMutatingRequestsInflight  string
+	GoAwayChance                 string
 }
 
 func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) KubeAPIServerConfigParams {
@@ -79,13 +79,18 @@ func NewConfigParams(hcp *hyperv1.HostedControlPlane, featureGates []string) Kub
 		kasConfig.CloudProvider = aws.Provider
 	}
 
+	// Build etcd URLs based on management type
 	switch hcp.Spec.Etcd.ManagementType {
 	case hyperv1.Unmanaged:
 		if hcp.Spec.Etcd.Unmanaged != nil {
-			kasConfig.EtcdURL = hcp.Spec.Etcd.Unmanaged.Endpoint
+			shards := hcp.Spec.Etcd.Unmanaged.EffectiveShards()
+			kasConfig.EtcdURL, kasConfig.EtcdShardOverrides = buildUnmanagedEtcdConfig(shards)
 		}
 	case hyperv1.Managed:
-		kasConfig.EtcdURL = fmt.Sprintf("https://etcd-client.%s.svc:2379", hcp.Namespace)
+		if hcp.Spec.Etcd.Managed != nil {
+			shards := hcp.Spec.Etcd.Managed.EffectiveShards(hcp)
+			kasConfig.EtcdURL, kasConfig.EtcdShardOverrides = buildManagedEtcdConfig(shards, hcp.Namespace)
+		}
 	default:
 		kasConfig.EtcdURL = config.DefaultEtcdURL
 	}
@@ -213,4 +218,53 @@ func newKMSImages(hcp *hyperv1.HostedControlPlane) kmsImages {
 	}
 
 	return images
+}
+
+// buildManagedEtcdConfig constructs etcd URLs for managed etcd shards
+func buildManagedEtcdConfig(shards []hyperv1.ManagedEtcdShardSpec, namespace string) (string, map[string]string) {
+	var defaultURL string
+	overrides := make(map[string]string)
+
+	for _, shard := range shards {
+		// For backward compatibility, use "etcd-client" for the default shard
+		// Service naming must match resourceNameForShard() in manifests/etcd.go
+		var serviceName string
+		if shard.Name == "default" {
+			serviceName = "etcd-client"
+		} else {
+			serviceName = fmt.Sprintf("etcd-client-%s", shard.Name)  // Fixed: was etcd-%s-client
+		}
+		url := fmt.Sprintf("https://%s.%s.svc:2379", serviceName, namespace)
+
+		for _, prefix := range shard.ResourcePrefixes {
+			if prefix == "/" {
+				defaultURL = url
+			} else {
+				// Resource prefixes in API include trailing '#' (e.g., "/events#")
+				// --etcd-servers-overrides expects format: /events#https://url
+				// So we use prefix as-is (it already has the '#')
+				overrides[prefix] = url
+			}
+		}
+	}
+
+	return defaultURL, overrides
+}
+
+// buildUnmanagedEtcdConfig constructs etcd URLs for unmanaged etcd shards
+func buildUnmanagedEtcdConfig(shards []hyperv1.UnmanagedEtcdShardSpec) (string, map[string]string) {
+	var defaultURL string
+	overrides := make(map[string]string)
+
+	for _, shard := range shards {
+		for _, prefix := range shard.ResourcePrefixes {
+			if prefix == "/" {
+				defaultURL = shard.Endpoint
+			} else {
+				overrides[prefix] = shard.Endpoint
+			}
+		}
+	}
+
+	return defaultURL, overrides
 }

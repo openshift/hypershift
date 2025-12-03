@@ -73,6 +73,32 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	// pod crashing. For unmanaged, make no assumptions.
 	if hcp.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
 		util.RemoveInitContainer("wait-for-etcd", &deployment.Spec.Template.Spec)
+	} else if hcp.Spec.Etcd.ManagementType == hyperv1.Managed {
+		// Update wait-for-etcd init container to wait for ALL shard services
+		util.UpdateContainer("wait-for-etcd", deployment.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
+			shards := hcp.Spec.Etcd.Managed.EffectiveShards(hcp)
+
+			// Build list of all client service names
+			var serviceNames []string
+			for _, shard := range shards {
+				var serviceName string
+				if shard.Name == "default" {
+					serviceName = "etcd-client"
+				} else {
+					serviceName = fmt.Sprintf("etcd-client-%s", shard.Name)
+				}
+				serviceNames = append(serviceNames, serviceName)
+			}
+
+			// Build script that waits for all services
+			var scriptLines []string
+			scriptLines = append(scriptLines, "#!/bin/sh")
+			for _, serviceName := range serviceNames {
+				scriptLines = append(scriptLines, fmt.Sprintf("while ! nslookup %s.$(POD_NAMESPACE).svc; do sleep 1; done", serviceName))
+			}
+
+			c.Args = []string{"-c", strings.Join(scriptLines, "\n")}
+		})
 	}
 
 	// If the built-in OAuth stack is not enabled, there is no need to do the auth-related
