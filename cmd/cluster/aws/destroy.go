@@ -34,6 +34,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 	cmd.Flags().StringVar(&opts.CredentialSecretName, "secret-creds", opts.CredentialSecretName, "A Kubernetes secret with a platform credential, pull-secret and base-domain. The secret must exist in the supplied \"--namespace\"")
 	cmd.Flags().DurationVar(&opts.AWSPlatform.AwsInfraGracePeriod, "aws-infra-grace-period", opts.AWSPlatform.AwsInfraGracePeriod, "Timeout for destroying infrastructure in minutes")
 	cmd.Flags().BoolVar(&opts.AWSPlatform.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.AWSPlatform.PrivateZonesInClusterAccount, "In shared VPC infrastructure, delete private hosted zones in cluster account")
+	cmd.Flags().BoolVar(&opts.AWSPlatform.SharedRole, "shared-role", opts.AWSPlatform.SharedRole, "Delete the shared role instead of individual component roles")
 
 	opts.AWSPlatform.Credentials.BindFlags(cmd.Flags())
 	opts.AWSPlatform.VPCOwnerCredentials.BindVPCOwnerFlags(cmd.Flags())
@@ -104,6 +105,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 			CredentialsSecretData:        secretData,
 			VPCOwnerCredentialsOpts:      o.AWSPlatform.VPCOwnerCredentials,
 			PrivateZonesInClusterAccount: o.AWSPlatform.PrivateZonesInClusterAccount,
+			SharedRole:                   o.AWSPlatform.SharedRole,
 		}
 		if err := destroyOpts.Run(ctx); err != nil {
 			return fmt.Errorf("failed to destroy IAM: %w", err)

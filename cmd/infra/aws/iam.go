@@ -869,13 +869,26 @@ func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient ia
 		bindings[&output.KMSProviderRoleARN] = kmsProviderPolicy(o.KMSKeyARN)
 	}
 
-	for into, binding := range bindings {
-		trustPolicy := oidcTrustPolicy(providerARN, providerName, binding.serviceAccounts...)
-		arn, err := o.CreateOIDCRole(ctx, iamClient, binding, trustPolicy, logger)
+	if o.SharedRole {
+		// Create a single shared role with all policies
+		sharedRoleARN, err := o.CreateSharedOIDCRole(ctx, iamClient, bindings, providerARN, providerName, logger)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create OIDC Role %q: with trust policy %s and permission policy %s: %v", binding.name, trustPolicy, binding.policy, err)
+			return nil, fmt.Errorf("failed to create shared OIDC role: %v", err)
 		}
-		*into = arn
+		// Set all role ARNs to the shared role ARN
+		for into := range bindings {
+			*into = sharedRoleARN
+		}
+	} else {
+		// Create individual roles for each component
+		for into, binding := range bindings {
+			trustPolicy := oidcTrustPolicy(providerARN, providerName, binding.serviceAccounts...)
+			arn, err := o.CreateOIDCRole(ctx, iamClient, binding, trustPolicy, logger)
+			if err != nil {
+				return nil, fmt.Errorf("failed to create OIDC Role %q: with trust policy %s and permission policy %s: %v", binding.name, trustPolicy, binding.policy, err)
+			}
+			*into = arn
+		}
 	}
 
 	if o.UseROSAManagedPolicies {
@@ -975,6 +988,77 @@ func (o *CreateIAMOptions) CreateOIDCRole(ctx context.Context, client iamiface.I
 		return createIAMRoleOpts.CreateRoleWithManagedPolicy(ctx, client, binding.rosaManagedPolicyARN, logger)
 	}
 	return createIAMRoleOpts.CreateRoleWithInlinePolicy(ctx, client, logger)
+}
+
+// CreateSharedOIDCRole creates a single IAM Role with all policies from the bindings
+func (o *CreateIAMOptions) CreateSharedOIDCRole(ctx context.Context, client iamiface.IAMAPI, bindings map[*string]policyBinding, providerARN, providerName string, logger logr.Logger) (string, error) {
+	// Collect all service accounts from all bindings
+	var allServiceAccounts []string
+	serviceAccountsMap := make(map[string]bool)
+	for _, binding := range bindings {
+		for _, sa := range binding.serviceAccounts {
+			if !serviceAccountsMap[sa] {
+				serviceAccountsMap[sa] = true
+				allServiceAccounts = append(allServiceAccounts, sa)
+			}
+		}
+	}
+
+	// Create a combined trust policy with all service accounts
+	trustPolicy := oidcTrustPolicy(providerARN, providerName, allServiceAccounts...)
+
+	// Create the shared role
+	roleName := fmt.Sprintf("%s-shared-role", o.InfraID)
+	createIAMRoleOpts := CreateIAMRoleOptions{
+		RoleName:          roleName,
+		TrustPolicy:       trustPolicy,
+		additionalIAMTags: o.additionalIAMTags,
+		AllowAssume:       false,
+	}
+
+	// Check if any binding has allowAssumeRole set
+	for _, binding := range bindings {
+		if binding.allowAssumeRole {
+			createIAMRoleOpts.AllowAssume = true
+			break
+		}
+	}
+
+	arn, err := createIAMRoleOpts.CreateRole(ctx, client, logger)
+	if err != nil {
+		return "", fmt.Errorf("failed to create shared role: %w", err)
+	}
+
+	// Add all policies to the shared role as inline policies
+	for _, binding := range bindings {
+		policyName := fmt.Sprintf("%s-%s", roleName, binding.name)
+		_, err = client.PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
+			PolicyName:     aws.String(policyName),
+			PolicyDocument: aws.String(binding.policy),
+			RoleName:       aws.String(roleName),
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to add policy %q to shared role: %w", binding.name, err)
+		}
+		logger.Info("Added policy to shared role", "policy", binding.name, "role", roleName)
+	}
+
+	// Add assume role policy if needed
+	if createIAMRoleOpts.AllowAssume {
+		assumePolicyName := fmt.Sprintf("%s-assume", roleName)
+		_, err = client.PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
+			PolicyName:     aws.String(assumePolicyName),
+			PolicyDocument: aws.String(allowAssumeRolePolicy),
+			RoleName:       aws.String(roleName),
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to add assume role policy to shared role: %w", err)
+		}
+		logger.Info("Added assume role policy to shared role", "role", roleName)
+	}
+
+	logger.Info("Created shared role", "name", roleName, "arn", arn)
+	return arn, nil
 }
 
 func (o *CreateIAMOptions) CreateWorkerInstanceProfile(client iamiface.IAMAPI, profileName string, logger logr.Logger) error {

@@ -47,6 +47,7 @@ type CreateIAMOptions struct {
 	additionalIAMTags      []*iam.Tag
 	CreateKarpenterRoleARN bool
 	UseROSAManagedPolicies bool
+	SharedRole             bool
 }
 
 type CreateIAMOutput struct {
@@ -90,6 +91,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, create private hosted zones in cluster account")
 	cmd.Flags().BoolVar(&opts.UseROSAManagedPolicies, "use-rosa-managed-policies", opts.UseROSAManagedPolicies, "Use ROSA managed policies for the operator roles and worker instance profile")
 	cmd.Flags().StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
+	cmd.Flags().BoolVar(&opts.SharedRole, "shared-role", opts.SharedRole, "Create a single shared role with all role policies instead of individual component roles")
 
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 	opts.VPCOwnerCredentialsOpts.BindVPCOwnerFlags(cmd.Flags())
