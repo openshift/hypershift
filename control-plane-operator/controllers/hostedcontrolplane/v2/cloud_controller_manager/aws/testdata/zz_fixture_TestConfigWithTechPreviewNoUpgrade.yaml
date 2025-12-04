@@ -1,0 +1,15 @@
+apiVersion: v1
+data:
+  aws.conf: |-
+    [Global]
+    Zone = my-zone
+    VPC = my-vpc
+    KubernetesClusterID = my-infra-ID
+    SubnetID = my-subnet-ID
+    ClusterServiceLoadBalancerHealthProbeMode = Shared
+    ClusterServiceSharedLoadBalancerHealthProbePath = /healthz
+    ClusterServiceSharedLoadBalancerHealthProbePort = 10256
+    NLBSecurityGroupMode = Managed
+kind: ConfigMap
+metadata:
+  name: aws-cloud-config
