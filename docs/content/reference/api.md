@@ -4652,6 +4652,23 @@ APIServerNetworking
 how the APIServer is exposed inside a hosted cluster node.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>allocateNodeCidrs</code></br>
+<em>
+bool
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>allocateNodeCidrs is a flag that controls whether the KCM manages node CIDR
+allocation. When using networkType=Other, it is recommended to set this field
+to &ldquo;true&rdquo; if Flannel is used as the CNI, as it relies on this behavior.
+Default is false.
+This field can only be set to true when NetworkType is &ldquo;Other&rdquo;. Setting it to true
+with any other NetworkType will result in a validation error during cluster creation.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###ClusterVersionOperatorSpec { #hypershift.openshift.io/v1beta1.ClusterVersionOperatorSpec }
