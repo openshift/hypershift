@@ -13,11 +13,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go/service/elbv2"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/azureutil"
@@ -26,6 +28,7 @@ import (
 	integrationframework "github.com/openshift/hypershift/test/integration/framework"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/clientcmd"
@@ -2920,4 +2923,328 @@ func testSwitchEndpointAccess(ctx context.Context, client crclient.Client, hoste
 			e2eutil.WaitForGuestKubeconfigHostResolutionUpdate(t, ctx, host, endpointAccess)
 		}
 	}
+}
+
+func TestCCMCreateCluster(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	zones := strings.Split(globalOpts.ConfigurableClusterOptions.Zone.String(), ",")
+	if len(zones) >= 3 {
+		// CreateCluster also tests multi-zone workers work properly if a sufficient number of zones are configured
+		t.Logf("Sufficient zones available for InfrastructureAvailabilityPolicy HighlyAvailable")
+		clusterOpts.AWSPlatform.Zones = zones
+		clusterOpts.InfrastructureAvailabilityPolicy = string(hyperv1.HighlyAvailable)
+		clusterOpts.NodePoolReplicas = 1
+	}
+
+	featureSet := configv1.Default
+	if !e2eutil.IsLessThan(e2eutil.Version418) {
+		// Check if the env var TECH_PREVIEW_NO_UPGRADE is set by job level variable, if not set, use the default feature set
+		if os.Getenv("TECH_PREVIEW_NO_UPGRADE") == "true" {
+			featureSet = configv1.TechPreviewNoUpgrade
+		}
+	}
+
+	clusterOpts.FeatureSet = string(featureSet)
+
+	if globalOpts.Platform == hyperv1.AzurePlatform || globalOpts.Platform == hyperv1.AWSPlatform {
+		// Configure Ingress Operator with custom endpointPublishingStrategy before cluster creation
+		clusterOpts.BeforeApply = func(o crclient.Object) {
+			switch hc := o.(type) {
+			case *hyperv1.HostedCluster:
+				if hc.Spec.OperatorConfiguration == nil {
+					hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
+				}
+				if hc.Spec.OperatorConfiguration.IngressOperator == nil {
+					hc.Spec.OperatorConfiguration.IngressOperator = &hyperv1.IngressOperatorSpec{}
+				}
+				// Set a custom endpoint publishing strategy (Internal LoadBalancer for testing)
+				hc.Spec.OperatorConfiguration.IngressOperator.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+					Type: operatorv1.LoadBalancerServiceStrategyType,
+					LoadBalancer: &operatorv1.LoadBalancerStrategy{
+						Scope: operatorv1.InternalLoadBalancer,
+					},
+				}
+			}
+		}
+	}
+
+	clusterOpts.PodsLabels = map[string]string{
+		"hypershift-e2e-test-label": "test",
+	}
+	clusterOpts.Tolerations = []string{"key=hypershift-e2e-test-toleration,operator=Equal,value=true,effect=NoSchedule"}
+
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		// Sanity check the cluster by waiting for the nodes to report ready
+		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
+
+		t.Logf("fetching mgmt kubeconfig")
+		mgmtCfg, err := e2eutil.GetConfig()
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't get mgmt kubeconfig")
+		mgmtCfg.QPS = -1
+		mgmtCfg.Burst = -1
+
+		mgmtClients, err := integrationframework.NewClients(mgmtCfg)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't create mgmt clients")
+
+		guestKubeConfigSecretData := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
+
+		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+		guestConfig.QPS = -1
+		guestConfig.Burst = -1
+
+		guestClients, err := integrationframework.NewClients(guestConfig)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't create guest clients")
+
+		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
+		e2eutil.EnsureAPIUX(t, ctx, mgtClient, hostedCluster)
+		e2eutil.EnsureCustomLabels(t, ctx, mgtClient, hostedCluster)
+		e2eutil.EnsureCustomTolerations(t, ctx, mgtClient, hostedCluster)
+		e2eutil.EnsureAppLabel(t, ctx, mgtClient, hostedCluster)
+		e2eutil.EnsureFeatureGateStatus(t, ctx, guestClient)
+		e2eutil.EnsureCAPIFinalizers(t, ctx, mgtClient, hostedCluster)
+
+		// ensure KAS DNS name is configured with a KAS Serving cert
+		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)
+		e2eutil.EnsureDefaultSecurityGroupTags(t, ctx, mgtClient, hostedCluster, clusterOpts)
+
+		if globalOpts.Platform == hyperv1.AzurePlatform {
+			e2eutil.EnsureKubeAPIServerAllowedCIDRs(t, ctx, mgtClient, guestConfig, hostedCluster)
+		}
+		e2eutil.EnsureGlobalPullSecret(t, ctx, mgtClient, hostedCluster)
+
+		// Verify CPO override image if TEST_CPO_OVERRIDE=1 is set
+		if os.Getenv("TEST_CPO_OVERRIDE") == "1" {
+			controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+			e2eutil.VerifyCPOOverrideImage(t, ctx, mgtClient, controlPlaneNamespace, clusterOpts.ReleaseImage, string(globalOpts.Platform))
+		}
+
+		if globalOpts.Platform == hyperv1.AzurePlatform || globalOpts.Platform == hyperv1.AWSPlatform {
+			// ensure Ingress Operator configuration is properly applied
+			e2eutil.EnsureIngressOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
+		}
+
+		// CCM Managed Security Groups validation tests
+		if globalOpts.Platform == hyperv1.AWSPlatform {
+			controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+			// Test case 1: Validate managed security groups in TechPreviewNoUpgrade feature set
+			t.Run("When feature set is TechPreviewNoUpgrade it should have NLBSecurityGroupMode managed", func(t *testing.T) {
+				e2eutil.AtLeast(t, e2eutil.Version418)
+				if featureSet != configv1.TechPreviewNoUpgrade {
+					t.Skip("Skipping test: feature set is not TechPreviewNoUpgrade")
+				}
+
+				t.Logf("Validating aws-cloud-config ConfigMap contains NLBSecurityGroupMode = Managed")
+
+				e2eutil.EventuallyObject(t, ctx, "aws-cloud-config ConfigMap to contain NLBSecurityGroupMode = Managed",
+					func(ctx context.Context) (*corev1.ConfigMap, error) {
+						cm := &corev1.ConfigMap{}
+						err := mgtClient.Get(ctx, crclient.ObjectKey{
+							Namespace: controlPlaneNamespace,
+							Name:      "aws-cloud-config",
+						}, cm)
+						return cm, err
+					},
+					[]e2eutil.Predicate[*corev1.ConfigMap]{
+						func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
+							awsConf, exists := cm.Data["aws.conf"]
+							if !exists {
+								return false, "aws.conf key not found in ConfigMap", nil
+							}
+							if !strings.Contains(awsConf, "NLBSecurityGroupMode = Managed") {
+								return false, fmt.Sprintf("NLBSecurityGroupMode = Managed not found in aws.conf. Current config:\n%s", awsConf), nil
+							}
+							return true, "Successfully validated NLBSecurityGroupMode = Managed is present", nil
+						},
+					},
+					e2eutil.WithTimeout(2*time.Minute),
+				)
+			})
+
+			// Test case 2: Validate no managed security groups in Default feature set
+			t.Run("When feature set is Default it should not have NLBSecurityGroupMode managed", func(t *testing.T) {
+				e2eutil.AtLeast(t, e2eutil.Version418)
+				if featureSet != configv1.Default {
+					t.Skip("Skipping test: feature set is not Default")
+				}
+
+				t.Logf("Validating aws-cloud-config ConfigMap does not contain NLBSecurityGroupMode = Managed")
+
+				e2eutil.EventuallyObject(t, ctx, "aws-cloud-config ConfigMap to not contain NLBSecurityGroupMode = Managed",
+					func(ctx context.Context) (*corev1.ConfigMap, error) {
+						cm := &corev1.ConfigMap{}
+						err := mgtClient.Get(ctx, crclient.ObjectKey{
+							Namespace: controlPlaneNamespace,
+							Name:      "aws-cloud-config",
+						}, cm)
+						return cm, err
+					},
+					[]e2eutil.Predicate[*corev1.ConfigMap]{
+						func(cm *corev1.ConfigMap) (done bool, reasons string, err error) {
+							awsConf, exists := cm.Data["aws.conf"]
+							if !exists {
+								return false, "aws.conf key not found in ConfigMap", nil
+							}
+							if strings.Contains(awsConf, "NLBSecurityGroupMode = Managed") {
+								return false, fmt.Sprintf("NLBSecurityGroupMode = Managed should not be present in Default feature set. Current config:\n%s", awsConf), nil
+							}
+							return true, "Successfully validated NLBSecurityGroupMode = Managed is not present", nil
+						},
+					},
+					e2eutil.WithTimeout(2*time.Minute),
+				)
+			})
+
+			// Test case 3: Nested test for LoadBalancer with security groups validation (only for TechPreviewNoUpgrade)
+			// TODO: this test must be moved to default feature set when feature is promoted to GA.
+			t.Run("When feature set is TechPreviewNoUpgrade", func(t *testing.T) {
+				e2eutil.AtLeast(t, e2eutil.Version418)
+				if featureSet != configv1.TechPreviewNoUpgrade {
+					t.Skip("Skipping test: feature set is not TechPreviewNoUpgrade")
+				}
+
+				t.Run("LoadBalancer service should have security groups attached", func(t *testing.T) {
+					g := NewWithT(t)
+
+					// Create a test namespace in the guest cluster
+					testNS := &corev1.Namespace{}
+					testNS.Name = "test-ccm-nlb-sg"
+					t.Logf("Creating test namespace %s in guest cluster", testNS.Name)
+					err := guestClient.Create(ctx, testNS)
+					g.Expect(err).NotTo(HaveOccurred(), "failed to create test namespace")
+					defer func() {
+						t.Logf("Cleaning up test namespace %s", testNS.Name)
+						_ = guestClient.Delete(ctx, testNS)
+					}()
+
+					// Create a simple pod to back the service
+					testPod := &corev1.Pod{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-ccm-nlb-sg-pod",
+							Namespace: testNS.Name,
+							Labels: map[string]string{
+								"app": "test-ccm-nlb-sg",
+							},
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name:  "nginx",
+									Image: "registry.k8s.io/e2e-test-images/agnhost:2.45",
+									Ports: []corev1.ContainerPort{
+										{
+											ContainerPort: 8080,
+											Protocol:      corev1.ProtocolTCP,
+										},
+									},
+									Command: []string{"/agnhost", "netexec", "--http-port=8080"},
+								},
+							},
+						},
+					}
+					t.Logf("Creating test pod %s/%s", testPod.Namespace, testPod.Name)
+					err = guestClient.Create(ctx, testPod)
+					g.Expect(err).NotTo(HaveOccurred(), "failed to create test pod")
+
+					// Create a LoadBalancer service
+					testSvc := &corev1.Service{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "test-ccm-nlb-sg-svc",
+							Namespace: testNS.Name,
+						},
+						Spec: corev1.ServiceSpec{
+							Type: corev1.ServiceTypeLoadBalancer,
+							Selector: map[string]string{
+								"app": "test-ccm-nlb-sg",
+							},
+							Ports: []corev1.ServicePort{
+								{
+									Name:       "http",
+									Port:       80,
+									TargetPort: intstr.FromInt(8080),
+									Protocol:   corev1.ProtocolTCP,
+								},
+							},
+						},
+					}
+					t.Logf("Creating LoadBalancer service %s/%s", testSvc.Namespace, testSvc.Name)
+					err = guestClient.Create(ctx, testSvc)
+					g.Expect(err).NotTo(HaveOccurred(), "failed to create LoadBalancer service")
+
+					// Wait for the LoadBalancer to be provisioned and get hostname
+					var lbHostname string
+					e2eutil.EventuallyObject(t, ctx, "LoadBalancer service to have ingress hostname",
+						func(ctx context.Context) (*corev1.Service, error) {
+							svc := &corev1.Service{}
+							err := guestClient.Get(ctx, crclient.ObjectKey{
+								Namespace: testNS.Name,
+								Name:      testSvc.Name,
+							}, svc)
+							return svc, err
+						},
+						[]e2eutil.Predicate[*corev1.Service]{
+							func(svc *corev1.Service) (done bool, reasons string, err error) {
+								if len(svc.Status.LoadBalancer.Ingress) == 0 {
+									return false, "LoadBalancer ingress list is empty", nil
+								}
+								if svc.Status.LoadBalancer.Ingress[0].Hostname == "" {
+									return false, "LoadBalancer hostname is empty", nil
+								}
+								lbHostname = svc.Status.LoadBalancer.Ingress[0].Hostname
+								return true, fmt.Sprintf("LoadBalancer hostname is %s", lbHostname), nil
+							},
+						},
+						e2eutil.WithTimeout(5*time.Minute),
+					)
+
+					t.Logf("LoadBalancer provisioned with hostname: %s", lbHostname)
+
+					// Extract load balancer name from hostname
+					// AWS NLB hostname format: <name>-<id>.elb.<region>.amazonaws.com
+					lbName := strings.Split(lbHostname, ".")[0]
+					t.Logf("Extracted load balancer name: %s", lbName)
+
+					// Use AWS SDK to describe the load balancer and verify security groups
+					t.Logf("Verifying load balancer has security groups using AWS SDK")
+
+					// Get AWS credentials and region from cluster options
+					awsCredsFile := clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile
+					awsRegion := clusterOpts.AWSPlatform.Region
+
+					// Create AWS session and ELBv2 client
+					awsSession := awsutil.NewSession("e2e-ccm-nlb-sg", awsCredsFile, "", "", awsRegion)
+					awsConfig := awsutil.NewConfig()
+					elbv2Client := elbv2.New(awsSession, awsConfig)
+
+					// Describe the load balancer
+					t.Logf("Describing load balancer to check for security groups")
+					describeLBOutput, err := elbv2Client.DescribeLoadBalancersWithContext(ctx, &elbv2.DescribeLoadBalancersInput{
+						Names: []*string{&lbName},
+					})
+					g.Expect(err).NotTo(HaveOccurred(), "failed to describe load balancer")
+					g.Expect(len(describeLBOutput.LoadBalancers)).To(BeNumerically(">", 0), "no load balancers found with name %s", lbName)
+
+					lb := describeLBOutput.LoadBalancers[0]
+					t.Logf("Load balancer ARN: %s", *lb.LoadBalancerArn)
+					t.Logf("Load balancer Type: %s", *lb.Type)
+					t.Logf("Load balancer Security Groups: %v", lb.SecurityGroups)
+
+					// Verify security groups are attached
+					g.Expect(len(lb.SecurityGroups)).To(BeNumerically(">", 0), "load balancer should have security groups attached when NLBSecurityGroupMode = Managed")
+
+					t.Logf("Successfully validated that load balancer has %d security group(s) attached", len(lb.SecurityGroups))
+					for i, sg := range lb.SecurityGroups {
+						t.Logf("  Security Group %d: %s", i+1, *sg)
+					}
+				})
+			})
+		}
+	}).
+		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster", globalOpts.ServiceAccountSigningKey)
 }
