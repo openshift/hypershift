@@ -71,6 +71,10 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 			if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {
 				svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = strategy.LoadBalancer.Hostname
 			}
+			if !azureutil.IsAroHCP() {
+				svc.Spec.LoadBalancerSourceRanges = apiAllowedCIDRBlocks
+			}
+
 			if isPrivate {
 				// AWS Private link requires endpoint and service endpoints to exist in the same underlying zone.
 				// To ensure that requirement is satisfied in Regions with more than 3 zones, managed services create subnets in all of them.
@@ -95,9 +99,6 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	}
 	svc.Spec.Ports[0] = portSpec
 
-	if !azureutil.IsAroHCP() {
-		svc.Spec.LoadBalancerSourceRanges = apiAllowedCIDRBlocks
-	}
 	return nil
 }
 
