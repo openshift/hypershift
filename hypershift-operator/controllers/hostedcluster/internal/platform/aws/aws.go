@@ -298,14 +298,19 @@ func (p AWS) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 		}
 		return nil
 	}
-	for arn, secret := range map[string]*corev1.Secret{
-		hcluster.Spec.Platform.AWS.RolesRef.KubeCloudControllerARN:  KubeCloudControllerCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.AWS.RolesRef.NodePoolManagementARN:   NodePoolManagementCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN: ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.AWS.RolesRef.NetworkARN:              CloudNetworkConfigControllerCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.AWS.RolesRef.StorageARN:              AWSEBSCSIDriverCredsSecret(controlPlaneNamespace),
-	} {
-		if err := syncSecret(secret, arn); err != nil {
+	// Use a slice instead of a map to support shared roles where multiple secrets may have the same ARN
+	secretsToSync := []struct {
+		arn    string
+		secret *corev1.Secret
+	}{
+		{hcluster.Spec.Platform.AWS.RolesRef.KubeCloudControllerARN, KubeCloudControllerCredsSecret(controlPlaneNamespace)},
+		{hcluster.Spec.Platform.AWS.RolesRef.NodePoolManagementARN, NodePoolManagementCredsSecret(controlPlaneNamespace)},
+		{hcluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, ControlPlaneOperatorCredsSecret(controlPlaneNamespace)},
+		{hcluster.Spec.Platform.AWS.RolesRef.NetworkARN, CloudNetworkConfigControllerCredsSecret(controlPlaneNamespace)},
+		{hcluster.Spec.Platform.AWS.RolesRef.StorageARN, AWSEBSCSIDriverCredsSecret(controlPlaneNamespace)},
+	}
+	for _, item := range secretsToSync {
+		if err := syncSecret(item.secret, item.arn); err != nil {
 			errs = append(errs, err)
 		}
 	}
