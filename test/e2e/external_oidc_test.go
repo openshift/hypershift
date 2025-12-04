@@ -30,7 +30,9 @@ func TestExternalOIDC(t *testing.T) {
 		t.Skipf("skip external OIDC test if e2e.external-oidc-provider is not provided")
 	}
 
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()

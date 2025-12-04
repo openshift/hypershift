@@ -40,7 +40,9 @@ type NodePoolTestCase struct {
 }
 
 func TestNodePool(t *testing.T) {
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	nodePoolTestCasesPerHostedCluster := []HostedClusterNodePoolTestCases{
 		{
@@ -171,7 +173,9 @@ func TestNodePool(t *testing.T) {
 }
 
 func TestNodePoolMultiArch(t *testing.T) {
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 	nodePoolTestCasesPerHostedCluster := []HostedClusterNodePoolTestCases{
 		{
 			setup: func(t *testing.T) {
@@ -203,7 +207,9 @@ func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []Host
 			if nodePoolTestCases.setup != nil {
 				nodePoolTestCases.setup(t)
 			}
-			t.Parallel()
+			// Run serially instead of in parallel as autoSizingReserved
+			// requires higher system reserved resources for each node.
+			// t.Parallel()
 			clusterOpts := globalOpts.DefaultClusterOptions(t)
 			// We set replicas to 0 in order to allow the inner tests to
 			// create their own NodePools with the proper replicas
@@ -302,7 +308,9 @@ func (i *DummyInfraSetup) TeardownInfra(*testing.T) error {
 
 func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hcClient crclient.Client,
 	defaultNodepool hyperv1.NodePool, nodePoolTest NodePoolTest, manifestBuilder NodePoolManifestBuilder) {
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	nodePoolTest.Setup(t)
 	g := NewWithT(t)

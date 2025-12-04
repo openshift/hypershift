@@ -32,7 +32,9 @@ import (
 // TestHAEtcdChaos launches a HighlyAvailable control plane and executes a suite
 // of chaotic etcd tests which ensure no data is lost in the chaos.
 func TestHAEtcdChaos(t *testing.T) {
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
@@ -44,15 +46,21 @@ func TestHAEtcdChaos(t *testing.T) {
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		t.Run("SingleMemberRecovery", func(t *testing.T) {
-			t.Parallel()
+			// Run serially instead of in parallel as autoSizingReserved
+			// requires higher system reserved resources for each node.
+			// t.Parallel()
 			testSingleMemberRecovery(ctx, mgtClient, hostedCluster)
 		})
 		t.Run("KillRandomMembers", func(t *testing.T) {
-			t.Parallel()
+			// Run serially instead of in parallel as autoSizingReserved
+			// requires higher system reserved resources for each node.
+			// t.Parallel()
 			testKillRandomMembers(ctx, mgtClient, hostedCluster)
 		})
 		t.Run("KillAllMembers", func(t *testing.T) {
-			t.Parallel()
+			// Run serially instead of in parallel as autoSizingReserved
+			// requires higher system reserved resources for each node.
+			// t.Parallel()
 			testKillAllMembers(ctx, mgtClient, hostedCluster)
 		})
 		t.Run("SingleMemberRecoveryWithCorruption", func(t *testing.T) {
