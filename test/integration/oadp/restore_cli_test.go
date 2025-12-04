@@ -433,19 +433,19 @@ func validateRestoreNamespaces(t *testing.T, obj map[string]interface{}, opts *o
 		t.Fatalf("includedNamespaces should be []interface{}, got %T", includedNamespaces)
 	}
 
-	if len(opts.IncludeNamespaces) > 0 {
-		// Custom namespaces should match exactly
-		g.Expect(namespaces).To(ConsistOf(opts.IncludeNamespaces),
-			"Custom included namespaces should match opts")
-	} else {
-		// Default namespaces: hc-namespace and hc-namespace-hc-name
-		expectedDefault := []string{
-			opts.HCNamespace,
-			fmt.Sprintf("%s-%s", opts.HCNamespace, opts.HCName),
-		}
-		g.Expect(namespaces).To(ConsistOf(expectedDefault),
-			"Default included namespaces should follow 1NS=1HC pattern")
+	// Always expect default namespaces: hc-namespace and hc-namespace-hc-name
+	expectedNamespaces := []string{
+		opts.HCNamespace,
+		fmt.Sprintf("%s-%s", opts.HCNamespace, opts.HCName),
 	}
+
+	// Add any additional namespaces specified by the user
+	if len(opts.IncludeNamespaces) > 0 {
+		expectedNamespaces = append(expectedNamespaces, opts.IncludeNamespaces...)
+	}
+
+	g.Expect(namespaces).To(ConsistOf(expectedNamespaces),
+		"Included namespaces should include defaults plus any additional ones")
 
 	// Ensure namespaces are not empty
 	g.Expect(namespaces).ToNot(BeEmpty(), "includedNamespaces should not be empty")

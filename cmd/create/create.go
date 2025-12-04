@@ -20,6 +20,7 @@ func NewCommand() *cobra.Command {
 
 	cmd.AddCommand(oadp.NewCreateBackupCommand())
 	cmd.AddCommand(oadp.NewCreateRestoreCommand())
+	cmd.AddCommand(oadp.NewCreateScheduleCommand())
 	cmd.AddCommand(cluster.NewCreateCommands())
 	cmd.AddCommand(infra.NewCreateCommand())
 	cmd.AddCommand(infra.NewCreateIAMCommand())

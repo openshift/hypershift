@@ -45,3 +45,20 @@ func getDefaultResourcesForPlatform(platform string) []string {
 
 	return result
 }
+
+// buildIncludedNamespaces builds the list of namespaces to include in backup/schedule/restore operations
+// Always includes HC-namespace and HCP-namespace, and then adds any additional namespaces specified
+func buildIncludedNamespaces(hcNamespace, hcName string, additionalNamespaces []string) []string {
+	// Always include HC and HCP namespaces
+	namespaces := []string{
+		hcNamespace,
+		fmt.Sprintf("%s-%s", hcNamespace, hcName),
+	}
+
+	// Add any additional namespaces specified by the user
+	if len(additionalNamespaces) > 0 {
+		namespaces = append(namespaces, additionalNamespaces...)
+	}
+
+	return namespaces
+}

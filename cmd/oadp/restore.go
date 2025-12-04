@@ -8,9 +8,11 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/oadp"
+	utilroute "github.com/openshift/hypershift/support/util"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/validation"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -71,10 +73,10 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	cmd.Flags().StringVar(&opts.ScheduleName, "from-schedule", "", "Name of the schedule to restore from (uses latest backup, mutually exclusive with --from-backup)")
 
 	// Optional flags with defaults
-	cmd.Flags().StringVar(&opts.RestoreName, "name", "", "Custom name for the restore (auto-generated if not specified)")
+	cmd.Flags().StringVar(&opts.RestoreName, "name", "", "Custom name for the restore (auto-generated if not provided)")
 	cmd.Flags().StringVar(&opts.OADPNamespace, "oadp-namespace", "openshift-adp", "Namespace where OADP operator is installed")
 	cmd.Flags().StringVar(&opts.ExistingResourcePolicy, "existing-resource-policy", "update", "Policy for handling existing resources (none, update)")
-	cmd.Flags().StringSliceVar(&opts.IncludeNamespaces, "include-namespaces", nil, "Override included namespaces (by default includes hc-namespace and hc-namespace+hc-name)")
+	cmd.Flags().StringSliceVar(&opts.IncludeNamespaces, "include-additional-namespaces", nil, "Additional namespaces to include (HC and HCP namespaces are always included)")
 	cmd.Flags().BoolVar(&opts.Render, "render", false, "Render the restore object to STDOUT instead of creating it")
 	cmd.Flags().BoolVar(&restorePVs, "restore-pvs", true, "Restore persistent volumes")
 	cmd.Flags().BoolVar(&preserveNodePorts, "preserve-node-ports", true, "Preserve NodePort assignments during restore")
@@ -86,9 +88,23 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	return cmd
 }
 
+// generateRestoreName creates a restore name using the format: {hcName}-{hcNamespace}-{randomSuffix}
+// If the name is too long, it uses utils.ShortenName to ensure it doesn't exceed 63 characters
+func generateRestoreName(hcName, hcNamespace string) string {
+	randomSuffix := utilrand.String(6)
+	baseName := fmt.Sprintf("%s-%s", hcName, hcNamespace)
+	// Use ShortenName to ensure it doesn't exceed DNS1123 subdomain max length (63 chars)
+	return utilroute.ShortenName(baseName, randomSuffix, validation.DNS1123LabelMaxLength)
+}
+
 func (o *CreateOptions) RunRestore(ctx context.Context) error {
 	// Validate that exactly one of backup or schedule is specified
 	if err := o.validateBackupOrSchedule(); err != nil {
+		return err
+	}
+
+	// Validate restore name if provided
+	if err := o.ValidateRestoreName(); err != nil {
 		return err
 	}
 
@@ -198,6 +214,21 @@ func (o *CreateOptions) RunRestore(ctx context.Context) error {
 	return nil
 }
 
+// ValidateRestoreName validates the custom restore name if provided
+func (o *CreateOptions) ValidateRestoreName() error {
+	if o.RestoreName != "" {
+		// Kubernetes resource names must be 63 characters or less
+		if len(o.RestoreName) > 63 {
+			return fmt.Errorf("restore name '%s' is too long (%d characters). Kubernetes resource names must be 63 characters or less. Use --name to specify a shorter custom name", o.RestoreName, len(o.RestoreName))
+		}
+		// Use Kubernetes official DNS subdomain validation
+		if errs := validation.IsDNS1123Subdomain(o.RestoreName); len(errs) > 0 {
+			return fmt.Errorf("restore name '%s' is invalid: %s", o.RestoreName, strings.Join(errs, "; "))
+		}
+	}
+	return nil
+}
+
 func (o *CreateOptions) validateBackupOrSchedule() error {
 	hasBackup := o.BackupName != ""
 	hasSchedule := o.ScheduleName != ""
@@ -279,12 +310,6 @@ func (o *CreateOptions) validateScheduleExists(ctx context.Context) error {
 	return nil
 }
 
-// generateRestoreName creates a restore name using the format: {sourceName}-{hcName}-restore-{randomSuffix}
-func generateRestoreName(sourceName, hcName string, randomGen func(int) string) string {
-	randomSuffix := randomGen(6)
-	return fmt.Sprintf("%s-%s-restore-%s", sourceName, hcName, randomSuffix)
-}
-
 func (o *CreateOptions) GenerateRestoreObject() (*unstructured.Unstructured, string, error) {
 	// Apply default values if not set
 	if o.ExistingResourcePolicy == "" {
@@ -304,23 +329,14 @@ func (o *CreateOptions) GenerateRestoreObject() (*unstructured.Unstructured, str
 		o.PreserveNodePorts = &defaultPreserveNodePorts
 	}
 
-	var restoreName string
-
-	// Use custom name if provided, otherwise generate one
-	if o.RestoreName != "" {
-		restoreName = o.RestoreName
-	} else {
-		// Determine source name for restore name generation
-		sourceName := o.BackupName
-		if o.ScheduleName != "" {
-			sourceName = o.ScheduleName
-		}
-		// Generate restore name with hc-name included
-		restoreName = generateRestoreName(sourceName, o.HCName, utilrand.String)
+	// Use the name from flag, or generate if empty
+	restoreName := o.RestoreName
+	if restoreName == "" {
+		restoreName = generateRestoreName(o.HCName, o.HCNamespace)
 	}
 
 	// Build included namespaces list
-	includedNamespaces := o.buildIncludedNamespaces()
+	includedNamespaces := buildIncludedNamespaces(o.HCNamespace, o.HCName, o.IncludeNamespaces)
 
 	// Convert string slices to interface slices for unstructured objects
 	includedNamespacesInterface := make([]interface{}, len(includedNamespaces))
@@ -363,17 +379,4 @@ func (o *CreateOptions) GenerateRestoreObject() (*unstructured.Unstructured, str
 	}
 
 	return restore, restoreName, nil
-}
-
-func (o *CreateOptions) buildIncludedNamespaces() []string {
-	// If user specified custom namespaces, use those instead of defaults
-	if len(o.IncludeNamespaces) > 0 {
-		return o.IncludeNamespaces
-	}
-
-	// Otherwise use default namespaces for hosted cluster
-	return []string{
-		o.HCNamespace,
-		fmt.Sprintf("%s-%s", o.HCNamespace, o.HCName),
-	}
 }

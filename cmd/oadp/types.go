@@ -21,11 +21,15 @@ type CreateOptions struct {
 	BackupName   string
 	ScheduleName string
 
+	// Schedule-specific required flags
+	Schedule string
+
 	// Optional flags with defaults (common)
 	OADPNamespace string
 	Render        bool
 
 	// Backup-specific optional flags
+	BackupCustomName         string
 	StorageLocation          string
 	TTL                      time.Duration
 	SnapshotMoveData         bool
@@ -39,13 +43,15 @@ type CreateOptions struct {
 	RestorePVs             *bool
 	PreserveNodePorts      *bool
 
+	// Schedule-specific optional flags
+	Paused             bool
+	UseOwnerReferences bool
+	SkipImmediately    bool
+
 	// Client context (common)
 	Log    logr.Logger
 	Client client.Client
 }
-
-// randomStringGenerator is a function type for generating random strings
-type randomStringGenerator func(int) string
 
 var (
 	// Base resources common to all platforms

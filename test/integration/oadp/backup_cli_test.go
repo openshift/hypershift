@@ -262,3 +262,159 @@ func validateBackupPlatformResources(t *testing.T, obj map[string]interface{}, p
 		}
 	}
 }
+
+// TestBackupCustomNameIntegration validates that the --name flag works correctly with validation
+func TestBackupCustomNameIntegration(t *testing.T) {
+	tests := []struct {
+		name                  string
+		customName            string
+		expectValidBackup     bool
+		expectValidationError bool
+	}{
+		{
+			name:                  "Valid custom name",
+			customName:            "my-production-backup",
+			expectValidBackup:     true,
+			expectValidationError: false,
+		},
+		{
+			name:                  "Custom name with numbers",
+			customName:            "backup-cluster-123",
+			expectValidBackup:     true,
+			expectValidationError: false,
+		},
+		{
+			name:                  "Name too long (over 63 chars)",
+			customName:            "this-is-a-very-long-backup-name-that-exceeds-the-kubernetes-limit",
+			expectValidBackup:     false,
+			expectValidationError: true,
+		},
+		{
+			name:                  "Name with invalid characters",
+			customName:            "backup_with_underscores",
+			expectValidBackup:     false,
+			expectValidationError: true,
+		},
+		{
+			name:                  "Empty name (auto-generated)",
+			customName:            "",
+			expectValidBackup:     true,
+			expectValidationError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			opts := &oadp.CreateOptions{
+				HCName:           "test-cluster",
+				HCNamespace:      "test-cluster-ns",
+				BackupCustomName: tt.customName,
+				OADPNamespace:    "openshift-adp",
+				StorageLocation:  "default",
+				TTL:              2 * time.Hour,
+			}
+
+			// Test validation
+			err := opts.ValidateBackupName()
+			if tt.expectValidationError {
+				g.Expect(err).To(HaveOccurred(), "Expected validation error for name '%s'", tt.customName)
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred(), "Unexpected validation error for name '%s'", tt.customName)
+
+			// Test backup generation
+			if tt.expectValidBackup {
+				backup, backupName, err := opts.GenerateBackupObjectWithPlatform("AWS")
+				g.Expect(err).ToNot(HaveOccurred(), "Failed to generate backup object")
+
+				if tt.customName != "" {
+					g.Expect(backupName).To(Equal(tt.customName), "Custom backup name should be used")
+					g.Expect(backup.GetName()).To(Equal(tt.customName), "Backup object name should match custom name")
+				} else {
+					expectedPrefix := "test-cluster-test-cluster-ns-"
+					g.Expect(backupName).To(HavePrefix(expectedPrefix), "Should use auto-generated name pattern")
+					g.Expect(len(backupName)).To(Equal(len(expectedPrefix) + 6), "Auto-generated name should have 6-char random suffix")
+					g.Expect(backup.GetName()).To(Equal(backupName), "Backup object name should match generated name")
+				}
+			}
+		})
+	}
+}
+
+// TestBackupIncludedNamespacesIntegration validates that the --include-additional-namespaces flag works correctly
+func TestBackupIncludedNamespacesIntegration(t *testing.T) {
+	tests := []struct {
+		name               string
+		hcName             string
+		hcNamespace        string
+		includeNamespaces  []string
+		expectedNamespaces []string
+	}{
+		{
+			name:               "Default namespaces",
+			hcName:             "prod-cluster",
+			hcNamespace:        "production-ns",
+			includeNamespaces:  nil,
+			expectedNamespaces: []string{"production-ns", "production-ns-prod-cluster"},
+		},
+		{
+			name:               "Additional namespaces added to defaults",
+			hcName:             "test-cluster",
+			hcNamespace:        "test-ns",
+			includeNamespaces:  []string{"custom-app-ns", "custom-data-ns"},
+			expectedNamespaces: []string{"test-ns", "test-ns-test-cluster", "custom-app-ns", "custom-data-ns"},
+		},
+		{
+			name:               "Single additional namespace",
+			hcName:             "demo-cluster",
+			hcNamespace:        "demo-ns",
+			includeNamespaces:  []string{"demo-app"},
+			expectedNamespaces: []string{"demo-ns", "demo-ns-demo-cluster", "demo-app"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			opts := &oadp.CreateOptions{
+				HCName:            tt.hcName,
+				HCNamespace:       tt.hcNamespace,
+				IncludeNamespaces: tt.includeNamespaces,
+				OADPNamespace:     "openshift-adp",
+				StorageLocation:   "default",
+				TTL:               2 * time.Hour,
+			}
+
+			backup, _, err := opts.GenerateBackupObjectWithPlatform("AWS")
+			g.Expect(err).ToNot(HaveOccurred(), "Failed to generate backup object")
+
+			// Extract included namespaces from backup spec
+			spec, exists := backup.Object["spec"].(map[string]interface{})
+			g.Expect(exists).To(BeTrue(), "Backup should have spec field")
+
+			includedNamespacesInterface, exists := spec["includedNamespaces"]
+			g.Expect(exists).To(BeTrue(), "Backup spec should have includedNamespaces field")
+
+			// Convert to string slice
+			var includedNamespaces []string
+			if nsSlice, ok := includedNamespacesInterface.([]string); ok {
+				includedNamespaces = nsSlice
+			} else if nsInterfaceSlice, ok := includedNamespacesInterface.([]interface{}); ok {
+				for _, ns := range nsInterfaceSlice {
+					includedNamespaces = append(includedNamespaces, ns.(string))
+				}
+			} else {
+				t.Fatalf("includedNamespaces has unexpected type: %T", includedNamespacesInterface)
+			}
+
+			// Verify namespaces match expected
+			g.Expect(includedNamespaces).To(Equal(tt.expectedNamespaces),
+				"Included namespaces should match expected for test case: %s", tt.name)
+
+			t.Logf("✅ Backup included namespaces validated: %v", includedNamespaces)
+		})
+	}
+}
