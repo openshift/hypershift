@@ -457,6 +457,7 @@ And these are samples for each one of the roles Hypershift uses:
             {
                 "Action": [
                     "ec2:DescribeInstances",
+                    "ec2:DescribeInstanceTopology",
                     "ec2:DescribeImages",
                     "ec2:DescribeRegions",
                     "ec2:DescribeRouteTables",

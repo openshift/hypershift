@@ -308,9 +308,11 @@ func adjustAPIs(delegates aws.ServicesByDelegate) aws.ServicesByDelegate {
 			"DeregisterTargets",
 			"DescribeListeners",
 			"DescribeTargetGroups",
+			"DescribeTargetGroupAttributes",
 			"DescribeTargetHealth",
 			"ModifyListener",
 			"ModifyTargetGroup",
+			"ModifyTargetGroupAttributes",
 		),
 		"elbv2": sets.New(
 			"ApplySecurityGroupsToLoadBalancer",
