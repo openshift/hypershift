@@ -284,6 +284,7 @@ func (o *Options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
 		MultiArch:              o.ConfigurableClusterOptions.AWSMultiArch,
 		PublicOnly:             true,
 		UseROSAManagedPolicies: true,
+		SharedRole:             true,
 	}
 	if IsLessThan(semver.MustParse("4.16.0")) {
 		opts.PublicOnly = false
