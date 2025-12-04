@@ -2313,6 +2313,10 @@ func TestCreateCluster(t *testing.T) {
 	if !e2eutil.IsLessThan(e2eutil.Version418) {
 		clusterOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
 	}
+	if globalOpts.Platform == hyperv1.AWSPlatform {
+		// Use this test cluster to validate per-component roles
+		clusterOpts.AWSPlatform.SharedRole = false
+	}
 
 	clusterOpts.PodsLabels = map[string]string{
 		"hypershift-e2e-test-label": "test",
