@@ -1,17 +1,17 @@
 #!/bin/bash
+set -o nounset
 set -x
 
 # Prerequisites.
 #  setup_MIv3_kv.sh
-PREFIX="${PREFIX:-}"
-SUBSCRIPTION_ID=${SUBSCRIPTION_ID:-}
-LOCATION="${LOCATION:-}"
-PERSISTENT_RG_NAME="${PERSISTENT_RG_NAME:-}"
+PREFIX=${PREFIX:?"Provide prefix"}
+SUBSCRIPTION_ID=${SUBSCRIPTION_ID:?"Provide subscription ID"}
+LOCATION=${LOCATION:?"Provide location"}
+PERSISTENT_RG_NAME=${PERSISTENT_RG_NAME:?"Provide persistent resource group name"}
 
 # Local.
-AKS_RG="${AKS_RG:-}"
-AKS_CLUSTER_NAME="${AKS_CLUSTER_NAME:-}"
-KV_NAME="${PREFIX}"
+AKS_RG=${AKS_RG:?"Provide AKS resource group name"}
+AKS_CLUSTER_NAME=${AKS_CLUSTER_NAME:?"Provide AKS cluster name"}
 AKS_CP_MI_NAME="${PREFIX}-aks-mi"
 AKS_KUBELET_MI_NAME="${PREFIX}-aks-kubelet-mi"
 

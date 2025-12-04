@@ -1,4 +1,5 @@
 #!/bin/bash
+set -o nounset
 set -x
 
 # This creates an Azure HostedCluster with the VNET in its own RG and the NSG in its own NSG.
@@ -8,17 +9,17 @@ set -x
 # 1. Two different JSON files containing control plane service principals in one and workload managed identities in the
 # other, see steps 5 & 6 in setup_dev_environment.md.
 # 2. Set up the SA Token Issuer Private Key Path and OIDC Issue URL, see steps 15 and 16 in setup_dev_environment.md.
-LOCATION="${LOCATION:-}"
-AZURE_BASE_DOMAIN=${PARENT_DNS_ZONE:-}
-PULL_SECRET="${PULL_SECRET:-}"
-HYPERSHIFT_BINARY_PATH="${HYPERSHIFT_BINARY_PATH:-}"
-CP_OUTPUT_FILE="${CP_OUTPUT_FILE:-}"
-DP_OUTPUT_FILE="${DP_OUTPUT_FILE:-}"
-OIDC_ISSUER_URL="${OIDC_ISSUER_URL:-}"
-SA_TOKEN_ISSUER_PRIVATE_KEY_PATH="${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH:-}"
+LOCATION=${LOCATION:?"Provide location"}
+AZURE_BASE_DOMAIN=${PARENT_DNS_ZONE:?"Provide parent DNS zone name"}
+PULL_SECRET=${PULL_SECRET:?"Provide pull secret"}
+HYPERSHIFT_BINARY_PATH=${HYPERSHIFT_BINARY_PATH:?"Provide hypershift binary path"}
+CP_OUTPUT_FILE=${CP_OUTPUT_FILE:?"Provide control plane output file path"}
+DP_OUTPUT_FILE=${DP_OUTPUT_FILE:?"Provide data plane output file path"}
+OIDC_ISSUER_URL=${OIDC_ISSUER_URL:?"Provide OIDC issuer URL"}
+SA_TOKEN_ISSUER_PRIVATE_KEY_PATH=${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH:?"Provide service account token issuer private key path"}
 
 # Local.
-PREFIX="${PREFIX:-}"
+PREFIX=${PREFIX:?"Provide prefix"}
 MANAGED_RG_NAME="${PREFIX}-managed-rg"
 CUSTOMER_VNET_RG_NAME="${PREFIX}-customer-vnet-rg"
 CUSTOMER_NSG_RG_NAME="${PREFIX}-customer-nsg-rg"
