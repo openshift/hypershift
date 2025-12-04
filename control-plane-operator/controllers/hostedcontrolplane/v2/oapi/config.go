@@ -115,7 +115,6 @@ func adaptConfig(cfg *openshiftcpv1.OpenShiftAPIServerConfig, hcp *hyperv1.Hoste
 		}
 	}
 
-
 	if len(featureGates) > 0 {
 		cfg.APIServerArguments["feature-gates"] = featureGates
 	}
