@@ -91,6 +91,8 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.BoolVar(&opts.GenerateSSH, "generate-ssh", opts.GenerateSSH, "If true, generate SSH keys")
 	flags.StringVar(&opts.EtcdStorageClass, "etcd-storage-class", opts.EtcdStorageClass, "The persistent volume storage class for etcd data volumes")
 	flags.StringVar(&opts.EtcdStorageSize, "etcd-storage-size", opts.EtcdStorageSize, "The storage size for etcd data volume. Example: 8Gi")
+	flags.StringVar(&opts.EtcdShardingConfig, "etcd-sharding-config", opts.EtcdShardingConfig, "Path to YAML/JSON file containing etcd sharding configuration. Mutually exclusive with --etcd-shard.")
+	flags.StringArrayVar(&opts.EtcdShards, "etcd-shard", opts.EtcdShards, "Define an etcd shard inline with comma-separated key=value pairs. Keys: name (required), prefixes (pipe-separated, required), priority (Critical|High|Medium|Low), replicas (1|3), storage-size (e.g. 8Gi), storage-class, backup-schedule (cron format). Can be specified multiple times. Mutually exclusive with --etcd-sharding-config.")
 	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for hosted cluster resources.")
 	flags.StringArrayVar(&opts.ServiceCIDR, "service-cidr", opts.ServiceCIDR, "The CIDR of the service network. Can be specified multiple times.")
 	flags.StringArrayVar(&opts.ClusterCIDR, "cluster-cidr", opts.ClusterCIDR, "The CIDR of the cluster network. Can be specified multiple times.")
@@ -133,6 +135,8 @@ type RawCreateOptions struct {
 	ControlPlaneOperatorImage        string
 	EtcdStorageClass                 string
 	EtcdStorageSize                  string
+	EtcdShardingConfig               string
+	EtcdShards                       []string
 	FIPS                             bool
 	GenerateSSH                      bool
 	ImageContentSources              string
@@ -372,6 +376,18 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 			return nil, fmt.Errorf("failed parse ectd storage size: %w", err)
 		}
 		prototype.Cluster.Spec.Etcd.Managed.Storage.PersistentVolume.Size = &etcdStorageSize
+	}
+
+	// Build and validate ETCD sharding configuration
+	shards, err := buildEtcdShards(opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build etcd shard configuration: %w", err)
+	}
+	if len(shards) > 0 {
+		if err := validateEtcdSharding(shards); err != nil {
+			return nil, fmt.Errorf("invalid etcd sharding configuration: %w", err)
+		}
+		prototype.Cluster.Spec.Etcd.Managed.Shards = shards
 	}
 
 	sshKey, sshPrivateKey := opts.PublicKey, opts.PrivateKey
@@ -772,6 +788,23 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		return nil, fmt.Errorf("disableMultiNetwork is only allowed when networkType is 'Other' (got '%s')", opts.NetworkType)
 	}
 
+	// Validate ETCD sharding configuration
+	if opts.EtcdShardingConfig != "" && len(opts.EtcdShards) > 0 {
+		return nil, fmt.Errorf("--etcd-sharding-config and --etcd-shard are mutually exclusive")
+	}
+
+	if opts.EtcdShardingConfig != "" {
+		if _, err := os.Stat(opts.EtcdShardingConfig); err != nil {
+			return nil, fmt.Errorf("etcd sharding config file not found: %w", err)
+		}
+	}
+
+	if len(opts.EtcdShards) > 0 {
+		if _, err := parseInlineShards(opts.EtcdShards); err != nil {
+			return nil, fmt.Errorf("invalid --etcd-shard configuration: %w", err)
+		}
+	}
+
 	return &ValidatedCreateOptions{
 		validatedCreateOptions: &validatedCreateOptions{
 			RawCreateOptions: opts,
@@ -1157,5 +1190,271 @@ func validateVersion(ctx context.Context, versionCLI string, client crclient.Cli
 	if operatorVersion != versionCLI {
 		return fmt.Errorf("version mismatch detected, CLI: %s, Operator: %s", versionCLI, operatorVersion)
 	}
+	return nil
+}
+
+// buildEtcdShards orchestrates the building of etcd shard configuration from either
+// file-based or inline configuration options.
+func buildEtcdShards(opts *CreateOptions) ([]hyperv1.ManagedEtcdShardSpec, error) {
+	var shards []hyperv1.ManagedEtcdShardSpec
+	var err error
+
+	if opts.EtcdShardingConfig != "" {
+		shards, err = parseShardingConfigFile(opts.EtcdShardingConfig)
+		if err != nil {
+			return nil, err
+		}
+	} else if len(opts.EtcdShards) > 0 {
+		shards, err = parseInlineShards(opts.EtcdShards)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(shards) > 0 {
+		applyGlobalDefaults(shards, opts)
+	}
+
+	return shards, nil
+}
+
+// parseShardingConfigFile reads and parses a YAML or JSON file containing etcd sharding configuration.
+func parseShardingConfigFile(path string) ([]hyperv1.ManagedEtcdShardSpec, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read etcd sharding config file: %w", err)
+	}
+
+	var config struct {
+		Shards []hyperv1.ManagedEtcdShardSpec `json:"shards"`
+	}
+
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse etcd sharding config file: %w", err)
+	}
+
+	if len(config.Shards) == 0 {
+		return nil, fmt.Errorf("etcd sharding config file must contain at least one shard")
+	}
+
+	return config.Shards, nil
+}
+
+// parseInlineShards parses multiple inline shard definitions from --etcd-shard flags.
+func parseInlineShards(shardDefs []string) ([]hyperv1.ManagedEtcdShardSpec, error) {
+	shards := make([]hyperv1.ManagedEtcdShardSpec, 0, len(shardDefs))
+
+	for i, def := range shardDefs {
+		shard, err := parseInlineShard(def)
+		if err != nil {
+			return nil, fmt.Errorf("invalid shard definition at index %d: %w", i, err)
+		}
+		shards = append(shards, shard)
+	}
+
+	return shards, nil
+}
+
+// parseInlineShard parses a single inline shard definition.
+// Format: name=<name>,prefixes=<prefix1>|<prefix2>,priority=<priority>,replicas=<n>,storage-size=<size>,storage-class=<class>,backup-schedule=<schedule>
+func parseInlineShard(def string) (hyperv1.ManagedEtcdShardSpec, error) {
+	shard := hyperv1.ManagedEtcdShardSpec{}
+	pairs := strings.Split(def, ",")
+
+	var hasName, hasPrefixes bool
+
+	for _, pair := range pairs {
+		kv := strings.SplitN(pair, "=", 2)
+		if len(kv) != 2 {
+			return shard, fmt.Errorf("invalid key=value pair: %s", pair)
+		}
+
+		key := strings.TrimSpace(kv[0])
+		value := strings.TrimSpace(kv[1])
+
+		switch key {
+		case "name":
+			shard.Name = value
+			hasName = true
+		case "prefixes":
+			shard.ResourcePrefixes = strings.Split(value, "|")
+			hasPrefixes = true
+		case "priority":
+			shard.Priority = hyperv1.EtcdShardPriority(value)
+		case "replicas":
+			replicas, err := strconv.ParseInt(value, 10, 32)
+			if err != nil {
+				return shard, fmt.Errorf("invalid replicas value: %w", err)
+			}
+			r := int32(replicas)
+			shard.Replicas = &r
+		case "storage-size":
+			if shard.Storage == nil {
+				shard.Storage = &hyperv1.ManagedEtcdStorageSpec{
+					Type:             hyperv1.PersistentVolumeEtcdStorage,
+					PersistentVolume: &hyperv1.PersistentVolumeEtcdStorageSpec{},
+				}
+			}
+			size, err := resource.ParseQuantity(value)
+			if err != nil {
+				return shard, fmt.Errorf("invalid storage-size value: %w", err)
+			}
+			shard.Storage.PersistentVolume.Size = &size
+		case "storage-class":
+			if shard.Storage == nil {
+				shard.Storage = &hyperv1.ManagedEtcdStorageSpec{
+					Type:             hyperv1.PersistentVolumeEtcdStorage,
+					PersistentVolume: &hyperv1.PersistentVolumeEtcdStorageSpec{},
+				}
+			}
+			shard.Storage.PersistentVolume.StorageClassName = ptr.To(value)
+		case "backup-schedule":
+			shard.BackupSchedule = ptr.To(value)
+		default:
+			return shard, fmt.Errorf("unknown key: %s", key)
+		}
+	}
+
+	if !hasName {
+		return shard, fmt.Errorf("name is required")
+	}
+	if !hasPrefixes {
+		return shard, fmt.Errorf("prefixes is required")
+	}
+
+	return shard, nil
+}
+
+// applyGlobalDefaults applies global etcd configuration defaults to shards that don't have specific values.
+func applyGlobalDefaults(shards []hyperv1.ManagedEtcdShardSpec, opts *CreateOptions) {
+	for i := range shards {
+		// Apply default priority if not specified
+		if shards[i].Priority == "" {
+			shards[i].Priority = hyperv1.EtcdShardPriorityMedium
+		}
+
+		// Apply global storage defaults if shard doesn't have storage config
+		if shards[i].Storage == nil && (opts.EtcdStorageClass != "" || opts.EtcdStorageSize != "") {
+			shards[i].Storage = &hyperv1.ManagedEtcdStorageSpec{
+				Type:             hyperv1.PersistentVolumeEtcdStorage,
+				PersistentVolume: &hyperv1.PersistentVolumeEtcdStorageSpec{},
+			}
+		}
+
+		if shards[i].Storage != nil && shards[i].Storage.PersistentVolume != nil {
+			// Apply global storage class if not specified in shard
+			if shards[i].Storage.PersistentVolume.StorageClassName == nil && opts.EtcdStorageClass != "" {
+				shards[i].Storage.PersistentVolume.StorageClassName = ptr.To(opts.EtcdStorageClass)
+			}
+
+			// Apply global storage size if not specified in shard
+			if shards[i].Storage.PersistentVolume.Size == nil && opts.EtcdStorageSize != "" {
+				if size, err := resource.ParseQuantity(opts.EtcdStorageSize); err == nil {
+					shards[i].Storage.PersistentVolume.Size = &size
+				}
+			}
+		}
+	}
+}
+
+// validateEtcdSharding performs comprehensive validation of etcd shard configuration.
+func validateEtcdSharding(shards []hyperv1.ManagedEtcdShardSpec) error {
+	if len(shards) == 0 {
+		return fmt.Errorf("at least one shard is required")
+	}
+
+	if len(shards) > 10 {
+		return fmt.Errorf("maximum 10 shards allowed, got %d", len(shards))
+	}
+
+	seenNames := make(map[string]bool)
+	seenPrefixes := make(map[string]bool)
+	hasCatchAll := false
+
+	for i, shard := range shards {
+		// Validate shard name
+		if shard.Name == "" {
+			return fmt.Errorf("shard at index %d: name is required", i)
+		}
+
+		if len(shard.Name) > 15 {
+			return fmt.Errorf("shard %q: name must be 15 characters or less", shard.Name)
+		}
+
+		// Validate DNS-1035 compliance
+		errs := validation.IsDNS1035Label(shard.Name)
+		if len(errs) > 0 {
+			return fmt.Errorf("shard %q: name must be DNS-1035 compliant (lowercase alphanumeric + hyphens): %s", shard.Name, strings.Join(errs, ", "))
+		}
+
+		// Check for duplicate names
+		if seenNames[shard.Name] {
+			return fmt.Errorf("duplicate shard name: %q", shard.Name)
+		}
+		seenNames[shard.Name] = true
+
+		// Validate resource prefixes
+		if len(shard.ResourcePrefixes) == 0 {
+			return fmt.Errorf("shard %q: at least one resource prefix is required", shard.Name)
+		}
+
+		if len(shard.ResourcePrefixes) > 50 {
+			return fmt.Errorf("shard %q: maximum 50 resource prefixes allowed, got %d", shard.Name, len(shard.ResourcePrefixes))
+		}
+
+		for _, prefix := range shard.ResourcePrefixes {
+			// Check if this is the catch-all prefix
+			if prefix == "/" {
+				if hasCatchAll {
+					return fmt.Errorf("multiple shards have \"/\" prefix, only one catch-all shard is allowed")
+				}
+				hasCatchAll = true
+			} else {
+				// Non-catch-all prefixes must end with '#'
+				if !strings.HasSuffix(prefix, "#") {
+					return fmt.Errorf("shard %q: resource prefix %q must end with '#' (or be \"/\" for catch-all)", shard.Name, prefix)
+				}
+			}
+
+			// Check for duplicate prefixes across shards
+			if seenPrefixes[prefix] {
+				return fmt.Errorf("duplicate resource prefix across shards: %q", prefix)
+			}
+			seenPrefixes[prefix] = true
+		}
+
+		// Validate replicas if specified
+		if shard.Replicas != nil {
+			if *shard.Replicas != 1 && *shard.Replicas != 3 {
+				return fmt.Errorf("shard %q: replicas must be 1 or 3, got %d", shard.Name, *shard.Replicas)
+			}
+		}
+
+		// Validate priority if specified
+		if shard.Priority != "" {
+			validPriorities := []hyperv1.EtcdShardPriority{
+				hyperv1.EtcdShardPriorityCritical,
+				hyperv1.EtcdShardPriorityHigh,
+				hyperv1.EtcdShardPriorityMedium,
+				hyperv1.EtcdShardPriorityLow,
+			}
+			valid := false
+			for _, p := range validPriorities {
+				if shard.Priority == p {
+					valid = true
+					break
+				}
+			}
+			if !valid {
+				return fmt.Errorf("shard %q: invalid priority %q, must be one of: Critical, High, Medium, Low", shard.Name, shard.Priority)
+			}
+		}
+	}
+
+	// Ensure exactly one catch-all shard exists
+	if !hasCatchAll {
+		return fmt.Errorf("exactly one shard must have \"/\" in its resourcePrefixes to serve as the catch-all shard")
+	}
+
 	return nil
 }

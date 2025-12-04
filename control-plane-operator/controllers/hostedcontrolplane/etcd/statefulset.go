@@ -67,7 +67,7 @@ func ReconcileStatefulSet(
 	util.UpdateContainer("ensure-dns", sts.Spec.Template.Spec.InitContainers, func(c *corev1.Container) {
 		c.Image = params.ControlPlaneOperatorImage
 		// Update command to use shard-specific discovery service
-		discoveryService := sts.Spec.ServiceName  // This is already set to shard-specific discovery service
+		discoveryService := sts.Spec.ServiceName // This is already set to shard-specific discovery service
 		c.Args = []string{
 			"-c",
 			fmt.Sprintf("exec control-plane-operator resolve-dns ${HOSTNAME}.%s.${NAMESPACE}.svc", discoveryService),
@@ -124,7 +124,7 @@ func ReconcileStatefulSet(
 			discoveryService = "etcd-discovery"
 		} else {
 			podPrefix = fmt.Sprintf("etcd-%s", shard.Name)
-			discoveryService = fmt.Sprintf("etcd-discovery-%s", shard.Name)  // Fixed: was etcd-%s-discovery
+			discoveryService = fmt.Sprintf("etcd-discovery-%s", shard.Name) // Fixed: was etcd-%s-discovery
 		}
 
 		for i := range replicas {

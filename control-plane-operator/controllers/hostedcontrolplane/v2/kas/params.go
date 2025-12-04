@@ -232,7 +232,7 @@ func buildManagedEtcdConfig(shards []hyperv1.ManagedEtcdShardSpec, namespace str
 		if shard.Name == "default" {
 			serviceName = "etcd-client"
 		} else {
-			serviceName = fmt.Sprintf("etcd-client-%s", shard.Name)  // Fixed: was etcd-%s-client
+			serviceName = fmt.Sprintf("etcd-client-%s", shard.Name) // Fixed: was etcd-%s-client
 		}
 		url := fmt.Sprintf("https://%s.%s.svc:2379", serviceName, namespace)
 
