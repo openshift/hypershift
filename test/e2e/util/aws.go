@@ -72,6 +72,12 @@ func GetIAMClient(awsCreds, awsRegion string) iamiface.IAMAPI {
 	return iam.New(awsSession, awsConfig)
 }
 
+func GetEC2Client(awsCreds, awsRegion string) *ec2.EC2 {
+	awsSession := awsutil.NewSession("e2e-ec2", awsCreds, "", "", awsRegion)
+	awsConfig := awsutil.NewConfig()
+	return ec2.New(awsSession, awsConfig)
+}
+
 func PutRolePolicy(awsCreds, awsRegion, roleARN string, policy string) (func() error, error) {
 	iamClient := GetIAMClient(awsCreds, awsRegion)
 	roleName := roleARN[strings.LastIndex(roleARN, "/")+1:]
