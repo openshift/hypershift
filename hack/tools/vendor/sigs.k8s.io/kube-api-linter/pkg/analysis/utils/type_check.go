@@ -62,7 +62,7 @@ func (t *typeChecker) CheckNode(pass *analysis.Pass, node ast.Node) {
 }
 
 func (t *typeChecker) checkField(pass *analysis.Pass, field *ast.Field) {
-	fieldName := FieldName(field)
+	fieldName := GetQualifiedFieldName(pass, field)
 	if fieldName == "" {
 		return
 	}

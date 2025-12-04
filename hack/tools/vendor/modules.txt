@@ -2214,7 +2214,7 @@ sigs.k8s.io/controller-tools/pkg/webhook
 ## explicit; go 1.21
 sigs.k8s.io/json
 sigs.k8s.io/json/internal/golang/encoding/json
-# sigs.k8s.io/kube-api-linter v0.0.0-20251120155801-28b6469eac23
+# sigs.k8s.io/kube-api-linter v0.0.0-20251204152257-91d1bdbd8811
 ## explicit; go 1.24.0
 sigs.k8s.io/kube-api-linter
 sigs.k8s.io/kube-api-linter/pkg/analysis/arrayofstruct
@@ -2238,6 +2238,7 @@ sigs.k8s.io/kube-api-linter/pkg/analysis/nobools
 sigs.k8s.io/kube-api-linter/pkg/analysis/nodurations
 sigs.k8s.io/kube-api-linter/pkg/analysis/nofloats
 sigs.k8s.io/kube-api-linter/pkg/analysis/nomaps
+sigs.k8s.io/kube-api-linter/pkg/analysis/nonpointerstructs
 sigs.k8s.io/kube-api-linter/pkg/analysis/nonullable
 sigs.k8s.io/kube-api-linter/pkg/analysis/nophase
 sigs.k8s.io/kube-api-linter/pkg/analysis/noreferences

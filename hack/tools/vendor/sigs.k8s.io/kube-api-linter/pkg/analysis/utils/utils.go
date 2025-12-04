@@ -21,6 +21,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -157,6 +158,78 @@ func FieldName(field *ast.Field) string {
 	}
 
 	return ""
+}
+
+// GetStructName returns the name of the struct that the field is in.
+func GetStructName(pass *analysis.Pass, field *ast.Field) string {
+	_, astFile := getFilesForField(pass, field)
+	if astFile == nil {
+		return ""
+	}
+
+	return GetStructNameFromFile(astFile, field)
+}
+
+// GetStructNameFromFile returns the name of the struct that the field is in.
+func GetStructNameFromFile(file *ast.File, field *ast.Field) string {
+	var (
+		structName string
+		found      bool
+	)
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+
+		typeSpec, ok := n.(*ast.TypeSpec)
+		if !ok {
+			return true
+		}
+
+		structType, ok := typeSpec.Type.(*ast.StructType)
+		if !ok {
+			return true
+		}
+
+		structName = typeSpec.Name.Name
+
+		if structType.Fields == nil {
+			return true
+		}
+
+		if slices.Contains(structType.Fields.List, field) {
+			found = true
+			return false
+		}
+
+		return true
+	})
+
+	if found {
+		return structName
+	}
+
+	return ""
+}
+
+// GetQualifiedFieldName returns the qualified field name.
+func GetQualifiedFieldName(pass *analysis.Pass, field *ast.Field) string {
+	fieldName := FieldName(field)
+	structName := GetStructName(pass, field)
+
+	return fmt.Sprintf("%s.%s", structName, fieldName)
+}
+
+func getFilesForField(pass *analysis.Pass, field *ast.Field) (*token.File, *ast.File) {
+	tokenFile := pass.Fset.File(field.Pos())
+	for _, astFile := range pass.Files {
+		if astFile.FileStart == token.Pos(tokenFile.Base()) {
+			return tokenFile, astFile
+		}
+	}
+
+	return tokenFile, nil
 }
 
 func getFilesForType(pass *analysis.Pass, ident *ast.Ident) (*token.File, *ast.File) {
