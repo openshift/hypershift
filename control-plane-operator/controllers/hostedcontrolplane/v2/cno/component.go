@@ -110,23 +110,30 @@ type operand struct {
 }
 
 func checkOperandsRolloutStatus(cpContext component.WorkloadContext) (bool, error) {
-	operandsDeploymentsList := []operand{
-		{
-			DeploymentName:  "ovnkube-control-plane",
-			ContainerName:   "ovnkube-control-plane",
-			ReleaseImageKey: "ovn-kubernetes",
-		},
-		{
-			DeploymentName:  "network-node-identity",
-			ContainerName:   "approver",
-			ReleaseImageKey: "ovn-kubernetes",
-		},
-		{
-			DeploymentName:  "cloud-network-config-controller",
-			ContainerName:   "controller",
-			ReleaseImageKey: "cloud-network-config-controller",
-		},
+	var operandsDeploymentsList []operand
+
+	// OVN-specific operands are only checked when NetworkType is OVNKubernetes
+	if cpContext.HCP.Spec.Networking.NetworkType == hyperv1.OVNKubernetes {
+		operandsDeploymentsList = []operand{
+			{
+				DeploymentName:  "ovnkube-control-plane",
+				ContainerName:   "ovnkube-control-plane",
+				ReleaseImageKey: "ovn-kubernetes",
+			},
+			{
+				DeploymentName:  "network-node-identity",
+				ContainerName:   "approver",
+				ReleaseImageKey: "ovn-kubernetes",
+			},
+			{
+				DeploymentName:  "cloud-network-config-controller",
+				ContainerName:   "controller",
+				ReleaseImageKey: "cloud-network-config-controller",
+			},
+		}
 	}
+
+	// multus-admission-controller is needed for all network types when multi-network is enabled
 	if !util.IsDisableMultiNetwork(cpContext.HCP) {
 		operandsDeploymentsList = append(operandsDeploymentsList, operand{
 			DeploymentName:  "multus-admission-controller",
