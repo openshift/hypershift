@@ -2429,7 +2429,7 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecom
 	// temporary override for 4.21 to unblock CAPI bump to 1.11 which introduces a new API version.
 	// used image from multiArch release payload 4.20.5 (quay.io/openshift-release-dev/ocp-release@sha256:1f2c28ac126453a3b9e83b349822b9f1fb7662973a212f936b90fdc40e06eb58)
 	// TODO(https://issues.redhat.com/browse/CNTRLPLANE-1200): Remove this override once Hypershift installs the CAPI v1beta2 API version
-	if imageOverride == "" && releaseVersion.Major == 4 && releaseVersion.Minor == 21 {
+	if imageOverride == "" && releaseVersion.GTE(semver.MustParse("4.21.0-0")) {
 		imageOverride = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:f82ee3586bba6ea0479e3154f959123ef8ebdb2594c4ed9e5899b7ce728a3eb2"
 	}
 
