@@ -101,6 +101,131 @@ etcd:
 | Medium | None | Standard workload data |
 | Low | None | Transient or easily recreatable data |
 
+## CLI Usage
+
+HyperShift CLI supports etcd sharding configuration during cluster creation via two methods:
+
+### Method 1: Configuration File (Recommended)
+
+Use `--etcd-sharding-config` to specify a YAML or JSON file containing your shard configuration.
+
+**AWS Example:**
+```bash
+hypershift create cluster aws \
+  --name my-cluster \
+  --pull-secret /path/to/pull-secret.json \
+  --base-domain example.com \
+  --etcd-sharding-config ./etcd-shards.yaml \
+  --region us-east-1 \
+  --role-arn arn:aws:iam::123456789012:role/hypershift-role \
+  --sts-creds /path/to/sts-creds.json
+```
+
+**Azure Example:**
+```bash
+hypershift create cluster azure \
+  --name my-cluster \
+  --pull-secret /path/to/pull-secret.json \
+  --base-domain example.com \
+  --etcd-sharding-config ./etcd-shards.yaml \
+  --location eastus \
+  --credentials-file /path/to/azure-creds.json
+```
+
+**Configuration File Format** (etcd-shards.yaml):
+```yaml
+shards:
+  - name: main
+    resourcePrefixes: ["/"]
+    priority: Critical
+    replicas: 3
+    storage:
+      type: PersistentVolume
+      persistentVolume:
+        size: 16Gi
+        storageClassName: gp3-csi
+    backupSchedule: "*/30 * * * *"
+
+  - name: events
+    resourcePrefixes: ["/events#"]
+    priority: Low
+    replicas: 1
+    storage:
+      type: PersistentVolume
+      persistentVolume:
+        size: 8Gi
+
+  - name: leases
+    resourcePrefixes: ["/coordination.k8s.io/leases#"]
+    priority: Low
+    replicas: 1
+```
+
+### Method 2: Inline Flags (Simple Cases)
+
+Use `--etcd-shard` (repeatable) for simple 2-3 shard configurations:
+
+```bash
+hypershift create cluster aws \
+  --name my-cluster \
+  --pull-secret /path/to/pull-secret.json \
+  --base-domain example.com \
+  --etcd-shard name=main,prefixes=/,priority=Critical,replicas=3 \
+  --etcd-shard name=events,prefixes=/events#,priority=Low,replicas=1 \
+  --region us-east-1 \
+  --role-arn arn:aws:iam::123456789012:role/hypershift-role \
+  --sts-creds /path/to/sts-creds.json
+```
+
+**Inline Flag Format:**
+```
+--etcd-shard name=<name>,prefixes=<prefix1>|<prefix2>,priority=<priority>,replicas=<1|3>,storage-size=<size>,storage-class=<class>,backup-schedule=<cron>
+```
+
+**Required keys:**
+- `name`: Shard identifier (DNS-1035 compliant, max 15 chars)
+- `prefixes`: Pipe-separated resource prefixes (e.g., `/events#`)
+
+**Optional keys:**
+- `priority`: Critical, High, Medium (default), Low
+- `replicas`: 1 or 3 (defaults based on cluster availability policy)
+- `storage-size`: e.g., 8Gi, 16Gi
+- `storage-class`: Storage class name
+- `backup-schedule`: Cron format (e.g., "*/30 * * * *")
+
+### Global Storage Defaults
+
+You can specify global etcd storage settings that apply to all shards unless overridden:
+
+```bash
+hypershift create cluster aws \
+  --name my-cluster \
+  --etcd-storage-size 20Gi \
+  --etcd-storage-class fast-ssd \
+  --etcd-sharding-config ./etcd-shards.yaml \
+  ...
+```
+
+Shards without explicit storage configuration will inherit these global defaults.
+
+### Rendering Manifests
+
+Use `--render` to preview the generated HostedCluster manifest with sharding configuration:
+
+```bash
+hypershift create cluster aws \
+  --name my-cluster \
+  --etcd-sharding-config ./etcd-shards.yaml \
+  --render > cluster-manifest.yaml
+```
+
+### Important Notes
+
+- **Mutually Exclusive**: Cannot use both `--etcd-sharding-config` and `--etcd-shard` together
+- **Validation**: CLI validates shard configuration before cluster creation
+- **All Platforms**: Etcd sharding is available for all platforms (AWS, Azure, KubeVirt, OpenStack, Agent, etc.)
+- **Immutable**: Sharding configuration cannot be changed after cluster creation
+
 ### Unmanaged Etcd Sharding
 
 For externally managed etcd clusters:
@@ -212,7 +337,7 @@ oc get deployment -n <namespace> kube-apiserver -o yaml | grep etcd-servers
 ### Current Limitations
 
 1. **No in-place migration**: Cannot enable sharding on existing clusters
-2. **No CLI support**: Must configure via YAML manifest editing
+2. **Immutable configuration**: Cannot modify sharding config after cluster creation
 
 ### Design Constraints
 
@@ -248,12 +373,17 @@ oc get deployment -n <namespace> kube-apiserver -o yaml | grep etcd-servers
 
 ## Future Enhancements
 
-The following features are planned post-MVP:
+### Completed Features
+
+- ✅ **CLI integration**: `--etcd-sharding-config` and `--etcd-shard` flags (available in current version)
+
+### Planned Features
+
+The following features are planned for future releases:
 
 - **Dynamic shard rebalancing**: Move prefixes between shards
 - **In-place migration**: Enable sharding on existing clusters
 - **Auto-sharding**: Automatic prefix distribution based on metrics
-- **CLI integration**: `--etcd-sharding-config` flag support
 - **Grafana dashboards**: Pre-built shard visualization
 - **Health scoring**: Aggregated shard health metrics
 
