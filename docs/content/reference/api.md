@@ -6159,16 +6159,19 @@ Tags must conform to GCP naming conventions:
 </tr>
 <tr>
 <td>
-<code>preemptible</code></br>
+<code>provisioningModel</code></br>
 <em>
-bool
+<a href="#hypershift.openshift.io/v1beta1.GCPProvisioningModel">
+GCPProvisioningModel
+</a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>preemptible specifies whether node instances should be preemptible.
+<p>provisioningModel specifies the provisioning model for node instances.
 Preemptible instances cost less but can be terminated by GCP with 30 seconds notice.
-Default is false (standard instances).</p>
+Standard instances are regular VMs that run until explicitly stopped.
+If not specified, defaults to &ldquo;Standard&rdquo;.</p>
 </td>
 </tr>
 <tr>
@@ -6522,6 +6525,33 @@ string
 </td>
 </tr>
 </tbody>
+</table>
+###GCPProvisioningModel { #hypershift.openshift.io/v1beta1.GCPProvisioningModel }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>)
+</p>
+<p>
+<p>GCPProvisioningModel defines the provisioning model for GCP node instances.
+Follows GCP&rsquo;s provisioning model terminology for compute instances.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Preemptible&#34;</p></td>
+<td><p>GCPProvisioningModelPreemptible specifies preemptible instances.
+Preemptible instances are lower-cost instances that can be terminated by GCP
+with 30 seconds notice when capacity is needed elsewhere.</p>
+</td>
+</tr><tr><td><p>&#34;Standard&#34;</p></td>
+<td><p>GCPProvisioningModelStandard specifies standard (non-preemptible) instances.
+Standard instances run until explicitly stopped and are not subject to automatic termination.</p>
+</td>
+</tr></tbody>
 </table>
 ###GCPResourceReference { #hypershift.openshift.io/v1beta1.GCPResourceReference }
 <p>

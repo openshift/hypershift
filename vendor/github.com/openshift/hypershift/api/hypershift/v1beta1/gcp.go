@@ -31,6 +31,21 @@ const (
 	GCPEndpointAccessPrivate GCPEndpointAccessType = "Private"
 )
 
+// GCPProvisioningModel defines the provisioning model for GCP node instances.
+// Follows GCP's provisioning model terminology for compute instances.
+type GCPProvisioningModel string
+
+const (
+	// GCPProvisioningModelStandard specifies standard (non-preemptible) instances.
+	// Standard instances run until explicitly stopped and are not subject to automatic termination.
+	GCPProvisioningModelStandard GCPProvisioningModel = "Standard"
+
+	// GCPProvisioningModelPreemptible specifies preemptible instances.
+	// Preemptible instances are lower-cost instances that can be terminated by GCP
+	// with 30 seconds notice when capacity is needed elsewhere.
+	GCPProvisioningModelPreemptible GCPProvisioningModel = "Preemptible"
+)
+
 // GCPNetworkConfig specifies VPC configuration for GCP clusters and Private Service Connect endpoint creation.
 type GCPNetworkConfig struct {
 	// network is the VPC network name
@@ -313,13 +328,15 @@ type GCPNodePoolPlatform struct {
 	// +kubebuilder:validation:items:Pattern=`^[a-z][a-z0-9-]*[a-z0-9]$|^[a-z]$`
 	NetworkTags []string `json:"networkTags,omitempty"`
 
-	// preemptible specifies whether node instances should be preemptible.
+	// provisioningModel specifies the provisioning model for node instances.
 	// Preemptible instances cost less but can be terminated by GCP with 30 seconds notice.
-	// Default is false (standard instances).
+	// Standard instances are regular VMs that run until explicitly stopped.
+	// If not specified, defaults to "Standard".
 	//
 	// +optional
-	// +kubebuilder:default=false
-	Preemptible *bool `json:"preemptible,omitempty"`
+	// +kubebuilder:default=Standard
+	// +kubebuilder:validation:Enum=Standard;Preemptible
+	ProvisioningModel *GCPProvisioningModel `json:"provisioningModel,omitempty"`
 
 	// onHostMaintenance specifies the behavior when host maintenance occurs.
 	// For preemptible instances, this must be "TERMINATE".

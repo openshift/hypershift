@@ -136,9 +136,9 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.GCPPlatform,
 						GCP: &hyperv1.GCPNodePoolPlatform{
-							MachineType: "n1-standard-2",
-							Zone:        "us-central1-a",
-							Preemptible: ptr.To(true),
+							MachineType:       "n1-standard-2",
+							Zone:              "us-central1-a",
+							ProvisioningModel: ptr.To(hyperv1.GCPProvisioningModelPreemptible),
 						},
 					},
 				},

@@ -17,6 +17,10 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // GCPNodePoolPlatformApplyConfiguration represents a declarative configuration of the GCPNodePoolPlatform type for use
 // with apply.
 type GCPNodePoolPlatformApplyConfiguration struct {
@@ -27,7 +31,7 @@ type GCPNodePoolPlatformApplyConfiguration struct {
 	ServiceAccount    *GCPNodeServiceAccountApplyConfiguration `json:"serviceAccount,omitempty"`
 	ResourceLabels    map[string]string                        `json:"resourceLabels,omitempty"`
 	NetworkTags       []string                                 `json:"networkTags,omitempty"`
-	Preemptible       *bool                                    `json:"preemptible,omitempty"`
+	ProvisioningModel *hypershiftv1beta1.GCPProvisioningModel  `json:"provisioningModel,omitempty"`
 	OnHostMaintenance *string                                  `json:"onHostMaintenance,omitempty"`
 }
 
@@ -101,11 +105,11 @@ func (b *GCPNodePoolPlatformApplyConfiguration) WithNetworkTags(values ...string
 	return b
 }
 
-// WithPreemptible sets the Preemptible field in the declarative configuration to the given value
+// WithProvisioningModel sets the ProvisioningModel field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the Preemptible field is set to the value of the last call.
-func (b *GCPNodePoolPlatformApplyConfiguration) WithPreemptible(value bool) *GCPNodePoolPlatformApplyConfiguration {
-	b.Preemptible = &value
+// If called multiple times, the ProvisioningModel field is set to the value of the last call.
+func (b *GCPNodePoolPlatformApplyConfiguration) WithProvisioningModel(value hypershiftv1beta1.GCPProvisioningModel) *GCPNodePoolPlatformApplyConfiguration {
+	b.ProvisioningModel = &value
 	return b
 }
 

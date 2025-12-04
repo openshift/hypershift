@@ -106,12 +106,11 @@ func gcpMachineTemplateSpec(
 	networkTags := configureGCPNetworkTags(gcpPlatform.NetworkTags, infraName)
 
 	// Configure maintenance behavior
-	onHostMaintenance := configureGCPMaintenanceBehavior(gcpPlatform.OnHostMaintenance, gcpPlatform.Preemptible)
+	onHostMaintenance := configureGCPMaintenanceBehavior(gcpPlatform.OnHostMaintenance, gcpPlatform.ProvisioningModel)
 
-	preemptible := false
-	if gcpPlatform.Preemptible != nil {
-		preemptible = *gcpPlatform.Preemptible
-	}
+	// Determine preemptible setting for CAPG (which still uses boolean)
+	preemptible := gcpPlatform.ProvisioningModel != nil &&
+		*gcpPlatform.ProvisioningModel == hyperv1.GCPProvisioningModelPreemptible
 
 	spec := &capigcp.GCPMachineSpec{
 		InstanceType:          gcpPlatform.MachineType,
@@ -291,7 +290,7 @@ func configureGCPNetworkTags(userTags []string, infraID string) []string {
 }
 
 // configureGCPMaintenanceBehavior determines the host maintenance behavior.
-func configureGCPMaintenanceBehavior(userMaintenance *string, preemptible *bool) capigcp.HostMaintenancePolicy {
+func configureGCPMaintenanceBehavior(userMaintenance *string, provisioningModel *hyperv1.GCPProvisioningModel) capigcp.HostMaintenancePolicy {
 	if userMaintenance != nil && *userMaintenance != "" {
 		if *userMaintenance == "TERMINATE" {
 			return capigcp.HostMaintenancePolicyTerminate
@@ -300,7 +299,7 @@ func configureGCPMaintenanceBehavior(userMaintenance *string, preemptible *bool)
 	}
 
 	// For preemptible instances, must use TERMINATE
-	if preemptible != nil && *preemptible {
+	if provisioningModel != nil && *provisioningModel == hyperv1.GCPProvisioningModelPreemptible {
 		return capigcp.HostMaintenancePolicyTerminate
 	}
 

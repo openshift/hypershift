@@ -1107,13 +1107,17 @@ spec:
                         - MIGRATE
                         - TERMINATE
                         type: string
-                      preemptible:
-                        default: false
+                      provisioningModel:
+                        default: Standard
                         description: |-
-                          preemptible specifies whether node instances should be preemptible.
+                          provisioningModel specifies the provisioning model for node instances.
                           Preemptible instances cost less but can be terminated by GCP with 30 seconds notice.
-                          Default is false (standard instances).
-                        type: boolean
+                          Standard instances are regular VMs that run until explicitly stopped.
+                          If not specified, defaults to "Standard".
+                        enum:
+                        - Standard
+                        - Preemptible
+                        type: string
                       resourceLabels:
                         additionalProperties:
                           type: string

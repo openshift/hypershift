@@ -1556,9 +1556,9 @@ func (in *GCPNodePoolPlatform) DeepCopyInto(out *GCPNodePoolPlatform) {
 		*out = make([]string, len(*in))
 		copy(*out, *in)
 	}
-	if in.Preemptible != nil {
-		in, out := &in.Preemptible, &out.Preemptible
-		*out = new(bool)
+	if in.ProvisioningModel != nil {
+		in, out := &in.ProvisioningModel, &out.ProvisioningModel
+		*out = new(GCPProvisioningModel)
 		**out = **in
 	}
 	if in.OnHostMaintenance != nil {
