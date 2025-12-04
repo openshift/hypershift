@@ -1333,10 +1333,6 @@ linters:
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
-        text: 'requiredfields: field ForwardingRuleName should have the omitempty tag'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
         text: 'requiredfields: field LoadBalancerIP has a valid zero value'
       - linters:
           - kubeapilinter

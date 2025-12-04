@@ -47,14 +47,6 @@ linters:
         source: 'Konnectivity'
       - linters:
           - staticcheck
-        text: 'ST1019'
-        path: 'test/e2e/util/(util|kubevirt)\.go$'
-      - linters:
-          - staticcheck
-        text: 'ST1019'
-        path: 'support/util/util_test\.go$'
-      - linters:
-          - staticcheck
         text: 'QF1008'
       - linters:
           - staticcheck
