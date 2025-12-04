@@ -397,6 +397,13 @@ const (
 	// KubeAPIServerGoAwayChance allows the --goaway-chance parameter of the kube-apiserver to be overridden from its default of 0
 	KubeAPIServerGoAwayChance = "hypershift.openshift.io/kube-apiserver-goaway-chance"
 
+	// KubeAPIServerServiceAccountTokenMaxExpiration allows setting the maximum expiration duration
+	// for service account tokens issued by the kube-apiserver. This is useful during service account
+	// signing key rotation to enforce a limited token lifetime, ensuring tokens are re-issued with
+	// the new signing key. The value must be a valid Go duration string (e.g., "24h", "168h", "720h").
+	// Minimum value is 600s (10 minutes) per Kubernetes requirements.
+	KubeAPIServerServiceAccountTokenMaxExpiration = "hypershift.openshift.io/kube-apiserver-service-account-token-max-expiration"
+
 	// AWSMachinePublicIPs, if set to "true", results in an AWS machine template that creates machines with public IPs
 	// WARNING: This option is for development and testing purposes only
 	AWSMachinePublicIPs = "hypershift.openshift.io/aws-machine-public-ips"
