@@ -93,8 +93,14 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 			if tc.useSharedIngress {
 				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
 			}
+			hc := &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: tc.platform},
+				},
+			}
+
 			config, err := apiServerProxyConfig(image, tc.proxy, "fakeClusterID", externalAddress, internalAddress, 443, 8443,
-				tc.proxy, tc.noProxy, serviceNetwork, clusterNetwork, tc.platform)
+				tc.proxy, tc.noProxy, serviceNetwork, clusterNetwork, hc)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

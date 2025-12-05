@@ -93,7 +93,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		}
 	}
 
-	if sharedingress.UseSharedIngress() {
+	if sharedingress.UseSharedIngressByHC(hcluster) {
 		// Reconcile shared-ingress Network Policy.
 		// Let all ingress from shared-ingress namespace.
 		policy := networkpolicy.SharedIngressNetworkPolicy(controlPlaneNamespaceName)
