@@ -18,7 +18,6 @@ var _ component.ComponentOptions = &CAPIProviderOptions{}
 type CAPIProviderOptions struct {
 	deploymentSpec      *appsv1.DeploymentSpec
 	platformPolicyRules []rbacv1.PolicyRule
-	platformType        hyperv1.PlatformType
 }
 
 // IsRequestServing implements controlplanecomponent.ComponentOptions.
@@ -40,25 +39,12 @@ func NewComponent(deploymentSpec *appsv1.DeploymentSpec, platformPolicyRules []r
 	capi := &CAPIProviderOptions{
 		deploymentSpec:      deploymentSpec,
 		platformPolicyRules: platformPolicyRules,
-		platformType:        platformType,
 	}
 
 	builder := component.NewDeploymentComponent(ComponentName, capi).
 		WithAdaptFunction(capi.adaptDeployment).
 		WithPredicate(predicate).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{})
-
-	// Inject token minter for GCP platform to support Workload Identity Federation
-	if platformType == hyperv1.GCPPlatform {
-		builder = builder.InjectTokenMinterContainer(component.TokenMinterContainerOptions{
-			TokenType:               component.CloudToken,
-			ServiceAccountName:      "capi-gcp-controller-manager",
-			ServiceAccountNameSpace: "kube-system",
-			KubeconfigSecretName:    "service-network-admin-kubeconfig",
-		})
-	}
-
-	return builder.
+		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
 		WithManifestAdapter(
 			"role.yaml",
 			component.WithAdaptFunction(capi.adaptRole),
@@ -70,8 +56,19 @@ func NewComponent(deploymentSpec *appsv1.DeploymentSpec, platformPolicyRules []r
 		WithManifestAdapter(
 			"serviceaccount.yaml",
 			component.SetHostedClusterAnnotation(),
-		).
-		Build()
+		)
+
+	// Inject token minter for GCP platform to support Workload Identity Federation
+	if platformType == hyperv1.GCPPlatform {
+		builder = builder.InjectTokenMinterContainer(component.TokenMinterContainerOptions{
+			TokenType:               component.CloudToken,
+			ServiceAccountName:      "capi-gcp-controller-manager",
+			ServiceAccountNameSpace: "kube-system",
+			KubeconfigSecretName:    "service-network-admin-kubeconfig",
+		})
+	}
+
+	return builder.Build()
 }
 
 func predicate(cpContext component.WorkloadContext) (bool, error) {
