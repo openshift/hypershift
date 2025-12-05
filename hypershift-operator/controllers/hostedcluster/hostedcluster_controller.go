@@ -205,6 +205,7 @@ type HostedClusterReconciler struct {
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=velero.io,resources=backups,verbs=get;list
 
 func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateProvider, metricsSet metrics.MetricsSet, operatorNamespace string) error {
 	if r.Clock == nil {
@@ -332,6 +333,9 @@ func pauseHostedControlPlane(ctx context.Context, c client.Client, hcp *hyperv1.
 func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("reconciling")
+
+	// Initialize the Velero backup cache if needed
+	initVeleroBackupCache()
 
 	// Look up the HostedCluster instance to reconcile
 	hcluster := &hyperv1.HostedCluster{}
@@ -1210,14 +1214,43 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	// if paused: ensure associated HostedControlPlane (if it exists) is also paused and stop reconciliation
 	if isPaused, duration := hyperutil.IsReconciliationPaused(log, hcluster.Spec.PausedUntil); isPaused {
-		if err := pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
+		var (
+			shouldUnpause bool
+			err           error
+		)
+
+		if err = pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
 			return ctrl.Result{}, err
 		}
-		if err := pauseCAPICluster(ctx, r.Client, hcp); err != nil {
+		if err = pauseCAPICluster(ctx, r.Client, hcp); err != nil {
 			return ctrl.Result{}, err
 		}
+
+		// Check if this cluster was paused by OADP and if it should be unpaused
+		shouldUnpause, err = r.checkOADPRecovery(ctx, hcluster)
+		if err != nil {
+			log.Error(err, "error checking OADP recovery status", "cluster", hcluster.Name)
+			// Don't fail completely, just log and continue with normal pause behavior
+		}
+
+		if shouldUnpause {
+			// OADP recovery conditions are met, unpause the cluster
+			log.Info("OADP recovery triggered - unpausing hanged OADP backup HostedCluster and its NodePools", "cluster", hcluster.Name)
+			return r.resumeClusterFromHangedOADPBackup(ctx, hcluster, createOrUpdate)
+		}
+
+		// For OADP-paused clusters, ensure frequent reconciliation to detect backup completion
+		// even when pausedUntil is a boolean (which normally returns duration=0)
+		requeueDuration := duration
+		if hasOADPPauseAnnotations(hcluster) && duration == 0 {
+			requeueDuration = 30 * time.Second // Force frequent requeue for OADP monitoring
+			log.V(4).Info("forcing frequent requeue for OADP-paused cluster",
+				"cluster", hcluster.Name,
+				"requeueAfter", requeueDuration)
+		}
+
 		log.Info("Reconciliation paused", "name", req.NamespacedName, "pausedUntil", *hcluster.Spec.PausedUntil)
-		return ctrl.Result{RequeueAfter: duration}, nil
+		return ctrl.Result{RequeueAfter: requeueDuration}, nil
 	}
 
 	if err := r.defaultClusterIDsIfNeeded(ctx, hcluster); err != nil {
@@ -4825,44 +4858,6 @@ func FindNodePoolStatusCondition(conditions []hyperv1.NodePoolCondition, conditi
 		if conditions[i].Type == conditionType {
 			return &conditions[i]
 		}
-	}
-
-	return nil
-}
-
-// reconcileAdditionalTrustBundle reconciles the HostedControlPlane AdditionalTrustBundle ConfigMap by resolving
-// the source reference from the HostedCluster and syncing the CM in the control plane namespace.
-func (r *HostedClusterReconciler) reconcileAdditionalTrustBundle(ctx context.Context, hcluster *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN, controlPlaneNamespace string) error {
-	dest := controlplaneoperator.UserCABundle(controlPlaneNamespace)
-	if hcluster.Spec.AdditionalTrustBundle == nil {
-		// If the HostedCluster has no additional trust bundle, delete the destination ConfigMap if it exists
-		if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, dest); err != nil {
-			return fmt.Errorf("failed to delete unused additionalTrustBundle: %w", err)
-		}
-		return nil
-	}
-
-	var src corev1.ConfigMap
-	err := r.Client.Get(ctx, client.ObjectKey{Namespace: hcluster.Namespace, Name: hcluster.Spec.AdditionalTrustBundle.Name}, &src)
-	if err != nil {
-		return fmt.Errorf("failed to get hostedcluster AdditionalTrustBundle ConfigMap %s: %w", hcluster.Spec.AdditionalTrustBundle.Name, err)
-	}
-	if err := ensureReferencedResourceAnnotation(ctx, r.Client, hcluster.Name, &src); err != nil {
-		return fmt.Errorf("failed to set referenced resource annotation: %w", err)
-	}
-	_, err = createOrUpdate(ctx, r.Client, dest, func() error {
-		srcData, srcHasData := src.Data["ca-bundle.crt"]
-		if !srcHasData {
-			return fmt.Errorf("hostedcluster AdditionalTrustBundle configmap %q must have a ca-bundle.crt key", src.Name)
-		}
-		if dest.Data == nil {
-			dest.Data = map[string]string{}
-		}
-		dest.Data["ca-bundle.crt"] = srcData
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to reconcile controlplane AdditionalTrustBundle configmap: %w", err)
 	}
 
 	return nil

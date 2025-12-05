@@ -62,6 +62,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
@@ -212,6 +213,15 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		Client: crclient.Options{
 			Cache: &crclient.CacheOptions{
 				Unstructured: true,
+				DisableFor: []crclient.Object{
+					// Disable caching for Velero Backup resources to avoid cluster-scope permissions requirement
+					&unstructured.Unstructured{
+						Object: map[string]interface{}{
+							"apiVersion": "velero.io/v1",
+							"kind":       "Backup",
+						},
+					},
+				},
 			},
 		},
 		LeaderElection:                true,
