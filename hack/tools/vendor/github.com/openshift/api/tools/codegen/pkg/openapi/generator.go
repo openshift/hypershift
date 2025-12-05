@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 
 	"github.com/openshift/api/tools/codegen/pkg/generation"
+	"k8s.io/gengo/v2/parser"
+	"k8s.io/gengo/v2/types"
 	"k8s.io/klog/v2"
 )
 
@@ -48,6 +50,13 @@ type Options struct {
 	// Verify determines whether the generator should verify the content instead
 	// of updating the generated file.
 	Verify bool
+
+	// GlobalParser is the parser for the global package.
+	// This loads all packages found in the base directory.
+	GlobalParser *parser.Parser
+
+	// Universe is the universe for the global package.
+	Universe types.Universe
 }
 
 // generator implements the generation.Generator interface.
@@ -57,6 +66,8 @@ type generator struct {
 	outputFileName    string
 	outputPackagePath string
 	verify            bool
+	globalParser      *parser.Parser
+	universe          types.Universe
 }
 
 // NewGenerator builds a new openapi generator.
@@ -76,6 +87,8 @@ func NewGenerator(opts Options) generation.MultiGroupGenerator {
 		outputFileName:    outputFileBaseName,
 		outputPackagePath: outputPackagePath,
 		verify:            opts.Verify,
+		globalParser:      opts.GlobalParser,
+		universe:          opts.Universe,
 	}
 }
 
@@ -109,7 +122,7 @@ func (g *generator) GenGroups(groupCtxs []generation.APIGroupContext) error {
 		headerFilePath = tmpFile.Name()
 	}
 
-	if err := generateOpenAPIDefinitions(inputPaths, g.outputPackagePath, g.outputFileName, headerFilePath, g.verify); err != nil {
+	if err := generateOpenAPIDefinitions(g.globalParser, g.universe, inputPaths, g.outputPackagePath, g.outputFileName, headerFilePath, g.verify); err != nil {
 		return fmt.Errorf("could not generate openapi definitions: %w", err)
 	}
 

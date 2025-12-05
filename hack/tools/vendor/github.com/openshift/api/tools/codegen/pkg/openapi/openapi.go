@@ -6,16 +6,18 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/openshift/api/tools/codegen/pkg/generation"
 	"github.com/openshift/api/tools/codegen/pkg/utils"
-	"k8s.io/gengo/v2"
 	gengenerator "k8s.io/gengo/v2/generator"
+	"k8s.io/gengo/v2/parser"
+	"k8s.io/gengo/v2/types"
 	"k8s.io/klog/v2"
 	"k8s.io/kube-openapi/cmd/openapi-gen/args"
 	"k8s.io/kube-openapi/pkg/generators"
 )
 
 // generateDeepcopyFunctions generates the OpenAPI functions for the given API package paths.
-func generateOpenAPIDefinitions(inputPaths []string, outputPackagePath, outputFileName, headerFilePath string, verify bool) error {
+func generateOpenAPIDefinitions(globalParser *parser.Parser, universe types.Universe, inputPaths []string, outputPackagePath, outputFileName, headerFilePath string, verify bool) error {
 	// This is the expected path to the output file.
 	// This is what we will compare against if verify is true.
 	outputFile := filepath.Join(outputPackagePath, outputFileName)
@@ -47,11 +49,12 @@ func generateOpenAPIDefinitions(inputPaths []string, outputPackagePath, outputFi
 		return generators.GetTargets(context, arguments)
 	}
 
-	if err := gengo.Execute(
+	if err := generation.Execute(
+		globalParser,
+		universe,
 		generators.NameSystems(),
 		generators.DefaultNameSystem(),
 		myTargets,
-		gengo.StdBuildTag,
 		inputPaths,
 	); err != nil {
 		return fmt.Errorf("error executing openapi generator: %w", err)
