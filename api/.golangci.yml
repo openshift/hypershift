@@ -14,7 +14,13 @@ linters:
         original-url: sigs.k8s.io/kube-api-linter
         settings:
           linters:
+            # Disable all default linters and only enable specific ones.
+            # This prevents new default linters from causing unexpected failures
+            # when upgrading kube-api-linter.
+            disable:
+              - "*"
             enable:
+              - conditions
               - maxlength
               - nobools
               - nomaps
