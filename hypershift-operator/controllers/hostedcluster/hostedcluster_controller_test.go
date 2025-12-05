@@ -50,6 +50,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/clock"
 	clocktesting "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
@@ -4795,6 +4796,58 @@ func TestReconcileAdditionalTrustBundle(t *testing.T) {
 					Namespace: controlPlaneNamespace,
 				}, destConfigMap)
 				g.Expect(errors2.IsNotFound(err)).To(BeTrue())
+			}
+		})
+	}
+}
+
+func TestValidateNodePortVsServiceNetwork(t *testing.T) {
+	testCases := []struct {
+		name              string
+		hostedCluster     *hyperv1.HostedCluster
+		expectedErrorList field.ErrorList
+	}{
+		{
+			name: "no nodeport, error",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+							},
+						},
+					},
+				},
+			},
+			expectedErrorList: field.ErrorList{field.Required(field.NewPath("spec.Services[0].NodePort"), "Nodeport can not be empty")},
+		},
+		{
+			name: "nodeport set, success",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+								NodePort: &hyperv1.NodePortPublishingStrategy{
+									Address: "1.1.1.1",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := validateNodePortVsServiceNetwork(tc.hostedCluster)
+			if diff := cmp.Diff(actual, tc.expectedErrorList, equateErrorMessage); diff != "" {
+				t.Errorf("actual validation result differs from expected: %s", diff)
 			}
 		})
 	}

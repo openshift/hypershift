@@ -4001,7 +4001,10 @@ func checkAdvertiseAddressOverlapping(hc *hyperv1.HostedCluster) field.ErrorList
 func validateNodePortVsServiceNetwork(hc *hyperv1.HostedCluster) field.ErrorList {
 	var errs field.ErrorList
 
-	ip := getNodePortIP(hc)
+	ip, err := getNodePortIP(hc)
+	if err != nil {
+		errs = append(errs, err)
+	}
 	if ip != nil {
 		// Validate that the nodeport IP is not within the ServiceNetwork CIDR.
 		for _, cidr := range hc.Spec.Networking.ServiceNetwork {
@@ -4767,13 +4770,16 @@ func (r *HostedClusterReconciler) reconcileSREMetricsConfig(ctx context.Context,
 	return nil
 }
 
-func getNodePortIP(hcluster *hyperv1.HostedCluster) net.IP {
-	for _, svc := range hcluster.Spec.Services {
+func getNodePortIP(hcluster *hyperv1.HostedCluster) (net.IP, *field.Error) {
+	for idx, svc := range hcluster.Spec.Services {
 		if svc.Service == hyperv1.APIServer && svc.Type == hyperv1.NodePort {
-			return net.ParseIP(svc.NodePort.Address)
+			if svc.NodePort == nil {
+				return nil, field.Required(field.NewPath(fmt.Sprintf("spec.Services[%v].NodePort", idx)), "Nodeport can not be empty")
+			}
+			return net.ParseIP(svc.NodePort.Address), nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func ensureReferencedResourceAnnotation(ctx context.Context, client client.Client, hcName string, obj client.Object) error {
