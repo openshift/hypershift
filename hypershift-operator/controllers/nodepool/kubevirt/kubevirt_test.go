@@ -394,6 +394,10 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 							memoryTmpltOpt("5Gi"),
 							cpuTmpltOpt(4),
 							storageTmpltOpt("32Gi"),
+							annotationsTmpltOpt(map[string]string{
+								// Skip the kubevirt.io/allow-pod-bridge-network-live-migration annotation
+								suppconfig.PodSafeToEvictLocalVolumesKey: strings.Join(LocalStorageVolumes, ","),
+							}),
 							interfacesTmpltOpt([]kubevirtv1.Interface{
 								{
 									Name: "iface1_ns1-nad1",
@@ -1344,6 +1348,7 @@ func interfacesTmpltOpt(interfaces []kubevirtv1.Interface) nodeTemplateOption {
 		template.Spec.Template.Spec.Domain.Devices.Interfaces = interfaces
 	}
 }
+
 func networksTmpltOpt(networks []kubevirtv1.Network) nodeTemplateOption {
 	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
 		template.Spec.Template.Spec.Networks = networks
@@ -1426,7 +1431,6 @@ func generateNodeTemplate(options ...nodeTemplateOption) *capikubevirt.VirtualMa
 					},
 				},
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{
-
 					Affinity: &corev1.Affinity{
 						PodAntiAffinity: &corev1.PodAntiAffinity{
 							PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
