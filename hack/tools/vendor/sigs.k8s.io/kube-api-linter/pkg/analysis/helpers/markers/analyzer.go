@@ -45,13 +45,21 @@ import (
 // is "k8s:item(one: "value", two: "value")=...".
 const UnnamedArgument = ""
 
+// maxMarkerSeparationLines is the maximum number of lines that can separate
+// a marker comment group from the godoc comment for it to still be considered
+// associated with the type declaration.
+const maxMarkerSeparationLines = 3
+
+// markerPrefix is the prefix that identifies a comment line as a marker.
+const markerPrefix = "// +"
+
 // Markers allows access to markers extracted from the
 // go types.
 type Markers interface {
 	// FieldMarkers returns markers associated to the field.
 	FieldMarkers(*ast.Field) MarkerSet
 
-	// StructMarkers returns markers associated to the given sturct.
+	// StructMarkers returns markers associated to the given struct.
 	StructMarkers(*ast.StructType) MarkerSet
 
 	// TypeMarkers returns markers associated to the given type.
@@ -154,7 +162,19 @@ func run(pass *analysis.Pass) (any, error) {
 	inspect.Preorder(nodeFilter, func(n ast.Node) {
 		switch typ := n.(type) {
 		case *ast.GenDecl:
-			extractGenDeclMarkers(typ, results)
+			// Find the file this declaration belongs to.
+			// For most packages, there are only a few files (typically 1-10),
+			// so a simple linear search is efficient and clear.
+			var file *ast.File
+
+			for _, f := range pass.Files {
+				if f.Pos() <= typ.Pos() && typ.End() <= f.End() {
+					file = f
+					break
+				}
+			}
+
+			extractGenDeclMarkers(typ, file, pass.Fset, results)
 		case *ast.Field:
 			extractFieldMarkers(typ, results)
 		}
@@ -163,15 +183,20 @@ func run(pass *analysis.Pass) (any, error) {
 	return results, nil
 }
 
-func extractGenDeclMarkers(typ *ast.GenDecl, results *markers) {
+func extractGenDeclMarkers(typ *ast.GenDecl, file *ast.File, fset *token.FileSet, results *markers) {
 	declMarkers := NewMarkerSet()
 
+	// Collect markers from the GenDecl's Doc field (comments directly attached to the declaration)
 	if typ.Doc != nil {
 		for _, comment := range typ.Doc.List {
 			if marker := extractMarker(comment); marker.Identifier != "" {
 				declMarkers.Insert(marker)
 			}
 		}
+
+		// Also collect markers from the comment group immediately before the godoc comment
+		// if separated by a blank line.
+		extractOrphanedMarkers(typ.Doc, file, fset, declMarkers)
 	}
 
 	if len(typ.Specs) == 0 {
@@ -188,6 +213,255 @@ func extractGenDeclMarkers(typ *ast.GenDecl, results *markers) {
 	if sTyp, ok := tSpec.Type.(*ast.StructType); ok {
 		results.insertStructMarkers(sTyp, declMarkers)
 	}
+}
+
+// extractOrphanedMarkers finds markers in the comment group immediately before the godoc comment
+// that are separated by a blank line. Only the immediately preceding comment group is checked,
+// and it must be within maxMarkerSeparationLines lines of the godoc comment.
+//
+// This handles the "second level comment bug" (issue #53) where markers are separated from type
+// declarations by blank lines, which commonly occurs in real-world Kubernetes API code.
+//
+// Example scenario this handles:
+//
+//	// +kubebuilder:object:root=true
+//	// +kubebuilder:subresource:status
+//
+//	// ClusterList contains a list of Cluster.
+//	type ClusterList struct {
+//	    metav1.TypeMeta `json:",inline"`
+//	    metav1.ListMeta `json:"metadata,omitempty"`
+//	    Items []Cluster `json:"items"`
+//	}
+//
+// The markers will be detected even though separated by a blank line from the godoc comment.
+// Note: Only multi-line marker groups are considered orphaned. Single-line markers are assumed
+// to be regular Doc comments already handled by the AST parser.
+func extractOrphanedMarkers(docGroup *ast.CommentGroup, file *ast.File, fset *token.FileSet, declMarkers MarkerSet) {
+	if file == nil || fset == nil {
+		return
+	}
+
+	prevGroup := findPreviousCommentGroup(docGroup, file)
+	if prevGroup == nil {
+		return
+	}
+
+	if !isValidOrphanedMarkerGroup(prevGroup, docGroup, file, fset) {
+		return
+	}
+
+	// Extract markers from the previous comment group
+	for _, comment := range prevGroup.List {
+		if marker := extractMarker(comment); marker.Identifier != "" {
+			declMarkers.Insert(marker)
+		}
+	}
+}
+
+// findPreviousCommentGroup finds the comment group immediately before the given docGroup.
+func findPreviousCommentGroup(docGroup *ast.CommentGroup, file *ast.File) *ast.CommentGroup {
+	for i, cg := range file.Comments {
+		if cg == docGroup && i > 0 {
+			return file.Comments[i-1]
+		}
+	}
+
+	return nil
+}
+
+// isValidOrphanedMarkerGroup checks if the previous comment group is a valid orphaned marker group.
+func isValidOrphanedMarkerGroup(prevGroup, docGroup *ast.CommentGroup, file *ast.File, fset *token.FileSet) bool {
+	// Check if the comment groups are properly separated
+	if !isProperlySeparated(prevGroup, docGroup, fset) {
+		return false
+	}
+
+	// Only extract if the comment group contains markers
+	if !containsMarkers(prevGroup) {
+		return false
+	}
+
+	// Check if this previous comment group is a Doc comment for another declaration
+	return !isDocCommentForDeclaration(prevGroup, file)
+}
+
+// isProperlySeparated checks if comment groups are separated by at least one blank line.
+func isProperlySeparated(prevGroup, docGroup *ast.CommentGroup, fset *token.FileSet) bool {
+	docStartLine := fset.Position(docGroup.Pos()).Line
+	prevEndLine := fset.Position(prevGroup.End()).Line
+	lineDiff := docStartLine - prevEndLine
+
+	// lineDiff > 1: ensures at least one blank line
+	// lineDiff <= maxMarkerSeparationLines: ensures not too far apart
+	return lineDiff > 1 && lineDiff <= maxMarkerSeparationLines
+}
+
+// containsMarkers checks if a comment group contains at least one marker.
+// It also ensures the comment group doesn't contain commented-out code.
+//
+// This function detects both single-line and multi-line marker groups that are
+// separated from type declarations by blank lines (orphaned markers).
+//
+// Single-line comments immediately before a type declaration (without a blank line)
+// are already captured as Doc comments by the Go AST parser and processed normally.
+//
+// Example of what IS detected (orphaned markers separated by blank line):
+//
+//	// +kubebuilder:object:root=true
+//
+//	// MyType does something
+//	type MyType struct {}
+//
+// Or multi-line:
+//
+//	// +kubebuilder:object:root=true
+//	// +kubebuilder:subresource:status
+//
+//	// MyType does something
+//	type MyType struct {}
+//
+// Example of what is NOT detected (marker without blank line, already handled as Doc comment):
+//
+//	// +kubebuilder:object:root=true
+//	// MyType does something
+//	type MyType struct {}
+func containsMarkers(group *ast.CommentGroup) bool {
+	if len(group.List) == 0 {
+		return false
+	}
+
+	hasMarker := false
+
+	for _, comment := range group.List {
+		text := comment.Text
+		if strings.HasPrefix(text, markerPrefix) {
+			hasMarker = true
+		} else if looksLikeCommentedCode(text) {
+			// Skip comment groups that contain commented-out code
+			return false
+		}
+	}
+
+	return hasMarker
+}
+
+// looksLikeCommentedCode checks if a comment line looks like commented-out code.
+func looksLikeCommentedCode(text string) bool {
+	content := prepareContentForAnalysis(text)
+
+	// Empty lines or lines starting with markers are not code
+	if content == "" || strings.HasPrefix(content, "+") {
+		return false
+	}
+
+	return hasCodeIndicators(content)
+}
+
+// prepareContentForAnalysis strips comment prefixes and normalizes the content.
+func prepareContentForAnalysis(text string) string {
+	content := strings.TrimPrefix(text, "//")
+	return strings.TrimSpace(content)
+}
+
+// hasCodeIndicators checks if content contains patterns that indicate Go code.
+func hasCodeIndicators(content string) bool {
+	// Check for struct tags (backticks are a strong signal of Go code)
+	if strings.Contains(content, "`") {
+		return true
+	}
+
+	// Check for field declaration patterns
+	if hasFieldDeclarationPattern(content) {
+		return true
+	}
+
+	// Check for assignment operators
+	if hasAssignmentOperators(content) {
+		return true
+	}
+
+	// Check for function call patterns
+	if hasFunctionCallPattern(content) {
+		return true
+	}
+
+	// Check for Go keywords at the start of the line
+	return hasCodeKeywordPrefix(content)
+}
+
+// hasAssignmentOperators checks if content contains Go assignment operators.
+func hasAssignmentOperators(content string) bool {
+	assignmentOps := []string{" := ", " = ", " += ", " -= ", " *= ", " /="}
+	for _, op := range assignmentOps {
+		if strings.Contains(content, op) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasCodeKeywordPrefix checks if content starts with Go code keywords.
+func hasCodeKeywordPrefix(content string) bool {
+	// Go declaration keywords
+	codeKeywords := []string{"func ", "type ", "var ", "const ", "import ", "package ", "struct ", "interface "}
+	for _, keyword := range codeKeywords {
+		if strings.HasPrefix(content, keyword) {
+			return true
+		}
+	}
+
+	// Control flow keywords
+	controlFlowKeywords := []string{"if ", "for ", "switch ", "case ", "return ", "break ", "continue ", "defer ", "go ", "select "}
+	for _, keyword := range controlFlowKeywords {
+		if strings.HasPrefix(content, keyword) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasFieldDeclarationPattern checks if the content looks like a Go field declaration.
+// Examples: "Name string", "Count int", "Enabled *bool", "*Field Type".
+func hasFieldDeclarationPattern(content string) bool {
+	// Look for common Go type names after a potential field name
+	if typePattern.MatchString(content) {
+		return true
+	}
+
+	// Also check for pointer field declarations: *Type
+	if strings.HasPrefix(content, "*") && len(content) > 1 && content[1] != ' ' {
+		return true
+	}
+
+	return false
+}
+
+// hasFunctionCallPattern checks if the content looks like a function call.
+// Examples: "someFunc()", "pkg.Method(arg)", "New()".
+func hasFunctionCallPattern(content string) bool {
+	// Simple heuristic: word followed by ( with something inside )
+	return funcPattern.MatchString(content)
+}
+
+// isDocCommentForDeclaration checks if the comment group is a Doc comment for any declaration.
+func isDocCommentForDeclaration(group *ast.CommentGroup, file *ast.File) bool {
+	for _, decl := range file.Decls {
+		switch d := decl.(type) {
+		case *ast.GenDecl:
+			if d.Doc == group {
+				return true
+			}
+		case *ast.FuncDecl:
+			if d.Doc == group {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func extractFieldMarkers(field *ast.Field, results *markers) {
@@ -213,12 +487,20 @@ func extractFieldMarkers(field *ast.Field, results *markers) {
 // while supporting declarative validation tags with parentheses and nested markers.
 var validMarkerStart = regexp.MustCompile(`^[a-zA-Z]([a-zA-Z0-9:\(\)\"\" ,])+=?`)
 
+// typePattern matches common Go field declaration patterns.
+// Examples: "Name string", "Count int", "Enabled *bool".
+var typePattern = regexp.MustCompile(`^\w+\s+\*?(string|int|int32|int64|uint|uint32|uint64|bool|float32|float64|byte|rune)\b`)
+
+// funcPattern matches function call patterns.
+// Examples: "someFunc()", "pkg.Method(arg)", "New()".
+var funcPattern = regexp.MustCompile(`\w+(\.\w+)?\([^)]*\)`)
+
 func extractMarker(comment *ast.Comment) Marker {
-	if !strings.HasPrefix(comment.Text, "// +") {
+	if !strings.HasPrefix(comment.Text, markerPrefix) {
 		return Marker{}
 	}
 
-	markerContent := strings.TrimPrefix(comment.Text, "// +")
+	markerContent := strings.TrimPrefix(comment.Text, markerPrefix)
 
 	// Valid markers must start with an alphabetic character (a-zA-Z).
 	// This excludes markdown tables (e.g., "// +-------") and other non-marker content,
@@ -460,7 +742,7 @@ type Marker struct {
 
 // String returns the string representation of the marker.
 func (m Marker) String() string {
-	return strings.TrimPrefix(m.RawComment, "// +")
+	return strings.TrimPrefix(m.RawComment, markerPrefix)
 }
 
 // MarkerSet is a set implementation for Markers that uses
