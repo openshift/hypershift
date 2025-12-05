@@ -41,22 +41,22 @@ var (
 // For structs, for the zero value to be valid, all fields within the struct that would not be omitted must accept their zero values.
 // The second return value indicates whether the field validation is complete. Complete validation means that we are certain whether or not the zero value is valid.
 // Incomplete validation means that if additional validation were added (e.g. to add a min length to a string), the zero value might become invalid.
-func IsZeroValueValid(pass *analysis.Pass, field *ast.Field, typeExpr ast.Expr, markersAccess markershelper.Markers, considerOmitzero bool) (bool, bool) {
+func IsZeroValueValid(pass *analysis.Pass, field *ast.Field, typeExpr ast.Expr, markersAccess markershelper.Markers, considerOmitzero bool, qualifiedFieldName string) (bool, bool) {
 	underlyingType := getUnderlyingType(typeExpr)
 
 	switch t := underlyingType.(type) {
 	case *ast.StructType:
 		// For structs, we have to check if there are any non-omitted fields, that do not accept a zero value.
-		return isStructZeroValueValid(pass, field, t, markersAccess, considerOmitzero)
+		return isStructZeroValueValid(pass, field, t, markersAccess, considerOmitzero, qualifiedFieldName)
 	case *ast.Ident:
-		return isIdentZeroValueValid(pass, field, t, markersAccess, considerOmitzero)
+		return isIdentZeroValueValid(pass, field, t, markersAccess, considerOmitzero, qualifiedFieldName)
 	case *ast.MapType:
 		return isMapZeroValueValid(pass, field, markersAccess)
 	case *ast.ArrayType:
 		// For arrays, we can use a zero value if the array is not required to have a minimum number of items.
 		return isArrayZeroValueValid(pass, field, t, markersAccess)
 	case *ast.StarExpr:
-		return IsZeroValueValid(pass, field, t.X, markersAccess, considerOmitzero)
+		return IsZeroValueValid(pass, field, t.X, markersAccess, considerOmitzero, qualifiedFieldName)
 	}
 
 	// We don't know what the type is so can't assert the zero value is valid.
@@ -73,12 +73,41 @@ func getUnderlyingType(expr ast.Expr) ast.Expr {
 	return expr
 }
 
+// GetTypeMarkerValue returns the value of the kubebuilder Type marker for a field.
+// Returns empty string if no Type marker is present.
+// The Type marker indicates how the field serializes (e.g., "string", "number", "object").
+func GetTypeMarkerValue(pass *analysis.Pass, field *ast.Field, markersAccess markershelper.Markers) string {
+	fieldMarkers := TypeAwareMarkerCollectionForField(pass, markersAccess, field)
+	typeMarkers := fieldMarkers.Get(markers.KubebuilderTypeMarker)
+
+	for _, typeMarker := range typeMarkers {
+		// The value might be "string" (with quotes) or string (without quotes)
+		typeValue := strings.Trim(typeMarker.Payload.Value, `"`)
+		if typeValue != "" {
+			return typeValue
+		}
+	}
+
+	return ""
+}
+
 // isStructZeroValueValid checks if the zero value of a struct is valid.
 // It checks if all non-omitted fields within the struct accept their zero values.
 // It also checks if the struct has a minProperties marker, and if so, whether the number of non-omitted fields is greater than or equal to the minProperties value.
-func isStructZeroValueValid(pass *analysis.Pass, field *ast.Field, structType *ast.StructType, markersAccess markershelper.Markers, considerOmitzero bool) (bool, bool) {
+// Special case: If the struct has Type=string marker with string validation markers (MinLength/MaxLength),
+// treat it as a string for validation purposes (e.g., for structs with custom marshalling).
+func isStructZeroValueValid(pass *analysis.Pass, field *ast.Field, structType *ast.StructType, markersAccess markershelper.Markers, considerOmitzero bool, qualifiedFieldName string) (bool, bool) {
 	if structType == nil {
 		return false, false
+	}
+
+	// Check if this struct should be validated as a string (Type=string marker).
+	// This handles structs with custom marshalling that serialize as strings.
+	if GetTypeMarkerValue(pass, field, markersAccess) == "string" {
+		// Use string validation logic instead of struct validation logic.
+		// This ensures that string-specific validation markers (MinLength, MaxLength, Pattern)
+		// are properly evaluated for structs that marshal as strings.
+		return isStringZeroValueValid(pass, field, markersAccess)
 	}
 
 	jsonTagInfo, ok := pass.ResultOf[extractjsontags.Analyzer].(extractjsontags.StructFieldTags)
@@ -86,7 +115,7 @@ func isStructZeroValueValid(pass *analysis.Pass, field *ast.Field, structType *a
 		panic("could not get struct field tags from pass result")
 	}
 
-	zeroValueValid, nonOmittedFields := areStructFieldZeroValuesValid(pass, structType, markersAccess, jsonTagInfo, considerOmitzero)
+	zeroValueValid, nonOmittedFields := areStructFieldZeroValuesValid(pass, structType, markersAccess, jsonTagInfo, considerOmitzero, qualifiedFieldName)
 
 	markerSet := TypeAwareMarkerCollectionForField(pass, markersAccess, field)
 
@@ -114,7 +143,7 @@ func isStructZeroValueValid(pass *analysis.Pass, field *ast.Field, structType *a
 // areStructFieldZeroValuesValid checks if all non-omitted fields within a struct accept their zero values.
 //
 //nolint:cyclop
-func areStructFieldZeroValuesValid(pass *analysis.Pass, structType *ast.StructType, markersAccess markershelper.Markers, jsonTagInfo extractjsontags.StructFieldTags, considerOmitzero bool) (bool, int) {
+func areStructFieldZeroValuesValid(pass *analysis.Pass, structType *ast.StructType, markersAccess markershelper.Markers, jsonTagInfo extractjsontags.StructFieldTags, considerOmitzero bool, qualifiedFieldName string) (bool, int) {
 	zeroValueValid := true
 	nonOmittedFields := 0
 
@@ -147,7 +176,7 @@ func areStructFieldZeroValuesValid(pass *analysis.Pass, structType *ast.StructTy
 			// This is silently dropped by the API server, or is accepted as a valid value with +nullable.
 			// If the field does have omitempty, then the zero value is valid based on the requiredness of the field.
 		case !fieldTagInfo.OmitEmpty:
-			validValue, _ = IsZeroValueValid(pass, field, field.Type, markersAccess, considerOmitzero)
+			validValue, _ = IsZeroValueValid(pass, field, field.Type, markersAccess, considerOmitzero, qualifiedFieldName)
 		}
 
 		// If either value is false then the collected values will be false.
@@ -158,7 +187,7 @@ func areStructFieldZeroValuesValid(pass *analysis.Pass, structType *ast.StructTy
 }
 
 // isIdentZeroValueValid checks if the zero value of an identifier is valid.
-func isIdentZeroValueValid(pass *analysis.Pass, field *ast.Field, ident *ast.Ident, markersAccess markershelper.Markers, considerOmitzero bool) (bool, bool) {
+func isIdentZeroValueValid(pass *analysis.Pass, field *ast.Field, ident *ast.Ident, markersAccess markershelper.Markers, considerOmitzero bool, qualifiedFieldName string) (bool, bool) {
 	if ident == nil {
 		return false, false
 	}
@@ -168,9 +197,9 @@ func isIdentZeroValueValid(pass *analysis.Pass, field *ast.Field, ident *ast.Ide
 	case isStringIdent(ident):
 		return isStringZeroValueValid(pass, field, markersAccess)
 	case isIntegerIdent(ident):
-		return isNumericZeroValueValid[int](pass, field, markersAccess)
+		return isNumericZeroValueValid[int](pass, field, markersAccess, qualifiedFieldName)
 	case isFloatIdent(ident):
-		return isNumericZeroValueValid[float64](pass, field, markersAccess)
+		return isNumericZeroValueValid[float64](pass, field, markersAccess, qualifiedFieldName)
 	case isBoolIdent(ident):
 		// For bool, we can always use a zero value.
 		return true, true
@@ -182,7 +211,7 @@ func isIdentZeroValueValid(pass *analysis.Pass, field *ast.Field, ident *ast.Ide
 		return false, false
 	}
 
-	return IsZeroValueValid(pass, field, typeSpec.Type, markersAccess, considerOmitzero)
+	return IsZeroValueValid(pass, field, typeSpec.Type, markersAccess, considerOmitzero, qualifiedFieldName)
 }
 
 // isStringZeroValueValid checks if a string field can have a zero value.
@@ -254,18 +283,18 @@ type number interface {
 // isIntegerZeroValueValid checks if an integer field can have a zero value.
 //
 //nolint:cyclop
-func isNumericZeroValueValid[N number](pass *analysis.Pass, field *ast.Field, markersAccess markershelper.Markers) (bool, bool) {
+func isNumericZeroValueValid[N number](pass *analysis.Pass, field *ast.Field, markersAccess markershelper.Markers, qualifiedFieldName string) (bool, bool) {
 	fieldMarkers := TypeAwareMarkerCollectionForField(pass, markersAccess, field)
 
 	minimum, err := getMarkerNumericValueByName[N](fieldMarkers, markers.KubebuilderMinimumMarker)
 	if err != nil && !errors.Is(err, errMarkerMissingValue) {
-		pass.Reportf(field.Pos(), "field %s has an invalid minimum marker: %v", FieldName(field), err)
+		pass.Reportf(field.Pos(), "field %s has an invalid minimum marker: %v", qualifiedFieldName, err)
 		return false, false
 	}
 
 	maximum, err := getMarkerNumericValueByName[N](fieldMarkers, markers.KubebuilderMaximumMarker)
 	if err != nil && !errors.Is(err, errMarkerMissingValue) {
-		pass.Reportf(field.Pos(), "field %s has an invalid maximum marker: %v", FieldName(field), err)
+		pass.Reportf(field.Pos(), "field %s has an invalid maximum marker: %v", qualifiedFieldName, err)
 		return false, false
 	}
 
@@ -448,4 +477,14 @@ func IsFieldRequired(field *ast.Field, markersAccess markershelper.Markers) bool
 	return fieldMarkers.Has(markers.RequiredMarker) ||
 		fieldMarkers.Has(markers.KubebuilderRequiredMarker) ||
 		fieldMarkers.Has(markers.K8sRequiredMarker)
+}
+
+// IsFieldOptional checks if the field is optional.
+// It checks for the presence of the optional marker, the kubebuilder optional marker, or the k8s optional marker.
+func IsFieldOptional(field *ast.Field, markersAccess markershelper.Markers) bool {
+	fieldMarkers := markersAccess.FieldMarkers(field)
+
+	return fieldMarkers.Has(markers.OptionalMarker) ||
+		fieldMarkers.Has(markers.KubebuilderOptionalMarker) ||
+		fieldMarkers.Has(markers.K8sOptionalMarker)
 }
