@@ -18,6 +18,7 @@ var _ component.ComponentOptions = &CAPIProviderOptions{}
 type CAPIProviderOptions struct {
 	deploymentSpec      *appsv1.DeploymentSpec
 	platformPolicyRules []rbacv1.PolicyRule
+	platformType        hyperv1.PlatformType
 }
 
 // IsRequestServing implements controlplanecomponent.ComponentOptions.
@@ -35,16 +36,29 @@ func (c *CAPIProviderOptions) NeedsManagementKASAccess() bool {
 	return true
 }
 
-func NewComponent(deploymentSpec *appsv1.DeploymentSpec, platformPolicyRules []rbacv1.PolicyRule) component.ControlPlaneComponent {
+func NewComponent(deploymentSpec *appsv1.DeploymentSpec, platformPolicyRules []rbacv1.PolicyRule, platformType hyperv1.PlatformType) component.ControlPlaneComponent {
 	capi := &CAPIProviderOptions{
 		deploymentSpec:      deploymentSpec,
 		platformPolicyRules: platformPolicyRules,
+		platformType:        platformType,
 	}
 
-	return component.NewDeploymentComponent(ComponentName, capi).
+	builder := component.NewDeploymentComponent(ComponentName, capi).
 		WithAdaptFunction(capi.adaptDeployment).
 		WithPredicate(predicate).
-		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
+		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{})
+
+	// Inject token minter for GCP platform to support Workload Identity Federation
+	if platformType == hyperv1.GCPPlatform {
+		builder = builder.InjectTokenMinterContainer(component.TokenMinterContainerOptions{
+			TokenType:               component.CloudToken,
+			ServiceAccountName:      "capi-gcp-controller-manager",
+			ServiceAccountNameSpace: "kube-system",
+			KubeconfigSecretName:    "service-network-admin-kubeconfig",
+		})
+	}
+
+	return builder.
 		WithManifestAdapter(
 			"role.yaml",
 			component.WithAdaptFunction(capi.adaptRole),

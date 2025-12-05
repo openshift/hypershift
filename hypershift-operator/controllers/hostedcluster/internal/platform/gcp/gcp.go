@@ -115,52 +115,53 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 	}
 	gcpCluster.Annotations[capiv1.ManagedByAnnotation] = "external"
 
-	// Set GCP-specific cluster configuration
-	if hcluster.Spec.Platform.GCP != nil {
-		gcpSpec := hcluster.Spec.Platform.GCP
+	// Validate GCP platform configuration is present
+	if hcluster.Spec.Platform.GCP == nil {
+		return fmt.Errorf("GCP platform configuration is missing")
+	}
+	gcpSpec := hcluster.Spec.Platform.GCP
 
-		// Set project and region (required fields)
-		gcpCluster.Spec.Project = gcpSpec.Project
-		gcpCluster.Spec.Region = gcpSpec.Region
+	// Set project and region (required fields)
+	gcpCluster.Spec.Project = gcpSpec.Project
+	gcpCluster.Spec.Region = gcpSpec.Region
 
-		// Configure network settings if available
-		if gcpSpec.NetworkConfig.Network.Name != "" {
-			gcpCluster.Spec.Network = capigcp.NetworkSpec{
-				Name: ptr.To(gcpSpec.NetworkConfig.Network.Name),
-			}
-
-			// Set subnet for Private Service Connect if available
-			if gcpSpec.NetworkConfig.PrivateServiceConnectSubnet.Name != "" {
-				// CAPG handles subnets differently, configure as needed for PSC
-				// This will be used by CAPG for node creation
-				gcpCluster.Spec.Network.Subnets = []capigcp.SubnetSpec{
-					{
-						Name:   gcpSpec.NetworkConfig.PrivateServiceConnectSubnet.Name,
-						Region: gcpSpec.Region,
-						// CAPG will discover the network CIDR automatically
-					},
-				}
-			}
+	// Configure network settings if available
+	if gcpSpec.NetworkConfig.Network.Name != "" {
+		gcpCluster.Spec.Network = capigcp.NetworkSpec{
+			Name: ptr.To(gcpSpec.NetworkConfig.Network.Name),
 		}
 
-		// Add resource labels as additional labels
-		if len(gcpSpec.ResourceLabels) > 0 {
-			if gcpCluster.Spec.AdditionalLabels == nil {
-				gcpCluster.Spec.AdditionalLabels = make(map[string]string)
-			}
-			for _, label := range gcpSpec.ResourceLabels {
-				gcpCluster.Spec.AdditionalLabels[label.Key] = ptr.Deref(label.Value, "")
+		// Set subnet for Private Service Connect if available
+		if gcpSpec.NetworkConfig.PrivateServiceConnectSubnet.Name != "" {
+			// CAPG handles subnets differently, configure as needed for PSC
+			// This will be used by CAPG for node creation
+			gcpCluster.Spec.Network.Subnets = []capigcp.SubnetSpec{
+				{
+					Name:   gcpSpec.NetworkConfig.PrivateServiceConnectSubnet.Name,
+					Region: gcpSpec.Region,
+					// CAPG will discover the network CIDR automatically
+				},
 			}
 		}
+	}
 
-		// Add HyperShift-specific labels for resource identification
+	// Add resource labels as additional labels
+	if len(gcpSpec.ResourceLabels) > 0 {
 		if gcpCluster.Spec.AdditionalLabels == nil {
 			gcpCluster.Spec.AdditionalLabels = make(map[string]string)
 		}
-		gcpCluster.Spec.AdditionalLabels[toGCPLabel("hypershift.openshift.io/cluster")] = hcluster.Name
-		if hcluster.Spec.InfraID != "" {
-			gcpCluster.Spec.AdditionalLabels[toGCPLabel("hypershift.openshift.io/infra-id")] = hcluster.Spec.InfraID
+		for _, label := range gcpSpec.ResourceLabels {
+			gcpCluster.Spec.AdditionalLabels[label.Key] = ptr.Deref(label.Value, "")
 		}
+	}
+
+	// Add HyperShift-specific labels for resource identification
+	if gcpCluster.Spec.AdditionalLabels == nil {
+		gcpCluster.Spec.AdditionalLabels = make(map[string]string)
+	}
+	gcpCluster.Spec.AdditionalLabels[toGCPLabel("hypershift.openshift.io/cluster")] = hcluster.Name
+	if hcluster.Spec.InfraID != "" {
+		gcpCluster.Spec.AdditionalLabels[toGCPLabel("hypershift.openshift.io/infra-id")] = hcluster.Spec.InfraID
 	}
 
 	// Set control plane endpoint (following AWS pattern)
@@ -238,10 +239,6 @@ func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hype
 					ReadOnly:  true,
 					MountPath: "/tmp/k8s-webhook-server/serving-certs",
 				},
-				{
-					Name:      "token",
-					MountPath: "/var/run/secrets/openshift/serviceaccount",
-				},
 			},
 			Resources: corev1.ResourceRequirements{
 				Requests: corev1.ResourceList{
@@ -255,7 +252,6 @@ func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hype
 				RunAsNonRoot:             ptr.To(true),
 			},
 		},
-		p.tokenMinterSidecar(hcluster),
 	}
 
 	return &appsv1.DeploymentSpec{
@@ -278,7 +274,7 @@ func (p GCP) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hype
 }
 
 // buildVolumes creates all volumes needed for CAPG deployment including
-// credentials, webhook certificates, kubeconfig, and writable token volume.
+// credentials and webhook certificates.
 func (p GCP) buildVolumes(hcluster *hyperv1.HostedCluster) []corev1.Volume {
 	defaultMode := int32(0640)
 	return []corev1.Volume{
@@ -297,55 +293,6 @@ func (p GCP) buildVolumes(hcluster *hyperv1.HostedCluster) []corev1.Volume {
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: "node-management-creds",
 				},
-			},
-		},
-		{
-			Name: "svc-kubeconfig",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					DefaultMode: &defaultMode,
-					SecretName:  "service-network-admin-kubeconfig",
-				},
-			},
-		},
-		{
-			Name: "token",
-			VolumeSource: corev1.VolumeSource{
-				EmptyDir: &corev1.EmptyDirVolumeSource{Medium: corev1.StorageMediumMemory},
-			},
-		},
-	}
-}
-
-// tokenMinterSidecar creates the token minter sidecar container.
-// This sidecar generates OpenShift service account tokens that are used by the
-// Google Cloud SDK for Workload Identity Federation authentication.
-func (p GCP) tokenMinterSidecar(_ *hyperv1.HostedCluster) corev1.Container {
-	return corev1.Container{
-		Name:    "token-minter",
-		Image:   p.utilitiesImage,
-		Command: []string{"/usr/bin/control-plane-operator", "token-minter"},
-		Args: []string{
-			"--service-account-namespace=kube-system",
-			"--service-account-name=capi-gcp-controller-manager",
-			"--token-audience=openshift",
-			"--token-file=/var/run/secrets/openshift/serviceaccount/token",
-			"--kubeconfig=/etc/kubernetes/kubeconfig",
-		},
-		VolumeMounts: []corev1.VolumeMount{
-			{
-				Name:      "token",
-				MountPath: "/var/run/secrets/openshift/serviceaccount",
-			},
-			{
-				Name:      "svc-kubeconfig",
-				MountPath: "/etc/kubernetes",
-			},
-		},
-		Resources: corev1.ResourceRequirements{
-			Requests: corev1.ResourceList{
-				corev1.ResourceCPU:    resource.MustParse("5m"),
-				corev1.ResourceMemory: resource.MustParse("32Mi"),
 			},
 		},
 	}
