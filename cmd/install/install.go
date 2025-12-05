@@ -132,6 +132,10 @@ type Options struct {
 	PlatformsToInstall                        []string
 	ImagePullPolicy                           string
 	EnableAuditLogPersistence                 bool
+	EnableScaleFromZero                       bool
+	ScaleFromZeroAWSCreds                     string
+	ScaleFromZeroAWSCredentialsSecret         string
+	ScaleFromZeroAWSCredentialsSecretKey      string
 }
 
 func (o *Options) Validate() error {
@@ -183,6 +187,12 @@ func (o *Options) Validate() error {
 
 	if o.CertRotationScale > 24*time.Hour {
 		errs = append(errs, fmt.Errorf("cannot set --cert-rotation-scale longer than 24h, invalid value: %s", o.CertRotationScale.String()))
+	}
+
+	if o.EnableScaleFromZero {
+		if len(o.ScaleFromZeroAWSCreds) == 0 && len(o.ScaleFromZeroAWSCredentialsSecret) == 0 {
+			errs = append(errs, fmt.Errorf("either --scale-from-zero-aws-creds or --scale-from-zero-aws-secret is required when --enable-scale-from-zero is enabled"))
+		}
 	}
 
 	if o.RHOBSMonitoring && o.EnableCVOManagementClusterMetricsAccess {
@@ -287,6 +297,10 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringSliceVar(&opts.PlatformsToInstall, "limit-crd-install", opts.PlatformsToInstall, "Used to limit the CRDs that are installed to a per platform basis (example: --limit-crd-install=AWS,Azure). If this flag is not specified, all CRDs for all platforms will be installed. Valid, case-insensitive values are: AWS, Azure, IBMCloud, KubeVirt, Agent, OpenStack.")
 	cmd.PersistentFlags().StringToStringVar(&opts.AdditionalOperatorEnvVars, "additional-operator-env-vars", opts.AdditionalOperatorEnvVars, "Set of additional environment variables to be set on the HyperShift Operator deployment.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAuditLogPersistence, "enable-audit-log-persistence", opts.EnableAuditLogPersistence, "If true, enables persistent audit logs with automatic snapshots for kube-apiserver pods")
+	cmd.PersistentFlags().BoolVar(&opts.EnableScaleFromZero, "enable-scale-from-zero", opts.EnableScaleFromZero, "Enable scale-from-zero autoscaling (min=0) and MachineDeployment annotation controller for AWS")
+	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroAWSCreds, "scale-from-zero-aws-creds", opts.ScaleFromZeroAWSCreds, "Path to AWS credentials file for EC2 instance type queries (required when --enable-scale-from-zero is enabled)")
+	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroAWSCredentialsSecret, "scale-from-zero-aws-secret", opts.ScaleFromZeroAWSCredentialsSecret, "Name of existing secret containing scale-from-zero AWS credentials (alternative to --scale-from-zero-aws-creds)")
+	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroAWSCredentialsSecretKey, "scale-from-zero-aws-secret-key", opts.ScaleFromZeroAWSCredentialsSecretKey, "Key within the scale-from-zero AWS credentials secret (default: credentials)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
@@ -340,6 +354,7 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 func NewInstallOptionsWithDefaults() Options {
 	opts := Options{}
 	opts.AWSPrivateCredentialsSecretKey = "credentials"
+	opts.ScaleFromZeroAWSCredentialsSecretKey = "credentials"
 	opts.CertRotationScale = 24 * time.Hour
 	opts.Development = false
 	opts.EnableAdminRBACGeneration = false
@@ -580,7 +595,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 	}
 
 	// Setup Secrets
-	oidcSecret, operatorCredentialsSecret, secretObjs, err := setupAuth(opts, operatorNamespace)
+	oidcSecret, operatorCredentialsSecret, scaleFromZeroSecret, secretObjs, err := setupAuth(opts, operatorNamespace)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -605,7 +620,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 	// Setup HyperShift Operator Deployment and Service
 	operatorService, operatorObjs := setupOperatorResources(
 		opts, userCABundleCM, trustedCABundle, operatorNamespace, operatorServiceAccount, operatorCredentialsSecret,
-		oidcSecret, images,
+		oidcSecret, scaleFromZeroSecret, images,
 	)
 	objects = append(objects, operatorObjs...)
 
@@ -701,32 +716,78 @@ func setupCRDs(opts Options, operatorNamespace *corev1.Namespace, operatorServic
 				return true
 			}, func(crd *apiextensionsv1.CustomResourceDefinition) {
 				if crd.Spec.Group == "hypershift.openshift.io" {
-					if !opts.EnableConversionWebhook {
-						return
-					}
-					if crd.Annotations != nil {
-						crd.Annotations = map[string]string{}
-					}
-					crd.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
-					crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
-						Strategy: apiextensionsv1.WebhookConverter,
-						Webhook: &apiextensionsv1.WebhookConversion{
-							ClientConfig: &apiextensionsv1.WebhookClientConfig{
-								Service: &apiextensionsv1.ServiceReference{
-									Namespace: operatorNamespace.Name,
-									Name:      operatorService.Name,
-									Port:      ptr.To[int32](443),
-									Path:      ptr.To("/convert"),
+					// Handle conversion webhook setup
+					if opts.EnableConversionWebhook {
+						if crd.Annotations != nil {
+							crd.Annotations = map[string]string{}
+						}
+						crd.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
+						crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
+							Strategy: apiextensionsv1.WebhookConverter,
+							Webhook: &apiextensionsv1.WebhookConversion{
+								ClientConfig: &apiextensionsv1.WebhookClientConfig{
+									Service: &apiextensionsv1.ServiceReference{
+										Namespace: operatorNamespace.Name,
+										Name:      operatorService.Name,
+										Port:      ptr.To[int32](443),
+										Path:      ptr.To("/convert"),
+									},
 								},
+								ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
 							},
-							ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
-						},
+						}
+					}
+
+					// Handle scale-from-zero CRD mutation for NodePool
+					if opts.EnableScaleFromZero && strings.Contains(crd.Name, "nodepools") {
+						if crd.Annotations == nil {
+							crd.Annotations = make(map[string]string)
+						}
+						crd.Annotations["hypershift.openshift.io/scale-from-zero-enabled"] = "true"
+
+						// Mutate the validation rule to allow min=0 when flag is enabled
+						// Find and update the CEL validation rule for autoscaling.min
+						for i := range crd.Spec.Versions {
+							if crd.Spec.Versions[i].Schema != nil && crd.Spec.Versions[i].Schema.OpenAPIV3Schema != nil {
+								mutateNodePoolAutoscalingValidation(crd.Spec.Versions[i].Schema.OpenAPIV3Schema)
+							}
+						}
 					}
 				}
 			},
 		)...,
 	)
 	return crds
+}
+
+// mutateNodePoolAutoscalingValidation updates the NodePool CRD schema to allow autoscaling min=0
+// when the --enable-scale-from-zero flag is set. This modifies the CEL validation rule.
+func mutateNodePoolAutoscalingValidation(schema *apiextensionsv1.JSONSchemaProps) {
+	// Navigate to NodePoolSpec in the schema
+	if schema.Properties == nil {
+		return
+	}
+
+	spec, ok := schema.Properties["spec"]
+	if !ok || spec.Properties == nil {
+		return
+	}
+
+	// The CEL validation is at the NodePoolSpec level
+	// We need to modify the rule that checks autoScaling.min
+	if spec.XValidations != nil {
+		for i, validation := range spec.XValidations {
+			// Find the validation rule for scale-from-zero
+			if strings.Contains(validation.Rule, "autoScaling.min") &&
+				strings.Contains(validation.Rule, "platform.type") {
+				// Replace the validation rule to always allow min=0
+				// Original: !has(self.autoScaling) || self.autoScaling.min > 0 || self.platform.type == 'AWS'
+				// New: Always allow min=0 (remove the restriction)
+				spec.XValidations[i].Rule = "!has(self.autoScaling) || self.autoScaling.min >= 0"
+				spec.XValidations[i].Message = "autoscaling.min must be >= 0 (scale-from-zero enabled)"
+			}
+		}
+	}
 }
 
 func isAWSPlatformEnabled(platformsToInstall []string) bool {
@@ -794,7 +855,7 @@ func setupMonitoring(opts Options, operatorNamespace *corev1.Namespace) []crclie
 // setupOperatorResources creates the operator Deployment and Service resources.
 //
 // Returns the Service and a list of resources to apply.
-func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trustedCABundle *corev1.ConfigMap, operatorNamespace *corev1.Namespace, operatorServiceAccount *corev1.ServiceAccount, operatorCredentialsSecret *corev1.Secret, oidcSecret *corev1.Secret, images map[string]string) (*corev1.Service, []crclient.Object) {
+func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trustedCABundle *corev1.ConfigMap, operatorNamespace *corev1.Namespace, operatorServiceAccount *corev1.ServiceAccount, operatorCredentialsSecret *corev1.Secret, oidcSecret *corev1.Secret, scaleFromZeroSecret *corev1.Secret, images map[string]string) (*corev1.Service, []crclient.Object) {
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
 		AdditionalTrustBundle:                   userCABundleCM,
 		OpenShiftTrustBundle:                    trustedCABundle,
@@ -834,6 +895,9 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		PlatformsInstalled:                      strings.Join(opts.PlatformsToInstall, ","),
 		ImagePullPolicy:                         opts.ImagePullPolicy,
 		EnableAuditLogPersistence:               opts.EnableAuditLogPersistence,
+		EnableScaleFromZero:                     opts.EnableScaleFromZero,
+		ScaleFromZeroAWSSecret:                  scaleFromZeroSecret,
+		ScaleFromZeroAWSSecretKey:               opts.ScaleFromZeroAWSCredentialsSecretKey,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
@@ -1065,15 +1129,16 @@ func setupAdminRBAC(operatorNamespace *corev1.Namespace) []crclient.Object {
 // - Platform specific secrets (e.g. AWS credentials)
 //
 // Returns the OIDC S3 credentials secret, operator credentials secret, and a list of resources to apply
-func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secret, *corev1.Secret, []crclient.Object, error) {
+func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secret, *corev1.Secret, *corev1.Secret, []crclient.Object, error) {
 	var objects []crclient.Object
 	var operatorCredentialsSecret *corev1.Secret
 	var oidcSecret *corev1.Secret
+	var scaleFromZeroSecret *corev1.Secret
 
 	if len(opts.PullSecretFile) > 0 {
 		pullSecretBytes, err := os.ReadFile(opts.PullSecretFile)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to read pull secret file: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("failed to read pull secret file: %w", err)
 		}
 
 		pullSecret := assets.HyperShiftPullSecret{
@@ -1086,7 +1151,7 @@ func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secre
 	if opts.OIDCStorageProviderS3Credentials != "" {
 		oidcCreds, err := os.ReadFile(opts.OIDCStorageProviderS3Credentials)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		oidcSecret = assets.HyperShiftOperatorOIDCProviderS3Secret{
@@ -1109,7 +1174,7 @@ func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secre
 		if opts.AWSPrivateCreds != "" {
 			credBytes, err := os.ReadFile(opts.AWSPrivateCreds)
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, nil, nil, nil, err
 			}
 
 			operatorCredentialsSecret = assets.HyperShiftOperatorCredentialsSecret{
@@ -1141,5 +1206,30 @@ func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secre
 			},
 		)
 	}
-	return oidcSecret, operatorCredentialsSecret, objects, nil
+
+	// Setup scale-from-zero AWS credentials
+	if opts.EnableScaleFromZero {
+		if opts.ScaleFromZeroAWSCreds != "" {
+			credBytes, err := os.ReadFile(opts.ScaleFromZeroAWSCreds)
+			if err != nil {
+				return nil, nil, nil, nil, err
+			}
+
+			scaleFromZeroSecret = assets.ScaleFromZeroAWSCredentialsSecret{
+				Namespace:  operatorNamespace,
+				CredsBytes: credBytes,
+				CredsKey:   opts.ScaleFromZeroAWSCredentialsSecretKey,
+			}.Build()
+			objects = append(objects, scaleFromZeroSecret)
+		} else if opts.ScaleFromZeroAWSCredentialsSecret != "" {
+			scaleFromZeroSecret = &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: operatorNamespace.Name,
+					Name:      opts.ScaleFromZeroAWSCredentialsSecret,
+				},
+			}
+		}
+	}
+
+	return oidcSecret, operatorCredentialsSecret, scaleFromZeroSecret, objects, nil
 }

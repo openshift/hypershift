@@ -160,8 +160,38 @@ func (r *NodePoolReconciler) setPlatformConditions(ctx context.Context, hcluster
 	}
 }
 
-func (r *NodePoolReconciler) autoscalerEnabledCondition(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster) (*ctrl.Result, error) {
+func (r *NodePoolReconciler) autoscalerEnabledCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	if isAutoscalingEnabled(nodePool) {
+		// Check if autoscaling from zero (min=0) is being used
+		if nodePool.Spec.AutoScaling.Min == 0 {
+			// Verify the OCP version supports autoscaling from zero for this platform via CPO image labels
+			cpoCapabilities, err := r.detectCPOCapabilities(ctx, hcluster)
+			if err != nil {
+				return nil, fmt.Errorf("failed to detect CPO capabilities: %w", err)
+			}
+
+			// Check platform-specific support
+			var supported bool
+			switch nodePool.Spec.Platform.Type {
+			case hyperv1.AWSPlatform:
+				supported = cpoCapabilities.SupportsAWSAutoscalingFromZero
+			default:
+				// Other platforms don't support autoscaling from zero yet
+				supported = false
+			}
+
+			if !supported {
+				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+					Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
+					Status:             corev1.ConditionFalse,
+					Reason:             hyperv1.NodePoolValidationFailedReason,
+					Message:            fmt.Sprintf("Autoscaling from zero (min=0) is not supported for %s platform on this OCP version", nodePool.Spec.Platform.Type),
+					ObservedGeneration: nodePool.Generation,
+				})
+				return nil, nil
+			}
+		}
+
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
 			Status:             corev1.ConditionTrue,
