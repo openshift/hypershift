@@ -29,7 +29,6 @@ data:
       monitor-uri /haproxy_ready
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: router
   namespace: hcp-namespace
   ownerReferences:

@@ -253,6 +253,7 @@ func (r *HostedClusterReconciler) managedResources() []client.Object {
 		&corev1.Namespace{},
 		&corev1.ServiceAccount{},
 		&corev1.Service{},
+		//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 		&corev1.Endpoints{},
 		&hyperv1.NodePool{},
 	}

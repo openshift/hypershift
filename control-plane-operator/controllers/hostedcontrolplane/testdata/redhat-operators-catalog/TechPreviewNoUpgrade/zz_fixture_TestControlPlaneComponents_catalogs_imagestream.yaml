@@ -1,7 +1,6 @@
 apiVersion: image.openshift.io/v1
 kind: ImageStream
 metadata:
-  creationTimestamp: null
   name: catalogs
   namespace: hcp-namespace
   ownerReferences:

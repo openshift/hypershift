@@ -47,11 +47,13 @@ func TestReconcileNetworkPolicies_GCP_PrivateRouter(t *testing.T) {
 	}
 
 	// Create test environment
+	//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 	kubernetesEndpoint := &corev1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kubernetes",
 			Namespace: "default",
 		},
+		//nolint:staticcheck // SA1019: corev1.EndpointSubset is intentionally used for backward compatibility
 		Subsets: []corev1.EndpointSubset{
 			{
 				Addresses: []corev1.EndpointAddress{
@@ -206,7 +208,9 @@ func TestGCPPrivateRouterNetworkPolicy_IngressOnly(t *testing.T) {
 		},
 	}
 
+	//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 	kubernetesEndpoint := &corev1.Endpoints{
+		//nolint:staticcheck // SA1019: corev1.EndpointSubset is intentionally used for backward compatibility
 		Subsets: []corev1.EndpointSubset{
 			{
 				Addresses: []corev1.EndpointAddress{

@@ -134,16 +134,14 @@ hostedclusters.hypershift.openshift.io:
   FeatureGates:
   - AutoNodeKarpenter
   - ClusterVersionOperatorConfiguration
-  - DynamicResourceAllocation
   - ExternalOIDC
   - ExternalOIDCWithUIDAndExtraClaimMappings
   - GCPPlatform
+  - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
-  - IngressControllerLBSubnetsAWS
   - KMSEncryptionProvider
   - NetworkDiagnosticsConfig
   - OpenStack
-  - SetEIPForNLBIngressController
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
   FilenameRunLevel: ""
@@ -193,16 +191,14 @@ hostedcontrolplanes.hypershift.openshift.io:
   FeatureGates:
   - AutoNodeKarpenter
   - ClusterVersionOperatorConfiguration
-  - DynamicResourceAllocation
   - ExternalOIDC
   - ExternalOIDCWithUIDAndExtraClaimMappings
   - GCPPlatform
+  - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
-  - IngressControllerLBSubnetsAWS
   - KMSEncryptionProvider
   - NetworkDiagnosticsConfig
   - OpenStack
-  - SetEIPForNLBIngressController
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
   FilenameRunLevel: ""

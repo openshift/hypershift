@@ -72,7 +72,9 @@ func OLMPackageServerControlPlaneService(ns string) *corev1.Service {
 	}
 }
 
+//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 func OLMPackageServerEndpoints() *corev1.Endpoints {
+	//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 	return &corev1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "packageserver",

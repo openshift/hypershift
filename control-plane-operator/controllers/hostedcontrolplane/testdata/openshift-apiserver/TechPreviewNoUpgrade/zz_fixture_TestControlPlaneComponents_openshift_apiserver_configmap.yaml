@@ -188,7 +188,6 @@ data:
       - https://etcd-client:2379
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: openshift-apiserver
   namespace: hcp-namespace
   ownerReferences:

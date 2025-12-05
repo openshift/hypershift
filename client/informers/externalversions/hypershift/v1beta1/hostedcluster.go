@@ -61,13 +61,25 @@ func NewFilteredHostedClusterInformer(client clientset.Interface, namespace stri
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.HypershiftV1beta1().HostedClusters(namespace).List(context.TODO(), options)
+				return client.HypershiftV1beta1().HostedClusters(namespace).List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.HypershiftV1beta1().HostedClusters(namespace).Watch(context.TODO(), options)
+				return client.HypershiftV1beta1().HostedClusters(namespace).Watch(context.Background(), options)
+			},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.HypershiftV1beta1().HostedClusters(namespace).List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.HypershiftV1beta1().HostedClusters(namespace).Watch(ctx, options)
 			},
 		},
 		&apihypershiftv1beta1.HostedCluster{},

@@ -242,6 +242,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		&corev1.Namespace{},
 		&corev1.Secret{},
 		&corev1.Service{},
+		//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 		&corev1.Endpoints{},
 		&corev1.PersistentVolumeClaim{},
 		&corev1.PersistentVolume{},
