@@ -48,7 +48,8 @@ type PlatformAgnosticOptions struct {
 	PowerVSPlatform   powervs.RawCreateOptions
 	OpenStackPlatform openstack.RawCreateOptions
 
-	ExtOIDCConfig *ExtOIDCConfig
+	ExtOIDCConfig       *ExtOIDCConfig
+	ExternalCNIProvider string
 }
 
 type hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
@@ -124,7 +125,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 // runs before each test.
 func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, platform hyperv1.PlatformType) {
 	h.Run("ValidateHostedCluster", func(t *testing.T) {
-		if platform != hyperv1.NonePlatform {
+		if platform != hyperv1.NonePlatform && hostedCluster.Spec.Networking.NetworkType != hyperv1.Other {
 			if opts.AWSPlatform.EndpointAccess == string(hyperv1.Private) {
 				ValidatePrivateCluster(t, h.ctx, h.client, hostedCluster, opts)
 			} else {
@@ -136,6 +137,25 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 			if opts.ExtOIDCConfig != nil && opts.ExtOIDCConfig.ExternalOIDCProvider == ProviderKeycloak {
 				ValidateAuthenticationSpec(t, h.ctx, h.client, hostedCluster, opts.ExtOIDCConfig)
 			}
+		}
+
+		if opts.ExternalCNIProvider == "cilium" {
+			// Only install Cilium when there are worker nodes configured.
+			// The cilium-olm deployment requires worker nodes to schedule its pods.
+			// TestNodePool sets NodePoolReplicas=0 and creates NodePools later in individual tests,
+			// so we skip Cilium installation during the initial cluster validation phase.
+			if !util.IsPrivateHC(hostedCluster) {
+				if opts.NodePoolReplicas == 0 {
+					t.Fatal("NodePool replicas must be positive for Cilium to install.")
+				}
+				guestClient := WaitForGuestClient(t, context.Background(), h.client, hostedCluster)
+				InstallCilium(t, context.Background(), guestClient, hostedCluster)
+				// wait hosted cluster ready
+				WaitForNReadyNodes(t, context.Background(), guestClient, opts.NodePoolReplicas, platform)
+				WaitForImageRollout(t, context.Background(), h.client, hostedCluster)
+				ValidateHostedClusterConditions(t, context.Background(), h.client, hostedCluster, true, 10*time.Minute)
+			}
+
 		}
 	})
 }
