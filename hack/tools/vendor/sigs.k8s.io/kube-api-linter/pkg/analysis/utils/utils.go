@@ -21,6 +21,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -30,9 +31,33 @@ import (
 
 // IsBasicType checks if the type of the given identifier is a basic type.
 // Basic types are types like int, string, bool, etc.
-func IsBasicType(pass *analysis.Pass, ident *ast.Ident) bool {
-	_, ok := pass.TypesInfo.TypeOf(ident).(*types.Basic)
+func IsBasicType(pass *analysis.Pass, expr ast.Expr) bool {
+	_, ok := pass.TypesInfo.TypeOf(expr).(*types.Basic)
 	return ok
+}
+
+// IsStringType checks if the type of the given expression is a string type..
+func IsStringType(pass *analysis.Pass, expr ast.Expr) bool {
+	// In case the expr is a pointer.
+	underlying := getUnderlyingType(expr)
+
+	ident, ok := underlying.(*ast.Ident)
+	if !ok {
+		return false
+	}
+
+	if ident.Name == "string" {
+		return true
+	}
+
+	// Is either an alias or another basic type, try to look up the alias.
+	tSpec, ok := LookupTypeSpec(pass, ident)
+	if !ok {
+		// Basic type and not a string.
+		return false
+	}
+
+	return IsStringType(pass, tSpec.Type)
 }
 
 // IsStructType checks if the given expression is a struct type.
@@ -157,6 +182,78 @@ func FieldName(field *ast.Field) string {
 	}
 
 	return ""
+}
+
+// GetStructName returns the name of the struct that the field is in.
+func GetStructName(pass *analysis.Pass, field *ast.Field) string {
+	_, astFile := getFilesForField(pass, field)
+	if astFile == nil {
+		return ""
+	}
+
+	return GetStructNameFromFile(astFile, field)
+}
+
+// GetStructNameFromFile returns the name of the struct that the field is in.
+func GetStructNameFromFile(file *ast.File, field *ast.Field) string {
+	var (
+		structName string
+		found      bool
+	)
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+
+		typeSpec, ok := n.(*ast.TypeSpec)
+		if !ok {
+			return true
+		}
+
+		structType, ok := typeSpec.Type.(*ast.StructType)
+		if !ok {
+			return true
+		}
+
+		structName = typeSpec.Name.Name
+
+		if structType.Fields == nil {
+			return true
+		}
+
+		if slices.Contains(structType.Fields.List, field) {
+			found = true
+			return false
+		}
+
+		return true
+	})
+
+	if found {
+		return structName
+	}
+
+	return ""
+}
+
+// GetQualifiedFieldName returns the qualified field name.
+func GetQualifiedFieldName(pass *analysis.Pass, field *ast.Field) string {
+	fieldName := FieldName(field)
+	structName := GetStructName(pass, field)
+
+	return fmt.Sprintf("%s.%s", structName, fieldName)
+}
+
+func getFilesForField(pass *analysis.Pass, field *ast.Field) (*token.File, *ast.File) {
+	tokenFile := pass.Fset.File(field.Pos())
+	for _, astFile := range pass.Files {
+		if astFile.FileStart == token.Pos(tokenFile.Base()) {
+			return tokenFile, astFile
+		}
+	}
+
+	return tokenFile, nil
 }
 
 func getFilesForType(pass *analysis.Pass, ident *ast.Ident) (*token.File, *ast.File) {

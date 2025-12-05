@@ -19,9 +19,11 @@ import (
 	"go/ast"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
+
 	kalerrors "sigs.k8s.io/kube-api-linter/pkg/analysis/errors"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/inspector"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/utils"
 )
 
@@ -33,37 +35,35 @@ var Analyzer = &analysis.Analyzer{
 	Name:     name,
 	Doc:      "All integers should be explicit about their size, int32 and int64 should be used over plain int. Unsigned ints are not allowed.",
 	Run:      run,
-	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Requires: []*analysis.Analyzer{inspector.Analyzer},
 }
 
 func run(pass *analysis.Pass) (any, error) {
-	inspect, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	inspect, ok := pass.ResultOf[inspector.Analyzer].(inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
 	}
 
-	// Filter to fields so that we can look at fields within structs.
-	// Filter typespecs so that we can look at type aliases.
-	nodeFilter := []ast.Node{
-		(*ast.StructType)(nil),
-		(*ast.TypeSpec)(nil),
-	}
+	typeChecker := utils.NewTypeChecker(utils.IsBasicType, checkIntegers)
 
-	typeChecker := utils.NewTypeChecker(checkIntegers)
+	inspect.InspectFields(func(field *ast.Field, _ extractjsontags.FieldTagInfo, _ markers.Markers, _ string) {
+		typeChecker.CheckNode(pass, field)
+	})
 
-	// Preorder visits all the nodes of the AST in depth-first order. It calls
-	// f(n) for each node n before it visits n's children.
-	//
-	// We use the filter defined above, ensuring we only look at struct fields and type declarations.
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		typeChecker.CheckNode(pass, n)
+	inspect.InspectTypeSpec(func(typeSpec *ast.TypeSpec, markersAccess markers.Markers) {
+		typeChecker.CheckNode(pass, typeSpec)
 	})
 
 	return nil, nil //nolint:nilnil
 }
 
 // checkIntegers looks for known type of integers that do not match the allowed `int32` or `int64` requirements.
-func checkIntegers(pass *analysis.Pass, ident *ast.Ident, node ast.Node, prefix string) {
+func checkIntegers(pass *analysis.Pass, expr ast.Expr, node ast.Node, prefix string) {
+	ident, ok := expr.(*ast.Ident)
+	if !ok {
+		return
+	}
+
 	switch ident.Name {
 	case "int32", "int64":
 		// Valid cases
