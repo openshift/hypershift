@@ -1,11 +1,19 @@
 package generation
 
+import (
+	crdifycfg "sigs.k8s.io/crdify/pkg/config"
+)
+
 // Config represents the configuration of a API group version
 // and the configuration for each generator within it.
 type Config struct {
 	// Compatibility represents the configuration of the compatiblity generator.
 	// When omitted, the default configuration will be used.
 	Compatibility *CompatibilityConfig `json:"compatibility,omitempty"`
+
+	// Crdify represents the configuration of the crdify generator.
+	// When omitted, the default configuration will be used.
+	Crdify *CrdifyConfig `json:"crdify,omitempty"`
 
 	// Deepcopy represents the configuration of the deepcopy generator.
 	// When omitted, the default configuration will be used.
@@ -46,6 +54,16 @@ type CompatibilityConfig struct {
 	// Disabled determines whether the compatibility generator should be run or not.
 	// This generator is enabled by default so this field defaults to false.
 	Disabled bool `json:"disabled,omitempty"`
+}
+
+type CrdifyConfig struct {
+	// Disabled determines whether the crdify generator should be run or not.
+	// This generator is enabled by default so this field defaults to false.
+	Disabled bool `json:"disabled,omitempty"`
+
+	// Config configures the validations that crdify performs and how they should be run.
+	// When omitted, a default configuration is used.
+	Config *crdifycfg.Config `json:"config,omitempty"`
 }
 
 // DeepcopyConfig is the configuration for the deepcopy generator.
