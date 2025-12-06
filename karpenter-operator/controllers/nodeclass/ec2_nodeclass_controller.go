@@ -176,6 +176,10 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
+	if err := r.reconcileOpenshiftEC2NodeClassVAP(ctx); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
 }
 
@@ -229,6 +233,8 @@ func reconcileEC2NodeClass(ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftE
 		AssociatePublicIPAddress: openshiftEC2NodeClass.Spec.AssociatePublicIPAddress,
 		Tags:                     openshiftEC2NodeClass.Spec.Tags,
 		DetailedMonitoring:       openshiftEC2NodeClass.Spec.DetailedMonitoring,
+		Role:                     openshiftEC2NodeClass.Spec.Role,
+		InstanceProfile:          openshiftEC2NodeClass.Spec.InstanceProfile,
 		BlockDeviceMappings:      openshiftEC2NodeClass.Spec.KarpenterBlockDeviceMapping(),
 		InstanceStorePolicy:      openshiftEC2NodeClass.Spec.KarpenterInstanceStorePolicy(),
 	}
@@ -354,6 +360,68 @@ func (r *EC2NodeClassReconciler) reconcileVAP(ctx context.Context) error {
 	vapBinding := &admissionv1.ValidatingAdmissionPolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "karpenter-binding.ec2nodeclass.hypershift.io",
+		},
+	}
+	_, err := r.CreateOrUpdate(ctx, r.guestClient, vapBinding, func() error {
+		vapBinding.Spec.PolicyName = vap.Name
+		vapBinding.Spec.ValidationActions = []admissionv1.ValidationAction{admissionv1.Deny}
+		return nil
+	})
+
+	return err
+}
+
+func (r *EC2NodeClassReconciler) reconcileOpenshiftEC2NodeClassVAP(ctx context.Context) error {
+	vap := &admissionv1.ValidatingAdmissionPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "karpenter.openshiftec2nodeclass.hypershift.io",
+		},
+	}
+
+	if _, err := r.CreateOrUpdate(ctx, r.guestClient, vap, func() error {
+		vap.Spec.MatchConstraints = &admissionv1.MatchResources{
+			ResourceRules: []admissionv1.NamedRuleWithOperations{
+				{
+					RuleWithOperations: admissionv1.RuleWithOperations{
+						Operations: []admissionv1.OperationType{
+							admissionv1.Update,
+						},
+						Rule: admissionv1.Rule{
+							APIGroups:   []string{"karpenter.hypershift.openshift.io"},
+							APIVersions: []string{"v1beta1"},
+							Resources:   []string{"openshiftec2nodeclasses"},
+						},
+					},
+				},
+			},
+		}
+		vap.Spec.MatchConditions = []admissionv1.MatchCondition{
+			{
+				Name:       "exclude-hcco-user",
+				Expression: "'system:hosted-cluster-config' != request.userInfo.username",
+			},
+			{
+				Name:       "only-default-resource",
+				Expression: "object.metadata.name == 'default'",
+			},
+		}
+
+		vap.Spec.Validations = []admissionv1.Validation{
+			{
+				Expression: "object.spec == oldObject.spec",
+				Message:    "The 'default' OpenshiftEC2NodeClass is system-managed and cannot be modified. To customize your configuration, create a new OpenshiftEC2NodeClass with a different name and reference it from your NodePool's spec.template.spec.nodeClassRef.",
+				Reason:     ptr.To(metav1.StatusReasonForbidden),
+			},
+		}
+
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	vapBinding := &admissionv1.ValidatingAdmissionPolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "karpenter-binding.openshiftec2nodeclass.hypershift.io",
 		},
 	}
 	_, err := r.CreateOrUpdate(ctx, r.guestClient, vapBinding, func() error {

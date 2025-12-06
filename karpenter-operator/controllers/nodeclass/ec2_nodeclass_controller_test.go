@@ -133,6 +133,93 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				DetailedMonitoring:  ptr.To(true),
 			},
 		},
+		{
+			name: "when role is specified, it should be synced to EC2NodeClass",
+			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				Role: "my-custom-role",
+			},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": hcp.Spec.InfraID,
+						},
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": hcp.Spec.InfraID,
+						},
+					},
+				},
+				Role: "my-custom-role",
+			},
+		},
+		{
+			name: "when instanceProfile is specified, it should be synced to EC2NodeClass",
+			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				InstanceProfile: ptr.To("my-custom-instance-profile"),
+			},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": hcp.Spec.InfraID,
+						},
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": hcp.Spec.InfraID,
+						},
+					},
+				},
+				InstanceProfile: ptr.To("my-custom-instance-profile"),
+			},
+		},
+		{
+			name: "when all fields including role are specified, they should be synced to EC2NodeClass",
+			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
+					{
+						ID: "subnet-123",
+					},
+				},
+				SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
+					{
+						ID: "sg-123",
+					},
+				},
+				AssociatePublicIPAddress: ptr.To(false),
+				Tags: map[string]string{
+					"Environment": "production",
+				},
+				DetailedMonitoring:  ptr.To(true),
+				InstanceStorePolicy: ptr.To(hyperkarpenterv1.InstanceStorePolicyRAID0),
+				Role:                "production-worker-role",
+			},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						ID: "subnet-123",
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						ID: "sg-123",
+					},
+				},
+				AssociatePublicIPAddress: ptr.To(false),
+				Tags: map[string]string{
+					"Environment": "production",
+				},
+				DetailedMonitoring:  ptr.To(true),
+				InstanceStorePolicy: ptr.To(awskarpenterv1.InstanceStorePolicyRAID0),
+				Role:                "production-worker-role",
+			},
+		},
 	}
 
 	for _, tc := range testCases {
