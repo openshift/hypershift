@@ -14,7 +14,13 @@ linters:
         original-url: sigs.k8s.io/kube-api-linter
         settings:
           linters:
+            # Disable all default linters and only enable specific ones.
+            # This prevents new default linters from causing unexpected failures
+            # when upgrading kube-api-linter.
+            disable:
+              - "*"
             enable:
+              - conditions
               - maxlength
               - nobools
               - nomaps
@@ -39,23 +45,23 @@ linters:
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/aws.go
-        text: 'nobools: field Encrypted pointer should not use a bool. Use a string type with meaningful constant values as an enum'
+        text: 'nobools: field Volume.Encrypted pointer should not use a bool. Use a string type with meaningful constant values as an enum'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hosted_controlplane.go
-        text: 'nobools: field FIPS should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field HostedControlPlaneSpec.FIPS should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hosted_controlplane.go
-        text: 'nobools: field Ready should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field HostedControlPlaneStatus.Ready should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hosted_controlplane.go
-        text: 'nobools: field Initialized should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field HostedControlPlaneStatus.Initialized should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hosted_controlplane.go
-        text: 'nobools: field ExternalManagedControlPlane pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field HostedControlPlaneStatus.ExternalManagedControlPlane pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hosted_controlplane.go
@@ -63,7 +69,7 @@ linters:
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hostedcluster_types.go
-        text: 'nobools: field FIPS should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field HostedClusterSpec.FIPS should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/kubevirt.go
@@ -71,15 +77,15 @@ linters:
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/kubevirt.go
-        text: 'nobools: field AttachDefaultNetwork pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field KubevirtNodePoolPlatform.AttachDefaultNetwork pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/kubevirt.go
-        text: 'nobools: field BaseDomainPassthrough pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field KubevirtPlatformSpec.BaseDomainPassthrough pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/nodepool_types.go
-        text: 'nobools: field AutoRepair should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field NodePoolManagement.AutoRepair should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/openstack.go
@@ -87,7 +93,7 @@ linters:
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/openstack.go
-        text: 'nobools: field DisableExternalNetwork pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field OpenStackPlatformSpec.DisableExternalNetwork pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/powervs.go
@@ -111,7 +117,7 @@ linters:
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/aws.go
-        text: 'nobools: field MultiArch should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field AWSPlatformSpec.MultiArch should not use a bool. Use a string type with meaningful constant values as an enum.'
       # TODO(kubeapilinter): Review and fix these linting errors
       # These exceptions were added to allow the linter to pass while
       # marking API issues for future review. Each should be evaluated
@@ -229,47 +235,53 @@ linters:
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/aws.go
-        text: 'nobools: field Encrypted pointer should not use a bool. Use a string type with meaningful constant values as an enum'
+        text: 'nobools: field Volume.Encrypted pointer should not use a bool. Use a string type with meaningful constant values as an enum'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/aws.go
-        text: 'nobools: field MultiArch should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field AWSPlatformSpec.MultiArch should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hosted_controlplane.go
-        text: 'nobools: field ExternalManagedControlPlane pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field HostedControlPlaneStatus.ExternalManagedControlPlane pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hosted_controlplane.go
-        text: 'nobools: field FIPS should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field HostedControlPlaneSpec.FIPS should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hosted_controlplane.go
-        text: 'nobools: field Initialized should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field HostedControlPlaneStatus.Initialized should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hosted_controlplane.go
-        text: 'nobools: field Ready should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field HostedControlPlaneStatus.Ready should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hostedcluster_types.go
-        text: 'nobools: field FIPS should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field HostedClusterSpec.FIPS should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/kubevirt.go
-        text: 'nobools: field AttachDefaultNetwork pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field KubevirtNodePoolPlatform.AttachDefaultNetwork pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/kubevirt.go
-        text: 'nobools: field BaseDomainPassthrough pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field KubevirtPlatformSpec.BaseDomainPassthrough pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/nodepool_types.go
-        text: 'nobools: field AutoRepair should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field NodePoolManagement.AutoRepair should not use a bool. Use a string type with meaningful constant values as an enum.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/openstack.go
-        text: 'nobools: field DisableExternalNetwork pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+        text: 'nobools: field OpenStackPlatformSpec.DisableExternalNetwork pointer should not use a bool. Use a string type with meaningful constant values as an enum.'
+
+      # statussubresource (1 issue)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/certificatesigningrequestapproval_types.go
+        text: 'statussubresource: root object type "CertificateSigningRequestApproval" has a status field but does not have the marker "kubebuilder:subresource:status" to enable the status subresource'
 
       # nodurations (2 issues)
       - linters:
