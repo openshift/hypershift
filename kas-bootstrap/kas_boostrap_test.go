@@ -1,6 +1,7 @@
 package kasbootstrap
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -370,6 +372,27 @@ func TestReconcileFeatureGate(t *testing.T) {
 	}
 }
 
+type fakeApplyClient struct {
+	client client.Client
+}
+
+func newFakeApplyClient() *fakeApplyClient {
+	c := fake.NewClientBuilder().WithScheme(configScheme).Build()
+	return &fakeApplyClient{client: c}
+}
+
+func (c *fakeApplyClient) Apply(ctx context.Context, obj *unstructured.Unstructured, opts ...client.PatchOption) error {
+	return c.client.Create(ctx, obj)
+}
+
+func (c *fakeApplyClient) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	return c.client.Get(ctx, key, obj, opts...)
+}
+
+func (c *fakeApplyClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	return c.client.List(ctx, list, opts...)
+}
+
 func TestApplyBootstrapResources(t *testing.T) {
 	testCases := []struct {
 		name      string
@@ -396,10 +419,10 @@ func TestApplyBootstrapResources(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			builder := fake.NewClientBuilder().WithScheme(configScheme)
-			c := builder.Build()
+			c := newFakeApplyClient()
+			hccoClient := newFakeApplyClient()
 
-			err := applyBootstrapResources(t.Context(), c, tc.filesPath)
+			err := applyBootstrapResources(t.Context(), c, hccoClient, tc.filesPath)
 			if tc.expectErr {
 				g.Expect(err).To(HaveOccurred())
 				return
@@ -413,10 +436,13 @@ func TestApplyBootstrapResources(t *testing.T) {
 			// we expect 2 CRDs to be created.
 			g.Expect(crdList.Items).To(HaveLen(2))
 
-			// we expect the feature gate to be created.
+			// we expect the feature gate to be created using the HCCO client.
 			featureGate := &configv1.FeatureGate{}
-			err = c.Get(t.Context(), client.ObjectKey{Name: "cluster"}, featureGate)
+			err = hccoClient.Get(t.Context(), client.ObjectKey{Name: "cluster"}, featureGate)
 			g.Expect(err).ToNot(HaveOccurred())
+			featureGate2 := &configv1.FeatureGate{}
+			err = c.Get(t.Context(), client.ObjectKey{Name: "cluster"}, featureGate2)
+			g.Expect(err).To(HaveOccurred())
 
 			// we expect the hcco-role-binding to be created.
 			roleBinding := &rbacv1.ClusterRoleBinding{}
