@@ -109,7 +109,7 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 		// temporary override for 4.21 to unblock CAPI bump to 1.11 which introduces a new API version.
 		// used image from multiArch release payload 4.20.5 (quay.io/openshift-release-dev/ocp-release@sha256:1f2c28ac126453a3b9e83b349822b9f1fb7662973a212f936b90fdc40e06eb58)
 		// TODO(https://issues.redhat.com/browse/CNTRLPLANE-1200): Remove this override once Hypershift installs the CAPI v1beta2 API version
-		if payloadVersion != nil && payloadVersion.Major == 4 && payloadVersion.Minor == 21 {
+		if payloadVersion != nil && payloadVersion.GTE(semver.MustParse("4.21.0-0")) {
 			capiImageProvider = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:b8881eafb5fdb31bdaffe03d2cb74ee6729a4776ce879c550e0ea26c489e2cf6"
 		}
 		platform = aws.New(utilitiesImage, capiImageProvider, payloadVersion)
@@ -136,7 +136,7 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 		// temporary override for 4.21 to unblock CAPI bump to 1.11 which introduces a new API version.
 		// used image from multiArch release payload 4.20.5 (quay.io/openshift-release-dev/ocp-release@sha256:1f2c28ac126453a3b9e83b349822b9f1fb7662973a212f936b90fdc40e06eb58)
 		// TODO(https://issues.redhat.com/browse/CNTRLPLANE-1200): Remove this override once Hypershift installs the CAPI v1beta2 API version
-		if payloadVersion != nil && payloadVersion.Major == 4 && payloadVersion.Minor == 21 {
+		if payloadVersion != nil && payloadVersion.GTE(semver.MustParse("4.21.0-0")) {
 			capiImageProvider = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:54c33e77c60da570e9f18dcae94c4c320145a77a78df9de615a9949fbebf6b40"
 		}
 		platform = azure.New(utilitiesImage, capiImageProvider, payloadVersion)
