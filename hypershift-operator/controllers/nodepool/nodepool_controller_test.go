@@ -1825,22 +1825,22 @@ func TestSupportedVersionSkewCondition(t *testing.T) {
 			name: "when nodePool version is four minor versions lower (n-4) it should report invalid condition",
 			nodePool: func() *hyperv1.NodePool {
 				np := baseNodePool.DeepCopy()
-				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.14.0-x86_64"
+				np.Spec.Release.Image = "quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64"
 				return np
 			}(),
 			hostedCluster: func() *hyperv1.HostedCluster {
 				hc := baseHostedCluster.DeepCopy()
-				hc.Status.Version.History[0].Version = "4.18.0"
+				hc.Status.Version.History[0].Version = "4.20.0"
 				return hc
 			}(),
 			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
-				Version: "4.14.0",
+				Version: "4.16.0",
 			},
 			expectedCondition: &hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolSupportedVersionSkewConditionType,
 				Status:             corev1.ConditionFalse,
 				Reason:             hyperv1.NodePoolUnsupportedSkewReason,
-				Message:            "NodePool minor version 4.14 is less than 4.15, which is the minimum NodePool version compatible with the 4.18 HostedCluster",
+				Message:            "NodePool minor version 4.16 is less than 4.17, which is the minimum NodePool version compatible with the 4.20 HostedCluster",
 				ObservedGeneration: 0,
 			},
 			expectedError: "",
