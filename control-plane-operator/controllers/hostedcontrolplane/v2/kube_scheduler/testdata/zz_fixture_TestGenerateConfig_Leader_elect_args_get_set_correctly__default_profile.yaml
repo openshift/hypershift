@@ -23,5 +23,4 @@ data:
     }
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: kube-scheduler

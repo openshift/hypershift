@@ -1,7 +1,6 @@
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  creationTimestamp: null
   name: ignition-server
   namespace: hcp-namespace
   ownerReferences:

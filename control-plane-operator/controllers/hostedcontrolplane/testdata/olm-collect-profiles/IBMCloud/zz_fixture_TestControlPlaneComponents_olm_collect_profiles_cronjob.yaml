@@ -1,7 +1,6 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: olm-collect-profiles
@@ -16,8 +15,7 @@ metadata:
   resourceVersion: "1"
 spec:
   jobTemplate:
-    metadata:
-      creationTimestamp: null
+    metadata: {}
     spec:
       template:
         metadata:
@@ -25,7 +23,6 @@ spec:
             cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
             component.hypershift.openshift.io/config-hash: fe7dc514
             hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
-          creationTimestamp: null
           labels:
             app: olm-collect-profiles
             hypershift.openshift.io/control-plane-component: olm-collect-profiles

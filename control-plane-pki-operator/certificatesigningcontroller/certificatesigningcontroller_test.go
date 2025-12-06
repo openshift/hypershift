@@ -10,9 +10,11 @@ import (
 	"embed"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -25,7 +27,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/diff"
 	certificatesv1applyconfigurations "k8s.io/client-go/applyconfigurations/certificates/v1"
 	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
 	"k8s.io/client-go/util/certificate/csr"
@@ -41,6 +42,44 @@ import (
 //
 //go:embed testdata
 var testdata embed.FS
+
+// IgnoreUnset is an option that ignores fields that are unset on the right
+// hand side of a comparison. This is useful in testing to assert that an
+// object is a derivative.
+func IgnoreUnset() cmp.Option {
+	return cmp.Options{
+		// ignore unset fields in v2
+		cmp.FilterPath(func(path cmp.Path) bool {
+			_, v2 := path.Last().Values()
+			switch v2.Kind() {
+			case reflect.Slice, reflect.Map:
+				if v2.IsNil() || v2.Len() == 0 {
+					return true
+				}
+			case reflect.String:
+				if v2.Len() == 0 {
+					return true
+				}
+			case reflect.Interface, reflect.Pointer:
+				if v2.IsNil() {
+					return true
+				}
+			}
+			return false
+		}, cmp.Ignore()),
+		// ignore map entries that aren't set in v2
+		cmp.FilterPath(func(path cmp.Path) bool {
+			switch i := path.Last().(type) {
+			case cmp.MapIndex:
+				if _, v2 := i.Values(); !v2.IsValid() {
+					fmt.Println("E")
+					return true
+				}
+			}
+			return false
+		}, cmp.Ignore()),
+	}
+}
 
 func privateKey(t *testing.T) crypto.PrivateKey {
 	if os.Getenv("REGENERATE_PKI") != "" {
@@ -493,7 +532,7 @@ func TestSign(t *testing.T) {
 		MaxPathLen:            -1,
 	}
 
-	if d := cmp.Diff(*certs[0], want, diff.IgnoreUnset()); d != "" {
+	if d := cmp.Diff(*certs[0], want, IgnoreUnset()); d != "" {
 		t.Errorf("unexpected diff: %v", d)
 	}
 }

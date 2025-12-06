@@ -84,6 +84,7 @@ var (
 		&batchv1.Job{},
 		&batchv1.CronJob{},
 		&corev1.ConfigMap{},
+		//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 		&corev1.Endpoints{},
 		&corev1.Event{},
 		&corev1.PersistentVolumeClaim{},

@@ -9,6 +9,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -118,7 +119,9 @@ func (cg *ConfigGenerator) CompressedAndEncoded() (*bytes.Buffer, error) {
 // TODO(alberto): hash the struct directly instead of the string representation field by field.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) Hash() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.globalConfig)
+	fullHashInput := cg.mcoRawConfig + cg.releaseImage.Version() + cg.pullSecretName + cg.additionalTrustBundleName + cg.globalConfig
+	result := supportutil.HashSimple(fullHashInput)
+	return result
 }
 
 // HashWithOutVersion is like Hash but doesn't compute the release version.
@@ -126,7 +129,9 @@ func (cg *ConfigGenerator) Hash() string {
 // TODO(alberto): This was left inconsistent in https://github.com/openshift/hypershift/pull/3795/files. It should also contain cg.globalConfig.
 // This is kept like this for now to contain the scope of the refactor and avoid backward compatibility issues.
 func (cg *ConfigGenerator) HashWithoutVersion() string {
-	return supportutil.HashSimple(cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName)
+	hashInput := cg.mcoRawConfig + cg.pullSecretName + cg.additionalTrustBundleName
+	result := supportutil.HashSimple(hashInput)
+	return result
 }
 
 func (cg *ConfigGenerator) Version() string {
@@ -159,7 +164,11 @@ func (cg *ConfigGenerator) generateMCORawConfig(ctx context.Context, caps *hyper
 		configs = append(configs, nodeTuningGeneratedConfigs...)
 	}
 
-	return cg.parse(configs)
+	result, err := cg.parse(configs)
+	if err != nil {
+		return "", err
+	}
+	return result, nil
 }
 
 // getUserConfigs returns a slice with all the configMaps in nodePool.Spec.Config.
@@ -235,6 +244,7 @@ func (cg *ConfigGenerator) parse(configs []corev1.ConfigMap) (string, error) {
 
 	for _, config := range configs {
 		cmPayload := config.Data[TokenSecretConfigKey]
+
 		// ignition config-map payload may contain multiple manifests
 		yamlReader := yaml.NewYAMLReader(bufio.NewReader(strings.NewReader(cmPayload)))
 		for {
@@ -260,7 +270,8 @@ func (cg *ConfigGenerator) parse(configs []corev1.ConfigMap) (string, error) {
 	// These configs are the input to a hash func whose output is used as part of the name of the user-data secret,
 	// so our output must be deterministic.
 	sort.Strings(allConfigPlainText)
-	return strings.Join(allConfigPlainText, "\n---\n"), utilerrors.NewAggregate(errors)
+	finalConfig := strings.Join(allConfigPlainText, "\n---\n")
+	return finalConfig, utilerrors.NewAggregate(errors)
 }
 
 // defaultAndValidateConfigManifest validates a manifest is a MCO consumabled supported API
@@ -322,11 +333,25 @@ func (cg *ConfigGenerator) defaultAndValidateConfigManifest(manifest []byte) ([]
 }
 
 func encode(obj runtime.Object, ser *serializer.Serializer) ([]byte, error) {
+	// Ensure CreationTimestamp is set to zero time for consistent serialization
+	// This matches the old OpenShift API behavior where creationTimestamp: null was included
+	if metaObj, ok := obj.(metav1.Object); ok {
+		creationTimestamp := metaObj.GetCreationTimestamp()
+		if creationTimestamp.IsZero() {
+			// Use Unix epoch time to force serialization of creationTimestamp field
+			metaObj.SetCreationTimestamp(metav1.NewTime(time.Unix(0, 0)))
+		}
+	}
+
 	buff := bytes.Buffer{}
 	if err := ser.Encode(obj, &buff); err != nil {
 		return nil, err
 	}
-	return buff.Bytes(), nil
+
+	result := buff.Bytes()
+	// Replace Unix epoch timestamp with null to match old OpenShift API behavior
+	resultStr := strings.ReplaceAll(string(result), `creationTimestamp: "1970-01-01T00:00:00Z"`, `creationTimestamp: null`)
+	return []byte(resultStr), nil
 }
 
 func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
@@ -343,6 +368,18 @@ func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
 	// Serialize proxy and image into a single string to use in the token secret hash.
 	globalConfigBytes := bytes.NewBuffer(nil)
 
+	// Ensure consistent serialization with creationTimestamp: null like the old OpenShift API
+	proxyTimestamp := proxy.GetCreationTimestamp()
+	if proxyTimestamp.IsZero() {
+		// Use Unix epoch time to force serialization of creationTimestamp field
+		proxy.SetCreationTimestamp(metav1.NewTime(time.Unix(0, 0)))
+	}
+	imageTimestamp := image.GetCreationTimestamp()
+	if imageTimestamp.IsZero() {
+		// Use Unix epoch time to force serialization of creationTimestamp field
+		image.SetCreationTimestamp(metav1.NewTime(time.Unix(0, 0)))
+	}
+
 	enc := json.NewEncoder(globalConfigBytes)
 	if err := enc.Encode(proxy); err != nil {
 		return "", fmt.Errorf("failed to encode proxy global config: %w", err)
@@ -352,6 +389,11 @@ func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
 		return "", fmt.Errorf("failed to encode image global config: %w", err)
 	}
 
+	rawConfig := globalConfigBytes.String()
+	// Replace Unix epoch timestamp with null to match old OpenShift API behavior
+	rawConfig = strings.ReplaceAll(rawConfig, `"creationTimestamp":"1970-01-01T00:00:00Z"`, `"creationTimestamp":null`)
+
 	// Some fields in the ClusterConfiguration have changes that are not backwards compatible with older versions of the CPO.
-	return backwardcompat.GetBackwardCompatibleConfigString(globalConfigBytes.String()), nil
+	result := backwardcompat.GetBackwardCompatibleConfigString(rawConfig)
+	return result, nil
 }

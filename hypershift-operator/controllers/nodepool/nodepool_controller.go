@@ -687,7 +687,11 @@ func isUpdatingVersion(nodePool *hyperv1.NodePool, targetVersion string) bool {
 }
 
 func isUpdatingConfig(nodePool *hyperv1.NodePool, targetConfigHash string) bool {
-	return targetConfigHash != nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfig]
+	currentHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfig]
+	isUpdating := targetConfigHash != currentHash
+	fmt.Printf("DEBUG: isUpdatingConfig comparison - current: %s, target: %s, updating: %t\n",
+		currentHash, targetConfigHash, isUpdating)
+	return isUpdating
 }
 
 func isUpdatingMachineTemplate(nodePool *hyperv1.NodePool, targetMachineTemplate string) bool {

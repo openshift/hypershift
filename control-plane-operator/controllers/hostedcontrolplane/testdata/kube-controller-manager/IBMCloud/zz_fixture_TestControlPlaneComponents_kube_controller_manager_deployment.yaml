@@ -1,7 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-controller-manager
@@ -29,9 +28,8 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: logs,certs,tmp-dir
-        component.hypershift.openshift.io/config-hash: 1252551487ecf31a87ecf31a8c3f52a8d6265674
+        component.hypershift.openshift.io/config-hash: 1252551440ea5fe187ecf31a87ecf31ad6265674
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
-      creationTimestamp: null
       labels:
         app: kube-controller-manager
         hypershift.openshift.io/control-plane-component: kube-controller-manager

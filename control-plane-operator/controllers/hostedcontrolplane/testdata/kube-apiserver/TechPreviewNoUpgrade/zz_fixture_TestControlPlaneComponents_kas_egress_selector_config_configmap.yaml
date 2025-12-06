@@ -22,7 +22,6 @@ data:
     kind: EgressSelectorConfiguration
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: kas-egress-selector-config
   namespace: hcp-namespace
   ownerReferences:

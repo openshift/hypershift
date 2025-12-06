@@ -79,7 +79,7 @@ var map_ContainerRuntimeConfiguration = map[string]string{
 	"logLevel":       "logLevel specifies the verbosity of the logs based on the level it is set to. Options are fatal, panic, error, warn, info, and debug.",
 	"logSizeMax":     "logSizeMax specifies the Maximum size allowed for the container log file. Negative numbers indicate that no size limit is imposed. If it is positive, it must be >= 8192 to match/exceed conmon's read buffer.",
 	"overlaySize":    "overlaySize specifies the maximum size of a container image. This flag can be used to set quota on the size of container images. (default: 10GB)",
-	"defaultRuntime": "defaultRuntime is the name of the OCI runtime to be used as the default.",
+	"defaultRuntime": "defaultRuntime is the name of the OCI runtime to be used as the default for containers. Allowed values are `runc` and `crun`. When set to `runc`, OpenShift will use runc to execute the container When set to `crun`, OpenShift will use crun to execute the container When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time. Currently, the default is `crun`.",
 }
 
 func (ContainerRuntimeConfiguration) SwaggerDoc() map[string]string {
@@ -289,6 +289,7 @@ var map_MachineConfigPoolSpec = map[string]string{
 	"maxUnavailable":        "maxUnavailable defines either an integer number or percentage of nodes in the pool that can go Unavailable during an update. This includes nodes Unavailable for any reason, including user initiated cordons, failing nodes, etc. The default value is 1.\n\nA value larger than 1 will mean multiple nodes going unavailable during the update, which may affect your workload stress on the remaining nodes. You cannot set this value to 0 to stop updates (it will default back to 1); to stop updates, use the 'paused' property instead. Drain will respect Pod Disruption Budgets (PDBs) such as etcd quorum guards, even if maxUnavailable is greater than one.",
 	"configuration":         "The targeted MachineConfig object for the machine config pool.",
 	"pinnedImageSets":       "pinnedImageSets specifies a sequence of PinnedImageSetRef objects for the pool. Nodes within this pool will preload and pin images defined in the PinnedImageSet. Before pulling images the MachineConfigDaemon will ensure the total uncompressed size of all the images does not exceed available resources. If the total size of the images exceeds the available resources the controller will report a Degraded status to the MachineConfigPool and not attempt to pull any images. Also to help ensure the kubelet can mitigate storage risk, the pinned_image configuration and subsequent service reload will happen only after all of the images have been pulled for each set. Images from multiple PinnedImageSets are loaded and pinned sequentially as listed. Duplicate and existing images will be skipped.\n\nAny failure to prefetch or pin images will result in a Degraded pool. Resolving these failures is the responsibility of the user. The admin should be proactive in ensuring adequate storage and proper image authentication exists in advance.",
+	"osImageStream":         "osImageStream specifies an OS stream to be used for the pool.\n\nThis field can be optionally set to a known OSImageStream name to change the OS and Extension images with a well-known, tested, release-provided set of images. This enables a streamlined way of switching the pool's node OS to a different version than the cluster default, such as transitioning to a major RHEL version.\n\nWhen set, the referenced stream overrides the cluster-wide OS images for the pool with the OS and Extensions associated to stream. When omitted, the pool uses the cluster-wide default OS images.",
 }
 
 func (MachineConfigPoolSpec) SwaggerDoc() map[string]string {
@@ -307,6 +308,7 @@ var map_MachineConfigPoolStatus = map[string]string{
 	"conditions":              "conditions represents the latest available observations of current state.",
 	"certExpirys":             "certExpirys keeps track of important certificate expiration data",
 	"poolSynchronizersStatus": "poolSynchronizersStatus is the status of the machines managed by the pool synchronizers.",
+	"osImageStream":           "osImageStream specifies the last updated OSImageStream for the pool.\n\nWhen omitted, the pool is using the cluster-wide default OS images.",
 }
 
 func (MachineConfigPoolStatus) SwaggerDoc() map[string]string {
@@ -346,6 +348,14 @@ func (NetworkInfo) SwaggerDoc() map[string]string {
 	return map_NetworkInfo
 }
 
+var map_OSImageStreamReference = map[string]string{
+	"name": "name is a required reference to an OSImageStream to be used for the pool.\n\nIt must be a valid RFC 1123 subdomain between 1 and 253 characters in length, consisting of lowercase alphanumeric characters, hyphens ('-'), and periods ('.').",
+}
+
+func (OSImageStreamReference) SwaggerDoc() map[string]string {
+	return map_OSImageStreamReference
+}
+
 var map_PinnedImageSetRef = map[string]string{
 	"name": "name is a reference to the name of a PinnedImageSet.  Must adhere to RFC-1123 (https://tools.ietf.org/html/rfc1123). Made up of one of more period-separated (.) segments, where each segment consists of alphanumeric characters and hyphens (-), must begin and end with an alphanumeric character, and is at most 63 characters in length. The total length of the name must not exceed 253 characters.",
 }
@@ -366,6 +376,16 @@ var map_PoolSynchronizerStatus = map[string]string{
 
 func (PoolSynchronizerStatus) SwaggerDoc() map[string]string {
 	return map_PoolSynchronizerStatus
+}
+
+var map_IrreconcilableChangeDiff = map[string]string{
+	"":          "IrreconcilableChangeDiff holds an individual diff between the initial install-time MachineConfig and the latest applied one caused by the presence of irreconcilable changes.",
+	"fieldPath": "fieldPath is a required reference to the path in the latest rendered MachineConfig that differs from this nodes configuration. Must not be empty and must not exceed 70 characters in length. Must begin with the prefix 'spec.' and only contain alphanumeric characters, square brackets ('[]'), or dots ('.').",
+	"diff":      "diff is a required field containing the difference between the nodes current configuration and the latest rendered MachineConfig for the field specified in fieldPath. Must not be an empty string and must not exceed 4096 characters in length.",
+}
+
+func (IrreconcilableChangeDiff) SwaggerDoc() map[string]string {
+	return map_IrreconcilableChangeDiff
 }
 
 var map_MCOObjectReference = map[string]string{
@@ -403,10 +423,20 @@ var map_MachineConfigNodeSpec = map[string]string{
 	"node":          "node contains a reference to the node for this machine config node.",
 	"pool":          "pool contains a reference to the machine config pool that this machine config node's referenced node belongs to.",
 	"configVersion": "configVersion holds the desired config version for the node targeted by this machine config node resource. The desired version represents the machine config the node will attempt to update to and gets set before the machine config operator validates the new machine config against the current machine config.",
+	"configImage":   "configImage is an optional field for configuring the OS image to be used for this node. This field will only exist if the node belongs to a pool opted into on-cluster image builds, and will override any MachineConfig referenced OSImageURL fields When omitted, Image Mode is not be enabled and the node will follow the standard update process of creating a rendered MachineConfig and updating to its specifications. When specified, Image Mode is enabled and will attempt to update the node to use the desired image. Following this, the node will follow the standard update process of creating a rendered MachineConfig and updating to its specifications.",
 }
 
 func (MachineConfigNodeSpec) SwaggerDoc() map[string]string {
 	return map_MachineConfigNodeSpec
+}
+
+var map_MachineConfigNodeSpecConfigImage = map[string]string{
+	"":             "MachineConfigNodeSpecConfigImage holds the desired image for the node. This structure is populated from the `machineconfiguration.openshift.io/desiredImage` annotation on the target node, which is set by the Machine Config Pool controller to signal the desired image pullspec for the node to update to.",
+	"desiredImage": "desiredImage is a required field that configures the image that the node should be updated to use. It must be a fully qualified OCI image pull spec of the format host[:port][/namespace]/name@sha256:, where the digest must be exactly 64 characters in length and consist only of lowercase hexadecimal characters, a-f and 0-9. desiredImage must not be an empty string and must not exceed 447 characters in length.",
+}
+
+func (MachineConfigNodeSpecConfigImage) SwaggerDoc() map[string]string {
+	return map_MachineConfigNodeSpecConfigImage
 }
 
 var map_MachineConfigNodeSpecMachineConfigVersion = map[string]string{
@@ -419,15 +449,48 @@ func (MachineConfigNodeSpecMachineConfigVersion) SwaggerDoc() map[string]string 
 }
 
 var map_MachineConfigNodeStatus = map[string]string{
-	"":                   "MachineConfigNodeStatus holds the reported information on a particular machine config node.",
-	"conditions":         "conditions represent the observations of a machine config node's current state. Valid types are: UpdatePrepared, UpdateExecuted, UpdatePostActionComplete, UpdateComplete, Updated, Resumed, Drained, AppliedFilesAndOS, Cordoned, Uncordoned, RebootedNode, NodeDegraded, PinnedImageSetsProgressing, and PinnedImageSetsDegraded.",
-	"observedGeneration": "observedGeneration represents the generation of the MachineConfigNode object observed by the Machine Config Operator's controller. This field is updated when the controller observes a change to the desiredConfig in the configVersion of the machine config node spec.",
-	"configVersion":      "configVersion describes the current and desired machine config version for this node.",
-	"pinnedImageSets":    "pinnedImageSets describes the current and desired pinned image sets for this node.",
+	"":                      "MachineConfigNodeStatus holds the reported information on a particular machine config node.",
+	"conditions":            "conditions represent the observations of a machine config node's current state. Valid types are: UpdatePrepared, UpdateExecuted, UpdatePostActionComplete, UpdateComplete, Updated, Resumed, Drained, AppliedFilesAndOS, Cordoned, Uncordoned, RebootedNode, NodeDegraded, PinnedImageSetsProgressing, and PinnedImageSetsDegraded. The following types are only available when the ImageModeStatusReporting feature gate is enabled: ImagePulledFromRegistry, AppliedOSImage, AppliedFiles",
+	"observedGeneration":    "observedGeneration represents the generation of the MachineConfigNode object observed by the Machine Config Operator's controller. This field is updated when the controller observes a change to the desiredConfig in the configVersion of the machine config node spec.",
+	"configVersion":         "configVersion describes the current and desired machine config version for this node.",
+	"configImage":           "configImage is an optional field for configuring the OS image to be used for this node. This field will only exist if the node belongs to a pool opted into on-cluster image builds, and will override any MachineConfig referenced OSImageURL fields. When omitted, this means that the Image Mode feature is not being used and the node will be up to date with the specific current rendered config version for the nodes MachinePool. When specified, the Image Mode feature is enabled and the contents of this field show the observed state of the node image. When Image Mode is enabled and a new MachineConfig is applied such that a new OS image build is not created, only the configVersion field will change. When Image Mode is enabled and a new MachineConfig is applied such that a new OS image build is created, then only the configImage field will change. It is also possible that both the configImage and configVersion change during the same update.",
+	"pinnedImageSets":       "pinnedImageSets describes the current and desired pinned image sets for this node.",
+	"irreconcilableChanges": "irreconcilableChanges is an optional field that contains the observed differences between this nodes configuration and the target rendered MachineConfig. This field will be set when there are changes to the target rendered MachineConfig that can only be applied to new nodes joining the cluster. Entries must be unique, keyed on the fieldPath field. Must not exceed 32 entries.",
+	"internalReleaseImage":  "internalReleaseImage describes the status of the release payloads stored in the node. When specified, an internalReleaseImage custom resource exists on the cluster, and the specified images will be made available on the control plane nodes. This field will reflect the actual on-disk state of those release images.",
 }
 
 func (MachineConfigNodeStatus) SwaggerDoc() map[string]string {
 	return map_MachineConfigNodeStatus
+}
+
+var map_MachineConfigNodeStatusConfigImage = map[string]string{
+	"":             "MachineConfigNodeStatusConfigImage holds the observed state of the image on the node, including both the image targeted for an update and the image currently applied. This allows for monitoring the progress of the layering rollout. If Image Mode is enabled, desiredImage must be defined.",
+	"currentImage": "currentImage is an optional field that represents the current image that is applied to the node. When omitted, this means that no image updates have been applied to the node and it will be up to date with the specific current rendered config version. When specified, this means that the node is currently using this image. currentImage must be a fully qualified OCI image pull spec of the format host[:port][/namespace]/name@sha256:, where the digest must be exactly 64 characters in length and consist only of lowercase hexadecimal characters, a-f and 0-9. currentImage must not be an empty string and must not exceed 447 characters in length.",
+	"desiredImage": "desiredImage is an optional field that represents the currently observed state of image that the node should be updated to use. When not specified, this means that Image Mode has been disabled and the node will up to date with the specific current rendered config version. When specified, this means that Image Mode has been enabled and the node is actively progressing to update the node to this image. If currentImage and desiredImage match, the node has been successfully updated to use the desired image. desiredImage must be a fully qualified OCI image pull spec of the format host[:port][/namespace]/name@sha256:, where the digest must be exactly 64 characters in length and consist only of lowercase hexadecimal characters, a-f and 0-9. desiredImage must not be an empty string and must not exceed 447 characters in length.",
+}
+
+func (MachineConfigNodeStatusConfigImage) SwaggerDoc() map[string]string {
+	return map_MachineConfigNodeStatusConfigImage
+}
+
+var map_MachineConfigNodeStatusInternalReleaseImage = map[string]string{
+	"":         "MachineConfigNodeStatusInternalReleaseImage holds information about the current and discovered release bundles for the observed machine config node.",
+	"releases": "releases is a list of the release bundles currently owned and managed by the cluster. A release bundle content could be safely pulled only when its Conditions field contains at least an Available entry set to \"True\" and Degraded to \"False\". Entries must be unique, keyed on the name field. releases must contain at least one entry and must not exceed 32 entries.",
+}
+
+func (MachineConfigNodeStatusInternalReleaseImage) SwaggerDoc() map[string]string {
+	return map_MachineConfigNodeStatusInternalReleaseImage
+}
+
+var map_MachineConfigNodeStatusInternalReleaseImageRef = map[string]string{
+	"":           "MachineConfigNodeStatusInternalReleaseImageRef is used to provide a more detailed reference for a release bundle.",
+	"conditions": "conditions represent the observations of an internal release image current state. Valid types are: Mounted, Installing, Available, Removing and Degraded.\n\nIf Mounted is true, that means that a valid ISO has been mounted on the current node. If Installing is true, that means that a new release bundle is currently being copied on the current node, and not yet completed. If Available is true, it means that the release has been previously installed on the current node, and it can be used. If Removing is true, it means that a release deletion is in progress on the current node, and not yet completed. If Degraded is true, that means something has gone wrong in the current node.",
+	"name":       "name indicates the desired release bundle identifier. This field is required and must be between 1 and 64 characters long. The expected name format is ocp-release-bundle-<version>-<arch|stream>.",
+	"image":      "image is an OCP release image referenced by digest. The format of the image pull spec is: host[:port][/namespace]/name@sha256:<digest>, where the digest must be 64 characters long, and consist only of lowercase hexadecimal characters, a-f and 0-9. The length of the whole spec must be between 1 to 447 characters. The field is optional, and it will be provided after a release will be successfully installed.",
+}
+
+func (MachineConfigNodeStatusInternalReleaseImageRef) SwaggerDoc() map[string]string {
+	return map_MachineConfigNodeStatusInternalReleaseImageRef
 }
 
 var map_MachineConfigNodeStatusMachineConfigVersion = map[string]string{
