@@ -40,7 +40,9 @@ func TestKarpenter(t *testing.T) {
 	if globalOpts.Platform != hyperv1.AWSPlatform {
 		t.Skip("test only supported on platform AWS")
 	}
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()

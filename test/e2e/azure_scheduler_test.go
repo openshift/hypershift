@@ -28,7 +28,9 @@ import (
 //   - the HostedCluster has a NodePool with 2 replicas.
 //   - the NodePool is using Standard_D4s_v5 VMs.
 func TestAzureScheduler(t *testing.T) {
-	t.Parallel()
+	// Run serially instead of in parallel as autoSizingReserved
+	// requires higher system reserved resources for each node.
+	// t.Parallel()
 
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
