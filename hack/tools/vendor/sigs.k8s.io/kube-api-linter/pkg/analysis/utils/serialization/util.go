@@ -80,15 +80,15 @@ func reportShouldRemovePointer(pass *analysis.Pass, field *ast.Field, pointerPol
 }
 
 // reportShouldAddOmitEmpty adds an analysis diagnostic that explains that an omitempty tag should be added.
-func reportShouldAddOmitEmpty(pass *analysis.Pass, field *ast.Field, omitEmptyPolicy OmitEmptyPolicy, fieldName, messageFmt string, fieldTagInfo extractjsontags.FieldTagInfo) {
+func reportShouldAddOmitEmpty(pass *analysis.Pass, field *ast.Field, omitEmptyPolicy OmitEmptyPolicy, qualifiedFieldName, messageFmt string, fieldTagInfo extractjsontags.FieldTagInfo) {
 	switch omitEmptyPolicy {
 	case OmitEmptyPolicySuggestFix:
 		pass.Report(analysis.Diagnostic{
 			Pos:     field.Pos(),
-			Message: fmt.Sprintf(messageFmt, fieldName),
+			Message: fmt.Sprintf(messageFmt, qualifiedFieldName),
 			SuggestedFixes: []analysis.SuggestedFix{
 				{
-					Message: fmt.Sprintf("should add 'omitempty' to the field tag for field %s", fieldName),
+					Message: fmt.Sprintf("should add 'omitempty' to the field tag for field %s", qualifiedFieldName),
 					TextEdits: []analysis.TextEdit{
 						{
 							Pos:     fieldTagInfo.Pos + token.Pos(len(fieldTagInfo.Name)),
@@ -99,7 +99,7 @@ func reportShouldAddOmitEmpty(pass *analysis.Pass, field *ast.Field, omitEmptyPo
 			},
 		})
 	case OmitEmptyPolicyWarn:
-		pass.Reportf(field.Pos(), messageFmt, fieldName)
+		pass.Reportf(field.Pos(), messageFmt, qualifiedFieldName)
 	case OmitEmptyPolicyIgnore:
 		// Do nothing, as the policy is to ignore the missing omitempty tag.
 	default:
@@ -108,15 +108,15 @@ func reportShouldAddOmitEmpty(pass *analysis.Pass, field *ast.Field, omitEmptyPo
 }
 
 // reportShouldAddOmitZero adds an analysis diagnostic that explains that an omitzero tag should be added.
-func reportShouldAddOmitZero(pass *analysis.Pass, field *ast.Field, omitZeroPolicy OmitZeroPolicy, fieldName, messageFmt string, fieldTagInfo extractjsontags.FieldTagInfo) {
+func reportShouldAddOmitZero(pass *analysis.Pass, field *ast.Field, omitZeroPolicy OmitZeroPolicy, qualifiedFieldName, messageFmt string, fieldTagInfo extractjsontags.FieldTagInfo) {
 	switch omitZeroPolicy {
 	case OmitZeroPolicySuggestFix:
 		pass.Report(analysis.Diagnostic{
 			Pos:     field.Pos(),
-			Message: fmt.Sprintf(messageFmt, fieldName),
+			Message: fmt.Sprintf(messageFmt, qualifiedFieldName),
 			SuggestedFixes: []analysis.SuggestedFix{
 				{
-					Message: fmt.Sprintf("should add 'omitzero' to the field tag for field %s", fieldName),
+					Message: fmt.Sprintf("should add 'omitzero' to the field tag for field %s", qualifiedFieldName),
 					TextEdits: []analysis.TextEdit{
 						{
 							Pos:     fieldTagInfo.Pos + token.Pos(len(fieldTagInfo.Name)),
@@ -127,7 +127,7 @@ func reportShouldAddOmitZero(pass *analysis.Pass, field *ast.Field, omitZeroPoli
 			},
 		})
 	case OmitZeroPolicyWarn:
-		pass.Reportf(field.Pos(), messageFmt, fieldName)
+		pass.Reportf(field.Pos(), messageFmt, qualifiedFieldName)
 	case OmitZeroPolicyForbid:
 		// Do nothing, as the policy is to forbid the missing omitzero tag.
 	default:
@@ -136,12 +136,12 @@ func reportShouldAddOmitZero(pass *analysis.Pass, field *ast.Field, omitZeroPoli
 }
 
 // reportShouldRemoveOmitZero adds an analysis diagnostic that explains that an omitzero tag should be removed.
-func reportShouldRemoveOmitZero(pass *analysis.Pass, field *ast.Field, fieldName string, jsonTags extractjsontags.FieldTagInfo) {
+func reportShouldRemoveOmitZero(pass *analysis.Pass, field *ast.Field, qualifiedFieldName string, jsonTags extractjsontags.FieldTagInfo) {
 	omitZeroPos := jsonTags.Pos + token.Pos(strings.Index(jsonTags.RawValue, ",omitzero"))
 
 	pass.Report(analysis.Diagnostic{
 		Pos:     field.Pos(),
-		Message: fmt.Sprintf("field %s has the omitzero tag, but by policy is not allowed. The omitzero tag should be removed.", fieldName),
+		Message: fmt.Sprintf("field %s has the omitzero tag, but by policy is not allowed. The omitzero tag should be removed.", qualifiedFieldName),
 		SuggestedFixes: []analysis.SuggestedFix{
 			{
 				Message: "should remove the omitzero tag",
