@@ -123,9 +123,6 @@ func NewIAMManager(ctx context.Context, projectID string, infraID string, jwksFi
 	if infraID == "" {
 		return nil, fmt.Errorf("infraID is not set on Client")
 	}
-	if jwksFile == "" {
-		return nil, fmt.Errorf("jwksFile is required")
-	}
 
 	if projectID == "" {
 		return nil, fmt.Errorf("projectID is required")
@@ -258,13 +255,13 @@ func (c *IAMManager) CreateOIDCProvider(ctx context.Context) (string, string, er
 			"google.subject": "assertion.sub",
 		},
 	}
-	parent := fmt.Sprintf("projects/%s/locations/global/workloadIdentityPools/%s", c.projectID, c.formatPoolID())
+	parent := c.formatPoolParent()
 	err = c.createWorkloadIdentityProvider(ctx, parent, providerID, provider)
 	if err != nil {
 		if isAlreadyExistsError(err) {
 			// Provider exists, check and fix its state/config if needed
 			c.logger.Info("OIDC Provider already exists, checking state and configuration", "providerID", providerID)
-			return c.ensureProviderUsable(ctx, parent, providerID, provider, providerAudience)
+			return c.ensureProviderUsable(ctx, providerID, provider, providerAudience)
 		}
 		return "", "", fmt.Errorf("failed to create OIDC Provider: %w", err)
 	}
@@ -275,8 +272,8 @@ func (c *IAMManager) CreateOIDCProvider(ctx context.Context) (string, string, er
 
 // ensureProviderUsable checks the state and configuration of an existing provider and fixes it if needed.
 // It handles providers that exist but are soft-deleted, disabled, and misconfigured.
-func (c *IAMManager) ensureProviderUsable(ctx context.Context, parent, providerID string, expectedProvider *iam.WorkloadIdentityPoolProvider, providerAudience string) (string, string, error) {
-	providerResource := fmt.Sprintf("%s/providers/%s", parent, providerID)
+func (c *IAMManager) ensureProviderUsable(ctx context.Context, providerID string, expectedProvider *iam.WorkloadIdentityPoolProvider, providerAudience string) (string, string, error) {
+	providerResource := c.formatProviderResource()
 
 	// GET to check state and configuration
 	existingProvider, err := c.getWorkloadIdentityProvider(ctx, providerResource)
@@ -420,7 +417,7 @@ func (c *IAMManager) assignRoles(ctx context.Context, serviceAccountEmail string
 		return nil
 	}
 
-	member := fmt.Sprintf("serviceAccount:%s", serviceAccountEmail)
+	member := c.formatServiceAccountMember(serviceAccountEmail)
 
 	// Get current IAM policy once
 	policy, err := c.getProjectIAMPolicy(ctx)
@@ -583,6 +580,11 @@ func (c *IAMManager) formatServiceAccountResource(serviceAccountEmail string) st
 	return fmt.Sprintf("projects/%s/serviceAccounts/%s", c.projectID, serviceAccountEmail)
 }
 
+// formatServiceAccountMember returns the IAM member format for a service account.
+func (c *IAMManager) formatServiceAccountMember(serviceAccountEmail string) string {
+	return fmt.Sprintf("serviceAccount:%s", serviceAccountEmail)
+}
+
 // formatProjectResource returns the full resource path for the project.
 func (c *IAMManager) formatProjectResource() string {
 	return fmt.Sprintf("projects/%s", c.projectID)
@@ -597,6 +599,16 @@ func (c *IAMManager) formatWIFPrincipal(namespace, serviceAccountName string) st
 // formatPoolResource returns the full resource path for a Workload Identity Pool.
 func (c *IAMManager) formatPoolResource(parent, poolID string) string {
 	return fmt.Sprintf("%s/workloadIdentityPools/%s", parent, poolID)
+}
+
+// formatPoolParent returns the parent resource path for the Workload Identity Pool.
+func (c *IAMManager) formatPoolParent() string {
+	return fmt.Sprintf("projects/%s/locations/global/workloadIdentityPools/%s", c.projectID, c.formatPoolID())
+}
+
+// formatProviderResource returns the full resource path for an OIDC Provider.
+func (c *IAMManager) formatProviderResource() string {
+	return fmt.Sprintf("%s/providers/%s", c.formatPoolParent(), c.formatProviderID())
 }
 
 func isAlreadyExistsError(err error) bool {
@@ -902,4 +914,160 @@ func (c *IAMManager) undeleteWorkloadIdentityProvider(ctx context.Context, provi
 		return err
 	}
 	return c.waitOperation(ctx, op.Name)
+}
+
+// ============================================================================
+// Destroy Methods
+// ============================================================================
+
+// DeleteWorkloadIdentityPool deletes the Workload Identity Pool for this cluster.
+func (c *IAMManager) DeleteWorkloadIdentityPool(ctx context.Context) error {
+	poolID := c.formatPoolID()
+	parent := fmt.Sprintf("projects/%s/locations/global", c.projectID)
+	poolResource := c.formatPoolResource(parent, poolID)
+
+	c.logger.Info("Deleting Workload Identity Pool", "poolID", poolID)
+
+	op, err := c.iamService.Projects.Locations.WorkloadIdentityPools.Delete(poolResource).Context(ctx).Do()
+	if err != nil {
+		if isNotFoundError(err) {
+			c.logger.Info("Workload Identity Pool not found, skipping deletion", "poolID", poolID)
+			return nil
+		}
+		return fmt.Errorf("failed to delete Workload Identity Pool: %w", err)
+	}
+
+	if err := c.waitOperation(ctx, op.Name); err != nil {
+		return fmt.Errorf("failed waiting for pool deletion: %w", err)
+	}
+
+	c.logger.Info("Successfully deleted Workload Identity Pool", "poolID", poolID)
+	return nil
+}
+
+// DeleteOIDCProvider deletes the OIDC Provider for this cluster.
+func (c *IAMManager) DeleteOIDCProvider(ctx context.Context) error {
+	providerID := c.formatProviderID()
+	providerResource := c.formatProviderResource()
+
+	c.logger.Info("Deleting OIDC Provider", "providerID", providerID)
+
+	op, err := c.iamService.Projects.Locations.WorkloadIdentityPools.Providers.Delete(providerResource).Context(ctx).Do()
+	if err != nil {
+		if isNotFoundError(err) {
+			c.logger.Info("OIDC Provider not found, skipping deletion", "providerID", providerID)
+			return nil
+		}
+		return fmt.Errorf("failed to delete OIDC Provider: %w", err)
+	}
+
+	if err := c.waitOperation(ctx, op.Name); err != nil {
+		return fmt.Errorf("failed waiting for provider deletion: %w", err)
+	}
+
+	c.logger.Info("Successfully deleted OIDC Provider", "providerID", providerID)
+	return nil
+}
+
+// DeleteServiceAccounts deletes all Google Service Accounts created for this cluster.
+func (c *IAMManager) DeleteServiceAccounts(ctx context.Context) error {
+	definitions, err := loadServiceAccountDefinitions("")
+	if err != nil {
+		return fmt.Errorf("failed to load service account definitions: %w", err)
+	}
+
+	var deleteErrors []error
+
+	for _, def := range definitions {
+		email := c.formatServiceAccountEmail(def.Name)
+		c.logger.Info("Deleting service account", "name", def.Name, "email", email)
+
+		// First remove IAM role bindings from the project
+		if len(def.Roles) > 0 {
+			if err := c.removeRoles(ctx, email, def.Roles); err != nil {
+				c.logger.Error(err, "Failed to remove role bindings, continuing with deletion", "email", email)
+				// Continue anyway - the service account deletion will orphan the bindings
+			}
+		}
+
+		// Delete the service account
+		if err := c.deleteServiceAccount(ctx, email); err != nil {
+			if !isNotFoundError(err) {
+				deleteErrors = append(deleteErrors, fmt.Errorf("failed to delete service account %s: %w", email, err))
+				continue
+			}
+			c.logger.Info("Service account not found, skipping", "email", email)
+		} else {
+			c.logger.Info("Successfully deleted service account", "email", email)
+		}
+	}
+
+	if len(deleteErrors) > 0 {
+		return fmt.Errorf("failed to delete some service accounts: %v", deleteErrors)
+	}
+
+	return nil
+}
+
+// deleteServiceAccount deletes a single Google Service Account.
+func (c *IAMManager) deleteServiceAccount(ctx context.Context, email string) error {
+	resource := c.formatServiceAccountResource(email)
+	_, err := c.iamService.Projects.ServiceAccounts.Delete(resource).Context(ctx).Do()
+	return err
+}
+
+// removeRoles removes IAM roles from a Google Service Account at the project level.
+func (c *IAMManager) removeRoles(ctx context.Context, serviceAccountEmail string, roles []string) error {
+	if len(roles) == 0 {
+		return nil
+	}
+
+	member := c.formatServiceAccountMember(serviceAccountEmail)
+
+	// Get current IAM policy
+	policy, err := c.getProjectIAMPolicy(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get IAM policy: %w", err)
+	}
+
+	policyModified := false
+
+	for _, role := range roles {
+		c.logger.Info("Removing role binding", "role", role, "member", member)
+
+		if c.removeMemberFromRoleBinding(policy, role, member) {
+			policyModified = true
+			c.logger.Info("Removed role binding", "role", role, "member", member)
+		} else {
+			c.logger.Info("Role binding not found", "role", role, "member", member)
+		}
+	}
+
+	// Only update policy if changes were made
+	if policyModified {
+		if err := c.setProjectIAMPolicy(ctx, policy); err != nil {
+			return fmt.Errorf("failed to set IAM policy: %w", err)
+		}
+		c.logger.Info("Updated project IAM policy", "member", member)
+	}
+
+	return nil
+}
+
+// removeMemberFromRoleBinding removes a member from a role binding in the policy.
+// Returns true if the member was removed, false if it wasn't found.
+func (c *IAMManager) removeMemberFromRoleBinding(policy *cloudresourcemanager.Policy, role, member string) bool {
+	for _, binding := range policy.Bindings {
+		if binding.Role == role {
+			for i, existingMember := range binding.Members {
+				if existingMember == member {
+					// Remove member by replacing with last element and shrinking slice
+					binding.Members[i] = binding.Members[len(binding.Members)-1]
+					binding.Members = binding.Members[:len(binding.Members)-1]
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
