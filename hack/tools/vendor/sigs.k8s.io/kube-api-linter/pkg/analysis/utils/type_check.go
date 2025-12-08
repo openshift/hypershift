@@ -31,14 +31,16 @@ type TypeChecker interface {
 }
 
 // NewTypeChecker returns a new TypeChecker with the provided checkFunc.
-func NewTypeChecker(checkFunc func(pass *analysis.Pass, ident *ast.Ident, node ast.Node, prefix string)) TypeChecker {
+func NewTypeChecker(isTypeFunc func(pass *analysis.Pass, ident ast.Expr) bool, checkFunc func(pass *analysis.Pass, expr ast.Expr, node ast.Node, prefix string)) TypeChecker {
 	return &typeChecker{
-		checkFunc: checkFunc,
+		isTypeFunc: isTypeFunc,
+		checkFunc:  checkFunc,
 	}
 }
 
 type typeChecker struct {
-	checkFunc func(pass *analysis.Pass, ident *ast.Ident, node ast.Node, prefix string)
+	isTypeFunc func(pass *analysis.Pass, expr ast.Expr) bool
+	checkFunc  func(pass *analysis.Pass, expr ast.Expr, node ast.Node, prefix string)
 }
 
 // CheckNode checks the provided node for built-in types.
@@ -62,7 +64,7 @@ func (t *typeChecker) CheckNode(pass *analysis.Pass, node ast.Node) {
 }
 
 func (t *typeChecker) checkField(pass *analysis.Pass, field *ast.Field) {
-	fieldName := FieldName(field)
+	fieldName := GetQualifiedFieldName(pass, field)
 	if fieldName == "" {
 		return
 	}
@@ -84,6 +86,11 @@ func (t *typeChecker) checkTypeSpec(pass *analysis.Pass, tSpec *ast.TypeSpec, no
 }
 
 func (t *typeChecker) checkTypeExpr(pass *analysis.Pass, typeExpr ast.Expr, node ast.Node, prefix string) {
+	if t.isTypeFunc(pass, typeExpr) {
+		t.checkFunc(pass, typeExpr, node, prefix)
+		return
+	}
+
 	switch typ := typeExpr.(type) {
 	case *ast.Ident:
 		t.checkIdent(pass, typ, node, prefix)
@@ -94,18 +101,14 @@ func (t *typeChecker) checkTypeExpr(pass *analysis.Pass, typeExpr ast.Expr, node
 	case *ast.MapType:
 		t.checkTypeExpr(pass, typ.Key, node, fmt.Sprintf("%s map key", prefix))
 		t.checkTypeExpr(pass, typ.Value, node, fmt.Sprintf("%s map value", prefix))
+	case *ast.IndexExpr:
+		t.checkTypeExpr(pass, typ.X, node, prefix)
 	}
 }
 
 // checkIdent calls the checkFunc with the ident, when we have hit a built-in type.
 // If the ident is not a built in, we look at the underlying type until we hit a built-in type.
 func (t *typeChecker) checkIdent(pass *analysis.Pass, ident *ast.Ident, node ast.Node, prefix string) {
-	if IsBasicType(pass, ident) {
-		// We've hit a built-in type, no need to check further.
-		t.checkFunc(pass, ident, node, prefix)
-		return
-	}
-
 	tSpec, ok := LookupTypeSpec(pass, ident)
 	if !ok {
 		return

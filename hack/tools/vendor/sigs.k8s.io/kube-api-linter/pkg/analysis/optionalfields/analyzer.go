@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/inspector"
 	markershelper "sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/utils"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/utils/serialization"
 	"sigs.k8s.io/kube-api-linter/pkg/markers"
 )
@@ -93,20 +94,19 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 		return nil, kalerrors.ErrCouldNotGetInspector
 	}
 
-	inspect.InspectFields(func(field *ast.Field, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markershelper.Markers, _ string) {
-		a.checkField(pass, field, markersAccess, jsonTagInfo)
+	inspect.InspectFields(func(field *ast.Field, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markershelper.Markers, qualifiedFieldName string) {
+		a.checkField(pass, field, markersAccess, jsonTagInfo, qualifiedFieldName)
 	})
 
 	return nil, nil //nolint:nilnil
 }
 
-func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, markersAccess markershelper.Markers, jsonTags extractjsontags.FieldTagInfo) {
+func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, markersAccess markershelper.Markers, jsonTags extractjsontags.FieldTagInfo, qualifiedFieldName string) {
 	if field == nil || len(field.Names) == 0 {
 		return
 	}
 
-	fieldMarkers := markersAccess.FieldMarkers(field)
-	if !isFieldOptional(fieldMarkers) {
+	if !utils.IsFieldOptional(field, markersAccess) {
 		// The field is not marked optional, so we don't need to check it.
 		return
 	}
@@ -116,7 +116,7 @@ func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, markersAcce
 		return
 	}
 
-	a.serializationCheck.Check(pass, field, markersAccess, jsonTags)
+	a.serializationCheck.Check(pass, field, markersAccess, jsonTags, qualifiedFieldName)
 }
 
 func defaultConfig(cfg *OptionalFieldsConfig) {
@@ -135,9 +135,4 @@ func defaultConfig(cfg *OptionalFieldsConfig) {
 	if cfg.OmitZero.Policy == "" {
 		cfg.OmitZero.Policy = OptionalFieldsOmitZeroPolicySuggestFix
 	}
-}
-
-// isFieldOptional checks if a field has an optional marker.
-func isFieldOptional(fieldMarkers markershelper.MarkerSet) bool {
-	return fieldMarkers.Has(markers.OptionalMarker) || fieldMarkers.Has(markers.KubebuilderOptionalMarker)
 }

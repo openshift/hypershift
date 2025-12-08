@@ -93,14 +93,14 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 		return nil, kalerrors.ErrCouldNotGetInspector
 	}
 
-	inspect.InspectFields(func(field *ast.Field, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markershelper.Markers, _ string) {
-		a.checkField(pass, field, markersAccess, jsonTagInfo)
+	inspect.InspectFields(func(field *ast.Field, jsonTagInfo extractjsontags.FieldTagInfo, markersAccess markershelper.Markers, qualifiedFieldName string) {
+		a.checkField(pass, field, markersAccess, jsonTagInfo, qualifiedFieldName)
 	})
 
 	return nil, nil //nolint:nilnil
 }
 
-func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, markersAccess markershelper.Markers, jsonTags extractjsontags.FieldTagInfo) {
+func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, markersAccess markershelper.Markers, jsonTags extractjsontags.FieldTagInfo, qualifiedFieldName string) {
 	if field == nil || len(field.Names) == 0 {
 		return
 	}
@@ -115,7 +115,7 @@ func (a *analyzer) checkField(pass *analysis.Pass, field *ast.Field, markersAcce
 		return
 	}
 
-	a.serializationCheck.Check(pass, field, markersAccess, jsonTags)
+	a.serializationCheck.Check(pass, field, markersAccess, jsonTags, qualifiedFieldName)
 }
 
 func defaultConfig(cfg *RequiredFieldsConfig) {
