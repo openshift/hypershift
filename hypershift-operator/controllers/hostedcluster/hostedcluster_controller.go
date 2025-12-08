@@ -391,28 +391,26 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// We set this condition even if the HC is being deleted. Otherwise, a hostedCluster with a conflicted identity provider
 	// would fail to complete deletion forever with no clear signal for consumers.
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
-		freshCondition := &metav1.Condition{
-			Type:               string(hyperv1.ValidAWSIdentityProvider),
-			Status:             metav1.ConditionUnknown,
-			Reason:             hyperv1.StatusUnknownReason,
-			ObservedGeneration: hcluster.Generation,
-		}
+		updated := false
+		var validIdentityProviderCondition *metav1.Condition
 		if hcp != nil {
-			validIdentityProviderCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
-			if validIdentityProviderCondition != nil {
-				freshCondition = validIdentityProviderCondition
-			}
+			validIdentityProviderCondition = meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
 		}
 
-		oldCondition := meta.FindStatusCondition(hcluster.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
-
-		// Preserve previous status if we can no longer determine the status (for example when the hostedcontrolplane has been deleted)
-		if oldCondition != nil && freshCondition.Status == metav1.ConditionUnknown {
-			freshCondition.Status = oldCondition.Status
+		// condition not found in HCP or HCP has been deleted
+		if validIdentityProviderCondition == nil {
+			updated = meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+				Type:               string(hyperv1.ValidAWSIdentityProvider),
+				Status:             metav1.ConditionUnknown,
+				Reason:             hyperv1.StatusUnknownReason,
+				ObservedGeneration: hcluster.Generation,
+			})
+		} else {
+			validIdentityProviderCondition.ObservedGeneration = hcluster.Generation
+			updated = meta.SetStatusCondition(&hcluster.Status.Conditions, *validIdentityProviderCondition)
 		}
-		if oldCondition == nil || oldCondition.Status != freshCondition.Status {
-			freshCondition.ObservedGeneration = hcluster.Generation
-			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
+
+		if updated {
 			// Persist status updates
 			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
