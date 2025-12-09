@@ -301,6 +301,8 @@ nav:
   - "Infrastructure":
     - reference/infrastructure/index.md
     - "AWS": reference/infrastructure/aws.md
+    - "Azure (Self-Managed)": reference/infrastructure/azure-self-managed.md
+    - "Azure (ARO HCP)": reference/infrastructure/azure-aro-hcp.md
     - "Agent": reference/infrastructure/agent.md
   - reference/index.md
   - reference/konnectivity.md
