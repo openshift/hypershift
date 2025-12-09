@@ -1,7 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  creationTimestamp: null
   labels:
     app: karpenter-operator
     hypershift.openshift.io/managed-by: control-plane-operator
@@ -21,7 +20,6 @@ spec:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token,tmp-dir
         component.hypershift.openshift.io/config-hash: 295d966a
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
-      creationTimestamp: null
       labels:
         app: karpenter-operator
         hypershift.openshift.io/control-plane-component: karpenter-operator

@@ -1,7 +1,6 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: featuregate-generator
@@ -22,7 +21,6 @@ spec:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: manifests,work,tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
-      creationTimestamp: null
       labels:
         app: featuregate-generator
         hypershift.openshift.io/control-plane-component: featuregate-generator
@@ -117,7 +115,6 @@ spec:
             apiVersion: config.openshift.io/v1
             kind: FeatureGate
             metadata:
-              creationTimestamp: null
               name: cluster
             spec:
               featureSet: TechPreviewNoUpgrade

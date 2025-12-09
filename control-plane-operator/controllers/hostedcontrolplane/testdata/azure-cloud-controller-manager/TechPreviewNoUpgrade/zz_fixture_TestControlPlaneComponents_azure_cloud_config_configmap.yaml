@@ -30,7 +30,6 @@ data:
     }
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: azure-cloud-config
   namespace: hcp-namespace
   ownerReferences:

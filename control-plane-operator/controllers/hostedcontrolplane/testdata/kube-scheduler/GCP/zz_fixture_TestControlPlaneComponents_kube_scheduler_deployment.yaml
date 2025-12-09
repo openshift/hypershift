@@ -1,7 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: kube-scheduler
@@ -29,9 +28,8 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cert-work,tmp-dir
-        component.hypershift.openshift.io/config-hash: 022a8a3acb8019bf
+        component.hypershift.openshift.io/config-hash: 022a8a3ab4d55cfe
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
-      creationTimestamp: null
       labels:
         app: kube-scheduler
         hypershift.openshift.io/control-plane-component: kube-scheduler

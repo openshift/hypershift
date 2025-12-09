@@ -1,7 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openstack-cloud-controller-manager
@@ -29,7 +28,6 @@ spec:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
         component.hypershift.openshift.io/config-hash: 1cdcee0c
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
-      creationTimestamp: null
       labels:
         hypershift.openshift.io/control-plane-component: openstack-cloud-controller-manager
         hypershift.openshift.io/hosted-control-plane: hcp-namespace

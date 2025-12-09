@@ -14,5 +14,4 @@ data:
       hypershift.openshift.io/infra-id: my-infra-ID
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: kubevirt-cloud-config
