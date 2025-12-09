@@ -6,7 +6,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/checker/decls"
 )
 
 func TestGenerateCelExpression(t *testing.T) {
@@ -108,11 +107,9 @@ func TestGenerateCelExpression(t *testing.T) {
 
 			if len(tt.usernames) != 0 {
 				env, err := cel.NewEnv(
-					cel.Declarations(
-						decls.NewVar("object", decls.NewMapType(decls.String, decls.Dyn)),
-						decls.NewVar("oldObject", decls.NewMapType(decls.String, decls.Dyn)),
-						decls.NewVar("request.userInfo.username", decls.String),
-					),
+					cel.Variable("object", cel.MapType(cel.StringType, cel.DynType)),
+					cel.Variable("oldObject", cel.MapType(cel.StringType, cel.DynType)),
+					cel.Variable("request.userInfo.username", cel.StringType),
 				)
 
 				g.Expect(err).To(BeNil())
