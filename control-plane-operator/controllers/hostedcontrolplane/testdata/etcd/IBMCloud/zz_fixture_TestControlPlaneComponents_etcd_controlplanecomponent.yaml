@@ -1,7 +1,6 @@
 apiVersion: hypershift.openshift.io/v1beta1
 kind: ControlPlaneComponent
 metadata:
-  creationTimestamp: null
   name: etcd
   namespace: hcp-namespace
   resourceVersion: "1"

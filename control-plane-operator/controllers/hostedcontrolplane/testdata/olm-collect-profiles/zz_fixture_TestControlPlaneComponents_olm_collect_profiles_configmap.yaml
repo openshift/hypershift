@@ -4,7 +4,6 @@ data:
     disabled: False
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: olm-collect-profiles
   namespace: hcp-namespace
   ownerReferences:
