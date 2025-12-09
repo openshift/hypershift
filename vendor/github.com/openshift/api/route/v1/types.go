@@ -354,6 +354,7 @@ type RouteStatus struct {
 	// ingress points may contain duplicate Host or RouterName values. Routes
 	// are considered live once they are `Ready`
 	// +listType=atomic
+	// +optional
 	Ingress []RouteIngress `json:"ingress,omitempty" protobuf:"bytes,1,rep,name=ingress"`
 }
 
@@ -423,10 +424,12 @@ type RouterShard struct {
 // +kubebuilder:validation:XValidation:rule="has(self.termination) && has(self.insecureEdgeTerminationPolicy) ? !((self.termination=='passthrough') && (self.insecureEdgeTerminationPolicy=='Allow')) : true", message="cannot have both spec.tls.termination: passthrough and spec.tls.insecureEdgeTerminationPolicy: Allow"
 // +openshift:validation:FeatureGateAwareXValidation:featureGate=RouteExternalCertificate,rule="!(has(self.certificate) && has(self.externalCertificate))", message="cannot have both spec.tls.certificate and spec.tls.externalCertificate"
 type TLSConfig struct {
-	// termination indicates termination type.
+	// termination indicates the TLS termination type.
 	//
 	// * edge - TLS termination is done by the router and http is used to communicate with the backend (default)
+	//
 	// * passthrough - Traffic is sent straight to the destination without the router providing TLS termination
+	//
 	// * reencrypt - TLS termination is done by the router and https is used to communicate with the backend
 	//
 	// Note: passthrough termination is incompatible with httpHeader actions
