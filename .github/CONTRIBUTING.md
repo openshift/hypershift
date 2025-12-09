@@ -1,7 +1,3 @@
----
-title: Contribute to HyperShift
----
-
 # Contributing to HyperShift
 Thank you for your interest in contributing to HyperShift! HyperShift enables running multiple OpenShift control planes as lightweight, cost-effective hosted clusters. Your contributions help improve this critical infrastructure technology.
 
@@ -18,11 +14,12 @@ The following guidelines will help ensure a smooth contribution process for both
     1. Write commit subjects in [imperative mood](https://en.wikipedia.org/wiki/Imperative_mood) (e.g., "Fix bug" not "Fixed bug")
     2. Follow [conventional commit format](https://www.conventionalcommits.org/) and include "Why" and "How" in commit messages
 
-!!! tip "Install precommit hooks"
-    Install `precommit` to automatically catch issues before committing. This helps catch spelling mistakes, formatting issues, and test failures early in your development process.
-    
-    * [Installation instructions](https://pre-commit.com/#install)
-    * [HyperShift-specific tips](./precommit-hook-help.md)
+> **💡 Tip: Install precommit hooks**
+>
+> Install `precommit` to automatically catch issues before committing. This helps catch spelling mistakes, formatting issues, and test failures early in your development process.
+>
+> * [Installation instructions](https://pre-commit.com/#install)
+> * [HyperShift-specific tips](./precommit-hook-help.md)
 
 ## Creating a Pull Request
 1. **For small changes** (under 200 lines): Create your change and submit a pull request directly.
@@ -38,5 +35,6 @@ The following guidelines will help ensure a smooth contribution process for both
 
 5. **Explain the value**: Always describe how your change improves the project in the PR description.
 
-!!! note "Release Information"
-    This repository contains code for both the HyperShift Operator and Control Plane Operator (part of OCP payload), which may have different release cadences.
+> **📝 Note: Release Information**
+>
+> This repository contains code for both the HyperShift Operator and Control Plane Operator (part of OCP payload), which may have different release cadences.
