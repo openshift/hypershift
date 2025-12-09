@@ -4,8 +4,7 @@ metadata:
   annotations:
     api.openshift.io/merged-by-featuregates: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
-    include.release.openshift.io/self-managed-high-availability: "true"
-    release.openshift.io/feature-set: Default
+    release.openshift.io/feature-set: CustomNoUpgrade
   name: hostedcontrolplanes.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
@@ -81,6 +80,53 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              autoNode:
+                description: autoNode specifies the configuration for the autoNode
+                  feature.
+                properties:
+                  provisionerConfig:
+                    description: provisionerConfig is the implementation used for
+                      Node auto provisioning.
+                    properties:
+                      karpenter:
+                        description: karpenter specifies the configuration for the
+                          Karpenter provisioner.
+                        properties:
+                          aws:
+                            description: aws specifies the AWS-specific configuration
+                              for Karpenter.
+                            properties:
+                              roleARN:
+                                description: roleARN specifies the ARN of the Karpenter
+                                  provisioner.
+                                maxLength: 255
+                                type: string
+                            required:
+                            - roleARN
+                            type: object
+                          platform:
+                            description: platform specifies the platform-specific
+                              configuration for Karpenter.
+                            maxLength: 100
+                            type: string
+                        required:
+                        - platform
+                        type: object
+                      name:
+                        allOf:
+                        - enum:
+                          - Karpenter
+                        - enum:
+                          - Karpenter
+                        description: name specifies the name of the provisioner to
+                          use.
+                        type: string
+                    required:
+                    - name
+                    type: object
+                required:
+                - provisionerConfig
+                type: object
               autoscaling:
                 description: |-
                   autoscaling specifies auto-scaling behavior that applies to all NodePools
@@ -453,6 +499,71 @@ spec:
                         description: encryption allows the configuration of encryption
                           of resources at the datastore layer.
                         properties:
+                          kms:
+                            description: |-
+                              kms defines the configuration for the external KMS instance that manages the encryption keys,
+                              when KMS encryption is enabled sensitive resources will be encrypted using keys managed by an
+                              externally configured KMS instance.
+
+                              The Key Management Service (KMS) instance provides symmetric encryption and is responsible for
+                              managing the lifecyle of the encryption keys outside of the control plane.
+                              This allows integration with an external provider to manage the data encryption keys securely.
+                            properties:
+                              aws:
+                                description: |-
+                                  aws defines the key config for using an AWS KMS instance
+                                  for the encryption. The AWS KMS instance is managed
+                                  by the user outside the purview of the control plane.
+                                properties:
+                                  keyARN:
+                                    description: |-
+                                      keyARN specifies the Amazon Resource Name (ARN) of the AWS KMS key used for encryption.
+                                      The value must adhere to the format `arn:aws:kms:<region>:<account_id>:key/<key_id>`, where:
+                                      - `<region>` is the AWS region consisting of lowercase letters and hyphens followed by a number.
+                                      - `<account_id>` is a 12-digit numeric identifier for the AWS account.
+                                      - `<key_id>` is a unique identifier for the KMS key, consisting of lowercase hexadecimal characters and hyphens.
+                                    maxLength: 128
+                                    minLength: 1
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: keyARN must follow the format `arn:aws:kms:<region>:<account_id>:key/<key_id>`.
+                                        The account ID must be a 12 digit number and
+                                        the region and key ID should consist only
+                                        of lowercase hexadecimal characters and hyphens
+                                        (-).
+                                      rule: self.matches('^arn:aws:kms:[a-z0-9-]+:[0-9]{12}:key/[a-f0-9-]+$')
+                                  region:
+                                    description: |-
+                                      region specifies the AWS region where the KMS instance exists, and follows the format
+                                      `<region-prefix>-<region-name>-<number>`, e.g.: `us-east-1`.
+                                      Only lowercase letters and hyphens followed by numbers are allowed.
+                                    maxLength: 64
+                                    minLength: 1
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: region must be a valid AWS region,
+                                        consisting of lowercase characters, digits
+                                        and hyphens (-) only.
+                                      rule: self.matches('^[a-z0-9]+(-[a-z0-9]+)*$')
+                                required:
+                                - keyARN
+                                - region
+                                type: object
+                              type:
+                                description: |-
+                                  type defines the kind of platform for the KMS provider.
+                                  Available provider types are AWS only.
+                                enum:
+                                - AWS
+                                type: string
+                            required:
+                            - type
+                            type: object
+                            x-kubernetes-validations:
+                            - message: aws config is required when kms provider type
+                                is AWS, and forbidden otherwise
+                              rule: 'has(self.type) && self.type == ''AWS'' ?  has(self.aws)
+                                : !has(self.aws)'
                           type:
                             description: |-
                               type defines what encryption type should be used to encrypt resources at the datastore layer.
@@ -473,8 +584,14 @@ spec:
                             - identity
                             - aescbc
                             - aesgcm
+                            - KMS
                             type: string
                         type: object
+                        x-kubernetes-validations:
+                        - message: kms config is required when encryption type is
+                            KMS, and forbidden otherwise
+                          rule: 'has(self.type) && self.type == ''KMS'' ?  has(self.kms)
+                            : !has(self.kms)'
                       servingCerts:
                         description: |-
                           servingCert is the TLS cert info for serving secure traffic. If not specified, operator managed certificates
@@ -522,9 +639,8 @@ spec:
                         description: |-
                           tlsSecurityProfile specifies settings for TLS connections for externally exposed servers.
 
-                          If unset, a default (which may change between releases) is chosen. Note that only Old,
-                          Intermediate and Custom profiles are currently supported, and the maximum available
-                          minTLSVersion is VersionTLS12.
+                          When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
+                          The current default is the Intermediate profile.
                         properties:
                           custom:
                             description: |-
@@ -758,7 +874,7 @@ spec:
                           properties:
                             claimMappings:
                               description: |-
-                                claimMappings is an optional field that configures the rules to be used by
+                                claimMappings is a required field that configures the rules to be used by
                                 the Kubernetes API server for translating claims in a JWT token, issued
                                 by the identity provider, to a cluster identity.
                               properties:
@@ -768,7 +884,7 @@ spec:
                                     used to construct the extra attribute for the cluster identity.
                                     When omitted, no extra attributes will be present on the cluster identity.
                                     key values for extra mappings must be unique.
-                                    A maximum of 64 extra attribute mappings may be provided.
+                                    A maximum of 32 extra attribute mappings may be provided.
                                   items:
                                     description: |-
                                       ExtraMapping allows specifying a key and CEL expression
@@ -851,16 +967,16 @@ spec:
                                           For example, the 'sub' claim value can be accessed as 'claims.sub'.
                                           Nested claims can be accessed using dot notation ('claims.foo.bar').
 
-                                          valueExpression must not exceed 4096 characters in length.
+                                          valueExpression must not exceed 1024 characters in length.
                                           valueExpression must not be empty.
-                                        maxLength: 4096
+                                        maxLength: 1024
                                         minLength: 1
                                         type: string
                                     required:
                                     - key
                                     - valueExpression
                                     type: object
-                                  maxItems: 64
+                                  maxItems: 32
                                   type: array
                                   x-kubernetes-list-map-keys:
                                   - key
@@ -936,8 +1052,8 @@ spec:
                                         Precisely one of claim or expression must be set.
                                         expression must not be specified when claim is set.
                                         When specified, expression must be at least 1 character in length
-                                        and must not exceed 4096 characters in length.
-                                      maxLength: 4096
+                                        and must not exceed 1024 characters in length.
+                                      maxLength: 1024
                                       minLength: 1
                                       type: string
                                   type: object
@@ -948,7 +1064,7 @@ spec:
                                       : has(self.expression)'
                                 username:
                                   description: |-
-                                    username is an optional field that configures how the username of a cluster identity
+                                    username is a required field that configures how the username of a cluster identity
                                     should be constructed from the claims in a JWT token issued by the identity provider.
                                   properties:
                                     claim:
@@ -956,6 +1072,10 @@ spec:
                                         claim is a required field that configures the JWT token
                                         claim whose value is assigned to the cluster identity
                                         field associated with this mapping.
+
+                                        claim must not be an empty string ("") and must not exceed 256 characters.
+                                      maxLength: 256
+                                      minLength: 1
                                       type: string
                                     prefix:
                                       description: |-
@@ -1014,6 +1134,8 @@ spec:
                                     rule: 'has(self.prefixPolicy) && self.prefixPolicy
                                       == ''Prefix'' ? (has(self.prefix) && size(self.prefix.prefixString)
                                       > 0) : !has(self.prefix)'
+                              required:
+                              - username
                               type: object
                             claimValidationRules:
                               description: |-
@@ -1117,9 +1239,23 @@ spec:
                                     The Kubernetes API server determines how authentication tokens should be handled
                                     by matching the 'iss' claim in the JWT to the issuerURL of configured identity providers.
 
-                                    issuerURL must use the 'https' scheme.
-                                  pattern: ^https:\/\/[^\s]
+                                    Must be at least 1 character and must not exceed 512 characters in length.
+                                    Must be a valid URL that uses the 'https' scheme and does not contain a query, fragment or user.
+                                  maxLength: 512
+                                  minLength: 1
                                   type: string
+                                  x-kubernetes-validations:
+                                  - message: must be a valid URL
+                                    rule: isURL(self)
+                                  - message: must use the 'https' scheme
+                                    rule: isURL(self) && url(self).getScheme() ==
+                                      'https'
+                                  - message: must not have a query
+                                    rule: isURL(self) && url(self).getQuery() == {}
+                                  - message: must not have a fragment
+                                    rule: self.find('#(.+)$') == ''
+                                  - message: must not have user info
+                                    rule: self.find('@') == ''
                               required:
                               - audiences
                               - issuerURL
@@ -1224,6 +1360,7 @@ spec:
                               - componentName
                               x-kubernetes-list-type: map
                           required:
+                          - claimMappings
                           - issuer
                           - name
                           type: object
@@ -1429,6 +1566,24 @@ spec:
                           type: string
                         type: array
                         x-kubernetes-list-type: atomic
+                      imageStreamImportMode:
+                        description: |-
+                          imageStreamImportMode controls the import mode behaviour of imagestreams.
+                          It can be set to `Legacy` or `PreserveOriginal` or the empty string. If this value
+                          is specified, this setting is applied to all newly created imagestreams which do not have the
+                          value set. `Legacy` indicates that the legacy behaviour should be used.
+                          For manifest lists, the legacy behaviour will discard the manifest list and import a single
+                          sub-manifest. In this case, the platform is chosen in the following order of priority:
+                          1. tag annotations; 2. control plane arch/os; 3. linux/amd64; 4. the first manifest in the list.
+                          `PreserveOriginal` indicates that the original manifest will be preserved. For manifest lists,
+                          the manifest list and all its sub-manifests will be imported. When empty, the behaviour will be
+                          decided based on the payload type advertised by the ClusterVersion status, i.e single arch payload
+                          implies the import mode is Legacy and multi payload implies PreserveOriginal.
+                        enum:
+                        - ""
+                        - Legacy
+                        - PreserveOriginal
+                        type: string
                       registrySources:
                         description: |-
                           registrySources contains configuration that determines how the container runtime
@@ -2847,9 +3002,10 @@ spec:
                         - NoScoring
                         type: string
                       profileCustomizations:
-                        description: profileCustomizations contains configuration
-                          for modifying the default behavior of existing scheduler
-                          profiles.
+                        description: |-
+                          profileCustomizations contains configuration for modifying the default behavior of existing scheduler profiles.
+                          Deprecated: no longer needed, since DRA is GA starting with 4.21, and
+                          is enabled by' default in the cluster, this field will be removed in 4.24.
                         properties:
                           dynamicResourceAllocation:
                             description: |-
@@ -3499,6 +3655,26 @@ spec:
                             || !has(self.ipv4.internalTransitSwitchSubnet) || self.ipv4.internalJoinSubnet
                             != self.ipv4.internalTransitSwitchSubnet'
                     type: object
+                  clusterVersionOperator:
+                    description: clusterVersionOperator specifies the configuration
+                      for the Cluster Version Operator in the hosted cluster.
+                    properties:
+                      operatorLogLevel:
+                        default: Normal
+                        description: |-
+                          operatorLogLevel is an intent based logging for the operator itself. It does not give fine-grained control,
+                          but it is a simple way to manage coarse grained logging choices that operators have to interpret for themselves.
+
+                          Valid values are: "Normal", "Debug", "Trace", "TraceAll".
+                          Defaults to "Normal".
+                        enum:
+                        - ""
+                        - Normal
+                        - Debug
+                        - Trace
+                        - TraceAll
+                        type: string
+                    type: object
                   ingressOperator:
                     description: |-
                       ingressOperator specifies the configuration for the Ingress Operator in the hosted cluster.
@@ -3680,12 +3856,225 @@ spec:
                                               value for this field is 60s.  This default is subject to change.
                                             format: duration
                                             type: string
+                                          subnets:
+                                            description: |-
+                                              subnets specifies the subnets to which the load balancer will
+                                              attach. The subnets may be specified by either their
+                                              ID or name. The total number of subnets is limited to 10.
+
+                                              In order for the load balancer to be provisioned with subnets,
+                                              each subnet must exist, each subnet must be from a different
+                                              availability zone, and the load balancer service must be
+                                              recreated to pick up new values.
+
+                                              When omitted from the spec, the subnets will be auto-discovered
+                                              for each availability zone. Auto-discovered subnets are not reported
+                                              in the status of the IngressController object.
+                                            properties:
+                                              ids:
+                                                description: |-
+                                                  ids specifies a list of AWS subnets by subnet ID.
+                                                  Subnet IDs must start with "subnet-", consist only
+                                                  of alphanumeric characters, must be exactly 24
+                                                  characters long, must be unique, and the total
+                                                  number of subnets specified by ids and names
+                                                  must not exceed 10.
+                                                items:
+                                                  description: AWSSubnetID is a reference
+                                                    to an AWS subnet ID.
+                                                  maxLength: 24
+                                                  minLength: 24
+                                                  pattern: ^subnet-[0-9A-Za-z]+$
+                                                  type: string
+                                                maxItems: 10
+                                                type: array
+                                                x-kubernetes-list-type: atomic
+                                                x-kubernetes-validations:
+                                                - message: subnet ids cannot contain
+                                                    duplicates
+                                                  rule: self.all(x, self.exists_one(y,
+                                                    x == y))
+                                              names:
+                                                description: |-
+                                                  names specifies a list of AWS subnets by subnet name.
+                                                  Subnet names must not start with "subnet-", must not
+                                                  include commas, must be under 256 characters in length,
+                                                  must be unique, and the total number of subnets
+                                                  specified by ids and names must not exceed 10.
+                                                items:
+                                                  description: AWSSubnetName is a
+                                                    reference to an AWS subnet name.
+                                                  maxLength: 256
+                                                  minLength: 1
+                                                  type: string
+                                                  x-kubernetes-validations:
+                                                  - message: subnet name cannot contain
+                                                      a comma
+                                                    rule: '!self.contains('','')'
+                                                  - message: subnet name cannot start
+                                                      with 'subnet-'
+                                                    rule: '!self.startsWith(''subnet-'')'
+                                                maxItems: 10
+                                                type: array
+                                                x-kubernetes-list-type: atomic
+                                                x-kubernetes-validations:
+                                                - message: subnet names cannot contain
+                                                    duplicates
+                                                  rule: self.all(x, self.exists_one(y,
+                                                    x == y))
+                                            type: object
+                                            x-kubernetes-validations:
+                                            - message: the total number of subnets
+                                                cannot exceed 10
+                                              rule: 'has(self.ids) && has(self.names)
+                                                ? size(self.ids + self.names) <= 10
+                                                : true'
+                                            - message: must specify at least 1 subnet
+                                                name or id
+                                              rule: has(self.ids) && self.ids.size()
+                                                > 0 || has(self.names) && self.names.size()
+                                                > 0
                                         type: object
                                       networkLoadBalancer:
                                         description: |-
                                           networkLoadBalancerParameters holds configuration parameters for an AWS
                                           network load balancer. Present only if type is NLB.
+                                        properties:
+                                          eipAllocations:
+                                            description: |-
+                                              eipAllocations is a list of IDs for Elastic IP (EIP) addresses that
+                                              are assigned to the Network Load Balancer.
+                                              The following restrictions apply:
+
+                                              eipAllocations can only be used with external scope, not internal.
+                                              An EIP can be allocated to only a single IngressController.
+                                              The number of EIP allocations must match the number of subnets that are used for the load balancer.
+                                              Each EIP allocation must be unique.
+                                              A maximum of 10 EIP allocations are permitted.
+
+                                              See https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/elastic-ip-addresses-eip.html for general
+                                              information about configuration, characteristics, and limitations of Elastic IP addresses.
+                                            items:
+                                              description: |-
+                                                EIPAllocation is an ID for an Elastic IP (EIP) address that can be allocated to an ELB in the AWS environment.
+                                                Values must begin with `eipalloc-` followed by exactly 17 hexadecimal (`[0-9a-fA-F]`) characters.
+                                              maxLength: 26
+                                              minLength: 26
+                                              type: string
+                                              x-kubernetes-validations:
+                                              - message: eipAllocations should start
+                                                  with 'eipalloc-'
+                                                rule: self.startsWith('eipalloc-')
+                                              - message: eipAllocations must be 'eipalloc-'
+                                                  followed by exactly 17 hexadecimal
+                                                  characters (0-9, a-f, A-F)
+                                                rule: self.split("-", 2)[1].matches('[0-9a-fA-F]{17}$')
+                                            maxItems: 10
+                                            type: array
+                                            x-kubernetes-list-type: atomic
+                                            x-kubernetes-validations:
+                                            - message: eipAllocations cannot contain
+                                                duplicates
+                                              rule: self.all(x, self.exists_one(y,
+                                                x == y))
+                                          subnets:
+                                            description: |-
+                                              subnets specifies the subnets to which the load balancer will
+                                              attach. The subnets may be specified by either their
+                                              ID or name. The total number of subnets is limited to 10.
+
+                                              In order for the load balancer to be provisioned with subnets,
+                                              each subnet must exist, each subnet must be from a different
+                                              availability zone, and the load balancer service must be
+                                              recreated to pick up new values.
+
+                                              When omitted from the spec, the subnets will be auto-discovered
+                                              for each availability zone. Auto-discovered subnets are not reported
+                                              in the status of the IngressController object.
+                                            properties:
+                                              ids:
+                                                description: |-
+                                                  ids specifies a list of AWS subnets by subnet ID.
+                                                  Subnet IDs must start with "subnet-", consist only
+                                                  of alphanumeric characters, must be exactly 24
+                                                  characters long, must be unique, and the total
+                                                  number of subnets specified by ids and names
+                                                  must not exceed 10.
+                                                items:
+                                                  description: AWSSubnetID is a reference
+                                                    to an AWS subnet ID.
+                                                  maxLength: 24
+                                                  minLength: 24
+                                                  pattern: ^subnet-[0-9A-Za-z]+$
+                                                  type: string
+                                                maxItems: 10
+                                                type: array
+                                                x-kubernetes-list-type: atomic
+                                                x-kubernetes-validations:
+                                                - message: subnet ids cannot contain
+                                                    duplicates
+                                                  rule: self.all(x, self.exists_one(y,
+                                                    x == y))
+                                              names:
+                                                description: |-
+                                                  names specifies a list of AWS subnets by subnet name.
+                                                  Subnet names must not start with "subnet-", must not
+                                                  include commas, must be under 256 characters in length,
+                                                  must be unique, and the total number of subnets
+                                                  specified by ids and names must not exceed 10.
+                                                items:
+                                                  description: AWSSubnetName is a
+                                                    reference to an AWS subnet name.
+                                                  maxLength: 256
+                                                  minLength: 1
+                                                  type: string
+                                                  x-kubernetes-validations:
+                                                  - message: subnet name cannot contain
+                                                      a comma
+                                                    rule: '!self.contains('','')'
+                                                  - message: subnet name cannot start
+                                                      with 'subnet-'
+                                                    rule: '!self.startsWith(''subnet-'')'
+                                                maxItems: 10
+                                                type: array
+                                                x-kubernetes-list-type: atomic
+                                                x-kubernetes-validations:
+                                                - message: subnet names cannot contain
+                                                    duplicates
+                                                  rule: self.all(x, self.exists_one(y,
+                                                    x == y))
+                                            type: object
+                                            x-kubernetes-validations:
+                                            - message: the total number of subnets
+                                                cannot exceed 10
+                                              rule: 'has(self.ids) && has(self.names)
+                                                ? size(self.ids + self.names) <= 10
+                                                : true'
+                                            - message: must specify at least 1 subnet
+                                                name or id
+                                              rule: has(self.ids) && self.ids.size()
+                                                > 0 || has(self.names) && self.names.size()
+                                                > 0
                                         type: object
+                                        x-kubernetes-validations:
+                                        - message: number of subnets must be equal
+                                            to number of eipAllocations
+                                          rule: 'has(self.subnets) && has(self.subnets.ids)
+                                            && has(self.subnets.names) && has(self.eipAllocations)
+                                            ? size(self.subnets.ids + self.subnets.names)
+                                            == size(self.eipAllocations) : true'
+                                        - message: number of subnets must be equal
+                                            to number of eipAllocations
+                                          rule: 'has(self.subnets) && has(self.subnets.ids)
+                                            && !has(self.subnets.names) && has(self.eipAllocations)
+                                            ? size(self.subnets.ids) == size(self.eipAllocations)
+                                            : true'
+                                        - message: number of subnets must be equal
+                                            to number of eipAllocations
+                                          rule: 'has(self.subnets) && has(self.subnets.names)
+                                            && !has(self.subnets.ids) && has(self.eipAllocations)
+                                            ? size(self.subnets.names) == size(self.eipAllocations)
+                                            : true'
                                       type:
                                         description: |-
                                           type is the type of AWS load balancer to instantiate for an ingresscontroller.
@@ -3834,6 +4223,12 @@ spec:
                             - scope
                             type: object
                             x-kubernetes-validations:
+                            - message: eipAllocations are forbidden when the scope
+                                is Internal.
+                              rule: '!has(self.scope) || self.scope != ''Internal''
+                                || !has(self.providerParameters) || !has(self.providerParameters.aws)
+                                || !has(self.providerParameters.aws.networkLoadBalancer)
+                                || !has(self.providerParameters.aws.networkLoadBalancer.eipAllocations)'
                             - message: cannot specify a floating ip when scope is
                                 internal
                               rule: '!has(self.scope) || self.scope != ''Internal''
@@ -5300,6 +5695,295 @@ spec:
                     - tenantID
                     - vnetID
                     type: object
+                  gcp:
+                    description: gcp specifies configuration for clusters running
+                      on Google Cloud Platform.
+                    properties:
+                      endpointAccess:
+                        default: Private
+                        description: |-
+                          endpointAccess controls API endpoint accessibility for the HostedControlPlane on GCP.
+                          Allowed values: "Private", "PublicAndPrivate". Defaults to "Private".
+                        enum:
+                        - PublicAndPrivate
+                        - Private
+                        type: string
+                      networkConfig:
+                        description: |-
+                          networkConfig specifies VPC configuration for Private Service Connect.
+                          Required for VPC configuration in Private Service Connect deployments.
+                        properties:
+                          network:
+                            description: network is the VPC network name
+                            properties:
+                              name:
+                                description: |-
+                                  name is the name of the GCP resource.
+                                  Must conform to GCP resource naming standards: lowercase letters, numbers, and hyphens only.
+                                  Must start with a lowercase letter and end with a lowercase letter or number, max 63 characters.
+                                  Pattern: "^[a-z]([-a-z0-9]*[a-z0-9])?$" (max 63 chars), per GCP naming requirements.
+                                  See https://cloud.google.com/compute/docs/naming-resources for details.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
+                                type: string
+                            required:
+                            - name
+                            type: object
+                            x-kubernetes-validations:
+                            - message: Network is immutable
+                              rule: self == oldSelf
+                          privateServiceConnectSubnet:
+                            description: privateServiceConnectSubnet is the subnet
+                              for Private Service Connect endpoints
+                            properties:
+                              name:
+                                description: |-
+                                  name is the name of the GCP resource.
+                                  Must conform to GCP resource naming standards: lowercase letters, numbers, and hyphens only.
+                                  Must start with a lowercase letter and end with a lowercase letter or number, max 63 characters.
+                                  Pattern: "^[a-z]([-a-z0-9]*[a-z0-9])?$" (max 63 chars), per GCP naming requirements.
+                                  See https://cloud.google.com/compute/docs/naming-resources for details.
+                                maxLength: 63
+                                minLength: 1
+                                pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
+                                type: string
+                            required:
+                            - name
+                            type: object
+                            x-kubernetes-validations:
+                            - message: Private Service Connect subnet is immutable
+                              rule: self == oldSelf
+                        required:
+                        - network
+                        - privateServiceConnectSubnet
+                        type: object
+                      project:
+                        description: |-
+                          project is the GCP project ID.
+                          A valid project ID must satisfy the following rules:
+                            length: Must be between 6 and 30 characters, inclusive
+                            characters: Only lowercase letters (`a-z`), digits (`0-9`), and hyphens (`-`) are allowed
+                            start and end: Must begin with a lowercase letter and must not end with a hyphen
+                            valid examples: "my-project", "my-project-1", "my-project-123".
+                        maxLength: 30
+                        minLength: 6
+                        pattern: ^[a-z]([a-z0-9-]{4,28}[a-z0-9])$
+                        type: string
+                        x-kubernetes-validations:
+                        - message: Project is immutable
+                          rule: self == oldSelf
+                      region:
+                        description: |-
+                          region is the GCP region in which the cluster resides.
+                          Must be in the form of <geographic-area>-<location><number> (e.g., us-central1, europe-west12).
+                          Must contain exactly one hyphen separating the geographic area from the location.
+                          Must end with one or more digits.
+                          Valid examples: "us-central1", "europe-west2", "europe-west12", "northamerica-northeast1"
+                          Invalid examples: "us1" (no hyphen), "us-central" (no trailing digits), "us-central1-a" (zone suffix)
+                          For a full list of valid regions, see: https://cloud.google.com/compute/docs/regions-zones.
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z]+-[a-z]+[0-9]+$
+                        type: string
+                        x-kubernetes-validations:
+                        - message: Region is immutable
+                          rule: self == oldSelf
+                      resourceLabels:
+                        description: |-
+                          resourceLabels are applied to all GCP resources created for the cluster.
+                          Labels are key-value pairs used for organizing and managing GCP resources.
+                          Changes to this field will be propagated in-place to GCP resources where supported.
+                          GCP supports a maximum of 64 labels per resource. HyperShift reserves approximately 4 labels for system use.
+                          For GCP labeling guidance, see https://cloud.google.com/compute/docs/labeling-resources
+                        items:
+                          description: |-
+                            GCPResourceLabel is a label to apply to GCP resources created for the cluster.
+                            Labels are key-value pairs used for organizing and managing GCP resources.
+                            See https://cloud.google.com/compute/docs/labeling-resources for GCP labeling guidance.
+                          properties:
+                            key:
+                              description: |-
+                                key is the key part of the label. A label key can have a maximum of 63 characters and cannot be empty.
+                                For Compute Engine resources (VMs, disks, networks created by CAPG), keys must:
+                                - Start with a lowercase letter
+                                - Contain only lowercase letters, digits, or hyphens
+                                - End with a lowercase letter or digit (not a hyphen)
+                                - Be 1-63 characters long
+                                GCP reserves the 'goog' prefix for system labels.
+                                See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
+                              maxLength: 63
+                              minLength: 1
+                              pattern: ^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$
+                              type: string
+                              x-kubernetes-validations:
+                              - message: Label keys starting with the reserved 'goog'
+                                  prefix are not allowed
+                                rule: '!self.startsWith(''goog'')'
+                            value:
+                              description: |-
+                                value is the value part of the label. A label value can have a maximum of 63 characters.
+                                Empty values are allowed by GCP. If non-empty, it must start with a lowercase letter,
+                                contain only lowercase letters, digits, or hyphens, and end with a lowercase letter or digit.
+                                See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
+                              maxLength: 63
+                              minLength: 0
+                              pattern: ^$|^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$
+                              type: string
+                          required:
+                          - key
+                          type: object
+                        maxItems: 60
+                        type: array
+                        x-kubernetes-list-map-keys:
+                        - key
+                        x-kubernetes-list-type: map
+                      workloadIdentity:
+                        description: |-
+                          workloadIdentity configures Workload Identity Federation for the cluster.
+                          This enables secure, short-lived token-based authentication without storing
+                          long-term service account keys. These fields are immutable after cluster creation
+                          to prevent breaking the authentication chain.
+
+                          Prerequisites for WIF setup:
+                            - Workload Identity Pool and Provider must exist in the GCP project
+                            - Provider must be configured with audience mapping for OpenShift SA tokens
+                            - Target Google Service Account must have roles/iam.workloadIdentityUser
+                              granted to the workload pool principal (e.g., principal://iam.googleapis.com/projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/subject/system:serviceaccount:kube-system:capi-gcp-controller-manager)
+                            - Attribute mappings on the provider should include google.subject for token subject verification
+                        properties:
+                          poolID:
+                            description: |-
+                              poolID is the workload identity pool identifier within the project.
+                              This pool is used to manage external identity mappings.
+                              Must be 4-32 characters and start with a lowercase letter.
+                              Allowed characters: lowercase letters (a-z), digits (0-9), hyphens (-).
+                              Cannot start or end with a hyphen.
+                              The prefix "gcp-" is reserved by Google and cannot be used.
+
+                              This is a user-provided value referencing a pre-created Workload Identity Pool.
+                              Typically obtained from the output of `hypershift infra create gcp` which creates
+                              the WIF infrastructure and generates appropriate pool IDs.
+                            maxLength: 32
+                            minLength: 4
+                            pattern: ^[a-z]([a-z0-9-]{2,30}[a-z0-9])$
+                            type: string
+                            x-kubernetes-validations:
+                            - message: Pool ID cannot start with reserved prefix 'gcp-'
+                              rule: '!self.startsWith(''gcp-'')'
+                            - message: Pool ID is immutable
+                              rule: self == oldSelf
+                          projectNumber:
+                            description: |-
+                              projectNumber is the numeric GCP project identifier for WIF configuration.
+                              This differs from the project ID and is required for workload identity pools.
+                              Must be a numeric string representing the GCP project number.
+
+                              This is a user-provided value obtained from GCP (found in GCP Console or via `gcloud projects describe PROJECT_ID`).
+                              Also available in the output of `hypershift infra create gcp`.
+                            maxLength: 25
+                            minLength: 1
+                            pattern: ^[0-9]+$
+                            type: string
+                            x-kubernetes-validations:
+                            - message: Project number is immutable
+                              rule: self == oldSelf
+                          providerID:
+                            description: |-
+                              providerID is the workload identity provider identifier within the pool.
+                              This provider handles the token exchange between external and GCP identities.
+                              Must be 4-32 characters and start with a lowercase letter.
+                              Allowed characters: lowercase letters (a-z), digits (0-9), hyphens (-).
+                              Cannot start or end with a hyphen.
+                              The prefix "gcp-" is reserved by Google and cannot be used.
+
+                              This is a user-provided value referencing a pre-created OIDC Provider within the WIF Pool.
+                              Typically obtained from the output of `hypershift infra create gcp`.
+                            maxLength: 32
+                            minLength: 4
+                            pattern: ^[a-z]([a-z0-9-]{2,30}[a-z0-9])$
+                            type: string
+                            x-kubernetes-validations:
+                            - message: Provider ID cannot start with reserved prefix
+                                'gcp-'
+                              rule: '!self.startsWith(''gcp-'')'
+                            - message: Provider ID is immutable
+                              rule: self == oldSelf
+                          serviceAccountsEmails:
+                            description: |-
+                              serviceAccountsEmails contains email addresses of various Google Service Accounts
+                              required to enable integrations for different controllers and operators.
+                              This follows the AWS pattern of having different roles for different purposes.
+                            properties:
+                              controlPlane:
+                                description: |-
+                                  controlPlane is the Google Service Account email for the Control Plane Operator
+                                  that manages control plane infrastructure and resources.
+                                  This GSA requires the following IAM roles:
+                                  - roles/storage.admin (Storage Admin)
+                                  - roles/iam.serviceAccountUser (Service Account User)
+                                  See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+                                  Format: service-account-name@project-id.iam.gserviceaccount.com
+
+                                  This is a user-provided value referencing a pre-created Google Service Account.
+                                  Typically obtained from the output of `hypershift infra create gcp` which creates
+                                  the required service accounts with appropriate IAM roles and WIF bindings.
+                                maxLength: 100
+                                minLength: 38
+                                pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$
+                                type: string
+                                x-kubernetes-validations:
+                                - message: ControlPlane is immutable
+                                  rule: self == oldSelf
+                              nodePool:
+                                description: |-
+                                  nodePool is the Google Service Account email for CAPG controllers
+                                  that manage NodePool infrastructure (VMs, networks, disks, etc.).
+                                  This GSA requires the following IAM roles:
+                                  - roles/compute.instanceAdmin.v1 (Compute Instance Admin v1)
+                                  - roles/compute.networkAdmin (Compute Network Admin)
+                                  See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+                                  Format: service-account-name@project-id.iam.gserviceaccount.com
+
+                                  This is a user-provided value referencing a pre-created Google Service Account.
+                                  Typically obtained from the output of `hypershift infra create gcp` which creates
+                                  the required service accounts with appropriate IAM roles and WIF bindings.
+                                maxLength: 100
+                                minLength: 38
+                                pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$
+                                type: string
+                                x-kubernetes-validations:
+                                - message: NodePool is immutable
+                                  rule: self == oldSelf
+                            required:
+                            - controlPlane
+                            - nodePool
+                            type: object
+                        required:
+                        - poolID
+                        - projectNumber
+                        - providerID
+                        - serviceAccountsEmails
+                        type: object
+                        x-kubernetes-validations:
+                        - message: WorkloadIdentity is immutable
+                          rule: self == oldSelf
+                    required:
+                    - networkConfig
+                    - project
+                    - region
+                    - workloadIdentity
+                    type: object
+                    x-kubernetes-validations:
+                    - message: controlPlane service account must belong to the same
+                        project
+                      rule: self.workloadIdentity.serviceAccountsEmails.controlPlane.contains('@')
+                        && self.workloadIdentity.serviceAccountsEmails.controlPlane.endsWith('@'
+                        + self.project + '.iam.gserviceaccount.com')
+                    - message: nodePool service account must belong to the same project
+                      rule: self.workloadIdentity.serviceAccountsEmails.nodePool.contains('@')
+                        && self.workloadIdentity.serviceAccountsEmails.nodePool.endsWith('@'
+                        + self.project + '.iam.gserviceaccount.com')
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components
                     properties:
@@ -5493,6 +6177,547 @@ spec:
                     x-kubernetes-validations:
                     - message: Kubevirt GenerateID is required once set
                       rule: '!has(oldSelf.generateID) || has(self.generateID)'
+                  openstack:
+                    description: openstack specifies configuration for clusters running
+                      on OpenStack.
+                    properties:
+                      disableExternalNetwork:
+                        description: |-
+                          disableExternalNetwork specifies whether or not to attempt to connect the cluster
+                          to an external network. This allows for the creation of clusters when connecting
+                          to an external network is not possible or desirable, e.g. if using a provider network.
+                        type: boolean
+                      externalNetwork:
+                        description: |-
+                          externalNetwork is the OpenStack Network to be used to get public internet to the VMs.
+                          This option is ignored if DisableExternalNetwork is set to true.
+
+                          If ExternalNetwork is defined it must refer to exactly one external network.
+
+                          If ExternalNetwork is not defined or is empty the controller will use any
+                          existing external network as long as there is only one. It is an
+                          error if ExternalNetwork is not defined and there are multiple
+                          external networks unless DisableExternalNetwork is also set.
+
+                          If ExternalNetwork is not defined and there are no external networks
+                          the controller will proceed as though DisableExternalNetwork was set.
+                        maxProperties: 1
+                        minProperties: 1
+                        properties:
+                          filter:
+                            description: filter specifies a filter to select an OpenStack
+                              network. If provided, cannot be empty.
+                            minProperties: 1
+                            properties:
+                              description:
+                                description: description is the description of the
+                                  network to filter by.
+                                maxLength: 255
+                                type: string
+                              name:
+                                description: name is the name of the network to filter
+                                  by.
+                                maxLength: 255
+                                type: string
+                              notTags:
+                                description: |-
+                                  notTags is a list of tags to filter by. If specified, resources which
+                                  contain all of the given tags will be excluded from the result.
+                                items:
+                                  description: |-
+                                    NeutronTag represents a tag on a Neutron resource.
+                                    It may not be empty and may not contain commas.
+                                  maxLength: 255
+                                  minLength: 1
+                                  pattern: ^[^,]+$
+                                  type: string
+                                maxItems: 50
+                                type: array
+                                x-kubernetes-list-type: set
+                              notTagsAny:
+                                description: |-
+                                  notTagsAny is a list of tags to filter by. If specified, resources
+                                  which contain any of the given tags will be excluded from the result.
+                                items:
+                                  description: |-
+                                    NeutronTag represents a tag on a Neutron resource.
+                                    It may not be empty and may not contain commas.
+                                  maxLength: 255
+                                  minLength: 1
+                                  pattern: ^[^,]+$
+                                  type: string
+                                maxItems: 50
+                                type: array
+                                x-kubernetes-list-type: set
+                              projectID:
+                                description: projectID is the project ID of the network
+                                  to filter by.
+                                maxLength: 255
+                                type: string
+                              tags:
+                                description: |-
+                                  tags is a list of tags to filter by. If specified, the resource must
+                                  have all of the tags specified to be included in the result.
+                                items:
+                                  description: |-
+                                    NeutronTag represents a tag on a Neutron resource.
+                                    It may not be empty and may not contain commas.
+                                  maxLength: 255
+                                  minLength: 1
+                                  pattern: ^[^,]+$
+                                  type: string
+                                maxItems: 50
+                                type: array
+                                x-kubernetes-list-type: set
+                              tagsAny:
+                                description: |-
+                                  tagsAny is a list of tags to filter by. If specified, the resource
+                                  must have at least one of the tags specified to be included in the
+                                  result.
+                                items:
+                                  description: |-
+                                    NeutronTag represents a tag on a Neutron resource.
+                                    It may not be empty and may not contain commas.
+                                  maxLength: 255
+                                  minLength: 1
+                                  pattern: ^[^,]+$
+                                  type: string
+                                maxItems: 50
+                                type: array
+                                x-kubernetes-list-type: set
+                            type: object
+                          id:
+                            description: id is the ID of the network to use. If ID
+                              is provided, the other filters cannot be provided. Must
+                              be in UUID format.
+                            format: uuid
+                            maxLength: 36
+                            type: string
+                        type: object
+                      identityRef:
+                        description: |-
+                          identityRef is a reference to a secret holding OpenStack credentials
+                          to be used when reconciling the hosted cluster.
+                        properties:
+                          cloudName:
+                            description: cloudName specifies the name of the entry
+                              in the clouds.yaml file to use.
+                            maxLength: 255
+                            type: string
+                          name:
+                            description: |-
+                              name is the name of a secret in the same namespace as the resource being provisioned.
+                              The secret must contain a key named `clouds.yaml` which contains an OpenStack clouds.yaml file.
+                              The secret may optionally contain a key named `cacert` containing a PEM-encoded CA certificate.
+                            maxLength: 255
+                            type: string
+                        required:
+                        - cloudName
+                        - name
+                        type: object
+                      ingressFloatingIP:
+                        description: |-
+                          ingressFloatingIP is an available floating IP in your OpenStack cluster that will
+                          be associated with the OpenShift ingress port.
+                          When not specified, an IP address will be assigned randomly by the OpenStack cloud provider.
+                          When specified, the floating IP has to be pre-created.  If the
+                          specified value is not a floating IP or is already claimed, the
+                          OpenStack cloud provider won't be able to provision the load
+                          balancer.
+                          This value must be a valid IPv4 or IPv6 address.
+                        maxLength: 45
+                        type: string
+                        x-kubernetes-validations:
+                        - message: floatingIP must be a valid IPv4 or IPv6 address
+                          rule: isIP(self)
+                      managedSubnets:
+                        description: |-
+                          managedSubnets describe the OpenStack Subnet to be created. Cluster actuator will create a network,
+                          and a subnet with the defined DNSNameservers, AllocationPools and the CIDR defined in the HostedCluster
+                          MachineNetwork, and a router connected to the subnet. Currently only one IPv4
+                          subnet is supported.
+                        items:
+                          properties:
+                            allocationPools:
+                              description: |-
+                                allocationPools is an array of AllocationPool objects that will be applied to OpenStack Subnet being created.
+                                If set, OpenStack will only allocate these IPs for Machines. It will still be possible to create ports from
+                                outside of these ranges manually.
+                              items:
+                                properties:
+                                  end:
+                                    description: end represents the end of the AlloctionPool,
+                                      that is the highest IP of the pool.
+                                    maxLength: 255
+                                    type: string
+                                  start:
+                                    description: start represents the start of the
+                                      AllocationPool, that is the lowest IP of the
+                                      pool.
+                                    maxLength: 255
+                                    type: string
+                                required:
+                                - end
+                                - start
+                                type: object
+                              maxItems: 10
+                              type: array
+                            dnsNameservers:
+                              description: |-
+                                dnsNameservers holds a list of DNS server addresses that will be provided when creating
+                                the subnet. These addresses need to have the same IP version as CIDR.
+                              items:
+                                maxLength: 45
+                                type: string
+                              maxItems: 10
+                              type: array
+                          type: object
+                        maxItems: 1
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      network:
+                        description: |-
+                          network specifies an existing network to use if no ManagedSubnets
+                          are specified.
+                        maxProperties: 1
+                        minProperties: 1
+                        properties:
+                          filter:
+                            description: filter specifies a filter to select an OpenStack
+                              network. If provided, cannot be empty.
+                            minProperties: 1
+                            properties:
+                              description:
+                                description: description is the description of the
+                                  network to filter by.
+                                maxLength: 255
+                                type: string
+                              name:
+                                description: name is the name of the network to filter
+                                  by.
+                                maxLength: 255
+                                type: string
+                              notTags:
+                                description: |-
+                                  notTags is a list of tags to filter by. If specified, resources which
+                                  contain all of the given tags will be excluded from the result.
+                                items:
+                                  description: |-
+                                    NeutronTag represents a tag on a Neutron resource.
+                                    It may not be empty and may not contain commas.
+                                  maxLength: 255
+                                  minLength: 1
+                                  pattern: ^[^,]+$
+                                  type: string
+                                maxItems: 50
+                                type: array
+                                x-kubernetes-list-type: set
+                              notTagsAny:
+                                description: |-
+                                  notTagsAny is a list of tags to filter by. If specified, resources
+                                  which contain any of the given tags will be excluded from the result.
+                                items:
+                                  description: |-
+                                    NeutronTag represents a tag on a Neutron resource.
+                                    It may not be empty and may not contain commas.
+                                  maxLength: 255
+                                  minLength: 1
+                                  pattern: ^[^,]+$
+                                  type: string
+                                maxItems: 50
+                                type: array
+                                x-kubernetes-list-type: set
+                              projectID:
+                                description: projectID is the project ID of the network
+                                  to filter by.
+                                maxLength: 255
+                                type: string
+                              tags:
+                                description: |-
+                                  tags is a list of tags to filter by. If specified, the resource must
+                                  have all of the tags specified to be included in the result.
+                                items:
+                                  description: |-
+                                    NeutronTag represents a tag on a Neutron resource.
+                                    It may not be empty and may not contain commas.
+                                  maxLength: 255
+                                  minLength: 1
+                                  pattern: ^[^,]+$
+                                  type: string
+                                maxItems: 50
+                                type: array
+                                x-kubernetes-list-type: set
+                              tagsAny:
+                                description: |-
+                                  tagsAny is a list of tags to filter by. If specified, the resource
+                                  must have at least one of the tags specified to be included in the
+                                  result.
+                                items:
+                                  description: |-
+                                    NeutronTag represents a tag on a Neutron resource.
+                                    It may not be empty and may not contain commas.
+                                  maxLength: 255
+                                  minLength: 1
+                                  pattern: ^[^,]+$
+                                  type: string
+                                maxItems: 50
+                                type: array
+                                x-kubernetes-list-type: set
+                            type: object
+                          id:
+                            description: id is the ID of the network to use. If ID
+                              is provided, the other filters cannot be provided. Must
+                              be in UUID format.
+                            format: uuid
+                            maxLength: 36
+                            type: string
+                        type: object
+                      networkMTU:
+                        description: networkMTU is the MTU for the network.
+                        maximum: 9000
+                        minimum: 1500
+                        type: integer
+                      router:
+                        description: |-
+                          router specifies an existing router to be used if ManagedSubnets are
+                          specified. If specified, no new router will be created.
+                        maxProperties: 1
+                        minProperties: 1
+                        properties:
+                          filter:
+                            description: filter specifies a filter to select an OpenStack
+                              router. If provided, cannot be empty.
+                            minProperties: 1
+                            properties:
+                              description:
+                                description: description is the description of the
+                                  router to filter by.
+                                maxLength: 255
+                                type: string
+                              name:
+                                description: name is the name of the router to filter
+                                  by.
+                                maxLength: 255
+                                type: string
+                              notTags:
+                                description: |-
+                                  notTags is a list of tags to filter by. If specified, resources which
+                                  contain all of the given tags will be excluded from the result.
+                                items:
+                                  description: |-
+                                    NeutronTag represents a tag on a Neutron resource.
+                                    It may not be empty and may not contain commas.
+                                  maxLength: 255
+                                  minLength: 1
+                                  pattern: ^[^,]+$
+                                  type: string
+                                maxItems: 50
+                                type: array
+                                x-kubernetes-list-type: set
+                              notTagsAny:
+                                description: |-
+                                  notTagsAny is a list of tags to filter by. If specified, resources
+                                  which contain any of the given tags will be excluded from the result.
+                                items:
+                                  description: |-
+                                    NeutronTag represents a tag on a Neutron resource.
+                                    It may not be empty and may not contain commas.
+                                  maxLength: 255
+                                  minLength: 1
+                                  pattern: ^[^,]+$
+                                  type: string
+                                maxItems: 50
+                                type: array
+                                x-kubernetes-list-type: set
+                              projectID:
+                                description: projectID is the project ID of the router
+                                  to filter by.
+                                maxLength: 255
+                                type: string
+                              tags:
+                                description: |-
+                                  tags is a list of tags to filter by. If specified, the resource must
+                                  have all of the tags specified to be included in the result.
+                                items:
+                                  description: |-
+                                    NeutronTag represents a tag on a Neutron resource.
+                                    It may not be empty and may not contain commas.
+                                  maxLength: 255
+                                  minLength: 1
+                                  pattern: ^[^,]+$
+                                  type: string
+                                maxItems: 50
+                                type: array
+                                x-kubernetes-list-type: set
+                              tagsAny:
+                                description: |-
+                                  tagsAny is a list of tags to filter by. If specified, the resource
+                                  must have at least one of the tags specified to be included in the
+                                  result.
+                                items:
+                                  description: |-
+                                    NeutronTag represents a tag on a Neutron resource.
+                                    It may not be empty and may not contain commas.
+                                  maxLength: 255
+                                  minLength: 1
+                                  pattern: ^[^,]+$
+                                  type: string
+                                maxItems: 50
+                                type: array
+                                x-kubernetes-list-type: set
+                            type: object
+                          id:
+                            description: id is the ID of the router to use. If ID
+                              is provided, the other filters cannot be provided. Must
+                              be in UUID format.
+                            format: uuid
+                            maxLength: 36
+                            type: string
+                        type: object
+                      subnets:
+                        description: |-
+                          subnets specifies existing subnets to use if not ManagedSubnets are
+                          specified. All subnets must be in the network specified by Network.
+                          There can be zero, one, or two subnets. If no subnets are specified,
+                          all subnets in Network will be used. If 2 subnets are specified, one
+                          must be IPv4 and the other IPv6.
+                        items:
+                          description: SubnetParam specifies an OpenStack subnet to
+                            use. It may be specified by either ID or filter, but not
+                            both.
+                          maxProperties: 1
+                          minProperties: 1
+                          properties:
+                            filter:
+                              description: filter specifies a filter to select the
+                                subnet. It must match exactly one subnet.
+                              minProperties: 1
+                              properties:
+                                cidr:
+                                  description: cidr is the CIDR of the subnet to filter
+                                    by.
+                                  maxLength: 45
+                                  type: string
+                                description:
+                                  description: description is the description of the
+                                    subnet to filter by.
+                                  maxLength: 255
+                                  type: string
+                                gatewayIP:
+                                  description: gatewayIP is the gateway IP of the
+                                    subnet to filter by.
+                                  maxLength: 45
+                                  type: string
+                                ipVersion:
+                                  description: ipVersion is the IP version of the
+                                    subnet to filter by.
+                                  maximum: 2147483647
+                                  minimum: 0
+                                  type: integer
+                                ipv6AddressMode:
+                                  description: ipv6AddressMode is the IPv6 address
+                                    mode of the subnet to filter by.
+                                  maxLength: 255
+                                  type: string
+                                ipv6RAMode:
+                                  description: ipv6RAMode is the IPv6 RA mode of the
+                                    subnet to filter by.
+                                  maxLength: 255
+                                  type: string
+                                name:
+                                  description: name is the name of the subnet to filter
+                                    by.
+                                  maxLength: 255
+                                  type: string
+                                notTags:
+                                  description: |-
+                                    notTags is a list of tags to filter by. If specified, resources which
+                                    contain all of the given tags will be excluded from the result.
+                                  items:
+                                    description: |-
+                                      NeutronTag represents a tag on a Neutron resource.
+                                      It may not be empty and may not contain commas.
+                                    maxLength: 255
+                                    minLength: 1
+                                    pattern: ^[^,]+$
+                                    type: string
+                                  maxItems: 50
+                                  type: array
+                                  x-kubernetes-list-type: set
+                                notTagsAny:
+                                  description: |-
+                                    notTagsAny is a list of tags to filter by. If specified, resources
+                                    which contain any of the given tags will be excluded from the result.
+                                  items:
+                                    description: |-
+                                      NeutronTag represents a tag on a Neutron resource.
+                                      It may not be empty and may not contain commas.
+                                    maxLength: 255
+                                    minLength: 1
+                                    pattern: ^[^,]+$
+                                    type: string
+                                  maxItems: 50
+                                  type: array
+                                  x-kubernetes-list-type: set
+                                projectID:
+                                  description: projectID is the project ID of the
+                                    subnet to filter by.
+                                  maxLength: 255
+                                  type: string
+                                tags:
+                                  description: |-
+                                    tags is a list of tags to filter by. If specified, the resource must
+                                    have all of the tags specified to be included in the result.
+                                  items:
+                                    description: |-
+                                      NeutronTag represents a tag on a Neutron resource.
+                                      It may not be empty and may not contain commas.
+                                    maxLength: 255
+                                    minLength: 1
+                                    pattern: ^[^,]+$
+                                    type: string
+                                  maxItems: 50
+                                  type: array
+                                  x-kubernetes-list-type: set
+                                tagsAny:
+                                  description: |-
+                                    tagsAny is a list of tags to filter by. If specified, the resource
+                                    must have at least one of the tags specified to be included in the
+                                    result.
+                                  items:
+                                    description: |-
+                                      NeutronTag represents a tag on a Neutron resource.
+                                      It may not be empty and may not contain commas.
+                                    maxLength: 255
+                                    minLength: 1
+                                    pattern: ^[^,]+$
+                                    type: string
+                                  maxItems: 50
+                                  type: array
+                                  x-kubernetes-list-type: set
+                              type: object
+                            id:
+                              description: id is the uuid of the subnet. It will not
+                                be validated.
+                              format: uuid
+                              maxLength: 36
+                              type: string
+                          type: object
+                        maxItems: 2
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      tags:
+                        description: tags to set on all resources in cluster which
+                          support tags
+                        items:
+                          maxLength: 255
+                          type: string
+                        maxItems: 50
+                        type: array
+                        x-kubernetes-list-type: set
+                    required:
+                    - identityRef
+                    type: object
                   powervs:
                     description: |-
                       powervs specifies configuration for clusters running on IBMCloud Power VS Service.
@@ -5703,6 +6928,8 @@ spec:
                     - Agent
                     - PowerVS
                     - None
+                    - OpenStack
+                    - GCP
                     maxLength: 100
                     type: string
                     x-kubernetes-validations:
@@ -6731,6 +7958,17 @@ spec:
                       description: Release represents an OpenShift release image and
                         associated metadata.
                       properties:
+                        architecture:
+                          description: |-
+                            architecture is an optional field that indicates the
+                            value of the cluster architecture. In this context cluster
+                            architecture means either a single architecture or a multi
+                            architecture.
+                            Valid values are 'Multi' and empty.
+                          enum:
+                          - Multi
+                          - ""
+                          type: string
                         channels:
                           description: |-
                             channels is the set of Cincinnati channels to which the release
@@ -6848,6 +8086,17 @@ spec:
                         release:
                           description: release is the target of the update.
                           properties:
+                            architecture:
+                              description: |-
+                                architecture is an optional field that indicates the
+                                value of the cluster architecture. In this context cluster
+                                architecture means either a single architecture or a multi
+                                architecture.
+                                Valid values are 'Multi' and empty.
+                              enum:
+                              - Multi
+                              - ""
+                              type: string
                             channels:
                               description: |-
                                 channels is the set of Cincinnati channels to which the release
@@ -6980,6 +8229,17 @@ spec:
                       If the cluster is not yet fully initialized desired will be set
                       with the information available, which may be an image or a tag.
                     properties:
+                      architecture:
+                        description: |-
+                          architecture is an optional field that indicates the
+                          value of the cluster architecture. In this context cluster
+                          architecture means either a single architecture or a multi
+                          architecture.
+                          Valid values are 'Multi' and empty.
+                        enum:
+                        - Multi
+                        - ""
+                        type: string
                       channels:
                         description: |-
                           channels is the set of Cincinnati channels to which the release
@@ -7028,7 +8288,7 @@ spec:
                           description: |-
                             acceptedRisks records risks which were accepted to initiate the update.
                             For example, it may menition an Upgradeable=False or missing signature
-                            that was overriden via desiredUpdate.force, or an update that was
+                            that was overridden via desiredUpdate.force, or an update that was
                             initiated despite not being in the availableUpdates set of recommended
                             update targets.
                           type: string
