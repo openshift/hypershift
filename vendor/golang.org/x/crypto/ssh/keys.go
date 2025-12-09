@@ -1490,7 +1490,6 @@ type openSSHEncryptedPrivateKey struct {
 	NumKeys      uint32
 	PubKey       []byte
 	PrivKeyBlock []byte
-	Rest         []byte `ssh:"rest"`
 }
 
 type openSSHPrivateKey struct {

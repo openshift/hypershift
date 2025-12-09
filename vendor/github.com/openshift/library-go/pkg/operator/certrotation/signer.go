@@ -78,10 +78,12 @@ func (c RotatedSigningCASecret) EnsureSigningCertKeyPair(ctx context.Context) (*
 		creationRequired = true
 	}
 
-	// run Update if metadata needs changing
-	needsMetadataUpdate := ensureMetadataUpdate(signingCertKeyPairSecret, c.Owner, c.AdditionalAnnotations)
-	needsTypeChange := ensureSecretTLSTypeSet(signingCertKeyPairSecret)
-	updateRequired = needsMetadataUpdate || needsTypeChange
+	// run Update if metadata needs changing unless we're in RefreshOnlyWhenExpired mode
+	if !c.RefreshOnlyWhenExpired {
+		needsMetadataUpdate := ensureOwnerRefAndTLSAnnotations(signingCertKeyPairSecret, c.Owner, c.AdditionalAnnotations)
+		needsTypeChange := ensureSecretTLSTypeSet(signingCertKeyPairSecret)
+		updateRequired = needsMetadataUpdate || needsTypeChange
+	}
 
 	// run Update if signer content needs changing
 	signerUpdated := false
@@ -90,7 +92,7 @@ func (c RotatedSigningCASecret) EnsureSigningCertKeyPair(ctx context.Context) (*
 			reason = "secret doesn't exist"
 		}
 		c.EventRecorder.Eventf("SignerUpdateRequired", "%q in %q requires a new signing cert/key pair: %v", c.Name, c.Namespace, reason)
-		if err := setSigningCertKeyPairSecret(signingCertKeyPairSecret, c.Validity); err != nil {
+		if err = setSigningCertKeyPairSecretAndTLSAnnotations(signingCertKeyPairSecret, c.Validity, c.Refresh, c.AdditionalAnnotations); err != nil {
 			return nil, false, err
 		}
 
@@ -110,6 +112,10 @@ func (c RotatedSigningCASecret) EnsureSigningCertKeyPair(ctx context.Context) (*
 		signingCertKeyPairSecret = actualSigningCertKeyPairSecret
 	} else if updateRequired {
 		actualSigningCertKeyPairSecret, err := c.Client.Secrets(c.Namespace).Update(ctx, signingCertKeyPairSecret, metav1.UpdateOptions{})
+		if apierrors.IsConflict(err) {
+			// ignore error if its attempting to update outdated version of the secret
+			return nil, false, nil
+		}
 		resourcehelper.ReportUpdateEvent(c.EventRecorder, actualSigningCertKeyPairSecret, err)
 		if err != nil {
 			return nil, false, err
@@ -182,7 +188,7 @@ func getValidityFromAnnotations(annotations map[string]string) (notBefore time.T
 		return notBefore, notAfter, fmt.Sprintf("bad expiry: %q", notAfterString)
 	}
 	notBeforeString := annotations[CertificateNotBeforeAnnotation]
-	if len(notAfterString) == 0 {
+	if len(notBeforeString) == 0 {
 		return notBefore, notAfter, "missing notBefore"
 	}
 	notBefore, err = time.Parse(time.RFC3339, notBeforeString)
@@ -193,18 +199,30 @@ func getValidityFromAnnotations(annotations map[string]string) (notBefore time.T
 	return notBefore, notAfter, ""
 }
 
-// setSigningCertKeyPairSecret creates a new signing cert/key pair and sets them in the secret
-func setSigningCertKeyPairSecret(signingCertKeyPairSecret *corev1.Secret, validity time.Duration) error {
-	signerName := fmt.Sprintf("%s_%s@%d", signingCertKeyPairSecret.Namespace, signingCertKeyPairSecret.Name, time.Now().Unix())
-	ca, err := crypto.MakeSelfSignedCAConfigForDuration(signerName, validity)
+// setSigningCertKeyPairSecretAndTLSAnnotations generates a new signing certificate and key pair,
+// stores them in the specified secret, and adds predefined TLS annotations to that secret.
+func setSigningCertKeyPairSecretAndTLSAnnotations(signingCertKeyPairSecret *corev1.Secret, validity, refresh time.Duration, tlsAnnotations AdditionalAnnotations) error {
+	ca, err := setSigningCertKeyPairSecret(signingCertKeyPairSecret, validity)
 	if err != nil {
 		return err
 	}
 
+	setTLSAnnotationsOnSigningCertKeyPairSecret(signingCertKeyPairSecret, ca, refresh, tlsAnnotations)
+	return nil
+}
+
+// setSigningCertKeyPairSecret creates a new signing cert/key pair and sets them in the secret
+func setSigningCertKeyPairSecret(signingCertKeyPairSecret *corev1.Secret, validity time.Duration) (*crypto.TLSCertificateConfig, error) {
+	signerName := fmt.Sprintf("%s_%s@%d", signingCertKeyPairSecret.Namespace, signingCertKeyPairSecret.Name, time.Now().Unix())
+	ca, err := crypto.MakeSelfSignedCAConfigForDuration(signerName, validity)
+	if err != nil {
+		return nil, err
+	}
+
 	certBytes := &bytes.Buffer{}
 	keyBytes := &bytes.Buffer{}
-	if err := ca.WriteCertConfig(certBytes, keyBytes); err != nil {
-		return err
+	if err = ca.WriteCertConfig(certBytes, keyBytes); err != nil {
+		return nil, err
 	}
 
 	if signingCertKeyPairSecret.Annotations == nil {
@@ -215,9 +233,21 @@ func setSigningCertKeyPairSecret(signingCertKeyPairSecret *corev1.Secret, validi
 	}
 	signingCertKeyPairSecret.Data["tls.crt"] = certBytes.Bytes()
 	signingCertKeyPairSecret.Data["tls.key"] = keyBytes.Bytes()
-	signingCertKeyPairSecret.Annotations[CertificateNotAfterAnnotation] = ca.Certs[0].NotAfter.Format(time.RFC3339)
-	signingCertKeyPairSecret.Annotations[CertificateNotBeforeAnnotation] = ca.Certs[0].NotBefore.Format(time.RFC3339)
+	return ca, nil
+}
+
+// setTLSAnnotationsOnSigningCertKeyPairSecret applies predefined TLS annotations to the given secret.
+//
+// This function does not perform nil checks on its parameters and assumes that the
+// secret's Annotations field has already been initialized.
+//
+// These assumptions are safe because this function is only called after the secret
+// has been initialized in setSigningCertKeyPairSecret.
+func setTLSAnnotationsOnSigningCertKeyPairSecret(signingCertKeyPairSecret *corev1.Secret, ca *crypto.TLSCertificateConfig, refresh time.Duration, tlsAnnotations AdditionalAnnotations) {
 	signingCertKeyPairSecret.Annotations[CertificateIssuer] = ca.Certs[0].Issuer.CommonName
 
-	return nil
+	tlsAnnotations.NotBefore = ca.Certs[0].NotBefore.Format(time.RFC3339)
+	tlsAnnotations.NotAfter = ca.Certs[0].NotAfter.Format(time.RFC3339)
+	tlsAnnotations.RefreshPeriod = refresh.String()
+	_ = tlsAnnotations.EnsureTLSMetadataUpdate(&signingCertKeyPairSecret.ObjectMeta)
 }
