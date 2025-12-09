@@ -512,7 +512,9 @@ func getOperatorDeployment(opts Options) *appsv1.Deployment {
 	}
 }
 
+//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 func operatorEndpoints(opts Options) *corev1.Endpoints {
+	//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 	return &corev1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{Name: "operator", Namespace: opts.Namespace},
 	}
