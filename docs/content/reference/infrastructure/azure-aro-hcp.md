@@ -26,7 +26,7 @@ The following infrastructure must exist before creating an ARO HCP HostedCluster
 | OpenShift CLI | `oc` or `kubectl` for cluster management |
 | HyperShift CLI | `hypershift` binary for cluster creation |
 | `jq` | Command-line JSON processor |
-| CCO Tool | Cloud Credential Operator tool for OIDC setup |
+| CCO Tool | [Cloud Credential Operator CLI](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md#azure) for OIDC setup |
 
 #### Azure Subscription Requirements
 
