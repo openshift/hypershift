@@ -1,7 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: openshift-oauth-apiserver
@@ -29,9 +28,8 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: work-logs,tmp-dir
-        component.hypershift.openshift.io/config-hash: 19dc307e52ebd36a
+        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
-      creationTimestamp: null
       labels:
         app: openshift-oauth-apiserver
         hypershift.openshift.io/control-plane-component: openshift-oauth-apiserver

@@ -11,5 +11,4 @@ data:
     ClusterServiceSharedLoadBalancerHealthProbePort = 10256
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: aws-cloud-config
