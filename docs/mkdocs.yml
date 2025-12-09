@@ -80,6 +80,10 @@ nav:
     - how-to/ci/checking-ci.md
   - 'HyperShift Operator Install':
     - how-to/install/index.md
+  - 'PKI and Certificates':
+    - how-to/pki/index.md
+    - how-to/pki/control-plane-certificates.md
+    - how-to/pki/break-glass-credentials.md
   - 'Disaster Recovery':
     - how-to/disaster-recovery/index.md
     - how-to/disaster-recovery/dr-cli.md
