@@ -42,6 +42,7 @@ func OpenshiftEC2NodeClass(name, namespace string) *OpenshiftEC2NodeClassApplyCo
 	b.WithAPIVersion("karpenter.hypershift.openshift.io/v1beta1")
 	return b
 }
+func (b OpenshiftEC2NodeClassApplyConfiguration) IsApplyConfiguration() {}
 
 // WithKind sets the Kind field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
@@ -217,8 +218,24 @@ func (b *OpenshiftEC2NodeClassApplyConfiguration) WithStatus(value *OpenshiftEC2
 	return b
 }
 
+// GetKind retrieves the value of the Kind field in the declarative configuration.
+func (b *OpenshiftEC2NodeClassApplyConfiguration) GetKind() *string {
+	return b.TypeMetaApplyConfiguration.Kind
+}
+
+// GetAPIVersion retrieves the value of the APIVersion field in the declarative configuration.
+func (b *OpenshiftEC2NodeClassApplyConfiguration) GetAPIVersion() *string {
+	return b.TypeMetaApplyConfiguration.APIVersion
+}
+
 // GetName retrieves the value of the Name field in the declarative configuration.
 func (b *OpenshiftEC2NodeClassApplyConfiguration) GetName() *string {
 	b.ensureObjectMetaApplyConfigurationExists()
 	return b.ObjectMetaApplyConfiguration.Name
+}
+
+// GetNamespace retrieves the value of the Namespace field in the declarative configuration.
+func (b *OpenshiftEC2NodeClassApplyConfiguration) GetNamespace() *string {
+	b.ensureObjectMetaApplyConfigurationExists()
+	return b.ObjectMetaApplyConfiguration.Namespace
 }
