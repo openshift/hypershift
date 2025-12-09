@@ -222,11 +222,11 @@ type ControllerCertificate struct {
 
 	// notBefore is the lower boundary for validity
 	// +optional
-	NotBefore *metav1.Time `json:"notBefore"`
+	NotBefore *metav1.Time `json:"notBefore,omitempty"`
 
 	// notAfter is the upper boundary for validity
 	// +optional
-	NotAfter *metav1.Time `json:"notAfter"`
+	NotAfter *metav1.Time `json:"notAfter,omitempty"`
 
 	// bundleFile is the larger bundle a cert comes from
 	// +required
@@ -323,7 +323,7 @@ type MachineConfigSpec struct {
 
 	// config is a Ignition Config object.
 	// +optional
-	Config runtime.RawExtension `json:"config"`
+	Config runtime.RawExtension `json:"config,omitempty"`
 
 	// kernelArguments contains a list of kernel arguments to be added
 	// +listType=atomic
@@ -452,6 +452,34 @@ type MachineConfigPoolSpec struct {
 	// +listMapKey=name
 	// +kubebuilder:validation:MaxItems=100
 	PinnedImageSets []PinnedImageSetRef `json:"pinnedImageSets,omitempty"`
+
+	// osImageStream specifies an OS stream to be used for the pool.
+	//
+	// This field can be optionally set to a known OSImageStream name to change the
+	// OS and Extension images with a well-known, tested, release-provided set of images.
+	// This enables a streamlined way of switching the pool's node OS to a different version
+	// than the cluster default, such as transitioning to a major RHEL version.
+	//
+	// When set, the referenced stream overrides the cluster-wide OS
+	// images for the pool with the OS and Extensions associated to stream.
+	// When omitted, the pool uses the cluster-wide default OS images.
+	//
+	// +openshift:enable:FeatureGate=OSStreams
+	// +optional
+	OSImageStream OSImageStreamReference `json:"osImageStream,omitempty,omitzero"`
+}
+
+type OSImageStreamReference struct {
+	// name is a required reference to an OSImageStream to be used for the pool.
+	//
+	// It must be a valid RFC 1123 subdomain between 1 and 253 characters in length,
+	// consisting of lowercase alphanumeric characters, hyphens ('-'), and periods ('.').
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:XValidation:rule="!format.dns1123Subdomain().validate(self).hasValue()",message="a RFC 1123 subdomain must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character."
+	Name string `json:"name,omitempty"`
 }
 
 type PinnedImageSetRef struct {
@@ -517,6 +545,13 @@ type MachineConfigPoolStatus struct {
 	// +listMapKey=poolSynchronizerType
 	// +optional
 	PoolSynchronizersStatus []PoolSynchronizerStatus `json:"poolSynchronizersStatus,omitempty"`
+
+	// osImageStream specifies the last updated OSImageStream for the pool.
+	//
+	// When omitted, the pool is using the cluster-wide default OS images.
+	// +openshift:enable:FeatureGate=OSStreams
+	// +optional
+	OSImageStream OSImageStreamReference `json:"osImageStream,omitempty,omitzero"`
 }
 
 // +kubebuilder:validation:XValidation:rule="self.machineCount >= self.updatedMachineCount", message="machineCount must be greater than or equal to updatedMachineCount"
@@ -598,7 +633,7 @@ type MachineConfigPoolCondition struct {
 
 	// status of the condition, one of ('True', 'False', 'Unknown').
 	// +optional
-	Status corev1.ConditionStatus `json:"status"`
+	Status corev1.ConditionStatus `json:"status,omitempty"`
 
 	// lastTransitionTime is the timestamp corresponding to the last status
 	// change of this condition.
@@ -636,6 +671,10 @@ const (
 	// MachineConfigPoolRenderDegraded means the rendered configuration for the pool cannot be generated because of an error
 	MachineConfigPoolRenderDegraded MachineConfigPoolConditionType = "RenderDegraded"
 
+	// MachineConfigPoolImageBuildDegraded means the image build for the pool was not successful
+	// This condition is only used when Image Mode is enabled for the pool
+	MachineConfigPoolImageBuildDegraded MachineConfigPoolConditionType = "ImageBuildDegraded"
+
 	// MachineConfigPoolPinnedImageSetsDegraded means the pinned image sets for the pool cannot be populated because of an error
 	// +openshift:enable:FeatureGate=PinnedImages
 	MachineConfigPoolPinnedImageSetsDegraded MachineConfigPoolConditionType = "PinnedImageSetsDegraded"
@@ -644,7 +683,7 @@ const (
 	// +openshift:enable:FeatureGate=PinnedImages
 	MachineConfigPoolSynchronizerDegraded MachineConfigPoolConditionType = "PoolSynchronizerDegraded"
 
-	// MachineConfigPoolDegraded is the overall status of the pool based, today, on whether we fail with NodeDegraded or RenderDegraded
+	// MachineConfigPoolDegraded is the overall status of the pool based, today, on whether we fail with NodeDegraded, RenderDegraded, or ImageBuildDegraded
 	MachineConfigPoolDegraded MachineConfigPoolConditionType = "Degraded"
 
 	MachineConfigPoolBuildPending MachineConfigPoolConditionType = "BuildPending"
@@ -742,7 +781,7 @@ type KubeletConfigCondition struct {
 
 	// status of the condition, one of True, False, Unknown.
 	// +optional
-	Status corev1.ConditionStatus `json:"status"`
+	Status corev1.ConditionStatus `json:"status,omitempty"`
 
 	// lastTransitionTime is the time of the last update to the current status object.
 	// +optional
@@ -844,18 +883,25 @@ type ContainerRuntimeConfiguration struct {
 	// +optional
 	OverlaySize *resource.Quantity `json:"overlaySize,omitempty"`
 
-	// defaultRuntime is the name of the OCI runtime to be used as the default.
+	// defaultRuntime is the name of the OCI runtime to be used as the default for containers.
+	// Allowed values are `runc` and `crun`.
+	// When set to `runc`, OpenShift will use runc to execute the container
+	// When set to `crun`, OpenShift will use crun to execute the container
+	// When omitted, this means no opinion and the platform is left to choose a reasonable default,
+	// which is subject to change over time. Currently, the default is `crun`.
+	// +kubebuilder:validation:Enum=crun;runc
 	// +optional
 	DefaultRuntime ContainerRuntimeDefaultRuntime `json:"defaultRuntime,omitempty"`
 }
 
 type ContainerRuntimeDefaultRuntime string
 
+// These constants are used in the Machine Config Operator (MCO)
 const (
 	ContainerRuntimeDefaultRuntimeEmpty   = ""
 	ContainerRuntimeDefaultRuntimeRunc    = "runc"
 	ContainerRuntimeDefaultRuntimeCrun    = "crun"
-	ContainerRuntimeDefaultRuntimeDefault = ContainerRuntimeDefaultRuntimeRunc
+	ContainerRuntimeDefaultRuntimeDefault = ContainerRuntimeDefaultRuntimeCrun
 )
 
 // ContainerRuntimeConfigStatus defines the observed state of a ContainerRuntimeConfig
@@ -878,7 +924,7 @@ type ContainerRuntimeConfigCondition struct {
 
 	// status of the condition, one of True, False, Unknown.
 	// +optional
-	Status corev1.ConditionStatus `json:"status"`
+	Status corev1.ConditionStatus `json:"status,omitempty"`
 
 	// lastTransitionTime is the time of the last update to the current status object.
 	// +nullable
