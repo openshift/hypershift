@@ -6,7 +6,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 func KASEndpoints() *corev1.Endpoints {
+	//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 	return &corev1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kubernetes",
