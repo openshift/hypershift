@@ -16,6 +16,7 @@ CONTROLLER_GEN := $(abspath $(TOOLS_BIN_DIR)/controller-gen)
 CODE_GEN := $(abspath $(TOOLS_BIN_DIR)/codegen)
 STATICCHECK := $(abspath $(TOOLS_BIN_DIR)/staticcheck)
 GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
+MOCKGEN := $(abspath $(TOOLS_BIN_DIR)/mockgen)
 
 PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 
@@ -54,7 +55,7 @@ build: hypershift-operator control-plane-operator control-plane-pki-operator hyp
 update: workspace-sync api-deps api api-docs deps clients
 
 .PHONY: verify
-verify: update staticcheck fmt vet
+verify: generate update staticcheck fmt vet
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	git diff --exit-code HEAD --
@@ -74,9 +75,16 @@ $(STATICCHECK): $(TOOLS_DIR)/go.mod # Build staticcheck from tools folder.
 $(GENAPIDOCS): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(GENAPIDOCS) github.com/ahmetb/gen-crd-api-reference-docs
 
+$(MOCKGEN): ${TOOLS_DIR}/go.mod
+	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o $(BIN_DIR)/mockgen go.uber.org/mock/mockgen
+
+#.PHONY: generate
+generate: $(MOCKGEN)
+	GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go generate ./...
+
 # Compile all tests
 .PHONY: tests
-tests:
+tests: generate
 	$(GO) test -o /dev/null -c ./...
 
 # Build hypershift-operator binary
@@ -214,7 +222,7 @@ delegating_client:
 
 # Run tests
 .PHONY: test
-test:
+test: generate
 	$(GO) test -race -count=25 -timeout=30m ./... -coverprofile cover.out
 
 .PHONY: e2e
