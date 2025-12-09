@@ -23,7 +23,7 @@
                         "name": "ExternalOIDC"
                     },
                     {
-                        "name": "DynamicResourceAllocation"
+                        "name": "HyperShiftOnlyDynamicResourceAllocation"
                     },
                     {
                         "name": "NetworkDiagnosticsConfig"
