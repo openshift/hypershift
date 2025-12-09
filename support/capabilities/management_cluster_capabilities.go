@@ -69,6 +69,10 @@ const (
 	// CapabilityImageStream indicates if the cluster supports ImageStream
 	// image.openshift.io
 	CapabilityImageStream
+
+	// CapabilityValidatingAdmissionPolicy indicates if the cluster supports ValidatingAdmissionPolicy
+	// admissionregistration.k8s.io/v1
+	CapabilityValidatingAdmissionPolicy
 )
 
 // ManagementClusterCapabilities holds all information about optional capabilities of
@@ -211,6 +215,16 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 	}
 	if hasImageStreamCap {
 		discoveredCapabilities[CapabilityImageStream] = struct{}{}
+	}
+
+	// check for ValidatingAdmissionPolicy capability
+	admissionregistrationV1GroupVersion := schema.GroupVersion{Group: "admissionregistration.k8s.io", Version: "v1"}
+	hasValidatingAdmissionPolicyCap, err := isAPIResourceRegistered(client, admissionregistrationV1GroupVersion, "validatingadmissionpolicies")
+	if err != nil {
+		return nil, err
+	}
+	if hasValidatingAdmissionPolicyCap {
+		discoveredCapabilities[CapabilityValidatingAdmissionPolicy] = struct{}{}
 	}
 
 	return &ManagementClusterCapabilities{capabilities: discoveredCapabilities}, nil

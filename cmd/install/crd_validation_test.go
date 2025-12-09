@@ -79,9 +79,9 @@ func TestHostedClusterSchedulerProfileCustomizationsDynamicResourceAllocationFie
 
 	// Test all HostedCluster CRD variants
 	crdPaths := []string{
-		"hypershift-operator/zz_generated.crd-manifests/hostedclusters-Default.crd.yaml",
-		"hypershift-operator/zz_generated.crd-manifests/hostedclusters-TechPreviewNoUpgrade.crd.yaml",
-		"hypershift-operator/zz_generated.crd-manifests/hostedclusters-CustomNoUpgrade.crd.yaml",
+		"hypershift-operator/zz_generated.crd-manifests/hostedclusters-Hypershift-Default.crd.yaml",
+		"hypershift-operator/zz_generated.crd-manifests/hostedclusters-Hypershift-TechPreviewNoUpgrade.crd.yaml",
+		"hypershift-operator/zz_generated.crd-manifests/hostedclusters-Hypershift-CustomNoUpgrade.crd.yaml",
 	}
 
 	for _, crdPath := range crdPaths {
