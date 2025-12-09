@@ -117,6 +117,7 @@ nav:
         - how-to/aws/troubleshooting/debug-nodes.md
         - how-to/aws/troubleshooting/troubleshooting-disaster-recovery.md
   - 'Azure':
+    - how-to/azure/index.md
     - 'Managed Azure':
       - how-to/azure/create-azure-cluster-on-aks.md
       - how-to/azure/create-azure-cluster-with-options.md

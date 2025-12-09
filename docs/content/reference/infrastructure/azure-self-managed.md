@@ -38,7 +38,7 @@ The following infrastructure must exist before creating a self-managed Azure Hos
 | Azure Subscription | Active subscription with sufficient quota |
 | Azure CLI | `az` CLI installed and configured |
 | `jq` | Command-line JSON processor |
-| CCO Tool | Cloud Credential Operator tool for OIDC setup |
+| CCO Tool | [Cloud Credential Operator CLI](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md#azure) for OIDC setup |
 
 #### Required Azure Permissions
 

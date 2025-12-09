@@ -7,7 +7,7 @@ This section describes the infrastructure requirements for ARO HCP (Azure Red Ha
 ARO HCP deployments consist of:
 
 1. **Management Cluster**: An AKS cluster that hosts the HyperShift operator and control planes
-2. **Control Plane**: Kubernetes control plane components running as pods on the AKS management cluster
+2. **Control Plane**: OpenShift control plane components running as pods on the AKS management cluster
 3. **Data Plane**: Worker nodes running as Azure Virtual Machines in the customer's Azure subscription
 
 The architecture uses Azure Managed Identities with certificate-based authentication for secure communication between OpenShift components and Azure services. Credentials are stored in Azure Key Vault and accessed via the Secrets Store CSI driver.
@@ -18,26 +18,9 @@ The architecture uses Azure Managed Identities with certificate-based authentica
 
 The following infrastructure must exist before creating an ARO HCP HostedCluster:
 
-#### Tool Requirements
-
-| Requirement | Description |
-|-------------|-------------|
-| Azure CLI | `az` CLI installed and configured |
-| OpenShift CLI | `oc` or `kubectl` for cluster management |
-| HyperShift CLI | `hypershift` binary for cluster creation |
-| `jq` | Command-line JSON processor |
-| CCO Tool | Cloud Credential Operator tool for OIDC setup |
-
-#### Azure Subscription Requirements
-
-| Requirement | Description |
-|-------------|-------------|
-| Azure Subscription | Active subscription with sufficient quota |
-| Microsoft Graph Permission | `Application.ReadWrite.OwnedBy` on the service principal |
-
 #### Required Azure Permissions
 
-The service principal creating infrastructure requires:
+A service principal with the following permissions is required for creating infrastructure:
 
 | Role | Scope | Purpose |
 |------|-------|---------|
@@ -50,32 +33,28 @@ Additionally, Microsoft Graph API permissions are required:
 |------------|------|---------|
 | `Application.ReadWrite.OwnedBy` | Application | Create and manage service principals |
 
-#### Persistent Resource Group
+#### Shared Resources (Per Management Cluster)
 
-A long-lived resource group for shared resources that persist across multiple HostedClusters:
+A resource group for shared resources that are reusable across HostedCluster creation and deletion cycles:
 
-| Resource | Purpose | Lifecycle |
-|----------|---------|-----------|
-| Azure Key Vault | Stores service principal certificates | Persistent |
-| Service Principals | Control plane component authentication | Persistent |
-| OIDC Issuer Storage Account | Hosts OIDC discovery documents | Persistent |
-| Data Plane Managed Identities | Data plane component authentication | Persistent |
-| Azure DNS Zones | DNS management | Persistent |
+| Resource | Purpose |
+|----------|---------|
+| Azure Key Vault | Stores service principal certificates |
+| Service Principals | Control plane component authentication |
+| OIDC Issuer Storage Account | Hosts OIDC discovery documents |
+| Data Plane Managed Identities | Data plane component authentication |
+| Azure DNS Zones | DNS management |
 
-!!! warning "One-Time Setup Resources"
+!!! warning "Resource Reusability"
 
-    Three categories of resources should be created once and **reused across multiple clusters** to avoid Azure quota limits:
-
-    - Service principals and Key Vault
-    - OIDC issuer
-    - Data plane identities
+    These resources should be created once and **reused when recreating the same HostedCluster** to avoid Azure quota limits. They can also be shared across multiple HostedClusters if desired.
 
 #### AKS Management Cluster
 
-An AKS cluster configured with the following requirements:
+An AKS cluster that hosts the HyperShift operator and control planes. For production deployments, the following features are recommended:
 
-| Requirement | Configuration |
-|-------------|---------------|
+| Feature | Configuration |
+|---------|---------------|
 | Azure Key Vault Secrets Provider | Enabled for credential mounting |
 | OIDC Issuer | Enabled for workload identity |
 | Managed Identity | Cluster and kubelet managed identities |
@@ -135,13 +114,17 @@ The control plane identities are provided in a JSON file with the following form
 
 ### Data Plane Identities
 
-Data plane identities are managed identities with federated credentials for components running on worker nodes:
+Data plane identities are Azure managed identities with federated credentials for components running on worker nodes. Each managed identity is assigned an Azure built-in role that grants the specific permissions required by that component:
 
-| Component | Purpose | Azure Role |
-|-----------|---------|------------|
-| **Image Registry** | Image registry operations from worker nodes | Image Registry Role (`8b32b316-c2f5-4ddf-b05b-83dacd2d08b5`) |
-| **Azure Disk CSI** | Disk operations from worker nodes | Azure Disk Role (`5b7237c5-45e1-49d6-bc18-a1f62f400748`) |
-| **Azure File CSI** | File operations from worker nodes | Azure File Role (`0d7aedc0-15fd-4a67-a412-efad370c947e`) |
+| Component | Purpose | Azure Built-in Role |
+|-----------|---------|---------------------|
+| **Image Registry** | Image registry operations from worker nodes | Azure Red Hat OpenShift Image Registry Operator |
+| **Azure Disk CSI** | Disk operations from worker nodes | Azure Red Hat OpenShift Azure Disk CSI Driver Operator |
+| **Azure File CSI** | File operations from worker nodes | Azure Red Hat OpenShift Azure Files CSI Driver Operator |
+
+!!! note "Azure Built-in Roles"
+
+    These roles are Azure built-in roles created specifically for Azure Red Hat OpenShift. Each role has a unique role definition ID (GUID) that HyperShift uses when creating role assignments. For detailed permissions granted by each role, see the [Azure built-in roles documentation](https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles).
 
 The data plane identities are provided in a JSON file with the following format:
 
@@ -155,15 +138,19 @@ The data plane identities are provided in a JSON file with the following format:
 
 #### OIDC Issuer
 
-An OIDC issuer is required for data plane workload identity federation:
+An OIDC issuer is required for data plane workload identity federation (see [Data Plane Authentication](#data-plane-authentication-federated-identity) for how this works). Setting up an OIDC issuer requires:
 
 - Azure Blob Storage account configured as OIDC issuer
 - RSA key pair for service account token signing
 - Created using the Cloud Credential Operator (CCO) tool
 
-### Infrastructure Created by HyperShift
+### Infrastructure Required Before HostedCluster Creation
 
-The `hypershift create cluster azure` command creates the following resources:
+The following Azure infrastructure must exist before creating a HostedCluster resource:
+
+!!! tip "Creating Infrastructure with the CLI"
+
+    When using the `hypershift` CLI for cluster creation, this infrastructure gets automatically created whether via the `hypershift create infra azure` or the `hypershift create cluster azure` command. See [Create an Azure Hosted Cluster on AKS](../../how-to/azure/create-azure-cluster-on-aks.md) for details.
 
 #### Resource Groups
 
@@ -177,16 +164,26 @@ The `hypershift create cluster azure` command creates the following resources:
 
 | Resource | Configuration | Notes |
 |----------|---------------|-------|
-| **Virtual Network (VNet)** | Address prefix: `10.0.0.0/16` | Contains the subnet for worker nodes |
-| **Subnet** | Address prefix: `10.0.0.0/24` | Named `default`, attached to NSG |
+| **Virtual Network (VNet)** | Any valid address space | Contains the subnet for worker nodes |
+| **Subnet** | Any valid address prefix within the VNet | Attached to NSG |
 | **Network Security Group (NSG)** | Empty rules by default | Additional rules added by cloud provider as needed |
+
+!!! note "CLI Defaults"
+
+    The CLI creates a VNet with address prefix `10.0.0.0/16` and a subnet named `default` with address prefix `10.0.0.0/24`. Use `--vnet-id`, `--subnet-id`, and `--network-security-group-id` to bring your own resources.
 
 #### DNS Resources
 
-| Resource | Configuration | Notes |
-|----------|---------------|-------|
-| **Private DNS Zone** | `<name>-azurecluster.<baseDomain>` | For internal cluster DNS resolution |
-| **Private DNS Zone Link** | Location: `global` | Links private zone to VNet, registration disabled |
+Internal cluster DNS resolution requires a Private DNS Zone and a Virtual Network Link connecting the worker VNet to that zone.
+
+| Resource | Configuration | Purpose |
+|----------|---------------|---------|
+| **Private DNS Zone** | `<name>-azurecluster.<baseDomain>` | Hosts internal DNS records for the hosted cluster |
+| **Virtual Network Link** | Links to worker VNet | Connects the VNet to the zone for DNS resolution |
+
+!!! note "CLI Defaults"
+
+    The CLI creates both resources with `location: global` and the Virtual Network Link with automatic VM registration disabled.
 
 #### Load Balancer Resources
 
