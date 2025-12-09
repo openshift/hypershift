@@ -1139,6 +1139,7 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 		t.Run("EnsureLimitedEgressTrafficToManagementKAS", func(t *testing.T) {
 			g := NewWithT(t)
 
+			//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 			kubernetesEndpoint := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}}
 			err := c.Get(ctx, crclient.ObjectKeyFromObject(kubernetesEndpoint), kubernetesEndpoint)
 			g.Expect(err).ToNot(HaveOccurred())

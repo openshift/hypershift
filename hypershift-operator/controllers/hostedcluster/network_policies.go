@@ -68,6 +68,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	}
 
 	// Reconcile management KAS network policy
+	//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 	kubernetesEndpoint := &corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}}
 	if err := r.Get(ctx, client.ObjectKeyFromObject(kubernetesEndpoint), kubernetesEndpoint); err != nil {
 		return fmt.Errorf("failed to get management cluster network config: %w", err)
@@ -233,6 +234,7 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 	return nil
 }
 
+//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network, ingressOnly bool) error {
 	httpPort := intstr.FromInt(8080)
 	httpsPort := intstr.FromInt(8443)
@@ -703,6 +705,8 @@ func reconcileSameNamespaceNetworkPolicy(policy *networkingv1.NetworkPolicy) err
 
 // reconcileManagementKASNetworkPolicy selects pods excluding the ones having NeedManagementKASAccessLabel and specific operands.
 // It denies egress traffic to the management cluster clusterNetwork and to the KAS endpoints.
+//
+//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, managementClusterNetwork *configv1.Network, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool) error {
 	// Allow traffic to same namespace
 	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
@@ -806,6 +810,7 @@ func reconcileManagementKASNetworkPolicy(policy *networkingv1.NetworkPolicy, man
 	return nil
 }
 
+//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 func kasEndpointsToCIDRs(kubernetesEndpoint *corev1.Endpoints) []string {
 	kasCIDRs := make([]string, 0)
 	for _, subset := range kubernetesEndpoint.Subsets {
