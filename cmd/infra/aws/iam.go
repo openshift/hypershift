@@ -1029,31 +1029,18 @@ func (o *CreateIAMOptions) CreateSharedOIDCRole(ctx context.Context, client iami
 		return "", fmt.Errorf("failed to create shared role: %w", err)
 	}
 
-	// Add all policies to the shared role
+	// Add all policies to the shared role as inline policies
 	for _, binding := range bindings {
-		if o.UseROSAManagedPolicies && binding.rosaManagedPolicyARN != "" {
-			// Attach ROSA managed policy
-			_, err = client.AttachRolePolicyWithContext(ctx, &iam.AttachRolePolicyInput{
-				PolicyArn: aws.String(binding.rosaManagedPolicyARN),
-				RoleName:  aws.String(roleName),
-			})
-			if err != nil {
-				return "", fmt.Errorf("failed to attach managed policy %q to shared role: %w", binding.rosaManagedPolicyARN, err)
-			}
-			logger.Info("Attached managed policy to shared role", "policy", binding.rosaManagedPolicyARN, "role", roleName)
-		} else {
-			// Add inline policy
-			policyName := fmt.Sprintf("%s-%s", roleName, binding.name)
-			_, err = client.PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
-				PolicyName:     aws.String(policyName),
-				PolicyDocument: aws.String(binding.policy),
-				RoleName:       aws.String(roleName),
-			})
-			if err != nil {
-				return "", fmt.Errorf("failed to add policy %q to shared role: %w", binding.name, err)
-			}
-			logger.Info("Added inline policy to shared role", "policy", binding.name, "role", roleName)
+		policyName := fmt.Sprintf("%s-%s", roleName, binding.name)
+		_, err = client.PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
+			PolicyName:     aws.String(policyName),
+			PolicyDocument: aws.String(binding.policy),
+			RoleName:       aws.String(roleName),
+		})
+		if err != nil {
+			return "", fmt.Errorf("failed to add policy %q to shared role: %w", binding.name, err)
 		}
+		logger.Info("Added policy to shared role", "policy", binding.name, "role", roleName)
 	}
 
 	// Add assume role policy if needed
