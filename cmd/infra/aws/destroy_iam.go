@@ -29,6 +29,7 @@ type DestroyIAMOptions struct {
 
 	VPCOwnerCredentialsOpts      awsutil.AWSCredentialsOptions
 	PrivateZonesInClusterAccount bool
+	SharedRole                   bool
 
 	CredentialsSecretData *util.CredentialsSecretData
 }
@@ -49,6 +50,7 @@ func NewDestroyIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Infrastructure ID to use for AWS resources.")
 	cmd.Flags().StringVar(&opts.Region, "region", opts.Region, "Region where cluster infra lives")
 	cmd.Flags().BoolVar(&opts.PrivateZonesInClusterAccount, "private-zones-in-cluster-account", opts.PrivateZonesInClusterAccount, "In shared VPC infrastructure, delete roles for private hosted zones from cluster account")
+	cmd.Flags().BoolVar(&opts.SharedRole, "shared-role", opts.SharedRole, "Delete the shared role instead of individual component roles")
 
 	opts.AWSCredentialsOpts.BindFlags(cmd.Flags())
 	opts.VPCOwnerCredentialsOpts.BindVPCOwnerFlags(cmd.Flags())
@@ -146,59 +148,56 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 		}
 	}
 
-	// Delete the shared role
-	removed := false
-	if removed, err = o.DestroyOIDCRole(iamClient, "shared-role"); err != nil {
-		return err
-	}
-	if removed {
-		// The cluster was created with a single shared role, so we are done.
-		// Save on additional API calls and just return here.
-		return nil
-	}
-	// Delete individual component roles
-	if _, err = o.DestroyOIDCRole(iamClient, "openshift-ingress"); err != nil {
-		return err
-	}
-	if _, err = o.DestroyOIDCRole(iamClient, "openshift-image-registry"); err != nil {
-		return err
-	}
-	if _, err = o.DestroyOIDCRole(iamClient, "aws-ebs-csi-driver-controller"); err != nil {
-		return err
-	}
-	if _, err = o.DestroyOIDCRole(iamClient, "cloud-controller"); err != nil {
-		return err
-	}
-	if _, err = o.DestroyOIDCRole(iamClient, "node-pool"); err != nil {
-		return err
-	}
-	if _, err = o.DestroyOIDCRole(iamClient, "control-plane-operator"); err != nil {
-		return err
-	}
-	if _, err = o.DestroyOIDCRole(iamClient, "cloud-network-config-controller"); err != nil {
-		return err
-	}
-	if _, err = o.DestroyOIDCRole(iamClient, "kms-provider"); err != nil {
-		return err
-	}
-	if _, err = o.DestroyOIDCRole(iamClient, "karpenter"); err != nil {
-		return err
+	if o.SharedRole {
+		// Delete the shared role
+		if err = o.DestroyOIDCRole(iamClient, "shared-role", false); err != nil {
+			return err
+		}
+	} else {
+		// Delete individual component roles
+		if err = o.DestroyOIDCRole(iamClient, "openshift-ingress", true); err != nil {
+			return err
+		}
+		if err = o.DestroyOIDCRole(iamClient, "openshift-image-registry", false); err != nil {
+			return err
+		}
+		if err = o.DestroyOIDCRole(iamClient, "aws-ebs-csi-driver-controller", false); err != nil {
+			return err
+		}
+		if err = o.DestroyOIDCRole(iamClient, "cloud-controller", false); err != nil {
+			return err
+		}
+		if err = o.DestroyOIDCRole(iamClient, "node-pool", false); err != nil {
+			return err
+		}
+		if err = o.DestroyOIDCRole(iamClient, "control-plane-operator", true); err != nil {
+			return err
+		}
+		if err := o.DestroyOIDCRole(iamClient, "cloud-network-config-controller", false); err != nil {
+			return err
+		}
+		if err := o.DestroyOIDCRole(iamClient, "kms-provider", false); err != nil {
+			return err
+		}
+		if err := o.DestroyOIDCRole(iamClient, "karpenter", false); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
 // DestroyOIDCRole deletes an IAM Role with all its policies
-func (o *DestroyIAMOptions) DestroyOIDCRole(client iamiface.IAMAPI, name string) (removed bool, reterr error) {
+func (o *DestroyIAMOptions) DestroyOIDCRole(client iamiface.IAMAPI, name string, includeAssumePolicy bool) error {
 	roleName := fmt.Sprintf("%s-%s", o.InfraID, name)
 	role, err := existingRole(client, roleName)
 	if err != nil {
-		return false, fmt.Errorf("cannot check for existing role: %w", err)
+		return fmt.Errorf("cannot check for existing role: %w", err)
 	}
 
 	if role == nil {
 		o.Log.Info("Role already deleted!", "role", roleName)
-		return false, nil
+		return nil
 	}
 
 	// Detach managed policies
@@ -206,7 +205,7 @@ func (o *DestroyIAMOptions) DestroyOIDCRole(client iamiface.IAMAPI, name string)
 		RoleName: aws.String(roleName),
 	})
 	if err != nil {
-		return false, fmt.Errorf("failed to list attached policies for role %s: %w", roleName, err)
+		return fmt.Errorf("failed to list attached policies for role %s: %w", roleName, err)
 	}
 
 	for _, policy := range attachedPolicies.AttachedPolicies {
@@ -215,7 +214,7 @@ func (o *DestroyIAMOptions) DestroyOIDCRole(client iamiface.IAMAPI, name string)
 			RoleName:  aws.String(roleName),
 		})
 		if err != nil {
-			return false, fmt.Errorf("failed to detach policy %s from role %s: %w", *policy.PolicyArn, roleName, err)
+			return fmt.Errorf("failed to detach policy %s from role %s: %w", *policy.PolicyArn, roleName, err)
 		}
 		o.Log.Info("Detached role policy", "role", roleName, "policy", *policy.PolicyArn)
 	}
@@ -225,7 +224,7 @@ func (o *DestroyIAMOptions) DestroyOIDCRole(client iamiface.IAMAPI, name string)
 		RoleName: aws.String(roleName),
 	})
 	if err != nil {
-		return false, fmt.Errorf("failed to list inline policies for role %s: %w", roleName, err)
+		return fmt.Errorf("failed to list inline policies for role %s: %w", roleName, err)
 	}
 
 	for _, policyName := range listPoliciesOutput.PolicyNames {
@@ -237,11 +236,11 @@ func (o *DestroyIAMOptions) DestroyOIDCRole(client iamiface.IAMAPI, name string)
 			if aerr, ok := err.(awserr.Error); ok {
 				if aerr.Code() != iam.ErrCodeNoSuchEntityException {
 					o.Log.Error(aerr, "Error deleting role policy", "role", roleName, "policy", *policyName)
-					return false, aerr
+					return aerr
 				}
 			} else {
 				o.Log.Error(err, "Error deleting role policy", "role", roleName, "policy", *policyName)
-				return false, err
+				return err
 			}
 		} else {
 			o.Log.Info("Deleted role policy", "role", roleName, "policy", *policyName)
@@ -253,11 +252,11 @@ func (o *DestroyIAMOptions) DestroyOIDCRole(client iamiface.IAMAPI, name string)
 		RoleName: aws.String(roleName),
 	})
 	if err != nil {
-		return false, fmt.Errorf("failed to delete role %s: %w", roleName, err)
+		return fmt.Errorf("failed to delete role %s: %w", roleName, err)
 	}
 	o.Log.Info("Deleted role", "role", roleName)
 
-	return true, nil
+	return nil
 }
 
 func (o *DestroyIAMOptions) DestroyWorkerInstanceProfile(client iamiface.IAMAPI) error {
@@ -358,10 +357,10 @@ func (o *DestroyIAMOptions) DestroySharedVPCRoles(ctx context.Context, iamClient
 	if o.PrivateZonesInClusterAccount {
 		ingressRoleClient = iamClient
 	}
-	if _, err = o.DestroyOIDCRole(ingressRoleClient, "shared-vpc-ingress"); err != nil {
+	if err = o.DestroyOIDCRole(ingressRoleClient, "shared-vpc-ingress", true); err != nil {
 		return err
 	}
-	if _, err = o.DestroyOIDCRole(vpcOwnerIAMClient, "shared-vpc-control-plane"); err != nil {
+	if err = o.DestroyOIDCRole(vpcOwnerIAMClient, "shared-vpc-control-plane", true); err != nil {
 		return err
 	}
 	return nil

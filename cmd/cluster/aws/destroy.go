@@ -105,6 +105,7 @@ func destroyPlatformSpecifics(ctx context.Context, o *core.DestroyOptions) error
 			CredentialsSecretData:        secretData,
 			VPCOwnerCredentialsOpts:      o.AWSPlatform.VPCOwnerCredentials,
 			PrivateZonesInClusterAccount: o.AWSPlatform.PrivateZonesInClusterAccount,
+			SharedRole:                   o.AWSPlatform.SharedRole,
 		}
 		if err := destroyOpts.Run(ctx); err != nil {
 			return fmt.Errorf("failed to destroy IAM: %w", err)
