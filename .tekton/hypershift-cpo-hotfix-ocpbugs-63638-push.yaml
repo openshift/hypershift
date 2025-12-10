@@ -23,7 +23,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-{{.versionName}}:{{revision}}
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63638:{{revision}}
   - name: build-platforms
     value:
     - linux/x86_64
@@ -251,7 +251,7 @@ spec:
         - name: name
           value: buildah-remote-oci-ta
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.7@sha256:a62072e3feaf6ba94e93b4b83e95530cd21523d0420c29a24c4dbb2310ce9ca0
+          value: quay.io/konflux-ci/tekton-catalog/task-buildah-remote-oci-ta:0.7@sha256:b24359805297760c87cbce7b4c378267bc83aa1b9a3ac8431829f80bc26ed5d7
         - name: kind
           value: task
         resolver: bundles
@@ -282,7 +282,7 @@ spec:
         - name: name
           value: build-image-index
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-build-image-index:0.2@sha256:1dbb98f5ac6b0c0c74125bea86710756047b1a6ce60e23887cff85318ce174aa
+          value: quay.io/konflux-ci/tekton-catalog/task-build-image-index:0.2@sha256:39561ac43e325159497c10c0284cf61dfddf39e39100ca5e3df6b73c5d96db8b
         - name: kind
           value: task
         resolver: bundles
