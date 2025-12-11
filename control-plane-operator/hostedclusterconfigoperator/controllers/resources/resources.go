@@ -1729,16 +1729,24 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			}
 			return nil
 		}
-		roleMap := map[string]*corev1.Secret{}
-
-		roleMap[hcp.Spec.Platform.AWS.RolesRef.StorageARN] = manifests.AWSStorageCloudCredsSecret()
-
-		if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
-			roleMap[hcp.Spec.Platform.AWS.RolesRef.IngressARN] = manifests.AWSIngressCloudCredsSecret()
+		type cred struct {
+			secret *corev1.Secret
+			arn    string
 		}
 
-		for arn, secret := range roleMap {
-			if err := syncSecret(secret, arn); err != nil {
+		secretsToSync := []cred{
+			{secret: manifests.AWSStorageCloudCredsSecret(), arn: hcp.Spec.Platform.AWS.RolesRef.StorageARN},
+		}
+
+		if capabilities.IsIngressCapabilityEnabled(hcp.Spec.Capabilities) {
+			secretsToSync = append(secretsToSync, cred{
+				secret: manifests.AWSIngressCloudCredsSecret(),
+				arn:    hcp.Spec.Platform.AWS.RolesRef.IngressARN,
+			})
+		}
+
+		for _, cred := range secretsToSync {
+			if err := syncSecret(cred.secret, cred.arn); err != nil {
 				errs = append(errs, err)
 			}
 		}
