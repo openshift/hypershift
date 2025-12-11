@@ -100,8 +100,8 @@ github.com/ProtonMail/go-crypto/openpgp/packet
 github.com/ProtonMail/go-crypto/openpgp/s2k
 github.com/ProtonMail/go-crypto/openpgp/x25519
 github.com/ProtonMail/go-crypto/openpgp/x448
-# github.com/a8m/envsubst v1.4.2
-## explicit; go 1.17
+# github.com/a8m/envsubst v1.4.3
+## explicit; go 1.24
 github.com/a8m/envsubst/parse
 # github.com/ahmetb/gen-crd-api-reference-docs v0.3.0
 ## explicit; go 1.15
@@ -118,7 +118,7 @@ github.com/alecthomas/chroma/v2/styles
 # github.com/alecthomas/go-check-sumtype v0.3.1
 ## explicit; go 1.22.0
 github.com/alecthomas/go-check-sumtype
-# github.com/alecthomas/participle/v2 v2.1.1
+# github.com/alecthomas/participle/v2 v2.1.4
 ## explicit; go 1.18
 github.com/alecthomas/participle/v2/lexer
 # github.com/alexkohler/nakedret/v2 v2.0.6
@@ -287,7 +287,7 @@ github.com/dlclark/regexp2/syntax
 # github.com/dnephin/pflag v1.0.7
 ## explicit; go 1.12
 github.com/dnephin/pflag
-# github.com/elliotchance/orderedmap v1.6.0
+# github.com/elliotchance/orderedmap v1.8.0
 ## explicit; go 1.12
 github.com/elliotchance/orderedmap
 # github.com/emicklei/go-restful/v3 v3.11.0
@@ -401,6 +401,9 @@ github.com/go-git/go-git/v5/utils/merkletrie/internal/frame
 github.com/go-git/go-git/v5/utils/merkletrie/noder
 github.com/go-git/go-git/v5/utils/sync
 github.com/go-git/go-git/v5/utils/trace
+# github.com/go-ini/ini v1.67.0
+## explicit
+github.com/go-ini/ini
 # github.com/go-logr/logr v1.4.3
 ## explicit; go 1.18
 github.com/go-logr/logr
@@ -459,7 +462,7 @@ github.com/gobwas/glob/syntax/ast
 github.com/gobwas/glob/syntax/lexer
 github.com/gobwas/glob/util/runes
 github.com/gobwas/glob/util/strings
-# github.com/goccy/go-json v0.10.3
+# github.com/goccy/go-json v0.10.5
 ## explicit; go 1.19
 github.com/goccy/go-json
 github.com/goccy/go-json/internal/decoder
@@ -470,11 +473,12 @@ github.com/goccy/go-json/internal/encoder/vm_color_indent
 github.com/goccy/go-json/internal/encoder/vm_indent
 github.com/goccy/go-json/internal/errors
 github.com/goccy/go-json/internal/runtime
-# github.com/goccy/go-yaml v1.13.0
-## explicit; go 1.19
+# github.com/goccy/go-yaml v1.18.0
+## explicit; go 1.21.0
 github.com/goccy/go-yaml
 github.com/goccy/go-yaml/ast
 github.com/goccy/go-yaml/internal/errors
+github.com/goccy/go-yaml/internal/format
 github.com/goccy/go-yaml/lexer
 github.com/goccy/go-yaml/parser
 github.com/goccy/go-yaml/printer
@@ -914,7 +918,7 @@ github.com/lucasb-eyer/go-colorful
 # github.com/macabu/inamedparam v0.2.0
 ## explicit; go 1.23.0
 github.com/macabu/inamedparam
-# github.com/magiconair/properties v1.8.7
+# github.com/magiconair/properties v1.8.10
 ## explicit; go 1.19
 github.com/magiconair/properties
 # github.com/mailru/easyjson v0.7.7
@@ -959,8 +963,8 @@ github.com/mgechev/revive/internal/typeparams
 github.com/mgechev/revive/lint
 github.com/mgechev/revive/logging
 github.com/mgechev/revive/rule
-# github.com/mikefarah/yq/v4 v4.44.5
-## explicit; go 1.21.0
+# github.com/mikefarah/yq/v4 v4.49.2
+## explicit; go 1.24.0
 github.com/mikefarah/yq/v4
 github.com/mikefarah/yq/v4/cmd
 github.com/mikefarah/yq/v4/pkg/yqlib
@@ -1401,6 +1405,10 @@ go.uber.org/zap/internal/exit
 go.uber.org/zap/internal/pool
 go.uber.org/zap/internal/stacktrace
 go.uber.org/zap/zapcore
+# go.yaml.in/yaml/v4 v4.0.0-rc.3
+## explicit; go 1.18
+go.yaml.in/yaml/v4
+go.yaml.in/yaml/v4/internal/libyaml
 # golang.org/x/crypto v0.45.0
 ## explicit; go 1.24.0
 golang.org/x/crypto/argon2

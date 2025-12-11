@@ -249,11 +249,12 @@ func (dec *tomlDecoder) processTopLevelNode(currentNode *toml.Node) (bool, error
 	var runAgainstCurrentExp bool
 	var err error
 	log.Debug("processTopLevelNode: Going to process %v state is current %v", currentNode.Kind, NodeToString(dec.rootMap))
-	if currentNode.Kind == toml.Table {
+	switch currentNode.Kind {
+	case toml.Table:
 		runAgainstCurrentExp, err = dec.processTable(currentNode)
-	} else if currentNode.Kind == toml.ArrayTable {
+	case toml.ArrayTable:
 		runAgainstCurrentExp, err = dec.processArrayTable(currentNode)
-	} else {
+	default:
 		runAgainstCurrentExp, err = dec.decodeKeyValuesIntoMap(dec.rootMap, currentNode)
 	}
 
@@ -266,6 +267,14 @@ func (dec *tomlDecoder) processTable(currentNode *toml.Node) (bool, error) {
 	fullPath := dec.getFullPath(currentNode.Child())
 	log.Debug("fullpath: %v", fullPath)
 
+	c := Context{}
+	c = c.SingleChildContext(dec.rootMap)
+
+	fullPath, err := getPathToUse(fullPath, dec, c)
+	if err != nil {
+		return false, err
+	}
+
 	tableNodeValue := &CandidateNode{
 		Kind:    MappingNode,
 		Tag:     "!!map",
@@ -274,25 +283,22 @@ func (dec *tomlDecoder) processTable(currentNode *toml.Node) (bool, error) {
 
 	var tableValue *toml.Node
 	runAgainstCurrentExp := false
-	var err error
 	hasValue := dec.parser.NextExpression()
 	// check to see if there is any table data
 	if hasValue {
 		tableValue = dec.parser.Expression()
 		// next expression is not table data, so we are done
 		if tableValue.Kind != toml.KeyValue {
-			log.Debug("got an empty table, returning")
-			return true, nil
-		}
-
-		runAgainstCurrentExp, err = dec.decodeKeyValuesIntoMap(tableNodeValue, tableValue)
-		if err != nil && !errors.Is(err, io.EOF) {
-			return false, err
+			log.Debug("got an empty table")
+			runAgainstCurrentExp = true
+		} else {
+			runAgainstCurrentExp, err = dec.decodeKeyValuesIntoMap(tableNodeValue, tableValue)
+			if err != nil && !errors.Is(err, io.EOF) {
+				return false, err
+			}
 		}
 	}
 
-	c := Context{}
-	c = c.SingleChildContext(dec.rootMap)
 	err = dec.d.DeeplyAssign(c, fullPath, tableNodeValue)
 	if err != nil {
 		return false, err
@@ -323,35 +329,69 @@ func (dec *tomlDecoder) arrayAppend(context Context, path []interface{}, rhsNode
 }
 
 func (dec *tomlDecoder) processArrayTable(currentNode *toml.Node) (bool, error) {
-	log.Debug("Entering processArrayTable")
+	log.Debug("Enter processArrayTable")
 	fullPath := dec.getFullPath(currentNode.Child())
 	log.Debug("Fullpath: %v", fullPath)
 
+	c := Context{}
+	c = c.SingleChildContext(dec.rootMap)
+
+	fullPath, err := getPathToUse(fullPath, dec, c)
+	if err != nil {
+		return false, err
+	}
+
 	// need to use the array append exp to add another entry to
 	// this array: fullpath += [ thing ]
-
 	hasValue := dec.parser.NextExpression()
-	if !hasValue {
-		return false, fmt.Errorf("error retrieving table %v value: %w", fullPath, dec.parser.Error())
-	}
 
 	tableNodeValue := &CandidateNode{
 		Kind: MappingNode,
 		Tag:  "!!map",
 	}
-
-	tableValue := dec.parser.Expression()
-	runAgainstCurrentExp, err := dec.decodeKeyValuesIntoMap(tableNodeValue, tableValue)
-	log.Debugf("table node err: %w", err)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return false, err
+	runAgainstCurrentExp := false
+	// if the next value is a ArrayTable or Table, then its not part of this declaration (not a key value pair)
+	// so lets leave that expression for the next round of parsing
+	if hasValue && (dec.parser.Expression().Kind == toml.ArrayTable || dec.parser.Expression().Kind == toml.Table) {
+		runAgainstCurrentExp = true
+	} else if hasValue {
+		// otherwise, if there is a value, it must be some key value pairs of the
+		// first object in the array!
+		tableValue := dec.parser.Expression()
+		runAgainstCurrentExp, err = dec.decodeKeyValuesIntoMap(tableNodeValue, tableValue)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return false, err
+		}
 	}
-	c := Context{}
-
-	c = c.SingleChildContext(dec.rootMap)
 
 	// += function
 	err = dec.arrayAppend(c, fullPath, tableNodeValue)
 
 	return runAgainstCurrentExp, err
+}
+
+// if fullPath points to an array of maps rather than a map
+// then it should set this element into the _last_ element of that array.
+// Because TOML. So we'll inject the last index into the path.
+
+func getPathToUse(fullPath []interface{}, dec *tomlDecoder, c Context) ([]interface{}, error) {
+	pathToCheck := fullPath
+	if len(fullPath) >= 1 {
+		pathToCheck = fullPath[:len(fullPath)-1]
+	}
+	readOp := createTraversalTree(pathToCheck, traversePreferences{DontAutoCreate: true}, false)
+
+	resultContext, err := dec.d.GetMatchingNodes(c, readOp)
+	if err != nil {
+		return nil, err
+	}
+	if resultContext.MatchingNodes.Len() >= 1 {
+		match := resultContext.MatchingNodes.Front().Value.(*CandidateNode)
+		// path refers to an array, we need to add this to the last element in the array
+		if match.Kind == SequenceNode {
+			fullPath = append(pathToCheck, len(match.Content)-1, fullPath[len(fullPath)-1])
+			log.Debugf("Adding to end of %v array, using path: %v", pathToCheck, fullPath)
+		}
+	}
+	return fullPath, err
 }
