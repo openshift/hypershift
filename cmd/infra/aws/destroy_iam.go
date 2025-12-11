@@ -155,7 +155,7 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 		}
 	} else {
 		// Delete individual component roles
-		if err = o.DestroyOIDCRole(iamClient, "openshift-ingress", true); err != nil {
+		if err = o.DestroyOIDCRoleWithRetry(iamClient, "openshift-ingress", true); err != nil {
 			return err
 		}
 		if err = o.DestroyOIDCRole(iamClient, "openshift-image-registry", false); err != nil {
@@ -185,6 +185,22 @@ func (o *DestroyIAMOptions) DestroyOIDCResources(ctx context.Context, iamClient 
 	}
 
 	return nil
+}
+
+// DestroyOIDCRoleWithRetry retries the entire DestroyOIDCRole operation if it fails due to attached policies
+func (o *DestroyIAMOptions) DestroyOIDCRoleWithRetry(client iamiface.IAMAPI, name string, includeAssumePolicy bool) error {
+	return wait.PollUntilContextTimeout(context.Background(), 10*time.Second, 3*time.Minute, true, func(ctx context.Context) (bool, error) {
+		err := o.DestroyOIDCRole(client, name, includeAssumePolicy)
+		if err != nil {
+			// Check if the error message indicates a delete conflict
+			if strings.Contains(err.Error(), "DeleteConflict") {
+				o.Log.Info("Role deletion failed due to attached policies, retrying entire operation", "role", fmt.Sprintf("%s-%s", o.InfraID, name))
+				return false, nil
+			}
+			return false, err
+		}
+		return true, nil
+	})
 }
 
 // DestroyOIDCRole deletes an IAM Role with all its policies
