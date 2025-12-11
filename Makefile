@@ -64,7 +64,7 @@ pre-commit: all verify test
 build: hypershift-operator control-plane-operator control-plane-pki-operator karpenter-operator hypershift product-cli
 
 .PHONY: update
-update: api-deps workspace-sync deps api api-docs clients
+update: api-deps workspace-sync deps api api-docs clients docs-aggregate
 
 GOLANGCI_LINT := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
 $(GOLANGCI_LINT): $(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
@@ -251,6 +251,10 @@ clients: delegating_client
 .PHONY: release
 release:
 	go run ./hack/tools/release/notes.go --from=${FROM} --to=${TO} --token=${TOKEN}
+
+.PHONY: docs-aggregate
+docs-aggregate:
+	$(GO) run ./hack/tools/docs-aggregator/main.go
 
 .PHONY: delegating_client
 delegating_client:
