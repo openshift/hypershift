@@ -34,10 +34,11 @@ type KubeAPIServerConfigParams struct {
 	AdditionalCORSAllowedOrigins []string
 	InternalRegistryHostName     string
 	ExternalRegistryHostNames    []string
-	DefaultNodeSelector          string
-	AdvertiseAddress             string
-	ServiceAccountIssuerURL      string
-	CloudProvider                string
+	DefaultNodeSelector              string
+	AdvertiseAddress                 string
+	ServiceAccountIssuerURL          string
+	ServiceAccountMaxTokenExpiration string
+	CloudProvider                    string
 	CloudProviderConfigRef       *corev1.LocalObjectReference
 	EtcdURL                      string
 	EtcdShardOverrides           map[string]string // maps resource prefix to URL
