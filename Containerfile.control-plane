@@ -28,3 +28,7 @@ LABEL io.openshift.hypershift.control-plane-pki-operator-signs-csrs=true
 LABEL io.openshift.hypershift.hosted-cluster-config-operator-reports-node-count=true
 LABEL io.openshift.hypershift.control-plane-operator-supports-kas-custom-kubeconfig=true
 LABEL io.openshift.hypershift.control-plane-operator.v2-isdefault=true
+# TODO: Uncomment when CPO natively adds capacity annotations to MachineDeployments for scale-from-zero.
+# When uncommented, the hypershift-operator MachineDeployment controller will automatically skip reconciliation
+# and let CPO handle annotations natively.
+# LABEL io.openshift.hypershift.control-plane-operator-supports-aws-autoscaling-from-zero=true
