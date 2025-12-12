@@ -63,6 +63,10 @@ func getInstallOptions(opts HyperShiftOperatorInstallOptions) install.Options {
 	installOpts.EnableDedicatedRequestServingIsolation = opts.EnableDedicatedRequestServingIsolation
 	installOpts.EnableCPOOverrides = opts.EnableCPOOverrides
 	installOpts.EnableEtcdRecovery = opts.EnableEtcdRecovery
+	installOpts.EnableScaleFromZero = opts.EnableScaleFromZero
+	if installOpts.EnableScaleFromZero && opts.ScaleFromZeroAWSCreds != "" {
+		installOpts.ScaleFromZeroAWSCreds = opts.ScaleFromZeroAWSCreds
+	}
 
 	return installOpts
 }
