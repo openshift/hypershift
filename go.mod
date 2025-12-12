@@ -95,7 +95,7 @@ require (
 	k8s.io/kube-scheduler v0.32.2
 	k8s.io/kubectl v0.32.3
 	k8s.io/pod-security-admission v0.32.2
-	k8s.io/utils v0.0.0-20250321185631-1f6e0b77f77e
+	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
 	kubevirt.io/api v1.4.0
 	kubevirt.io/containerized-data-importer-api v1.61.1
 	sigs.k8s.io/cluster-api v1.10.4
@@ -291,7 +291,7 @@ replace sigs.k8s.io/controller-runtime => sigs.k8s.io/controller-runtime v0.19.7
 replace github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
 
 // Use Kubernetes v1.32.3's version of k8s.io/utils for compatibility
-replace k8s.io/utils => k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
+replace k8s.io/utils => k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
 
 // replace (
 // 	k8s.io/api => k8s.io/api v0.32.3
