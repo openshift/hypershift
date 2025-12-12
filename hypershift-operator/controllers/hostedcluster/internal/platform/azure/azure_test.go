@@ -274,7 +274,7 @@ func TestReconcileCredentials(t *testing.T) {
 					ClientID: "network-client-id",
 				},
 			}),
-			expectedSecretsCount: 5, // ingress, image-registry, disk, file, cncc
+			expectedSecretsCount: 3, // ingress, image-registry, cncc (disk/file managed by control-plane-operator)
 			expectedError:        false,
 			validateSecrets: func(secrets []*corev1.Secret) {
 				// Check base data is present in all secrets
@@ -294,11 +294,10 @@ func TestReconcileCredentials(t *testing.T) {
 				}
 
 				// Validate client IDs are set correctly based on the secret name
+				// Note: disk/file CSI credentials are managed by control-plane-operator, not here
 				expectedClientIDs := map[string]string{
 					"azure-ingress-credentials":             "ingress-client-id",
 					"azure-image-registry-credentials":      "registry-client-id",
-					"azure-disk-csi-config":                 "disk-client-id",
-					"azure-file-csi-config":                 "file-client-id",
 					"cloud-network-config-controller-creds": "network-client-id",
 				}
 
@@ -337,7 +336,7 @@ func TestReconcileCredentials(t *testing.T) {
 				}
 				return hc
 			}(),
-			expectedSecretsCount: 3, // Only disk, file, and cncc (network) should be created
+			expectedSecretsCount: 1, // Only cncc (disk/file managed by control-plane-operator, ingress/image-registry disabled)
 			expectedError:        false,
 			validateSecrets: func(secrets []*corev1.Secret) {
 				secretNames := make([]string, len(secrets))
@@ -345,13 +344,11 @@ func TestReconcileCredentials(t *testing.T) {
 					secretNames[i] = secret.Name
 				}
 
-				// Should not contain ingress or image-registry secrets
+				// Should not contain ingress or image-registry secrets (disabled capabilities)
 				g.Expect(secretNames).ToNot(ContainElement("azure-ingress-credentials"))
 				g.Expect(secretNames).ToNot(ContainElement("azure-image-registry-credentials"))
 
-				// Should contain the other secrets
-				g.Expect(secretNames).To(ContainElement("azure-disk-csi-config"))
-				g.Expect(secretNames).To(ContainElement("azure-file-csi-config"))
+				// Should only contain CNCC secret (disk/file managed by control-plane-operator)
 				g.Expect(secretNames).To(ContainElement("cloud-network-config-controller-creds"))
 			},
 		},
