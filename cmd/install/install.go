@@ -307,7 +307,12 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 		return err
 	}
 
-	crds, objects, err := hyperShiftOperatorManifests(opts)
+	client, err := util.GetClient()
+	if err != nil {
+		return err
+	}
+
+	crds, objects, err := hyperShiftOperatorManifests(ctx, client, opts)
 	if err != nil {
 		return err
 	}
@@ -534,7 +539,7 @@ func fetchImageRefs(file string) (map[string]string, error) {
 	return result, nil
 }
 
-func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Object, error) {
+func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, opts Options) ([]crclient.Object, []crclient.Object, error) {
 	var crds []crclient.Object
 	var objects []crclient.Object
 
@@ -620,7 +625,10 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 	monitoringObjs := setupMonitoring(opts, operatorNamespace)
 	objects = append(objects, monitoringObjs...)
 
-	crds = setupCRDs(opts, operatorNamespace, operatorService)
+	crds, err = setupCRDs(ctx, client, opts, operatorNamespace, operatorService)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// Set the GVK for all the objects
 	setGVK := func(objsList ...[]crclient.Object) error {
@@ -646,12 +654,37 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 	return crds, objects, nil
 }
 
+// ipamCRDNames contains the names of the IPAM CRDs that should be skipped if they already exist.
+// These CRDs may be already installed (e.g., by CVO) and we want
+// to avoid conflicts by not overwriting them if they're already present.
+var ipamCRDNames = set.New(
+	"ipaddressclaims.ipam.cluster.x-k8s.io",
+	"ipaddresses.ipam.cluster.x-k8s.io",
+)
+
 // setupCRDs returns the CRDs from all the manifests under the assets directory as list of CustomResourceDefinition objects
 //
 // The CRDs are filtered based on the options provided. If the option ExcludeEtcdManifests is set to true, the CRDs
 // related to etcd are excluded from the list. If the option EnableConversionWebhook is set to true, the CRDs related
 // to hypershift.openshift.io group are annotated with the necessary annotations to enable the conversion webhook.
-func setupCRDs(opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service) []crclient.Object {
+// If a client is provided, IPAM CRDs that already exist in the cluster are skipped to avoid conflicts.
+func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service) ([]crclient.Object, error) {
+	// Build a set of existing IPAM CRDs if a client is available
+	existingIPAMCRDs := set.New[string]()
+	if client != nil {
+		for crdName := range ipamCRDNames {
+			existing := &apiextensionsv1.CustomResourceDefinition{}
+			err := client.Get(ctx, crclient.ObjectKey{Name: crdName}, existing)
+			if err == nil {
+				// CRD exists, add to the set so we can skip it
+				existingIPAMCRDs.Insert(crdName)
+				fmt.Printf("Skipping existing IPAM CRD %s\n", crdName)
+			} else if !apierrors.IsNotFound(err) {
+				return nil, fmt.Errorf("failed to check if CRD %s exists: %w", crdName, err)
+			}
+		}
+	}
+
 	var crds []crclient.Object
 	crds = append(
 		crds, assets.CustomResourceDefinitions(
@@ -684,6 +717,10 @@ func setupCRDs(opts Options, operatorNamespace *corev1.Namespace, operatorServic
 					return true
 				}
 				if strings.Contains(path, "cluster-api/") {
+					// Skip IPAM CRDs if they already exist in the cluster
+					if existingIPAMCRDs.Has(crd.Name) {
+						return false
+					}
 					return true
 				}
 				// Conditionally include auditlogpersistence CRD only if feature is enabled
@@ -726,7 +763,7 @@ func setupCRDs(opts Options, operatorNamespace *corev1.Namespace, operatorServic
 			},
 		)...,
 	)
-	return crds
+	return crds, nil
 }
 
 func isAWSPlatformEnabled(platformsToInstall []string) bool {

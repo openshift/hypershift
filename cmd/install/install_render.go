@@ -1,6 +1,7 @@
 package install
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -69,7 +70,7 @@ func NewRenderCommand(opts *Options) *cobra.Command {
 	cmd.MarkFlagsMutuallyExclusive("template", "outputs")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		return RenderHyperShiftOperator(cmd.OutOrStdout(), opts)
+		return RenderHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
 	}
 
 	return cmd
@@ -92,7 +93,7 @@ func (o *Options) ValidateRender() error {
 	return nil
 }
 
-func RenderHyperShiftOperator(cmdOut io.Writer, opts *Options) error {
+func RenderHyperShiftOperator(ctx context.Context, cmdOut io.Writer, opts *Options) error {
 	opts.ApplyDefaults()
 
 	var err error
@@ -104,13 +105,14 @@ func RenderHyperShiftOperator(cmdOut io.Writer, opts *Options) error {
 	var objects []crclient.Object
 
 	if opts.Template {
-		templateObject, err := openshiftTemplate(opts)
+		templateObject, err := openshiftTemplate(ctx, opts)
 		if err != nil {
 			return err
 		}
 		objects = []crclient.Object{templateObject}
 	} else {
-		crds, objects, err = hyperShiftOperatorManifests(*opts)
+		// Render path doesn't check for existing CRDs - it always includes all CRDs
+		crds, objects, err = hyperShiftOperatorManifests(ctx, nil, *opts)
 		if err != nil {
 			return err
 		}
@@ -144,7 +146,7 @@ func RenderHyperShiftOperator(cmdOut io.Writer, opts *Options) error {
 	return nil
 }
 
-func openshiftTemplate(opts *Options) (crclient.Object, error) {
+func openshiftTemplate(ctx context.Context, opts *Options) (crclient.Object, error) {
 	templateParameters := []map[string]string{}
 	templateParameters = append(
 		templateParameters,
@@ -204,7 +206,8 @@ func openshiftTemplate(opts *Options) (crclient.Object, error) {
 	}
 
 	// create manifests
-	crds, objects, err := hyperShiftOperatorTemplateManifest(opts, openshiftTemplateParams)
+	// Render path doesn't check for existing CRDs - it always includes all CRDs
+	crds, objects, err := hyperShiftOperatorTemplateManifest(ctx, nil, opts, openshiftTemplateParams)
 	objects = append(objects, crds...)
 	if err != nil {
 		return nil, err

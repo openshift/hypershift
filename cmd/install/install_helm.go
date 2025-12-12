@@ -49,7 +49,8 @@ func NewHelmRenderCommand(opts *Options) *cobra.Command {
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		opts.ApplyDefaults()
 
-		crds, manifests, err := hyperShiftOperatorTemplateManifest(opts, helmTemplateParams)
+		// Helm rendering doesn't need to check for existing CRDs, so pass nil for client
+		crds, manifests, err := hyperShiftOperatorTemplateManifest(cmd.Context(), nil, opts, helmTemplateParams)
 		if err != nil {
 			return err
 		}

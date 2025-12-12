@@ -21,7 +21,7 @@ func InstallHyperShiftOperator(ctx context.Context, opts HyperShiftOperatorInsta
 		installOpts.OutputFile = opts.DryRunDir + "/install-hypershift-operator.yaml"
 		installOpts.Format = install.RenderFormatYaml
 		installOpts.OutputTypes = string(install.OutputAll)
-		return install.RenderHyperShiftOperator(os.Stdout, &installOpts)
+		return install.RenderHyperShiftOperator(ctx, os.Stdout, &installOpts)
 	}
 
 	return install.InstallHyperShiftOperator(ctx, os.Stdout, installOpts)
