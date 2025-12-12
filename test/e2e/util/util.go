@@ -2112,7 +2112,6 @@ func waitForDaemonSetsReady(t *testing.T, ctx context.Context, guestClient crcli
 				return true, nil
 			}
 		})
-
 		if err != nil {
 			return fmt.Errorf("failed to wait for DaemonSet %s to be ready: %w", dsName, err)
 		}
@@ -4154,4 +4153,62 @@ func ExtractVersionFromReleaseImage(releaseImage string) string {
 
 	// No known architecture suffix found, return the tag as-is
 	return tag
+}
+
+// EnsureKubeAPIServerPrePullInitContainers validates that the kube-apiserver deployment has
+// pre-pull init containers for all regular container images, and that they run before other init containers.
+func EnsureKubeAPIServerPrePullInitContainers(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	g := NewWithT(t)
+
+	t.Logf("Validating kube-apiserver has pre-pull init containers")
+
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+	// Get the kube-apiserver deployment
+	kasDeployment := &appsv1.Deployment{}
+	err := client.Get(ctx, crclient.ObjectKey{
+		Namespace: controlPlaneNamespace,
+		Name:      "kube-apiserver",
+	}, kasDeployment)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get kube-apiserver deployment")
+
+	// Collect images from regular containers
+	regularContainerImages := make(map[string]bool)
+	for _, container := range kasDeployment.Spec.Template.Spec.Containers {
+		if container.Image != "" {
+			regularContainerImages[container.Image] = true
+		}
+	}
+
+	// Find pre-pull init containers and pre-pull container positions to perform checks.
+	prePullInitContainers := []corev1.Container{}
+	firstOtherInitContainerIndex := -1
+	lastPrePullInitContainerIndex := -1
+
+	for i, initContainer := range kasDeployment.Spec.Template.Spec.InitContainers {
+		if strings.HasPrefix(initContainer.Name, "pre-pull-image-") {
+			prePullInitContainers = append(prePullInitContainers, initContainer)
+			lastPrePullInitContainerIndex = i
+		} else {
+			if firstOtherInitContainerIndex == -1 {
+				firstOtherInitContainerIndex = i
+			}
+		}
+	}
+
+	// Validate we have one pre-pull init container per regular container image
+	g.Expect(len(prePullInitContainers)).To(Equal(len(regularContainerImages)),
+		"expected one pre-pull init container per regular container image")
+
+	// Validate that pre-pull init containers use images from regular containers
+	for _, prePullContainer := range prePullInitContainers {
+		g.Expect(regularContainerImages[prePullContainer.Image]).To(BeTrue(),
+			"pre-pull init container %s uses image %s which is not in regular containers",
+			prePullContainer.Name, prePullContainer.Image)
+	}
+
+	if firstOtherInitContainerIndex != -1 && lastPrePullInitContainerIndex != -1 {
+		g.Expect(lastPrePullInitContainerIndex).To(BeNumerically("<", firstOtherInitContainerIndex),
+			"pre-pull init containers must come before other init containers")
+	}
 }
