@@ -30,6 +30,9 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/types"
 	kubeclient "k8s.io/client-go/kubernetes"
+	k8sScheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/remotecommand"
 	"k8s.io/client-go/util/retry"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -752,4 +755,95 @@ func CountAvailableNodes(ctx context.Context, client client.Client) (int32, erro
 	}
 
 	return availableNodesCount, nil
+}
+
+// ExecCommandInPod executes a command in a pod and returns stdout, stderr, and error.
+// This is a low-level utility function that can be used by both controllers and tests.
+func ExecCommandInPod(ctx context.Context, restConfig *rest.Config, clientSet kubeclient.Interface, namespace, podName, containerName string, command []string) (string, string, error) {
+	// Build the exec request
+	req := clientSet.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(podName).
+		Namespace(namespace).
+		SubResource("exec")
+
+	// Set up the exec options
+	execOptions := &corev1.PodExecOptions{
+		Container: containerName,
+		Command:   command,
+		Stdout:    true,
+		Stderr:    true,
+	}
+
+	req.VersionedParams(execOptions, k8sScheme.ParameterCodec)
+
+	// Execute the command
+	executor, err := remotecommand.NewSPDYExecutor(restConfig, "POST", req.URL())
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create SPDY executor: %w", err)
+	}
+
+	stdout := &bytes.Buffer{}
+	stderr := &bytes.Buffer{}
+
+	err = executor.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdout: stdout,
+		Stderr: stderr,
+	})
+
+	return stdout.String(), stderr.String(), err
+}
+
+// IsPodReady checks if a pod is ready.
+// Returns true if the pod is in Running phase with Ready condition set to True.
+func IsPodReady(pod *corev1.Pod) bool {
+	if pod.Status.Phase != corev1.PodRunning {
+		return false
+	}
+	// Check if pod is ready
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+// FindReadyPod finds a ready pod in the given pod list.
+// Returns the first pod that is in Running phase with Ready condition set to True.
+func FindReadyPod(podList *corev1.PodList) *corev1.Pod {
+	for _, pod := range podList.Items {
+		if IsPodReady(&pod) {
+			return &pod
+		}
+	}
+	return nil
+}
+
+// RunCommandInPod lists pods matching the given component label in the specified namespace,
+// finds a ready pod, and executes the given command in the specified container.
+// Returns the stdout output as a string.
+func RunCommandInPod(ctx context.Context, c client.Client, restConfig *rest.Config, clientSet kubeclient.Interface, component, namespace string, command []string, containerName string) (string, error) {
+	var podList corev1.PodList
+	if err := c.List(ctx, &podList,
+		client.InNamespace(namespace),
+		client.MatchingLabels{"app": component}); err != nil {
+		return "", fmt.Errorf("failed to list pods: %w", err)
+	}
+
+	if len(podList.Items) < 1 {
+		return "", fmt.Errorf("pods for component %q not found", component)
+	}
+
+	readyPod := FindReadyPod(&podList)
+	if readyPod == nil {
+		return "", fmt.Errorf("no ready pod found for component %q", component)
+	}
+
+	stdout, stderr, err := ExecCommandInPod(ctx, restConfig, clientSet, readyPod.Namespace, readyPod.Name, containerName, command)
+	if err != nil {
+		return "", fmt.Errorf("failed to execute command in pod %s/%s: %w (stderr: %s)", readyPod.Namespace, readyPod.Name, err, stderr)
+	}
+
+	return stdout, nil
 }

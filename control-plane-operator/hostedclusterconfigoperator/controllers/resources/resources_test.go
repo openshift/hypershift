@@ -39,6 +39,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 
 	controllerruntime "sigs.k8s.io/controller-runtime"
@@ -114,6 +115,19 @@ func (c *testClient) Get(ctx context.Context, key client.ObjectKey, obj client.O
 	return c.Client.Get(ctx, key, obj)
 }
 
+// errorInjectingClient wraps a fake client and injects errors on List operations
+type errorInjectingClient struct {
+	client.Client
+	injectListError bool
+}
+
+func (c *errorInjectingClient) List(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+	if c.injectListError {
+		return fmt.Errorf("simulated list error")
+	}
+	return c.Client.List(ctx, list, opts...)
+}
+
 var cpObjects = []client.Object{
 	fakeHCP(),
 	fakeIngressCert(),
@@ -169,6 +183,12 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 			ImageMetaDataProvider:  &imageMetaDataProvider,
+			PatchHCPStatusConditions: func(ctx context.Context, cpClient client.Client, hcp *hyperv1.HostedControlPlane, conditions ...*metav1.Condition) error {
+				for _, condition := range conditions {
+					meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
+				}
+				return cpClient.Status().Update(ctx, hcp)
+			},
 		}
 		_, err := r.Reconcile(ctx, controllerruntime.Request{})
 		if err != nil {
@@ -199,6 +219,12 @@ func TestReconcileErrorHandling(t *testing.T) {
 			hcpNamespace:           "bar",
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 			ImageMetaDataProvider:  &imageMetaDataProvider,
+			PatchHCPStatusConditions: func(ctx context.Context, cpClient client.Client, hcp *hyperv1.HostedControlPlane, conditions ...*metav1.Condition) error {
+				for _, condition := range conditions {
+					meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
+				}
+				return cpClient.Status().Update(ctx, hcp)
+			},
 		}
 		_, err := r.Reconcile(ctx, controllerruntime.Request{})
 		if err != nil {
@@ -1657,6 +1683,12 @@ func TestReconcileOcmConfigChange(t *testing.T) {
 				releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 				ImageMetaDataProvider:  &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
 				platformType:           tc.platformType,
+				PatchHCPStatusConditions: func(ctx context.Context, cpClient client.Client, hcp *hyperv1.HostedControlPlane, conditions ...*metav1.Condition) error {
+					for _, condition := range conditions {
+						meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
+					}
+					return cpClient.Status().Update(ctx, hcp)
+				},
 			}
 			_, err := r.Reconcile(ctx, controllerruntime.Request{})
 			g.Expect(err).NotTo(HaveOccurred())
@@ -2393,20 +2425,25 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 	}
 
 	tests := []struct {
-		name              string
-		hcp               *hyperv1.HostedControlPlane
-		wantErr           bool
-		expectedCondition *metav1.Condition
-		pods              []corev1.Pod
-		nodes             []corev1.Node
-		mockedGetPodLogs  func(context context.Context, clientet *clientset.Clientset, namespace, name, container string) ([]byte, error)
+		name                                    string
+		hcp                                     *hyperv1.HostedControlPlane
+		wantErr                                 bool
+		expectedDataPlaneConnectionCondition    *metav1.Condition
+		expectedControlPlaneConnectionCondition *metav1.Condition
+		pods                                    []corev1.Pod
+		nodes                                   []corev1.Node
+		simulateListPodError                    bool
+		mockedGetPodLogs                        func(context context.Context, clientet *clientset.Clientset, namespace, name, container string) ([]byte, error)
+		mockedCheckPodKasConnection             func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error)
 	}{
 		{
 			name:    "no worker nodes Condition Unknown",
 			hcp:     fakeHCP(),
 			wantErr: false,
-			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionUnknown, hyperv1.DataPlaneConnectionNoWorkerNodesAvailableReason, "No worker nodes available"),
+			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{}, // no Nodes
 			mockedGetPodLogs: func(context context.Context,
 				clientet *clientset.Clientset,
@@ -2414,13 +2451,39 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return nil, nil
 			},
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+				return false, fmt.Errorf("it fails")
+			},
+		},
+		{
+			name:                 "When...pod list fails...it should set DataPlaneConnectionAvailable to Unknown",
+			hcp:                  fakeHCP(),
+			wantErr:              false,
+			simulateListPodError: true,
+			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Couldn't list konnectivity-agent PODs in kube-system namespace: simulated list error"),
+			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
+			nodes: []corev1.Node{newRunningNode("node1")},
+			pods:  []corev1.Pod{},
+			mockedGetPodLogs: func(context context.Context,
+				clientet *clientset.Clientset,
+				namespace, name,
+				container string) ([]byte, error) {
+				return nil, nil
+			},
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+				return false, nil
+			},
 		},
 		{
 			name:    "no konnectivity-agent PODs condition False",
 			hcp:     fakeHCP(),
 			wantErr: false,
-			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionFalse, hyperv1.DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason, "Couldn't find any konnectivity-agent running in data plane"),
+			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{}, // no Pods
 			mockedGetPodLogs: func(context context.Context,
@@ -2429,13 +2492,18 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return nil, nil
 			},
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+				return false, fmt.Errorf("it fails")
+			},
 		},
 		{
 			name:    "only one pending POD condition False",
 			hcp:     fakeHCP(),
 			wantErr: false,
-			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionFalse, hyperv1.DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason, "Couldn't find any konnectivity-agent running in data plane"),
+			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodPending)},
 			mockedGetPodLogs: func(context context.Context,
@@ -2444,13 +2512,18 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return nil, nil
 			},
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+				return false, fmt.Errorf("it fails")
+			},
 		},
 		{
 			name:    "one konnectivity-agent PODs running condition OK",
 			hcp:     fakeHCP(),
 			wantErr: false,
-			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
+			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
 			mockedGetPodLogs: func(context context.Context,
@@ -2459,13 +2532,18 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return []byte("this is the log my friend"), nil
 			},
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+				return false, fmt.Errorf("it fails")
+			},
 		},
 		{
 			name:    "may konnectivity-agent PODs only one running condition OK",
 			hcp:     fakeHCP(),
 			wantErr: false,
-			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
+			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods: []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax1", corev1.PodPending),
 				newKonnectivityAgentPod("konnectivity-agent-rdax2", corev1.PodPending),
@@ -2478,14 +2556,19 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return []byte("this is the log my friend"), nil
 			},
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+				return false, fmt.Errorf("it fails")
+			},
 		},
 		{
 			name:    "one konnectivity-agent PODs running bad since error getting LOG",
 			hcp:     fakeHCP(),
 			wantErr: false,
-			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionFalse, hyperv1.DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason,
 				"failed to read konnectivity-agent logs from data plane"),
+			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
 			mockedGetPodLogs: func(context context.Context,
@@ -2494,14 +2577,19 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return nil, fmt.Errorf("this time we fail")
 			},
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+				return false, fmt.Errorf("it fails")
+			},
 		},
 		{
 			name:    "one konnectivity-agent PODs running bad since no LOG", // unsure this is possible
 			hcp:     fakeHCP(),
 			wantErr: false,
-			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionFalse, hyperv1.DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason,
 				"failed to read konnectivity-agent logs from data plane"),
+			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
 			mockedGetPodLogs: func(context context.Context,
@@ -2509,6 +2597,69 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				namespace, name,
 				container string) ([]byte, error) {
 				return nil, nil
+			},
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+				return false, fmt.Errorf("it fails")
+			},
+		},
+		{
+			name:    "When...CheckPodKasConnection returns an error...it should set ControlPlaneConnectionAvailable to Unknown",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
+			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
+			nodes: []corev1.Node{newRunningNode("node1")},
+			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
+			mockedGetPodLogs: func(context context.Context,
+				clientet *clientset.Clientset,
+				namespace, name,
+				container string) ([]byte, error) {
+				return []byte("this is the log my friend"), nil
+			},
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+				return false, fmt.Errorf("failed to check kas connection")
+			},
+		},
+		{
+			name:    "When...CheckPodKasConnection returns true...it should set ControlPlaneConnectionAvailable to True",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
+			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
+			nodes: []corev1.Node{newRunningNode("node1")},
+			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
+			mockedGetPodLogs: func(context context.Context,
+				clientet *clientset.Clientset,
+				namespace, name,
+				container string) ([]byte, error) {
+				return []byte("this is the log my friend"), nil
+			},
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+				return true, nil
+			},
+		},
+		{
+			name:    "When...CheckPodKasConnection returns false with nil error...it should set ControlPlaneConnectionAvailable to False",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
+			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionFalse, hyperv1.ControlPlaneConnectionKASAccessFailedReason, "Failed to access KAS from data plane"),
+			nodes: []corev1.Node{newRunningNode("node1")},
+			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
+			mockedGetPodLogs: func(context context.Context,
+				clientet *clientset.Clientset,
+				namespace, name,
+				container string) ([]byte, error) {
+				return []byte("this is the log my friend"), nil
+			},
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+				return false, nil
 			},
 		},
 	}
@@ -2524,11 +2675,63 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				Items: tt.pods,
 			}
 			r.client = fake.NewClientBuilder().WithLists(nodeList).Build()
-			r.uncachedClient = fake.NewClientBuilder().WithLists(podList).Build()
+			if tt.simulateListPodError {
+				r.uncachedClient = &errorInjectingClient{
+					Client:          fake.NewClientBuilder().WithLists(podList).Build(),
+					injectListError: true,
+				}
+			} else {
+				r.uncachedClient = fake.NewClientBuilder().WithLists(podList).Build()
+			}
 			r.cpClient = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 			r.GetPodLogs = tt.mockedGetPodLogs
+			r.CheckPodKasConnection = tt.mockedCheckPodKasConnection
+			// Mock PatchHCPStatusConditions to validate expected conditions.
+			r.PatchHCPStatusConditions = func(ctx context.Context, cpClient client.Client, hcp *hyperv1.HostedControlPlane, conditions ...*metav1.Condition) error {
+				// First apply the conditions to hcp (this is what the real function does)
+				for _, condition := range conditions {
+					meta.SetStatusCondition(&hcp.Status.Conditions, *condition)
+				}
 
-			gotErr := r.reconcileControlPlaneDataPlaneConnectivityConditions(ctx, tt.hcp, log)
+				// Validate DataPlaneConnectionAvailable condition
+				if tt.expectedDataPlaneConnectionCondition != nil {
+					found := false
+					for _, c := range hcp.Status.Conditions {
+						if tt.expectedDataPlaneConnectionCondition.Type == c.Type &&
+							tt.expectedDataPlaneConnectionCondition.Message == c.Message &&
+							tt.expectedDataPlaneConnectionCondition.Status == c.Status &&
+							tt.expectedDataPlaneConnectionCondition.Reason == c.Reason {
+							found = true
+							break
+						}
+					}
+					if !found {
+						return fmt.Errorf("expected DataPlaneConnectionAvailable condition not found: expected %+v", tt.expectedDataPlaneConnectionCondition)
+					}
+				}
+
+				// Validate ControlPlaneConnectionAvailable condition
+				if tt.expectedControlPlaneConnectionCondition != nil {
+					found := false
+					for _, c := range hcp.Status.Conditions {
+						if tt.expectedControlPlaneConnectionCondition.Type == c.Type &&
+							tt.expectedControlPlaneConnectionCondition.Message == c.Message &&
+							tt.expectedControlPlaneConnectionCondition.Status == c.Status &&
+							tt.expectedControlPlaneConnectionCondition.Reason == c.Reason {
+							found = true
+							break
+						}
+					}
+					if !found {
+						return fmt.Errorf("expected ControlPlaneConnectionAvailable condition not found: expected %+v", tt.expectedControlPlaneConnectionCondition)
+					}
+				}
+
+				// Update the status in the fake client
+				return cpClient.Status().Update(ctx, hcp)
+			}
+
+			gotErr := r.reconcileConnectionConditions(ctx, tt.hcp, log)
 			if gotErr != nil {
 				if !tt.wantErr {
 					t.Errorf("reconcileControlPlaneDataPlaneConnectivityConditions() failed: %v", gotErr)
@@ -2537,20 +2740,6 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			}
 			if tt.wantErr {
 				t.Fatal("reconcileControlPlaneDataPlaneConnectivityConditions() succeeded unexpectedly")
-			}
-			if tt.expectedCondition != nil {
-				found := false
-				for _, c := range tt.hcp.Status.Conditions {
-					if tt.expectedCondition.Type == c.Type &&
-						tt.expectedCondition.Message == c.Message &&
-						tt.expectedCondition.Status == c.Status &&
-						tt.expectedCondition.Reason == c.Reason {
-						found = true
-					}
-				}
-				if !found {
-					t.Fatal("couldn't find expected condition")
-				}
 			}
 		})
 	}
