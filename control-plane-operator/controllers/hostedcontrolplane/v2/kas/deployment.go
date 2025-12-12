@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -104,6 +105,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		}
 	}
 
+	// Pre-pull images to avoid startup delays between containers and timeout errors.
+	// Avoids flakiness in tests: https://issues.redhat.com/browse/OCPBUGS-62760
+	addImagePrePullInitContainers(&deployment.Spec.Template.Spec)
+
 	return nil
 }
 
@@ -176,7 +181,7 @@ func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlan
 				VolumeSource: corev1.VolumeSource{
 					Secret: &corev1.SecretVolumeSource{
 						SecretName:  namedCert.ServingCertificate.Name,
-						DefaultMode: ptr.To[int32](0640),
+						DefaultMode: ptr.To[int32](0o640),
 					},
 				},
 			})
@@ -293,6 +298,35 @@ func buildKASAuditWebhookConfigFileVolume(auditWebhookRef *corev1.LocalObjectRef
 	v.Secret = &corev1.SecretVolumeSource{}
 	v.Secret.SecretName = auditWebhookRef.Name
 	return v
+}
+
+// addImagePrePullInitContainers adds init containers to pre-pull images for all regular containers
+// in the kube-apiserver pod. These init containers ensure images are cached on the node before
+// the regular containers start, reducing startup time.
+func addImagePrePullInitContainers(podSpec *corev1.PodSpec) {
+	imagesToPrePull := []string{}
+
+	// Collect images from regular containers
+	for _, container := range podSpec.Containers {
+		if container.Image != "" && !slices.Contains(imagesToPrePull, container.Image) {
+			imagesToPrePull = append(imagesToPrePull, container.Image)
+		}
+	}
+
+	// Create pre-pull init containers - one for each unique image
+	prePullInitContainers := make([]corev1.Container, 0, len(imagesToPrePull))
+	for _, image := range imagesToPrePull {
+		prePullInitContainers = append(prePullInitContainers, corev1.Container{
+			Name:            fmt.Sprintf("pre-pull-image-%s", image),
+			Image:           image,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command:         []string{"/bin/sh", "-c", fmt.Sprintf("echo 'Image pre-pulled: %s'; exit 0", image)},
+		})
+	}
+
+	// Prepend the pre-pull init containers to the existing init containers.
+	// This ensures images are pulled before any other init containers run.
+	podSpec.InitContainers = append(prePullInitContainers, podSpec.InitContainers...)
 }
 
 const (
