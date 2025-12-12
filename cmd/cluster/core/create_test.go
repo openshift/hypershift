@@ -359,14 +359,14 @@ func TestValidate(t *testing.T) {
 			expectedErr: "ingress capability can only be disabled if Console capability is also disabled",
 		},
 		{
-			name: "passes when disable-multi-network is used with network-type=Other",
+			name: "passes when disable-multi-network is used with third-party CNI",
 			rawOpts: &RawCreateOptions{
 				Name:                "test-hc",
 				Namespace:           "test-hc",
 				PullSecretFile:      pullSecretFile,
 				Arch:                "amd64",
 				DisableMultiNetwork: true,
-				NetworkType:         "Other",
+				NetworkType:         "Cilium", //choose arbitrary value for third-party network provider
 			},
 			expectedErr: "",
 		},
@@ -378,7 +378,7 @@ func TestValidate(t *testing.T) {
 				PullSecretFile:      pullSecretFile,
 				Arch:                "amd64",
 				DisableMultiNetwork: false,
-				NetworkType:         "OVNKubernetes",
+				NetworkType:         string(hyperv1.OVNKubernetes),
 			},
 			expectedErr: "",
 		},
@@ -390,9 +390,9 @@ func TestValidate(t *testing.T) {
 				PullSecretFile:      pullSecretFile,
 				Arch:                "amd64",
 				DisableMultiNetwork: true,
-				NetworkType:         "OVNKubernetes",
+				NetworkType:         string(hyperv1.OVNKubernetes),
 			},
-			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'OVNKubernetes')",
+			expectedErr: "disableMultiNetwork is only allowed when networkType is third-party (got 'OVNKubernetes')",
 		},
 		{
 			name: "fails when disable-multi-network is true with network-type=OpenShiftSDN",
@@ -402,21 +402,9 @@ func TestValidate(t *testing.T) {
 				PullSecretFile:      pullSecretFile,
 				Arch:                "amd64",
 				DisableMultiNetwork: true,
-				NetworkType:         "OpenShiftSDN",
+				NetworkType:         string(hyperv1.OpenShiftSDN),
 			},
-			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'OpenShiftSDN')",
-		},
-		{
-			name: "fails when disable-multi-network is true with network-type=Calico",
-			rawOpts: &RawCreateOptions{
-				Name:                "test-hc",
-				Namespace:           "test-hc",
-				PullSecretFile:      pullSecretFile,
-				Arch:                "amd64",
-				DisableMultiNetwork: true,
-				NetworkType:         "Calico",
-			},
-			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'Calico')",
+			expectedErr: "disableMultiNetwork is only allowed when networkType is third-party (got 'OpenShiftSDN')",
 		},
 	}
 	for _, test := range tests {
