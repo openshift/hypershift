@@ -84,6 +84,10 @@ const (
 	// KubeVirtNodesLiveMigratable indicates if all (VirtualMachines) nodes of the kubevirt
 	// hosted cluster can be live migrated without experiencing a node restart
 	NodePoolKubeVirtLiveMigratableType = "KubeVirtNodesLiveMigratable"
+
+	// NodePoolDegradedConditionType signals a terminal state for NodePool.
+	// A NodePool with Degraded condition set tu True it is skipped during reconciliation
+	NodePoolDegradedConditionType = "Degraded"
 )
 
 // PerformanceProfile Conditions
