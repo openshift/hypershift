@@ -78,6 +78,7 @@ nav:
     - 'Global Pull Secret': how-to/common/global-pull-secret.md
   - 'CI':
     - how-to/ci/checking-ci.md
+    - how-to/ci/ci-infrastructure.md
   - 'HyperShift Operator Install':
     - how-to/install/index.md
   - 'PKI and Certificates':
