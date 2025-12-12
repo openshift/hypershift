@@ -18,15 +18,15 @@ import (
 	"context"
 	"sync"
 
-	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
-	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
-	"go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/server/v3/etcdserver/api/v3rpc"
-
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+
+	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
+	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/server/v3/etcdserver/api/v3rpc"
 )
 
 type watchProxy struct {
@@ -234,6 +234,17 @@ func (wps *watchProxyStream) recvLoop() error {
 		switch uv := req.RequestUnion.(type) {
 		case *pb.WatchRequest_CreateRequest:
 			cr := uv.CreateRequest
+
+			if cr.StartRevision < 0 {
+				wps.watchCh <- &pb.WatchResponse{
+					Header:       &pb.ResponseHeader{},
+					WatchId:      clientv3.InvalidWatchID,
+					Created:      true,
+					Canceled:     true,
+					CancelReason: rpctypes.ErrCompacted.Error(),
+				}
+				continue
+			}
 
 			if err := wps.checkPermissionForWatch(cr.Key, cr.RangeEnd); err != nil {
 				wps.watchCh <- &pb.WatchResponse{
