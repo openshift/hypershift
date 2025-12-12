@@ -41,17 +41,43 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, buildAdditionalTrustBundleProjectedVolume(additionalCAs))
 	}
 
-	etcdHostname := "etcd-client"
-	if cpContext.HCP.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
-		etcdHostname, err = util.HostFromURL(cpContext.HCP.Spec.Etcd.Unmanaged.Endpoint)
-		if err != nil {
-			return err
-		}
-	}
+	// Build NO_PROXY list with all etcd shard service names
 	noProxy := []string{
 		manifests.KubeAPIServerService("").Name,
-		etcdHostname,
 		config.AuditWebhookService,
+	}
+
+	// Add etcd service names based on management type
+	switch cpContext.HCP.Spec.Etcd.ManagementType {
+	case hyperv1.Unmanaged:
+		if etcdHostname, err := util.HostFromURL(cpContext.HCP.Spec.Etcd.Unmanaged.Endpoint); err == nil {
+			noProxy = append(noProxy, etcdHostname)
+		}
+	case hyperv1.Managed:
+		// Add all shard client service names to NO_PROXY (both short and FQDN)
+		if cpContext.HCP.Spec.Etcd.Managed != nil {
+			shards := cpContext.HCP.Spec.Etcd.Managed.EffectiveShards(cpContext.HCP)
+			for _, shard := range shards {
+				var serviceName string
+				if shard.Name == "default" {
+					serviceName = "etcd-client"
+				} else {
+					serviceName = fmt.Sprintf("etcd-client-%s", shard.Name)
+				}
+				// Add both short name and FQDN for proxy bypass
+				noProxy = append(noProxy,
+					serviceName,
+					fmt.Sprintf("%s.%s.svc", serviceName, cpContext.HCP.Namespace),
+					fmt.Sprintf("%s.%s.svc.cluster.local", serviceName, cpContext.HCP.Namespace),
+				)
+			}
+		} else {
+			// Fallback to non-sharded service name
+			noProxy = append(noProxy, "etcd-client")
+		}
+	default:
+		// Fallback
+		noProxy = append(noProxy, "etcd-client")
 	}
 
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {

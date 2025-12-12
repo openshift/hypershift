@@ -1574,8 +1574,82 @@ type EtcdSpec struct {
 // HyperShift.
 type ManagedEtcdSpec struct {
 	// storage specifies how etcd data is persisted.
+	// When shards are specified, this serves as the default for all shards
+	// unless overridden per-shard.
 	// +required
 	Storage ManagedEtcdStorageSpec `json:"storage"`
+
+	// shards configures etcd sharding by Kubernetes resource kind.
+	// When not specified, a default single shard accepting all prefixes is used.
+	// When specified, exactly one shard must have "/" in its resourcePrefixes.
+	// +optional
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=10
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:XValidation:rule="self.exists(s, '/' in s.resourcePrefixes)",message="exactly one shard must have '/' prefix"
+	// +kubebuilder:validation:XValidation:rule="self.all(s, s.resourcePrefixes.all(p, p == '/' || p.endsWith('#')))",message="non-default prefixes must end with '#'"
+	Shards []ManagedEtcdShardSpec `json:"shards,omitempty"`
+}
+
+// EtcdShardPriority defines the operational priority of an etcd shard
+// +kubebuilder:validation:Enum=Critical;High;Medium;Low
+type EtcdShardPriority string
+
+const (
+	EtcdShardPriorityCritical EtcdShardPriority = "Critical"
+	EtcdShardPriorityHigh     EtcdShardPriority = "High"
+	EtcdShardPriorityMedium   EtcdShardPriority = "Medium"
+	EtcdShardPriorityLow      EtcdShardPriority = "Low"
+)
+
+// ManagedEtcdShardSpec defines configuration for a single managed etcd shard
+type ManagedEtcdShardSpec struct {
+	// name is the unique identifier for this shard
+	// Must be DNS-1035 compliant (lowercase alphanumeric + hyphens)
+	// Used for resource naming: etcd-{name}, etcd-{name}-client, etc.
+	// +required
+	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=15
+	Name string `json:"name"`
+
+	// resourcePrefixes specifies which Kubernetes resources are stored in this shard
+	// Format: "group/resource#" or "/" for default (catch-all)
+	// Examples: "/events#", "/coordination.k8s.io/leases#", "/"
+	// Exactly one shard must have "/" as a prefix
+	// +required
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:items:MaxLength=255
+	// +listType=set
+	ResourcePrefixes []string `json:"resourcePrefixes"`
+
+	// priority determines operational importance and default backup frequency
+	// Critical: Default backup every 30 minutes
+	// High: Default backup hourly
+	// Medium/Low: Default backup disabled
+	// +optional
+	// +kubebuilder:default=Medium
+	Priority EtcdShardPriority `json:"priority,omitempty"`
+
+	// storage specifies storage configuration for this shard
+	// If not specified, inherits from ManagedEtcdSpec.Storage
+	// +optional
+	Storage *ManagedEtcdStorageSpec `json:"storage,omitempty"`
+
+	// replicas is the number of etcd replicas for this shard
+	// Must be 1 or 3. If not specified, defaults based on cluster's
+	// ControllerAvailabilityPolicy (1 for SingleReplica, 3 for HighlyAvailable)
+	// +optional
+	// +kubebuilder:validation:Enum=1;3
+	Replicas *int32 `json:"replicas,omitempty"`
+
+	// backupSchedule is the cron schedule for backups (standard cron format)
+	// If empty, uses priority-based default or disables backups
+	// Examples: "*/30 * * * *" (every 30 min), "0 * * * *" (hourly)
+	// +optional
+	// +kubebuilder:validation:MaxLength=100
+	BackupSchedule *string `json:"backupSchedule,omitempty"`
 }
 
 // ManagedEtcdStorageType is a storage type for an etcd cluster.
@@ -1645,20 +1719,68 @@ type PersistentVolumeEtcdStorageSpec struct {
 }
 
 // UnmanagedEtcdSpec specifies configuration which enables the control plane to
-// integrate with an eternally managed etcd cluster.
+// integrate with an externally managed etcd cluster.
 type UnmanagedEtcdSpec struct {
-	// endpoint is the full etcd cluster client endpoint URL. For example:
-	//
-	//     https://etcd-client:2379
-	//
-	// If the URL uses an HTTPS scheme, the TLS field is required.
-	//
+	// endpoint is the full etcd cluster client endpoint URL.
+	// Used only when shards is not specified (legacy single-etcd mode).
+	// When shards are specified, this field is ignored.
+	// +optional
 	// +kubebuilder:validation:Pattern=`^https://`
 	// +kubebuilder:validation:MaxLength=255
-	// +required
-	Endpoint string `json:"endpoint"`
+	Endpoint string `json:"endpoint,omitempty"`
 
 	// tls specifies TLS configuration for HTTPS etcd client endpoints.
+	// Used only when shards is not specified (legacy single-etcd mode).
+	// When shards are specified, this field is ignored.
+	// +optional
+	TLS *EtcdTLSConfig `json:"tls,omitempty"`
+
+	// shards configures etcd sharding by Kubernetes resource kind.
+	// When not specified, uses endpoint and tls fields (legacy single-etcd mode).
+	// When specified, exactly one shard must have "/" in its resourcePrefixes.
+	// +optional
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=10
+	// +listType=map
+	// +listMapKey=name
+	// +kubebuilder:validation:XValidation:rule="self.exists(s, '/' in s.resourcePrefixes)",message="exactly one shard must have '/' prefix"
+	// +kubebuilder:validation:XValidation:rule="self.all(s, s.resourcePrefixes.all(p, p == '/' || p.endsWith('#')))",message="non-default prefixes must end with '#'"
+	Shards []UnmanagedEtcdShardSpec `json:"shards,omitempty"`
+}
+
+// UnmanagedEtcdShardSpec defines configuration for a single unmanaged etcd shard
+type UnmanagedEtcdShardSpec struct {
+	// name is the unique identifier for this shard
+	// Must be DNS-1035 compliant (lowercase alphanumeric + hyphens)
+	// +required
+	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:MaxLength=15
+	Name string `json:"name"`
+
+	// resourcePrefixes specifies which Kubernetes resources are stored in this shard
+	// Format: "group/resource#" or "/" for default (catch-all)
+	// Examples: "/events#", "/coordination.k8s.io/leases#", "/"
+	// Exactly one shard must have "/" as a prefix
+	// +required
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:items:MaxLength=255
+	// +listType=set
+	ResourcePrefixes []string `json:"resourcePrefixes"`
+
+	// priority determines operational importance
+	// +optional
+	// +kubebuilder:default=Medium
+	Priority EtcdShardPriority `json:"priority,omitempty"`
+
+	// endpoint is the full etcd shard client endpoint URL
+	// Example: https://etcd-events-client:2379
+	// +required
+	// +kubebuilder:validation:Pattern=`^https://`
+	// +kubebuilder:validation:MaxLength=255
+	Endpoint string `json:"endpoint"`
+
+	// tls specifies TLS configuration for this shard's HTTPS endpoint
 	// +required
 	TLS EtcdTLSConfig `json:"tls"`
 }

@@ -5619,6 +5619,32 @@ and the user is responsible for doing so.</p>
 </td>
 </tr></tbody>
 </table>
+###EtcdShardPriority { #hypershift.openshift.io/v1beta1.EtcdShardPriority }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdShardSpec">ManagedEtcdShardSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.UnmanagedEtcdShardSpec">UnmanagedEtcdShardSpec</a>)
+</p>
+<p>
+<p>EtcdShardPriority defines the operational priority of an etcd shard</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Critical&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;High&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Low&#34;</p></td>
+<td></td>
+</tr><tr><td><p>&#34;Medium&#34;</p></td>
+<td></td>
+</tr></tbody>
+</table>
 ###EtcdSpec { #hypershift.openshift.io/v1beta1.EtcdSpec }
 <p>
 (<em>Appears on:</em>
@@ -5685,6 +5711,7 @@ integrate with an externally managed etcd cluster.</p>
 ###EtcdTLSConfig { #hypershift.openshift.io/v1beta1.EtcdTLSConfig }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.UnmanagedEtcdShardSpec">UnmanagedEtcdShardSpec</a>, 
 <a href="#hypershift.openshift.io/v1beta1.UnmanagedEtcdSpec">UnmanagedEtcdSpec</a>)
 </p>
 <p>
@@ -9641,6 +9668,111 @@ string
 </tr>
 </tbody>
 </table>
+###ManagedEtcdShardSpec { #hypershift.openshift.io/v1beta1.ManagedEtcdShardSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdSpec">ManagedEtcdSpec</a>)
+</p>
+<p>
+<p>ManagedEtcdShardSpec defines configuration for a single managed etcd shard</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the unique identifier for this shard
+Must be DNS-1035 compliant (lowercase alphanumeric + hyphens)
+Used for resource naming: etcd-{name}, etcd-{name}-client, etc.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourcePrefixes</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<p>resourcePrefixes specifies which Kubernetes resources are stored in this shard
+Format: &ldquo;group/resource#&rdquo; or &ldquo;/&rdquo; for default (catch-all)
+Examples: &ldquo;/events#&rdquo;, &ldquo;/coordination.k8s.io/leases#&rdquo;, &ldquo;/&rdquo;
+Exactly one shard must have &ldquo;/&rdquo; as a prefix</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>priority</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EtcdShardPriority">
+EtcdShardPriority
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>priority determines operational importance and default backup frequency
+Critical: Default backup every 30 minutes
+High: Default backup hourly
+Medium/Low: Default backup disabled</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>storage</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdStorageSpec">
+ManagedEtcdStorageSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>storage specifies storage configuration for this shard
+If not specified, inherits from ManagedEtcdSpec.Storage</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>replicas</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>replicas is the number of etcd replicas for this shard
+Must be 1 or 3. If not specified, defaults based on cluster&rsquo;s
+ControllerAvailabilityPolicy (1 for SingleReplica, 3 for HighlyAvailable)</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>backupSchedule</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>backupSchedule is the cron schedule for backups (standard cron format)
+If empty, uses priority-based default or disables backups
+Examples: &ldquo;*/30 * * * *&rdquo; (every 30 min), &ldquo;0 * * * *&rdquo; (hourly)</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ManagedEtcdSpec { #hypershift.openshift.io/v1beta1.ManagedEtcdSpec }
 <p>
 (<em>Appears on:</em>
@@ -9668,7 +9800,25 @@ ManagedEtcdStorageSpec
 </em>
 </td>
 <td>
-<p>storage specifies how etcd data is persisted.</p>
+<p>storage specifies how etcd data is persisted.
+When shards are specified, this serves as the default for all shards
+unless overridden per-shard.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>shards</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdShardSpec">
+[]ManagedEtcdShardSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>shards configures etcd sharding by Kubernetes resource kind.
+When not specified, a default single shard accepting all prefixes is used.
+When specified, exactly one shard must have &ldquo;/&rdquo; in its resourcePrefixes.</p>
 </td>
 </tr>
 </tbody>
@@ -9676,6 +9826,7 @@ ManagedEtcdStorageSpec
 ###ManagedEtcdStorageSpec { #hypershift.openshift.io/v1beta1.ManagedEtcdStorageSpec }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdShardSpec">ManagedEtcdShardSpec</a>, 
 <a href="#hypershift.openshift.io/v1beta1.ManagedEtcdSpec">ManagedEtcdSpec</a>)
 </p>
 <p>
@@ -13349,6 +13500,89 @@ Valid effects are NoSchedule, PreferNoSchedule and NoExecute.</p>
 </tr>
 </tbody>
 </table>
+###UnmanagedEtcdShardSpec { #hypershift.openshift.io/v1beta1.UnmanagedEtcdShardSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.UnmanagedEtcdSpec">UnmanagedEtcdSpec</a>)
+</p>
+<p>
+<p>UnmanagedEtcdShardSpec defines configuration for a single unmanaged etcd shard</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the unique identifier for this shard
+Must be DNS-1035 compliant (lowercase alphanumeric + hyphens)</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourcePrefixes</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<p>resourcePrefixes specifies which Kubernetes resources are stored in this shard
+Format: &ldquo;group/resource#&rdquo; or &ldquo;/&rdquo; for default (catch-all)
+Examples: &ldquo;/events#&rdquo;, &ldquo;/coordination.k8s.io/leases#&rdquo;, &ldquo;/&rdquo;
+Exactly one shard must have &ldquo;/&rdquo; as a prefix</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>priority</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EtcdShardPriority">
+EtcdShardPriority
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>priority determines operational importance</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>endpoint</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>endpoint is the full etcd shard client endpoint URL
+Example: <a href="https://etcd-events-client:2379">https://etcd-events-client:2379</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>tls</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.EtcdTLSConfig">
+EtcdTLSConfig
+</a>
+</em>
+</td>
+<td>
+<p>tls specifies TLS configuration for this shard&rsquo;s HTTPS endpoint</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###UnmanagedEtcdSpec { #hypershift.openshift.io/v1beta1.UnmanagedEtcdSpec }
 <p>
 (<em>Appears on:</em>
@@ -13356,7 +13590,7 @@ Valid effects are NoSchedule, PreferNoSchedule and NoExecute.</p>
 </p>
 <p>
 <p>UnmanagedEtcdSpec specifies configuration which enables the control plane to
-integrate with an eternally managed etcd cluster.</p>
+integrate with an externally managed etcd cluster.</p>
 </p>
 <table>
 <thead>
@@ -13374,10 +13608,10 @@ string
 </em>
 </td>
 <td>
-<p>endpoint is the full etcd cluster client endpoint URL. For example:</p>
-<pre><code>https://etcd-client:2379
-</code></pre>
-<p>If the URL uses an HTTPS scheme, the TLS field is required.</p>
+<em>(Optional)</em>
+<p>endpoint is the full etcd cluster client endpoint URL.
+Used only when shards is not specified (legacy single-etcd mode).
+When shards are specified, this field is ignored.</p>
 </td>
 </tr>
 <tr>
@@ -13390,7 +13624,26 @@ EtcdTLSConfig
 </em>
 </td>
 <td>
-<p>tls specifies TLS configuration for HTTPS etcd client endpoints.</p>
+<em>(Optional)</em>
+<p>tls specifies TLS configuration for HTTPS etcd client endpoints.
+Used only when shards is not specified (legacy single-etcd mode).
+When shards are specified, this field is ignored.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>shards</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.UnmanagedEtcdShardSpec">
+[]UnmanagedEtcdShardSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>shards configures etcd sharding by Kubernetes resource kind.
+When not specified, uses endpoint and tls fields (legacy single-etcd mode).
+When specified, exactly one shard must have &ldquo;/&rdquo; in its resourcePrefixes.</p>
 </td>
 </tr>
 </tbody>

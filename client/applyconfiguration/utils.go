@@ -255,6 +255,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.MachineNetworkEntryApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedAzureKeyVault"):
 		return &hypershiftv1beta1.ManagedAzureKeyVaultApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdShardSpec"):
+		return &hypershiftv1beta1.ManagedEtcdShardSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdSpec"):
 		return &hypershiftv1beta1.ManagedEtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ManagedEtcdStorageSpec"):
@@ -345,6 +347,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.SubnetSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("Taint"):
 		return &hypershiftv1beta1.TaintApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("UnmanagedEtcdShardSpec"):
+		return &hypershiftv1beta1.UnmanagedEtcdShardSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("UnmanagedEtcdSpec"):
 		return &hypershiftv1beta1.UnmanagedEtcdSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("UserManagedDiagnostics"):

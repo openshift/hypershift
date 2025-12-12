@@ -1,0 +1,65 @@
+# Example: 3-Shard Etcd Configuration for HyperShift
+#
+# This configuration creates three etcd shards:
+# - main: Critical shard for all resources except events and leases (3 replicas, 8Gi storage, backup every 30min)
+# - events: Low priority shard for Events (1 replica, 4Gi storage, no backup)
+# - leases: Low priority shard for Coordination Leases (1 replica, 2Gi storage, no backup)
+#
+# Use case: Large clusters (7500+ nodes) where event and lease churn impacts etcd performance
+
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: my-cluster
+  namespace: clusters
+spec:
+  # ... other HostedCluster spec fields ...
+
+  etcd:
+    managementType: Managed
+    managed:
+      # Default storage configuration (inherited by all shards unless overridden)
+      storage:
+        type: PersistentVolume
+        persistentVolume:
+          storageClassName: gp3-csi
+
+      # Shard configuration
+      shards:
+        - name: main
+          # This shard handles all resources except those explicitly routed to other shards
+          resourcePrefixes:
+            - "/"
+          priority: Critical
+          replicas: 3
+          backupSchedule: "*/30 * * * *"  # Every 30 minutes
+          storage:
+            type: PersistentVolume
+            persistentVolume:
+              size: 8Gi
+              storageClassName: fast-ssd
+
+        - name: events
+          # This shard handles only Events
+          resourcePrefixes:
+            - "/events#"
+          priority: Low
+          replicas: 1
+          # No backupSchedule = no backups for this shard
+          storage:
+            type: PersistentVolume
+            persistentVolume:
+              size: 4Gi
+              storageClassName: standard
+
+        - name: leases
+          # This shard handles only Coordination Leases
+          resourcePrefixes:
+            - "/coordination.k8s.io/leases#"
+          priority: Low
+          replicas: 1
+          storage:
+            type: PersistentVolume
+            persistentVolume:
+              size: 2Gi
+              storageClassName: standard

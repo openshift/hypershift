@@ -18,6 +18,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/etcd"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ignition"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
@@ -43,7 +44,6 @@ import (
 	kubevirtcsiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/csi/kubevirt"
 	cvov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cvo"
 	dnsoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/dnsoperator"
-	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	fgv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
@@ -228,7 +228,7 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 
 	r.components = append(r.components,
 		pkioperatorv2.NewComponent(r.CertRotationScale),
-		etcdv2.NewComponent(),
+		// etcd is now reconciled outside the v2 framework - see reconcileEtcdShards()
 		fgv2.NewComponent(),
 		kasv2.NewComponent(),
 		kcmv2.NewComponent(),
@@ -464,24 +464,12 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		switch hostedControlPlane.Spec.Etcd.ManagementType {
 		case hyperv1.Managed:
 			r.Log.Info("Reconciling etcd cluster status for managed strategy")
-			sts := manifests.EtcdStatefulSet(hostedControlPlane.Namespace)
-			if err := r.Get(ctx, client.ObjectKeyFromObject(sts), sts); err != nil {
-				if apierrors.IsNotFound(err) {
-					newCondition = metav1.Condition{
-						Type:   string(hyperv1.EtcdAvailable),
-						Status: metav1.ConditionFalse,
-						Reason: hyperv1.EtcdStatefulSetNotFoundReason,
-					}
-				} else {
-					return ctrl.Result{}, fmt.Errorf("failed to fetch etcd statefulset %s/%s: %w", sts.Namespace, sts.Name, err)
-				}
-			} else {
-				conditionPtr, err := r.etcdStatefulSetCondition(ctx, sts)
-				if err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to get etcd statefulset status: %w", err)
-				}
-				newCondition = *conditionPtr
+			shards := hostedControlPlane.Spec.Etcd.Managed.EffectiveShards(hostedControlPlane)
+			conditionPtr, err := etcd.AggregateShardStatus(ctx, hostedControlPlane, shards, r.Client)
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to get etcd shard status: %w", err)
 			}
+			newCondition = *conditionPtr
 		case hyperv1.Unmanaged:
 			r.Log.Info("Assuming Etcd cluster is running in unmanaged etcd strategy")
 			newCondition = metav1.Condition{
@@ -1042,6 +1030,14 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		r.Log.Info("Reconciling unmanaged Etcd")
 		if err := r.reconcileUnmanagedEtcd(ctx, hcp, createOrUpdate); err != nil {
 			return fmt.Errorf("failed to reconcile etcd: %w", err)
+		}
+	}
+
+	// Reconcile managed etcd shards (OUTSIDE v2 framework)
+	if hcp.Spec.Etcd.ManagementType == hyperv1.Managed {
+		r.Log.Info("Reconciling managed Etcd shards")
+		if err := r.reconcileEtcdShards(ctx, hcp, createOrUpdate, releaseImageProvider); err != nil {
+			return fmt.Errorf("failed to reconcile etcd shards: %w", err)
 		}
 	}
 
@@ -1790,10 +1786,16 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		return fmt.Errorf("failed to reconcile etcd client secret: %w", err)
 	}
 
+	// Get etcd shards for certificate SANs (only for managed etcd)
+	var etcdShards []hyperv1.ManagedEtcdShardSpec
+	if hcp.Spec.Etcd.ManagementType == hyperv1.Managed && hcp.Spec.Etcd.Managed != nil {
+		etcdShards = hcp.Spec.Etcd.Managed.EffectiveShards(hcp)
+	}
+
 	// Etcd server secret
 	etcdServerSecret := manifests.EtcdServerSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, etcdServerSecret, func() error {
-		return pki.ReconcileEtcdServerSecret(etcdServerSecret, etcdSignerSecret, p.OwnerRef)
+		return pki.ReconcileEtcdServerSecret(etcdServerSecret, etcdSignerSecret, p.OwnerRef, etcdShards)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd server secret: %w", err)
 	}
@@ -1801,7 +1803,7 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 	// Etcd peer secret
 	etcdPeerSecret := manifests.EtcdPeerSecret(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, etcdPeerSecret, func() error {
-		return pki.ReconcileEtcdPeerSecret(etcdPeerSecret, etcdSignerSecret, p.OwnerRef)
+		return pki.ReconcileEtcdPeerSecret(etcdPeerSecret, etcdSignerSecret, p.OwnerRef, etcdShards)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile etcd peer secret: %w", err)
 	}
@@ -2270,6 +2272,63 @@ func (r *HostedControlPlaneReconciler) reconcileUnmanagedEtcd(ctx context.Contex
 		return nil
 	})
 	return err
+}
+
+func (r *HostedControlPlaneReconciler) reconcileEtcdShards(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN, releaseImageProvider imageprovider.ReleaseImageProvider) error {
+	if hcp.Spec.Etcd.ManagementType != hyperv1.Managed {
+		return nil
+	}
+
+	r.Log.Info("Reconciling managed etcd shards")
+
+	shards := hcp.Spec.Etcd.Managed.EffectiveShards(hcp)
+	if len(shards) == 0 {
+		return fmt.Errorf("no etcd shards configured")
+	}
+
+	// Check if snapshot has been restored
+	snapshotRestored := false
+	restoreCondition := meta.FindStatusCondition(hcp.Status.Conditions, string(hyperv1.EtcdSnapshotRestored))
+	if restoreCondition != nil && restoreCondition.Status == metav1.ConditionTrue {
+		snapshotRestored = true
+	}
+
+	// Get etcd and control-plane-operator images
+	etcdImage := releaseImageProvider.GetImage("etcd")
+	cpoImage := releaseImageProvider.GetImage("hypershift")
+	clusterEtcdOperatorImage := releaseImageProvider.GetImage("cluster-etcd-operator")
+
+	// Build security context
+	var securityContext *corev1.PodSecurityContext
+	if r.SetDefaultSecurityContext {
+		securityContext = &corev1.PodSecurityContext{
+			RunAsUser: &r.DefaultSecurityContextUID,
+		}
+	}
+
+	// Create shard params
+	params, err := etcd.NewShardParams(hcp, etcdImage, cpoImage, clusterEtcdOperatorImage, snapshotRestored, securityContext)
+	if err != nil {
+		return fmt.Errorf("failed to create shard params: %w", err)
+	}
+
+	// Reconcile all shards
+	if err := etcd.ReconcileEtcdShards(ctx, hcp, params, r.Client, createOrUpdate, r.MetricsSet); err != nil {
+		return fmt.Errorf("failed to reconcile etcd shards: %w", err)
+	}
+
+	// Clean up orphaned shards
+	if err := etcd.CleanupOrphanedShards(ctx, hcp, shards, r.Client); err != nil {
+		return fmt.Errorf("failed to cleanup orphaned shards: %w", err)
+	}
+
+	// Create/update ControlPlaneComponent resource so other v2 components can depend on etcd
+	etcdVersion := releaseImageProvider.Version()
+	if err := etcd.ReconcileControlPlaneComponent(ctx, hcp, shards, r.Client, etcdVersion); err != nil {
+		return fmt.Errorf("failed to reconcile etcd ControlPlaneComponent: %w", err)
+	}
+
+	return nil
 }
 
 func (r *HostedControlPlaneReconciler) cleanupOldKonnectivityServerDeployment(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {

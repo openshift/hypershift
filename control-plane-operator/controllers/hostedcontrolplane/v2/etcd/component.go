@@ -35,6 +35,22 @@ func NewComponent() component.ControlPlaneComponent {
 		WithAdaptFunction(adaptStatefulSet).
 		WithPredicate(isManagedETCD).
 		WithManifestAdapter(
+			"service.yaml",
+			component.WithAdaptFunction(adaptClientService),
+			component.WithPredicate(func(cpContext component.WorkloadContext) bool {
+				managed, _ := isManagedETCD(cpContext)
+				return managed
+			}),
+		).
+		WithManifestAdapter(
+			"discovery-service.yaml",
+			component.WithAdaptFunction(adaptDiscoveryService),
+			component.WithPredicate(func(cpContext component.WorkloadContext) bool {
+				managed, _ := isManagedETCD(cpContext)
+				return managed
+			}),
+		).
+		WithManifestAdapter(
 			"servicemonitor.yaml",
 			component.WithAdaptFunction(adaptServiceMonitor),
 		).
