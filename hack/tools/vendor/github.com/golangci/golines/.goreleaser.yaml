@@ -1,0 +1,48 @@
+version: 2
+
+project_name: golines
+
+builds:
+  - main: .
+    flags:
+      - -trimpath
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    env:
+      - GOAMD64=v3
+      - CGO_ENABLED=0
+
+universal_binaries:
+  - replace: true
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [ 'tar.gz' ]
+    wrap_in_directory: true
+    format_overrides:
+      - goos: windows
+        formats: [ 'zip' ]
+    name_template: '{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
+    files:
+      - LICENSE
+      - README.md
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-pre+{{ .ShortCommit }}"
+
+changelog:
+  use: github
+  filters:
+    exclude:
+      - "^chore:"
+      - "^dev:"
+      - "^doc:"
+      - "^docs:"
+      - "^test:"
+      - "^tests:"
+      - '^build\(deps\): .*'
