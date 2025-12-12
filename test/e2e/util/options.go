@@ -111,6 +111,8 @@ type HyperShiftOperatorInstallOptions struct {
 	EnableDedicatedRequestServingIsolation bool
 	EnableCPOOverrides                     bool
 	EnableEtcdRecovery                     bool
+	EnableScaleFromZero                    bool
+	ScaleFromZeroAWSCreds                  string
 	DryRun                                 bool
 	DryRunDir                              string
 }
@@ -451,6 +453,11 @@ func (o *Options) Complete() error {
 
 	if o.ConfigurableClusterOptions.AWSOidcS3BucketName != "" {
 		o.HOInstallationOptions.AWSOidcS3BucketName = o.ConfigurableClusterOptions.AWSOidcS3BucketName
+	}
+
+	// Map AWS credentials for scale-from-zero controller
+	if o.HOInstallationOptions.EnableScaleFromZero && o.HOInstallationOptions.ScaleFromZeroAWSCreds == "" && o.ConfigurableClusterOptions.AWSCredentialsFile != "" {
+		o.HOInstallationOptions.ScaleFromZeroAWSCreds = o.ConfigurableClusterOptions.AWSCredentialsFile
 	}
 
 	if o.ConfigurableClusterOptions.ExternalDNSDomain != "" {
