@@ -389,3 +389,215 @@ func TestUserDataSecretPredicate(t *testing.T) {
 		})
 	}
 }
+
+func TestIsROSACluster(t *testing.T) {
+	testCases := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected bool
+	}{
+		{
+			name: "should return true for ROSA cluster with red-hat-clustertype tag",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: []hyperv1.AWSResourceTag{
+								{Key: "red-hat-clustertype", Value: "rosa"},
+								{Key: "red-hat-managed", Value: "true"},
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "should return false for OSD cluster with red-hat-clustertype=osd tag",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: []hyperv1.AWSResourceTag{
+								{Key: "red-hat-clustertype", Value: "osd"},
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "should return false for cluster without red-hat-clustertype tag",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: []hyperv1.AWSResourceTag{
+								{Key: "some-other-tag", Value: "value"},
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "should return false for cluster with nil AWS platform",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  nil,
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "should return false for cluster with no resource tags",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: []hyperv1.AWSResourceTag{},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := isROSACluster(tc.hcp)
+			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}
+
+func TestGetInstanceProfileName(t *testing.T) {
+	testCases := []struct {
+		name            string
+		hcp             *hyperv1.HostedControlPlane
+		expectedProfile string
+	}{
+		{
+			name: "ROSA cluster with environment label should use managed policies pattern",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "my-cluster",
+					Labels: map[string]string{
+						"api.openshift.com/environment": "prod",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "abc123",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: []hyperv1.AWSResourceTag{
+								{Key: "red-hat-clustertype", Value: "rosa"},
+								{Key: "red-hat-managed", Value: "true"},
+							},
+						},
+					},
+				},
+			},
+			expectedProfile: "rosa-service-managed-prod-abc123-my-cluster-worker",
+		},
+		{
+			name: "ROSA cluster with stage environment should use managed policies pattern",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "rosa-cluster",
+					Labels: map[string]string{
+						"api.openshift.com/environment": "stage",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "rosa123",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: []hyperv1.AWSResourceTag{
+								{Key: "red-hat-clustertype", Value: "rosa"},
+							},
+						},
+					},
+				},
+			},
+			expectedProfile: "rosa-service-managed-stage-rosa123-rosa-cluster-worker",
+		},
+		{
+			name: "ROSA cluster missing environment label should fallback to simple pattern",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "my-cluster",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "abc123",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: []hyperv1.AWSResourceTag{
+								{Key: "red-hat-clustertype", Value: "rosa"},
+							},
+						},
+					},
+				},
+			},
+			expectedProfile: "abc123-worker",
+		},
+		{
+			name: "OSD cluster should use simple pattern",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "my-cluster",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "test-infra",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							ResourceTags: []hyperv1.AWSResourceTag{
+								{Key: "red-hat-clustertype", Value: "osd"},
+							},
+						},
+					},
+				},
+			},
+			expectedProfile: "test-infra-worker",
+		},
+		{
+			name: "Non-ROSA cluster without tags should use simple pattern",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "my-cluster",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: "test-infra",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{},
+					},
+				},
+			},
+			expectedProfile: "test-infra-worker",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			result := getInstanceProfileName(tc.hcp)
+			g.Expect(result).To(Equal(tc.expectedProfile))
+		})
+	}
+}

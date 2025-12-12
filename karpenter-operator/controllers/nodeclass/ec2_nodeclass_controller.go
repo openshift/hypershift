@@ -163,7 +163,7 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	// Use the default instance profile created by IAM (matches cmd/infra/aws/iam.go:DefaultProfileName)
-	instanceProfile := fmt.Sprintf("%s-worker", hcp.Spec.InfraID)
+	instanceProfile := getInstanceProfileName(hcp)
 
 	if _, err := r.CreateOrUpdate(ctx, r.guestClient, ec2NodeClass, func() error {
 		return reconcileEC2NodeClass(ec2NodeClass, openshiftEC2NodeClass, hcp, userDataSecret, instanceProfile)
@@ -400,6 +400,45 @@ func (r *EC2NodeClassReconciler) getHCP(ctx context.Context) (*hyperv1.HostedCon
 	}
 
 	return &hcpList.Items[0], nil
+}
+
+// isROSACluster returns true if the HostedControlPlane represents a ROSA cluster.
+// Detection is based on the red-hat-clustertype tag automatically set by UHC clusters service.
+func isROSACluster(hcp *hyperv1.HostedControlPlane) bool {
+	if hcp.Spec.Platform.AWS == nil {
+		return false
+	}
+	for _, tag := range hcp.Spec.Platform.AWS.ResourceTags {
+		if tag.Key == "red-hat-clustertype" && tag.Value == "rosa" {
+			return true
+		}
+	}
+	return false
+}
+
+// getInstanceProfileName returns the appropriate instance profile name for the cluster.
+// For ROSA clusters, it uses the pattern: rosa-service-managed-{environment}-{infraID}-{name}-worker
+// For non-ROSA clusters, it falls back to: {infraID}-worker
+func getInstanceProfileName(hcp *hyperv1.HostedControlPlane) string {
+	// TODO(jkyros): If the ROSA naming standard ever changes, this will break, we need to find a way to either
+	// have ROSA feed us the profile for the ec2nodeclass like it does when it creates the day1 CAPI nodepools or
+	// just create the ec2nodeclass for us when we're on ROSA. If we go snarf this off the CAPI nodepools we have to be
+	// sure we get the right one and grant RBAC for that, I don't know if that's better or worse.
+
+	// Check if this is a ROSA cluster
+	if isROSACluster(hcp) {
+		// Get environment from labels set by UHC
+		environment := hcp.Labels["api.openshift.com/environment"]
+		if environment == "" {
+			// Fallback if label is missing (shouldn't happen for ROSA)
+			return fmt.Sprintf("%s-worker", hcp.Spec.InfraID)
+		}
+		// TODO(jkyros): Assuming "managed" for now since this is for AutoNode and I think all our AutoNode usage is managed
+		return fmt.Sprintf("rosa-service-managed-%s-%s-%s-worker", environment, hcp.Spec.InfraID, hcp.Name)
+	}
+
+	// Non-ROSA clusters use the current pattern
+	return fmt.Sprintf("%s-worker", hcp.Spec.InfraID)
 }
 
 // userDataSecretPredicate only returns true on creates/updates on the userData secret tied to the karpenter hyperv1.NodePool
