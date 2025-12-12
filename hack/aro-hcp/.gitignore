@@ -1,0 +1,32 @@
+# Generated credentials and keys
+cp-output.json
+dp-output.json
+serviceaccount-signer.public
+serviceaccount-signer.private
+external-dns-creds.json
+azure-credentials.json
+pull-secret.json
+
+# Temporary credential files
+creds-tmp/
+
+# Kubeconfig files
+kubeconfig-*
+mgmt-kubeconfig
+
+# OIDC files
+jwks
+openid-configuration
+
+# TLS keys
+tls/
+
+# Screenshots
+*.png
+
+# Environment configuration (contains secrets)
+.envrc
+
+# SP output files
+*.sp-output.json
+*.reset-output.json

@@ -1,0 +1,431 @@
+version: '3'
+
+# This file handles Key Vault and Control Plane Service Principals (MIv3 pattern)
+# The SPs are created with certificates stored in Key Vault, which are then
+# mounted onto pods via SecretProviderClass.
+
+vars:
+  # List of control plane SP names for iteration
+  CP_SP_NAMES:
+    - '{{.AZURE_DISK_SP_NAME}}'
+    - '{{.AZURE_FILE_SP_NAME}}'
+    - '{{.CLOUD_PROVIDER_SP_NAME}}'
+    - '{{.CONTROL_PLANE_SP_NAME}}'
+    - '{{.IMAGE_REGISTRY_SP_NAME}}'
+    - '{{.INGRESS_SP_NAME}}'
+    - '{{.CNCC_SP_NAME}}'
+    - '{{.NODEPOOL_MGMT_SP_NAME}}'
+    - '{{.VELERO_SP_NAME}}'
+
+tasks:
+  # === KEY VAULT CREATION ===
+
+  create:
+    status:
+      - az keyvault show --name {{.KV_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} 2>/dev/null
+    vars:
+      # Get the SP's object ID from the clientId in azure-credentials.json
+      SP_CLIENT_ID:
+        sh: 'jq -r ".clientId // empty" {{.AZURE_CREDS}}'
+      SP_OBJECT_ID:
+        sh: 'az ad sp show --id $(jq -r ".clientId" {{.AZURE_CREDS}}) --query id -o tsv'
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Creating Key Vault"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - az keyvault create --name {{.KV_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --location {{.PERSISTENT_RG_LOCATION}} --enable-rbac-authorization
+      - |
+        az role assignment create \
+          --assignee {{.SP_OBJECT_ID}} \
+          --scope /subscriptions/{{.SUBSCRIPTION_ID}}/resourceGroups/{{.PERSISTENT_RG_NAME}}/providers/Microsoft.KeyVault/vaults/{{.KV_NAME}} \
+          --role "Key Vault Administrator"
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Key Vault
+          Name,{{.KV_NAME}}
+          Resource Group,{{.PERSISTENT_RG_NAME}}
+          Location,{{.PERSISTENT_RG_LOCATION}}
+          Status,✓ Created" | gum table --print --border rounded
+        silent: true
+
+  # === SERVICE PRINCIPAL CREATION ===
+
+  create-sp:
+    desc: Create a single service principal with certificate in Key Vault
+    internal: true
+    requires:
+      vars: [SP_NAME]
+    cmds:
+      - |
+        az ad sp create-for-rbac \
+          --name "{{.SP_NAME}}" \
+          --create-cert \
+          --cert "{{.SP_NAME}}" \
+          --keyvault "{{.KV_NAME}}" \
+          --query "{clientID: appId, certificateName: '{{.SP_NAME}}'}" \
+          -o json > ./creds-tmp/{{.SP_NAME}}.sp-output.json
+
+  create-sps:
+    status:
+      - test -f ./creds-tmp/{{.CLOUD_PROVIDER_SP_NAME}}.sp-output.json
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Creating Control Plane Service Principals"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - mkdir -p ./creds-tmp
+      - for: {var: CP_SP_NAMES, as: sp_name}
+        task: create-sp
+        vars:
+          SP_NAME: '{{.sp_name}}'
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Control Plane SPs
+          cloudProvider,{{.CLOUD_PROVIDER_SP_NAME}}
+          controlPlane,{{.CONTROL_PLANE_SP_NAME}}
+          disk,{{.AZURE_DISK_SP_NAME}}
+          file,{{.AZURE_FILE_SP_NAME}}
+          imageRegistry,{{.IMAGE_REGISTRY_SP_NAME}}
+          ingress,{{.INGRESS_SP_NAME}}
+          network,{{.CNCC_SP_NAME}}
+          nodePoolMgmt,{{.NODEPOOL_MGMT_SP_NAME}}
+          velero,{{.VELERO_SP_NAME}}
+          Key Vault,{{.KV_NAME}}
+          Status,✓ Created" | gum table --print --border rounded
+        silent: true
+
+  # === CREDENTIAL JSON GENERATION ===
+
+  generate-sp-json:
+    desc: Generate JSON credentials file for a single SP
+    internal: true
+    requires:
+      vars: [SP_NAME]
+    cmds:
+      - |
+        CERT_DETAILS=$(az keyvault secret show \
+          --vault-name {{.KV_NAME}} \
+          --name {{.SP_NAME}} \
+          --query "{value: value, notBefore: attributes.notBefore, expires: attributes.expires}" \
+          -o json)
+        CLIENT_SECRET=$(echo $CERT_DETAILS | jq -r '.value')
+        NOT_BEFORE=$(echo $CERT_DETAILS | jq -r '.notBefore')
+        NOT_AFTER=$(echo $CERT_DETAILS | jq -r '.expires')
+
+        SP_DETAILS=$(az ad sp list \
+          --display-name {{.SP_NAME}} \
+          --query "[0].{client_id: appId, tenant_id: appOwnerOrganizationId}" \
+          -o json)
+        CLIENT_ID=$(echo $SP_DETAILS | jq -r '.client_id')
+        TENANT_ID=$(echo $SP_DETAILS | jq -r '.tenant_id')
+
+        cat > ./creds-tmp/{{.SP_NAME}}.json <<EOF
+        {
+            "authentication_endpoint": "https://login.microsoftonline.com/",
+            "client_id": "$CLIENT_ID",
+            "client_secret": "$CLIENT_SECRET",
+            "tenant_id": "$TENANT_ID",
+            "not_before": "$NOT_BEFORE",
+            "not_after": "$NOT_AFTER"
+        }
+        EOF
+
+  generate-sp-jsons:
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Generating SP Credentials JSON"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - for: {var: CP_SP_NAMES, as: sp_name}
+        task: generate-sp-json
+        vars:
+          SP_NAME: '{{.sp_name}}'
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,SP Credentials JSON
+          cloudProvider,{{.CLOUD_PROVIDER_SP_NAME}}.json
+          controlPlane,{{.CONTROL_PLANE_SP_NAME}}.json
+          disk/file/registry/ingress,...
+          network/nodePool/velero,...
+          Location,./creds-tmp/
+          Status,✓ Generated" | gum table --print --border rounded
+        silent: true
+
+  # === VAULT STORAGE ===
+
+  store-sp-to-vault:
+    desc: Store SP credentials JSON to Key Vault
+    internal: true
+    requires:
+      vars: [SP_NAME]
+    preconditions:
+      - sh: test -f ./creds-tmp/{{.SP_NAME}}.json
+        msg: "Credentials file not found: ./creds-tmp/{{.SP_NAME}}.json"
+    cmds:
+      - az keyvault secret set --name "{{.SP_NAME}}-json" --vault-name {{.KV_NAME}} --file ./creds-tmp/{{.SP_NAME}}.json > /dev/null
+
+  store-creds:
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Storing Credentials to Key Vault"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - for: {var: CP_SP_NAMES, as: sp_name}
+        task: store-sp-to-vault
+        vars:
+          SP_NAME: '{{.sp_name}}'
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Store Credentials
+          Key Vault,{{.KV_NAME}}
+          Secrets,*-json (9 total)
+          Example,{{.CLOUD_PROVIDER_SP_NAME}}-json
+          Status,✓ Stored" | gum table --print --border rounded
+        silent: true
+
+  # === CP-OUTPUT.JSON GENERATION ===
+
+  generate-cp-json:
+    vars:
+      CLOUD_PROVIDER_CLIENT_ID:
+        sh: 'jq -r ".clientID" ./creds-tmp/{{.CLOUD_PROVIDER_SP_NAME}}.sp-output.json'
+      CPO_CLIENT_ID:
+        sh: 'jq -r ".clientID" ./creds-tmp/{{.CONTROL_PLANE_SP_NAME}}.sp-output.json'
+      DISK_CLIENT_ID:
+        sh: 'jq -r ".clientID" ./creds-tmp/{{.AZURE_DISK_SP_NAME}}.sp-output.json'
+      FILE_CLIENT_ID:
+        sh: 'jq -r ".clientID" ./creds-tmp/{{.AZURE_FILE_SP_NAME}}.sp-output.json'
+      IMAGE_REGISTRY_CLIENT_ID:
+        sh: 'jq -r ".clientID" ./creds-tmp/{{.IMAGE_REGISTRY_SP_NAME}}.sp-output.json'
+      INGRESS_CLIENT_ID:
+        sh: 'jq -r ".clientID" ./creds-tmp/{{.INGRESS_SP_NAME}}.sp-output.json'
+      NETWORK_CLIENT_ID:
+        sh: 'jq -r ".clientID" ./creds-tmp/{{.CNCC_SP_NAME}}.sp-output.json'
+      NODEPOOL_MGMT_CLIENT_ID:
+        sh: 'jq -r ".clientID" ./creds-tmp/{{.NODEPOOL_MGMT_SP_NAME}}.sp-output.json'
+      VELERO_CLIENT_ID:
+        sh: 'jq -r ".clientID" ./creds-tmp/{{.VELERO_SP_NAME}}.sp-output.json'
+      KV_TENANT_ID:
+        sh: 'az account show --query tenantId -o tsv'
+    preconditions:
+      - sh: test -d ./creds-tmp
+        msg: "creds-tmp directory not found. Run create-sps first."
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Generating Control Plane Output"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - |
+        cat > {{.CP_OUTPUT_FILE}} <<EOF
+        {
+            "cloudProvider": {
+                "certificateName": "{{.CLOUD_PROVIDER_SP_NAME}}",
+                "clientID": "{{.CLOUD_PROVIDER_CLIENT_ID}}",
+                "credentialsSecretName": "{{.CLOUD_PROVIDER_SP_NAME}}-json",
+                "objectEncoding": "utf-8"
+            },
+            "controlPlaneOperator": {
+                "certificateName": "{{.CONTROL_PLANE_SP_NAME}}",
+                "clientID": "{{.CPO_CLIENT_ID}}",
+                "credentialsSecretName": "{{.CONTROL_PLANE_SP_NAME}}-json",
+                "objectEncoding": "utf-8"
+            },
+            "disk": {
+                "certificateName": "{{.AZURE_DISK_SP_NAME}}",
+                "clientID": "{{.DISK_CLIENT_ID}}",
+                "credentialsSecretName": "{{.AZURE_DISK_SP_NAME}}-json",
+                "objectEncoding": "utf-8"
+            },
+            "file": {
+                "certificateName": "{{.AZURE_FILE_SP_NAME}}",
+                "clientID": "{{.FILE_CLIENT_ID}}",
+                "credentialsSecretName": "{{.AZURE_FILE_SP_NAME}}-json",
+                "objectEncoding": "utf-8"
+            },
+            "imageRegistry": {
+                "certificateName": "{{.IMAGE_REGISTRY_SP_NAME}}",
+                "clientID": "{{.IMAGE_REGISTRY_CLIENT_ID}}",
+                "credentialsSecretName": "{{.IMAGE_REGISTRY_SP_NAME}}-json",
+                "objectEncoding": "utf-8"
+            },
+            "ingress": {
+                "certificateName": "{{.INGRESS_SP_NAME}}",
+                "clientID": "{{.INGRESS_CLIENT_ID}}",
+                "credentialsSecretName": "{{.INGRESS_SP_NAME}}-json",
+                "objectEncoding": "utf-8"
+            },
+            "managedIdentitiesKeyVault": {
+                "name": "{{.KV_NAME}}",
+                "tenantID": "{{.KV_TENANT_ID}}"
+            },
+            "network": {
+                "certificateName": "{{.CNCC_SP_NAME}}",
+                "clientID": "{{.NETWORK_CLIENT_ID}}",
+                "credentialsSecretName": "{{.CNCC_SP_NAME}}-json",
+                "objectEncoding": "utf-8"
+            },
+            "nodePoolManagement": {
+                "certificateName": "{{.NODEPOOL_MGMT_SP_NAME}}",
+                "clientID": "{{.NODEPOOL_MGMT_CLIENT_ID}}",
+                "credentialsSecretName": "{{.NODEPOOL_MGMT_SP_NAME}}-json",
+                "objectEncoding": "utf-8"
+            },
+            "velero": {
+                "certificateName": "{{.VELERO_SP_NAME}}",
+                "clientID": "{{.VELERO_CLIENT_ID}}",
+                "credentialsSecretName": "{{.VELERO_SP_NAME}}-json",
+                "objectEncoding": "utf-8"
+            }
+        }
+        EOF
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Control Plane Output
+          File,{{.CP_OUTPUT_FILE}}
+          cloudProvider,{{.CLOUD_PROVIDER_SP_NAME}}
+          controlPlaneOperator,{{.CONTROL_PLANE_SP_NAME}}
+          disk,{{.AZURE_DISK_SP_NAME}}
+          file,{{.AZURE_FILE_SP_NAME}}
+          imageRegistry,{{.IMAGE_REGISTRY_SP_NAME}}
+          ingress,{{.INGRESS_SP_NAME}}
+          network,{{.CNCC_SP_NAME}}
+          nodePoolManagement,{{.NODEPOOL_MGMT_SP_NAME}}
+          velero,{{.VELERO_SP_NAME}}
+          keyVault,{{.KV_NAME}}
+          Status,✓ Generated" | gum table --print --border rounded
+        silent: true
+
+  # === ORCHESTRATION ===
+
+  setup:
+    status:
+      - test -f {{.CP_OUTPUT_FILE}}
+    cmds:
+      - task: create
+      - task: create-sps
+      - task: generate-sp-jsons
+      - task: store-creds
+      - task: generate-cp-json
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Key Vault Setup
+          Key Vault,{{.KV_NAME}}
+          SPs,cloudProvider controlPlane disk file imageRegistry ingress network nodePoolMgmt velero
+          Output File,{{.CP_OUTPUT_FILE}}
+          Status,✓ Complete" | gum table --print --border rounded
+        silent: true
+
+  # === CREDENTIAL ROTATION (e2e-aks pattern) ===
+
+  rotate-sp-creds:
+    desc: Rotate credentials for a single SP
+    internal: true
+    requires:
+      vars: [SP_NAME]
+    vars:
+      APP_ID:
+        sh: 'az ad sp list --display-name {{.SP_NAME}} --query "[0].appId" -o tsv'
+    cmds:
+      - mkdir -p ./creds-tmp
+      - |
+        az ad app credential reset \
+          --id {{.APP_ID}} \
+          --create-cert \
+          --display-name "{{.SP_NAME}}" \
+          -o json > ./creds-tmp/{{.SP_NAME}}.reset-output.json
+      - task: generate-sp-json
+        vars:
+          SP_NAME: '{{.SP_NAME}}'
+      - task: store-sp-to-vault
+        vars:
+          SP_NAME: '{{.SP_NAME}}'
+
+  rotate-creds:
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Rotating SP Credentials"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - for: {var: CP_SP_NAMES, as: sp_name}
+        task: rotate-sp-creds
+        vars:
+          SP_NAME: '{{.sp_name}}'
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Credential Rotation
+          Key Vault,{{.KV_NAME}}
+          SPs Rotated,cloudProvider controlPlane disk file imageRegistry ingress network nodePoolMgmt velero
+          Status,✓ Rotated" | gum table --print --border rounded
+        silent: true
+
+  # === CLEANUP ===
+
+  delete-sp:
+    desc: Delete a single service principal
+    internal: true
+    requires:
+      vars: [SP_NAME]
+    vars:
+      APP_ID:
+        sh: 'az ad sp list --display-name {{.SP_NAME}} --query "[0].appId" -o tsv 2>/dev/null || echo ""'
+    cmds:
+      - cmd: |
+          if [ -n "{{.APP_ID}}" ]; then
+            az ad app delete --id {{.APP_ID}}
+          fi
+        ignore_error: true
+
+  delete:
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Deleting Key Vault Resources"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - for: {var: CP_SP_NAMES, as: sp_name}
+        task: delete-sp
+        vars:
+          SP_NAME: '{{.sp_name}}'
+      - cmd: az keyvault delete --name {{.KV_NAME}} --resource-group {{.PERSISTENT_RG_NAME}}
+        ignore_error: true
+      - cmd: az keyvault purge --name {{.KV_NAME}}
+        ignore_error: true
+      - rm -rf ./creds-tmp
+      - rm -f {{.CP_OUTPUT_FILE}}
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Key Vault Deletion
+          Key Vault,{{.KV_NAME}}
+          SPs Deleted,cloudProvider controlPlane disk file imageRegistry ingress network nodePoolMgmt velero
+          Status,✓ Deleted" | gum table --print --border rounded
+        silent: true
+
+  cleanup-local:
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Cleaning Up Local Files"
+        silent: true
+      - rm -rf ./creds-tmp
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Local Cleanup
+          Directory,./creds-tmp
+          Status,✓ Removed" | gum table --print --border rounded
+        silent: true

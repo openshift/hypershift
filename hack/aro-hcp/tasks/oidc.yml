@@ -1,0 +1,99 @@
+version: '3'
+
+# This file handles OIDC provider setup using ccoctl
+
+tasks:
+  create-keypair:
+    status:
+      - test -f {{.SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}}
+      - test -f {{.SA_TOKEN_ISSUER_PUBLIC_KEY_PATH}}
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Creating OIDC Key Pair"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - ccoctl azure create-key-pair --output-dir .
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,OIDC Key Pair
+          Public Key,{{.SA_TOKEN_ISSUER_PUBLIC_KEY_PATH}}
+          Private Key,{{.SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}}
+          Status,✓ Created" | gum table --print --border rounded
+        silent: true
+
+  create-issuer:
+    internal: true
+    preconditions:
+      - sh: test -f {{.SA_TOKEN_ISSUER_PUBLIC_KEY_PATH}}
+        msg: "Service account public key not found. Run 'task oidc:create-keypair' first."
+    status:
+      - az storage account show --name {{.OIDC_ISSUER_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} 2>/dev/null
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Creating OIDC Issuer"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - |
+        ccoctl azure create-oidc-issuer \
+          --oidc-resource-group-name {{.PERSISTENT_RG_NAME}} \
+          --tenant-id {{.TENANT_ID}} \
+          --region {{.PERSISTENT_RG_LOCATION}} \
+          --name {{.OIDC_ISSUER_NAME}} \
+          --subscription-id {{.SUBSCRIPTION_ID}} \
+          --public-key-file {{.SA_TOKEN_ISSUER_PUBLIC_KEY_PATH}}
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,OIDC Issuer
+          Name,{{.OIDC_ISSUER_NAME}}
+          URL,{{.OIDC_ISSUER_URL}}
+          Resource Group,{{.PERSISTENT_RG_NAME}}
+          Status,✓ Created" | gum table --print --border rounded
+        silent: true
+
+  create:
+    cmds:
+      - task: create-keypair
+      - task: create-issuer
+
+  show:
+    vars:
+      STORAGE_EXISTS:
+        sh: 'az storage account show --name {{.OIDC_ISSUER_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} -o none 2>/dev/null && echo "✓ Exists" || echo "✗ Not found"'
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "OIDC Issuer Information"
+        silent: true
+      - cmd: |
+          echo "Setting,Value
+          Issuer Name,{{.OIDC_ISSUER_NAME}}
+          Issuer URL,{{.OIDC_ISSUER_URL}}
+          Resource Group,{{.PERSISTENT_RG_NAME}}
+          Storage Account,{{.STORAGE_EXISTS}}" | gum table --print --border rounded
+        silent: true
+
+  delete:
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Deleting OIDC Issuer"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - cmd: |
+          ccoctl azure delete \
+            --storage-account-name {{.OIDC_ISSUER_NAME}} \
+            --region {{.PERSISTENT_RG_LOCATION}} \
+            --oidc-resource-group-name {{.PERSISTENT_RG_NAME}} \
+            --subscription-id {{.SUBSCRIPTION_ID}} \
+            --name {{.OIDC_ISSUER_NAME}}
+        ignore_error: true
+      - rm -f {{.SA_TOKEN_ISSUER_PUBLIC_KEY_PATH}} {{.SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}}
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,OIDC Issuer
+          Name,{{.OIDC_ISSUER_NAME}}
+          Status,✓ Deleted" | gum table --print --border rounded
+        silent: true
