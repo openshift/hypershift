@@ -5,7 +5,6 @@ data:
     = \n"
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: openstack-cloud-config
   namespace: hcp-namespace
   ownerReferences:

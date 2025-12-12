@@ -3,7 +3,6 @@ kind: Deployment
 metadata:
   annotations:
     hypershift.openshift.io/cluster: ""
-  creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: capi-provider
@@ -23,7 +22,6 @@ spec:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: token,tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
-      creationTimestamp: null
       labels:
         app: capi-provider-controller-manager
         control-plane: capi-provider-controller-manager

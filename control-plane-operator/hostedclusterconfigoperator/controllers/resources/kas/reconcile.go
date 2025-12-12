@@ -8,11 +8,13 @@ import (
 	"k8s.io/utils/ptr"
 )
 
+//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 func ReconcileKASEndpoints(endpoints *corev1.Endpoints, address string, port int32) {
 	if endpoints.Labels == nil {
 		endpoints.Labels = map[string]string{}
 	}
 	endpoints.Labels[discoveryv1.LabelSkipMirror] = "true"
+	//nolint:staticcheck // SA1019: corev1.EndpointSubset is intentionally used for backward compatibility
 	endpoints.Subsets = []corev1.EndpointSubset{{
 		Addresses: []corev1.EndpointAddress{{
 			IP: address,

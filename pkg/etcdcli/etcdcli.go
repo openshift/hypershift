@@ -20,7 +20,7 @@ import (
 	"go.etcd.io/etcd/client/pkg/v3/logutil"
 	"go.etcd.io/etcd/client/pkg/v3/transport"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/server/v3/etcdserver"
+	"go.etcd.io/etcd/server/v3/etcdserver/errors"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/grpclog"
@@ -168,7 +168,7 @@ func (g *etcdClientGetter) MemberPromote(ctx context.Context, member *etcdserver
 		if err != nil {
 			// Not being ready for promotion can be a common event until the learner's log
 			// catches up with the leader, so we don't emit events for failing for that case
-			if err.Error() == etcdserver.ErrLearnerNotReady.Error() {
+			if err.Error() == errors.ErrLearnerNotReady.Error() {
 				return
 			}
 			g.eventRecorder.Warningf("MemberPromote", "failed to promote learner member %s: %v", member.PeerURLs[0], err)

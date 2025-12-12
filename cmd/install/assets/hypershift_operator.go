@@ -1322,6 +1322,11 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 				Resources: []string{"verticalpodautoscalers"},
 				Verbs:     []string{rbacv1.VerbAll},
 			},
+			{
+				APIGroups: []string{"admissionregistration.k8s.io"},
+				Resources: []string{"validatingadmissionpolicies", "validatingadmissionpolicybindings"},
+				Verbs:     []string{rbacv1.VerbAll},
+			},
 		},
 	}
 	if o.EnableCVOManagementClusterMetricsAccess {

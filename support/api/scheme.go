@@ -1,7 +1,11 @@
 package api
 
 import (
+	"bytes"
+	stdjson "encoding/json"
 	"os"
+	"regexp"
+	"time"
 
 	auditlogpersistencev1alpha1 "github.com/openshift/hypershift/api/auditlogpersistence/v1alpha1"
 	certificatesv1alpha1 "github.com/openshift/hypershift/api/certificates/v1alpha1"
@@ -152,4 +156,78 @@ func init() {
 		)
 		_ = hyperkarpenterv1.AddToScheme(scheme)
 	}
+}
+
+// prepareCreationTimestamp ensures CreationTimestamp is set to zero time for consistent serialization.
+// This matches the old OpenShift API behavior where creationTimestamp: null was included.
+func prepareCreationTimestamp(obj runtime.Object) {
+	if metaObj, ok := obj.(metav1.Object); ok {
+		creationTimestamp := metaObj.GetCreationTimestamp()
+		if creationTimestamp.IsZero() {
+			// Use Unix epoch time to force serialization of creationTimestamp field
+			metaObj.SetCreationTimestamp(metav1.NewTime(time.Unix(0, 0)))
+		}
+	}
+}
+
+var (
+	// yamlCreationTimestampRegex matches creationTimestamp field in YAML format
+	// Matches: "creationTimestamp: "1970-01-01T00:00:00Z"" with optional whitespace
+	// Uses word boundary to ensure we match the actual field name, not a substring
+	yamlCreationTimestampRegex = regexp.MustCompile(`(?m)^(\s*)creationTimestamp:\s+"1970-01-01T00:00:00Z"(\s*)$`)
+
+	// jsonCreationTimestampRegex matches creationTimestamp field in JSON format
+	// Matches: "creationTimestamp":"1970-01-01T00:00:00Z" with optional whitespace around colon
+	// Uses word boundary to ensure we match the actual field name, not a substring
+	jsonCreationTimestampRegex = regexp.MustCompile(`"creationTimestamp"\s*:\s*"1970-01-01T00:00:00Z"`)
+)
+
+// replaceCreationTimestamp replaces Unix epoch timestamp with null to match old OpenShift API behavior.
+// Uses regex to ensure we only replace the actual metadata creationTimestamp field,
+// not occurrences of the epoch timestamp in other fields (e.g., annotations, labels, data).
+func replaceCreationTimestamp(data []byte, isYAML bool) []byte {
+	if isYAML {
+		// Replace with preserved indentation and line ending
+		result := yamlCreationTimestampRegex.ReplaceAllFunc(data, func(match []byte) []byte {
+			// Extract indentation from the match
+			submatches := yamlCreationTimestampRegex.FindSubmatch(match)
+			if len(submatches) >= 3 {
+				indent := submatches[1]
+				lineEnd := submatches[2]
+				return append(append(indent, []byte("creationTimestamp: null")...), lineEnd...)
+			}
+			return []byte("creationTimestamp: null")
+		})
+		return result
+	}
+	// For JSON, replace with preserved whitespace around colon
+	result := jsonCreationTimestampRegex.ReplaceAll(data, []byte(`"creationTimestamp":null`))
+	return result
+}
+
+// CompatibleYAMLEncode encodes an object using the provided serializer with consistent creationTimestamp handling.
+func CompatibleYAMLEncode(obj runtime.Object, ser *json.Serializer) ([]byte, error) {
+	prepareCreationTimestamp(obj)
+
+	buff := bytes.Buffer{}
+	if err := ser.Encode(obj, &buff); err != nil {
+		return nil, err
+	}
+
+	result := buff.Bytes()
+	return replaceCreationTimestamp(result, true), nil
+}
+
+// CompatibleJSONEncode encodes an object to JSON with consistent creationTimestamp handling.
+func CompatibleJSONEncode(obj runtime.Object) ([]byte, error) {
+	prepareCreationTimestamp(obj)
+
+	buff := bytes.Buffer{}
+	enc := stdjson.NewEncoder(&buff)
+	if err := enc.Encode(obj); err != nil {
+		return nil, err
+	}
+
+	result := buff.Bytes()
+	return replaceCreationTimestamp(result, false), nil
 }

@@ -66,6 +66,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -308,6 +309,11 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		return fmt.Errorf("failed to construct api reading client: %w", err)
 	}
 
+	// Reconcile deprecation ValidatingAdmissionPolicy if supported
+	if err := reconcileDeprecationValidatingAdmissionPolicy(ctx, apiReadingClient, mgmtClusterCaps, log); err != nil {
+		return fmt.Errorf("failed to reconcile deprecation ValidatingAdmissionPolicy: %w", err)
+	}
+
 	// Create the registry provider for the release and image metadata providers
 	registryProvider, err := globalconfig.NewCommonRegistryProvider(ctx, mgmtClusterCaps, apiReadingClient, opts.RegistryOverrides)
 
@@ -523,11 +529,11 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			if ic.Spec.RouteSelector.MatchExpressions == nil {
 				ic.Spec.RouteSelector.MatchExpressions = []metav1.LabelSelectorRequirement{}
 			}
-			for _, requirement := range ic.Spec.RouteSelector.MatchExpressions {
+			for i, requirement := range ic.Spec.RouteSelector.MatchExpressions {
 				if requirement.Key != hyperutil.HCPRouteLabel {
 					continue
 				}
-				requirement.Operator = metav1.LabelSelectorOpDoesNotExist
+				ic.Spec.RouteSelector.MatchExpressions[i].Operator = metav1.LabelSelectorOpDoesNotExist
 				return nil
 			}
 			ic.Spec.RouteSelector.MatchExpressions = append(ic.Spec.RouteSelector.MatchExpressions, metav1.LabelSelectorRequirement{
@@ -586,4 +592,72 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	// Start the controllers
 	log.Info("starting manager")
 	return mgr.Start(ctx)
+}
+
+// reconcileDeprecationValidatingAdmissionPolicy reconciles the deprecation ValidatingAdmissionPolicy
+// if the management cluster supports ValidatingAdmissionPolicy.
+func reconcileDeprecationValidatingAdmissionPolicy(ctx context.Context, client crclient.Client, mgmtClusterCaps *capabilities.ManagementClusterCapabilities, log logr.Logger) error {
+	// Check if ValidatingAdmissionPolicy is supported
+	if !mgmtClusterCaps.Has(capabilities.CapabilityValidatingAdmissionPolicy) {
+		log.Info("ValidatingAdmissionPolicy not supported, skipping deprecation policy reconciliation")
+		return nil
+	}
+
+	log.Info("Reconciling deprecation ValidatingAdmissionPolicy")
+
+	// Reconcile ValidatingAdmissionPolicy
+	deprecationPolicy := &admissionregistrationv1.ValidatingAdmissionPolicy{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hypershift.openshift.io-deprecation-policy",
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, client, deprecationPolicy, func() error {
+		deprecationPolicy.Spec.FailurePolicy = ptr.To(admissionregistrationv1.Ignore)
+		if deprecationPolicy.Spec.MatchConstraints == nil {
+			deprecationPolicy.Spec.MatchConstraints = &admissionregistrationv1.MatchResources{}
+		}
+		deprecationPolicy.Spec.MatchConstraints.ResourceRules = []admissionregistrationv1.NamedRuleWithOperations{
+			{
+				RuleWithOperations: admissionregistrationv1.RuleWithOperations{
+					Operations: []admissionregistrationv1.OperationType{
+						admissionregistrationv1.Create,
+						admissionregistrationv1.Update,
+					},
+					Rule: admissionregistrationv1.Rule{
+						APIGroups:   []string{"hypershift.openshift.io"},
+						APIVersions: []string{"v1beta1"},
+						Resources:   []string{"hostedclusters"},
+					},
+				},
+			},
+		}
+		deprecationPolicy.Spec.Validations = []admissionregistrationv1.Validation{
+			{
+				Expression: "!(has(object.spec.configuration) && has(object.spec.configuration.scheduler) && has(object.spec.configuration.scheduler.profileCustomizations) && has(object.spec.configuration.scheduler.profileCustomizations.dynamicResourceAllocation))",
+				Message:    "The field spec.configuration.scheduler.profileCustomizations.dynamicResourceAllocation is deprecated and has no effect",
+			},
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ValidatingAdmissionPolicy: %w", err)
+	}
+
+	// Reconcile ValidatingAdmissionPolicyBinding
+	deprecationPolicyBinding := &admissionregistrationv1.ValidatingAdmissionPolicyBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: deprecationPolicy.Name,
+		},
+	}
+	if _, err := controllerutil.CreateOrUpdate(ctx, client, deprecationPolicyBinding, func() error {
+		deprecationPolicyBinding.Spec.PolicyName = deprecationPolicy.Name
+		deprecationPolicyBinding.Spec.ValidationActions = []admissionregistrationv1.ValidationAction{
+			admissionregistrationv1.Warn,
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile ValidatingAdmissionPolicyBinding: %w", err)
+	}
+
+	log.Info("Successfully reconciled deprecation ValidatingAdmissionPolicy")
+	return nil
 }

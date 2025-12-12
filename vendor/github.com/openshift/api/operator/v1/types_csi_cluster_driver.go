@@ -81,7 +81,6 @@ const (
 	CinderCSIDriver          CSIDriverName = "cinder.csi.openstack.org"
 	VSphereCSIDriver         CSIDriverName = "csi.vsphere.vmware.com"
 	ManilaCSIDriver          CSIDriverName = "manila.csi.openstack.org"
-	OvirtCSIDriver           CSIDriverName = "csi.ovirt.org"
 	KubevirtCSIDriver        CSIDriverName = "csi.kubevirt.io"
 	SharedResourcesCSIDriver CSIDriverName = "csi.sharedresource.openshift.io"
 	AlibabaDiskCSIDriver     CSIDriverName = "diskplugin.csi.alibabacloud.com"
@@ -169,7 +168,6 @@ type AWSCSIDriverConfigSpec struct {
 	KMSKeyARN string `json:"kmsKeyARN,omitempty"`
 
 	// efsVolumeMetrics sets the configuration for collecting metrics from EFS volumes used by the EFS CSI Driver.
-	// +openshift:enable:FeatureGate=AWSEFSDriverVolumeMetrics
 	// +optional
 	EFSVolumeMetrics *AWSEFSVolumeMetrics `json:"efsVolumeMetrics,omitempty"`
 }

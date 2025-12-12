@@ -1,7 +1,6 @@
 apiVersion: hypershift.openshift.io/v1beta1
 kind: ControlPlaneComponent
 metadata:
-  creationTimestamp: null
   name: csi-snapshot-controller-operator
   namespace: hcp-namespace
   resourceVersion: "1"

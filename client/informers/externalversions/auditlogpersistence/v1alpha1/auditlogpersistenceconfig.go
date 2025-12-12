@@ -60,13 +60,25 @@ func NewFilteredAuditLogPersistenceConfigInformer(client clientset.Interface, re
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.AuditlogpersistenceV1alpha1().AuditLogPersistenceConfigs().List(context.TODO(), options)
+				return client.AuditlogpersistenceV1alpha1().AuditLogPersistenceConfigs().List(context.Background(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.AuditlogpersistenceV1alpha1().AuditLogPersistenceConfigs().Watch(context.TODO(), options)
+				return client.AuditlogpersistenceV1alpha1().AuditLogPersistenceConfigs().Watch(context.Background(), options)
+			},
+			ListWithContextFunc: func(ctx context.Context, options v1.ListOptions) (runtime.Object, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.AuditlogpersistenceV1alpha1().AuditLogPersistenceConfigs().List(ctx, options)
+			},
+			WatchFuncWithContext: func(ctx context.Context, options v1.ListOptions) (watch.Interface, error) {
+				if tweakListOptions != nil {
+					tweakListOptions(&options)
+				}
+				return client.AuditlogpersistenceV1alpha1().AuditLogPersistenceConfigs().Watch(ctx, options)
 			},
 		},
 		&apiauditlogpersistencev1alpha1.AuditLogPersistenceConfig{},

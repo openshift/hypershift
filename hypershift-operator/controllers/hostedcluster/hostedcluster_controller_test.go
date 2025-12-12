@@ -1629,6 +1629,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "ibm"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubevirt"}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openstack"}},
+		//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 		&corev1.Endpoints{ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"}},
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: "kubevirt" + etcdEncKeyPostfix, Namespace: "test"},
