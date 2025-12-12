@@ -1,0 +1,48 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: oadp-recovery
+  namespace: openshift-adp
+spec:
+  schedule: "*/5 * * * *"  # Every 5 minutes
+  concurrencyPolicy: Forbid  # Prevent overlapping executions
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: oadp-recovery
+        spec:
+          containers:
+          - name: oadp-recovery
+            image: quay.io/jparrill/oadp-recovery:latest
+            command: ["/usr/bin/oadp-recovery", "run"]
+            env:
+            - name: OADP_NAMESPACE
+              value: "openshift-adp"
+            - name: DRY_RUN
+              value: "false"
+            - name: LOG_LEVEL
+              value: "debug"
+            resources:
+              requests:
+                cpu: "10m"
+                memory: "64Mi"
+              limits:
+                cpu: "100m"
+                memory: "128Mi"
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              seccompProfile:
+                type: RuntimeDefault
+          restartPolicy: OnFailure
+          serviceAccountName: oadp-recovery
+          securityContext:
+            runAsNonRoot: true
