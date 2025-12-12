@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oadp-recovery
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: oadp-recovery
+subjects:
+- kind: ServiceAccount
+  name: oadp-recovery
+  namespace: openshift-adp
