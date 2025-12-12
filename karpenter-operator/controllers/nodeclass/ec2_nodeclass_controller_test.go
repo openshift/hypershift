@@ -143,7 +143,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				Spec: tc.spec,
 			}
 			ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
-			err := reconcileEC2NodeClass(ec2NodeClass, openshiftEC2NodeClass, hcp, userDataSecret)
+			instanceProfile := "test-infra-worker-profile"
+			err := reconcileEC2NodeClass(ec2NodeClass, openshiftEC2NodeClass, hcp, userDataSecret, instanceProfile)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// Verify basic fields, those fields should be the same regardless of OpenshiftEC2NodeClass spec.
@@ -154,6 +155,7 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 					ID: "ami-123",
 				},
 			}
+			tc.expectedSpec.InstanceProfile = ptr.To(instanceProfile)
 
 			g.Expect(ec2NodeClass.Spec).To(Equal(tc.expectedSpec))
 		})

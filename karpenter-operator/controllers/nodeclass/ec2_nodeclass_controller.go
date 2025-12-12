@@ -162,8 +162,11 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
+	// Use the default instance profile created by IAM (matches cmd/infra/aws/iam.go:DefaultProfileName)
+	instanceProfile := fmt.Sprintf("%s-worker", hcp.Spec.InfraID)
+
 	if _, err := r.CreateOrUpdate(ctx, r.guestClient, ec2NodeClass, func() error {
-		return reconcileEC2NodeClass(ec2NodeClass, openshiftEC2NodeClass, hcp, userDataSecret)
+		return reconcileEC2NodeClass(ec2NodeClass, openshiftEC2NodeClass, hcp, userDataSecret, instanceProfile)
 	}); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -214,7 +217,7 @@ func (r *EC2NodeClassReconciler) reconcileCRDs(ctx context.Context, onlyCreate b
 	return nil
 }
 
-func reconcileEC2NodeClass(ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, hcp *hyperv1.HostedControlPlane, userDataSecret *corev1.Secret) error {
+func reconcileEC2NodeClass(ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, hcp *hyperv1.HostedControlPlane, userDataSecret *corev1.Secret, instanceProfile string) error {
 	ownerRef := config.OwnerRefFrom(openshiftEC2NodeClass)
 	ownerRef.ApplyTo(ec2NodeClass)
 
@@ -231,6 +234,7 @@ func reconcileEC2NodeClass(ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftE
 		DetailedMonitoring:       openshiftEC2NodeClass.Spec.DetailedMonitoring,
 		BlockDeviceMappings:      openshiftEC2NodeClass.Spec.KarpenterBlockDeviceMapping(),
 		InstanceStorePolicy:      openshiftEC2NodeClass.Spec.KarpenterInstanceStorePolicy(),
+		InstanceProfile:          ptr.To(instanceProfile),
 	}
 
 	var subnetSelectorTerms []awskarpenterv1.SubnetSelectorTerm
