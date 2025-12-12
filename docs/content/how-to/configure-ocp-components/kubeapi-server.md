@@ -58,6 +58,11 @@ spec:
 - `names`: List of DNS names that the certificate should be valid for.
 - `servingCertificate.name`: Name of the secret containing the custom certificate
 
+Note: In HyperShift, the `namedCertificates` configuration applies to both the Kubernetes API Server (KAS) and the OAuth server. Both components read from
+"APIServer.ServingCerts.NamedCertificates". Any certificate whose hostname matches the OAuth endpoint will automatically be served by the managed OAuth server.
+
+This differs from standalone OpenShift, where OAuth serving certificates are provisioned separately using the Ingress Operator’s `componentRoutes` mechanism.
+
 ## Prerequisites
 
 Before configuring a custom certificate:
