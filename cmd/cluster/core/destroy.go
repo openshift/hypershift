@@ -56,7 +56,6 @@ type AWSPlatformDestroyOptions struct {
 	AwsInfraGracePeriod          time.Duration
 	VPCOwnerCredentials          awsutil.AWSCredentialsOptions
 	PrivateZonesInClusterAccount bool
-	SharedRole                   bool
 }
 
 type AzurePlatformDestroyOptions struct {
