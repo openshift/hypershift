@@ -11,13 +11,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	karpentercpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
 	karpenteroperatorcpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -119,6 +121,15 @@ func TestKarpenter(t *testing.T) {
 			// validate admin cannot delete EC2NodeClass directly
 			ec2NodeClass := ec2NodeClassList.Items[0]
 			g.Expect(guestClient.Delete(ctx, &ec2NodeClass)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
+
+			// validate that default instanceProfile got applied so users can e.g. access the ECR
+			// TODO(jkyros): Adjust this if/when we allow this to be custom/user-configurable
+			t.Log("Validating EC2NodeClass has instance profile set")
+			g.Expect(ec2NodeClass.Spec.InstanceProfile).NotTo(BeNil(), "EC2NodeClass should have InstanceProfile set")
+			expectedProfile := fmt.Sprintf("%s-worker", hostedCluster.Spec.InfraID)
+			g.Expect(*ec2NodeClass.Spec.InstanceProfile).To(Equal(expectedProfile),
+				"EC2NodeClass InstanceProfile should match expected default")
+			t.Logf("EC2NodeClass has correct instance profile: %s", *ec2NodeClass.Spec.InstanceProfile)
 
 			// TODO(alberto): increase coverage:
 			// - Karpenter operator plumbing, e.g:
@@ -246,7 +257,48 @@ func TestKarpenter(t *testing.T) {
 			g.Expect(guestClient.Create(ctx, workLoads)).To(Succeed())
 			t.Logf("Created workloads")
 
-			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), nodeLabels)
+			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), nodeLabels)
+
+			// verify that attaching the default instance profile to the ec2nodeclass resulted
+			// in the node actually receiving it
+			// TODO(jkyros): Adjust this if/when we allow this to be custom/user-configurable
+			t.Log("Verifying Karpenter nodes have IAM instance profile attached")
+			expectedProfile := fmt.Sprintf("%s-worker", hostedCluster.Spec.InfraID)
+			for _, node := range nodes {
+				// Get instance ID from node's providerID (format: aws:///us-east-1a/i-0123456789abcdef)
+				if node.Spec.ProviderID == "" {
+					t.Logf("Node %s has no providerID, skipping IAM profile check", node.Name)
+					continue
+				}
+				instanceID := node.Spec.ProviderID[strings.LastIndex(node.Spec.ProviderID, "/")+1:]
+
+				// Query AWS EC2 API to verify instance has IAM instance profile
+				awsCreds := globalOpts.ConfigurableClusterOptions.AWSCredentialsFile
+				awsRegion := globalOpts.ConfigurableClusterOptions.Region
+				awsSession := awsutil.NewSession("e2e-ec2", awsCreds, "", "", awsRegion)
+				awsConfig := awsutil.NewConfig()
+				ec2Client := ec2.New(awsSession, awsConfig)
+
+				describeOutput, err := ec2Client.DescribeInstances(&ec2.DescribeInstancesInput{
+					InstanceIds: []*string{aws.String(instanceID)},
+				})
+				g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance %s", instanceID)
+				g.Expect(describeOutput.Reservations).To(HaveLen(1))
+				g.Expect(describeOutput.Reservations[0].Instances).To(HaveLen(1))
+
+				instance := describeOutput.Reservations[0].Instances[0]
+				g.Expect(instance.IamInstanceProfile).NotTo(BeNil(), "instance %s should have IAM instance profile", instanceID)
+
+				// The profile ARN has format: arn:aws:iam::123456789:instance-profile/profile-name
+				// We want to verify it contains the expected profile name
+				profileARN := aws.StringValue(instance.IamInstanceProfile.Arn)
+				g.Expect(profileARN).To(ContainSubstring(expectedProfile),
+					"instance %s IAM profile ARN %s should contain expected profile name %s",
+					instanceID, profileARN, expectedProfile)
+
+				t.Logf("Verified node %s (instance %s) has IAM instance profile: %s",
+					node.Name, instanceID, profileARN)
+			}
 		})
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "karpenter", globalOpts.ServiceAccountSigningKey)
 }
