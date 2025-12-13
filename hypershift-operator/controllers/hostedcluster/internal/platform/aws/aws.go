@@ -39,6 +39,18 @@ region = %s
 `
 )
 
+// CredentialStatus represents the status of AWS credentials
+type CredentialStatus int
+
+const (
+	// CredentialStatusValid indicates that AWS credentials are valid
+	CredentialStatusValid CredentialStatus = 0
+	// CredentialStatusInvalid indicates that AWS credentials are invalid
+	CredentialStatusInvalid CredentialStatus = 1
+	// CredentialStatusUnknown indicates that AWS credential status is unknown
+	CredentialStatusUnknown CredentialStatus = 2
+)
+
 func New(utilitiesImage string, capiProviderImage string, payloadVersion *semver.Version) *AWS {
 	return &AWS{
 		utilitiesImage:    utilitiesImage,
@@ -332,20 +344,41 @@ func (AWS) ReconcileSecretEncryption(ctx context.Context, c client.Client, creat
 	return nil
 }
 
-func ValidCredentials(hc *hyperv1.HostedCluster) bool {
+// GetCredentialStatus returns the AWS credential status (valid/invalid/unknown)
+func GetCredentialStatus(hc *hyperv1.HostedCluster) CredentialStatus {
+	// Get OIDC configuration status
+	var oidcStatus metav1.ConditionStatus
 	oidcConfigValid := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidOIDCConfiguration))
-	if oidcConfigValid != nil && oidcConfigValid.Status == metav1.ConditionFalse {
-		return false
+	if oidcConfigValid == nil {
+		oidcStatus = metav1.ConditionUnknown
+	} else {
+		oidcStatus = oidcConfigValid.Status
 	}
+
+	// Get AWS Identity Provider status
+	var awsIdentityStatus metav1.ConditionStatus
 	validIdentityProvider := meta.FindStatusCondition(hc.Status.Conditions, string(hyperv1.ValidAWSIdentityProvider))
-	if validIdentityProvider != nil && validIdentityProvider.Status != metav1.ConditionTrue {
-		return false
+	if validIdentityProvider == nil {
+		awsIdentityStatus = metav1.ConditionUnknown
+	} else {
+		awsIdentityStatus = validIdentityProvider.Status
 	}
-	return true
+
+	// Combine the results:
+	// - If either is explicitly False → Invalid
+	// - If both are True → Valid
+	// - Otherwise → Unknown
+	if oidcStatus == metav1.ConditionFalse || awsIdentityStatus == metav1.ConditionFalse {
+		return CredentialStatusInvalid
+	}
+	if oidcStatus == metav1.ConditionTrue && awsIdentityStatus == metav1.ConditionTrue {
+		return CredentialStatusValid
+	}
+	return CredentialStatusUnknown
 }
 
 func (AWS) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
-	if ValidCredentials(hc) {
+	if GetCredentialStatus(hc) == CredentialStatusValid {
 		return nil
 	}
 	awsMachineList := capiaws.AWSMachineList{}
