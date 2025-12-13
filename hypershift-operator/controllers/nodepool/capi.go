@@ -391,12 +391,11 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 	machineDeployment.Spec.MinReadySeconds = ptr.To[int32](0)
 
 	machineDeployment.Spec.ClusterName = capiClusterName
-	if machineDeployment.Spec.Selector.MatchLabels == nil {
-		machineDeployment.Spec.Selector.MatchLabels = map[string]string{}
-	}
-	machineDeployment.Spec.Selector.MatchLabels[capiv1.ClusterNameLabel] = capiClusterName
 	resourcesName := generateName(capiClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
-	machineDeployment.Spec.Selector.MatchLabels[resourcesName] = resourcesName
+	machineDeployment.Spec.Selector.MatchLabels = map[string]string{
+		capiv1.ClusterNameLabel: capiClusterName,
+		resourcesName:           resourcesName,
+	}
 
 	gvk, err := apiutil.GVKForObject(machineTemplateCR, api.Scheme)
 	if err != nil {
@@ -827,10 +826,10 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 
 	// Set selector and template
 	machineSet.Spec.ClusterName = capiClusterName
-	if machineSet.Spec.Selector.MatchLabels == nil {
-		machineSet.Spec.Selector.MatchLabels = map[string]string{}
+	machineSet.Spec.Selector.MatchLabels = map[string]string{
+		capiv1.ClusterNameLabel: capiClusterName,
+		resourcesName:           resourcesName,
 	}
-	machineSet.Spec.Selector.MatchLabels[resourcesName] = resourcesName
 	machineSet.Spec.Template = capiv1.MachineTemplateSpec{
 		ObjectMeta: capiv1.ObjectMeta{
 			Labels: map[string]string{
