@@ -40,6 +40,13 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			c.Args = append(c.Args, fmt.Sprintf("--cloud-provider=%s", "external"))
 		}
 
+		// Enable node CIDR allocation if `.Spec.Networking.AllocateNodeCIDRs` is "Enabled"
+		if hcp.Spec.Networking.AllocateNodeCIDRs != nil && *hcp.Spec.Networking.AllocateNodeCIDRs == hyperv1.AllocateNodeCIDRsEnabled {
+			c.Args = append(c.Args, "--allocate-node-cidrs=true")
+		} else {
+			c.Args = append(c.Args, "--allocate-node-cidrs=false")
+		}
+
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 			c.Args = append(c.Args, "--node-monitor-grace-period=55s")
 		} else {
