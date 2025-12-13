@@ -1449,6 +1449,8 @@ func generateNodeTemplate(options ...nodeTemplateOption) *capikubevirt.VirtualMa
 						},
 					},
 
+					EvictionStrategy: ptr.To(kubevirtv1.EvictionStrategyExternal),
+
 					Domain: kubevirtv1.DomainSpec{
 						Devices: kubevirtv1.Devices{
 							Disks: []kubevirtv1.Disk{
