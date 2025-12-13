@@ -25,18 +25,16 @@ import (
 	"kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
-var (
-	LocalStorageVolumes = []string{
-		"private",
-		"public",
-		"sockets",
-		"virt-bin-share-dir",
-		"libvirt-runtime",
-		"ephemeral-disks",
-		"container-disks",
-		"hotplug-disks",
-	}
-)
+var LocalStorageVolumes = []string{
+	"private",
+	"public",
+	"sockets",
+	"virt-bin-share-dir",
+	"libvirt-runtime",
+	"ephemeral-disks",
+	"container-disks",
+	"hotplug-disks",
+}
 
 func defaultImage(nodePoolArch string, releaseImage *releaseinfo.ReleaseImage) (string, string, error) {
 	var archName string
@@ -169,11 +167,6 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 		Spec: kubevirtv1.VirtualMachineSpec{
 			RunStrategy: ptr.To(kubevirtv1.RunStrategyAlways),
 			Template: &kubevirtv1.VirtualMachineInstanceTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
-						"kubevirt.io/allow-pod-bridge-network-live-migration": "",
-					},
-				},
 				Spec: kubevirtv1.VirtualMachineInstanceSpec{
 					Domain: kubevirtv1.DomainSpec{
 						Devices: kubevirtv1.Devices{
@@ -184,6 +177,12 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 				},
 			},
 		},
+	}
+
+	if shouldAttachDefaultNetwork(kvPlatform) {
+		template.Spec.Template.ObjectMeta.Annotations = map[string]string{
+			"kubevirt.io/allow-pod-bridge-network-live-migration": "",
+		}
 	}
 
 	if guaranteedResources {
@@ -289,7 +288,6 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 				hostDevices = append(hostDevices, kvHostDevice)
 				deviceCounter++
 			}
-
 		}
 		template.Spec.Template.Spec.Domain.Devices.HostDevices = hostDevices
 	}
@@ -344,6 +342,7 @@ func virtualMachineNetworks(kvPlatform *hyperv1.KubevirtNodePoolPlatform) []kube
 	}
 	return networks
 }
+
 func shouldAttachDefaultNetwork(kvPlatform *hyperv1.KubevirtNodePoolPlatform) bool {
 	return kvPlatform.AttachDefaultNetwork == nil || *kvPlatform.AttachDefaultNetwork
 }
