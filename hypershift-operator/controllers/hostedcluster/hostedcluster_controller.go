@@ -1213,7 +1213,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err := pauseHostedControlPlane(ctx, r.Client, hcp, hcluster.Spec.PausedUntil); err != nil {
 			return ctrl.Result{}, err
 		}
-		if err := pauseCAPICluster(ctx, r.Client, hcp); err != nil {
+		if err := pauseCAPICluster(ctx, r.Client, hcluster, true); err != nil {
 			return ctrl.Result{}, err
 		}
 		log.Info("Reconciliation paused", "name", req.NamespacedName, "pausedUntil", *hcluster.Spec.PausedUntil)
@@ -2823,12 +2823,13 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	return nil
 }
 
-func pauseCAPICluster(ctx context.Context, c client.Client, hcp *hyperv1.HostedControlPlane) error {
-	if hcp == nil {
+func pauseCAPICluster(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, paused bool) error {
+	if hc == nil {
 		return nil
 	}
 
-	capiCluster := controlplaneoperator.CAPICluster(hcp.Namespace, hcp.Spec.InfraID)
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+	capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace, hc.Spec.InfraID)
 	err := c.Get(ctx, client.ObjectKeyFromObject(capiCluster), capiCluster)
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -2837,8 +2838,8 @@ func pauseCAPICluster(ctx context.Context, c client.Client, hcp *hyperv1.HostedC
 		return nil
 	}
 
-	if !capiCluster.Spec.Paused {
-		capiCluster.Spec.Paused = true
+	if capiCluster.Spec.Paused != paused {
+		capiCluster.Spec.Paused = paused
 		if err := c.Update(ctx, capiCluster); err != nil {
 			return fmt.Errorf("failed to update CAPI Cluster: %w", err)
 		}
@@ -3166,6 +3167,11 @@ func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNa
 func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.HostedCluster) (bool, error) {
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
 	log := ctrl.LoggerFrom(ctx)
+
+	// Unpause CAPI cluster to allow deletion to proceed
+	if err := pauseCAPICluster(ctx, r.Client, hc, false); err != nil {
+		return false, err
+	}
 
 	// ensure that the cleanup annotation has been propagated to the hcp if it is set
 	if hc.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true" {
