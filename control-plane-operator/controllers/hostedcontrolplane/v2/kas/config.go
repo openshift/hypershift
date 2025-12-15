@@ -117,7 +117,7 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 									Kind:       "PodSecurityConfiguration",
 								},
 								Defaults: podsecurityadmissionv1.PodSecurityDefaults{
-									Enforce:        "restricted",
+									Enforce:        "privileged",
 									EnforceVersion: "latest",
 									Audit:          "restricted",
 									AuditVersion:   "latest",
