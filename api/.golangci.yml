@@ -25,6 +25,7 @@ linters:
               - nobools
               - nomaps
               - statussubresource
+              - arrayofstruct
           lintersConfig:
             conditions:
               isFirstField: Warn
@@ -123,6 +124,7 @@ linters:
       # marking API issues for future review. Each should be evaluated
       # to determine if it should be fixed or permanently excepted.
 
+      # Exclusion for api backward compatibility
       # arrayofstruct (4 issues)
       - linters:
           - kubeapilinter
@@ -141,6 +143,7 @@ linters:
         path: hypershift/v1beta1/openstack.go
         text: 'arrayofstruct: OpenStackPlatformSpec.Subnets is an array of structs, but the struct has no required fields. At least one field should be marked as required to prevent ambiguous YAML configurations'
 
+      # See the docs for NodePoolCondition 
       # conditions (1 issue)
       - linters:
           - kubeapilinter
