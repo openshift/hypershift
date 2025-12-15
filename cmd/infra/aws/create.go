@@ -14,13 +14,14 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	stsv2 "github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/ram"
 	"github.com/aws/aws-sdk-go/service/route53"
-	"github.com/aws/aws-sdk-go/service/sts"
 
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
@@ -202,9 +203,18 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	if err != nil {
 		return nil, err
 	}
+	awsSessionv2, err := o.AWSCredentialsOpts.GetSessionV2(ctx, "cli-create-infra", o.CredentialsSecretData, o.Region)
+	if err != nil {
+		return nil, err
+	}
 	var vpcOwnerAWSSession *session.Session
+	var vpcOwnerSessionv2 *awsv2.Config
 	if o.VPCOwnerCredentialOpts.AWSCredentialsFile != "" {
 		vpcOwnerAWSSession, err = o.VPCOwnerCredentialOpts.GetSession("cli-create-infra", nil, o.Region)
+		if err != nil {
+			return nil, err
+		}
+		vpcOwnerSessionv2, err = o.VPCOwnerCredentialOpts.GetSessionV2(ctx, "cli-create-infra", nil, o.Region)
 		if err != nil {
 			return nil, err
 		}
@@ -330,7 +340,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	}
 
 	if vpcOwnerAWSSession != nil {
-		if err := o.shareSubnets(ctx, l, vpcOwnerAWSSession, awsSession, publicSubnetIDs, result); err != nil {
+		if err := o.shareSubnets(ctx, l, vpcOwnerAWSSession, awsSession, vpcOwnerSessionv2, awsSessionv2, publicSubnetIDs, result); err != nil {
 			return nil, err
 		}
 	}
@@ -555,23 +565,29 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger,
 	return &result, nil
 }
 
-func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vpcOwnerSession, clusterSession *session.Session, publicSubnetIDs []string, output *CreateInfraOutput) error {
-	// Obtain account IDs for both accounts
-	clusterSTSClient := sts.New(clusterSession, awsutil.NewConfig())
+func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vpcOwnerSession, clusterSession *session.Session, vpcOwnerSessionv2, clusterSessionv2 *awsv2.Config, publicSubnetIDs []string, output *CreateInfraOutput) error {
+	// Obtain account IDs for both accounts using v2 STS
+	clusterSTSClient := stsv2.NewFromConfig(*clusterSessionv2, func(o *stsv2.Options) {
+		o.Retryer = awsutil.NewConfigV2()()
+	})
+	vpcOwnerSTSClient := stsv2.NewFromConfig(*vpcOwnerSessionv2, func(o *stsv2.Options) {
+		o.Retryer = awsutil.NewConfigV2()()
+	})
+
+	// Create v1 EC2 clients (EC2 not yet migrated)
 	clusterEC2Client := ec2.New(clusterSession, awsutil.NewConfig())
-	vpcOwnerSTSClient := sts.New(vpcOwnerSession, awsutil.NewConfig())
 	vpcOwnerEC2Client := ec2.New(vpcOwnerSession, awsutil.NewConfig())
 
-	clusterAccountID, err := clusterSTSClient.GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+	clusterAccountID, err := clusterSTSClient.GetCallerIdentity(ctx, &stsv2.GetCallerIdentityInput{})
 	if err != nil {
 		return err
 	}
-	vpcOwnerAccountID, err := vpcOwnerSTSClient.GetCallerIdentityWithContext(ctx, &sts.GetCallerIdentityInput{})
+	vpcOwnerAccountID, err := vpcOwnerSTSClient.GetCallerIdentity(ctx, &stsv2.GetCallerIdentityInput{})
 	if err != nil {
 		return err
 	}
-	output.VPCCreatorAccountID = aws.StringValue(vpcOwnerAccountID.Account)
-	output.ClusterAccountID = aws.StringValue(clusterAccountID.Account)
+	output.VPCCreatorAccountID = awsv2.ToString(vpcOwnerAccountID.Account)
+	output.ClusterAccountID = awsv2.ToString(clusterAccountID.Account)
 
 	privateSubnetIDsToShare := make([]*string, 0, len(output.Zones))
 	publicSubnetIDsToShare := make([]*string, 0, len(publicSubnetIDs))
