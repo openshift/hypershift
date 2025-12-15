@@ -408,6 +408,12 @@ const (
 	// WARNING: This option is for development and testing purposes only
 	AWSMachinePublicIPs = "hypershift.openshift.io/aws-machine-public-ips"
 
+	// AWSKarpenterDefaultInstanceProfile specifies the default IAM instance profile
+	// for EC2 instances created by Karpenter. This will be set directly on the
+	// EC2NodeClass. The instance profile must already exist in AWS.
+	// This is platform-controlled and bypasses OpenshiftEC2NodeClass.
+	AWSKarpenterDefaultInstanceProfile = "hypershift.openshift.io/aws-karpenter-default-instance-profile"
+
 	// HostedClusterRestoredFromBackupAnnotation is set to true when the HostedCluster is restored from a backup using Hypershift
 	// OADP plugin. This annotation is set by the Hypershift OADP plugin during the Backup/Restore process. The annotation will trigger
 	// a process to check if the different components in the DataPlane are working as expected. Checks:
