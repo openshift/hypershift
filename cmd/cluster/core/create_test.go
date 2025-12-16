@@ -418,6 +418,66 @@ func TestValidate(t *testing.T) {
 			},
 			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'Calico')",
 		},
+		{
+			name: "passes when allocate-node-cidrs is used with network-type=Other",
+			rawOpts: &RawCreateOptions{
+				Name:              "test-hc",
+				Namespace:         "test-hc",
+				PullSecretFile:    pullSecretFile,
+				Arch:              "amd64",
+				AllocateNodeCIDRs: true,
+				NetworkType:       "Other",
+			},
+			expectedErr: "",
+		},
+		{
+			name: "passes when allocate-node-cidrs is false with any network-type",
+			rawOpts: &RawCreateOptions{
+				Name:              "test-hc",
+				Namespace:         "test-hc",
+				PullSecretFile:    pullSecretFile,
+				Arch:              "amd64",
+				AllocateNodeCIDRs: false,
+				NetworkType:       "OVNKubernetes",
+			},
+			expectedErr: "",
+		},
+		{
+			name: "fails when allocate-node-cidrs is true with network-type=OVNKubernetes",
+			rawOpts: &RawCreateOptions{
+				Name:              "test-hc",
+				Namespace:         "test-hc",
+				PullSecretFile:    pullSecretFile,
+				Arch:              "amd64",
+				AllocateNodeCIDRs: true,
+				NetworkType:       "OVNKubernetes",
+			},
+			expectedErr: "allocateNodeCIDRs is only allowed when networkType is 'Other' (got 'OVNKubernetes')",
+		},
+		{
+			name: "fails when allocate-node-cidrs is true with network-type=OpenShiftSDN",
+			rawOpts: &RawCreateOptions{
+				Name:              "test-hc",
+				Namespace:         "test-hc",
+				PullSecretFile:    pullSecretFile,
+				Arch:              "amd64",
+				AllocateNodeCIDRs: true,
+				NetworkType:       "OpenShiftSDN",
+			},
+			expectedErr: "allocateNodeCIDRs is only allowed when networkType is 'Other' (got 'OpenShiftSDN')",
+		},
+		{
+			name: "fails when allocate-node-cidrs is true with network-type=Calico",
+			rawOpts: &RawCreateOptions{
+				Name:              "test-hc",
+				Namespace:         "test-hc",
+				PullSecretFile:    pullSecretFile,
+				Arch:              "amd64",
+				AllocateNodeCIDRs: true,
+				NetworkType:       "Calico",
+			},
+			expectedErr: "allocateNodeCIDRs is only allowed when networkType is 'Other' (got 'Calico')",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -494,6 +554,59 @@ func TestDisableMultiNetworkFlag(t *testing.T) {
 				}
 				// If OperatorConfiguration is nil, that's also valid since DisableMultiNetwork defaults to false
 			}
+		})
+	}
+}
+
+func TestAllocateNodeCIDRsFlag(t *testing.T) {
+	tests := []struct {
+		name                      string
+		allocateNodeCIDRs         bool
+		expectedAllocateNodeCIDRs *hyperv1.AllocateNodeCIDRsMode
+		description               string
+	}{
+		{
+			name:                      "allocate-node-cidrs flag set to true",
+			allocateNodeCIDRs:         true,
+			expectedAllocateNodeCIDRs: ptr.To(hyperv1.AllocateNodeCIDRsEnabled),
+			description:               "When --allocate-node-cidrs=true is set, AllocateNodeCIDRs should be Enabled",
+		},
+		{
+			name:                      "allocate-node-cidrs flag set to false",
+			allocateNodeCIDRs:         false,
+			expectedAllocateNodeCIDRs: nil,
+			description:               "When --allocate-node-cidrs=false is set or not provided, AllocateNodeCIDRs should be nil (defaults to Disabled in webhook).",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Create options with the test value, following the pattern from TestPrototypeResources
+			opts := &CreateOptions{
+				completedCreateOptions: &completedCreateOptions{
+					ValidatedCreateOptions: &ValidatedCreateOptions{
+						validatedCreateOptions: &validatedCreateOptions{
+							RawCreateOptions: &RawCreateOptions{
+								AllocateNodeCIDRs: tt.allocateNodeCIDRs,
+							},
+						},
+					},
+				},
+			}
+
+			// Create prototype resources using the actual function
+			resources, err := prototypeResources(context.Background(), opts)
+			g.Expect(err).To(BeNil())
+			g.Expect(resources.Cluster.Spec.Networking).ToNot(BeNil())
+			if tt.expectedAllocateNodeCIDRs == nil {
+				g.Expect(resources.Cluster.Spec.Networking.AllocateNodeCIDRs).To(BeNil(), tt.description)
+			} else {
+				g.Expect(resources.Cluster.Spec.Networking.AllocateNodeCIDRs).ToNot(BeNil(), tt.description)
+				g.Expect(*resources.Cluster.Spec.Networking.AllocateNodeCIDRs).To(Equal(*tt.expectedAllocateNodeCIDRs), tt.description)
+			}
+
 		})
 	}
 }

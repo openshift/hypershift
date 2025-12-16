@@ -23,7 +23,6 @@ spec:
         - --kubeconfig=/etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
         - --authentication-kubeconfig=/etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
         - --authorization-kubeconfig=/etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
-        - --allocate-node-cidrs=false
         - --cert-dir=/var/run/kubernetes
         - --cluster-signing-cert-file=/etc/kubernetes/certs/cluster-signer/ca.crt
         - --cluster-signing-key-file=/etc/kubernetes/certs/cluster-signer/ca.key
