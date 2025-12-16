@@ -20,17 +20,64 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 	hcp := cpContext.HCP
 	managedEtcdSpec := hcp.Spec.Etcd.Managed
 
+	// Use EffectiveShards to get normalized shard configuration
+	// For now, we only deploy the first (default) shard via the StatefulSet component
+	shards := managedEtcdSpec.EffectiveShards(hcp)
+	if len(shards) == 0 {
+		return fmt.Errorf("no etcd shards configured")
+	}
+	defaultShard := shards[0]
+
 	ipv4, err := util.IsIPv4CIDR(hcp.Spec.Networking.ClusterNetwork[0].CIDR.String())
 	if err != nil {
 		return fmt.Errorf("error checking the ClusterNetworkCIDR: %v", err)
 	}
 
+	// Apply shard-specific replica count
+	replicas := component.DefaultReplicas(hcp, &etcd{}, ComponentName)
+	if defaultShard.Replicas != nil {
+		replicas = *defaultShard.Replicas
+	}
+	sts.Spec.Replicas = &replicas
+
+	// Update StatefulSet name to include shard name
+	// For backward compatibility, use "etcd" for the default shard
+	if defaultShard.Name == "default" {
+		sts.Name = "etcd"
+		sts.Spec.ServiceName = "etcd-discovery"
+	} else {
+		sts.Name = fmt.Sprintf("etcd-%s", defaultShard.Name)
+		sts.Spec.ServiceName = fmt.Sprintf("etcd-%s-discovery", defaultShard.Name)
+	}
+
+	// Add shard label to pod template
+	if sts.Spec.Template.Labels == nil {
+		sts.Spec.Template.Labels = make(map[string]string)
+	}
+	sts.Spec.Template.Labels["hypershift.openshift.io/etcd-shard"] = defaultShard.Name
+
+	// Update selector to include shard label
+	if sts.Spec.Selector.MatchLabels == nil {
+		sts.Spec.Selector.MatchLabels = make(map[string]string)
+	}
+	sts.Spec.Selector.MatchLabels["hypershift.openshift.io/etcd-shard"] = defaultShard.Name
+
 	util.UpdateContainer(ComponentName, sts.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		replicas := component.DefaultReplicas(hcp, &etcd{}, ComponentName)
 		var members []string
+		var podPrefix, discoveryService string
+
+		// For backward compatibility with default shard
+		if defaultShard.Name == "default" {
+			podPrefix = "etcd"
+			discoveryService = "etcd-discovery"
+		} else {
+			podPrefix = fmt.Sprintf("etcd-%s", defaultShard.Name)
+			discoveryService = fmt.Sprintf("etcd-%s-discovery", defaultShard.Name)
+		}
+
 		for i := range replicas {
-			name := fmt.Sprintf("etcd-%d", i)
-			members = append(members, fmt.Sprintf("%s=https://%s.etcd-discovery.%s.svc:2380", name, name, hcp.Namespace))
+			name := fmt.Sprintf("%s-%d", podPrefix, i)
+			members = append(members, fmt.Sprintf("%s=https://%s.%s.%s.svc:2380", name, name, discoveryService, hcp.Namespace))
 		}
 		c.Env = append(c.Env,
 			corev1.EnvVar{
@@ -82,9 +129,14 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 		)
 	}
 
-	// adapt PersistentVolume
-	if managedEtcdSpec != nil && managedEtcdSpec.Storage.Type == hyperv1.PersistentVolumeEtcdStorage {
-		if pv := managedEtcdSpec.Storage.PersistentVolume; pv != nil {
+	// adapt PersistentVolume using shard-specific storage or default
+	storage := managedEtcdSpec.Storage
+	if defaultShard.Storage != nil {
+		storage = *defaultShard.Storage
+	}
+
+	if storage.Type == hyperv1.PersistentVolumeEtcdStorage {
+		if pv := storage.PersistentVolume; pv != nil {
 			sts.Spec.VolumeClaimTemplates[0].Spec.StorageClassName = pv.StorageClassName
 			if pv.Size != nil {
 				sts.Spec.VolumeClaimTemplates[0].Spec.Resources = corev1.VolumeResourceRequirements{

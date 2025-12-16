@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path"
 	"slices"
+	"sort"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -211,6 +212,23 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args.Set("etcd-keyfile", cpath(etcdClientCertVolumeName, pki.EtcdClientKeyKey))
 	args.Set("etcd-prefix", "kubernetes.io")
 	args.Set("etcd-servers", p.EtcdURL)
+
+	// Build etcd-servers-overrides if shards are configured
+	// Format per Kubernetes docs: /group/resource#url1;url2,/group2/resource2#url3
+	// - # separates resource from servers
+	// - ; separates multiple servers for same resource
+	// - , separates different resource configurations
+	// - NO semicolon after # when only one server!
+	if len(p.EtcdShardOverrides) > 0 {
+		var overrides []string
+		for prefix, url := range p.EtcdShardOverrides {
+			// Prefix includes '#' (e.g., "/events#"), concatenate directly with URL
+			overrides = append(overrides, fmt.Sprintf("%s%s", prefix, url))
+		}
+		sort.Strings(overrides) // Deterministic ordering
+		args.Set("etcd-servers-overrides", strings.Join(overrides, ","))
+	}
+
 	args.Set("event-ttl", "3h")
 	// TODO remove in 4.16 once we're able to have different featuregates for hypershift
 	featureGates := append([]string{}, p.FeatureGates...)

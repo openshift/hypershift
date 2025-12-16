@@ -25,24 +25,55 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 	var err error
 	etcdHostname := "etcd-client"
+	etcdURL := config.DefaultEtcdURL
+
 	if cpContext.HCP.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
 		etcdHostname, err = util.HostFromURL(cpContext.HCP.Spec.Etcd.Unmanaged.Endpoint)
 		if err != nil {
 			return err
 		}
+		etcdURL = cpContext.HCP.Spec.Etcd.Unmanaged.Endpoint
+	} else {
+		// For managed etcd, determine the URL based on sharding configuration
+		if len(cpContext.HCP.Spec.Etcd.Managed.Shards) > 0 {
+			// When sharded, find the default shard (one containing "/" prefix)
+			namespace := cpContext.HCP.Namespace
+			for _, shard := range cpContext.HCP.Spec.Etcd.Managed.Shards {
+				for _, prefix := range shard.ResourcePrefixes {
+					if prefix == "/" {
+						// Found the default shard
+						serviceName := fmt.Sprintf("etcd-client-%s", shard.Name)
+						etcdURL = fmt.Sprintf("https://%s.%s.svc:2379", serviceName, namespace)
+						etcdHostname = serviceName
+						break
+					}
+				}
+			}
+		}
+		// If not sharded or no default shard found, use the default etcd-client service
+		// etcdURL and etcdHostname are already set to defaults
 	}
+
+	// For NO_PROXY, we need both the short hostname and the FQDN that's actually used in the URL
+	// The FQDN is extracted from the etcdURL (e.g., etcd-client-main.clusters-etcd-shard-test.svc)
+	etcdFQDN := etcdHostname
+	if etcdURL != config.DefaultEtcdURL && cpContext.HCP.Spec.Etcd.ManagementType != hyperv1.Unmanaged {
+		// Extract the host part from the URL (everything between https:// and :2379)
+		if hostStart := len("https://"); len(etcdURL) > hostStart {
+			if portIdx := strings.Index(etcdURL[hostStart:], ":"); portIdx > 0 {
+				etcdFQDN = etcdURL[hostStart : hostStart+portIdx]
+			}
+		}
+	}
+
 	noProxy := []string{
 		manifests.KubeAPIServerService("").Name,
-		etcdHostname,
+		etcdHostname,       // Short name for backwards compatibility
+		etcdFQDN,          // FQDN that's actually used in connections
 		config.AuditWebhookService,
 	}
 
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		etcdURL := config.DefaultEtcdURL
-		if cpContext.HCP.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
-			etcdURL = cpContext.HCP.Spec.Etcd.Unmanaged.Endpoint
-		}
-
 		configuration := cpContext.HCP.Spec.Configuration
 		c.Args = append(c.Args,
 			fmt.Sprintf("--api-audiences=%s", cpContext.HCP.Spec.IssuerURL),
