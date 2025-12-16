@@ -19,9 +19,11 @@ import (
 	"go/ast"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/passes/inspect"
-	"golang.org/x/tools/go/ast/inspector"
+
 	kalerrors "sigs.k8s.io/kube-api-linter/pkg/analysis/errors"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/inspector"
+	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/markers"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/utils"
 )
 
@@ -33,36 +35,34 @@ var Analyzer = &analysis.Analyzer{
 	Name:     name,
 	Doc:      "Float values cannot be reliably round-tripped without changing and have varying precisions and representations across languages and architectures.",
 	Run:      run,
-	Requires: []*analysis.Analyzer{inspect.Analyzer},
+	Requires: []*analysis.Analyzer{inspector.Analyzer},
 }
 
 func run(pass *analysis.Pass) (any, error) {
-	inspect, ok := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	inspect, ok := pass.ResultOf[inspector.Analyzer].(inspector.Inspector)
 	if !ok {
 		return nil, kalerrors.ErrCouldNotGetInspector
 	}
 
-	// Filter to structs so that we can look at fields within structs.
-	// Filter typespecs so that we can look at type aliases.
-	nodeFilter := []ast.Node{
-		(*ast.StructType)(nil),
-		(*ast.TypeSpec)(nil),
-	}
+	typeChecker := utils.NewTypeChecker(utils.IsBasicType, checkFloat)
 
-	typeChecker := utils.NewTypeChecker(checkFloat)
+	inspect.InspectFields(func(field *ast.Field, _ extractjsontags.FieldTagInfo, _ markers.Markers, _ string) {
+		typeChecker.CheckNode(pass, field)
+	})
 
-	// Preorder visits all the nodes of the AST in depth-first order. It calls
-	// f(n) for each node n before it visits n's children.
-	//
-	// We use the filter defined above, ensuring we only look at struct fields and type declarations.
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		typeChecker.CheckNode(pass, n)
+	inspect.InspectTypeSpec(func(typeSpec *ast.TypeSpec, markersAccess markers.Markers) {
+		typeChecker.CheckNode(pass, typeSpec)
 	})
 
 	return nil, nil //nolint:nilnil
 }
 
-func checkFloat(pass *analysis.Pass, ident *ast.Ident, node ast.Node, prefix string) {
+func checkFloat(pass *analysis.Pass, expr ast.Expr, node ast.Node, prefix string) {
+	ident, ok := expr.(*ast.Ident)
+	if !ok {
+		return
+	}
+
 	if ident.Name == "float32" || ident.Name == "float64" {
 		pass.Reportf(node.Pos(), "%s should not use a float value because they cannot be reliably round-tripped.", prefix)
 	}

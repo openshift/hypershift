@@ -17,7 +17,6 @@ limitations under the License.
 package nodurations
 
 import (
-	"fmt"
 	"go/ast"
 
 	"golang.org/x/tools/go/analysis"
@@ -45,78 +44,41 @@ func run(pass *analysis.Pass) (any, error) {
 		return nil, kalerrors.ErrCouldNotGetInspector
 	}
 
-	inspect.InspectFields(func(field *ast.Field, _ extractjsontags.FieldTagInfo, markersAccess markers.Markers, qualifiedFieldName string) {
-		checkField(pass, field, qualifiedFieldName)
+	typeChecker := utils.NewTypeChecker(isDurationType, checkDuration)
+
+	inspect.InspectFields(func(field *ast.Field, _ extractjsontags.FieldTagInfo, _ markers.Markers, _ string) {
+		typeChecker.CheckNode(pass, field)
 	})
 
 	inspect.InspectTypeSpec(func(typeSpec *ast.TypeSpec, markersAccess markers.Markers) {
-		checkTypeSpec(pass, typeSpec, typeSpec, "type")
+		typeChecker.CheckNode(pass, typeSpec)
 	})
 
 	return nil, nil //nolint:nilnil
 }
 
-func checkField(pass *analysis.Pass, field *ast.Field, qualifiedFieldName string) {
-	prefix := fmt.Sprintf("field %s", qualifiedFieldName)
-
-	checkTypeExpr(pass, field.Type, field, prefix)
-}
-
-//nolint:cyclop
-func checkTypeExpr(pass *analysis.Pass, typeExpr ast.Expr, node ast.Node, prefix string) {
-	switch typ := typeExpr.(type) {
-	case *ast.SelectorExpr:
-		pkg, ok := typ.X.(*ast.Ident)
-		if !ok {
-			return
-		}
-
-		if typ.X == nil || (pkg.Name != "time" && pkg.Name != "metav1") {
-			return
-		}
-
-		// Array element is not a metav1.Condition.
-		if typ.Sel == nil || typ.Sel.Name != "Duration" {
-			return
-		}
-
-		pass.Reportf(node.Pos(), "%s should not use a Duration. Use an integer type with units in the name to avoid the need for clients to implement Go style duration parsing.", prefix)
-	case *ast.Ident:
-		checkIdent(pass, typ, node, prefix)
-	case *ast.StarExpr:
-		checkTypeExpr(pass, typ.X, node, fmt.Sprintf("%s pointer", prefix))
-	case *ast.ArrayType:
-		checkTypeExpr(pass, typ.Elt, node, fmt.Sprintf("%s array element", prefix))
-	case *ast.MapType:
-		checkTypeExpr(pass, typ.Key, node, fmt.Sprintf("%s map key", prefix))
-		checkTypeExpr(pass, typ.Value, node, fmt.Sprintf("%s map value", prefix))
-	}
-}
-
-// checkIdent calls the checkFunc with the ident, when we have hit a built-in type.
-// If the ident is not a built in, we look at the underlying type until we hit a built-in type.
-func checkIdent(pass *analysis.Pass, ident *ast.Ident, node ast.Node, prefix string) {
-	if utils.IsBasicType(pass, ident) {
-		// We've hit a built-in type, no need to check further.
-		return
-	}
-
-	tSpec, ok := utils.LookupTypeSpec(pass, ident)
+func isDurationType(pass *analysis.Pass, expr ast.Expr) bool {
+	typ, ok := expr.(*ast.SelectorExpr)
 	if !ok {
-		return
+		return false
 	}
 
-	// The field is using a type alias, check if the alias is an int.
-	checkTypeSpec(pass, tSpec, node, fmt.Sprintf("%s type", prefix))
+	pkg, ok := typ.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+
+	if typ.X == nil || (pkg.Name != "time" && pkg.Name != "metav1") {
+		return false
+	}
+
+	if typ.Sel == nil || typ.Sel.Name != "Duration" {
+		return false
+	}
+
+	return true
 }
 
-func checkTypeSpec(pass *analysis.Pass, tSpec *ast.TypeSpec, node ast.Node, prefix string) {
-	if tSpec.Name == nil {
-		return
-	}
-
-	typeName := tSpec.Name.Name
-	prefix = fmt.Sprintf("%s %s", prefix, typeName)
-
-	checkTypeExpr(pass, tSpec.Type, node, prefix)
+func checkDuration(pass *analysis.Pass, expr ast.Expr, node ast.Node, prefix string) {
+	pass.Reportf(node.Pos(), "%s should not use a Duration. Use an integer type with units in the name to avoid the need for clients to implement Go style duration parsing.", prefix)
 }

@@ -20,7 +20,6 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
-	"slices"
 
 	astinspector "golang.org/x/tools/go/ast/inspector"
 	"sigs.k8s.io/kube-api-linter/pkg/analysis/helpers/extractjsontags"
@@ -102,7 +101,7 @@ func (i *inspector) inspectFields(inspectField func(field *ast.Field, jsonTagInf
 		// The 0th node in the stack is the *ast.File.
 		file, ok := stack[0].(*ast.File)
 		if ok {
-			structName = getStructName(file, field)
+			structName = utils.GetStructNameFromFile(file, field)
 		}
 
 		if structName != "" {
@@ -201,46 +200,4 @@ func printDebugInfo(field *ast.Field) string {
 	debug += fmt.Sprintf("Panic observed while inspecting field: %v (type: %v)\n", utils.FieldName(field), field.Type)
 
 	return debug
-}
-
-func getStructName(file *ast.File, field *ast.Field) string {
-	var (
-		structName string
-		found      bool
-	)
-
-	ast.Inspect(file, func(n ast.Node) bool {
-		if found {
-			return false
-		}
-
-		typeSpec, ok := n.(*ast.TypeSpec)
-		if !ok {
-			return true
-		}
-
-		structType, ok := typeSpec.Type.(*ast.StructType)
-		if !ok {
-			return true
-		}
-
-		structName = typeSpec.Name.Name
-
-		if structType.Fields == nil {
-			return true
-		}
-
-		if slices.Contains(structType.Fields.List, field) {
-			found = true
-			return false
-		}
-
-		return true
-	})
-
-	if found {
-		return structName
-	}
-
-	return ""
 }
