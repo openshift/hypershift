@@ -546,7 +546,7 @@ changed.</p>
 </td>
 <td>
 <p>services specifies how individual control plane services endpoints are published for consumption.
-This requires APIServer;OAuthServer;Konnectivity;Ignition.
+This requires APIServer;OAuthServer;Konnectivity at minimum. Ignition is required for most platforms.
 This field is immutable for all platforms but IBMCloud.
 Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.</p>
 <p>-kubebuilder:validation:XValidation:rule=&ldquo;self.all(s, !(s.service == &lsquo;APIServer&rsquo; &amp;&amp; s.servicePublishingStrategy.type == &lsquo;Route&rsquo;) || has(s.servicePublishingStrategy.route.hostname))&rdquo;,message=&ldquo;If serviceType is &lsquo;APIServer&rsquo; and publishing strategy is &lsquo;Route&rsquo;, then hostname must be set&rdquo;
@@ -6759,7 +6759,7 @@ changed.</p>
 </td>
 <td>
 <p>services specifies how individual control plane services endpoints are published for consumption.
-This requires APIServer;OAuthServer;Konnectivity;Ignition.
+This requires APIServer;OAuthServer;Konnectivity at minimum. Ignition is required for most platforms.
 This field is immutable for all platforms but IBMCloud.
 Max is 6 to account for OIDC;OVNSbDb for backward compatibility though they are no-op.</p>
 <p>-kubebuilder:validation:XValidation:rule=&ldquo;self.all(s, !(s.service == &lsquo;APIServer&rsquo; &amp;&amp; s.servicePublishingStrategy.type == &lsquo;Route&rsquo;) || has(s.servicePublishingStrategy.route.hostname))&rdquo;,message=&ldquo;If serviceType is &lsquo;APIServer&rsquo; and publishing strategy is &lsquo;Route&rsquo;, then hostname must be set&rdquo;
@@ -13060,7 +13060,7 @@ The specifics of the setup are platform dependent.</p>
 </p>
 <p>
 <p>ServicePublishingStrategyMapping specifies how individual control plane services endpoints are published for consumption.
-This includes APIServer;OAuthServer;Konnectivity;Ignition.
+This includes APIServer;OAuthServer;Konnectivity at minimum. Ignition is required for most platforms.
 If a given service is not present in this list, it will be exposed publicly by default.</p>
 </p>
 <table>
