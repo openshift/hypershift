@@ -1652,7 +1652,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				},
 			},
 			Data: map[string]string{
-				"supported-versions": "{\"versions\":[\"4.20\",\"4.19\",\"4.18\",\"4.17\",\"4.16\",\"4.15\",\"4.14\"]}",
+				"supported-versions": "{\"versions\":[\"4.21\",\"4.20\",\"4.19\",\"4.18\",\"4.17\",\"4.16\",\"4.15\",\"4.14\"]}",
 				"server-version":     "some-fake-server-version",
 			},
 		},
