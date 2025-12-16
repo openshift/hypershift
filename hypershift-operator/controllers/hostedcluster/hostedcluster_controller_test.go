@@ -577,7 +577,7 @@ func TestReconcileHostedControlPlaneConfiguration(t *testing.T) {
 					Domain: "test.domain.com",
 				},
 				Network: &configv1.NetworkSpec{
-					NetworkType: "OpenShiftSDN",
+					NetworkType: string(hyperv1.OpenShiftSDN),
 				},
 			},
 		},
@@ -1618,7 +1618,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 				Name: "cluster",
 			},
 			Spec: configv1.NetworkSpec{
-				NetworkType: "OVNKubernetes",
+				NetworkType: string(hyperv1.OVNKubernetes),
 			},
 		},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "agent-namespace"}},

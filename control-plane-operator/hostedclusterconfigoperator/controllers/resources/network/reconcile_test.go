@@ -202,7 +202,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		{
 			name:                "DisableMultiNetwork sets disableMultiNetwork to true",
 			inputNetwork:        NetworkOperator(),
-			inputNetworkType:    hyperv1.Other,
+			inputNetworkType:    "Other",
 			inputPlatformType:   hyperv1.AWSPlatform,
 			disableMultiNetwork: true,
 			expectedNetwork: &operatorv1.Network{
@@ -218,7 +218,7 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 		{
 			name:                "DisableMultiNetwork false does not set disableMultiNetwork",
 			inputNetwork:        NetworkOperator(),
-			inputNetworkType:    hyperv1.Other,
+			inputNetworkType:    "Other",
 			inputPlatformType:   hyperv1.AWSPlatform,
 			disableMultiNetwork: false,
 			expectedNetwork: &operatorv1.Network{

@@ -70,7 +70,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, "The ingress base domain for the cluster")
 	flags.StringVar(&opts.BaseDomainPrefix, "base-domain-prefix", opts.BaseDomainPrefix, "The ingress base domain prefix for the cluster, defaults to cluster name. Use 'none' for an empty prefix")
 	flags.StringVar(&opts.ExternalDNSDomain, "external-dns-domain", opts.ExternalDNSDomain, "Sets hostname to opinionated values in the specified domain for services with publishing type LoadBalancer or Route.")
-	flags.StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Enum specifying the cluster SDN provider. Supports either Calico, OVNKubernetes, OpenShiftSDN or Other.")
+	flags.StringVar(&opts.NetworkType, "network-type", opts.NetworkType, "Sets the cluster SDN provider. OVNKubernetes and OpenShiftSDN have special handling; any other value (e.g., Cilium, Calico) is treated as third-party. Values are case-sensitive.")
 	flags.StringVar(&opts.ReleaseImage, "release-image", opts.ReleaseImage, "The OCP release image for the cluster")
 	flags.StringVar(&opts.PullSecretFile, "pull-secret", opts.PullSecretFile, "File path to a pull secret.")
 	flags.StringVar(&opts.ControlPlaneAvailabilityPolicy, "control-plane-availability-policy", opts.ControlPlaneAvailabilityPolicy, "Availability policy for hosted cluster components. Supported options: SingleReplica, HighlyAvailable")
@@ -775,8 +775,8 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		}
 	}
 
-	if opts.DisableMultiNetwork && opts.NetworkType != "Other" {
-		return nil, fmt.Errorf("disableMultiNetwork is only allowed when networkType is 'Other' (got '%s')", opts.NetworkType)
+	if opts.DisableMultiNetwork && (opts.NetworkType == string(hyperv1.OVNKubernetes) || opts.NetworkType == string(hyperv1.OpenShiftSDN)) {
+		return nil, fmt.Errorf("disableMultiNetwork is only allowed when networkType is third-party (got '%s')", opts.NetworkType)
 	}
 
 	if opts.AllocateNodeCIDRs && opts.NetworkType != "Other" {

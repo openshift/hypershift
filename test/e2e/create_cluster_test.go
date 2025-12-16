@@ -679,15 +679,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 					expectedErrorSubstring string
 				}{
 					{
-						name: "when networkType is not one of OpenShiftSDN;Calico;OVNKubernetes;Other it should fail",
-						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Networking = hyperv1.ClusterNetworking{
-								NetworkType: "foo",
-							}
-						},
-						expectedErrorSubstring: "Unsupported value: \"foo\": supported values: \"OpenShiftSDN\", \"Calico\", \"OVNKubernetes\", \"Other\"",
-					},
-					{
 						name: "when the cidr is not valid it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Networking = hyperv1.ClusterNetworking{
@@ -1593,10 +1584,10 @@ func TestOnCreateAPIUX(t *testing.T) {
 						expectedErrorSubstring: "",
 					},
 					{
-						name: "when disableMultiNetwork is true and networkType is Other it should pass",
+						name: "when disableMultiNetwork is true and networkType is third-party it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Networking = hyperv1.ClusterNetworking{
-								NetworkType: hyperv1.Other,
+								NetworkType: "Calico",
 							}
 							hc.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{
 								ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
@@ -1681,6 +1672,15 @@ func TestOnCreateAPIUX(t *testing.T) {
 								ClusterNetworkOperator: &hyperv1.ClusterNetworkOperatorSpec{
 									DisableMultiNetwork: ptr.To(false),
 								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when networkType is a custom third-party value it should pass",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Networking = hyperv1.ClusterNetworking{
+								NetworkType: "Cilium",
 							}
 						},
 						expectedErrorSubstring: "",
