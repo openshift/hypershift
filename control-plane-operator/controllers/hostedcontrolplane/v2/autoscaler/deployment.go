@@ -146,6 +146,13 @@ func autoscalerArgs(options *hyperv1.ClusterAutoscaling, platformType hyperv1.Pl
 	// Append basic ignore labels for a specific cloud provider.
 	args = appendBasicIgnoreLabels(args, platformType)
 
+	// Add user-provided extra arguments
+	if options.ExtraArgs != "" {
+		// Split the extraArgs string by spaces and filter out empty strings
+		extraArgs := strings.Fields(options.ExtraArgs)
+		args = append(args, extraArgs...)
+	}
+
 	return args
 }
 
