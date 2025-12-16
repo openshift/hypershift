@@ -468,6 +468,10 @@ func isArchAndPlatformSupported(nodePool *hyperv1.NodePool) bool {
 		if nodePool.Spec.Arch == hyperv1.ArchitectureAMD64 || nodePool.Spec.Arch == hyperv1.ArchitectureARM64 {
 			supported = true
 		}
+	case hyperv1.GCPPlatform:
+		if nodePool.Spec.Arch == hyperv1.ArchitectureAMD64 || nodePool.Spec.Arch == hyperv1.ArchitectureARM64 {
+			supported = true
+		}
 	}
 
 	return supported
@@ -712,6 +716,19 @@ func defaultNodePoolAMI(region string, specifiedArch string, releaseImage *relea
 		return "", fmt.Errorf("release image metadata has no image for region %q", region)
 	}
 	return regionData.Image, nil
+}
+
+// defaultNodePoolGCPImage returns the default GCP image for a given architecture from release metadata.
+func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	arch, foundArch := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[specifiedArch]]
+	if !foundArch {
+		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
+	}
+
+	if len(arch.Images.GCP.Image) == 0 {
+		return "", fmt.Errorf("release image metadata has no GCP image for architecture %q", specifiedArch)
+	}
+	return arch.Images.GCP.Image, nil
 }
 
 // MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas

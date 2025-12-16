@@ -163,8 +163,16 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.FilterApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("FilterByNeutronTags"):
 		return &hypershiftv1beta1.FilterByNeutronTagsApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("GCPBootDisk"):
+		return &hypershiftv1beta1.GCPBootDiskApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("GCPDiskEncryptionKey"):
+		return &hypershiftv1beta1.GCPDiskEncryptionKeyApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPNetworkConfig"):
 		return &hypershiftv1beta1.GCPNetworkConfigApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("GCPNodePoolPlatform"):
+		return &hypershiftv1beta1.GCPNodePoolPlatformApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("GCPNodeServiceAccount"):
+		return &hypershiftv1beta1.GCPNodeServiceAccountApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPPlatformSpec"):
 		return &hypershiftv1beta1.GCPPlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPPrivateServiceConnect"):
@@ -173,8 +181,6 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.GCPPrivateServiceConnectSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPPrivateServiceConnectStatus"):
 		return &hypershiftv1beta1.GCPPrivateServiceConnectStatusApplyConfiguration{}
-	case v1beta1.SchemeGroupVersion.WithKind("GCPResourceLabel"):
-		return &hypershiftv1beta1.GCPResourceLabelApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPResourceReference"):
 		return &hypershiftv1beta1.GCPResourceReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("GCPServiceAccountsEmails"):
