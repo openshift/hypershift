@@ -6,7 +6,9 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"reflect"
 	"slices"
@@ -58,6 +60,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -4181,4 +4184,108 @@ func ExtractVersionFromReleaseImage(releaseImage string) string {
 
 	// No known architecture suffix found, return the tag as-is
 	return tag
+}
+
+// WaitForDeploymentAvailable waits for a deployment to be ready.
+func WaitForDeploymentAvailable(ctx context.Context, t *testing.T, client crclient.Client, name, namespace string, timeout, interval time.Duration) {
+	g := NewWithT(t)
+	t.Logf("Waiting for deployment %s/%s to be ready", namespace, name)
+	g.Eventually(func() bool {
+		deployment := &appsv1.Deployment{}
+		err := client.Get(ctx, crclient.ObjectKey{Name: name, Namespace: namespace}, deployment)
+		if err != nil {
+			t.Logf("Failed to get deployment %s/%s: %v", namespace, name, err)
+			return false
+		}
+		return deployment.Status.ReadyReplicas > 0
+	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("deployment %s/%s should be ready", namespace, name))
+}
+
+// WaitForDaemonSetReady waits for a DaemonSet to be ready.
+func WaitForDaemonSetReady(ctx context.Context, t *testing.T, client crclient.Client, name, namespace string, timeout, interval time.Duration) {
+	g := NewWithT(t)
+	t.Logf("Waiting for DaemonSet %s/%s to be ready", namespace, name)
+	g.Eventually(func() bool {
+		ds := &appsv1.DaemonSet{}
+		err := client.Get(ctx, crclient.ObjectKey{Name: name, Namespace: namespace}, ds)
+		if err != nil {
+			t.Logf("Failed to get DaemonSet %s/%s: %v", namespace, name, err)
+			return false
+		}
+		return ds.Status.NumberReady > 0
+	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("DaemonSet %s/%s should be ready", namespace, name))
+}
+
+// ApplyYAML reads YAML content from a URL or local file and applies it to the cluster.
+// It supports multi-document YAMLs and Server-Side Apply.
+func ApplyYAML(ctx context.Context, c crclient.Client, pathOrURL string, defaultNamespace ...string) error {
+	var yamlContent []byte
+	var err error
+
+	if strings.HasPrefix(pathOrURL, "http://") || strings.HasPrefix(pathOrURL, "https://") {
+		// Download YAML content
+		resp, err := http.Get(pathOrURL)
+		if err != nil {
+			return fmt.Errorf("failed to download manifest from %s: %w", pathOrURL, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("failed to download manifest from %s: HTTP %d", pathOrURL, resp.StatusCode)
+		}
+		yamlContent, err = io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to read manifest content: %w", err)
+		}
+	} else {
+		// Read local file
+		yamlContent, err = os.ReadFile(pathOrURL)
+		if err != nil {
+			return fmt.Errorf("failed to read manifest file from %s: %w", pathOrURL, err)
+		}
+	}
+
+	// Split multi-document YAML using yaml decoder
+	decoder := k8syaml.NewYAMLOrJSONDecoder(bytes.NewReader(yamlContent), 4096)
+
+	for {
+		obj := &unstructured.Unstructured{}
+		err := decoder.Decode(obj)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to decode YAML: %w", err)
+		}
+		if len(obj.Object) == 0 {
+			continue
+		}
+		// Set default namespace if provided and the resource doesn't have one
+		if len(defaultNamespace) > 0 && obj.GetNamespace() == "" {
+			isNamespaced := false
+			gvk := obj.GroupVersionKind()
+
+			// Check if the resource is namespaced using RESTMapper
+			mapping, err := c.RESTMapper().RESTMapping(gvk.GroupKind(), gvk.Version)
+			if err != nil {
+				return fmt.Errorf("failed to get mapping for %s: %w", gvk, err)
+			}
+			if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+				isNamespaced = true
+			}
+			if isNamespaced {
+				obj.SetNamespace(defaultNamespace[0])
+			}
+		}
+
+		// Apply the resource using Server-Side Apply
+		patchOpts := []crclient.PatchOption{
+			crclient.ForceOwnership,
+			crclient.FieldOwner("hypershift-e2e"),
+		}
+		err = c.Patch(ctx, obj, crclient.Apply, patchOpts...)
+		if err != nil {
+			return fmt.Errorf("failed to apply %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+		}
+	}
+	return nil
 }
