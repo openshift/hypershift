@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -12,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/upsert"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -83,7 +85,9 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		}
 
 		// Allow egress communication to the HCP metrics server for pods that have a known annotation.
-		if r.EnableCVOManagementClusterMetricsAccess {
+		// Enable if either RHOBS monitoring is enabled or the explicit flag is set.
+		enableMetricsAccess := os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" || r.EnableCVOManagementClusterMetricsAccess
+		if enableMetricsAccess {
 			policy = networkpolicy.MetricsServerNetworkPolicy(controlPlaneNamespaceName)
 			if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 				return reconcileMetricsServerNetworkPolicy(policy)
@@ -826,35 +830,70 @@ func kasEndpointsToCIDRs(kubernetesEndpoint *corev1.Endpoints) []string {
 }
 
 // reconcileMetricsServerNetworkPolicy selects pods having NeedMetricsServerAccessLabel.
-// It allows egress traffic to the HCP metrics server that is available for self-managed
-// HyperShift running on an OpenShift management cluster.
+// It allows egress traffic to the HCP metrics server. Depending on the monitoring stack:
+// - RHOBS: targets OBO Prometheus at port 9090 in openshift-observability-operator namespace
+// - CoreOS: targets Thanos Querier at port 9092 in openshift-monitoring namespace
 func reconcileMetricsServerNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
 	protocol := corev1.ProtocolTCP
-	port := intstr.FromInt(9092)
-	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
-		{
-			To: []networkingv1.NetworkPolicyPeer{
-				{
-					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"app.kubernetes.io/instance": "thanos-querier",
-							"app.kubernetes.io/name":     "thanos-query",
-						}},
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"network.openshift.io/policy-group": "monitoring",
+	var egressRules []networkingv1.NetworkPolicyEgressRule
+
+	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
+		// RHOBS Prometheus configuration
+		port := intstr.FromInt(9090)
+		egressRules = []networkingv1.NetworkPolicyEgressRule{
+			{
+				To: []networkingv1.NetworkPolicyPeer{
+					{
+						PodSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"app.kubernetes.io/instance": "hypershift-monitoring-stack",
+								"app.kubernetes.io/name":     "prometheus",
+							}},
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"network.openshift.io/policy-group": "monitoring",
+							},
 						},
 					},
 				},
-			},
-			Ports: []networkingv1.NetworkPolicyPort{
-				{
-					Protocol: &protocol,
-					Port:     &port,
+				Ports: []networkingv1.NetworkPolicyPort{
+					{
+						Protocol: &protocol,
+						Port:     &port,
+					},
 				},
 			},
-		},
+		}
+	} else {
+		// CoreOS Thanos configuration
+		port := intstr.FromInt(9092)
+		egressRules = []networkingv1.NetworkPolicyEgressRule{
+			{
+				To: []networkingv1.NetworkPolicyPeer{
+					{
+						PodSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"app.kubernetes.io/instance": "thanos-querier",
+								"app.kubernetes.io/name":     "thanos-query",
+							}},
+						NamespaceSelector: &metav1.LabelSelector{
+							MatchLabels: map[string]string{
+								"network.openshift.io/policy-group": "monitoring",
+							},
+						},
+					},
+				},
+				Ports: []networkingv1.NetworkPolicyPort{
+					{
+						Protocol: &protocol,
+						Port:     &port,
+					},
+				},
+			},
+		}
 	}
+
+	policy.Spec.Egress = egressRules
 
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeEgress}
 	policy.Spec.PodSelector = metav1.LabelSelector{
