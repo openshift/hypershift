@@ -28,6 +28,11 @@ func TestUpgradeControlPlane(t *testing.T) {
 	clusterOpts.ReleaseImage = globalOpts.PreviousReleaseImage
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 
+	if globalOpts.Platform == hyperv1.AWSPlatform {
+		// Use this test to verify that individual roles work as expected
+		clusterOpts.AWSPlatform.SharedRole = false
+	}
+
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		// Sanity check the cluster by waiting for the nodes to report ready
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
