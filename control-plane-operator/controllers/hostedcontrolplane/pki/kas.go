@@ -57,6 +57,16 @@ func ReconcileKubeSchedulerClientCertSecret(secret, ca *corev1.Secret, ownerRef 
 	return reconcileSignedCert(secret, ca, ownerRef, "system:kube-scheduler", []string{"kubernetes"}, X509UsageClientAuth)
 }
 
+func ReconcileKubeSchedulerServerCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	svcName := "kube-scheduler"
+	dnsNames := []string{
+		svcName,
+		fmt.Sprintf("%s.%s.svc", svcName, secret.Namespace),
+		fmt.Sprintf("%s.%s.svc.cluster.local", svcName, secret.Namespace),
+	}
+	return reconcileSignedCertWithAddresses(secret, ca, ownerRef, "system:kube-scheduler", []string{"kubernetes"}, X509UsageServerAuth, dnsNames, nil)
+}
+
 func ReconcileKubeControllerManagerClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
 	return reconcileSignedCert(secret, ca, ownerRef, "system:kube-controller-manager", []string{"kubernetes"}, X509UsageClientAuth)
 }

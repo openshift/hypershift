@@ -26,3 +26,9 @@ status:
   - group: ""
     kind: Secret
     name: kube-scheduler-kubeconfig
+  - group: ""
+    kind: Service
+    name: kube-scheduler
+  - group: monitoring.coreos.com
+    kind: ServiceMonitor
+    name: kube-scheduler
