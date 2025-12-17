@@ -85,27 +85,27 @@ func BindDeveloperOptions(opts *RawAzurePlatformCreateOptions, flags *pflag.Flag
 // BindProductFlags binds customer-facing flags for Azure nodepool creation in the product CLI
 func BindProductFlags(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) {
 	// VM configuration
-	flags.StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "The instance type to use for the nodepool")
-	flags.Int32Var(&opts.DiskSize, "root-disk-size", opts.DiskSize, "The size of the root disk for machines in the NodePool (minimum 16)")
-	flags.StringVar(&opts.AvailabilityZone, "availability-zone", opts.AvailabilityZone, "The availabilityZone for the nodepool. Must be left unspecified if in a region that doesn't support AZs")
-	flags.StringVar(&opts.SubnetID, "nodepool-subnet-id", opts.SubnetID, "The subnet id where the VMs will be placed.")
+	flags.StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, util.InstanceTypeDescription)
+	flags.Int32Var(&opts.DiskSize, "root-disk-size", opts.DiskSize, util.RootDiskSizeDescription)
+	flags.StringVar(&opts.AvailabilityZone, "availability-zone", opts.AvailabilityZone, util.AvailabilityZoneDescription)
+	flags.StringVar(&opts.SubnetID, "nodepool-subnet-id", opts.SubnetID, util.SubnetIDDescription)
 
 	// Disk configuration
-	flags.StringVar(&opts.DiskStorageAccountType, "disk-storage-account-type", opts.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
-	flags.StringVar(&opts.DiskEncryptionSetID, "disk-encryption-set-id", opts.DiskEncryptionSetID, "The Disk Encryption Set ID to use to encrypt the OS disks for the VMs.")
-	flags.BoolVar(&opts.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the NodePool will be setup with ephemeral OS disks")
-	flags.StringVar(&opts.EncryptionAtHost, "encryption-at-host", opts.EncryptionAtHost, "Enables or disables encryption at host on Azure VMs. Supported values: Enabled, Disabled.")
+	flags.StringVar(&opts.DiskStorageAccountType, "disk-storage-account-type", opts.DiskStorageAccountType, util.DiskStorageAccountTypeDescription)
+	flags.StringVar(&opts.DiskEncryptionSetID, "disk-encryption-set-id", opts.DiskEncryptionSetID, util.DiskEncryptionSetIDDescription)
+	flags.BoolVar(&opts.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.EnableEphemeralOSDisk, util.EnableEphemeralOSDiskDescription)
+	flags.StringVar(&opts.EncryptionAtHost, "encryption-at-host", opts.EncryptionAtHost, util.EncryptionAtHostDescription)
 
 	// Image configuration
-	flags.StringVar(&opts.ImageGeneration, "image-generation", opts.ImageGeneration, "The Hyper-V generation of the Azure VM image. Supported values: Gen1, Gen2. If unspecified, defaults to Gen2.")
-	flags.StringVar(&opts.MarketplacePublisher, "marketplace-publisher", opts.MarketplacePublisher, "The Azure Marketplace image publisher.")
-	flags.StringVar(&opts.MarketplaceOffer, "marketplace-offer", opts.MarketplaceOffer, "The Azure Marketplace image offer.")
-	flags.StringVar(&opts.MarketplaceSKU, "marketplace-sku", opts.MarketplaceSKU, "The Azure Marketplace image SKU.")
-	flags.StringVar(&opts.MarketplaceVersion, "marketplace-version", opts.MarketplaceVersion, "The Azure Marketplace image version.")
+	flags.StringVar(&opts.ImageGeneration, "image-generation", opts.ImageGeneration, util.ImageGenerationDescription)
+	flags.StringVar(&opts.MarketplacePublisher, "marketplace-publisher", opts.MarketplacePublisher, util.MarketplacePublisherDescription)
+	flags.StringVar(&opts.MarketplaceOffer, "marketplace-offer", opts.MarketplaceOffer, util.MarketplaceOfferDescription)
+	flags.StringVar(&opts.MarketplaceSKU, "marketplace-sku", opts.MarketplaceSKU, util.MarketplaceSKUDescription)
+	flags.StringVar(&opts.MarketplaceVersion, "marketplace-version", opts.MarketplaceVersion, util.MarketplaceVersionDescription)
 
 	// Diagnostics
-	flags.Var(&opts.DiagnosticsStorageAccountType, "diagnostics-storage-account-type", "Specifies the type of storage account for storing diagnostics data. Supported values: Disabled, Managed, UserManaged.")
-	flags.StringVar(&opts.DiagnosticsStorageAccountURI, "diagnostics-storage-account-uri", opts.DiagnosticsStorageAccountURI, "Specifies the URI of the storage account for diagnostics data. Applicable only if --diagnostics-storage-account-type is set to UserManaged.")
+	flags.Var(&opts.DiagnosticsStorageAccountType, "diagnostics-storage-account-type", util.DiagnosticsStorageAccountTypeDescription)
+	flags.StringVar(&opts.DiagnosticsStorageAccountURI, "diagnostics-storage-account-uri", opts.DiagnosticsStorageAccountURI, util.DiagnosticsStorageAccountURIDescription)
 }
 
 // validatedAzurePlatformCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
