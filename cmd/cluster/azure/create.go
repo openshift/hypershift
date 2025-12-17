@@ -107,6 +107,33 @@ func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	bindCoreOptions(opts, flags)
 }
 
+// BindProductFlags binds customer-facing flags for self-managed Azure in the product CLI
+func BindProductFlags(opts *RawCreateOptions, flags *pflag.FlagSet) {
+	// Required credentials
+	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, "Path to an Azure credentials file (required). This file is used to extract the subscription ID, tenant ID, and its credentials are used to create the necessary Azure resources for the HostedCluster.")
+
+	// General flags used for self-managed Azure
+	flags.StringVar(&opts.Location, "location", opts.Location, "Location for the HostedCluster. This is also used as the location for the Azure resources created for the HostedCluster.")
+	flags.StringSliceVar(&opts.AvailabilityZones, "availability-zones", opts.AvailabilityZones, "The availability zones in which NodePools will be created. Must be left unspecified if the region does not support AZs. If set, one nodepool per zone will be created.")
+	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, "The resource group name to create the HostedCluster infrastructure resources under. If not provided, a new resource group will be created.")
+	flags.StringVar(&opts.VnetID, "vnet-id", opts.VnetID, "An existing VNET ID. If not provided, a new VNET will be created.")
+	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed. If not provided, a new subnet will be created.")
+	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool. If not provided, a new Network Security Group will be created.")
+	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
+	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, "The name of the resource group where the DNS Zone resides. This is needed for the ingress controller.")
+
+	// Self-managed Azure identity flags
+	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, "Path to a file containing the workload identity client IDs configuration in json format for self-managed Azure.")
+	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL.")
+	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", "The file to the private key for the service account token issuer.")
+
+	// Encryption
+	flags.StringVar(&opts.EncryptionKeyID, "encryption-key-id", opts.EncryptionKeyID, "etcd encryption key identifier in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion> used to set up KMSv2 for etcd encryption.")
+
+	// Nodepool flags
+	azurenodepool.BindProductFlags(opts.NodePoolOpts, flags)
+}
+
 // Validate validates the Azure create cluster command options
 func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (core.PlatformCompleter, error) {
 	var err error
