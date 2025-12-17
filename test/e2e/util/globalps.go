@@ -8,7 +8,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
-	hyperutil "github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -201,8 +200,9 @@ func CreateKubeletConfigVerifierDaemonSet(ctx context.Context, guestClient crcli
 	return guestClient.Create(ctx, daemonSet)
 }
 
-// VerifyKubeletConfigWithDaemonSet implements complete verification using DaemonSet
-func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestClient crclient.Client, dsImage string) {
+// VerifyKubeletConfigWithDaemonSet implements complete verification using DaemonSet.
+// expectedNodeCount should be the NodePool replicas
+func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestClient crclient.Client, dsImage string, expectedNodeCount int32) {
 	g := NewWithT(t)
 
 	// Create the DaemonSet
@@ -210,20 +210,14 @@ func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestCl
 	err := CreateKubeletConfigVerifierDaemonSet(ctx, guestClient, dsImage)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to create kubelet config verifier DaemonSet")
 
-	// Wait for all DaemonSets to be ready using our new generic function
+	// Wait for all DaemonSets to be ready using NodePool replicas as authoritative source
 	t.Log("Waiting for OVN, GlobalPullSecret, Konnectivity and kubelet config verifier DaemonSets to be ready")
-	availableNodesCount, err := hyperutil.CountAvailableNodes(ctx, guestClient)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to count available nodes")
 
-	daemonSetsToCheck := []DaemonSetManifest{
-		{GetFunc: OpenshiftOVNKubeDaemonSet, AllowPartialNodes: false},
-		{GetFunc: hccomanifests.GlobalPullSecretDaemonSet, AllowPartialNodes: false},
-		{GetFunc: hccomanifests.KonnectivityAgentDaemonSet, AllowPartialNodes: false},
-		{GetFunc: KubeletConfigVerifierDaemonSet, AllowPartialNodes: true},
-	}
-
-	err = waitForDaemonSetsReady(t, ctx, guestClient, daemonSetsToCheck, availableNodesCount)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for DaemonSets to be ready")
+	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, "ovnkube-node", "openshift-ovn-kubernetes", expectedNodeCount)).To(Succeed())
+	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, expectedNodeCount)).To(Succeed())
+	konnectivityDS := hccomanifests.KonnectivityAgentDaemonSet()
+	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, expectedNodeCount)).To(Succeed())
+	g.Expect(waitForDaemonSetReady(t, ctx, guestClient, KubeletConfigVerifierDaemonSetName, KubeletConfigVerifierNamespace, expectedNodeCount)).To(Succeed())
 
 	// Clean up the DaemonSet after verification
 	t.Log("Cleaning up kubelet config verifier DaemonSet")
@@ -243,25 +237,4 @@ func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestCl
 		},
 	}
 	g.Expect(guestClient.Delete(ctx, pullSecret)).To(Succeed())
-}
-
-// Manifests
-// KubeletConfigVerifierDaemonSet returns a manifest for the kubelet config verifier DaemonSet
-func KubeletConfigVerifierDaemonSet() *appsv1.DaemonSet {
-	return &appsv1.DaemonSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      KubeletConfigVerifierDaemonSetName,
-			Namespace: KubeletConfigVerifierNamespace,
-		},
-	}
-}
-
-// OpenshiftOVNKubeDaemonSet returns a manifest for the OVN-Kubernetes DaemonSet
-func OpenshiftOVNKubeDaemonSet() *appsv1.DaemonSet {
-	return &appsv1.DaemonSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ovnkube-node",
-			Namespace: "openshift-ovn-kubernetes",
-		},
-	}
 }
