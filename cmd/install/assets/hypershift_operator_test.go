@@ -10,17 +10,20 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 	testNamespace := "hypershift"
 	testOperatorImage := "myimage"
 	tests := map[string]struct {
-		inputBuildParameters HyperShiftOperatorDeployment
-		expectedVolumeMounts []corev1.VolumeMount
-		expectedVolumes      []corev1.Volume
-		expectedArgs         []string
-		expectedEnvVars      []corev1.EnvVar
+		inputBuildParameters  HyperShiftOperatorDeployment
+		expectedVolumeMounts  []corev1.VolumeMount
+		expectedVolumes       []corev1.Volume
+		expectedArgs          []string
+		expectedEnvVars       []corev1.EnvVar
+		expectedTolerations   []corev1.Toleration
+		expectedNodeSelectors map[string]string
 	}{
 		"empty oidc parameters result in no volume mounts": {
 			inputBuildParameters: HyperShiftOperatorDeployment{
@@ -431,6 +434,53 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
 			},
 		},
+		"when operator tolerations and nodeselectors are specified": {
+			inputBuildParameters: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				OperatorImage: testOperatorImage,
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "hypershift",
+					},
+				},
+				Replicas:                               3,
+				PrivatePlatform:                        string(hyperv1.NonePlatform),
+				EnableDedicatedRequestServingIsolation: false,
+				OperatorTolerations:                    []string{"infra=true:NoSchedule", "keyOnly:NoExecute:3600"},
+				OperatorNodeSelectors:                  map[string]string{"aro-hcp.azure.com/role": "infra"},
+			},
+			expectedTolerations: []corev1.Toleration{
+				{
+					Key:      "infra",
+					Value:    "true",
+					Operator: corev1.TolerationOpEqual,
+					Effect:   corev1.TaintEffectNoSchedule,
+				},
+				{
+					Key:               "keyOnly",
+					Effect:            corev1.TaintEffectNoExecute,
+					Operator:          corev1.TolerationOpExists,
+					TolerationSeconds: ptr.To(int64(3600)),
+				},
+			},
+			expectedNodeSelectors: map[string]string{
+				"aro-hcp.azure.com/role": "infra",
+			},
+			expectedArgs: []string{
+				"run",
+				"--namespace=$(MY_NAMESPACE)",
+				"--pod-name=$(MY_NAME)",
+				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", false),
+				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
+				fmt.Sprintf("--enable-ci-debug-output=%t", false),
+				fmt.Sprintf("--private-platform=%s", string(hyperv1.NonePlatform)),
+			},
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -440,6 +490,12 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 			g.Expect(deployment.Spec.Template.Spec.Volumes).To(BeEquivalentTo(test.expectedVolumes))
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(BeEquivalentTo(test.expectedVolumeMounts))
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElements(test.expectedEnvVars))
+			if len(test.expectedTolerations) > 0 {
+				g.Expect(deployment.Spec.Template.Spec.Tolerations).To(BeEquivalentTo(test.expectedTolerations))
+			}
+			if len(test.expectedNodeSelectors) > 0 {
+				g.Expect(deployment.Spec.Template.Spec.NodeSelector).To(BeEquivalentTo(test.expectedNodeSelectors))
+			}
 		})
 	}
 }
