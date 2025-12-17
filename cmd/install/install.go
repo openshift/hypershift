@@ -22,6 +22,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +50,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/discovery"
@@ -158,6 +160,8 @@ type Options struct {
 	ScaleFromZeroCredentialsSecretKey         string
 	RenderSensitive                           bool
 	HCPEgressBlockCIDRs                       []string
+	OperatorTolerations                       []string
+	OperatorNodeSelectors                     map[string]string
 }
 
 func (o *Options) Validate() error {
@@ -359,7 +363,114 @@ func (o *Options) validateMiscConfig() []error {
 			errs = append(errs, fmt.Errorf("invalid --image-pull-policy: %s (want Always|Never|IfNotPresent)", o.ImagePullPolicy))
 		}
 	}
+
+	if len(o.OperatorTolerations) > 0 {
+		for _, tolerationStr := range o.OperatorTolerations {
+			if err := validateTolerationString(tolerationStr); err != nil {
+				errs = append(errs, fmt.Errorf("invalid operator toleration '%s': %w", tolerationStr, err))
+			}
+		}
+	}
+
+	if len(o.OperatorNodeSelectors) > 0 {
+		for nodeSelectorKey, nodeSelectorValue := range o.OperatorNodeSelectors {
+			if err := validateNodeSelectorKey(nodeSelectorKey); err != nil {
+				errs = append(errs, fmt.Errorf("invalid operator node selector key '%s': %w", nodeSelectorKey, err))
+			}
+			if err := validateNodeSelectorValue(nodeSelectorValue); err != nil {
+				errs = append(errs, fmt.Errorf("invalid operator node selector value '%s': %w", nodeSelectorValue, err))
+			}
+		}
+	}
 	return errs
+}
+
+func validateNodeSelectorKey(key string) error {
+	if errs := validation.IsQualifiedName(key); len(errs) > 0 {
+		return fmt.Errorf("invalid key '%s': %s", key, strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+func validateNodeSelectorValue(value string) error {
+	if value != "" {
+		if errs := validation.IsValidLabelValue(value); len(errs) > 0 {
+			return fmt.Errorf("invalid value '%s': %s", value, strings.Join(errs, "; "))
+		}
+	}
+	return nil
+}
+
+func validateTolerationString(s string) error {
+	if s == "" {
+		return fmt.Errorf("toleration string cannot be empty")
+	}
+
+	parts := strings.Split(s, ":")
+
+	// Check number of parts
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid format: expected key=value:effect or key:effect")
+	}
+
+	// Validate key[=value] part
+	if err := validateTolerationKeyValuePart(parts[0]); err != nil {
+		return err
+	}
+
+	// Validate effect part
+	if err := validateTolerationEffectPart(parts[1]); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Validates the key[=value] portion of the toleration string.
+func validateTolerationKeyValuePart(part string) error {
+	if part == "" {
+		return fmt.Errorf("toleration key:value cannot be empty")
+	}
+
+	keyValue := strings.SplitN(part, "=", 2)
+
+	key := keyValue[0]
+	if key == "" {
+		return fmt.Errorf("toleration key cannot be empty")
+	}
+
+	if errs := validation.IsQualifiedName(key); len(errs) > 0 {
+		return fmt.Errorf("invalid key '%s': %s", key, strings.Join(errs, "; "))
+	}
+
+	// If value is present.
+	if len(keyValue) == 2 {
+		value := keyValue[1]
+		if value != "" {
+			if errs := validation.IsValidLabelValue(value); len(errs) > 0 {
+				return fmt.Errorf("invalid value '%s': %s", value, strings.Join(errs, "; "))
+			}
+		}
+	}
+
+	return nil
+}
+
+// Validates the effect part of the toleration string.
+func validateTolerationEffectPart(effect string) error {
+	if effect == "" {
+		return fmt.Errorf("toleration effect can't be empty")
+	}
+
+	validEffects := []string{
+		string(corev1.TaintEffectNoSchedule),
+		string(corev1.TaintEffectPreferNoSchedule),
+		string(corev1.TaintEffectNoExecute),
+	}
+	if !slices.Contains(validEffects, effect) {
+		return fmt.Errorf("invalid effect '%s': must be NoSchedule, PreferNoSchedule, or NoExecute", effect)
+	}
+	return nil
 }
 
 func (o *Options) ApplyDefaults() {
@@ -453,6 +564,8 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecret, "scale-from-zero-secret", opts.ScaleFromZeroCredentialsSecret, "Name of existing secret containing scale-from-zero credentials (alternative to --scale-from-zero-creds)")
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecretKey, "scale-from-zero-secret-key", opts.ScaleFromZeroCredentialsSecretKey, "Key within the scale-from-zero credentials secret (default: credentials)")
 	cmd.PersistentFlags().StringArrayVar(&opts.HCPEgressBlockCIDRs, "hcp-egress-block-cidrs", nil, "Static CIDRs to block in HCP namespace egress NetworkPolicies instead of dynamically-discovered hosting cluster KAS endpoint IPs. When specified, eliminates NetworkPolicy churn during hosting cluster KAS rolling restarts and avoids OVN port-group reconciliation races that can drop traffic to HCP routers. May be specified multiple times.")
+	cmd.PersistentFlags().StringSliceVar(&opts.OperatorTolerations, "operator-tolerations", opts.OperatorTolerations, "A list of tolerations to apply to the HyperShift Operator deployment in the format 'key=value:effect' or 'key:effect'.")
+	cmd.PersistentFlags().StringToStringVar(&opts.OperatorNodeSelectors, "operator-node-selectors", opts.OperatorNodeSelectors, "Set of node selectors to apply to the HyperShift Operator deployment in the format 'key1=value1,key2=value2'.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
@@ -563,6 +676,8 @@ func NewInstallOptionsWithDefaults() Options {
 	opts.PrivatePlatform = string(hyperv1.NonePlatform)
 	opts.ImagePullPolicy = "IfNotPresent"
 	opts.AdditionalOperatorEnvVars = map[string]string{}
+	opts.OperatorTolerations = []string{}
+	opts.OperatorNodeSelectors = map[string]string{}
 
 	return opts
 }
@@ -1299,6 +1414,8 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		EnableEtcdRecovery:                      opts.EnableEtcdRecovery,
 		EnableCPOOverrides:                      opts.EnableCPOOverrides,
 		AdditionalOperatorEnvVars:               opts.AdditionalOperatorEnvVars,
+		OperatorTolerations:                     opts.OperatorTolerations,
+		OperatorNodeSelectors:                   opts.OperatorNodeSelectors,
 		AROHCPKeyVaultUsersClientID:             opts.AroHCPKeyVaultUsersClientID,
 		TechPreviewNoUpgrade:                    opts.TechPreviewNoUpgrade,
 		RegistryOverrides:                       opts.RegistryOverrides,
