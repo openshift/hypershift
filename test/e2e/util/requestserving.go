@@ -82,6 +82,10 @@ func SetupReqServingClusterNodePools(ctx context.Context, t *testing.T, kubeconf
 				Effect: corev1.TaintEffectNoSchedule,
 			},
 		}
+		// Ensure we use m5.xlarge for sufficient memory
+		if np.Spec.Platform.AWS != nil {
+			np.Spec.Platform.AWS.InstanceType = "m5.xlarge"
+		}
 	}
 
 	prepareNonReqServingNodePool := func(np *hyperv1.NodePool) {
@@ -94,6 +98,10 @@ func SetupReqServingClusterNodePools(ctx context.Context, t *testing.T, kubeconf
 		np.Spec.AutoScaling = nil
 		np.Spec.NodeLabels = map[string]string{
 			"hypershift.openshift.io/control-plane": "true",
+		}
+		// Ensure we use m5.xlarge for sufficient memory
+		if np.Spec.Platform.AWS != nil {
+			np.Spec.Platform.AWS.InstanceType = "m5.xlarge"
 		}
 	}
 

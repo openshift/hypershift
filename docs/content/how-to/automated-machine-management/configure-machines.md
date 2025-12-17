@@ -83,7 +83,7 @@ spec:
   platform:
     aws:
       instanceProfile: example-profile
-      instanceType: m5.large
+      instanceType: m5.xlarge
       rootVolume:
         size: 120
         type: gp3
