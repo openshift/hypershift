@@ -185,7 +185,7 @@ github.com/butuzov/ireturn/analyzer/internal/types
 ## explicit; go 1.19
 github.com/butuzov/mirror
 github.com/butuzov/mirror/internal/checker
-# github.com/catenacyber/perfsprint v0.10.0
+# github.com/catenacyber/perfsprint v0.10.1
 ## explicit; go 1.24.0
 github.com/catenacyber/perfsprint/analyzer
 # github.com/ccojocar/zxcvbn-go v1.0.4
