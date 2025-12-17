@@ -611,6 +611,12 @@ func (c *CertificateRevocationController) testCertificateAgainstAllKASPods(
 		podCfg := rest.CopyConfig(baseCfg)
 		// Use the pod IP with the port from the base config
 		podCfg.Host = "https://" + net.JoinHostPort(pod.Status.PodIP, port)
+		// To prevent entire revocation process to hang if a POD is unresponsive.
+		// Set timeout to 5 seconds if not already configured.
+		if podCfg.Timeout == 0 {
+			podCfg.Timeout = 5 * time.Second
+		}
+
 		certCfg := rest.AnonymousClientConfig(podCfg)
 		certCfg.TLSClientConfig.CertData = certPEM
 		certCfg.TLSClientConfig.KeyData = keyPEM
