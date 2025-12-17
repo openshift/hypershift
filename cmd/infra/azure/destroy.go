@@ -2,7 +2,9 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/openshift/hypershift/cmd/log"
@@ -12,7 +14,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 
 	"github.com/go-logr/logr"
@@ -29,6 +30,13 @@ type DestroyInfraOptions struct {
 	ResourceGroupName     string
 	PreserveResourceGroup bool
 	Cloud                 string
+
+	// clientOptions allows injecting custom Azure client options for testing.
+	// When nil, default options are created based on the Cloud field.
+	clientOptions *arm.ClientOptions
+	// azureCredential allows injecting custom Azure credentials for testing.
+	// When nil, credentials are created from Credentials or CredentialsFile.
+	azureCredential azcore.TokenCredential
 }
 
 func NewDestroyCommand() *cobra.Command {
@@ -109,24 +117,37 @@ func (o *DestroyInfraOptions) Validate() error {
 }
 
 func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error {
-	var additionalResourceGroups = []string{
+	additionalResourceGroups := []string{
 		o.Name + "-vnet-" + o.InfraID,
 		o.Name + "-nsg-" + o.InfraID,
 	}
-	var destroyFuture *runtime.Poller[armresources.ResourceGroupsClientDeleteResponse]
 
-	// Setup subscription ID and Azure credential information
-	subscriptionID, azureCreds, err := util.SetupAzureCredentials(logger, o.Credentials, o.CredentialsFile)
-	if err != nil {
-		return fmt.Errorf("failed to setup Azure credentials: %w", err)
+	// Use injected credential if provided (for testing), otherwise create from config
+	var subscriptionID string
+	var azureCreds azcore.TokenCredential
+	if o.azureCredential != nil {
+		azureCreds = o.azureCredential
+		if o.Credentials != nil {
+			subscriptionID = o.Credentials.SubscriptionID
+		}
+	} else {
+		var err error
+		subscriptionID, azureCreds, err = util.SetupAzureCredentials(logger, o.Credentials, o.CredentialsFile)
+		if err != nil {
+			return fmt.Errorf("failed to setup Azure credentials: %w", err)
+		}
 	}
 
-	// Setup cloud configuration
-	cloudConfig, err := azureutil.GetAzureCloudConfiguration(o.Cloud)
-	if err != nil {
-		return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	// Use injected client options if provided (for testing), otherwise create default options
+	clientOptions := o.clientOptions
+	if clientOptions == nil {
+		// Setup cloud configuration
+		cloudConfig, err := azureutil.GetAzureCloudConfiguration(o.Cloud)
+		if err != nil {
+			return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+		}
+		clientOptions = &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}}
 	}
-	clientOptions := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}}
 
 	// Setup Azure resource group client
 	resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, azureCreds, clientOptions)
@@ -151,17 +172,8 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 		logger.Info("Successfully cleaned up cluster resources, resource group preserved", "resource-group", mainResourceGroup)
 	} else {
 		logger.Info("Deleting main resource group", "resource-group", mainResourceGroup)
-		destroyFuture, err = resourceGroupClient.BeginDelete(ctx, mainResourceGroup, nil)
-		if err != nil {
-			if strings.Contains(err.Error(), "ResourceGroupNotFound") {
-				logger.Info("Resource group not found, continuing with infra deletion", "resource-group", mainResourceGroup)
-			} else {
-				return fmt.Errorf("failed to start deletion for resource group %s: %w", mainResourceGroup, err)
-			}
-		} else {
-			if _, err = destroyFuture.PollUntilDone(ctx, nil); err != nil {
-				return fmt.Errorf("failed to wait for resource group deletion %s: %w", mainResourceGroup, err)
-			}
+		if err := o.deleteResourceGroup(ctx, logger, resourceGroupClient, mainResourceGroup); err != nil {
+			return err
 		}
 	}
 
@@ -173,21 +185,30 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 		}
 		if exists.Success {
 			logger.Info("Deleting additional resource group", "resource-group", rg)
-			destroyFuture, err = resourceGroupClient.BeginDelete(ctx, rg, nil)
-			if err != nil {
-				if strings.Contains(err.Error(), "ResourceGroupNotFound") {
-					logger.Info("Resource group not found, continuing with infra deletion", "resource-group", rg)
-					continue
-				}
-				return fmt.Errorf("failed to start deletion for resource group %s: %w", rg, err)
-			}
-
-			if _, err = destroyFuture.PollUntilDone(ctx, nil); err != nil {
-				return fmt.Errorf("failed to wait for resource group deletion %s: %w", rg, err)
+			if err := o.deleteResourceGroup(ctx, logger, resourceGroupClient, rg); err != nil {
+				return err
 			}
 		}
 	}
 
+	return nil
+}
+
+// deleteResourceGroup deletes an Azure resource group and waits for the deletion to complete.
+// It handles the 404 "not found" case gracefully by logging and returning nil.
+func (o *DestroyInfraOptions) deleteResourceGroup(ctx context.Context, logger logr.Logger, client *armresources.ResourceGroupsClient, resourceGroup string) error {
+	poller, err := client.BeginDelete(ctx, resourceGroup, nil)
+	if err != nil {
+		if IsNotFoundError(err) {
+			logger.Info("Resource group not found, skipping deletion", "resource-group", resourceGroup)
+			return nil
+		}
+		return fmt.Errorf("failed to start deletion for resource group %s: %w", resourceGroup, err)
+	}
+
+	if _, err = poller.PollUntilDone(ctx, nil); err != nil {
+		return fmt.Errorf("failed to wait for resource group deletion %s: %w", resourceGroup, err)
+	}
 	return nil
 }
 
@@ -374,4 +395,15 @@ func (o *DestroyInfraOptions) GetResourceGroupName() string {
 		return o.ResourceGroupName
 	}
 	return o.Name + "-" + o.InfraID
+}
+
+// IsNotFoundError checks if the given error is an Azure API "not found" error (HTTP 404).
+// This follows Azure SDK best practices using errors.As() to access the ResponseError type.
+// See: https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/azcore#ResponseError
+func IsNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var respErr *azcore.ResponseError
+	return errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound
 }
