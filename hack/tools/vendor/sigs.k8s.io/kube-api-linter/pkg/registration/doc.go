@@ -38,6 +38,7 @@ import (
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/nodurations"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/nofloats"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/nomaps"
+	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/nonpointerstructs"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/nonullable"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/nophase"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/noreferences"

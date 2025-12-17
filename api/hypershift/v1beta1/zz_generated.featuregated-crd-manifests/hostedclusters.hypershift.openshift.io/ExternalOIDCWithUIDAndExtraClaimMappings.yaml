@@ -3105,6 +3105,22 @@ spec:
                   networking specifies network configuration for the hosted cluster.
                   Defaults to OVNKubernetes with a cluster network of cidr: "10.132.0.0/14" and a service network of cidr: "172.31.0.0/16".
                 properties:
+                  allocateNodeCIDRs:
+                    description: |-
+                      allocateNodeCIDRs controls whether the kube-controller-manager manages node CIDR allocation.
+                      When using networkType=Other, it is recommended to set this field to "Enabled"
+                      if Flannel is used as the CNI, as it relies on this behavior.
+                      Default is "Disabled".
+                      This field can only be set to "Enabled" when NetworkType is "Other". Setting it to "Enabled"
+                      with any other NetworkType will result in a validation error during cluster creation.
+                    enum:
+                    - Enabled
+                    - Disabled
+                    type: string
+                    x-kubernetes-validations:
+                    - message: allocateNodeCIDRs is immutable and cannot be modified
+                        once set.
+                      rule: self == oldSelf
                   apiServer:
                     description: |-
                       apiServer contains advanced network settings for the API server that affect
@@ -3279,6 +3295,10 @@ spec:
                     self.clusterNetwork.all(c, m.cidr != c.cidr)) && self.machineNetwork.all(m,
                     self.serviceNetwork.all(s, m.cidr != s.cidr)) && self.clusterNetwork.all(c,
                     self.serviceNetwork.all(s, c.cidr != s.cidr)))))
+                - message: allocateNodeCIDRs can only be set to Enabled when networkType
+                    is 'Other'
+                  rule: 'has(self.allocateNodeCIDRs) && self.allocateNodeCIDRs ==
+                    ''Enabled'' ? self.networkType == ''Other'' : true'
               nodeSelector:
                 additionalProperties:
                   type: string

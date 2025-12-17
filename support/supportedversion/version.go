@@ -33,7 +33,7 @@ const (
 // NOTE: The .0 (z release) should be ignored. It's only here to support
 // semver parsing.
 var (
-	LatestSupportedVersion      = semver.MustParse("4.21.0")
+	LatestSupportedVersion      = semver.MustParse("4.22.0")
 	MinSupportedVersion         = semver.MustParse("4.14.0")
 	IBMCloudMinSupportedVersion = semver.MustParse("4.14.0")
 )
@@ -48,6 +48,7 @@ var ocpVersionToKubeVersion = map[string]semver.Version{
 	"4.18.0": semver.MustParse("1.31.0"),
 	"4.19.0": semver.MustParse("1.32.0"),
 	"4.20.0": semver.MustParse("1.33.0"),
+	"4.21.0": semver.MustParse("1.34.0"),
 }
 
 func GetKubeVersionForSupportedVersion(supportedVersion semver.Version) (*semver.Version, error) {

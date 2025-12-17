@@ -43,6 +43,12 @@ func (defaulter *hostedClusterDefaulter) Default(ctx context.Context, obj runtim
 		hcluster.Spec.Release.Image = pullSpec
 	}
 
+	// Default allocateNodeCIDRs to Disabled if not set
+	if hcluster.Spec.Networking.AllocateNodeCIDRs == nil {
+		disabled := hyperv1.AllocateNodeCIDRsDisabled
+		hcluster.Spec.Networking.AllocateNodeCIDRs = &disabled
+	}
+
 	// Default platform specific values
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
