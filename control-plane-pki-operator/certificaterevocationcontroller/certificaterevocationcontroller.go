@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"sort"
 	"strconv"
 	"strings"
@@ -539,6 +540,19 @@ func (c *CertificateRevocationController) generateNewSignerCertificate(ctx conte
 	return false, nil, false, nil
 }
 
+func isPodReady(pod *corev1.Pod) bool {
+	if pod == nil {
+		return false
+	}
+
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
 // testCertificateAgainstAllKASPods tests a certificate against all kube-apiserver pods
 // and returns true if the test passes for all pods, false otherwise.
 // The testFunc should return true if the test passes, false if it should requeue.
@@ -568,32 +582,35 @@ func (c *CertificateRevocationController) testCertificateAgainstAllKASPods(
 	}
 
 	// List all kube-apiserver pods
-	selector, err := labels.Parse("app=kube-apiserver")
-	if err != nil {
-		return false, fmt.Errorf("couldn't parse selector: %w", err)
-	}
-	pods, err := c.listPods(namespace, selector)
+	pods, err := c.listPods(namespace, labels.SelectorFromSet(labels.Set{"app": "kube-apiserver"}))
 	if err != nil {
 		return false, fmt.Errorf("couldn't list kube-apiserver pods: %w", err)
 	}
 	if len(pods) == 0 {
 		// No pods found, requeue
+		klog.Warningf("No kube-apiserver pods found")
 		return false, nil
+	}
+
+	// Extract the port from the base config
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(baseCfg.Host, "https://"))
+	if err != nil {
+		klog.Warningf("couldn't extract kube api-server port from base config: %v. Trying with 6443", err)
+		port = "6443" // fall-back to 6443 in case something went wrong
 	}
 
 	// Test the certificate against each kube-apiserver pod
 	for _, pod := range pods {
 		// Skip pods without an IP assigned yet
-		if pod.Status.PodIP == "" {
+		if !isPodReady(pod) || pod.Status.PodIP == "" {
 			// Pod not ready, requeue
 			return false, nil
 		}
 
 		// Create a client config that connects directly to this pod's IP
 		podCfg := rest.CopyConfig(baseCfg)
-		// Use the pod IP with the KAS port (typically 6443)
-		// The base config should have the correct port from the service network kubeconfig
-		podCfg.Host = fmt.Sprintf("https://%s:6443", pod.Status.PodIP)
+		// Use the pod IP with the port from the base config
+		podCfg.Host = "https://" + net.JoinHostPort(pod.Status.PodIP, port)
 		certCfg := rest.AnonymousClientConfig(podCfg)
 		certCfg.TLSClientConfig.CertData = certPEM
 		certCfg.TLSClientConfig.KeyData = keyPEM
