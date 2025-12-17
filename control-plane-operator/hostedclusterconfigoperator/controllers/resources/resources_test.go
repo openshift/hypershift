@@ -1439,6 +1439,7 @@ func TestReconcileKASEndpoints(t *testing.T) {
 			err := r.reconcileKASEndpoints(t.Context(), tc.hcp)
 			g.Expect(err).ToNot(HaveOccurred())
 
+			//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 			endpoints := &corev1.Endpoints{}
 			err = fakeClient.Get(t.Context(), client.ObjectKey{Name: "kubernetes", Namespace: corev1.NamespaceDefault}, endpoints)
 			g.Expect(err).ToNot(HaveOccurred())

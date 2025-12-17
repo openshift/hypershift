@@ -9,6 +9,7 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -277,11 +278,19 @@ func validateTuningConfigManifest(manifest []byte) ([]byte, []byte, error) {
 
 	switch obj := cr.(type) {
 	case *tunedv1.Tuned:
+		// Ensure consistent serialization with creationTimestamp: null like the old OpenShift API
+		creationTimestamp := obj.GetCreationTimestamp()
+		if creationTimestamp.IsZero() {
+			obj.SetCreationTimestamp(metav1.NewTime(time.Unix(0, 0)))
+		}
 		buff := bytes.Buffer{}
 		if err := yamlSerializer.Encode(obj, &buff); err != nil {
 			return nil, nil, fmt.Errorf("failed to encode Tuned object: %w", err)
 		}
-		manifest = buff.Bytes()
+		result := buff.Bytes()
+		// Replace Unix epoch timestamp with null to match old OpenShift API behavior
+		resultStr := strings.ReplaceAll(string(result), `creationTimestamp: "1970-01-01T00:00:00Z"`, `creationTimestamp: null`)
+		manifest = []byte(resultStr)
 		return manifest, nil, nil
 
 	case *performanceprofilev2.PerformanceProfile:
@@ -290,11 +299,19 @@ func validateTuningConfigManifest(manifest []byte) ([]byte, []byte, error) {
 			return nil, nil, fmt.Errorf("PerformanceProfile validation failed pp:%s : %w", obj.Name, coreerrors.Join(validationErrors.ToAggregate().Errors()...))
 		}
 
+		// Ensure consistent serialization with creationTimestamp: null like the old OpenShift API
+		creationTimestamp := obj.GetCreationTimestamp()
+		if creationTimestamp.IsZero() {
+			obj.SetCreationTimestamp(metav1.NewTime(time.Unix(0, 0)))
+		}
 		buff := bytes.Buffer{}
 		if err := yamlSerializer.Encode(obj, &buff); err != nil {
 			return nil, nil, fmt.Errorf("failed to encode performance profile after defaulting it: %w", err)
 		}
-		manifest = buff.Bytes()
+		result := buff.Bytes()
+		// Replace Unix epoch timestamp with null to match old OpenShift API behavior
+		resultStr := strings.ReplaceAll(string(result), `creationTimestamp: "1970-01-01T00:00:00Z"`, `creationTimestamp: null`)
+		manifest = []byte(resultStr)
 		return nil, manifest, nil
 
 	default:

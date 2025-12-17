@@ -1,7 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-network-operator
@@ -29,7 +28,6 @@ spec:
         component.hypershift.openshift.io/config-hash: 87ecf31a
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
-      creationTimestamp: null
       labels:
         app: cluster-network-operator
         hypershift.openshift.io/control-plane-component: cluster-network-operator

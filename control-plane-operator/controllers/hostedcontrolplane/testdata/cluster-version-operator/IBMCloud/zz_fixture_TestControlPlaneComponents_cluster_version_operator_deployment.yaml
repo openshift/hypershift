@@ -1,7 +1,6 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-version-operator
@@ -32,7 +31,6 @@ spec:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: payload,update-payloads,tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
-      creationTimestamp: null
       labels:
         app: cluster-version-operator
         hypershift.openshift.io/control-plane-component: cluster-version-operator
@@ -260,7 +258,7 @@ spec:
         - name: KUBECONFIG
           value: /etc/kubernetes/kubeconfig
         - name: CLUSTER_VERSION_JSON
-          value: '{"kind":"ClusterVersion","apiVersion":"config.openshift.io/v1","metadata":{"name":"version","creationTimestamp":null},"spec":{"clusterID":"","capabilities":{"baselineCapabilitySet":"None","additionalEnabledCapabilities":["Build","CSISnapshot","CloudControllerManager","CloudCredential","Console","DeploymentConfig","ImageRegistry","Ingress","Insights","MachineAPI","NodeTuning","OperatorLifecycleManager","OperatorLifecycleManagerV1","Storage","marketplace","openshift-samples"]},"signatureStores":null},"status":{"desired":{"version":"","image":""},"observedGeneration":0,"versionHash":"","capabilities":{},"availableUpdates":null}}'
+          value: '{"kind":"ClusterVersion","apiVersion":"config.openshift.io/v1","metadata":{"name":"version"},"spec":{"clusterID":"","capabilities":{"baselineCapabilitySet":"None","additionalEnabledCapabilities":["Build","CSISnapshot","CloudControllerManager","CloudCredential","Console","DeploymentConfig","ImageRegistry","Ingress","Insights","MachineAPI","NodeTuning","OperatorLifecycleManager","OperatorLifecycleManagerV1","Storage","marketplace","openshift-samples"]},"signatureStores":null},"status":{"desired":{"version":"","image":""},"observedGeneration":0,"versionHash":"","capabilities":{},"availableUpdates":null}}'
         image: cli
         imagePullPolicy: IfNotPresent
         name: bootstrap

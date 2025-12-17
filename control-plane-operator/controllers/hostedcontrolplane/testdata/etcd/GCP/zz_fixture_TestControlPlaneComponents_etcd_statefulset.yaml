@@ -1,7 +1,6 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: etcd
@@ -31,7 +30,6 @@ spec:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cluster-state,tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
-      creationTimestamp: null
       labels:
         app: etcd
         hypershift.openshift.io/control-plane-component: etcd
@@ -420,7 +418,6 @@ spec:
     type: RollingUpdate
   volumeClaimTemplates:
   - metadata:
-      creationTimestamp: null
       name: data
     spec:
       accessModes:

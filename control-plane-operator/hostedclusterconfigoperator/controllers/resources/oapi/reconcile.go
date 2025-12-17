@@ -33,7 +33,9 @@ func ReconcileAPIService(apiService *apiregistrationv1.APIService, svc *corev1.S
 	}
 }
 
+//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 func ReconcileEndpoints(ep *corev1.Endpoints, clusterIP string) {
+	//nolint:staticcheck // SA1019: corev1.EndpointSubset is intentionally used for backward compatibility
 	ep.Subsets = []corev1.EndpointSubset{
 		{
 			Addresses: []corev1.EndpointAddress{

@@ -4,7 +4,6 @@ data:
     = Shared"
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: aws-cloud-config
   namespace: hcp-namespace
   ownerReferences:

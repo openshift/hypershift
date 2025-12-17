@@ -183,9 +183,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
 								PrefixPolicy: configv1.NoOpinion,
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "username",
-								},
+								Claim:        "username",
 							},
 						},
 					},
@@ -242,9 +240,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						},
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "username",
-								},
+								Claim:        "username",
 								PrefixPolicy: configv1.NoPrefix,
 							},
 						},
@@ -302,9 +298,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						},
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "username",
-								},
+								Claim:        "username",
 								PrefixPolicy: configv1.Prefix,
 								Prefix: &configv1.UsernamePrefix{
 									PrefixString: "providedPrefix",
@@ -332,9 +326,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						},
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "username",
-								},
+								Claim:        "username",
 								PrefixPolicy: configv1.Prefix,
 							},
 						},
@@ -392,9 +384,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						},
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "username",
-								},
+								Claim:        "username",
 								PrefixPolicy: configv1.NoOpinion,
 							},
 						},
@@ -452,9 +442,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						},
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "email",
-								},
+								Claim:        "email",
 								PrefixPolicy: configv1.NoOpinion,
 							},
 						},
@@ -513,9 +501,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
 								PrefixPolicy: configv1.NoOpinion,
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "username",
-								},
+								Claim:        "username",
 							},
 							Groups: configv1.PrefixedClaimMapping{
 								Prefix: "groups-prefix",
@@ -579,9 +565,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
 								PrefixPolicy: configv1.NoOpinion,
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "username",
-								},
+								Claim:        "username",
 							},
 							UID: &configv1.TokenClaimOrExpressionMapping{
 								Claim: "custom",
@@ -642,9 +626,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
 								PrefixPolicy: configv1.NoOpinion,
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "username",
-								},
+								Claim:        "username",
 							},
 							UID: &configv1.TokenClaimOrExpressionMapping{
 								Expression: "claims.foo",
@@ -672,9 +654,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
 								PrefixPolicy: configv1.NoOpinion,
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "username",
-								},
+								Claim:        "username",
 							},
 							UID: &configv1.TokenClaimOrExpressionMapping{
 								Claim:      "foo",
@@ -703,9 +683,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
 								PrefixPolicy: configv1.NoOpinion,
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "username",
-								},
+								Claim:        "username",
 							},
 							UID: &configv1.TokenClaimOrExpressionMapping{
 								Expression: "#@!$&*(^)",
@@ -771,9 +749,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
 								PrefixPolicy: configv1.NoOpinion,
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "username",
-								},
+								Claim:        "username",
 							},
 							Extra: []configv1.ExtraMapping{
 								{
@@ -804,9 +780,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
 								PrefixPolicy: configv1.NoOpinion,
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "username",
-								},
+								Claim:        "username",
 							},
 							Extra: []configv1.ExtraMapping{
 								{
@@ -837,9 +811,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
 								PrefixPolicy: configv1.NoOpinion,
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "username",
-								},
+								Claim:        "username",
 							},
 							Extra: []configv1.ExtraMapping{
 								{
@@ -869,9 +841,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
 								PrefixPolicy: configv1.NoOpinion,
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "username",
-								},
+								Claim:        "username",
 							},
 							Extra: []configv1.ExtraMapping{
 								{
@@ -938,9 +908,7 @@ func TestAdaptAuthConfig(t *testing.T) {
 						},
 						ClaimMappings: configv1.TokenClaimMappings{
 							Username: configv1.UsernameClaimMapping{
-								TokenClaimMapping: configv1.TokenClaimMapping{
-									Claim: "username",
-								},
+								Claim:        "username",
 								PrefixPolicy: configv1.NoOpinion,
 							},
 							Groups: configv1.PrefixedClaimMapping{
