@@ -8,7 +8,9 @@ import (
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 )
 
+//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 func OpenShiftAPIServerClusterEndpoints() *corev1.Endpoints {
+	//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 	return &corev1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "openshift-apiserver",

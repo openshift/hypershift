@@ -1,7 +1,6 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  creationTimestamp: null
   name: clusters
 spec: {}
 status: {}
@@ -11,7 +10,6 @@ data:
   .dockerconfigjson: ZmFrZQ==
 kind: Secret
 metadata:
-  creationTimestamp: null
   labels:
     hypershift.openshift.io/safe-to-delete-with-cluster: "true"
   name: example-pull-secret
@@ -23,7 +21,6 @@ data:
   AZURE_TENANT_ID: ZmFrZVRlbmFudElE
 kind: Secret
 metadata:
-  creationTimestamp: null
   name: example-cloud-credentials
   namespace: clusters
 ---
@@ -32,7 +29,6 @@ data:
   key: qO1Sny2IAcCrq0VGlEp7O6WsknhpszO7eSLmXjsPDxs=
 kind: Secret
 metadata:
-  creationTimestamp: null
   labels:
     hypershift.openshift.io/safe-to-delete-with-cluster: "true"
   name: example-etcd-encryption-key
@@ -42,7 +38,6 @@ type: Opaque
 apiVersion: hypershift.openshift.io/v1beta1
 kind: HostedCluster
 metadata:
-  creationTimestamp: null
   name: example
   namespace: clusters
 spec:
@@ -147,7 +142,6 @@ status:
 apiVersion: hypershift.openshift.io/v1beta1
 kind: NodePool
 metadata:
-  creationTimestamp: null
   name: example
   namespace: clusters
 spec:

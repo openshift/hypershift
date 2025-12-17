@@ -182,14 +182,14 @@ func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, hcluster *
 	}
 	machineConfig.Spec.Config.Raw = serializedConfig
 
-	buf := &bytes.Buffer{}
 	machineConfig.APIVersion = mcfgv1.SchemeGroupVersion.String()
 	machineConfig.Kind = "MachineConfig"
-	if err := api.YamlSerializer.Encode(machineConfig, buf); err != nil {
+	encoded, err := api.CompatibleYAMLEncode(machineConfig, api.YamlSerializer)
+	if err != nil {
 		return "", fmt.Errorf("failed to serialize haproxy machine config: %w", err)
 	}
 
-	return buf.String(), nil
+	return string(encoded), nil
 }
 
 // TODO (alberto): Technically anything should be calling util.BindAPIPortWithDefaultFromHostedCluster and let 443 be an invalid value.
@@ -404,11 +404,8 @@ func generateHAProxyStaticPod(name, image, internalAPIAddress, configPath string
 				},
 			},
 		}
-		out := &bytes.Buffer{}
-		if err := api.YamlSerializer.Encode(pod, out); err != nil {
-			return nil, err
-		}
-		return out.Bytes(), nil
+
+		return api.CompatibleYAMLEncode(pod, api.YamlSerializer)
 	}
 }
 

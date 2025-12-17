@@ -21,7 +21,7 @@ import (
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/blang/semver"
 )
@@ -248,7 +248,7 @@ func (r *NodePoolReconciler) ignitionEndpointAvailableCondition(ctx context.Cont
 	removeStatusCondition(&nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
 
 	caSecret := ignitionserver.IgnitionCACertSecret(controlPlaneNamespace)
-	if err := r.Get(ctx, client.ObjectKeyFromObject(caSecret), caSecret); err != nil {
+	if err := r.Get(ctx, crclient.ObjectKeyFromObject(caSecret), caSecret); err != nil {
 		if apierrors.IsNotFound(err) {
 			SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 				Type:               string(hyperv1.IgnitionEndpointAvailable),
@@ -362,6 +362,7 @@ func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePo
 	}
 
 	targetConfigHash := token.HashWithoutVersion()
+	currentConfigHash := nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfig]
 	isUpdatingConfig := isUpdatingConfig(nodePool, targetConfigHash)
 	if isUpdatingConfig {
 		reason := hyperv1.AsExpectedReason
@@ -375,7 +376,7 @@ func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePo
 			}
 
 			machineSet := capi.machineSet()
-			err = r.Get(ctx, client.ObjectKeyFromObject(machineSet), machineSet)
+			err = r.Get(ctx, crclient.ObjectKeyFromObject(machineSet), machineSet)
 			if err != nil {
 				if !apierrors.IsNotFound(err) {
 					return &ctrl.Result{}, fmt.Errorf("failed to get MachineSet: %w", err)
@@ -403,7 +404,7 @@ func (r *NodePoolReconciler) updatingConfigCondition(ctx context.Context, nodePo
 			ObservedGeneration: nodePool.Generation,
 		})
 		log.Info("NodePool config is updating",
-			"current", nodePool.GetAnnotations()[nodePoolAnnotationCurrentConfig],
+			"current", currentConfigHash,
 			"target", targetConfigHash)
 	} else {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -442,7 +443,7 @@ func (r *NodePoolReconciler) updatingVersionCondition(ctx context.Context, nodeP
 			}
 
 			machineSet := capi.machineSet()
-			err = r.Get(ctx, client.ObjectKeyFromObject(machineSet), machineSet)
+			err = r.Get(ctx, crclient.ObjectKeyFromObject(machineSet), machineSet)
 			if err != nil {
 				if !apierrors.IsNotFound(err) {
 					return &ctrl.Result{}, fmt.Errorf("failed to get MachineSet: %w", err)
@@ -737,7 +738,7 @@ func (r *NodePoolReconciler) setCIDRConflictCondition(nodePool *hyperv1.NodePool
 // createReachedIgnitionEndpointCondition creates a condition for the NodePool based on the tokenSecret data.
 func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.Context, tokenSecret *corev1.Secret, generation int64) (*hyperv1.NodePoolCondition, error) {
 	var condition *hyperv1.NodePoolCondition
-	if err := r.Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
+	if err := r.Get(ctx, crclient.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
 		if !apierrors.IsNotFound(err) {
 			condition = &hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolReachedIgnitionEndpoint,
@@ -783,7 +784,7 @@ func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.C
 // createValidGeneratedPayloadCondition creates a condition for the NodePool based on the tokenSecret data.
 func (r NodePoolReconciler) createValidGeneratedPayloadCondition(ctx context.Context, tokenSecret *corev1.Secret, generation int64) (*hyperv1.NodePoolCondition, error) {
 	var condition *hyperv1.NodePoolCondition
-	if err := r.Get(ctx, client.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
+	if err := r.Get(ctx, crclient.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
 		if !apierrors.IsNotFound(err) {
 			condition = &hyperv1.NodePoolCondition{
 				Type:               hyperv1.NodePoolValidGeneratedPayloadConditionType,

@@ -25,13 +25,6 @@ data:
     ingress:
       ingressIPNetworkCIDR: 99.1.0.0/24
     kind: OpenShiftControllerManagerConfig
-    kubeClientConfig:
-      connectionOverrides:
-        acceptContentTypes: ""
-        burst: 0
-        contentType: ""
-        qps: 0
-      kubeConfig: ""
     leaderElection:
       leaseDuration: 0s
       name: openshift-route-controllers
@@ -72,6 +65,5 @@ data:
       requestTimeoutSeconds: 0
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: openshift-route-controller-manager-config
   namespace: test-namespace

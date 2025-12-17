@@ -1,7 +1,6 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  creationTimestamp: null
   name: oauth-openshift
   namespace: hcp-namespace
   ownerReferences:

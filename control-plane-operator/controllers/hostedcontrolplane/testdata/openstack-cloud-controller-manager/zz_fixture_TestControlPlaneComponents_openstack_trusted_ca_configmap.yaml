@@ -3,7 +3,6 @@ data:
   ca-bundle.pem: ""
 kind: ConfigMap
 metadata:
-  creationTimestamp: null
   name: openstack-trusted-ca
   namespace: hcp-namespace
   ownerReferences:

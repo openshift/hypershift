@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"sort"
@@ -12,6 +11,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/globalconfig"
@@ -288,7 +288,7 @@ func (cg *ConfigGenerator) defaultAndValidateConfigManifest(manifest []byte) ([]
 			obj.Labels = map[string]string{}
 		}
 		obj.Labels["machineconfiguration.openshift.io/role"] = "worker"
-		manifest, err = encode(cr, yamlSerializer)
+		manifest, err = api.CompatibleYAMLEncode(cr, yamlSerializer)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encode machine config after defaulting it: %w", err)
 		}
@@ -301,7 +301,7 @@ func (cg *ConfigGenerator) defaultAndValidateConfigManifest(manifest []byte) ([]
 				"machineconfiguration.openshift.io/mco-built-in": "",
 			},
 		}
-		manifest, err = encode(cr, yamlSerializer)
+		manifest, err = api.CompatibleYAMLEncode(cr, yamlSerializer)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encode kubelet config after setting built-in MCP selector: %w", err)
 		}
@@ -311,7 +311,7 @@ func (cg *ConfigGenerator) defaultAndValidateConfigManifest(manifest []byte) ([]
 				"machineconfiguration.openshift.io/mco-built-in": "",
 			},
 		}
-		manifest, err = encode(cr, yamlSerializer)
+		manifest, err = api.CompatibleYAMLEncode(cr, yamlSerializer)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encode container runtime config after setting built-in MCP selector: %w", err)
 		}
@@ -319,14 +319,6 @@ func (cg *ConfigGenerator) defaultAndValidateConfigManifest(manifest []byte) ([]
 		return nil, fmt.Errorf("unsupported config type: %T", obj)
 	}
 	return manifest, err
-}
-
-func encode(obj runtime.Object, ser *serializer.Serializer) ([]byte, error) {
-	buff := bytes.Buffer{}
-	if err := ser.Encode(obj, &buff); err != nil {
-		return nil, err
-	}
-	return buff.Bytes(), nil
 }
 
 func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
@@ -343,15 +335,20 @@ func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
 	// Serialize proxy and image into a single string to use in the token secret hash.
 	globalConfigBytes := bytes.NewBuffer(nil)
 
-	enc := json.NewEncoder(globalConfigBytes)
-	if err := enc.Encode(proxy); err != nil {
+	proxyBytes, err := api.CompatibleJSONEncode(proxy)
+	if err != nil {
 		return "", fmt.Errorf("failed to encode proxy global config: %w", err)
 	}
+	globalConfigBytes.Write(proxyBytes)
 
-	if err := enc.Encode(image); err != nil {
+	imageBytes, err := api.CompatibleJSONEncode(image)
+	if err != nil {
 		return "", fmt.Errorf("failed to encode image global config: %w", err)
 	}
+	globalConfigBytes.Write(imageBytes)
+
+	rawConfig := globalConfigBytes.String()
 
 	// Some fields in the ClusterConfiguration have changes that are not backwards compatible with older versions of the CPO.
-	return backwardcompat.GetBackwardCompatibleConfigString(globalConfigBytes.String()), nil
+	return backwardcompat.GetBackwardCompatibleConfigString(rawConfig), nil
 }

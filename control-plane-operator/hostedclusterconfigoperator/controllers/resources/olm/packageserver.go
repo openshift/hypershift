@@ -30,7 +30,9 @@ func ReconcilePackageServerService(service *corev1.Service) {
 	}
 }
 
+//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 func ReconcilePackageServerEndpoints(ep *corev1.Endpoints, serviceIP string) {
+	//nolint:staticcheck // SA1019: corev1.EndpointSubset is intentionally used for backward compatibility
 	ep.Subsets = []corev1.EndpointSubset{
 		{
 			Addresses: []corev1.EndpointAddress{
