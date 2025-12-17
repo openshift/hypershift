@@ -1,0 +1,47 @@
+package azure
+
+import (
+	"context"
+	"fmt"
+
+	hypershiftazure "github.com/openshift/hypershift/cmd/cluster/azure"
+	"github.com/openshift/hypershift/cmd/cluster/core"
+
+	"github.com/spf13/cobra"
+)
+
+func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:          "azure",
+		Short:        "Creates basic functional HostedCluster resources on Azure",
+		SilenceUsage: true,
+	}
+
+	azureOpts, err := hypershiftazure.DefaultOptions()
+	if err != nil {
+		opts.Log.Error(err, "Failed to create default options")
+		cmd.RunE = func(cmd *cobra.Command, args []string) error {
+			return fmt.Errorf("failed to initialize Azure options: %w", err)
+		}
+		return cmd
+	}
+
+	hypershiftazure.BindProductFlags(azureOpts, cmd.Flags())
+
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		if opts.Timeout > 0 {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
+			defer cancel()
+		}
+
+		if err := core.CreateCluster(ctx, opts, azureOpts); err != nil {
+			opts.Log.Error(err, "Failed to create cluster")
+			return err
+		}
+		return nil
+	}
+
+	return cmd
+}
