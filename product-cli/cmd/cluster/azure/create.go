@@ -28,6 +28,9 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 	hypershiftazure.BindProductFlags(azureOpts, cmd.Flags())
 
+	_ = cmd.MarkFlagRequired("azure-creds")
+	_ = cmd.MarkPersistentFlagRequired("pull-secret")
+
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if opts.Timeout > 0 {
