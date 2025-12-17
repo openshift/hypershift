@@ -284,9 +284,17 @@ func (o *Options) DefaultAWSOptions() hypershiftaws.RawCreateOptions {
 		MultiArch:              o.ConfigurableClusterOptions.AWSMultiArch,
 		PublicOnly:             true,
 		UseROSAManagedPolicies: true,
+		SharedRole:             true,
 	}
+
 	if IsLessThan(semver.MustParse("4.16.0")) {
 		opts.PublicOnly = false
+	}
+
+	// HCCO requires this fix https://github.com/openshift/hypershift/pull/7383
+	// in order for shared roles to work properly.
+	if IsLessThan(semver.MustParse("4.20.0")) {
+		opts.SharedRole = false
 	}
 
 	// Set an expiration date tag if it's not already set
