@@ -111,7 +111,7 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 				// RHOBS Prometheus uses HTTP without TLS
 				metricsURL = fmt.Sprintf("http://hypershift-monitoring-stack-prometheus.openshift-observability-operator.svc:9090?namespace=%s", cpContext.HCP.Namespace)
 			} else {
-				// CoreOS Thanos uses HTTPS with service CA
+				// OCP Thanos Query uses HTTPS with service CA
 				c.Args = append(c.Args, "--metrics-ca-bundle-file=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt")
 				metricsURL = fmt.Sprintf("https://thanos-querier.openshift-monitoring.svc:9092?namespace=%s", cpContext.HCP.Namespace)
 			}
