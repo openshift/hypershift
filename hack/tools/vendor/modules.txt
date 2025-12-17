@@ -478,7 +478,7 @@ github.com/goccy/go-yaml/parser
 github.com/goccy/go-yaml/printer
 github.com/goccy/go-yaml/scanner
 github.com/goccy/go-yaml/token
-# github.com/godoc-lint/godoc-lint v0.10.1
+# github.com/godoc-lint/godoc-lint v0.10.2
 ## explicit; go 1.24
 github.com/godoc-lint/godoc-lint/pkg/analysis
 github.com/godoc-lint/godoc-lint/pkg/check
