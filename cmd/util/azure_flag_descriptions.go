@@ -1,0 +1,57 @@
+package util
+
+// Azure flag descriptions for the product CLI.
+// These constants are shared between cluster and nodepool commands to ensure consistency.
+
+const (
+	// Credentials
+	AzureCredsDescription = "Path to an Azure credentials file (JSON format) containing subscription ID, tenant ID, client ID, and client secret. These credentials are used to create and manage Azure resources for the HostedCluster."
+
+	// Location and availability
+	LocationDescription          = "Azure region where the cluster and its resources will be created (e.g. eastus, westus2, northeurope)."
+	AvailabilityZonesDescription = "Availability zones for NodePool placement (e.g. 1,2,3). One NodePool will be created per zone. Omit if the region does not support availability zones."
+	AvailabilityZoneDescription  = "Availability zone for the NodePool (e.g. 1, 2, or 3). Omit if the region does not support availability zones."
+
+	// Resource group
+	ResourceGroupNameDescription = "Name of an existing resource group where HostedCluster infrastructure resources will be created. If omitted, a new resource group will be created."
+	ResourceGroupTagsDescription = "Additional tags to apply to the resource group (e.g. 'environment=prod,team=platform')."
+	DNSZoneRGNameDescription     = "Name of the resource group containing your Azure DNS zone. Required for the ingress controller to create DNS records."
+
+	// Networking
+	VnetIDDescription                 = "Full resource ID of an existing VNET to use for the cluster (e.g. /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<name>). If omitted, a new VNET will be created."
+	SubnetIDDescription               = "Full resource ID of an existing subnet where VMs will be placed. If omitted for cluster creation, a new subnet will be created."
+	NetworkSecurityGroupIDDescription = "Full resource ID of an existing Network Security Group for the default NodePool. If omitted, a new NSG will be created."
+
+	// Identity
+	WorkloadIdentitiesFileDescription = "Path to a JSON file containing workload identity client IDs that map Azure identities to HyperShift components. Required for self-managed Azure clusters using workload identity authentication."
+	OIDCIssuerURLDescription          = "URL of the OIDC identity provider used for workload identity federation. This enables Azure workload identities to authenticate with the cluster."
+	SATokenIssuerKeyPathDescription   = "Path to the RSA private key file used to sign service account tokens. Required for OIDC-based workload identity authentication."
+	AssignIdentityRolesDescription    = "Automatically assign required Azure RBAC roles to workload identities. This grants the identities permissions to manage Azure resources (DNS, networking, storage) for the cluster."
+
+	// Encryption
+	EncryptionKeyIDDescription     = "Azure Key Vault key identifier used to encrypt etcd data via KMSv2 (format: https://<vault>.vault.azure.net/keys/<key>/<version>)."
+	EncryptionAtHostDescription    = "Enable host-based encryption for VM disks and temp disks. Valid values: Enabled, Disabled."
+	DiskEncryptionSetIDDescription = "Full resource ID of an Azure Disk Encryption Set used to encrypt NodePool OS disks with customer-managed keys."
+
+	// VM configuration
+	InstanceTypeDescription = "Azure VM size for NodePool instances (e.g. Standard_D4s_v4, Standard_D8s_v5)."
+	RootDiskSizeDescription = "Size of the OS disk in GB for each NodePool VM. Minimum: 16 GB."
+
+	// Disk configuration
+	DiskStorageAccountTypeDescription = "Azure storage type for NodePool OS disks. Valid values: Premium_LRS, StandardSSD_LRS, Standard_LRS."
+	EnableEphemeralOSDiskDescription  = "Use ephemeral OS disks for faster VM provisioning and lower latency. Note: Data is lost when VMs are deallocated."
+
+	// Image configuration
+	ImageGenerationDescription      = "Hyper-V generation for VM images. Valid values: Gen1, Gen2. Gen2 is recommended for most modern workloads."
+	MarketplacePublisherDescription = "Publisher name for Azure Marketplace image (e.g. redhat). Only needed if overriding the default RHCOS image."
+	MarketplaceOfferDescription     = "Offer name for Azure Marketplace image (e.g. rhcos). Only needed if overriding the default RHCOS image."
+	MarketplaceSKUDescription       = "SKU for Azure Marketplace image (e.g. rhcos-414). Only needed if overriding the default RHCOS image."
+	MarketplaceVersionDescription   = "Version of the Azure Marketplace image (e.g. 414.92.2024020901 or 'latest'). Only needed if overriding the default RHCOS image."
+
+	// Diagnostics
+	DiagnosticsStorageAccountTypeDescription = "Boot diagnostics storage type for troubleshooting VM issues. Valid values: Disabled, Managed (Azure-managed storage), UserManaged (your storage account)."
+	DiagnosticsStorageAccountURIDescription  = "URI of your storage account for boot diagnostics logs. Required when using UserManaged diagnostics type."
+
+	// Destroy options
+	PreserveResourceGroupDescription = "Keep the resource group after cluster deletion. Only cluster-specific resources within the group will be removed."
+)
