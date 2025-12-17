@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -43,6 +44,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/utils/ptr"
@@ -135,6 +137,8 @@ type Options struct {
 	ScaleFromZeroAWSCreds                     string
 	ScaleFromZeroAWSCredentialsSecret         string
 	ScaleFromZeroAWSCredentialsSecretKey      string
+	OperatorTolerations                       []string
+	OperatorNodeSelectors                     map[string]string
 }
 
 func (o *Options) Validate() error {
@@ -232,7 +236,140 @@ func (o *Options) Validate() error {
 		}
 	}
 
+	if len(o.OperatorTolerations) > 0 {
+		for _, tolerationStr := range o.OperatorTolerations {
+			if err := validateTolerationString(tolerationStr); err != nil {
+				errs = append(errs, fmt.Errorf("invalid operator toleration '%s': %w", tolerationStr, err))
+			}
+		}
+	}
+
+	if len(o.OperatorNodeSelectors) > 0 {
+		for nodeSelectorKey, nodeSelectorValue := range o.OperatorNodeSelectors {
+			if err := validateNodeSelectorKey(nodeSelectorKey); err != nil {
+				errs = append(errs, fmt.Errorf("invalid operator node selector key '%s': %w", nodeSelectorKey, err))
+			}
+			if err := validateNodeSelectorValue(nodeSelectorValue); err != nil {
+				errs = append(errs, fmt.Errorf("invalid operator node selector value '%s': %w", nodeSelectorValue, err))
+			}
+		}
+	}
 	return errors.NewAggregate(errs)
+}
+
+func validateNodeSelectorKey(key string) error {
+	if errs := validation.IsQualifiedName(key); len(errs) > 0 {
+		return fmt.Errorf("invalid key '%s': %s", key, strings.Join(errs, "; "))
+	}
+	return nil
+}
+
+func validateNodeSelectorValue(value string) error {
+	if value != "" {
+		if errs := validation.IsValidLabelValue(value); len(errs) > 0 {
+			return fmt.Errorf("invalid value '%s': %s", value, strings.Join(errs, "; "))
+		}
+	}
+	return nil
+}
+
+func validateTolerationString(s string) error {
+	if s == "" {
+		return fmt.Errorf("toleration string cannot be empty")
+	}
+
+	parts := strings.Split(s, ":")
+
+	// Check number of parts
+	if len(parts) < 2 {
+		return fmt.Errorf("invalid format: missing effect (expected key:effect or key=value:effect)")
+	}
+	if len(parts) > 3 {
+		return fmt.Errorf("invalid format: too many colons (expected key:effect or key=value:effect or key=value:effect:seconds)")
+	}
+
+	// Validate key[=value] part
+	if err := validateTolerationKeyValuePart(parts[0]); err != nil {
+		return err
+	}
+
+	// Validate effect part
+	if err := validateTolerationEffectPart(parts[1]); err != nil {
+		return err
+	}
+
+	// Validate tolerationSeconds part (if present)
+	if len(parts) == 3 {
+		if err := validateTolerationSecondsPart(parts[2]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Validates the key[=value] portion of the toleration string.
+func validateTolerationKeyValuePart(part string) error {
+	if part == "" {
+		return fmt.Errorf("toleration key:value cannot be empty")
+	}
+
+	keyValue := strings.SplitN(part, "=", 2)
+
+	key := keyValue[0]
+	if key == "" {
+		return fmt.Errorf("toleration key cannot be empty")
+	}
+
+	if errs := validation.IsQualifiedName(key); len(errs) > 0 {
+		return fmt.Errorf("invalid key '%s': %s", key, strings.Join(errs, "; "))
+	}
+
+	// If value is present.
+	if len(keyValue) == 2 {
+		value := keyValue[1]
+		if value != "" {
+			if errs := validation.IsValidLabelValue(value); len(errs) > 0 {
+				return fmt.Errorf("invalid value '%s': %s", value, strings.Join(errs, "; "))
+			}
+		}
+	}
+
+	return nil
+}
+
+// Validates the effect part of the toleration string.
+func validateTolerationEffectPart(effect string) error {
+	if effect == "" {
+		return fmt.Errorf("toleration effect cant be empty")
+	}
+
+	validEffects := []string{
+		string(corev1.TaintEffectNoSchedule),
+		string(corev1.TaintEffectPreferNoSchedule),
+		string(corev1.TaintEffectNoExecute),
+	}
+	if !slices.Contains(validEffects, effect) {
+		return fmt.Errorf("invalid effect '%s': must be NoSchedule, PreferNoSchedule, or NoExecute", effect)
+	}
+	return nil
+}
+
+func validateTolerationSecondsPart(tolerationSecondsStr string) error {
+	if tolerationSecondsStr == "" {
+		return fmt.Errorf("tolerationSeconds cannot be empty when specified")
+	}
+
+	seconds, err := strconv.ParseInt(tolerationSecondsStr, 10, 64)
+	if err != nil {
+		return fmt.Errorf("tolerationSeconds must be a valid integer: %w", err)
+	}
+
+	if seconds < 0 {
+		return fmt.Errorf("tolerationSeconds must be non-negative, got %d", seconds)
+	}
+
+	return nil
 }
 
 func (o *Options) ApplyDefaults() {
@@ -312,6 +449,8 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroAWSCreds, "scale-from-zero-aws-creds", opts.ScaleFromZeroAWSCreds, "Path to AWS credentials file for EC2 instance type queries (optional credentials for scale-from-zero controller)")
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroAWSCredentialsSecret, "scale-from-zero-aws-secret", opts.ScaleFromZeroAWSCredentialsSecret, "Name of existing secret containing scale-from-zero AWS credentials (alternative to --scale-from-zero-aws-creds)")
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroAWSCredentialsSecretKey, "scale-from-zero-aws-secret-key", opts.ScaleFromZeroAWSCredentialsSecretKey, "Key within the scale-from-zero AWS credentials secret (default: credentials)")
+	cmd.PersistentFlags().StringSliceVar(&opts.OperatorTolerations, "operator-tolerations", opts.OperatorTolerations, "A list of tolerations to apply to the HyperShift Operator deployment in the format 'key1=value1:effect:operator,key2=value2:effect:operator'.")
+	cmd.PersistentFlags().StringToStringVar(&opts.OperatorNodeSelectors, "operator-node-selectors", opts.OperatorNodeSelectors, "Set of node selectors to apply to the HyperShift Operator deployment in the format 'key1=value1,key2=value2'.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
@@ -389,6 +528,8 @@ func NewInstallOptionsWithDefaults() Options {
 	opts.PrivatePlatform = string(hyperv1.NonePlatform)
 	opts.ImagePullPolicy = "IfNotPresent"
 	opts.AdditionalOperatorEnvVars = map[string]string{}
+	opts.OperatorTolerations = []string{}
+	opts.OperatorNodeSelectors = map[string]string{}
 
 	return opts
 }
@@ -893,6 +1034,8 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		EnableEtcdRecovery:                      opts.EnableEtcdRecovery,
 		EnableCPOOverrides:                      opts.EnableCPOOverrides,
 		AdditionalOperatorEnvVars:               opts.AdditionalOperatorEnvVars,
+		OperatorTolerations:                     opts.OperatorTolerations,
+		OperatorNodeSelectors:                   opts.OperatorNodeSelectors,
 		AROHCPKeyVaultUsersClientID:             opts.AroHCPKeyVaultUsersClientID,
 		TechPreviewNoUpgrade:                    opts.TechPreviewNoUpgrade,
 		RegistryOverrides:                       opts.RegistryOverrides,
