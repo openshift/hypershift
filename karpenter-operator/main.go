@@ -10,6 +10,10 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
@@ -112,6 +116,7 @@ func run(ctx context.Context) error {
 		Namespace:                 namespace,
 		ControlPlaneOperatorImage: controlPlaneOperatorImage,
 		ReleaseProvider:           &releaseinfo.RegistryClientProvider{},
+		EC2ClientFactory:          newAWSEC2ClientFactory(),
 	}
 	if err := r.SetupWithManager(ctx, mgr, managementCluster); err != nil {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)
@@ -148,4 +153,18 @@ func kubeconfigFromFile(path string) (*rest.Config, error) {
 		return nil, fmt.Errorf("failed to construct kubeconfig from path %s: %w", path, err)
 	}
 	return cfg, nil
+}
+
+// newAWSEC2ClientFactory creates a factory function for creating AWS EC2 clients.
+// AWS_SDK_LOAD_CONFIG and AWS_SHARED_CREDENTIALS_FILE env vars are used for authentication.
+func newAWSEC2ClientFactory() func(region string) (ec2iface.EC2API, error) {
+	return func(region string) (ec2iface.EC2API, error) {
+		sess, err := session.NewSession(&aws.Config{
+			Region: aws.String(region),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create AWS session: %w", err)
+		}
+		return ec2.New(sess), nil
+	}
 }
