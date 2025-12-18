@@ -1,0 +1,23 @@
+package logcontext
+
+import (
+	"strings"
+
+	"github.com/go-logr/logr"
+)
+
+// AddAnnotationContext takes annotations, extracts context desired by the service provider, and adds that context to the logger.
+// This is useful when the service provider has keys like resourceGroupName, resourceName, hcpClusterName, clusterServiceID
+// and wants to be able to select all log lines that contain those keys.
+// We use annotations because they can hold more values and are applicable to all resource types.
+func AddAnnotationContext(log logr.Logger, annotations map[string]string) logr.Logger {
+	for k, v := range annotations {
+		if !strings.HasPrefix(k, "context.serviceprovider.hypershift.openshift.io/") {
+			continue
+		}
+		logKey, _ := strings.CutPrefix(k, "context.serviceprovider.hypershift.openshift.io/")
+
+		log = log.WithValues(logKey, v)
+	}
+	return log
+}

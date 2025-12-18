@@ -12,6 +12,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
+	"github.com/openshift/hypershift/support/logcontext"
 	"github.com/openshift/hypershift/support/util"
 
 	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
@@ -168,6 +169,8 @@ func (r *MachineSetDescaler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			return ctrl.Result{}, fmt.Errorf("failed to get hosted cluster: %w", err)
 		}
 	}
+	log = logcontext.AddAnnotationContext(log, hostedCluster.Annotations)
+	ctx = ctrl.LoggerInto(ctx, log)
 	machineSetList := &machinev1beta1.MachineSetList{}
 	if err := r.List(ctx, machineSetList, client.InNamespace(machineSetNamespace)); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to list machinesets: %w", err)

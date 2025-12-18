@@ -6,6 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/support/logcontext"
 	"github.com/openshift/hypershift/support/supportedversion"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
@@ -34,6 +35,10 @@ func (defaulter *hostedClusterDefaulter) Default(ctx context.Context, obj runtim
 	if !ok {
 		return apierrors.NewBadRequest(fmt.Sprintf("expected a HostedCluster but got a %T", obj))
 	}
+	// we do this so that others pulling the logger from the context will get the full context.
+	log := ctrl.LoggerFrom(ctx)
+	log = logcontext.AddAnnotationContext(log, hcluster.Annotations)
+	ctx = ctrl.LoggerInto(ctx, log)
 
 	if hcluster.Spec.Release.Image == "" {
 		pullSpec, err := supportedversion.LookupLatestSupportedRelease(ctx, hcluster)
