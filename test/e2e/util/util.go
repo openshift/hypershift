@@ -24,6 +24,7 @@ import (
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+	hcc "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
@@ -66,6 +67,7 @@ import (
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
@@ -1007,6 +1009,29 @@ func EnsureFeatureGateStatus(t *testing.T, ctx context.Context, guestClient crcl
 			}
 		}
 		g.Expect(versionFound).To(BeTrue(), "current version %s from ClusterVersion not found in FeatureGate status", currentVersion)
+	})
+}
+
+func EnsureCAPIFinalizers(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureCAPIFinalizers", func(t *testing.T) {
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+		for _, name := range hcc.CAPIComponents {
+			deployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: hcpNamespace,
+				},
+			}
+
+			if err := client.Get(ctx, crclient.ObjectKeyFromObject(deployment), deployment); err != nil {
+				t.Fatalf("failed to get CAPI deployment: %v", err)
+			}
+
+			if !controllerutil.ContainsFinalizer(deployment, hcc.ControlPlaneComponentFinalizer) {
+				t.Fatalf("CAPI deployment '%s' is expected to have finalizer: %s", name, hcc.ControlPlaneComponentFinalizer)
+			}
+		}
 	})
 }
 
@@ -2113,7 +2138,6 @@ func waitForDaemonSetsReady(t *testing.T, ctx context.Context, guestClient crcli
 				return true, nil
 			}
 		})
-
 		if err != nil {
 			return fmt.Errorf("failed to wait for DaemonSet %s to be ready: %w", dsName, err)
 		}
