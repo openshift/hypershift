@@ -1690,10 +1690,12 @@ func TestOnCreateAPIUX(t *testing.T) {
 		}
 
 		for _, tc := range testCases {
-			for _, v := range tc.validations {
+			for i, v := range tc.validations {
 
 				t.Logf("Running validation %q", v.name)
 				hostedCluster := assets.ShouldHostedCluster(content.ReadFile, fmt.Sprintf("assets/%s", tc.file))
+				// Generate unique name to avoid "already exists" race condition
+				hostedCluster.Name = fmt.Sprintf("test-%d-%d", time.Now().UnixNano(), i)
 				defer client.Delete(ctx, hostedCluster)
 				v.mutateInput(hostedCluster)
 
