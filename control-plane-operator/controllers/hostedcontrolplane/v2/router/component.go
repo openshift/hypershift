@@ -1,6 +1,7 @@
 package router
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -33,7 +34,9 @@ func (k *router) NeedsManagementKASAccess() bool {
 
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &router{}).
-		WithPredicate(useHCPRouter).
+		WithPredicate(func(cpContext component.WorkloadContext) (bool, error) {
+			return UseHCPRouter(cpContext.HCP, cpContext.DefaultIngressDomain), nil
+		}).
 		WithManifestAdapter(
 			"config.yaml",
 			component.WithAdaptFunction(adaptConfig),
@@ -46,15 +49,19 @@ func NewComponent() component.ControlPlaneComponent {
 		Build()
 }
 
-// useHCPRouter returns true if a dedicated common router is created for a HCP to handle ingress for the managed endpoints.
-// This is true when the API input specifies intent for the following:
-// 1 - AWS endpointAccess is private somehow (i.e. publicAndPrivate or private) or is public and configured with external DNS.
-// 2 - When 1 is true, we recommend (and automate via CLI) ServicePublishingStrategy to be "Route" for all endpoints but the KAS
-// which needs a dedicated Service type LB external to be exposed if no external DNS is supported.
-// Otherwise, the Routes use the management cluster Domain and resolve through the default ingress controller.
-func useHCPRouter(cpContext component.WorkloadContext) (bool, error) {
+// UseHCPRouter returns true if a dedicated HCP router is needed to handle ingress for managed endpoints.
+// This is true when:
+// 1 - Shared ingress is not enabled, AND
+// 2 - AWS endpointAccess is private (i.e. publicAndPrivate or private), OR
+// 3 - The HCP is public and has services configured with Route hostnames external to the
+//
+//	management cluster's default ingress domain.
+//
+// When hostnames are subdomains of the apps domain, they are served by the management cluster's
+// default router via wildcard DNS, so no dedicated HCP router is needed.
+func UseHCPRouter(hcp *hyperv1.HostedControlPlane, defaultIngressDomain string) bool {
 	if sharedingress.UseSharedIngress() {
-		return false, nil
+		return false
 	}
-	return util.IsPrivateHCP(cpContext.HCP) || util.IsPublicWithDNS(cpContext.HCP), nil
+	return util.IsPrivateHCP(hcp) || util.IsPublicWithExternalDNS(hcp, defaultIngressDomain)
 }

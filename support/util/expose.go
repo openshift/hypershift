@@ -1,6 +1,8 @@
 package util
 
 import (
+	"strings"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
@@ -51,6 +53,43 @@ func UseDedicatedDNS(hcp *hyperv1.HostedControlPlane, svcType hyperv1.ServiceTyp
 		svc.Route != nil && svc.Route.Hostname != ""
 }
 
+// IsSubdomain returns true if the hostname is a proper subdomain of the given domain.
+// It compares DNS labels from right to left, handling case insensitivity.
+// For example, "oauth.apps.example.com" is a subdomain of "apps.example.com",
+// but "apps.example.com" is not a subdomain of itself.
+func IsSubdomain(hostname, domain string) bool {
+	if hostname == "" || domain == "" {
+		return false
+	}
+	hostLabels := strings.Split(strings.ToLower(hostname), ".")
+	domainLabels := strings.Split(strings.ToLower(domain), ".")
+
+	// hostname must have more labels than domain to be a proper subdomain
+	if len(hostLabels) <= len(domainLabels) {
+		return false
+	}
+	// Compare labels from right to left
+	for i := 1; i <= len(domainLabels); i++ {
+		if hostLabels[len(hostLabels)-i] != domainLabels[len(domainLabels)-i] {
+			return false
+		}
+	}
+	return true
+}
+
+// UseDedicatedDNSWithExternalDomain checks if a service uses external DNS that requires a dedicated HCP router.
+// It returns true only if the service uses a Route with a hostname that is NOT a subdomain of the
+// management cluster's default ingress domain. Hostnames under the apps domain are served by the
+// management cluster's default router and don't require a separate HCP router LoadBalancer service.
+func UseDedicatedDNSWithExternalDomain(hcp *hyperv1.HostedControlPlane, svcType hyperv1.ServiceType, defaultIngressDomain string) bool {
+	svc := ServicePublishingStrategyByTypeForHCP(hcp, svcType)
+	if !IsRoute(hcp, svcType) || svc.Route == nil || svc.Route.Hostname == "" {
+		return false
+	}
+	// If hostname is under the apps domain, it's served by management cluster router
+	return !IsSubdomain(svc.Route.Hostname, defaultIngressDomain)
+}
+
 func ServicePublishingStrategyByTypeByHC(hc *hyperv1.HostedCluster, svcType hyperv1.ServiceType) *hyperv1.ServicePublishingStrategy {
 	for _, mapping := range hc.Spec.Services {
 		if mapping.Service == svcType {
@@ -80,6 +119,17 @@ func UseDedicatedDNSByHC(hc *hyperv1.HostedCluster, svcType hyperv1.ServiceType)
 		// When using dedicated DNS svc.Route.Hostname is set explicitly
 		// and later is used to annotate the route so the external DNS controller can watch it.
 		svc.Route != nil && svc.Route.Hostname != ""
+}
+
+// UseDedicatedDNSByHCWithExternalDomain checks if a service uses external DNS that requires a dedicated HCP router.
+// It returns true only if the service uses a Route with a hostname that is NOT a subdomain of the
+// management cluster's default ingress domain.
+func UseDedicatedDNSByHCWithExternalDomain(hc *hyperv1.HostedCluster, svcType hyperv1.ServiceType, defaultIngressDomain string) bool {
+	svc := ServicePublishingStrategyByTypeByHC(hc, svcType)
+	if !IsRouteByHC(hc, svcType) || svc.Route == nil || svc.Route.Hostname == "" {
+		return false
+	}
+	return !IsSubdomain(svc.Route.Hostname, defaultIngressDomain)
 }
 
 func ServiceExternalDNSHostname(hcp *hyperv1.HostedControlPlane, serviceType hyperv1.ServiceType) string {

@@ -55,6 +55,8 @@ type ControlPlaneContext struct {
 	EnableCIDebugOutput bool
 	// MetricsSet specifies which metrics to use in the service/pod-monitors.
 	MetricsSet metrics.MetricsSet
+	// DefaultIngressDomain is the default ingress domain for the management cluster.
+	DefaultIngressDomain string
 
 	// This is needed for the generic unit test, so we can always generate a fixture for the components deployment/statefulset.
 	SkipPredicate bool
@@ -77,6 +79,8 @@ type WorkloadContext struct {
 	SetDefaultSecurityContext bool
 	EnableCIDebugOutput       bool
 	MetricsSet                metrics.MetricsSet
+	// DefaultIngressDomain is the default ingress domain for the management cluster.
+	DefaultIngressDomain string
 
 	// skip generation of certificates for unit tests
 	SkipCertificateSigning bool
@@ -94,6 +98,7 @@ func (cp *ControlPlaneContext) workloadContext() WorkloadContext {
 		EnableCIDebugOutput:       cp.EnableCIDebugOutput,
 		MetricsSet:                cp.MetricsSet,
 		ImageMetadataProvider:     cp.ImageMetadataProvider,
+		DefaultIngressDomain:      cp.DefaultIngressDomain,
 		SkipCertificateSigning:    cp.SkipCertificateSigning,
 	}
 }

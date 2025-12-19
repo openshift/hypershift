@@ -24,6 +24,7 @@ import (
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
+	routerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router"
 	"github.com/openshift/hypershift/support/api"
 	autoscalercommon "github.com/openshift/hypershift/support/autoscaler"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
@@ -1577,7 +1578,7 @@ func TestReconcileRouter(t *testing.T) {
 			}
 
 			releaseInfo := &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{}}
-			if useHCPRouter(hcp) {
+			if routerv2.UseHCPRouter(hcp, "") {
 				if err := r.reconcileRouter(ctx, hcp, imageprovider.New(releaseInfo), controllerutil.CreateOrUpdate); err != nil {
 					t.Fatalf("reconcileRouter failed: %v", err)
 				}
