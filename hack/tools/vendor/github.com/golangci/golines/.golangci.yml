@@ -1,0 +1,72 @@
+version: "2"
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+    - golines
+  settings:
+    gofumpt:
+      extra-rules: true
+
+linters:
+  default: all
+  disable:
+    - rowserrcheck # SQL
+    - sqlclosecheck # SQL
+    - cyclop # duplicate of gocyclo
+    - wsl # Deprecated
+    - err113
+    - exhaustive
+    - exhaustruct
+    - gochecknoglobals
+    - lll
+    - mnd
+    - noinlineerr
+    - paralleltest
+    - prealloc
+    - testpackage
+    - tparallel
+    - varnamelen
+    - wrapcheck
+    ## Temporarily disabled, must be fixed
+    - gocognit
+    - gocyclo
+
+  settings:
+    funlen:
+      lines: -1
+      statements: 50
+    godox:
+      keywords:
+        - FIXME
+    gocyclo:
+      min-complexity: 12
+    gosec:
+      excludes:
+        - G204
+    depguard:
+      rules:
+        main:
+          deny:
+            - pkg: github.com/instana/testify
+              desc: not allowed
+            - pkg: github.com/pkg/errors
+              desc: Should be replaced by standard lib errors package
+
+  exclusions:
+    presets:
+      - comments
+      - common-false-positives
+      - std-error-handling
+    paths:
+      - base.go
+    rules:
+      - path: (.+)_test\.go
+        text: "G306: Expect WriteFile permissions to be 0600 or less"
+        linters:
+          - gosec
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
