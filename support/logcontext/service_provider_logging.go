@@ -21,3 +21,18 @@ func AddAnnotationContext(log logr.Logger, annotations map[string]string) logr.L
 	}
 	return log
 }
+
+// AddServiceProviderAnnotations adds service provider annotations from the hosted cluster (or other authoritative annotations)
+// and sets them on the target if they are not already set.  This is an easy way to take serviceprovider annotations used for log
+// and metric labeling during aggregated ingestion and placing them on namespaces where they can be accessed.
+func AddServiceProviderAnnotations(targetAnnotations map[string]string, hostedClusterAnnotations map[string]string) {
+	for k, v := range hostedClusterAnnotations {
+		if !strings.HasPrefix(k, "context.serviceprovider.hypershift.openshift.io/") {
+			continue
+		}
+		if _, exists := targetAnnotations[k]; exists {
+			continue
+		}
+		targetAnnotations[k] = v
+	}
+}

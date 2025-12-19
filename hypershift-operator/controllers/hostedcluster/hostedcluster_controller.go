@@ -1307,6 +1307,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 		controlPlaneNamespace.Labels["security.openshift.io/scc.podSecurityLabelSync"] = "false"
 
+		if controlPlaneNamespace.Annotations == nil {
+			controlPlaneNamespace.Annotations = make(map[string]string)
+		}
+		logcontext.AddServiceProviderAnnotations(controlPlaneNamespace.Annotations, hcluster.Annotations)
+
 		// Enable monitoring for hosted control plane namespaces
 		if r.EnableOCPClusterMonitoring {
 			controlPlaneNamespace.Labels["openshift.io/cluster-monitoring"] = "true"
