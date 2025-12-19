@@ -82,15 +82,20 @@ func NewComponent(registryOverrides map[string]string, openShiftImageRegistryOve
 }
 
 const (
-	kubeconfigVolumeName      = "kubeconfig"
-	rootCAVolumeName          = "root-ca"
-	clusterSignerCAVolumeName = "cluster-signer-ca"
+	kubeconfigVolumeName             = "kubeconfig"
+	rootCAVolumeName                 = "root-ca"
+	clusterSignerCAVolumeName        = "cluster-signer-ca"
+	hostedClusterConfigOperatorImage = "hosted-cluster-config-operator"
 )
 
 func (h *HCCO) AdaptDeployment(cpContext component.ControlPlaneContext, deployment *appsv1.Deployment) error {
 	versions, err := cpContext.ReleaseImageProvider.ComponentVersions()
 	if err != nil {
 		return fmt.Errorf("failed to get component versions: %w", err)
+	}
+	hccoImage := cpContext.ReleaseImageProvider.GetImage(hostedClusterConfigOperatorImage)
+	if hccoImage == "" {
+		return fmt.Errorf("hosted-cluster-config-operator image is not set")
 	}
 	kubeVersion := versions["kubernetes"]
 	hcp := cpContext.HCP
@@ -128,6 +133,10 @@ func (h *HCCO) AdaptDeployment(cpContext component.ControlPlaneContext, deployme
 			{
 				Name:  "OPENSHIFT_IMG_OVERRIDES",
 				Value: util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(h.openShiftImageRegistryOverrides),
+			},
+			{
+				Name:  "HOSTED_CLUSTER_CONFIG_OPERATOR_IMAGE",
+				Value: hccoImage,
 			},
 		}...)
 
