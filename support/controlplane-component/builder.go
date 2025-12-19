@@ -63,6 +63,15 @@ func (b *controlPlaneWorkloadBuilder[T]) WithPredicate(predicate func(cpContext 
 	return b
 }
 
+// WithPlatformPredicate sets a predicate that determines if this component is applicable to the current platform.
+// If the predicate returns false, the component is completely skipped (no API calls, no informer creation, no deletion).
+// Use this for platform-specific components (e.g., Azure CCM on AWS).
+// For configuration-based enabling/disabling (where cleanup is needed), use WithPredicate instead.
+func (b *controlPlaneWorkloadBuilder[T]) WithPlatformPredicate(predicate func(cpContext WorkloadContext) (bool, error)) *controlPlaneWorkloadBuilder[T] {
+	b.workload.platformPredicate = predicate
+	return b
+}
+
 func (b *controlPlaneWorkloadBuilder[T]) WithManifestAdapter(manifestName string, opts ...option) *controlPlaneWorkloadBuilder[T] {
 	adapter := &genericAdapter{}
 	for _, opt := range opts {
