@@ -370,7 +370,12 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 	if !reflect.DeepEqual(old, &condition) {
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
-		return res, utilerrors.NewAggregate([]error{err, r.Client.Status().Update(ctx, hcluster)})
+		if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+			if apierrors.IsConflict(statusErr) {
+				return ctrl.Result{Requeue: true}, nil
+			}
+			return ctrl.Result{}, utilerrors.NewAggregate([]error{err, statusErr})
+		}
 	}
 
 	return res, err
@@ -416,6 +421,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
 			// Persist status updates
 			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				if apierrors.IsConflict(err) {
+					return ctrl.Result{Requeue: true}, nil
+				}
 				return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 			}
 		}
@@ -443,6 +451,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
 				// Persist status updates
 				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+					if apierrors.IsConflict(err) {
+						return ctrl.Result{Requeue: true}, nil
+					}
 					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 				}
 			}
@@ -509,6 +520,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
 				// Persist status updates
 				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+					if apierrors.IsConflict(err) {
+						return ctrl.Result{Requeue: true}, nil
+					}
 					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 				}
 			}
@@ -581,6 +595,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 				meta.SetStatusCondition(&hcluster.Status.Conditions, *hostedClusterDestroyedCondition)
 				if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+					if apierrors.IsConflict(err) {
+						return ctrl.Result{Requeue: true}, nil
+					}
 					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 				}
 				log.Info("Waiting for grace period", "gracePeriod", hcDestroyGracePeriod)
@@ -598,6 +615,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if controllerutil.ContainsFinalizer(hcluster, HostedClusterFinalizer) {
 			controllerutil.RemoveFinalizer(hcluster, HostedClusterFinalizer)
 			if err := r.Update(ctx, hcluster); err != nil {
+				if apierrors.IsConflict(err) {
+					return ctrl.Result{Requeue: true}, nil
+				}
 				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from hostedcluster: %w", err)
 			}
 		}
@@ -1349,6 +1369,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				Message:            err.Error(),
 			})
 			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+				if apierrors.IsConflict(statusErr) {
+					return ctrl.Result{Requeue: true}, nil
+				}
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %s, failed to update status: %w", err, statusErr)
 			}
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %w", err)
@@ -1362,6 +1385,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				Message:            "Required platform credentials are found",
 			})
 			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+				if apierrors.IsConflict(statusErr) {
+					return ctrl.Result{Requeue: true}, nil
+				}
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile platform credentials: %s, failed to update status: %w", err, statusErr)
 			}
 		}
@@ -1409,6 +1435,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			// Persist status updates
 			meta.SetStatusCondition(&hcluster.Status.Conditions, *freshCondition)
 			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				if apierrors.IsConflict(err) {
+					return ctrl.Result{Requeue: true}, nil
+				}
 				return ctrl.Result{}, fmt.Errorf("failed to update status %v: %w", string(hyperv1.HostedClusterRestoredFromBackup), err)
 			}
 		}
@@ -1761,6 +1790,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			return reconcileCAPICluster(capiCluster, hcluster, hcp, infraCR)
 		})
 		if err != nil {
+			if apierrors.IsConflict(err) {
+				return ctrl.Result{Requeue: true}, nil
+			}
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile capi cluster: %w", err)
 		}
 	}
@@ -1996,6 +2028,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				Message:            err.Error(),
 			})
 			if statusErr := r.Client.Status().Update(ctx, hcluster); statusErr != nil {
+				if apierrors.IsConflict(statusErr) {
+					return ctrl.Result{Requeue: true}, nil
+				}
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile AWS OIDC documents: %s, failed to update status: %w", err, statusErr)
 			}
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile the AWS OIDC documents: %w", err)
@@ -2008,6 +2043,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			Message:            "OIDC configuration is valid",
 		})
 		if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+			if apierrors.IsConflict(err) {
+				return ctrl.Result{Requeue: true}, nil
+			}
 			return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 		}
 	case hyperv1.AzurePlatform:
@@ -2018,6 +2056,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				secretproviderclass.ReconcileManagedAzureSecretProviderClass(cpoSecretProviderClass, hcp, hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator)
 				return nil
 			}); err != nil {
+				if apierrors.IsConflict(err) {
+					return ctrl.Result{Requeue: true}, nil
+				}
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile control plane operator secret provider class: %w", err)
 			}
 
@@ -2027,6 +2068,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 				secretproviderclass.ReconcileManagedAzureSecretProviderClass(nodepoolMgmtSecretProviderClass, hcp, hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.NodePoolManagement)
 				return nil
 			}); err != nil {
+				if apierrors.IsConflict(err) {
+					return ctrl.Result{Requeue: true}, nil
+				}
 				return ctrl.Result{}, fmt.Errorf("failed to reconcile nodepool management secret provider class: %w", err)
 			}
 		}
@@ -4406,6 +4450,9 @@ func (r *HostedClusterReconciler) defaultClusterIDsIfNeeded(ctx context.Context,
 
 	if needsUpdate {
 		if err := r.Update(ctx, hcluster); err != nil {
+			if apierrors.IsConflict(err) {
+				return nil // Requeue will happen automatically
+			}
 			return fmt.Errorf("failed to update hostedcluster after defaulting IDs: %w", err)
 		}
 	}
