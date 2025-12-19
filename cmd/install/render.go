@@ -1,6 +1,7 @@
 package install
 
 import (
+	"context"
 	"fmt"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -29,7 +30,7 @@ type TemplateParams struct {
 	TemplateParamWrapper        func(string) string
 }
 
-func hyperShiftOperatorTemplateManifest(opts *Options, templateParamConfig TemplateParams) ([]crclient.Object, []crclient.Object, error) {
+func hyperShiftOperatorTemplateManifest(ctx context.Context, client crclient.Client, opts *Options, templateParamConfig TemplateParams) ([]crclient.Object, []crclient.Object, error) {
 	// validate options
 	if err := opts.ValidateRender(); err != nil {
 		return nil, nil, err
@@ -78,7 +79,7 @@ func hyperShiftOperatorTemplateManifest(opts *Options, templateParamConfig Templ
 
 	// create manifests
 	opts.RenderNamespace = templateParamConfig.TemplateNamespace
-	crds, objects, err := hyperShiftOperatorManifests(*opts)
+	crds, objects, err := hyperShiftOperatorManifests(ctx, client, *opts)
 	if err != nil {
 		return nil, nil, err
 	}

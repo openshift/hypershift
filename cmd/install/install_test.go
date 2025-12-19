@@ -193,7 +193,8 @@ func TestSetupCRDs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			crds := setupCRDs(tc.inputOptions, &corev1.Namespace{}, nil)
+			crds, err := setupCRDs(t.Context(), nil, tc.inputOptions, &corev1.Namespace{}, nil)
+			g.Expect(err).ToNot(HaveOccurred())
 			nodePoolCRDS := make([]crclient.Object, 0)
 			var machineDeploymentCRD crclient.Object
 			var awsEndpointServicesCRD crclient.Object
