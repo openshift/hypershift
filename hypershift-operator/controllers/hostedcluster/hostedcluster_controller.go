@@ -4439,10 +4439,11 @@ func (r *HostedClusterReconciler) reconcileServiceAccountSigningKey(ctx context.
 	}
 	cpSigningKeySecret := controlplaneoperator.ServiceAccountSigningKeySecret(targetNamespace)
 	_, err = createOrUpdate(ctx, r.Client, cpSigningKeySecret, func() error {
-		// Only set the signing key when the key does not already exist
-		if _, hasKey := cpSigningKeySecret.Data[controlplaneoperator.ServiceSignerPrivateKey]; hasKey {
+		existingKeyBytes, hasKey := cpSigningKeySecret.Data[controlplaneoperator.ServiceSignerPrivateKey]
+		if hasKey && bytes.Equal(existingKeyBytes, privateBytes) {
 			return nil
 		}
+
 		if cpSigningKeySecret.Data == nil {
 			cpSigningKeySecret.Data = map[string][]byte{}
 		}
