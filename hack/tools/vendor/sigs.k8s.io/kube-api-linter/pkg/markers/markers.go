@@ -205,4 +205,7 @@ const (
 
 	// K8sListMapKeyMarker is the marker that indicates that a field is a map in k8s declarative validation.
 	K8sListMapKeyMarker = "k8s:listMapKey"
+
+	// K8sDefaultMarker is the marker that indicates the default value for a field in k8s declarative validation.
+	K8sDefaultMarker = "k8s:default"
 )
