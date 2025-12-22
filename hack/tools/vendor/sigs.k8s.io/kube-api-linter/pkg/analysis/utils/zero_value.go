@@ -103,7 +103,7 @@ func isStructZeroValueValid(pass *analysis.Pass, field *ast.Field, structType *a
 
 	// Check if this struct should be validated as a string (Type=string marker).
 	// This handles structs with custom marshalling that serialize as strings.
-	if GetTypeMarkerValue(pass, field, markersAccess) == "string" {
+	if GetTypeMarkerValue(pass, field, markersAccess) == stringTypeName {
 		// Use string validation logic instead of struct validation logic.
 		// This ensures that string-specific validation markers (MinLength, MaxLength, Pattern)
 		// are properly evaluated for structs that marshal as strings.
@@ -456,7 +456,7 @@ func isIntegerIdent(ident *ast.Ident) bool {
 
 // isStringIdent checks if the identifier is a string type.
 func isStringIdent(ident *ast.Ident) bool {
-	return ident.Name == "string"
+	return ident.Name == stringTypeName
 }
 
 // isBoolIdent checks if the identifier is a boolean type.
