@@ -126,7 +126,7 @@ func TestIsAutoscalingEnabled(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
-						Min: 0,
+						Min: ptr.To[int32](0),
 						Max: 0,
 					},
 				},
@@ -138,7 +138,7 @@ func TestIsAutoscalingEnabled(t *testing.T) {
 			nodePool: &hyperv1.NodePool{
 				Spec: hyperv1.NodePoolSpec{
 					AutoScaling: &hyperv1.NodePoolAutoScaling{
-						Min: 1,
+						Min: ptr.To[int32](1),
 						Max: 2,
 					},
 				},
