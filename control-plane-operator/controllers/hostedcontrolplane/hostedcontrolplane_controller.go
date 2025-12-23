@@ -1049,7 +1049,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		return fmt.Errorf("failed to reconcile metrics config: %w", err)
 	}
 
-	if useHCPRouter(hcp) {
+	if routerv2.UseHCPRouter(hcp, r.DefaultIngressDomain) {
 		if err := r.admitHCPManagedRoutes(ctx, hcp, infraStatus.InternalHCPRouterHost, infraStatus.ExternalHCPRouterHost); err != nil {
 			return fmt.Errorf("failed to admit HCP managed routes: %w", err)
 		}
@@ -1102,6 +1102,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		MetricsSet:                r.MetricsSet,
 		EnableCIDebugOutput:       r.EnableCIDebugOutput,
 		ImageMetadataProvider:     r.ImageMetadataProvider,
+		DefaultIngressDomain:      r.DefaultIngressDomain,
 	}
 
 	var errs []error
@@ -1113,22 +1114,6 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 	}
 
 	return utilerrors.NewAggregate(errs)
-}
-
-// useHCPRouter returns true if a dedicated common router is created for a HCP to handle ingress for the managed endpoints.
-// This is true when the API input specifies intent for the following:
-// 1 - AWS endpointAccess is private somehow (i.e. publicAndPrivate or private) or is public and configured with external DNS.
-// 2 - When 1 is true, we recommend (and automate via CLI) ServicePublishingStrategy to be "Route" for all endpoints but the KAS
-// which needs a dedicated Service type LB external to be exposed if no external DNS is supported.
-// Otherwise, the Routes use the management cluster Domain and resolve through the default ingress controller.
-func useHCPRouter(hostedControlPlane *hyperv1.HostedControlPlane) bool {
-	if sharedingress.UseSharedIngress() {
-		return false
-	}
-	if hostedControlPlane.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-		return false
-	}
-	return util.IsPrivateHCP(hostedControlPlane) || util.IsPublicWithDNS(hostedControlPlane)
 }
 
 func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool {
@@ -1392,7 +1377,7 @@ func (r *HostedControlPlaneReconciler) reconcileOLMPackageServerService(ctx cont
 }
 
 func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
-	if sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+	if !routerv2.UseHCPRouter(hcp, r.DefaultIngressDomain) {
 		return nil
 	}
 
@@ -1421,7 +1406,7 @@ func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Co
 	}
 
 	// When Public access endpoint we need to create a Service type LB external.
-	if util.IsPublicWithDNS(hcp) {
+	if util.IsPublicWithExternalDNS(hcp, r.DefaultIngressDomain) {
 		if _, err := createOrUpdate(ctx, r.Client, pubSvc, func() error {
 			return ingress.ReconcileRouterService(pubSvc, false, util.IsPrivateHCP(hcp), hcp)
 		}); err != nil {
@@ -1532,7 +1517,7 @@ func (r *HostedControlPlaneReconciler) reconcileInternalRouterServiceStatus(ctx 
 }
 
 func (r *HostedControlPlaneReconciler) reconcileExternalRouterServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, needed bool, message string, err error) {
-	if !util.IsPublicWithDNS(hcp) || sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+	if !util.IsPublicWithExternalDNS(hcp, r.DefaultIngressDomain) || sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return
 	}
 	return r.reconcileRouterServiceStatus(ctx, manifests.RouterPublicService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))
