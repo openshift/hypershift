@@ -1,6 +1,8 @@
 package util
 
 import (
+	"strings"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
@@ -80,6 +82,47 @@ func UseDedicatedDNSByHC(hc *hyperv1.HostedCluster, svcType hyperv1.ServiceType)
 		// When using dedicated DNS svc.Route.Hostname is set explicitly
 		// and later is used to annotate the route so the external DNS controller can watch it.
 		svc.Route != nil && svc.Route.Hostname != ""
+}
+
+// IsSubdomain returns true if the hostname is a proper subdomain of the given domain.
+// It performs DNS label-based comparison, ensuring proper label boundaries.
+// For example:
+//   - IsSubdomain("oauth.apps.example.com", "apps.example.com") returns true
+//   - IsSubdomain("apps.example.com", "apps.example.com") returns false (exact match, not subdomain)
+//   - IsSubdomain("oauthapps.example.com", "apps.example.com") returns false (not a label boundary)
+func IsSubdomain(hostname, domain string) bool {
+	if hostname == "" || domain == "" {
+		return false
+	}
+	// Split into DNS labels for proper comparison
+	hostLabels := strings.Split(strings.ToLower(hostname), ".")
+	domainLabels := strings.Split(strings.ToLower(domain), ".")
+
+	// hostname must have more labels than domain to be a subdomain
+	if len(hostLabels) <= len(domainLabels) {
+		return false
+	}
+
+	// Compare labels from right to left (TLD first)
+	for i := 1; i <= len(domainLabels); i++ {
+		if hostLabels[len(hostLabels)-i] != domainLabels[len(domainLabels)-i] {
+			return false
+		}
+	}
+	return true
+}
+
+// UseDedicatedDNSWithExternalDomain checks if a service uses external DNS that requires a dedicated HCP router.
+// It returns true only if the service uses a Route with a hostname that is NOT a subdomain of the
+// management cluster's default ingress domain. Hostnames under the apps domain are served by the
+// management cluster's default router and don't require a separate HCP router LoadBalancer service.
+func UseDedicatedDNSWithExternalDomain(hcp *hyperv1.HostedControlPlane, svcType hyperv1.ServiceType, defaultIngressDomain string) bool {
+	svc := ServicePublishingStrategyByTypeForHCP(hcp, svcType)
+	if !IsRoute(hcp, svcType) || svc.Route == nil || svc.Route.Hostname == "" {
+		return false
+	}
+	// If the hostname is a subdomain of the default ingress domain, no dedicated DNS is needed
+	return !IsSubdomain(svc.Route.Hostname, defaultIngressDomain)
 }
 
 func ServiceExternalDNSHostname(hcp *hyperv1.HostedControlPlane, serviceType hyperv1.ServiceType) string {
