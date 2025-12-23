@@ -56,6 +56,8 @@ type ControlPlaneContext struct {
 	EnableCIDebugOutput bool
 	// MetricsSet specifies which metrics to use in the service/pod-monitors.
 	MetricsSet metrics.MetricsSet
+	// DefaultIngressDomain is the default ingress domain for the management cluster.
+	DefaultIngressDomain string
 	// OmitOwnerReference determines whether the HCP OwnerReference should be omitted from resources deployed by this component.
 	// This is useful when the component is not managed by the same HostedControlPlane controller like capi and the CPO itself.
 	OmitOwnerReference bool
@@ -84,6 +86,7 @@ type WorkloadContext struct {
 	DefaultSecurityContextUID int64
 	EnableCIDebugOutput       bool
 	MetricsSet                metrics.MetricsSet
+	DefaultIngressDomain      string
 
 	// skip generation of certificates for unit tests
 	SkipCertificateSigning bool
@@ -103,6 +106,7 @@ func (cp *ControlPlaneContext) workloadContext() WorkloadContext {
 		MetricsSet:                cp.MetricsSet,
 		ImageMetadataProvider:     cp.ImageMetadataProvider,
 		SkipCertificateSigning:    cp.SkipCertificateSigning,
+		DefaultIngressDomain:      cp.DefaultIngressDomain,
 	}
 }
 
