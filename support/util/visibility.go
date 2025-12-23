@@ -62,6 +62,17 @@ func IsPublicWithDNS(hcp *hyperv1.HostedControlPlane) bool {
 		UseDedicatedDNS(hcp, hyperv1.Ignition))
 }
 
+// IsPublicWithExternalDNS checks if any service uses a Route with a hostname that is external to
+// the management cluster's default ingress domain. This is used to determine if a dedicated HCP
+// router LoadBalancer service is needed. Hostnames that are subdomains of the apps domain are
+// served by the management cluster's default router via wildcard DNS.
+func IsPublicWithExternalDNS(hcp *hyperv1.HostedControlPlane, defaultIngressDomain string) bool {
+	return IsPublicHCP(hcp) && (UseDedicatedDNSWithExternalDomain(hcp, hyperv1.APIServer, defaultIngressDomain) ||
+		UseDedicatedDNSWithExternalDomain(hcp, hyperv1.OAuthServer, defaultIngressDomain) ||
+		UseDedicatedDNSWithExternalDomain(hcp, hyperv1.Konnectivity, defaultIngressDomain) ||
+		UseDedicatedDNSWithExternalDomain(hcp, hyperv1.Ignition, defaultIngressDomain))
+}
+
 func IsPublicWithDNSByHC(hc *hyperv1.HostedCluster) bool {
 	return IsPublicHC(hc) && (UseDedicatedDNSByHC(hc, hyperv1.APIServer) ||
 		UseDedicatedDNSByHC(hc, hyperv1.OAuthServer) ||
