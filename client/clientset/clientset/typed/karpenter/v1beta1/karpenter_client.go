@@ -28,6 +28,7 @@ import (
 type KarpenterV1beta1Interface interface {
 	RESTClient() rest.Interface
 	OpenshiftEC2NodeClassesGetter
+	OpenshiftNodePoolsGetter
 }
 
 // KarpenterV1beta1Client is used to interact with features provided by the karpenter.hypershift.openshift.io group.
@@ -37,6 +38,10 @@ type KarpenterV1beta1Client struct {
 
 func (c *KarpenterV1beta1Client) OpenshiftEC2NodeClasses(namespace string) OpenshiftEC2NodeClassInterface {
 	return newOpenshiftEC2NodeClasses(c, namespace)
+}
+
+func (c *KarpenterV1beta1Client) OpenshiftNodePools(namespace string) OpenshiftNodePoolInterface {
+	return newOpenshiftNodePools(c, namespace)
 }
 
 // NewForConfig creates a new KarpenterV1beta1Client for the given config.

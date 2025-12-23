@@ -7,6 +7,7 @@ import (
 
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/nodeclass"
+	"github.com/openshift/hypershift/karpenter-operator/controllers/nodepool"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 
@@ -126,6 +127,13 @@ func run(ctx context.Context) error {
 		Namespace: namespace,
 	}
 	if err := encr.SetupWithManager(ctx, mgr, managementCluster); err != nil {
+		return fmt.Errorf("failed to setup controller with manager: %w", err)
+	}
+
+	npr := nodepool.NodePoolReconciler{
+		Namespace: namespace,
+	}
+	if err := npr.SetupWithManager(ctx, mgr, managementCluster); err != nil {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)
 	}
 

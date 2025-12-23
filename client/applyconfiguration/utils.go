@@ -365,6 +365,12 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &applyconfigurationkarpenterv1beta1.OpenshiftEC2NodeClassSpecApplyConfiguration{}
 	case karpenterv1beta1.SchemeGroupVersion.WithKind("OpenshiftEC2NodeClassStatus"):
 		return &applyconfigurationkarpenterv1beta1.OpenshiftEC2NodeClassStatusApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("OpenshiftNodePool"):
+		return &applyconfigurationkarpenterv1beta1.OpenshiftNodePoolApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("OpenshiftNodePoolSpec"):
+		return &applyconfigurationkarpenterv1beta1.OpenshiftNodePoolSpecApplyConfiguration{}
+	case karpenterv1beta1.SchemeGroupVersion.WithKind("OpenshiftNodePoolStatus"):
+		return &applyconfigurationkarpenterv1beta1.OpenshiftNodePoolStatusApplyConfiguration{}
 	case karpenterv1beta1.SchemeGroupVersion.WithKind("SecurityGroup"):
 		return &applyconfigurationkarpenterv1beta1.SecurityGroupApplyConfiguration{}
 	case karpenterv1beta1.SchemeGroupVersion.WithKind("SecurityGroupSelectorTerm"):

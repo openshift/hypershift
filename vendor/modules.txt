@@ -477,7 +477,7 @@ github.com/aws/smithy-go/tracing
 github.com/aws/smithy-go/transport/http
 github.com/aws/smithy-go/transport/http/internal/io
 github.com/aws/smithy-go/waiter
-# github.com/awslabs/operatorpkg v0.0.0-20241205163410-0fff9f28d115
+# github.com/awslabs/operatorpkg v0.0.0-20250320000002-b05af0f15c68
 ## explicit; go 1.23.0
 github.com/awslabs/operatorpkg/metrics
 github.com/awslabs/operatorpkg/object

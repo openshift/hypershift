@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
@@ -25,14 +26,13 @@ import (
 )
 
 func TestKarpenterDeletion(t *testing.T) {
-	g := NewWithT(t)
 	scheme := api.Scheme
 
 	testCases := []struct {
 		name                                string
 		hcp                                 *hyperv1.HostedControlPlane
 		objects                             []client.Object
-		expectedNodePools                   int
+		expectedOpenshiftNodePools          int
 		eventuallyKarpenterFinalizerRemoved bool
 	}{
 		{
@@ -50,11 +50,11 @@ func TestKarpenterDeletion(t *testing.T) {
 				},
 			},
 			objects:                             []client.Object{},
-			expectedNodePools:                   0,
+			expectedOpenshiftNodePools:          0,
 			eventuallyKarpenterFinalizerRemoved: true,
 		},
 		{
-			name: "when hcp is deleted, delete karpenter NodePools and remove karpenter finalizer",
+			name: "when hcp is deleted, delete OpenshiftNodePools and remove karpenter finalizer",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-hcp",
@@ -68,22 +68,22 @@ func TestKarpenterDeletion(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				&karpenterv1.NodePool{
+				&hyperkarpenterv1.OpenshiftNodePool{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-nodepool-1",
 					},
 				},
-				&karpenterv1.NodePool{
+				&hyperkarpenterv1.OpenshiftNodePool{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-nodepool-2",
 					},
 				},
 			},
-			expectedNodePools:                   0,
+			expectedOpenshiftNodePools:          0,
 			eventuallyKarpenterFinalizerRemoved: true,
 		},
 		{
-			name: "when hcp is deleted, should not remove karpenter finalizer if karpenter NodePools still exist",
+			name: "when hcp is deleted, should not remove karpenter finalizer if OpenshiftNodePools still exist",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-hcp",
@@ -97,7 +97,7 @@ func TestKarpenterDeletion(t *testing.T) {
 				},
 			},
 			objects: func() []client.Object {
-				nodepool := &karpenterv1.NodePool{
+				nodepool := &hyperkarpenterv1.OpenshiftNodePool{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-nodepool-1",
 					},
@@ -105,7 +105,7 @@ func TestKarpenterDeletion(t *testing.T) {
 				nodepool.SetFinalizers([]string{"some-finalizer"}) // this prevents the nodepool from being deleted
 				return []client.Object{nodepool}
 			}(),
-			expectedNodePools:                   1,
+			expectedOpenshiftNodePools:          1,
 			eventuallyKarpenterFinalizerRemoved: false,
 		},
 		{
@@ -123,7 +123,7 @@ func TestKarpenterDeletion(t *testing.T) {
 				},
 			},
 			objects: []client.Object{
-				&karpenterv1.NodePool{
+				&hyperkarpenterv1.OpenshiftNodePool{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "test-nodepool-1",
 					},
@@ -134,13 +134,14 @@ func TestKarpenterDeletion(t *testing.T) {
 					},
 				},
 			},
-			expectedNodePools:                   0,
+			expectedOpenshiftNodePools:          0,
 			eventuallyKarpenterFinalizerRemoved: false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
 			mockCtrl := gomock.NewController(t)
 			mockedProvider := releaseinfo.NewMockProvider(mockCtrl)
 			mockedProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -185,11 +186,11 @@ func TestKarpenterDeletion(t *testing.T) {
 				g.Expect(hcp.Finalizers).To(ContainElement(karpenterFinalizer))
 			}
 
-			// check if the expected amount of nodepools still exist
-			nodePoolList := &karpenterv1.NodePoolList{}
-			err = fakeGuestClient.List(ctx, nodePoolList)
+			// check if the expected amount of OpenshiftNodePools still exist
+			openshiftNodePoolList := &hyperkarpenterv1.OpenshiftNodePoolList{}
+			err = fakeGuestClient.List(ctx, openshiftNodePoolList)
 			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(nodePoolList.Items).To(HaveLen(tc.expectedNodePools))
+			g.Expect(openshiftNodePoolList.Items).To(HaveLen(tc.expectedOpenshiftNodePools))
 		})
 	}
 }

@@ -27,7 +27,7 @@ import (
 const (
 	ControllerName                     = "globalps"
 	configSeedLabelKey                 = "hypershift.openshift.io/globalps-config-hash"
-	globalPSLabelKey                   = "hypershift.openshift.io/nodepool-globalps-enabled"
+	GlobalPSLabelKey                   = "hypershift.openshift.io/nodepool-globalps-enabled"
 	openshiftUserCriticalPriorityClass = "openshift-user-critical"
 )
 
@@ -249,10 +249,10 @@ func (r *Reconciler) labelNodesForGlobalPullSecret(ctx context.Context) error {
 				nodeCopy.Labels = make(map[string]string)
 			}
 
-			currentLabel := nodeCopy.Labels[globalPSLabelKey]
+			currentLabel := nodeCopy.Labels[GlobalPSLabelKey]
 
 			if currentLabel != "true" {
-				nodeCopy.Labels[globalPSLabelKey] = "true"
+				nodeCopy.Labels[GlobalPSLabelKey] = "true"
 				log.Info("labeling node as eligible for GlobalPullSecret DaemonSet", "node", node.Name)
 
 				if err := r.nodeClient.Update(ctx, nodeCopy); err != nil {
@@ -291,7 +291,7 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 					Tolerations:                  []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
 					// Use nodeSelector to only include nodes that are explicitly enabled for GlobalPullSecret
 					NodeSelector: map[string]string{
-						globalPSLabelKey: "true",
+						GlobalPSLabelKey: "true",
 					},
 					Containers: []corev1.Container{
 						{

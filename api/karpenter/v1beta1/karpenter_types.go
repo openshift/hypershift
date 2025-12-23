@@ -59,7 +59,7 @@ const (
 	InstanceStorePolicyRAID0 InstanceStorePolicy = "RAID0"
 )
 
-// OpenshiftEC2NodeClassSpec defines the desired state of ClusterSizingConfiguration
+// OpenshiftEC2NodeClassSpec defines the desired state of OpenshiftEC2NodeClass.
 // This will contain configuration necessary to launch instances in AWS.
 type OpenshiftEC2NodeClassSpec struct {
 	// SubnetSelectorTerms is a list of or subnet selector terms. The terms are ORed.

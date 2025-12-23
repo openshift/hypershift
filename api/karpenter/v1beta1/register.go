@@ -29,6 +29,8 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(SchemeGroupVersion,
 		&OpenshiftEC2NodeClass{},
 		&OpenshiftEC2NodeClassList{},
+		&OpenshiftNodePool{},
+		&OpenshiftNodePoolList{},
 	)
 	metav1.AddToGroupVersion(scheme, SchemeGroupVersion)
 	return nil

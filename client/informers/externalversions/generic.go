@@ -80,6 +80,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		// Group=karpenter.hypershift.openshift.io, Version=v1beta1
 	case karpenterv1beta1.SchemeGroupVersion.WithResource("openshiftec2nodeclasses"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Karpenter().V1beta1().OpenshiftEC2NodeClasses().Informer()}, nil
+	case karpenterv1beta1.SchemeGroupVersion.WithResource("openshiftnodepools"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Karpenter().V1beta1().OpenshiftNodePools().Informer()}, nil
 
 		// Group=scheduling.hypershift.openshift.io, Version=v1alpha1
 	case schedulingv1alpha1.SchemeGroupVersion.WithResource("clustersizingconfigurations"):

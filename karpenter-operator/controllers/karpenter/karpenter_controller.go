@@ -178,7 +178,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	if hcp.DeletionTimestamp != nil {
 		if controllerutil.ContainsFinalizer(hcp, karpenterFinalizer) {
-			nodePoolList := &karpenterv1.NodePoolList{}
+			nodePoolList := &hyperkarpenterv1.OpenshiftNodePoolList{}
 			if err := r.GuestClient.List(ctx, nodePoolList); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to list NodePools: %w", err)
 			}

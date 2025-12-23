@@ -581,7 +581,7 @@ func TestLabelNodesForGlobalPullSecret(t *testing.T) {
 
 			labeledNodes := make(map[string]bool)
 			for _, node := range nodeList.Items {
-				if node.Labels != nil && node.Labels[globalPSLabelKey] == "true" {
+				if node.Labels != nil && node.Labels[GlobalPSLabelKey] == "true" {
 					labeledNodes[node.Name] = true
 				}
 			}

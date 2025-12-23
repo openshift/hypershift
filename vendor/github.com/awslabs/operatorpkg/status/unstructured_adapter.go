@@ -1,10 +1,11 @@
 package status
 
 import (
-	"encoding/json"
+	"time"
 
 	"github.com/awslabs/operatorpkg/object"
 	"github.com/samber/lo"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -35,20 +36,49 @@ func (u *unstructuredAdapter[T]) GroupVersionKind() schema.GroupVersionKind {
 }
 
 func (u *unstructuredAdapter[T]) GetConditions() []Condition {
-	conditions, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
-	return lo.Map(conditions, func(condition interface{}, _ int) Condition {
+	conditions, _, _ := unstructured.NestedFieldNoCopy(u.Object, "status", "conditions")
+	if conditions == nil {
+		return nil
+	}
+	return lo.Map(conditions.([]interface{}), func(condition interface{}, _ int) Condition {
 		var newCondition Condition
 		cond := condition.(map[string]interface{})
-		jsonStr, _ := json.Marshal(cond)
-		json.Unmarshal(jsonStr, &newCondition)
+		newCondition.Type, _, _ = unstructured.NestedString(cond, "type")
+		newCondition.Reason, _, _ = unstructured.NestedString(cond, "reason")
+		status, _, _ := unstructured.NestedString(cond, "status")
+		if status != "" {
+			newCondition.Status = metav1.ConditionStatus(status)
+		}
+		newCondition.Message, _, _ = unstructured.NestedString(cond, "message")
+		transitionTime, _, _ := unstructured.NestedString(cond, "lastTransitionTime")
+		if transitionTime != "" {
+			newCondition.LastTransitionTime = metav1.Time{Time: lo.Must(time.Parse(time.RFC3339, transitionTime))}
+		}
+		newCondition.ObservedGeneration, _, _ = unstructured.NestedInt64(cond, "observedGeneration")
 		return newCondition
 	})
 }
 func (u *unstructuredAdapter[T]) SetConditions(conditions []Condition) {
 	unstructured.SetNestedSlice(u.Object, lo.Map(conditions, func(condition Condition, _ int) interface{} {
-		var b map[string]interface{}
-		j, _ := json.Marshal(&condition)
-		json.Unmarshal(j, &b)
+		b := map[string]interface{}{}
+		if condition.Type != "" {
+			b["type"] = condition.Type
+		}
+		if condition.Reason != "" {
+			b["reason"] = condition.Reason
+		}
+		if condition.Status != "" {
+			b["status"] = string(condition.Status)
+		}
+		if condition.Message != "" {
+			b["message"] = condition.Message
+		}
+		if !condition.LastTransitionTime.IsZero() {
+			b["lastTransitionTime"] = condition.LastTransitionTime.Format(time.RFC3339)
+		}
+		if condition.ObservedGeneration != 0 {
+			b["observedGeneration"] = condition.ObservedGeneration
+		}
 		return b
 	}), "status", "conditions")
 }

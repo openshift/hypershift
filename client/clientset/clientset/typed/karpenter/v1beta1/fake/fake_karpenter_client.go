@@ -31,6 +31,10 @@ func (c *FakeKarpenterV1beta1) OpenshiftEC2NodeClasses(namespace string) v1beta1
 	return newFakeOpenshiftEC2NodeClasses(c, namespace)
 }
 
+func (c *FakeKarpenterV1beta1) OpenshiftNodePools(namespace string) v1beta1.OpenshiftNodePoolInterface {
+	return newFakeOpenshiftNodePools(c, namespace)
+}
+
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
 func (c *FakeKarpenterV1beta1) RESTClient() rest.Interface {

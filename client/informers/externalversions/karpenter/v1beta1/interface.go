@@ -25,6 +25,8 @@ import (
 type Interface interface {
 	// OpenshiftEC2NodeClasses returns a OpenshiftEC2NodeClassInformer.
 	OpenshiftEC2NodeClasses() OpenshiftEC2NodeClassInformer
+	// OpenshiftNodePools returns a OpenshiftNodePoolInformer.
+	OpenshiftNodePools() OpenshiftNodePoolInformer
 }
 
 type version struct {
@@ -41,4 +43,9 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 // OpenshiftEC2NodeClasses returns a OpenshiftEC2NodeClassInformer.
 func (v *version) OpenshiftEC2NodeClasses() OpenshiftEC2NodeClassInformer {
 	return &openshiftEC2NodeClassInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// OpenshiftNodePools returns a OpenshiftNodePoolInformer.
+func (v *version) OpenshiftNodePools() OpenshiftNodePoolInformer {
+	return &openshiftNodePoolInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }

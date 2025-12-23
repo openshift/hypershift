@@ -45,7 +45,7 @@ spec:
             type: object
           spec:
             description: |-
-              OpenshiftEC2NodeClassSpec defines the desired state of ClusterSizingConfiguration
+              OpenshiftEC2NodeClassSpec defines the desired state of OpenshiftEC2NodeClass.
               This will contain configuration necessary to launch instances in AWS.
             properties:
               associatePublicIPAddress:

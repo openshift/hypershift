@@ -24,3 +24,11 @@ type OpenshiftEC2NodeClassListerExpansion interface{}
 // OpenshiftEC2NodeClassNamespaceListerExpansion allows custom methods to be added to
 // OpenshiftEC2NodeClassNamespaceLister.
 type OpenshiftEC2NodeClassNamespaceListerExpansion interface{}
+
+// OpenshiftNodePoolListerExpansion allows custom methods to be added to
+// OpenshiftNodePoolLister.
+type OpenshiftNodePoolListerExpansion interface{}
+
+// OpenshiftNodePoolNamespaceListerExpansion allows custom methods to be added to
+// OpenshiftNodePoolNamespaceLister.
+type OpenshiftNodePoolNamespaceListerExpansion interface{}

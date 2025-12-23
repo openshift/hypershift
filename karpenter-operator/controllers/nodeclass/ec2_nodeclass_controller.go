@@ -69,6 +69,7 @@ func (r *EC2NodeClassReconciler) SetupWithManager(ctx context.Context, mgr ctrl.
 	}
 
 	bldr := ctrl.NewControllerManagedBy(mgr).
+		Named("ec2nodeclass").
 		For(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
 		WithOptions(controller.Options{
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
@@ -78,8 +79,8 @@ func (r *EC2NodeClassReconciler) SetupWithManager(ctx context.Context, mgr ctrl.
 			func(ctx context.Context, o client.Object) []ctrl.Request {
 				// Only watch our Karpenter CRDs
 				switch o.GetName() {
-				case "ec2nodeclasses.karpenter.k8s.aws",
-					"openshiftec2nodeclasses.karpenter.hypershift.openshift.io":
+				case crdEC2NodeClass.GetName(),
+					crdOpenshiftEC2NodeClass.GetName():
 					return []ctrl.Request{{NamespacedName: client.ObjectKey{Namespace: r.Namespace}}}
 				}
 				return nil
@@ -123,7 +124,7 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			log.Info("openshiftEC2NodeClass not found, aborting reconcile", "name", req.NamespacedName)
 			return ctrl.Result{}, nil
 		}
-		return ctrl.Result{}, fmt.Errorf("failed to get openshiftEC2NodeClass %q: %w", req.NamespacedName, err)
+		return ctrl.Result{}, fmt.Errorf("failed to get OpenshiftEC2NodeClass %q: %w", req.NamespacedName, err)
 	}
 
 	ec2NodeClass := &awskarpenterv1.EC2NodeClass{
@@ -147,7 +148,7 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			original := openshiftEC2NodeClass.DeepCopy()
 			controllerutil.RemoveFinalizer(openshiftEC2NodeClass, finalizer)
 			if err := r.guestClient.Patch(ctx, openshiftEC2NodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from openshiftEC2NodeClass: %w", err)
+				return ctrl.Result{}, fmt.Errorf("failed to remove finalizer from OpenshiftEC2NodeClass: %w", err)
 			}
 		}
 		return ctrl.Result{}, nil
@@ -157,7 +158,7 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		original := openshiftEC2NodeClass.DeepCopy()
 		controllerutil.AddFinalizer(openshiftEC2NodeClass, finalizer)
 		if err := r.guestClient.Patch(ctx, openshiftEC2NodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to openshiftEC2NodeClass: %w", err)
+			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to OpenshiftEC2NodeClass: %w", err)
 		}
 	}
 
