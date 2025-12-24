@@ -1386,14 +1386,6 @@ var schemaYAML = typed.YAMLObject(`types:
           elementRelationship: associative
           keys:
           - key
-    - name: serviceEndpoints
-      type:
-        list:
-          elementType:
-            namedType: com.github.openshift.api.config.v1.GCPServiceEndpoint
-          elementRelationship: associative
-          keys:
-          - name
 - name: com.github.openshift.api.config.v1.GCPResourceLabel
   map:
     fields:
@@ -1417,17 +1409,6 @@ var schemaYAML = typed.YAMLObject(`types:
         scalar: string
       default: ""
     - name: value
-      type:
-        scalar: string
-      default: ""
-- name: com.github.openshift.api.config.v1.GCPServiceEndpoint
-  map:
-    fields:
-    - name: name
-      type:
-        scalar: string
-      default: ""
-    - name: url
       type:
         scalar: string
       default: ""
