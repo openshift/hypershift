@@ -22,6 +22,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/event"
 )
 
+const testInfraID = "test-infra"
+
 func TestReconcileEC2NodeClass(t *testing.T) {
 	userDataSecret := &corev1.Secret{
 		Data: map[string][]byte{
@@ -33,16 +35,11 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 			},
 		},
 	}
-	hcp := &hyperv1.HostedControlPlane{
-		Spec: hyperv1.HostedControlPlaneSpec{
-			InfraID: "test-infra",
-		},
-	}
-
 	testCases := []struct {
-		name         string
-		spec         hyperkarpenterv1.OpenshiftEC2NodeClassSpec
-		expectedSpec awskarpenterv1.EC2NodeClassSpec
+		name           string
+		hcpAnnotations map[string]string
+		spec           hyperkarpenterv1.OpenshiftEC2NodeClassSpec
+		expectedSpec   awskarpenterv1.EC2NodeClassSpec
 	}{
 		{
 			name: "When OpenshiftEC2NodeClassSpec.spec is empty it should reconcile the EC2NodeClass with default values",
@@ -51,14 +48,14 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
 					{
 						Tags: map[string]string{
-							"karpenter.sh/discovery": hcp.Spec.InfraID,
+							"karpenter.sh/discovery": testInfraID,
 						},
 					},
 				},
 				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
 					{
 						Tags: map[string]string{
-							"karpenter.sh/discovery": hcp.Spec.InfraID,
+							"karpenter.sh/discovery": testInfraID,
 						},
 					},
 				},
@@ -133,11 +130,89 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				DetailedMonitoring:  ptr.To(true),
 			},
 		},
+		{
+			name: "When HCP has instance-profile annotation it should set InstanceProfile on EC2NodeClass",
+			hcpAnnotations: map[string]string{
+				hyperv1.AWSKarpenterDefaultInstanceProfile: "test-instance-profile",
+			},
+			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				InstanceProfile: ptr.To("test-instance-profile"),
+			},
+		},
+		{
+			name: "When HCP has empty instance-profile annotation it should NOT set InstanceProfile",
+			hcpAnnotations: map[string]string{
+				hyperv1.AWSKarpenterDefaultInstanceProfile: "",
+			},
+			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "When HCP has no instance-profile annotation it should NOT set InstanceProfile",
+			hcpAnnotations: map[string]string{},
+			spec:           hyperkarpenterv1.OpenshiftEC2NodeClassSpec{},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
+
+			// Create HCP with test case annotations
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: tc.hcpAnnotations,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					InfraID: testInfraID,
+				},
+			}
 
 			openshiftEC2NodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
 				Spec: tc.spec,

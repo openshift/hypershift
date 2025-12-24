@@ -761,6 +761,18 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				"unrelated": "test",
 			},
 		},
+		{
+			name: "When HostedCluster has aws-karpenter-default-instance-profile annotation it should propagate to HCP",
+			hcAnnotations: map[string]string{
+				hyperv1.AWSKarpenterDefaultInstanceProfile: "test-instance-profile",
+			},
+			hcpAnnotations: map[string]string{},
+			expectedAnnotations: map[string]string{
+				hyperutil.HostedClusterAnnotation:          hcKey,
+				hyperv1.AWSKarpenterDefaultInstanceProfile: "test-instance-profile",
+				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+			},
+		},
 	}
 
 	for _, tc := range tests {
