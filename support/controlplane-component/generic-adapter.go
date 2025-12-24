@@ -17,6 +17,9 @@ type genericAdapter struct {
 	adapt             func(cpContext WorkloadContext, resource client.Object) error
 	predicate         Predicate
 	reconcileExisting bool // if true, causes the existing resource to be fetched before adapting
+
+	// tracks whether the resource has been applied successfully.
+	hasBeenApplied bool
 }
 
 type option func(*genericAdapter)
@@ -48,6 +51,11 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, obj client.Ob
 	workloadContext := cpContext.workloadContext()
 
 	if ga.predicate != nil && !ga.predicate(workloadContext) {
+		if !ga.hasBeenApplied {
+			// if the resource has not been applied, it doesn't exist, so there's nothing to delete.
+			return nil
+		}
+
 		// get the existing object to read its ownerRefs
 		existing := obj.DeepCopyObject().(client.Object)
 		err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(obj), existing)
@@ -64,6 +72,8 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, obj client.Ob
 		} else if !apierrors.IsNotFound(err) && !meta.IsNoMatchError(err) {
 			return err
 		}
+
+		ga.hasBeenApplied = false
 		return nil
 	}
 
@@ -83,5 +93,6 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, obj client.Ob
 		return err
 	}
 
+	ga.hasBeenApplied = true
 	return nil
 }

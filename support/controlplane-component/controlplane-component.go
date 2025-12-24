@@ -144,6 +144,9 @@ type controlPlaneWorkload[T client.Object] struct {
 
 	customOperandsRolloutCheck   func(cpContext WorkloadContext) (bool, error)
 	monitorOperandsRolloutStatus bool
+
+	// tracks whether the component has been applied successfully.
+	hasBeenApplied bool
 }
 
 // Name implements ControlPlaneComponent.
@@ -173,6 +176,7 @@ func (c *controlPlaneWorkload[T]) Reconcile(cpContext ControlPlaneContext) error
 	if len(unavailableDependencies) == 0 {
 		// reconcile only when all dependencies are available, and don't return error immediately so it can be included in the status condition first.
 		reconcilationError = c.update(cpContext)
+		c.hasBeenApplied = true
 	}
 
 	component := &hyperv1.ControlPlaneComponent{
@@ -191,6 +195,11 @@ func (c *controlPlaneWorkload[T]) Reconcile(cpContext ControlPlaneContext) error
 }
 
 func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
+	if !c.hasBeenApplied {
+		// if the component has not been applied, it doesn't exist, so there's nothing to delete.
+		return nil
+	}
+
 	workloadObj := c.workloadProvider.NewObject()
 	// make sure that the Deployment/Statefulset name matches the component name.
 	workloadObj.SetName(c.Name())
@@ -221,8 +230,12 @@ func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 			Namespace: cpContext.HCP.Namespace,
 		},
 	}
-	_, err = util.DeleteIfNeeded(cpContext, cpContext.Client, component)
-	return err
+	if _, err := util.DeleteIfNeeded(cpContext, cpContext.Client, component); err != nil {
+		return err
+	}
+
+	c.hasBeenApplied = false
+	return nil
 }
 
 // update reconciles component workload and related manifests
