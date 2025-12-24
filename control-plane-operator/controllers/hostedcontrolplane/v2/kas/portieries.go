@@ -15,6 +15,7 @@ const (
 
 	localhostKubeconfigVolumeName = "localhost-kubeconfig"
 	portierisCertsVolumeName      = "portieris-certs"
+	portierisTrustVolumeName      = "portieris-trust-data"
 )
 
 var (
@@ -22,13 +23,14 @@ var (
 		portierisContainerName: {
 			localhostKubeconfigVolumeName: "/etc/openshift/kubeconfig",
 			portierisCertsVolumeName:      "/etc/certs",
+			portierisTrustVolumeName:      "/run/.trust",
 		},
 	}
 )
 
 func applyPortieriesConfig(podSpec *corev1.PodSpec, portieriesImage string) {
 	podSpec.Containers = append(podSpec.Containers, buildKASPortieriesContainer(portieriesImage))
-	podSpec.Volumes = append(podSpec.Volumes, buildKASPortierisCertsVolume())
+	podSpec.Volumes = append(podSpec.Volumes, buildKASPortierisCertsVolume(), buildKASPortierisTrustVolume())
 }
 
 func buildKASPortieriesContainer(image string) corev1.Container {
@@ -82,6 +84,18 @@ func buildKASPortierisCertsVolume() corev1.Volume {
 	v.Secret = &corev1.SecretVolumeSource{
 		SecretName:  v.Name,
 		DefaultMode: ptr.To[int32](0640),
+	}
+	return v
+}
+
+func buildKASPortierisTrustVolume() corev1.Volume {
+	v := corev1.Volume{
+		Name: portierisTrustVolumeName,
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{
+				Medium: corev1.StorageMediumMemory,
+			},
+		},
 	}
 	return v
 }
