@@ -27562,6 +27562,9 @@ be generated automatically for the cluster.
 When specifying a service account signing key, an IssuerURL must also be specified.
 If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
 TODO(alberto): Signal this in a condition.</p>
+<p>For key rotation, the secret may optionally contain an &ldquo;old-key.pub&rdquo; key whose content is the PEM-encoded
+public key of the previous signing key. When present, the kube-apiserver will accept tokens signed by
+both the current and previous keys, allowing for graceful key rotation without invalidating existing tokens.</p>
 </td>
 </tr>
 <tr>
@@ -33775,6 +33778,9 @@ be generated automatically for the cluster.
 When specifying a service account signing key, an IssuerURL must also be specified.
 If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
 TODO(alberto): Signal this in a condition.</p>
+<p>For key rotation, the secret may optionally contain an &ldquo;old-key.pub&rdquo; key whose content is the PEM-encoded
+public key of the previous signing key. When present, the kube-apiserver will accept tokens signed by
+both the current and previous keys, allowing for graceful key rotation without invalidating existing tokens.</p>
 </td>
 </tr>
 <tr>

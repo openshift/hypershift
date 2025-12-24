@@ -4439,8 +4439,9 @@ func (r *HostedClusterReconciler) reconcileServiceAccountSigningKey(ctx context.
 	}
 	cpSigningKeySecret := controlplaneoperator.ServiceAccountSigningKeySecret(targetNamespace)
 	_, err = createOrUpdate(ctx, r.Client, cpSigningKeySecret, func() error {
-		existingKeyBytes, hasKey := cpSigningKeySecret.Data[controlplaneoperator.ServiceSignerPrivateKey]
-		if hasKey && bytes.Equal(existingKeyBytes, privateBytes) {
+		// If the private and public keys are the same as the existing ones, do nothing
+		if bytes.Equal(cpSigningKeySecret.Data[controlplaneoperator.ServiceSignerPrivateKey], privateBytes) &&
+			bytes.Equal(cpSigningKeySecret.Data[controlplaneoperator.ServiceSignerPublicKey], publicBytes) {
 			return nil
 		}
 
@@ -4507,7 +4508,16 @@ func (r *HostedClusterReconciler) serviceAccountSigningKeyBytes(ctx context.Cont
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot serialize public key from private key %s: %w", signingKeySecret.Name, err)
 	}
-	return privateKeyPEMBytes, publicKeyPEMBytes, nil
+
+	// Combine all public keys into a single PEM file.
+	// kube-apiserver accepts multiple PEM-encoded keys in one file for token verification,
+	// which enables key rotation by allowing tokens signed with the old key to still validate.
+	combinedPublicKeys := publicKeyPEMBytes
+	if oldPublicKeyPEMBytes, hasOldPublicKey := signingKeySecret.Data[hyperv1.ServiceAccountOldPublicKeySecretKey]; hasOldPublicKey {
+		combinedPublicKeys = append(combinedPublicKeys, oldPublicKeyPEMBytes...)
+	}
+
+	return privateKeyPEMBytes, combinedPublicKeys, nil
 }
 
 func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx context.Context, hc *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN, logger logr.Logger) error {

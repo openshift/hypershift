@@ -167,6 +167,10 @@ const (
 	// key if specified.
 	ServiceAccountSigningKeySecretKey = "key"
 
+	// ServiceAccountOldPublicKeySecretKey is the name of the secret key that should contain the old service account public
+	// key if specified.
+	ServiceAccountOldPublicKeySecretKey = "old-key.pub"
+
 	// DisableProfilingAnnotation is the annotation that allows disabling profiling for control plane components.
 	// Any components specified in this list will have profiling disabled. Profiling is disabled by default for etcd and konnectivity.
 	// Components this annotation can apply to: kube-scheduler, kube-controller-manager, kube-apiserver.
@@ -689,6 +693,10 @@ type HostedClusterSpec struct {
 	// When specifying a service account signing key, an IssuerURL must also be specified.
 	// If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
 	// TODO(alberto): Signal this in a condition.
+	//
+	// For key rotation, the secret may optionally contain an "old-key.pub" key whose content is the PEM-encoded
+	// public key of the previous signing key. When present, the kube-apiserver will accept tokens signed by
+	// both the current and previous keys, allowing for graceful key rotation without invalidating existing tokens.
 	//
 	// +optional
 	ServiceAccountSigningKey *corev1.LocalObjectReference `json:"serviceAccountSigningKey,omitempty"`
