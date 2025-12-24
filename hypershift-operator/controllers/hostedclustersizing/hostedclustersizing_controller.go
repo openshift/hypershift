@@ -11,6 +11,7 @@ import (
 	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
 	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/logcontext"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
@@ -134,6 +135,8 @@ func (r *reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 		}
 		return reconcile.Result{}, err
 	}
+	logger = logcontext.AddAnnotationContext(logger, hostedCluster.Annotations)
+	ctx = ctrl.LoggerInto(ctx, logger)
 
 	action, err := r.reconcile(ctx, request, config, hostedCluster)
 	if err != nil {

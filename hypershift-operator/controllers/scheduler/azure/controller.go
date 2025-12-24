@@ -8,6 +8,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	schedulingv1alpha1 "github.com/openshift/hypershift/api/scheduling/v1alpha1"
 	schedulerutil "github.com/openshift/hypershift/hypershift-operator/controllers/scheduler/util"
+	"github.com/openshift/hypershift/support/logcontext"
 	"github.com/openshift/hypershift/support/util"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -65,6 +66,8 @@ func (r *Scheduler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resul
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
 	}
+	log = logcontext.AddAnnotationContext(log, hc.Annotations)
+	ctx = ctrl.LoggerInto(ctx, log)
 
 	if !hc.DeletionTimestamp.IsZero() {
 		log.Info("hostedcluster is being deleted, aborting reconcile")
