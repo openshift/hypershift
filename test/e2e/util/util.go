@@ -124,6 +124,8 @@ var (
 		// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
 		"kubevirt-csi":                  20,
 		"aws-ebs-csi-driver-controller": 1,
+		// Allow 1 restart for network-node-identity webhook startup timing
+		"network-node-identity": 1,
 	}
 )
 
