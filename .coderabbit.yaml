@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_instructions:
+    - path: "**/controllers/**/*.go"
+      instructions: |
+        Follow .github/CONTRIBUTING.md "Controller Code Review Standards" section.
+        Key checks:
+        - Non-retryable conditions (missing labels, wrong resource type) should return nil, not error
+        - Check namespace labels (hypershift.openshift.io/hosted-control-plane=true) early
+        - Validate references (non-nil, correct Kind) before fetching
+        - Only patch when there's an actual difference
+        - Use ctrl.LoggerFrom(ctx), not klog
+        - Use Events for user-visible state changes
+        - Use Patch instead of Update for status updates
+        - Use meta.SetStatusCondition() return value instead of DeepEqual
+        - Extract complex anonymous functions to helper functions
+        - Conditions should be informative, not blocking reconciliation
+        - Use Unknown for error states, not removal
+        - Reuse existing clients, don't recreate
+
+    - path: "api/**/*.go"
+      instructions: |
+        Follow .github/CONTRIBUTING.md "API Design Standards" section.
+        Key checks:
+        - Use enums instead of bools (bools don't evolve well)
+        - For durations, include unit in field name (e.g., delayAfterAddSeconds)
+        - Document limits and defaults in godoc (users can't see validations)
+        - Default in code, not API level
+        - Set MinItems=1 to prevent empty list issues
+        - Mark immutable fields with XValidation
+        - Use pointers for optional fields where empty string is valid
+        - Define condition constants in same file as condition types
+        - Use API not Api in field names (kubeAPICustomName not kubeApiCustomName)
+        - Write godoc in prose, not bullet points
+        - Document day 1 and day 2 behavior
+        - Cannot add required fields to shipped APIs (breaking change)
+
+    - path: "cmd/**/*.go"
+      instructions: |
+        Follow .github/CONTRIBUTING.md "Controller Code Review Standards" section.
+        Key checks:
+        - Feature flags should require all necessary config
+        - Clear variable names that reflect purpose
+
+chat:
+  auto_reply: true
