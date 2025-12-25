@@ -70,7 +70,6 @@ func bindCoreOptions(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) 
 	flags.BoolVar(&opts.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the NodePool will be setup with ephemeral OS disks")
 	flags.StringVar(&opts.DiskStorageAccountType, "disk-storage-account-type", opts.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
 	flags.StringVar(&opts.SubnetID, "nodepool-subnet-id", opts.SubnetID, "The subnet id where the VMs will be placed.")
-	flags.StringVar(&opts.ImageID, "image-id", opts.ImageID, "The Image ID to boot the VMs with.")
 	flags.StringVar(&opts.ImageGeneration, "image-generation", opts.ImageGeneration, "The Hyper-V generation of the Azure VM image. Supported values: Gen1, Gen2. If unspecified, defaults to Gen2.")
 	flags.StringVar(&opts.MarketplacePublisher, "marketplace-publisher", opts.MarketplacePublisher, "The Azure Marketplace image publisher.")
 	flags.StringVar(&opts.MarketplaceOffer, "marketplace-offer", opts.MarketplaceOffer, "The Azure Marketplace image offer.")
@@ -81,6 +80,32 @@ func bindCoreOptions(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) 
 
 func BindDeveloperOptions(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) {
 	bindCoreOptions(opts, flags)
+}
+
+// BindProductFlags binds customer-facing flags for Azure nodepool creation in the product CLI
+func BindProductFlags(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) {
+	// VM configuration
+	flags.StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, util.InstanceTypeDescription)
+	flags.Int32Var(&opts.DiskSize, "root-disk-size", opts.DiskSize, util.RootDiskSizeDescription)
+	flags.StringVar(&opts.AvailabilityZone, "availability-zone", opts.AvailabilityZone, util.AvailabilityZoneDescription)
+	flags.StringVar(&opts.SubnetID, "nodepool-subnet-id", opts.SubnetID, util.SubnetIDDescription)
+
+	// Disk configuration
+	flags.StringVar(&opts.DiskStorageAccountType, "disk-storage-account-type", opts.DiskStorageAccountType, util.DiskStorageAccountTypeDescription)
+	flags.StringVar(&opts.DiskEncryptionSetID, "disk-encryption-set-id", opts.DiskEncryptionSetID, util.DiskEncryptionSetIDDescription)
+	flags.BoolVar(&opts.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.EnableEphemeralOSDisk, util.EnableEphemeralOSDiskDescription)
+	flags.StringVar(&opts.EncryptionAtHost, "encryption-at-host", opts.EncryptionAtHost, util.EncryptionAtHostDescription)
+
+	// Image configuration
+	flags.StringVar(&opts.ImageGeneration, "image-generation", opts.ImageGeneration, util.ImageGenerationDescription)
+	flags.StringVar(&opts.MarketplacePublisher, "marketplace-publisher", opts.MarketplacePublisher, util.MarketplacePublisherDescription)
+	flags.StringVar(&opts.MarketplaceOffer, "marketplace-offer", opts.MarketplaceOffer, util.MarketplaceOfferDescription)
+	flags.StringVar(&opts.MarketplaceSKU, "marketplace-sku", opts.MarketplaceSKU, util.MarketplaceSKUDescription)
+	flags.StringVar(&opts.MarketplaceVersion, "marketplace-version", opts.MarketplaceVersion, util.MarketplaceVersionDescription)
+
+	// Diagnostics
+	flags.Var(&opts.DiagnosticsStorageAccountType, "diagnostics-storage-account-type", util.DiagnosticsStorageAccountTypeDescription)
+	flags.StringVar(&opts.DiagnosticsStorageAccountURI, "diagnostics-storage-account-uri", opts.DiagnosticsStorageAccountURI, util.DiagnosticsStorageAccountURIDescription)
 }
 
 // validatedAzurePlatformCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
