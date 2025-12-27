@@ -13,20 +13,20 @@ reconciled with what is specified in the HostedCluster.
 
 The configuration resources that should be specified in the HostedCluster are:
 
-* [APIServer](https://docs.openshift.com/container-platform/4.9/rest_api/config_apis/apiserver-config-openshift-io-v1.html) - Provides API server configuration such as certificates and certificate authorities.
-* [Authentication](https://docs.openshift.com/container-platform/4.9/rest_api/config_apis/authentication-config-openshift-io-v1.html) - Controls the identity provider and authentication configuration for the cluster.
-* [FeatureGate](https://docs.openshift.com/container-platform/4.9/rest_api/config_apis/featuregate-config-openshift-io-v1.html) - Enables FeatureGates so that you can use Tech Preview features.
-* [Ingress](https://docs.openshift.com/container-platform/4.9/rest_api/config_apis/ingress-config-openshift-io-v1.html) - Configuration details related to routing such as the default domain for routes.
-* [Image](https://docs.openshift.com/container-platform/4.9/rest_api/config_apis/image-config-openshift-io-v1.html) - Configures how specific image registries should be treated (allowed, disallowed, insecure, CA details).
-* [OAuth](https://docs.openshift.com/container-platform/4.9/rest_api/config_apis/oauth-config-openshift-io-v1.html) - Configures identity providers and other behavior related to internal OAuth server flows.
-* [Proxy](https://docs.openshift.com/container-platform/4.9/rest_api/config_apis/proxy-config-openshift-io-v1.html) - Defines proxies to be used by components needing external network access. Note: not all components currently consume this value.
-* [Scheduler](https://docs.openshift.com/container-platform/4.9/rest_api/config_apis/scheduler-config-openshift-io-v1.html) - Configures scheduler behavior such as policies and default node selectors.
-* [Network](https://docs.openshift.com/container-platform/4.9/rest_api/config_apis/network-config-openshift-io-v1.html) - Configures network properties for initial cluster creation.
+* [APIServer](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/apiserver-config-openshift-io-v1.html) - Provides API server configuration such as certificates and certificate authorities.
+* [Authentication](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/authentication-config-openshift-io-v1.html) - Controls the identity provider and authentication configuration for the cluster.
+* [FeatureGate](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/featuregate-config-openshift-io-v1.html) - Enables FeatureGates so that you can use Tech Preview features.
+* [Ingress](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/ingress-config-openshift-io-v1.html) - Configuration details related to routing such as the default domain for routes.
+* [Image](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/image-config-openshift-io-v1.html) - Configures how specific image registries should be treated (allowed, disallowed, insecure, CA details).
+* [OAuth](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/oauth-config-openshift-io-v1.html) - Configures identity providers and other behavior related to internal OAuth server flows.
+* [Proxy](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/proxy-config-openshift-io-v1.html) - Defines proxies to be used by components needing external network access. Note: not all components currently consume this value.
+* [Scheduler](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/scheduler-config-openshift-io-v1.html) - Configures scheduler behavior such as policies and default node selectors.
+* [Network](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/network-config-openshift-io-v1.html) - Configures network properties for initial cluster creation.
 Resources that should still be configured inside the guest cluster are:
 
-* [Build](https://docs.openshift.com/container-platform/4.9/rest_api/config_apis/build-config-openshift-io-v1.html) - Controls default and enforced configuration for all builds on the cluster.
-* [Console](https://docs.openshift.com/container-platform/4.9/rest_api/config_apis/console-config-openshift-io-v1.html) - Configures the behavior of the web console interface, including the logout behavior.
-* [Project](https://docs.openshift.com/container-platform/4.9/rest_api/config_apis/project-config-openshift-io-v1.html) - Configures how projects are created including the project template.
+* [Build](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/build-config-openshift-io-v1.html) - Controls default and enforced configuration for all builds on the cluster.
+* [Console](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/console-config-openshift-io-v1.html) - Configures the behavior of the web console interface, including the logout behavior.
+* [Project](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/project-config-openshift-io-v1.html) - Configures how projects are created including the project template.
 
 ## Specifying Configuration in a HostedCluster
 
@@ -113,4 +113,4 @@ spec:
         type: OpenID
 ```
 
-For more details on the individual identity providers: refer to [upstream openshift documentation](https://docs.openshift.com/container-platform/4.9/authentication/understanding-identity-provider.html)
+For more details on the individual identity providers: refer to [upstream openshift documentation](https://docs.openshift.com/container-platform/4.20/authentication/understanding-identity-provider.html)
