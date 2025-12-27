@@ -21,6 +21,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	supportforwarder "github.com/openshift/hypershift/support/forwarder"
 	supportutil "github.com/openshift/hypershift/support/util"
 
@@ -433,7 +434,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 	if localKubevirtInUse {
 		namespaces = append(namespaces, kubevirtNamespace)
 	}
-	if sharedingress.UseSharedIngress() {
+	if azureutil.IsAroHCP() {
 		namespaces = append(namespaces, sharedingress.RouterNamespace)
 	}
 
@@ -443,7 +444,7 @@ func DumpCluster(ctx context.Context, opts *DumpOptions) error {
 
 	outputLogs(ctx, opts.Log, kubeClient, opts.ArtifactDir, controlPlaneNamespace, opts)
 	outputLogs(ctx, opts.Log, kubeClient, opts.ArtifactDir, hypershiftNamespace, opts)
-	if sharedingress.UseSharedIngress() {
+	if azureutil.IsAroHCP() {
 		outputLogs(ctx, opts.Log, kubeClient, opts.ArtifactDir, sharedingress.RouterNamespace, opts)
 	}
 
