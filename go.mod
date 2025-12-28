@@ -48,7 +48,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/opencontainers/image-spec v1.1.0
+	github.com/opencontainers/image-spec v1.1.1
 	github.com/openshift/api v0.0.0-20251204193610-68ce3d906ec8
 	github.com/openshift/client-go v0.0.0-20251202151200-fb4471581cf8
 	github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
