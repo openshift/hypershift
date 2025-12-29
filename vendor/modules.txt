@@ -88,7 +88,7 @@ github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets
 # github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.1.1
 ## explicit; go 1.18
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal
-# github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161
+# github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c
 ## explicit; go 1.16
 github.com/Azure/go-ansiterm
 github.com/Azure/go-ansiterm/winterm
@@ -740,8 +740,8 @@ github.com/google/go-cmp/cmp/internal/value
 ## explicit; go 1.12
 github.com/google/gofuzz
 github.com/google/gofuzz/bytesource
-# github.com/google/pprof v0.0.0-20250403155104-27863c87afa6
-## explicit; go 1.23
+# github.com/google/pprof v0.0.0-20250422154841-e1f9c1950416
+## explicit; go 1.23.0
 github.com/google/pprof/profile
 # github.com/google/s2a-go v0.1.9
 ## explicit; go 1.20
@@ -880,7 +880,7 @@ github.com/moby/spdystream/spdy
 # github.com/moby/sys/user v0.4.0
 ## explicit; go 1.17
 github.com/moby/sys/user
-# github.com/moby/term v0.5.0
+# github.com/moby/term v0.5.2
 ## explicit; go 1.18
 github.com/moby/term
 github.com/moby/term/windows
@@ -1484,7 +1484,7 @@ golang.org/x/crypto/salsa20/salsa
 golang.org/x/crypto/sha3
 golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
-# golang.org/x/exp v0.0.0-20250305212735-054e65f0b394
+# golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
 ## explicit; go 1.23.0
 golang.org/x/exp/maps
 golang.org/x/exp/slices
@@ -2555,15 +2555,15 @@ k8s.io/utils/ptr
 k8s.io/utils/set
 k8s.io/utils/strings/slices
 k8s.io/utils/trace
-# kubevirt.io/api v1.4.0
+# kubevirt.io/api v1.5.0
 ## explicit; go 1.22.0
 kubevirt.io/api/core
 kubevirt.io/api/core/v1
-# kubevirt.io/containerized-data-importer-api v1.61.1
-## explicit; go 1.22.0
+# kubevirt.io/containerized-data-importer-api v1.62.0
+## explicit; go 1.23.0
 kubevirt.io/containerized-data-importer-api/pkg/apis/core
 kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1
-# kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90
+# kubevirt.io/controller-lifecycle-operator-sdk/api v0.2.4
 ## explicit; go 1.17
 kubevirt.io/controller-lifecycle-operator-sdk/api
 # sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.32.0
@@ -2612,8 +2612,8 @@ sigs.k8s.io/cluster-api-provider-azure/util/webhook
 ## explicit; go 1.23.2
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2
-# sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9
-## explicit; go 1.22.0
+# sigs.k8s.io/cluster-api-provider-kubevirt v0.1.10
+## explicit; go 1.23.6
 sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1
 # sigs.k8s.io/cluster-api-provider-openstack v0.12.1
 ## explicit; go 1.23.0
