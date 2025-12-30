@@ -99,9 +99,6 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 			c.Args = append(c.Args, "--update-service", string(updateService))
 		}
 
-		// Enable CVO metrics access if either RHOBS monitoring is enabled or the explicit flag is set
-		enableMetricsAccess := os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" || cvo.enableCVOManagementClusterMetricsAccess
-
 		if enableMetricsAccess {
 			c.Args = append(c.Args, "--use-dns-for-services=true")
 
