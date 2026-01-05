@@ -7,15 +7,20 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/iam"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	karpentercpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
 	karpenteroperatorcpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
@@ -26,7 +31,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/yaml"
@@ -119,6 +126,27 @@ func TestKarpenter(t *testing.T) {
 			// validate admin cannot delete EC2NodeClass directly
 			ec2NodeClass := ec2NodeClassList.Items[0]
 			g.Expect(guestClient.Delete(ctx, &ec2NodeClass)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
+
+			// validate admin cannot modify the default OpenshiftEC2NodeClass
+			t.Log("Validating default OpenshiftEC2NodeClass is protected from modifications")
+			defaultOpenshiftEC2NodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+			g.Expect(guestClient.Get(ctx, types.NamespacedName{Name: "default"}, defaultOpenshiftEC2NodeClass)).To(Succeed())
+
+			// Store original spec to verify it doesn't change
+			originalInstanceProfile := defaultOpenshiftEC2NodeClass.Spec.InstanceProfile
+
+			// Attempt to update the default OpenshiftEC2NodeClass with an instanceProfile
+			err = e2eutil.UpdateObject(t, ctx, guestClient, defaultOpenshiftEC2NodeClass, func(obj *hyperkarpenterv1.OpenshiftEC2NodeClass) {
+				obj.Spec.InstanceProfile = ptr.To("should-be-rejected")
+			})
+			g.Expect(err).To(HaveOccurred(), "updating default OpenshiftEC2NodeClass should fail")
+			g.Expect(err.Error()).To(ContainSubstring("The 'default' OpenshiftEC2NodeClass is system-managed and cannot be modified"))
+			t.Logf("Verified default OpenshiftEC2NodeClass correctly rejected modification: %v", err)
+
+			// Verify the spec remained unchanged
+			g.Expect(guestClient.Get(ctx, types.NamespacedName{Name: "default"}, defaultOpenshiftEC2NodeClass)).To(Succeed())
+			g.Expect(defaultOpenshiftEC2NodeClass.Spec.InstanceProfile).To(Equal(originalInstanceProfile), "default OpenshiftEC2NodeClass spec should remain unchanged")
+			t.Log("Verified default OpenshiftEC2NodeClass spec was not modified")
 
 			// TODO(alberto): increase coverage:
 			// - Karpenter operator plumbing, e.g:
@@ -231,6 +259,299 @@ func TestKarpenter(t *testing.T) {
 			// Wait for Karpenter Nodes to go away.
 			t.Logf("Waiting for Karpenter Nodes to disappear")
 			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, nodeLabels)
+		})
+
+		t.Run("Test custom instance profile", func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Use the existing worker instance profile that's already created for the cluster
+			workerInstanceProfile := fmt.Sprintf("%s-worker", hostedCluster.Spec.InfraID)
+			t.Logf("Using existing worker instance profile: %s", workerInstanceProfile)
+
+			// Get the default OpenshiftEC2NodeClass to copy its selectors
+			defaultOpenshiftEC2NodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+			g.Expect(guestClient.Get(ctx, types.NamespacedName{Name: "default"}, defaultOpenshiftEC2NodeClass)).To(Succeed())
+
+			// Create custom OpenshiftEC2NodeClass with instanceProfile
+			customNodeClassName := "custom-worker-profile"
+			customOpenshiftEC2NodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: customNodeClassName,
+				},
+				Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+					InstanceProfile: ptr.To(workerInstanceProfile),
+					// Copy all fields from default to ensure nodes can properly join the cluster
+					SubnetSelectorTerms:        defaultOpenshiftEC2NodeClass.Spec.SubnetSelectorTerms,
+					SecurityGroupSelectorTerms: defaultOpenshiftEC2NodeClass.Spec.SecurityGroupSelectorTerms,
+					AssociatePublicIPAddress:   defaultOpenshiftEC2NodeClass.Spec.AssociatePublicIPAddress,
+					Tags:                       defaultOpenshiftEC2NodeClass.Spec.Tags,
+					BlockDeviceMappings:        defaultOpenshiftEC2NodeClass.Spec.BlockDeviceMappings,
+					DetailedMonitoring:         defaultOpenshiftEC2NodeClass.Spec.DetailedMonitoring,
+					InstanceStorePolicy:        defaultOpenshiftEC2NodeClass.Spec.InstanceStorePolicy,
+					// Note: We're setting InstanceProfile instead of Role
+				},
+			}
+			g.Expect(guestClient.Create(ctx, customOpenshiftEC2NodeClass)).To(Succeed())
+			t.Logf("Created custom OpenshiftEC2NodeClass %s with instanceProfile: %s", customNodeClassName, workerInstanceProfile)
+			defer guestClient.Delete(ctx, customOpenshiftEC2NodeClass)
+
+			// Verify corresponding EC2NodeClass gets created and synced with Spec.InstanceProfile
+			ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
+			g.Eventually(func() *string {
+				if err := guestClient.Get(ctx, types.NamespacedName{Name: customNodeClassName}, ec2NodeClass); err != nil {
+					return nil
+				}
+				return ec2NodeClass.Spec.InstanceProfile
+			}, 2*time.Minute, 5*time.Second).Should(Equal(ptr.To(workerInstanceProfile)), "EC2NodeClass should have instanceProfile set in Spec")
+			t.Logf("Verified EC2NodeClass Spec has instanceProfile: %s", workerInstanceProfile)
+
+			// Verify it syncs to EC2NodeClass Status (this is what Karpenter actually uses)
+			g.Eventually(func() string {
+				if err := guestClient.Get(ctx, types.NamespacedName{Name: customNodeClassName}, ec2NodeClass); err != nil {
+					return ""
+				}
+				return ec2NodeClass.Status.InstanceProfile
+			}, 2*time.Minute, 5*time.Second).Should(Equal(workerInstanceProfile), "EC2NodeClass should have instanceProfile set in Status")
+			t.Logf("Verified EC2NodeClass Status has instanceProfile: %s", workerInstanceProfile)
+
+			// Create a unique NodePool for this test to avoid conflicts with other tests
+			profileTestNodePool := karpenterNodePool.DeepCopy()
+			profileTestNodePool.SetName("nodepool-instance-profile")
+			profileTestNodePool.SetResourceVersion("")
+
+			// Update NodePool to reference the custom EC2NodeClass
+			nodeClassRef := profileTestNodePool.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})["nodeClassRef"].(map[string]interface{})
+			nodeClassRef["name"] = customNodeClassName
+			t.Logf("Updated NodePool to reference custom EC2NodeClass: %s", customNodeClassName)
+
+			// Create unique workload for this test
+			profileTestWorkloads := workLoads.DeepCopy()
+			profileTestWorkloads.SetName("workload-instance-profile")
+			profileTestWorkloads.SetResourceVersion("")
+			replicas := 1
+			profileTestWorkloads.Object["spec"].(map[string]interface{})["replicas"] = replicas
+
+			defer guestClient.Delete(ctx, profileTestNodePool)
+			defer guestClient.Delete(ctx, profileTestWorkloads)
+			g.Expect(guestClient.Create(ctx, profileTestNodePool)).To(Succeed())
+			t.Logf("Created Karpenter NodePool %s", profileTestNodePool.GetName())
+			g.Expect(guestClient.Create(ctx, profileTestWorkloads)).To(Succeed())
+			t.Logf("Created workloads")
+
+			// Wait for nodes to be ready using this test's unique NodePool labels
+			profileTestNodeLabels := map[string]string{
+				"node.kubernetes.io/instance-type": "t3.large",
+				"karpenter.sh/nodepool":            profileTestNodePool.GetName(),
+			}
+			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), profileTestNodeLabels)
+			t.Logf("Karpenter provisioned %d node(s)", len(nodes))
+
+			// Verify instances have the correct instance profile via AWS API
+			ec2Client := e2eutil.GetEC2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+			instanceIDRegex := regexp.MustCompile(`(?P<Provider>.*):///(?P<AZ>.*)/(?P<InstanceID>.*)`)
+
+			for _, node := range nodes {
+				providerID := node.Spec.ProviderID
+				matches := instanceIDRegex.FindStringSubmatch(providerID)
+				g.Expect(matches).NotTo(BeNil(), "providerID should match expected format")
+
+				var instanceID string
+				for i, name := range instanceIDRegex.SubexpNames() {
+					if name == "InstanceID" {
+						instanceID = matches[i]
+						break
+					}
+				}
+				g.Expect(instanceID).NotTo(BeEmpty(), "should extract instance ID from providerID")
+
+				t.Logf("Verifying instance %s has instance profile %s", instanceID, workerInstanceProfile)
+
+				// Describe the instance to get its IAM instance profile
+				describeOutput, err := ec2Client.DescribeInstances(&ec2.DescribeInstancesInput{
+					InstanceIds: []*string{aws.String(instanceID)},
+				})
+				g.Expect(err).NotTo(HaveOccurred(), "should describe instance")
+				g.Expect(describeOutput.Reservations).NotTo(BeEmpty(), "should have at least one reservation")
+				g.Expect(describeOutput.Reservations[0].Instances).NotTo(BeEmpty(), "should have at least one instance")
+
+				instance := describeOutput.Reservations[0].Instances[0]
+				g.Expect(instance.IamInstanceProfile).NotTo(BeNil(), "instance should have IAM instance profile")
+
+				// Extract just the profile name from the ARN
+				// ARN format: arn:aws:iam::123456789012:instance-profile/profile-name
+				profileARN := aws.StringValue(instance.IamInstanceProfile.Arn)
+				profileName := profileARN[strings.LastIndex(profileARN, "/")+1:]
+
+				g.Expect(profileName).To(Equal(workerInstanceProfile), "instance should have the correct instance profile")
+				t.Logf("✓ Instance %s has correct instance profile: %s", instanceID, profileName)
+			}
+
+			// Test we can delete both Karpenter NodePool and workloads.
+			g.Expect(guestClient.Delete(ctx, profileTestNodePool)).To(Succeed())
+			t.Logf("Deleted Karpenter NodePool %s", profileTestNodePool.GetName())
+			g.Expect(guestClient.Delete(ctx, profileTestWorkloads)).To(Succeed())
+			t.Logf("Deleted workloads")
+
+			// Wait for Karpenter Nodes to go away.
+			t.Log("Waiting for Karpenter Nodes to disappear")
+			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, profileTestNodeLabels)
+
+			t.Logf("Successfully verified all instances have the correct instance profile")
+		})
+
+		t.Run("Test custom role", func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Get the existing worker instance profile to extract its role
+			// The role name pattern varies depending on whether ROSA managed policies are used
+			workerInstanceProfile := fmt.Sprintf("%s-worker", hostedCluster.Spec.InfraID)
+			iamClient := e2eutil.GetIAMClient(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+			profileOutput, err := iamClient.GetInstanceProfile(&iam.GetInstanceProfileInput{
+				InstanceProfileName: aws.String(workerInstanceProfile),
+			})
+			g.Expect(err).NotTo(HaveOccurred(), "should get worker instance profile")
+			g.Expect(profileOutput.InstanceProfile.Roles).NotTo(BeEmpty(), "worker instance profile should have a role")
+
+			workerRoleName := *profileOutput.InstanceProfile.Roles[0].RoleName
+			t.Logf("Using existing worker role from instance profile: %s", workerRoleName)
+
+			// Get the default OpenshiftEC2NodeClass to copy configuration
+			defaultOpenshiftEC2NodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+			g.Expect(guestClient.Get(ctx, types.NamespacedName{Name: "default"}, defaultOpenshiftEC2NodeClass)).To(Succeed())
+
+			// Create custom OpenshiftEC2NodeClass with role
+			customNodeClassName := "custom-worker-role"
+			customOpenshiftEC2NodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: customNodeClassName,
+				},
+				Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+					Role: workerRoleName, // Set role instead of instanceProfile
+					// Copy all fields from default
+					SubnetSelectorTerms:        defaultOpenshiftEC2NodeClass.Spec.SubnetSelectorTerms,
+					SecurityGroupSelectorTerms: defaultOpenshiftEC2NodeClass.Spec.SecurityGroupSelectorTerms,
+					AssociatePublicIPAddress:   defaultOpenshiftEC2NodeClass.Spec.AssociatePublicIPAddress,
+					Tags:                       defaultOpenshiftEC2NodeClass.Spec.Tags,
+					BlockDeviceMappings:        defaultOpenshiftEC2NodeClass.Spec.BlockDeviceMappings,
+					DetailedMonitoring:         defaultOpenshiftEC2NodeClass.Spec.DetailedMonitoring,
+					InstanceStorePolicy:        defaultOpenshiftEC2NodeClass.Spec.InstanceStorePolicy,
+				},
+			}
+			g.Expect(guestClient.Create(ctx, customOpenshiftEC2NodeClass)).To(Succeed())
+			t.Logf("Created custom OpenshiftEC2NodeClass %s with role: %s", customNodeClassName, workerRoleName)
+			defer guestClient.Delete(ctx, customOpenshiftEC2NodeClass)
+
+			// Verify EC2NodeClass gets created and synced with Role in Spec
+			ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
+			g.Eventually(func() string {
+				if err := guestClient.Get(ctx, types.NamespacedName{Name: customNodeClassName}, ec2NodeClass); err != nil {
+					return ""
+				}
+				return ec2NodeClass.Spec.Role
+			}, 2*time.Minute, 5*time.Second).Should(Equal(workerRoleName), "EC2NodeClass should have role set in Spec")
+			t.Logf("Verified EC2NodeClass Spec has role: %s", workerRoleName)
+
+			// Verify Karpenter's instanceprofile controller creates an instance profile
+			// When using Spec.Role, Karpenter generates a dynamic instance profile name
+			var generatedInstanceProfile string
+			g.Eventually(func() string {
+				if err := guestClient.Get(ctx, types.NamespacedName{Name: customNodeClassName}, ec2NodeClass); err != nil {
+					return ""
+				}
+				return ec2NodeClass.Status.InstanceProfile
+			}, 2*time.Minute, 5*time.Second).ShouldNot(BeEmpty(), "EC2NodeClass should have instanceProfile generated in Status")
+
+			generatedInstanceProfile = ec2NodeClass.Status.InstanceProfile
+			t.Logf("Verified EC2NodeClass Status has generated instanceProfile: %s", generatedInstanceProfile)
+
+			// The generated instance profile should be DIFFERENT from the default worker profile
+			defaultWorkerProfile := fmt.Sprintf("%s-worker", hostedCluster.Spec.InfraID)
+			g.Expect(generatedInstanceProfile).NotTo(Equal(defaultWorkerProfile), "Generated instance profile should be different from default")
+
+			// Create a unique NodePool for this test to avoid conflicts with other tests
+			roleTestNodePool := karpenterNodePool.DeepCopy()
+			roleTestNodePool.SetName("nodepool-custom-role")
+			roleTestNodePool.SetResourceVersion("")
+
+			// Update NodePool to reference the custom EC2NodeClass
+			nodeClassRef := roleTestNodePool.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})["nodeClassRef"].(map[string]interface{})
+			nodeClassRef["name"] = customNodeClassName
+			t.Logf("Updated NodePool to reference custom EC2NodeClass: %s", customNodeClassName)
+
+			// Create unique workload for this test
+			roleTestWorkloads := workLoads.DeepCopy()
+			roleTestWorkloads.SetName("workload-custom-role")
+			roleTestWorkloads.SetResourceVersion("")
+			replicas := 1
+			roleTestWorkloads.Object["spec"].(map[string]interface{})["replicas"] = replicas
+
+			defer guestClient.Delete(ctx, roleTestNodePool)
+			defer guestClient.Delete(ctx, roleTestWorkloads)
+			g.Expect(guestClient.Create(ctx, roleTestNodePool)).To(Succeed())
+			t.Logf("Created Karpenter NodePool %s", roleTestNodePool.GetName())
+			g.Expect(guestClient.Create(ctx, roleTestWorkloads)).To(Succeed())
+			t.Logf("Created workloads")
+
+			// Wait for nodes to be ready using this test's unique NodePool labels
+			roleTestNodeLabels := map[string]string{
+				"node.kubernetes.io/instance-type": "t3.large",
+				"karpenter.sh/nodepool":            roleTestNodePool.GetName(),
+			}
+			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), roleTestNodeLabels)
+			t.Logf("Karpenter provisioned %d node(s) using role", len(nodes))
+
+			// Verify instances have the GENERATED instance profile (not the default one)
+			ec2Client := e2eutil.GetEC2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+			instanceIDRegex := regexp.MustCompile(`(?P<Provider>.*):///(?P<AZ>.*)/(?P<InstanceID>.*)`)
+
+			for _, node := range nodes {
+				providerID := node.Spec.ProviderID
+				matches := instanceIDRegex.FindStringSubmatch(providerID)
+				g.Expect(matches).NotTo(BeNil(), "providerID should match expected format")
+
+				var instanceID string
+				for i, name := range instanceIDRegex.SubexpNames() {
+					if name == "InstanceID" {
+						instanceID = matches[i]
+						break
+					}
+				}
+				g.Expect(instanceID).NotTo(BeEmpty(), "should extract instance ID from providerID")
+
+				t.Logf("Verifying instance %s has generated instance profile %s", instanceID, generatedInstanceProfile)
+
+				// Describe the instance to get its IAM instance profile
+				describeOutput, err := ec2Client.DescribeInstances(&ec2.DescribeInstancesInput{
+					InstanceIds: []*string{aws.String(instanceID)},
+				})
+				g.Expect(err).NotTo(HaveOccurred(), "should describe instance")
+				g.Expect(describeOutput.Reservations).NotTo(BeEmpty(), "should have reservations")
+				g.Expect(describeOutput.Reservations[0].Instances).NotTo(BeEmpty(), "should have instances")
+
+				instance := describeOutput.Reservations[0].Instances[0]
+				g.Expect(instance.IamInstanceProfile).NotTo(BeNil(), "instance should have IAM instance profile")
+
+				// Extract instance profile name from ARN
+				// ARN format: arn:aws:iam::ACCOUNT:instance-profile/NAME
+				profileARN := *instance.IamInstanceProfile.Arn
+				parts := strings.Split(profileARN, "/")
+				actualProfileName := parts[len(parts)-1]
+
+				g.Expect(actualProfileName).To(Equal(generatedInstanceProfile),
+					fmt.Sprintf("instance %s should have instance profile %s (got %s)", instanceID, generatedInstanceProfile, actualProfileName))
+
+				t.Logf("✓ Instance %s has correct generated instance profile: %s", instanceID, actualProfileName)
+			}
+
+			// Test we can delete both Karpenter NodePool and workloads.
+			g.Expect(guestClient.Delete(ctx, roleTestNodePool)).To(Succeed())
+			t.Logf("Deleted Karpenter NodePool")
+			g.Expect(guestClient.Delete(ctx, roleTestWorkloads)).To(Succeed())
+			t.Logf("Deleted workloads")
+
+			// Wait for Karpenter Nodes to go away.
+			t.Log("Waiting for Karpenter Nodes to disappear")
+			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, roleTestNodeLabels)
 		})
 
 		t.Run("Test basic provisioning and deprovising", func(t *testing.T) {
