@@ -35,6 +35,19 @@ const (
 	NeedMetricsServerAccessLabel = "hypershift.openshift.io/need-metrics-server-access"
 )
 
+func isROSAHCP(hcp *hyperv1.HostedControlPlane) bool {
+	if hcp.Spec.Platform.AWS == nil {
+		return false
+	}
+
+	for _, tag := range hcp.Spec.Platform.AWS.ResourceTags {
+		if tag.Key == "red-hat-managed" && tag.Value == "true" {
+			return true
+		}
+	}
+	return false
+}
+
 func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
@@ -90,7 +103,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		if enableMetricsAccess {
 			policy = networkpolicy.MetricsServerNetworkPolicy(controlPlaneNamespaceName)
 			if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-				return reconcileMetricsServerNetworkPolicy(policy)
+				return reconcileMetricsServerNetworkPolicy(policy, hcp)
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile metrics server network policy: %w", err)
 			}
@@ -830,15 +843,16 @@ func kasEndpointsToCIDRs(kubernetesEndpoint *corev1.Endpoints) []string {
 }
 
 // reconcileMetricsServerNetworkPolicy selects pods having NeedMetricsServerAccessLabel.
-// It allows egress traffic to the HCP metrics server. Depending on the monitoring stack:
-// - RHOBS: targets OBO Prometheus at port 9090 in openshift-observability-operator namespace
-// - CoreOS: targets Thanos Querier at port 9092 in openshift-monitoring namespace
-func reconcileMetricsServerNetworkPolicy(policy *networkingv1.NetworkPolicy) error {
+// It allows egress traffic to the HCP metrics server that is available for self-managed HyperShift running on an OpenShift management cluster.
+// Depending on the monitoring stack:
+// - RHOBS (ROSA HCP only): targets OBO Prometheus at port 9090 in openshift-observability-operator namespace
+// - CoreOS (self-managed HyperShift): targets Thanos Querier at port 9092 in openshift-monitoring namespace
+func reconcileMetricsServerNetworkPolicy(policy *networkingv1.NetworkPolicy, hcp *hyperv1.HostedControlPlane) error {
 	protocol := corev1.ProtocolTCP
 	var egressRules []networkingv1.NetworkPolicyEgressRule
 
-	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
-		// RHOBS Prometheus configuration
+	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" && isROSAHCP(hcp) {
+		// RHOBS Prometheus configuration (ROSA HCP specific)
 		port := intstr.FromInt(9090)
 		egressRules = []networkingv1.NetworkPolicyEgressRule{
 			{

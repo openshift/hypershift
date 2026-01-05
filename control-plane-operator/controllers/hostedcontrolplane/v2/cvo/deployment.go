@@ -28,6 +28,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
 
+func isROSAHCP(hcp *hyperv1.HostedControlPlane) bool {
+	if hcp.Spec.Platform.AWS == nil {
+		return false
+	}
+
+	for _, tag := range hcp.Spec.Platform.AWS.ResourceTags {
+		if tag.Key == "red-hat-managed" && tag.Value == "true" {
+			return true
+		}
+	}
+	return false
+}
+
 func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	// Enable CVO metrics access if either RHOBS monitoring is enabled or the explicit flag is set
 	enableMetricsAccess := os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" || cvo.enableCVOManagementClusterMetricsAccess
@@ -104,8 +117,8 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 
 			// Configure metrics endpoint based on monitoring stack
 			var metricsURL string
-			if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
-				// RHOBS Prometheus uses HTTP without TLS
+			if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" && isROSAHCP(cpContext.HCP) {
+				// RHOBS Prometheus uses HTTP without TLS (ROSA HCP specific)
 				metricsURL = fmt.Sprintf("http://hypershift-monitoring-stack-prometheus.openshift-observability-operator.svc:9090?namespace=%s", cpContext.HCP.Namespace)
 			} else {
 				// OCP Thanos Query uses HTTPS with service CA
