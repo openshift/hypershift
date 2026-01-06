@@ -12,6 +12,16 @@ const (
 
 type QoSClass string
 
+// CpuModelType represents the CPU model for KubeVirt VMs.
+//
+// +kubebuilder:validation:Enum=host-passthrough
+type CpuModelType string
+
+const (
+	// CpuModelHostPassthrough configures the VM to use the same CPU model as the node.
+	CpuModelHostPassthrough CpuModelType = "host-passthrough"
+)
+
 // KubevirtCompute contains values associated with the virtual compute hardware requested for the VM.
 type KubevirtCompute struct {
 	// memory represents how much guest memory the VM should have
@@ -34,6 +44,13 @@ type KubevirtCompute struct {
 	// +kubebuilder:validation:Enum=Burstable;Guaranteed
 	// +kubebuilder:default=Burstable
 	QosClass *QoSClass `json:"qosClass,omitempty"`
+
+	// model specifies the CPU model for the KubeVirt VirtualMachineInstance.
+	// When set to "host-passthrough", the VM will use the same CPU model as the node,
+	// which provides the best performance but may limit live migration compatibility.
+	//
+	// +optional
+	Model *CpuModelType `json:"model,omitempty"`
 }
 
 // +kubebuilder:validation:Enum=ReadWriteOnce;ReadWriteMany;ReadOnly;ReadWriteOncePod
