@@ -4464,28 +4464,9 @@ func (r *HostedClusterReconciler) validateServiceAccountSigningKey(ctx context.C
 		return fmt.Errorf("the IssuerURL must be set when specifying a service account signing key")
 	}
 
-	privateBytes, _, err := r.serviceAccountSigningKeyBytes(ctx, hc)
-	if err != nil {
-		return err
-	}
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
-	cpSigningKeySecret := controlplaneoperator.ServiceAccountSigningKeySecret(controlPlaneNamespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(cpSigningKeySecret), cpSigningKeySecret); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("cannot get control plane signing key secret %s/%s: %w", cpSigningKeySecret.Namespace, cpSigningKeySecret.Name, err)
-		}
-		return nil
-	}
-	if cpSigningKeySecret.Data != nil {
-		existingKeyBytes, hasKey := cpSigningKeySecret.Data[controlplaneoperator.ServiceSignerPrivateKey]
-		if !hasKey {
-			return nil
-		}
-		if !bytes.Equal(existingKeyBytes, privateBytes) {
-			return fmt.Errorf("existing control plane service account signing key does not match private key")
-		}
-	}
-	return nil
+	// Validate the service account signing key secret has a valid private key
+	_, _, err := r.serviceAccountSigningKeyBytes(ctx, hc)
+	return err
 }
 
 func (r *HostedClusterReconciler) serviceAccountSigningKeyBytes(ctx context.Context, hc *hyperv1.HostedCluster) ([]byte, []byte, error) {
