@@ -104,6 +104,14 @@ func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool
 
 	r.addKubeVirtCacheNameToStatus(kubevirtBootImage, nodePool)
 
+	// LiveMigrationWarningCondition must run after setAllMachinesLMCondition
+	// (called earlier in the signal-conditions loop) because both write to
+	// KubeVirtNodesLiveMigratable. The spec-based warning here takes
+	// precedence over the per-machine status aggregation.
+	if cond := kubevirt.LiveMigrationWarningCondition(nodePool); cond != nil {
+		SetStatusCondition(&nodePool.Status.Conditions, *cond)
+	}
+
 	// If this is a new nodepool, or we're currently updating a nodepool, then it is safe to
 	// use the new topologySpreadConstraints feature over pod anti-affinity when
 	// spreading out the VMs across the infra cluster
@@ -125,7 +133,13 @@ func (r *NodePoolReconciler) setAllMachinesLMCondition(ctx context.Context, node
 	}
 
 	if len(kubevirtMachines.Items) == 0 {
-		// not setting the condition if there are no kubevirt machines present
+		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+			Type:               hyperv1.NodePoolKubeVirtLiveMigratableType,
+			Status:             corev1.ConditionTrue,
+			Reason:             hyperv1.AsExpectedReason,
+			Message:            hyperv1.AllIsWellMessage,
+			ObservedGeneration: nodePool.Generation,
+		})
 		return nil
 	}
 
