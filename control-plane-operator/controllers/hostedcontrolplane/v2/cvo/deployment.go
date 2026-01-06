@@ -10,6 +10,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -27,19 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 )
-
-func isROSAHCP(hcp *hyperv1.HostedControlPlane) bool {
-	if hcp.Spec.Platform.AWS == nil {
-		return false
-	}
-
-	for _, tag := range hcp.Spec.Platform.AWS.ResourceTags {
-		if tag.Key == "red-hat-managed" && tag.Value == "true" {
-			return true
-		}
-	}
-	return false
-}
 
 func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	// Enable CVO metrics access if either RHOBS monitoring is enabled or the explicit flag is set
@@ -117,7 +105,7 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 
 			// Configure metrics endpoint based on monitoring stack
 			var metricsURL string
-			if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" && isROSAHCP(cpContext.HCP) {
+			if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" && awsutil.IsROSAHCP(cpContext.HCP) {
 				// RHOBS Prometheus uses HTTP without TLS (ROSA HCP specific)
 				metricsURL = fmt.Sprintf("http://hypershift-monitoring-stack-prometheus.openshift-observability-operator.svc:9090?namespace=%s", cpContext.HCP.Namespace)
 			} else {
