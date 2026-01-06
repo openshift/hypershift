@@ -104,6 +104,8 @@ func (r *NodePoolReconciler) setKubevirtConditions(ctx context.Context, nodePool
 
 	r.addKubeVirtCacheNameToStatus(kubevirtBootImage, nodePool)
 
+	kubevirt.ApplyLiveMigrationWarning(nodePool)
+
 	// If this is a new nodepool, or we're currently updating a nodepool, then it is safe to
 	// use the new topologySpreadConstraints feature over pod anti-affinity when
 	// spreading out the VMs across the infra cluster

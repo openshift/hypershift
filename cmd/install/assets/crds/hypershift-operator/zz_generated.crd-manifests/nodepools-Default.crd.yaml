@@ -1175,6 +1175,17 @@ spec:
                               VM should have
                             pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                             x-kubernetes-int-or-string: true
+                          model:
+                            description: |-
+                              model specifies the CPU model for the KubeVirt VirtualMachineInstance.
+                              When not set, no explicit CPU model is configured and KubeVirt will use
+                              its default behavior.
+                              When set to "HostPassthrough", the VM will use the same CPU model as the
+                              host node, which provides the best performance but may limit live migration
+                              compatibility between nodes with different CPU types.
+                            enum:
+                            - HostPassthrough
+                            type: string
                           qosClass:
                             default: Burstable
                             description: |-
