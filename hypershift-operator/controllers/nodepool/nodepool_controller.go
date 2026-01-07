@@ -1,6 +1,7 @@
 package nodepool
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"os"
@@ -12,6 +13,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
@@ -97,8 +99,8 @@ type NodePoolReconciler struct {
 	HypershiftOperatorImage string
 	ImageMetadataProvider   supportutil.ImageMetadataProvider
 	KubevirtInfraClients    kvinfra.KubevirtInfraClientMap
-
-	EC2Client ec2iface.EC2API
+	EC2Client               ec2iface.EC2API
+	InstanceTypeProvider    instancetype.Provider
 }
 
 type NotReadyError struct {
@@ -406,7 +408,21 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 		return ctrl.Result{}, err
 	}
+
+	// Set scale-from-zero annotations if provider is configured and platform is supported
+	// This works for both Replace (MachineDeployment) and InPlace (MachineSet) upgrade types
+	if isAutoscalingEnabled(nodePool) && r.InstanceTypeProvider != nil && supportedScaleFromZeroPlatform(nodePool.Spec.Platform.Type) {
+		if err = r.reconcileScaleFromZeroAnnotations(ctx, nodePool, controlPlaneNamespace); err != nil {
+			log.Error(err, "Failed to set scale-from-zero annotations")
+		}
+	}
+
 	return ctrl.Result{}, nil
+}
+
+// supportedScaleFromZeroPlatform checks if the platform supports scale-from-zero functionality.
+func supportedScaleFromZeroPlatform(platform hyperv1.PlatformType) bool {
+	return platform == hyperv1.AWSPlatform
 }
 
 func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (*Token, error) {
@@ -1093,6 +1109,98 @@ func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]st
 			return err
 		}
 	}
+	return nil
+}
+
+// reconcileScaleFromZeroAnnotations sets scale-from-zero annotations on MachineDeployment/MachineSet for AWS platform.
+func (r *NodePoolReconciler) reconcileScaleFromZeroAnnotations(ctx context.Context, nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
+	key := client.ObjectKey{
+		Namespace: controlPlaneNamespace,
+		Name:      nodePool.GetName(),
+	}
+
+	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
+		// InPlace mode uses MachineSet
+		ms := &capiv1.MachineSet{}
+		if err := r.Get(ctx, key, ms); err != nil {
+			if apierrors.IsNotFound(err) {
+				// MachineSet doesn't exist yet, skip annotation (it will be reconciled later)
+				return nil
+			}
+			return fmt.Errorf("failed to get MachineSet: %w", err)
+		}
+
+		// Ensure annotations map is initialized
+		if ms.Annotations == nil {
+			ms.Annotations = make(map[string]string)
+		}
+
+		// Check if it's an AWS machine template
+		if ms.Spec.Template.Spec.InfrastructureRef.Kind != "AWSMachineTemplate" {
+			return nil // Not an AWS machine template, skip
+		}
+
+		// Fetch the AWSMachineTemplate
+		awsMachineTemplate := &capiaws.AWSMachineTemplate{}
+		templateKey := client.ObjectKey{
+			Namespace: cmp.Or(ms.Spec.Template.Spec.InfrastructureRef.Namespace, controlPlaneNamespace),
+			Name:      ms.Spec.Template.Spec.InfrastructureRef.Name,
+		}
+		if err := r.Get(ctx, templateKey, awsMachineTemplate); err != nil {
+			return fmt.Errorf("failed to get AWSMachineTemplate: %w", err)
+		}
+
+		// Set annotations on the MachineSet
+		if err := setScaleFromZeroAnnotationsOnObject(ctx, r.InstanceTypeProvider, nodePool, ms.Annotations, awsMachineTemplate); err != nil {
+			return fmt.Errorf("failed to set scale-from-zero annotations on MachineSet: %w", err)
+		}
+
+		// Update the MachineSet
+		if err := r.Update(ctx, ms); err != nil {
+			return fmt.Errorf("failed to update MachineSet with scale-from-zero annotations: %w", err)
+		}
+	} else {
+		// Replace mode uses MachineDeployment
+		md := &capiv1.MachineDeployment{}
+		if err := r.Get(ctx, key, md); err != nil {
+			if apierrors.IsNotFound(err) {
+				// MachineDeployment doesn't exist yet, skip annotation (it will be reconciled later)
+				return nil
+			}
+			return fmt.Errorf("failed to get MachineDeployment: %w", err)
+		}
+
+		// Ensure annotations map is initialized
+		if md.Annotations == nil {
+			md.Annotations = make(map[string]string)
+		}
+
+		// Check if it's an AWS machine template
+		if md.Spec.Template.Spec.InfrastructureRef.Kind != "AWSMachineTemplate" {
+			return nil // Not an AWS machine template, skip
+		}
+
+		// Fetch the AWSMachineTemplate
+		awsMachineTemplate := &capiaws.AWSMachineTemplate{}
+		templateKey := client.ObjectKey{
+			Namespace: cmp.Or(md.Spec.Template.Spec.InfrastructureRef.Namespace, controlPlaneNamespace),
+			Name:      md.Spec.Template.Spec.InfrastructureRef.Name,
+		}
+		if err := r.Get(ctx, templateKey, awsMachineTemplate); err != nil {
+			return fmt.Errorf("failed to get AWSMachineTemplate: %w", err)
+		}
+
+		// Set annotations on the MachineDeployment
+		if err := setScaleFromZeroAnnotationsOnObject(ctx, r.InstanceTypeProvider, nodePool, md.Annotations, awsMachineTemplate); err != nil {
+			return fmt.Errorf("failed to set scale-from-zero annotations on MachineDeployment: %w", err)
+		}
+
+		// Update the MachineDeployment
+		if err := r.Update(ctx, md); err != nil {
+			return fmt.Errorf("failed to update MachineDeployment with scale-from-zero annotations: %w", err)
+		}
+	}
+
 	return nil
 }
 
