@@ -140,6 +140,47 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
+		"when scale-from-zero provider is missing but creds provided it errors": {
+			inputOptions: Options{
+				PrivatePlatform:    string(hyperv1.NonePlatform),
+				ScaleFromZeroCreds: "/path/to/creds",
+			},
+			expectError: true,
+		},
+		"when scale-from-zero provider is invalid it errors": {
+			inputOptions: Options{
+				PrivatePlatform:       string(hyperv1.NonePlatform),
+				ScaleFromZeroProvider: "gcp",
+				ScaleFromZeroCreds:    "/path/to/creds",
+			},
+			expectError: true,
+		},
+		"when scale-from-zero both creds and secret provided it errors": {
+			inputOptions: Options{
+				PrivatePlatform:                string(hyperv1.NonePlatform),
+				ScaleFromZeroProvider:          "aws",
+				ScaleFromZeroCreds:             "/path/to/creds",
+				ScaleFromZeroCredentialsSecret: "my-secret",
+			},
+			expectError: true,
+		},
+		"when scale-from-zero provider is aws with creds file there is no error": {
+			inputOptions: Options{
+				PrivatePlatform:       string(hyperv1.NonePlatform),
+				ScaleFromZeroProvider: "aws",
+				ScaleFromZeroCreds:    "/dev/null", // Use /dev/null as it always exists
+			},
+			expectError: false,
+		},
+		"when scale-from-zero provider is aws with secret reference there is no error": {
+			inputOptions: Options{
+				PrivatePlatform:                   string(hyperv1.NonePlatform),
+				ScaleFromZeroProvider:             "aws",
+				ScaleFromZeroCredentialsSecret:    "my-secret",
+				ScaleFromZeroCredentialsSecretKey: "credentials",
+			},
+			expectError: false,
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,8 +30,9 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedclustersizing"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/machinedeployment"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
+	awsinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/aws"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
@@ -44,7 +46,6 @@ import (
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	sharedingressconfiggenerator "github.com/openshift/hypershift/sharedingress-config-generator"
 	hyperapi "github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/awsclient"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
@@ -126,7 +127,8 @@ type StartOptions struct {
 	EnableUWMTelemetryRemoteWrite          bool
 	EnableValidatingWebhook                bool
 	EnableDedicatedRequestServingIsolation bool
-	ScaleFromZeroAWSCreds                  string // Path to AWS credentials file for scale-from-zero (set by deployment)
+	ScaleFromZeroProvider                  string
+	ScaleFromZeroCreds                     string
 }
 
 func NewStartCommand() *cobra.Command {
@@ -163,7 +165,8 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, enables a controller that ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 	cmd.Flags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
 	cmd.Flags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
-	cmd.Flags().StringVar(&opts.ScaleFromZeroAWSCreds, "scale-from-zero-aws-creds", opts.ScaleFromZeroAWSCreds, "Path to AWS credentials file for scale-from-zero autoscaling; enables the MachineDeployment controller when set")
+	cmd.Flags().StringVar(&opts.ScaleFromZeroProvider, "scale-from-zero-provider", opts.ScaleFromZeroProvider, "Platform type for scale-from-zero autoscaling (aws)")
+	cmd.Flags().StringVar(&opts.ScaleFromZeroCreds, "scale-from-zero-creds", opts.ScaleFromZeroCreds, "Path to credentials file for scale-from-zero instance type queries")
 
 	// Attempt to determine featureset prior to adding featuregate flags.
 	// It is safe to get the empty string from this as the empty string is the default featureset.
@@ -201,14 +204,23 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	log.Info("Starting hypershift-operator-manager", "version", supportedversion.String())
 
 	// Validate scale-from-zero configuration early
-	if opts.ScaleFromZeroAWSCreds != "" {
-		if _, err := os.Stat(opts.ScaleFromZeroAWSCreds); err != nil {
-			if os.IsNotExist(err) {
-				return fmt.Errorf("--scale-from-zero-aws-creds file does not exist: %s", opts.ScaleFromZeroAWSCreds)
-			}
-			return fmt.Errorf("--scale-from-zero-aws-creds file is not accessible: %w", err)
+	supportedProviders := []string{"aws"}
+	if opts.ScaleFromZeroCreds != "" {
+		if opts.ScaleFromZeroProvider == "" {
+			return fmt.Errorf("--scale-from-zero-provider is required when using --scale-from-zero-creds")
 		}
-		log.Info("Scale-from-zero enabled with AWS credentials", "credentialsFile", opts.ScaleFromZeroAWSCreds)
+		if !slices.Contains(supportedProviders, strings.ToLower(opts.ScaleFromZeroProvider)) {
+			return fmt.Errorf("invalid --scale-from-zero-provider: %s (must be one of: %v)", opts.ScaleFromZeroProvider, supportedProviders)
+		}
+		if _, err := os.Stat(opts.ScaleFromZeroCreds); err != nil {
+			if os.IsNotExist(err) {
+				return fmt.Errorf("--scale-from-zero-creds file does not exist: %s", opts.ScaleFromZeroCreds)
+			}
+			return fmt.Errorf("--scale-from-zero-creds file is not accessible: %w", err)
+		}
+		log.Info("Scale-from-zero enabled", "provider", opts.ScaleFromZeroProvider, "credentialsFile", opts.ScaleFromZeroCreds)
+	} else if opts.ScaleFromZeroProvider != "" {
+		log.Info("WARNING: --scale-from-zero-provider is set but --scale-from-zero-creds is empty; scale-from-zero will be disabled", "provider", opts.ScaleFromZeroProvider)
 	}
 
 	restConfig := ctrl.GetConfigOrDie()
@@ -409,6 +421,22 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 
 	npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient(), ec2Client)
 
+	var instanceTypeProvider instancetype.Provider
+
+	if opts.ScaleFromZeroCreds != "" && opts.ScaleFromZeroProvider != "" {
+		switch strings.ToLower(opts.ScaleFromZeroProvider) {
+		case "aws":
+			awsSession := awsutil.NewSession("hypershift-operator-scale-from-zero", opts.ScaleFromZeroCreds, "", "", "")
+			awsConfig := awsutil.NewConfig()
+			scaleFromZeroEC2Client := ec2.New(awsSession, awsConfig)
+			instanceTypeProvider = awsinstancetype.NewProvider(scaleFromZeroEC2Client)
+			log.Info("Instance type provider initialized", "provider", opts.ScaleFromZeroProvider)
+		default:
+			// Should not happen due to validation, but handle gracefully
+			log.Info("WARNING: Unsupported scale-from-zero provider", "provider", opts.ScaleFromZeroProvider)
+		}
+	}
+
 	if err := (&nodepool.NodePoolReconciler{
 		Client:                  mgr.GetClient(),
 		ReleaseProvider:         registryProvider.ReleaseProvider,
@@ -417,22 +445,9 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		ImageMetadataProvider:   registryProvider.MetadataProvider,
 		KubevirtInfraClients:    kvinfra.NewKubevirtInfraClientMap(),
 		EC2Client:               ec2Client,
+		InstanceTypeProvider:    instanceTypeProvider,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)
-	}
-
-	// Setup MachineDeployment controller for scale-from-zero
-	if opts.ScaleFromZeroAWSCreds != "" {
-		log.Info("Scale-from-zero enabled, setting up MachineDeployment controller")
-		mdReconciler := &machinedeployment.Reconciler{
-			Client:             mgr.GetClient(),
-			CredentialsFile:    opts.ScaleFromZeroAWSCreds, // Path to mounted credentials file from deployment
-			RegionCache:        awsclient.NewRegionCache(),
-			InstanceTypesCache: machinedeployment.NewInstanceTypesCache(),
-		}
-		if err := mdReconciler.SetupWithManager(mgr); err != nil {
-			return fmt.Errorf("unable to create MachineDeployment controller: %w", err)
-		}
 	}
 
 	if mgmtClusterCaps.Has(capabilities.CapabilityProxy) {
