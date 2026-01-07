@@ -10049,7 +10049,9 @@ int32
 </em>
 </td>
 <td>
-<p>min is the minimum number of nodes to maintain in the pool. Must be &gt;= 1 and &lt;= .Max.</p>
+<p>min is the minimum number of nodes to maintain in the pool.
+Can be set to 0 for scale-from-zero for AWS platform.
+Must be &gt;= 0 and &lt;= .Max.</p>
 </td>
 </tr>
 <tr>

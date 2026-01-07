@@ -132,6 +132,9 @@ type Options struct {
 	PlatformsToInstall                        []string
 	ImagePullPolicy                           string
 	EnableAuditLogPersistence                 bool
+	ScaleFromZeroAWSCreds                     string
+	ScaleFromZeroAWSCredentialsSecret         string
+	ScaleFromZeroAWSCredentialsSecretKey      string
 }
 
 func (o *Options) Validate() error {
@@ -183,6 +186,25 @@ func (o *Options) Validate() error {
 
 	if o.CertRotationScale > 24*time.Hour {
 		errs = append(errs, fmt.Errorf("cannot set --cert-rotation-scale longer than 24h, invalid value: %s", o.CertRotationScale.String()))
+	}
+
+	// Validate scale-from-zero credentials
+	if len(o.ScaleFromZeroAWSCreds) != 0 || len(o.ScaleFromZeroAWSCredentialsSecret) != 0 {
+		// Check mutual exclusivity - only one of file or secret should be provided
+		if len(o.ScaleFromZeroAWSCreds) != 0 && len(o.ScaleFromZeroAWSCredentialsSecret) != 0 {
+			errs = append(errs, fmt.Errorf("only one of --scale-from-zero-aws-creds or --scale-from-zero-aws-secret is supported"))
+		}
+
+		// Validate credentials file exists and is accessible if provided
+		if len(o.ScaleFromZeroAWSCreds) > 0 {
+			if _, err := os.Stat(o.ScaleFromZeroAWSCreds); err != nil {
+				if os.IsNotExist(err) {
+					errs = append(errs, fmt.Errorf("--scale-from-zero-aws-creds file does not exist: %s", o.ScaleFromZeroAWSCreds))
+				} else {
+					errs = append(errs, fmt.Errorf("--scale-from-zero-aws-creds file is not accessible: %w", err))
+				}
+			}
+		}
 	}
 
 	if o.RHOBSMonitoring && o.EnableCVOManagementClusterMetricsAccess {
@@ -287,6 +309,9 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringSliceVar(&opts.PlatformsToInstall, "limit-crd-install", opts.PlatformsToInstall, "Used to limit the CRDs that are installed to a per platform basis (example: --limit-crd-install=AWS,Azure). If this flag is not specified, all CRDs for all platforms will be installed. Valid, case-insensitive values are: AWS, Azure, IBMCloud, KubeVirt, Agent, OpenStack.")
 	cmd.PersistentFlags().StringToStringVar(&opts.AdditionalOperatorEnvVars, "additional-operator-env-vars", opts.AdditionalOperatorEnvVars, "Set of additional environment variables to be set on the HyperShift Operator deployment.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAuditLogPersistence, "enable-audit-log-persistence", opts.EnableAuditLogPersistence, "If true, enables persistent audit logs with automatic snapshots for kube-apiserver pods")
+	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroAWSCreds, "scale-from-zero-aws-creds", opts.ScaleFromZeroAWSCreds, "Path to AWS credentials file for EC2 instance type queries (optional credentials for scale-from-zero controller)")
+	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroAWSCredentialsSecret, "scale-from-zero-aws-secret", opts.ScaleFromZeroAWSCredentialsSecret, "Name of existing secret containing scale-from-zero AWS credentials (alternative to --scale-from-zero-aws-creds)")
+	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroAWSCredentialsSecretKey, "scale-from-zero-aws-secret-key", opts.ScaleFromZeroAWSCredentialsSecretKey, "Key within the scale-from-zero AWS credentials secret (default: credentials)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
@@ -340,6 +365,7 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 func NewInstallOptionsWithDefaults() Options {
 	opts := Options{}
 	opts.AWSPrivateCredentialsSecretKey = "credentials"
+	opts.ScaleFromZeroAWSCredentialsSecretKey = "credentials"
 	opts.CertRotationScale = 24 * time.Hour
 	opts.Development = false
 	opts.EnableAdminRBACGeneration = false
@@ -582,7 +608,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 	}
 
 	// Setup Secrets
-	oidcSecret, operatorCredentialsSecret, secretObjs, err := setupAuth(opts, operatorNamespace)
+	oidcSecret, operatorCredentialsSecret, scaleFromZeroSecret, secretObjs, err := setupAuth(opts, operatorNamespace)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -607,7 +633,7 @@ func hyperShiftOperatorManifests(opts Options) ([]crclient.Object, []crclient.Ob
 	// Setup HyperShift Operator Deployment and Service
 	operatorService, operatorObjs := setupOperatorResources(
 		opts, userCABundleCM, trustedCABundle, operatorNamespace, operatorServiceAccount, operatorCredentialsSecret,
-		oidcSecret, images,
+		oidcSecret, scaleFromZeroSecret, images,
 	)
 	objects = append(objects, operatorObjs...)
 
@@ -796,7 +822,7 @@ func setupMonitoring(opts Options, operatorNamespace *corev1.Namespace) []crclie
 // setupOperatorResources creates the operator Deployment and Service resources.
 //
 // Returns the Service and a list of resources to apply.
-func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trustedCABundle *corev1.ConfigMap, operatorNamespace *corev1.Namespace, operatorServiceAccount *corev1.ServiceAccount, operatorCredentialsSecret *corev1.Secret, oidcSecret *corev1.Secret, images map[string]string) (*corev1.Service, []crclient.Object) {
+func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trustedCABundle *corev1.ConfigMap, operatorNamespace *corev1.Namespace, operatorServiceAccount *corev1.ServiceAccount, operatorCredentialsSecret *corev1.Secret, oidcSecret *corev1.Secret, scaleFromZeroSecret *corev1.Secret, images map[string]string) (*corev1.Service, []crclient.Object) {
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
 		AdditionalTrustBundle:                   userCABundleCM,
 		OpenShiftTrustBundle:                    trustedCABundle,
@@ -836,6 +862,8 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		PlatformsInstalled:                      strings.Join(opts.PlatformsToInstall, ","),
 		ImagePullPolicy:                         opts.ImagePullPolicy,
 		EnableAuditLogPersistence:               opts.EnableAuditLogPersistence,
+		ScaleFromZeroAWSSecret:                  scaleFromZeroSecret,
+		ScaleFromZeroAWSSecretKey:               opts.ScaleFromZeroAWSCredentialsSecretKey,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
@@ -1067,15 +1095,16 @@ func setupAdminRBAC(operatorNamespace *corev1.Namespace) []crclient.Object {
 // - Platform specific secrets (e.g. AWS credentials)
 //
 // Returns the OIDC S3 credentials secret, operator credentials secret, and a list of resources to apply
-func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secret, *corev1.Secret, []crclient.Object, error) {
+func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secret, *corev1.Secret, *corev1.Secret, []crclient.Object, error) {
 	var objects []crclient.Object
 	var operatorCredentialsSecret *corev1.Secret
 	var oidcSecret *corev1.Secret
+	var scaleFromZeroSecret *corev1.Secret
 
 	if len(opts.PullSecretFile) > 0 {
 		pullSecretBytes, err := os.ReadFile(opts.PullSecretFile)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("failed to read pull secret file: %w", err)
+			return nil, nil, nil, nil, fmt.Errorf("failed to read pull secret file: %w", err)
 		}
 
 		pullSecret := assets.HyperShiftPullSecret{
@@ -1088,7 +1117,7 @@ func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secre
 	if opts.OIDCStorageProviderS3Credentials != "" {
 		oidcCreds, err := os.ReadFile(opts.OIDCStorageProviderS3Credentials)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		oidcSecret = assets.HyperShiftOperatorOIDCProviderS3Secret{
@@ -1111,7 +1140,7 @@ func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secre
 		if opts.AWSPrivateCreds != "" {
 			credBytes, err := os.ReadFile(opts.AWSPrivateCreds)
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, nil, nil, nil, err
 			}
 
 			operatorCredentialsSecret = assets.HyperShiftOperatorCredentialsSecret{
@@ -1143,5 +1172,28 @@ func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secre
 			},
 		)
 	}
-	return oidcSecret, operatorCredentialsSecret, objects, nil
+
+	// Setup scale-from-zero AWS credentials
+	if opts.ScaleFromZeroAWSCreds != "" {
+		credBytes, err := os.ReadFile(opts.ScaleFromZeroAWSCreds)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+
+		scaleFromZeroSecret = assets.ScaleFromZeroAWSCredentialsSecret{
+			Namespace:  operatorNamespace,
+			CredsBytes: credBytes,
+			CredsKey:   opts.ScaleFromZeroAWSCredentialsSecretKey,
+		}.Build()
+		objects = append(objects, scaleFromZeroSecret)
+	} else if opts.ScaleFromZeroAWSCredentialsSecret != "" {
+		scaleFromZeroSecret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: operatorNamespace.Name,
+				Name:      opts.ScaleFromZeroAWSCredentialsSecret,
+			},
+		}
+	}
+
+	return oidcSecret, operatorCredentialsSecret, scaleFromZeroSecret, objects, nil
 }
