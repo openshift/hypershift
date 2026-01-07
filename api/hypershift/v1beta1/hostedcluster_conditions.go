@@ -279,6 +279,8 @@ const (
 	DataPlaneConnectionLogsAccessFailedReason = "LogsAccessFailed"
 
 	DataPlaneConnectionNoWorkerNodesAvailableReason = "NoWorkerNodesAvailable"
+
+	ControlPlaneComponentsNotAvailable = "ComponentsNotAvailable"
 )
 
 // Messages.
