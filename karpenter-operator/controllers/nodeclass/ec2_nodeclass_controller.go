@@ -89,7 +89,11 @@ func (r *EC2NodeClassReconciler) SetupWithManager(ctx context.Context, mgr ctrl.
 		// Watch secrets in the management cluster and reconcile all ec2nodeclasses
 		WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.mapToOpenShiftEC2NodeClasses),
-			r.userDataSecretPredicate()))
+			r.userDataSecretPredicate())).
+		// Watch HostedControlPlane for annotation changes
+		WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &hyperv1.HostedControlPlane{},
+			handler.EnqueueRequestsFromMapFunc(r.mapToOpenShiftEC2NodeClasses),
+			r.hcpAnnotationPredicate()))
 	return bldr.Complete(r)
 }
 
@@ -231,6 +235,11 @@ func reconcileEC2NodeClass(ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftE
 		DetailedMonitoring:       openshiftEC2NodeClass.Spec.DetailedMonitoring,
 		BlockDeviceMappings:      openshiftEC2NodeClass.Spec.KarpenterBlockDeviceMapping(),
 		InstanceStorePolicy:      openshiftEC2NodeClass.Spec.KarpenterInstanceStorePolicy(),
+	}
+
+	// Set instance profile from HostedCluster annotation (platform-controlled)
+	if instanceProfile, ok := hcp.Annotations[hyperv1.AWSKarpenterDefaultInstanceProfile]; ok && instanceProfile != "" {
+		ec2NodeClass.Spec.InstanceProfile = ptr.To(instanceProfile)
 	}
 
 	var subnetSelectorTerms []awskarpenterv1.SubnetSelectorTerm
@@ -420,6 +429,44 @@ func (r *EC2NodeClassReconciler) userDataSecretPredicate() predicate.Predicate {
 		GenericFunc: func(e event.GenericEvent) bool { return false },
 	}
 	return userDataSecretPredicate
+}
+
+// hcpAnnotationPredicate filters HostedControlPlane events to only trigger reconciliation when the
+// AWSKarpenterDefaultInstanceProfile annotation changes
+func (r *EC2NodeClassReconciler) hcpAnnotationPredicate() predicate.Predicate {
+	filterHCP := func(obj client.Object) bool {
+		if obj.GetNamespace() != r.Namespace {
+			return false
+		}
+		if hcp, ok := obj.(*hyperv1.HostedControlPlane); ok {
+			// Trigger if the annotation exists
+			if _, exists := hcp.Annotations[hyperv1.AWSKarpenterDefaultInstanceProfile]; exists {
+				return true
+			}
+		}
+		return false
+	}
+
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return filterHCP(e.Object)
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldHCP, oldOK := e.ObjectOld.(*hyperv1.HostedControlPlane)
+			newHCP, newOK := e.ObjectNew.(*hyperv1.HostedControlPlane)
+			if oldOK && newOK {
+				if e.ObjectNew.GetNamespace() != r.Namespace {
+					return false
+				}
+				oldVal := oldHCP.Annotations[hyperv1.AWSKarpenterDefaultInstanceProfile]
+				newVal := newHCP.Annotations[hyperv1.AWSKarpenterDefaultInstanceProfile]
+				return oldVal != newVal
+			}
+			return false
+		},
+		DeleteFunc:  func(e event.DeleteEvent) bool { return false },
+		GenericFunc: func(e event.GenericEvent) bool { return false },
+	}
 }
 
 // mapToOpenShiftEC2NodeClasses maps a request to all OpenshiftEC2NodeClass resources

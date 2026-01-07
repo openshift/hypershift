@@ -11,13 +11,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
-
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/service/ec2"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	karpentercpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
 	karpenteroperatorcpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -233,6 +234,148 @@ func TestKarpenter(t *testing.T) {
 			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, nodeLabels)
 		})
 
+		t.Run("Instance profile annotation propagation", func(t *testing.T) {
+			// Get the current HostedCluster
+			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			// Use the default worker instance profile (typically {infraID}-worker)
+			workerInstanceProfile := hostedCluster.Spec.InfraID + "-worker"
+
+			// Apply the annotation to the HostedCluster
+			err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+				if obj.Annotations == nil {
+					obj.Annotations = make(map[string]string)
+				}
+				obj.Annotations[hyperv1.AWSKarpenterDefaultInstanceProfile] = workerInstanceProfile
+
+			})
+			g.Expect(err).NotTo(HaveOccurred())
+			t.Logf("Applied annotation %s=%s to HostedCluster", hyperv1.AWSKarpenterDefaultInstanceProfile, workerInstanceProfile)
+
+			// Wait for the EC2NodeClass to have the InstanceProfile field set
+			t.Logf("Waiting for EC2NodeClass to have InstanceProfile set to %s", workerInstanceProfile)
+			g.Eventually(func(g Gomega) {
+				ec2NodeClassList := &awskarpenterv1.EC2NodeClassList{}
+				err := guestClient.List(ctx, ec2NodeClassList)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(ec2NodeClassList.Items).NotTo(BeEmpty())
+
+				// Find the default EC2NodeClass
+				var defaultEC2NodeClass *awskarpenterv1.EC2NodeClass
+				for i := range ec2NodeClassList.Items {
+					if ec2NodeClassList.Items[i].Name == "default" {
+						defaultEC2NodeClass = &ec2NodeClassList.Items[i]
+						break
+					}
+				}
+				g.Expect(defaultEC2NodeClass).NotTo(BeNil(), "default EC2NodeClass should exist")
+				g.Expect(defaultEC2NodeClass.Spec.InstanceProfile).NotTo(BeNil(), "InstanceProfile should be set")
+				g.Expect(*defaultEC2NodeClass.Spec.InstanceProfile).To(Equal(workerInstanceProfile))
+			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+			t.Logf("EC2NodeClass has InstanceProfile set correctly")
+
+			// Now provision actual nodes to verify EC2 instances get the instance profile
+			t.Logf("Creating Karpenter NodePool and workloads to provision nodes")
+
+			// Create copies to avoid polluting shared test objects
+			testNodePool := karpenterNodePool.DeepCopy()
+			testWorkLoads := workLoads.DeepCopy()
+			testNodePool.SetResourceVersion("")
+			testWorkLoads.SetResourceVersion("")
+
+			replicas := 1
+			testWorkLoads.Object["spec"].(map[string]interface{})["replicas"] = replicas
+			testNodePool.SetName("instance-profile-test")
+			testWorkLoads.SetName("instance-profile-web-app")
+
+			g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
+			t.Logf("Created Karpenter NodePool")
+			g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
+			t.Logf("Created workloads")
+
+			// Ensure cleanup happens even if assertions fail
+			defer func() {
+				_ = guestClient.Delete(ctx, testWorkLoads)
+				_ = guestClient.Delete(ctx, testNodePool)
+			}()
+
+			// Update node labels to match the unique NodePool name
+			testNodeLabels := map[string]string{
+				"node.kubernetes.io/instance-type": "t3.large",
+				"karpenter.sh/nodepool":            testNodePool.GetName(),
+			}
+
+			// Wait for nodes to be provisioned
+			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), testNodeLabels)
+			t.Logf("Karpenter nodes are ready")
+
+			// Verify EC2 instances have the correct instance profile
+			ec2client := ec2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+
+			for _, node := range nodes {
+				// Extract instance ID from providerID (format: aws:///region/instance-id)
+				providerID := node.Spec.ProviderID
+				g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
+
+				// Parse instance ID from providerID
+				parts := strings.Split(providerID, "/")
+				g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
+				instanceID := parts[4]
+				t.Logf("Checking instance profile for node %s (instance %s)", node.Name, instanceID)
+
+				// Get EC2 instance details
+				result, err := ec2client.DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
+					InstanceIds: []*string{aws.String(instanceID)},
+				})
+				g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance")
+				g.Expect(result.Reservations).NotTo(BeEmpty(), "expected at least one reservation")
+				g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty(), "expected at least one instance")
+
+				instance := result.Reservations[0].Instances[0]
+				g.Expect(instance.IamInstanceProfile).NotTo(BeNil(), "instance should have an IAM instance profile")
+
+				// Extract instance profile name from ARN (format: arn:aws:iam::account-id:instance-profile/profile-name)
+				profileArn := *instance.IamInstanceProfile.Arn
+				profileParts := strings.Split(profileArn, "/")
+				g.Expect(profileParts).To(HaveLen(2), "instance profile ARN should have 2 parts")
+				actualInstanceProfile := profileParts[1]
+
+				g.Expect(actualInstanceProfile).To(Equal(workerInstanceProfile),
+					"instance %s should have instance profile %s, but has %s", instanceID, workerInstanceProfile, actualInstanceProfile)
+				t.Logf("Instance %s has correct instance profile: %s", instanceID, actualInstanceProfile)
+			}
+
+			// Wait for nodes to be deleted
+			t.Logf("Waiting for Karpenter nodes to be deleted")
+			g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
+			g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
+			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
+
+			// Remove the annotation and verify it gets cleared from EC2NodeClass
+			err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+				delete(obj.Annotations, hyperv1.AWSKarpenterDefaultInstanceProfile)
+			})
+			g.Expect(err).NotTo(HaveOccurred())
+			t.Logf("Removed annotation %s from HostedCluster", hyperv1.AWSKarpenterDefaultInstanceProfile)
+
+			// Wait for the EC2NodeClass to have InstanceProfile cleared
+			t.Logf("Waiting for EC2NodeClass to have InstanceProfile cleared")
+			g.Eventually(func(g Gomega) {
+				ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
+				err := guestClient.Get(ctx, crclient.ObjectKey{Name: "default"}, ec2NodeClass)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(ec2NodeClass.Spec.InstanceProfile).To(BeNil(), "InstanceProfile should be cleared")
+			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+			t.Logf("EC2NodeClass InstanceProfile cleared successfully")
+		})
+
+		// TODO(jkyros): This test doesn't clean up after itself (I think intentionally) so we can test general cluster
+		// cleanup, but as a result it needs to run last, otherwise it will pollute any other cases that come after it
+		// and its "on-demand" nodepool may service requests that are not intended for it
 		t.Run("Test basic provisioning and deprovising", func(t *testing.T) {
 			// Test that we can provision as many nodes as needed (in this case, we need 3 nodes for 3 replicas)
 			replicas := 3
@@ -248,6 +391,7 @@ func TestKarpenter(t *testing.T) {
 
 			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), nodeLabels)
 		})
+
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "karpenter", globalOpts.ServiceAccountSigningKey)
 }
 
