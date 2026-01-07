@@ -16,7 +16,7 @@ defaults
   timeout tunnel       86400s
 
 frontend main
-  bind :::8443 v4v6
+  bind :::{{ .ListenPort }} v4v6
   tcp-request inspect-delay 5s
   tcp-request content accept if { req_ssl_hello_type 1 }
   {{- range .Backends }}
