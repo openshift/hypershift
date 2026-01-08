@@ -84,3 +84,15 @@ func ParseAWSTags(tags []string) (map[string]string, error) {
 	}
 	return tagMap, nil
 }
+
+// AddUniqueTag appends a tag to the slice only if a tag with the same key doesn't already exist.
+// The tag should be in "key=value" format.
+func AddUniqueTag(tags []string, newTag string) []string {
+	key := strings.SplitN(newTag, "=", 2)[0]
+	for _, tag := range tags {
+		if strings.HasPrefix(tag, key+"=") {
+			return tags
+		}
+	}
+	return append(tags, newTag)
+}
