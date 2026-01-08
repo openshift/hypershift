@@ -1214,17 +1214,6 @@ func (ImageDigestMirrors) SwaggerDoc() map[string]string {
 	return map_ImageDigestMirrors
 }
 
-var map_FulcioCAWithRekor = map[string]string{
-	"":              "FulcioCAWithRekor defines the root of trust based on the Fulcio certificate and the Rekor public key.",
-	"fulcioCAData":  "fulcioCAData is a required field contains inline base64-encoded data for the PEM format fulcio CA. fulcioCAData must be at most 8192 characters. ",
-	"rekorKeyData":  "rekorKeyData is a required field contains inline base64-encoded data for the PEM format from the Rekor public key. rekorKeyData must be at most 8192 characters. ",
-	"fulcioSubject": "fulcioSubject is a required field specifies OIDC issuer and the email of the Fulcio authentication configuration.",
-}
-
-func (FulcioCAWithRekor) SwaggerDoc() map[string]string {
-	return map_FulcioCAWithRekor
-}
-
 var map_ImagePolicy = map[string]string{
 	"":         "ImagePolicy holds namespace-wide configuration for image signature verification\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
@@ -1236,6 +1225,17 @@ func (ImagePolicy) SwaggerDoc() map[string]string {
 	return map_ImagePolicy
 }
 
+var map_ImagePolicyFulcioCAWithRekorRootOfTrust = map[string]string{
+	"":              "ImagePolicyFulcioCAWithRekorRootOfTrust defines the root of trust based on the Fulcio certificate and the Rekor public key.",
+	"fulcioCAData":  "fulcioCAData is a required field contains inline base64-encoded data for the PEM format fulcio CA. fulcioCAData must be at most 8192 characters. ",
+	"rekorKeyData":  "rekorKeyData is a required field contains inline base64-encoded data for the PEM format from the Rekor public key. rekorKeyData must be at most 8192 characters. ",
+	"fulcioSubject": "fulcioSubject is a required field specifies OIDC issuer and the email of the Fulcio authentication configuration.",
+}
+
+func (ImagePolicyFulcioCAWithRekorRootOfTrust) SwaggerDoc() map[string]string {
+	return map_ImagePolicyFulcioCAWithRekorRootOfTrust
+}
+
 var map_ImagePolicyList = map[string]string{
 	"":         "ImagePolicyList is a list of ImagePolicy resources\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
 	"metadata": "metadata is the standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
@@ -1244,6 +1244,27 @@ var map_ImagePolicyList = map[string]string{
 
 func (ImagePolicyList) SwaggerDoc() map[string]string {
 	return map_ImagePolicyList
+}
+
+var map_ImagePolicyPKIRootOfTrust = map[string]string{
+	"":                      "ImagePolicyPKIRootOfTrust defines the root of trust based on Root CA(s) and corresponding intermediate certificates.",
+	"caRootsData":           "caRootsData contains base64-encoded data of a certificate bundle PEM file, which contains one or more CA roots in the PEM format. The total length of the data must not exceed 8192 characters. ",
+	"caIntermediatesData":   "caIntermediatesData contains base64-encoded data of a certificate bundle PEM file, which contains one or more intermediate certificates in the PEM format. The total length of the data must not exceed 8192 characters. caIntermediatesData requires caRootsData to be set. ",
+	"pkiCertificateSubject": "pkiCertificateSubject defines the requirements imposed on the subject to which the certificate was issued.",
+}
+
+func (ImagePolicyPKIRootOfTrust) SwaggerDoc() map[string]string {
+	return map_ImagePolicyPKIRootOfTrust
+}
+
+var map_ImagePolicyPublicKeyRootOfTrust = map[string]string{
+	"":             "ImagePolicyPublicKeyRootOfTrust defines the root of trust based on a sigstore public key.",
+	"keyData":      "keyData is a required field contains inline base64-encoded data for the PEM format public key. keyData must be at most 8192 characters. ",
+	"rekorKeyData": "rekorKeyData is an optional field contains inline base64-encoded data for the PEM format from the Rekor public key. rekorKeyData must be at most 8192 characters. ",
+}
+
+func (ImagePolicyPublicKeyRootOfTrust) SwaggerDoc() map[string]string {
+	return map_ImagePolicyPublicKeyRootOfTrust
 }
 
 var map_ImagePolicySpec = map[string]string{
@@ -1264,15 +1285,14 @@ func (ImagePolicyStatus) SwaggerDoc() map[string]string {
 	return map_ImagePolicyStatus
 }
 
-var map_PKI = map[string]string{
-	"":                      "PKI defines the root of trust based on Root CA(s) and corresponding intermediate certificates.",
-	"caRootsData":           "caRootsData contains base64-encoded data of a certificate bundle PEM file, which contains one or more CA roots in the PEM format. The total length of the data must not exceed 8192 characters. ",
-	"caIntermediatesData":   "caIntermediatesData contains base64-encoded data of a certificate bundle PEM file, which contains one or more intermediate certificates in the PEM format. The total length of the data must not exceed 8192 characters. caIntermediatesData requires caRootsData to be set. ",
-	"pkiCertificateSubject": "pkiCertificateSubject defines the requirements imposed on the subject to which the certificate was issued.",
+var map_ImageSigstoreVerificationPolicy = map[string]string{
+	"":               "ImageSigstoreVerificationPolicy defines the verification policy for the items in the scopes list.",
+	"rootOfTrust":    "rootOfTrust is a required field that defines the root of trust for verifying image signatures during retrieval. This allows image consumers to specify policyType and corresponding configuration of the policy, matching how the policy was generated.",
+	"signedIdentity": "signedIdentity is an optional field specifies what image identity the signature claims about the image. This is useful when the image identity in the signature differs from the original image spec, such as when mirror registry is configured for the image scope, the signature from the mirror registry contains the image identity of the mirror instead of the original scope. The required matchPolicy field specifies the approach used in the verification process to verify the identity in the signature and the actual image identity, the default matchPolicy is \"MatchRepoDigestOrExact\".",
 }
 
-func (PKI) SwaggerDoc() map[string]string {
-	return map_PKI
+func (ImageSigstoreVerificationPolicy) SwaggerDoc() map[string]string {
+	return map_ImageSigstoreVerificationPolicy
 }
 
 var map_PKICertificateSubject = map[string]string{
@@ -1283,16 +1303,6 @@ var map_PKICertificateSubject = map[string]string{
 
 func (PKICertificateSubject) SwaggerDoc() map[string]string {
 	return map_PKICertificateSubject
-}
-
-var map_Policy = map[string]string{
-	"":               "Policy defines the verification policy for the items in the scopes list.",
-	"rootOfTrust":    "rootOfTrust is a required field that defines the root of trust for verifying image signatures during retrieval. This allows image consumers to specify policyType and corresponding configuration of the policy, matching how the policy was generated.",
-	"signedIdentity": "signedIdentity is an optional field specifies what image identity the signature claims about the image. This is useful when the image identity in the signature differs from the original image spec, such as when mirror registry is configured for the image scope, the signature from the mirror registry contains the image identity of the mirror instead of the original scope. The required matchPolicy field specifies the approach used in the verification process to verify the identity in the signature and the actual image identity, the default matchPolicy is \"MatchRepoDigestOrExact\".",
-}
-
-func (Policy) SwaggerDoc() map[string]string {
-	return map_Policy
 }
 
 var map_PolicyFulcioSubject = map[string]string{
@@ -1335,7 +1345,7 @@ func (PolicyMatchRemapIdentity) SwaggerDoc() map[string]string {
 
 var map_PolicyRootOfTrust = map[string]string{
 	"":                  "PolicyRootOfTrust defines the root of trust based on the selected policyType.",
-	"policyType":        "policyType is a required field specifies the type of the policy for verification. This field must correspond to how the policy was generated. Allowed values are \"PublicKey\", \"FulcioCAWithRekor\", and \"PKI\". When set to \"PublicKey\", the policy relies on a sigstore publicKey and may optionally use a Rekor verification. When set to \"FulcioCAWithRekor\", the policy is based on the Fulcio certification and incorporates a Rekor verification. When set to \"PKI\", the policy is based on the certificates from Bring Your Own Public Key Infrastructure (BYOPKI). This value is enabled by turning on the SigstoreImageVerificationPKI feature gate.",
+	"policyType":        "policyType is a required field specifies the type of the policy for verification. This field must correspond to how the policy was generated. Allowed values are \"PublicKey\", \"FulcioCAWithRekor\", and \"PKI\". When set to \"PublicKey\", the policy relies on a sigstore publicKey and may optionally use a Rekor verification. When set to \"FulcioCAWithRekor\", the policy is based on the Fulcio certification and incorporates a Rekor verification. When set to \"PKI\", the policy is based on the certificates from Bring Your Own Public Key Infrastructure (BYOPKI).",
 	"publicKey":         "publicKey defines the root of trust configuration based on a sigstore public key. Optionally include a Rekor public key for Rekor verification. publicKey is required when policyType is PublicKey, and forbidden otherwise.",
 	"fulcioCAWithRekor": "fulcioCAWithRekor defines the root of trust configuration based on the Fulcio certificate and the Rekor public key. fulcioCAWithRekor is required when policyType is FulcioCAWithRekor, and forbidden otherwise For more information about Fulcio and Rekor, please refer to the document at: https://github.com/sigstore/fulcio and https://github.com/sigstore/rekor",
 	"pki":               "pki defines the root of trust configuration based on Bring Your Own Public Key Infrastructure (BYOPKI) Root CA(s) and corresponding intermediate certificates. pki is required when policyType is PKI, and forbidden otherwise.",
@@ -1343,16 +1353,6 @@ var map_PolicyRootOfTrust = map[string]string{
 
 func (PolicyRootOfTrust) SwaggerDoc() map[string]string {
 	return map_PolicyRootOfTrust
-}
-
-var map_PublicKey = map[string]string{
-	"":             "PublicKey defines the root of trust based on a sigstore public key.",
-	"keyData":      "keyData is a required field contains inline base64-encoded data for the PEM format public key. keyData must be at most 8192 characters. ",
-	"rekorKeyData": "rekorKeyData is an optional field contains inline base64-encoded data for the PEM format from the Rekor public key. rekorKeyData must be at most 8192 characters. ",
-}
-
-func (PublicKey) SwaggerDoc() map[string]string {
-	return map_PublicKey
 }
 
 var map_ImageTagMirrorSet = map[string]string{
@@ -2189,6 +2189,104 @@ var map_LoadBalancer = map[string]string{
 
 func (LoadBalancer) SwaggerDoc() map[string]string {
 	return map_LoadBalancer
+}
+
+var map_Custom = map[string]string{
+	"":        "Custom provides the custom configuration of gatherers",
+	"configs": "configs is a required list of gatherers configurations that can be used to enable or disable specific gatherers. It may not exceed 100 items and each gatherer can be present only once. It is possible to disable an entire set of gatherers while allowing a specific function within that set. The particular gatherers IDs can be found at https://github.com/openshift/insights-operator/blob/master/docs/gathered-data.md. Run the following command to get the names of last active gatherers: \"oc get insightsoperators.operator.openshift.io cluster -o json | jq '.status.gatherStatus.gatherers[].name'\"",
+}
+
+func (Custom) SwaggerDoc() map[string]string {
+	return map_Custom
+}
+
+var map_GatherConfig = map[string]string{
+	"":           "GatherConfig provides data gathering configuration options.",
+	"dataPolicy": "dataPolicy is an optional list of DataPolicyOptions that allows user to enable additional obfuscation of the Insights archive data. It may not exceed 2 items and must not contain duplicates. Valid values are ObfuscateNetworking and WorkloadNames. When set to ObfuscateNetworking the IP addresses and the cluster domain name are obfuscated. When set to WorkloadNames, the gathered data about cluster resources will not contain the workload names for your deployments. Resources UIDs will be used instead. When omitted no obfuscation is applied.",
+	"gatherers":  "gatherers is a required field that specifies the configuration of the gatherers.",
+	"storage":    "storage is an optional field that allows user to define persistent storage for gathering jobs to store the Insights data archive. If omitted, the gathering job will use ephemeral storage.",
+}
+
+func (GatherConfig) SwaggerDoc() map[string]string {
+	return map_GatherConfig
+}
+
+var map_GathererConfig = map[string]string{
+	"":      "GathererConfig allows to configure specific gatherers",
+	"name":  "name is the required name of a specific gatherer. It may not exceed 256 characters. The format for a gatherer name is: {gatherer}/{function} where the function is optional. Gatherer consists of a lowercase letters only that may include underscores (_). Function consists of a lowercase letters only that may include underscores (_) and is separated from the gatherer by a forward slash (/). The particular gatherers can be found at https://github.com/openshift/insights-operator/blob/master/docs/gathered-data.md. Run the following command to get the names of last active gatherers: \"oc get insightsoperators.operator.openshift.io cluster -o json | jq '.status.gatherStatus.gatherers[].name'\"",
+	"state": "state is a required field that allows you to configure specific gatherer. Valid values are \"Enabled\" and \"Disabled\". When set to Enabled the gatherer will run. When set to Disabled the gatherer will not run.",
+}
+
+func (GathererConfig) SwaggerDoc() map[string]string {
+	return map_GathererConfig
+}
+
+var map_Gatherers = map[string]string{
+	"":       "Gatherers specifies the configuration of the gatherers",
+	"mode":   "mode is a required field that specifies the mode for gatherers. Allowed values are All, None, and Custom. When set to All, all gatherers will run and gather data. When set to None, all gatherers will be disabled and no data will be gathered. When set to Custom, the custom configuration from the custom field will be applied.",
+	"custom": "custom provides gathering configuration. It is required when mode is Custom, and forbidden otherwise. Custom configuration allows user to disable only a subset of gatherers. Gatherers that are not explicitly disabled in custom configuration will run.",
+}
+
+func (Gatherers) SwaggerDoc() map[string]string {
+	return map_Gatherers
+}
+
+var map_InsightsDataGather = map[string]string{
+	"":         "InsightsDataGather provides data gather configuration options for the Insights Operator.\n\n\n\nCompatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"metadata": "metadata is the standard object's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"spec":     "spec holds user settable values for configuration",
+}
+
+func (InsightsDataGather) SwaggerDoc() map[string]string {
+	return map_InsightsDataGather
+}
+
+var map_InsightsDataGatherList = map[string]string{
+	"":         "InsightsDataGatherList is a collection of items Compatibility level 1: Stable within a major release for a minimum of 12 months or 3 minor releases (whichever is longer).",
+	"metadata": "metadata is the required standard list's metadata. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata",
+	"items":    "items is the required list of InsightsDataGather objects it may not exceed 100 items",
+}
+
+func (InsightsDataGatherList) SwaggerDoc() map[string]string {
+	return map_InsightsDataGatherList
+}
+
+var map_InsightsDataGatherSpec = map[string]string{
+	"":             "InsightsDataGatherSpec contains the configuration for the data gathering.",
+	"gatherConfig": "gatherConfig is a required spec attribute that includes all the configuration options related to gathering of the Insights data and its uploading to the ingress.",
+}
+
+func (InsightsDataGatherSpec) SwaggerDoc() map[string]string {
+	return map_InsightsDataGatherSpec
+}
+
+var map_PersistentVolumeClaimReference = map[string]string{
+	"":     "PersistentVolumeClaimReference is a reference to a PersistentVolumeClaim.",
+	"name": "name is the name of the PersistentVolumeClaim that will be used to store the Insights data archive. It is a string that follows the DNS1123 subdomain format. It must be at most 253 characters in length, and must consist only of lower case alphanumeric characters, '-' and '.', and must start and end with an alphanumeric character.",
+}
+
+func (PersistentVolumeClaimReference) SwaggerDoc() map[string]string {
+	return map_PersistentVolumeClaimReference
+}
+
+var map_PersistentVolumeConfig = map[string]string{
+	"":          "PersistentVolumeConfig provides configuration options for PersistentVolume storage.",
+	"claim":     "claim is a required field that specifies the configuration of the PersistentVolumeClaim that will be used to store the Insights data archive. The PersistentVolumeClaim must be created in the openshift-insights namespace.",
+	"mountPath": "mountPath is an optional field specifying the directory where the PVC will be mounted inside the Insights data gathering Pod. When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time. The current default mount path is /var/lib/insights-operator The path may not exceed 1024 characters and must not contain a colon.",
+}
+
+func (PersistentVolumeConfig) SwaggerDoc() map[string]string {
+	return map_PersistentVolumeConfig
+}
+
+var map_Storage = map[string]string{
+	"":                 "Storage provides persistent storage configuration options for gathering jobs. If the type is set to PersistentVolume, then the PersistentVolume must be defined. If the type is set to Ephemeral, then the PersistentVolume must not be defined.",
+	"type":             "type is a required field that specifies the type of storage that will be used to store the Insights data archive. Valid values are \"PersistentVolume\" and \"Ephemeral\". When set to Ephemeral, the Insights data archive is stored in the ephemeral storage of the gathering job. When set to PersistentVolume, the Insights data archive is stored in the PersistentVolume that is defined by the persistentVolume field.",
+	"persistentVolume": "persistentVolume is an optional field that specifies the PersistentVolume that will be used to store the Insights data archive. The PersistentVolume must be created in the openshift-insights namespace.",
+}
+
+func (Storage) SwaggerDoc() map[string]string {
+	return map_Storage
 }
 
 var map_AWSKMSConfig = map[string]string{
