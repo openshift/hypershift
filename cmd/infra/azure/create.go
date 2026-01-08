@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 const (
@@ -79,6 +80,52 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	return cmd
+}
+
+// DefaultOptions returns CreateInfraOptions with default values for self-managed Azure
+func DefaultOptions() *CreateInfraOptions {
+	return &CreateInfraOptions{
+		Location: "eastus",
+		Cloud:    "AzurePublicCloud",
+	}
+}
+
+// BindProductFlags binds flags for the product CLI (hcp) infra create azure command.
+// This exposes only the self-managed Azure flags relevant for the productized CLI.
+func BindProductFlags(opts *CreateInfraOptions, flags *pflag.FlagSet) {
+	// Required flags
+	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, util.InfraIDDescription)
+	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, util.AzureCredsDescription)
+	flags.StringVar(&opts.Name, "name", opts.Name, "A name for the HostedCluster")
+
+	// Location and cloud
+	flags.StringVar(&opts.Location, "location", opts.Location, util.LocationDescription)
+	flags.StringVar(&opts.Cloud, "cloud", opts.Cloud, "Azure cloud environment (AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud)")
+	flags.StringVar(&opts.BaseDomain, "base-domain", opts.BaseDomain, util.BaseDomainInfraDescription)
+
+	// Resource group and tags
+	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, util.ResourceGroupNameDescription)
+	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, util.ResourceGroupTagsDescription)
+
+	// Networking
+	flags.StringVar(&opts.VnetID, "vnet-id", opts.VnetID, util.VnetIDDescription)
+	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, util.SubnetIDDescription)
+	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, util.NetworkSecurityGroupIDDescription)
+
+	// Self-managed Azure identity flags
+	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, util.WorkloadIdentitiesFileDescription)
+	flags.StringVar(&opts.OIDCIssuerURL, "oidc-issuer-url", opts.OIDCIssuerURL, util.OIDCIssuerURLDescription)
+	flags.BoolVar(&opts.GenerateManagedIdentities, "generate-managed-identities", opts.GenerateManagedIdentities, util.GenerateManagedIdentitiesDescription)
+	flags.StringVar(&opts.WorkloadIdentitiesOutputFile, "workload-identities-output-file", opts.WorkloadIdentitiesOutputFile, util.WorkloadIdentitiesOutputFileDescription)
+
+	// RBAC and role assignment
+	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-identity-roles", opts.AssignServicePrincipalRoles, util.AssignIdentityRolesDescription)
+	flags.StringVar(&opts.DNSZoneRG, "dns-zone-rg-name", opts.DNSZoneRG, util.DNSZoneRGNameDescription)
+	flags.BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, util.AssignCustomHCPRolesDescription)
+	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", opts.DisableClusterCapabilities, util.DisableClusterCapabilitiesDescription)
+
+	// Output
+	flags.StringVar(&opts.OutputFile, "output-file", opts.OutputFile, util.InfraOutputFileDescription)
 }
 
 // Run is the main function responsible for creating the Azure infrastructure resources for a HostedCluster.

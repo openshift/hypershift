@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 type DestroyInfraOptions struct {
@@ -65,6 +66,31 @@ func NewDestroyCommand() *cobra.Command {
 
 	return cmd
 
+}
+
+// DefaultDestroyOptions returns DestroyInfraOptions with default values for self-managed Azure
+func DefaultDestroyOptions() *DestroyInfraOptions {
+	return &DestroyInfraOptions{
+		Location: "eastus",
+		Cloud:    "AzurePublicCloud",
+	}
+}
+
+// BindDestroyProductFlags binds flags for the product CLI (hcp) infra destroy azure command.
+// This exposes only the self-managed Azure flags relevant for the productized CLI.
+func BindDestroyProductFlags(opts *DestroyInfraOptions, flags *pflag.FlagSet) {
+	// Required flags
+	flags.StringVar(&opts.InfraID, "infra-id", opts.InfraID, util.InfraIDDescription)
+	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, util.AzureCredsDescription)
+	flags.StringVar(&opts.Name, "name", opts.Name, "A name for the HostedCluster")
+
+	// Location and cloud
+	flags.StringVar(&opts.Location, "location", opts.Location, util.LocationDescription)
+	flags.StringVar(&opts.Cloud, "cloud", opts.Cloud, "Azure cloud environment (AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud)")
+
+	// Resource group
+	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, util.ResourceGroupNameDescription)
+	flags.BoolVar(&opts.PreserveResourceGroup, "preserve-resource-group", opts.PreserveResourceGroup, util.PreserveResourceGroupDescription)
 }
 
 func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error {
