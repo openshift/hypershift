@@ -7,6 +7,7 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -108,6 +109,29 @@ func TestGetGpuCount(t *testing.T) {
 				Gpus: []*ec2.GpuDeviceInfo{},
 			},
 			expected: 0,
+		},
+		{
+			name:     "When gpuInfo is nil it should return 0",
+			gpuInfo:  nil,
+			expected: 0,
+		},
+		{
+			name: "When gpuInfo.Gpus is nil it should return 0",
+			gpuInfo: &ec2.GpuInfo{
+				Gpus: nil,
+			},
+			expected: 0,
+		},
+		{
+			name: "When Gpus array contains nil entries it should skip them",
+			gpuInfo: &ec2.GpuInfo{
+				Gpus: []*ec2.GpuDeviceInfo{
+					{Count: aws.Int64(4)},
+					nil,
+					{Count: aws.Int64(2)},
+				},
+			},
+			expected: 6,
 		},
 	}
 
@@ -211,6 +235,40 @@ func TestTransformInstanceTypeInfo_WhenMissingRequiredFields_ItShouldReturnError
 			},
 			expectedError: "invalid memory size",
 		},
+		{
+			name: "When ProcessorInfo is nil it should return error",
+			input: &ec2.InstanceTypeInfo{
+				InstanceType: aws.String("test.xlarge"),
+				VCpuInfo: &ec2.VCpuInfo{
+					DefaultVCpus: aws.Int64(4),
+				},
+				MemoryInfo: &ec2.MemoryInfo{
+					SizeInMiB: aws.Int64(16384),
+				},
+			},
+			expectedError: "missing CPU architecture information",
+		},
+		{
+			name:          "When architecture is unsupported it should return error",
+			input:         makeInstanceTypeInfo("t2.micro", ec2.ArchitectureTypeI386, 1, 1024, 0),
+			expectedError: "unsupported CPU architecture",
+		},
+		{
+			name: "When SupportedArchitectures[0] is nil it should return error",
+			input: &ec2.InstanceTypeInfo{
+				InstanceType: aws.String("test.xlarge"),
+				VCpuInfo: &ec2.VCpuInfo{
+					DefaultVCpus: aws.Int64(4),
+				},
+				MemoryInfo: &ec2.MemoryInfo{
+					SizeInMiB: aws.Int64(16384),
+				},
+				ProcessorInfo: &ec2.ProcessorInfo{
+					SupportedArchitectures: []*string{nil},
+				},
+			},
+			expectedError: "CPU architecture is nil",
+		},
 	}
 
 	for _, tt := range tests {
@@ -248,26 +306,7 @@ func TestTransformInstanceTypeInfo_WhenValidInput_ItShouldTransformCorrectly(t *
 				VCPU:            4,
 				MemoryMb:        16384,
 				GPU:             0,
-				CPUArchitecture: instancetype.ArchAMD64,
-			},
-		},
-		{
-			name: "When ProcessorInfo is nil it should default to amd64",
-			input: &ec2.InstanceTypeInfo{
-				InstanceType: aws.String("test.xlarge"),
-				VCpuInfo: &ec2.VCpuInfo{
-					DefaultVCpus: aws.Int64(4),
-				},
-				MemoryInfo: &ec2.MemoryInfo{
-					SizeInMiB: aws.Int64(16384),
-				},
-			},
-			expected: &instancetype.InstanceTypeInfo{
-				InstanceType:    "test.xlarge",
-				VCPU:            4,
-				MemoryMb:        16384,
-				GPU:             0,
-				CPUArchitecture: instancetype.ArchAMD64,
+				CPUArchitecture: hyperv1.ArchitectureAMD64,
 			},
 		},
 		{
@@ -278,7 +317,7 @@ func TestTransformInstanceTypeInfo_WhenValidInput_ItShouldTransformCorrectly(t *
 				VCPU:            8,
 				MemoryMb:        61440,
 				GPU:             1,
-				CPUArchitecture: instancetype.ArchAMD64,
+				CPUArchitecture: hyperv1.ArchitectureAMD64,
 			},
 		},
 		{
@@ -289,18 +328,7 @@ func TestTransformInstanceTypeInfo_WhenValidInput_ItShouldTransformCorrectly(t *
 				VCPU:            4,
 				MemoryMb:        16384,
 				GPU:             0,
-				CPUArchitecture: instancetype.ArchARM64,
-			},
-		},
-		{
-			name:  "When architecture is i386 it should default to amd64",
-			input: makeInstanceTypeInfo("t2.micro", ec2.ArchitectureTypeI386, 1, 1024, 0),
-			expected: &instancetype.InstanceTypeInfo{
-				InstanceType:    "t2.micro",
-				VCPU:            1,
-				MemoryMb:        1024,
-				GPU:             0,
-				CPUArchitecture: instancetype.ArchAMD64,
+				CPUArchitecture: hyperv1.ArchitectureARM64,
 			},
 		},
 	}
@@ -334,7 +362,7 @@ func TestGetInstanceTypeInfo(t *testing.T) {
 				VCPU:            4,
 				MemoryMb:        16384,
 				GPU:             0,
-				CPUArchitecture: instancetype.ArchAMD64,
+				CPUArchitecture: hyperv1.ArchitectureAMD64,
 			},
 		},
 		{
