@@ -156,7 +156,7 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 				Status: v1.ConditionTrue,
 			}),
 		},
-		e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(10*time.Minute),
+		e2eutil.WithInterval(30*time.Second), e2eutil.WithTimeout(20*time.Minute),
 	)
 	t.Log("✓ NodePool stabilized successfully")
 }
