@@ -11,7 +11,65 @@ The `hypershift create infra azure` command creates the necessary Azure infrastr
 
 The key difference is the authentication method: ARO HCP uses UserAssignedManagedIdentity while self-managed uses workload identity with federated credentials.
 
-## Command Examples
+## IAM Commands
+
+The `hypershift create/destroy iam azure` commands manage workload identities separately from infrastructure.
+
+### Create Workload Identities
+
+```bash
+hypershift create iam azure \
+  --name my-cluster \
+  --infra-id my-cluster-infra \
+  --azure-creds /path/to/azure-creds.json \
+  --location eastus \
+  --resource-group-name my-rg \
+  --oidc-issuer-url https://my-oidc-issuer.com \
+  --output-file workload-identities.json
+```
+
+This creates 7 managed identities with federated credentials for cluster components:
+- Disk CSI driver
+- File CSI driver
+- Image Registry
+- Ingress Operator
+- Cloud Provider
+- NodePool Management
+- Network Operator
+
+### Destroy Workload Identities
+
+```bash
+hypershift destroy iam azure \
+  --name my-cluster \
+  --infra-id my-cluster-infra \
+  --resource-group-name my-rg \
+  --azure-creds /path/to/azure-creds.json \
+  --workload-identities-file workload-identities.json
+```
+
+### IAM Command Flags
+
+#### Required for `create iam azure`:
+- `--name`: Name of the HostedCluster
+- `--infra-id`: Unique infrastructure identifier
+- `--azure-creds`: Path to Azure credentials JSON file
+- `--location`: Azure region
+- `--oidc-issuer-url`: OIDC issuer URL for federation
+
+#### Optional for `create iam azure`:
+- `--resource-group-name`: Resource group for identities (default: auto-generated)
+- `--output-file`: Output file path (default: `{name}-iam-output.json`)
+- `--cloud`: Azure cloud environment (default: `AzurePublicCloud`)
+
+#### Required for `destroy iam azure`:
+- `--name`: Name of the HostedCluster
+- `--infra-id`: Unique infrastructure identifier
+- `--resource-group-name`: Resource group containing the identities
+- `--azure-creds`: Path to Azure credentials JSON file
+- `--workload-identities-file`: Path to workload identities JSON from create
+
+## Infrastructure Command Examples
 
 ### ARO HCP with Managed Identities
 
@@ -57,22 +115,6 @@ hypershift create infra azure \
   --location eastus \
   --workload-identities-file /path/to/workload-identities.json \
   --output-file infra-output.yaml
-```
-
-### Generate Workload Identities Only
-
-Generate workload identities and save to JSON file without creating full infrastructure:
-
-```bash
-hypershift create infra azure \
-  --name my-cluster \
-  --infra-id my-cluster-infra \
-  --azure-creds /path/to/azure-creds.json \
-  --location eastus \
-  --resource-group-name my-existing-rg \
-  --oidc-issuer-url https://my-oidc-issuer.com \
-  --generate-managed-identities \
-  --workload-identities-output-file workload-identities.json
 ```
 
 ### Using Existing Network Resources
@@ -126,8 +168,50 @@ You must provide exactly one of the following identity configurations:
 ### For Self-managed Azure:
 - `--workload-identities-file` OR `--oidc-issuer-url`
 
-### For Generate Mode:
-- `--generate-managed-identities` with `--oidc-issuer-url`, `--workload-identities-output-file`, and `--resource-group-name`
+To create workload identities separately, use `hypershift create iam azure` instead.
+
+## RBAC and Role Assignment Flags
+
+When creating infrastructure with workload identities, you can optionally enable automatic RBAC role assignment:
+
+### Enabling Automatic Role Assignment
+
+```bash
+hypershift create infra azure \
+  --name my-cluster \
+  --infra-id my-cluster-infra \
+  --azure-creds /path/to/azure-creds.json \
+  --base-domain example.com \
+  --location eastus \
+  --oidc-issuer-url https://my-oidc-issuer.com \
+  --assign-identity-roles \
+  --dns-zone-rg-name my-dns-zone-rg \
+  --output-file infra-output.yaml
+```
+
+### RBAC Flag Reference
+
+- `--assign-identity-roles`: Automatically assign required Azure RBAC roles to workload identities. This grants the identities permissions to manage Azure resources (DNS, networking, storage) for the cluster.
+- `--dns-zone-rg-name`: Name of the resource group containing your Azure DNS zone. Required when using `--assign-identity-roles` for the ingress controller to create DNS records.
+- `--assign-custom-hcp-roles`: Use custom Azure HCP role definitions instead of the default Contributor role for workload identities.
+- `--disable-cluster-capabilities`: Comma-separated list of cluster capabilities to disable (e.g., `ImageRegistry`). Disabled capabilities will not have corresponding workload identities created.
+
+### Example with Custom Roles and Disabled Capabilities
+
+```bash
+hypershift create infra azure \
+  --name my-cluster \
+  --infra-id my-cluster-infra \
+  --azure-creds /path/to/azure-creds.json \
+  --base-domain example.com \
+  --location eastus \
+  --oidc-issuer-url https://my-oidc-issuer.com \
+  --assign-identity-roles \
+  --assign-custom-hcp-roles \
+  --dns-zone-rg-name my-dns-zone-rg \
+  --disable-cluster-capabilities ImageRegistry \
+  --output-file infra-output.yaml
+```
 
 ## Flag Conflicts
 
@@ -135,7 +219,6 @@ The following flags are mutually exclusive:
 
 - ARO HCP flags (`--managed-identities-file`, `--data-plane-identities-file`) cannot be used with self-managed Azure flags (`--workload-identities-file`)
 - Within self-managed Azure: `--workload-identities-file` and `--oidc-issuer-url` are mutually exclusive
-- Generate mode: `--generate-managed-identities` cannot be used with any identity file flags
 
 ## Output
 
@@ -155,13 +238,6 @@ When creating full infrastructure, the command outputs information to the specif
 - `controlPlaneMIs`: Control plane managed identities (ARO HCP only)
 - `dataPlaneIdentities`: Data plane identities (ARO HCP only)
 - `workloadIdentities`: Workload identities (self-managed Azure only)
-
-### Generate Mode (`--generate-managed-identities`)
-
-When using `--generate-managed-identities`, the command:
-- Creates only workload identities and federated credentials (no full infrastructure)
-- Outputs workload identities to the specified `--workload-identities-output-file` in JSON format
-- Does NOT use `--output-file` (generate mode is incompatible with full infrastructure creation)
 
 ## Azure Credentials File Format
 
