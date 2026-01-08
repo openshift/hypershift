@@ -311,7 +311,8 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 	tokenSecret.Annotations[TokenSecretNodePoolUpgradeType] = string(t.nodePool.Spec.Management.UpgradeType)
 	tokenSecret.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(t.nodePool).String()
 	if karpenterutil.IsKarpenterEnabled(t.hostedCluster.Spec.AutoNode) {
-		if t.nodePool.GetName() == hyperkarpenterv1.KarpenterNodePool {
+		npLabels := t.nodePool.GetLabels()
+		if npLabels != nil && npLabels[karpenterutil.ManagedForKarpenterLabel] == "true" {
 			tokenSecret.Annotations[supportutil.HostedClusterAnnotation] = client.ObjectKeyFromObject(t.ConfigGenerator.hostedCluster).String()
 		}
 	}
@@ -370,12 +371,13 @@ func (t *Token) reconcileUserDataSecret(userDataSecret *corev1.Secret, token str
 	}
 
 	if karpenterutil.IsKarpenterEnabled(t.hostedCluster.Spec.AutoNode) {
-		// TODO(alberto): prevent nodePool name collisions adding prefix to karpenter NodePool.
-		if t.nodePool.GetName() == hyperkarpenterv1.KarpenterNodePool {
-			userDataSecret.Labels[hyperv1.NodePoolLabel] = fmt.Sprintf("%s-%s", t.nodePool.Spec.ClusterName, t.nodePool.GetName())
+		npLabels := t.nodePool.GetLabels()
+		if npLabels != nil && npLabels[karpenterutil.ManagedForKarpenterLabel] == "true" {
+			// TODO(macao): I don't think this was being used by anything, and we are in tech preview so I hope this is not breaking anything.
+			// userDataSecret.Labels[hyperv1.NodePoolLabel] = fmt.Sprintf("%s-%s", t.nodePool.Spec.ClusterName, t.nodePool.GetName())
 			userDataSecret.Labels[hyperkarpenterv1.UserDataAMILabel] = t.userData.ami
+			userDataSecret.Labels[karpenterutil.ManagedForKarpenterLabel] = "true"
 		}
-
 	}
 
 	encodedCACert := base64.StdEncoding.EncodeToString(t.userData.caCert)

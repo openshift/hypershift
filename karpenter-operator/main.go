@@ -5,14 +5,17 @@ import (
 	"fmt"
 	"os"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/nodeclass"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/util"
 
 	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/rest"
@@ -20,6 +23,7 @@ import (
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	client "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -32,6 +36,8 @@ var (
 	targetKubeconfig          string
 	namespace                 string
 	controlPlaneOperatorImage string
+	hostedClusterNamespace    string
+	registryOverrides         map[string]string
 )
 
 func main() {
@@ -56,10 +62,13 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&targetKubeconfig, "target-kubeconfig", "", "Path to guest side kubeconfig file. Where the karpenter CRs (nodeClaim, nodePool, nodeClass) live")
 	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "", "The namespace to infer input for reconciliation, e.g the userData secret")
 	rootCmd.PersistentFlags().StringVar(&controlPlaneOperatorImage, "control-plane-operator-image", "", "The image to run the tokenMinter and the availability prober")
+	rootCmd.PersistentFlags().StringVar(&hostedClusterNamespace, "hosted-cluster-namespace", "", "The namespace which holds all of the HostedCluster objects")
+	rootCmd.PersistentFlags().StringToStringVar(&registryOverrides, "registry-overrides", map[string]string{}, "Registry source to destination overrides (e.g. quay.io=mirror.example.com)")
 
 	_ = rootCmd.MarkPersistentFlagRequired("target-kubeconfig")
 	_ = rootCmd.MarkPersistentFlagRequired("namespace")
 	_ = rootCmd.MarkPersistentFlagRequired("control-plane-operator-image")
+	_ = rootCmd.MarkPersistentFlagRequired("hosted-cluster-namespace")
 
 	if err := rootCmd.Execute(); err != nil {
 		setupLog.Error(err, "problem executing command")
@@ -82,8 +91,32 @@ func run(ctx context.Context) error {
 
 	managementCluster, err := cluster.New(managementKubeconfig, func(opt *cluster.Options) {
 		opt.Cache = cache.Options{
-			DefaultNamespaces: map[string]cache.Config{namespace: {}},
-			Scheme:            scheme,
+			DefaultNamespaces: map[string]cache.Config{
+				namespace: {},
+			},
+			// We need to watch these objects to reconcile token secret/configmap objects for every EC2NodeClass.
+			ByObject: map[client.Object]cache.ByObject{
+				&hyperv1.HostedCluster{}: {
+					Namespaces: map[string]cache.Config{
+						hostedClusterNamespace: {},
+					},
+				},
+				// secrets
+				&corev1.Secret{}: {
+					Namespaces: map[string]cache.Config{
+						hostedClusterNamespace: {},
+						namespace:              {},
+					},
+				},
+				// configmaps
+				&corev1.ConfigMap{}: {
+					Namespaces: map[string]cache.Config{
+						hostedClusterNamespace: {},
+						namespace:              {},
+					},
+				},
+			},
+			Scheme: scheme,
 		}
 		opt.Scheme = scheme
 	})
@@ -108,10 +141,31 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to add managementCluster to controller runtime manager: %v", err)
 	}
 
+	// Build image registry overrides from env var (passed by hypershift-operator)
+	var imageRegistryOverrides map[string][]string
+	if openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES"); ok && openShiftImgOverrides != "" {
+		imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
+	}
+
+	releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate: &releaseinfo.CachedProvider{
+				Inner: &releaseinfo.RegistryClientProvider{},
+				Cache: map[string]*releaseinfo.ReleaseImage{},
+			},
+			RegistryOverrides: registryOverrides,
+		},
+		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	}
+
+	imageMetadataProvider := &util.RegistryClientImageMetadataProvider{
+		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	}
+
 	r := karpenter.Reconciler{
 		Namespace:                 namespace,
 		ControlPlaneOperatorImage: controlPlaneOperatorImage,
-		ReleaseProvider:           &releaseinfo.RegistryClientProvider{},
+		ReleaseProvider:           releaseProvider,
 	}
 	if err := r.SetupWithManager(ctx, mgr, managementCluster); err != nil {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)
@@ -123,7 +177,10 @@ func run(ctx context.Context) error {
 	}
 
 	encr := nodeclass.EC2NodeClassReconciler{
-		Namespace: namespace,
+		Namespace:                 namespace,
+		ControlPlaneOperatorImage: controlPlaneOperatorImage,
+		ReleaseProvider:           releaseProvider,
+		ImageMetadataProvider:     imageMetadataProvider,
 	}
 	if err := encr.SetupWithManager(ctx, mgr, managementCluster); err != nil {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)

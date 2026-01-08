@@ -24,13 +24,14 @@ import (
 // OpenshiftEC2NodeClassSpecApplyConfiguration represents a declarative configuration of the OpenshiftEC2NodeClassSpec type for use
 // with apply.
 type OpenshiftEC2NodeClassSpecApplyConfiguration struct {
-	SubnetSelectorTerms        []SubnetSelectorTermApplyConfiguration        `json:"subnetSelectorTerms,omitempty"`
-	SecurityGroupSelectorTerms []SecurityGroupSelectorTermApplyConfiguration `json:"securityGroupSelectorTerms,omitempty"`
-	AssociatePublicIPAddress   *bool                                         `json:"associatePublicIPAddress,omitempty"`
-	Tags                       map[string]string                             `json:"tags,omitempty"`
-	BlockDeviceMappings        []*karpenterv1beta1.BlockDeviceMapping        `json:"blockDeviceMappings,omitempty"`
-	InstanceStorePolicy        *karpenterv1beta1.InstanceStorePolicy         `json:"instanceStorePolicy,omitempty"`
-	DetailedMonitoring         *bool                                         `json:"detailedMonitoring,omitempty"`
+	SubnetSelectorTerms          []SubnetSelectorTermApplyConfiguration        `json:"subnetSelectorTerms,omitempty"`
+	SecurityGroupSelectorTerms   []SecurityGroupSelectorTermApplyConfiguration `json:"securityGroupSelectorTerms,omitempty"`
+	AssociatePublicIPAddress     *bool                                         `json:"associatePublicIPAddress,omitempty"`
+	Tags                         map[string]string                             `json:"tags,omitempty"`
+	BlockDeviceMappings          []*karpenterv1beta1.BlockDeviceMapping        `json:"blockDeviceMappings,omitempty"`
+	InstanceStorePolicy          *karpenterv1beta1.InstanceStorePolicy         `json:"instanceStorePolicy,omitempty"`
+	DetailedMonitoring           *bool                                         `json:"detailedMonitoring,omitempty"`
+	OpenShiftReleaseImageVersion *string                                       `json:"openShiftReleaseImageVersion,omitempty"`
 }
 
 // OpenshiftEC2NodeClassSpecApplyConfiguration constructs a declarative configuration of the OpenshiftEC2NodeClassSpec type for use with
@@ -113,5 +114,13 @@ func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithInstanceStorePolicy(va
 // If called multiple times, the DetailedMonitoring field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithDetailedMonitoring(value bool) *OpenshiftEC2NodeClassSpecApplyConfiguration {
 	b.DetailedMonitoring = &value
+	return b
+}
+
+// WithOpenShiftReleaseImageVersion sets the OpenShiftReleaseImageVersion field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OpenShiftReleaseImageVersion field is set to the value of the last call.
+func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithOpenShiftReleaseImageVersion(value string) *OpenshiftEC2NodeClassSpecApplyConfiguration {
+	b.OpenShiftReleaseImageVersion = &value
 	return b
 }

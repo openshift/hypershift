@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
@@ -241,43 +242,86 @@ func TestGetUserDataSecret(t *testing.T) {
 	scheme := runtime.NewScheme()
 	g.Expect(corev1.AddToScheme(scheme)).To(Succeed())
 
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-nodepool",
+			Namespace: "test-namespace",
+		},
+	}
+
 	testCases := []struct {
-		name          string
-		namespace     string
-		hcp           *hyperv1.HostedControlPlane
-		objects       []client.Object
-		expectedError string
+		name           string
+		namespace      string
+		hcp            *hyperv1.HostedControlPlane
+		nodePool       *hyperv1.NodePool
+		objects        []client.Object
+		expectedSecret string
+		expectedError  string
 	}{
 		{
-			name:      "when multiple exist it should return newest secret",
+			name:      "when matching secret exists it should return the secret",
 			namespace: "test-namespace",
 			hcp: &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test-hcp",
 				},
 			},
+			nodePool: nodePool,
 			objects: []client.Object{
 				&corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:              "older-secret",
-						Namespace:         "test-namespace",
-						CreationTimestamp: metav1.Time{Time: time.Now().Add(-1 * time.Hour)},
-						Labels: map[string]string{
-							hyperv1.NodePoolLabel: "test-hcp-karpenter",
-						},
-					},
-				},
-				&corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:              "newer-secret",
+						Name:              "matching-secret",
 						Namespace:         "test-namespace",
 						CreationTimestamp: metav1.Time{Time: time.Now()},
 						Labels: map[string]string{
-							hyperv1.NodePoolLabel: "test-hcp-karpenter",
+							karpenterutil.ManagedForKarpenterLabel: "true",
+						},
+						Annotations: map[string]string{
+							hyperkarpenterv1.TokenSecretNodePoolAnnotation: "test-namespace/test-nodepool",
 						},
 					},
 				},
 			},
+			expectedSecret: "matching-secret",
+		},
+		{
+			name:      "when multiple secrets exist it should return the one matching nodepool",
+			namespace: "test-namespace",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-hcp",
+				},
+			},
+			nodePool: nodePool,
+			objects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "other-secret",
+						Namespace:         "test-namespace",
+						CreationTimestamp: metav1.Time{Time: time.Now().Add(-1 * time.Hour)},
+						Labels: map[string]string{
+							karpenterutil.ManagedForKarpenterLabel: "true",
+						},
+						Annotations: map[string]string{
+							hyperkarpenterv1.TokenSecretNodePoolAnnotation: "test-namespace/other-nodepool",
+						},
+					},
+				},
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "matching-secret",
+						Namespace:         "test-namespace",
+						CreationTimestamp: metav1.Time{Time: time.Now()},
+						Labels: map[string]string{
+							karpenterutil.ManagedForKarpenterLabel: "true",
+						},
+						Annotations: map[string]string{
+							hyperkarpenterv1.TokenSecretNodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+			},
+			expectedSecret: "matching-secret",
 		},
 		{
 			name:      "when no secrets exist it should return error",
@@ -287,8 +331,34 @@ func TestGetUserDataSecret(t *testing.T) {
 					Name: "test-hcp",
 				},
 			},
+			nodePool:      nodePool,
 			objects:       []client.Object{},
-			expectedError: "expected 1 secret, got 0",
+			expectedError: "failed to find user data secret for nodepool test-nodepool",
+		},
+		{
+			name:      "when secrets exist but none match nodepool it should return error",
+			namespace: "test-namespace",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-hcp",
+				},
+			},
+			nodePool: nodePool,
+			objects: []client.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "non-matching-secret",
+						Namespace: "test-namespace",
+						Labels: map[string]string{
+							karpenterutil.ManagedForKarpenterLabel: "true",
+						},
+						Annotations: map[string]string{
+							hyperkarpenterv1.TokenSecretNodePoolAnnotation: "test-namespace/other-nodepool",
+						},
+					},
+				},
+			},
+			expectedError: "failed to find user data secret for nodepool test-nodepool",
 		},
 	}
 
@@ -306,18 +376,17 @@ func TestGetUserDataSecret(t *testing.T) {
 				Namespace:        tc.namespace,
 			}
 
-			secret, err := r.getUserDataSecret(t.Context(), tc.hcp)
+			secret, err := r.getUserDataSecret(t.Context(), tc.nodePool)
 
 			if tc.expectedError != "" {
-				g.Expect(err).To(MatchError(tc.expectedError))
+				g.Expect(err).To(MatchError(ContainSubstring(tc.expectedError)))
 				g.Expect(secret).To(BeNil())
 				return
 			}
 
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(secret).NotTo(BeNil())
-
-			g.Expect(secret.Name).To(Equal("newer-secret"))
+			g.Expect(secret.Name).To(Equal(tc.expectedSecret))
 		})
 	}
 }
@@ -331,14 +400,14 @@ func TestUserDataSecretPredicate(t *testing.T) {
 		expectedResult bool
 	}{
 		{
-			name:      "should accept Create event for karpenter secret in correct namespace",
+			name:      "should accept Create event for karpenter-managed secret in correct namespace",
 			namespace: "test-namespace",
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "karpenter-secret",
 					Namespace: "test-namespace",
-					Annotations: map[string]string{
-						hyperv1.NodePoolLabel: "clusters/karpenter",
+					Labels: map[string]string{
+						karpenterutil.ManagedForKarpenterLabel: "true",
 					},
 				},
 			},
@@ -346,14 +415,14 @@ func TestUserDataSecretPredicate(t *testing.T) {
 			expectedResult: true,
 		},
 		{
-			name:      "should accept Update event for karpenter secret in correct namespace",
+			name:      "should accept Update event for karpenter-managed secret in correct namespace",
 			namespace: "test-namespace",
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "karpenter-secret",
 					Namespace: "test-namespace",
-					Annotations: map[string]string{
-						hyperv1.NodePoolLabel: "clusters/karpenter",
+					Labels: map[string]string{
+						karpenterutil.ManagedForKarpenterLabel: "true",
 					},
 				},
 			},
@@ -361,14 +430,14 @@ func TestUserDataSecretPredicate(t *testing.T) {
 			expectedResult: true,
 		},
 		{
-			name:      "should reject Delete event for karpenter secret",
+			name:      "should reject Delete event for karpenter-managed secret",
 			namespace: "test-namespace",
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "karpenter-secret",
 					Namespace: "test-namespace",
-					Annotations: map[string]string{
-						hyperv1.NodePoolLabel: "clusters/karpenter",
+					Labels: map[string]string{
+						karpenterutil.ManagedForKarpenterLabel: "true",
 					},
 				},
 			},
@@ -376,14 +445,14 @@ func TestUserDataSecretPredicate(t *testing.T) {
 			expectedResult: false,
 		},
 		{
-			name:      "should reject Generic event for karpenter secret",
+			name:      "should reject Generic event for karpenter-managed secret",
 			namespace: "test-namespace",
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "karpenter-secret",
 					Namespace: "test-namespace",
-					Annotations: map[string]string{
-						hyperv1.NodePoolLabel: "clusters/karpenter",
+					Labels: map[string]string{
+						karpenterutil.ManagedForKarpenterLabel: "true",
 					},
 				},
 			},
@@ -397,8 +466,8 @@ func TestUserDataSecretPredicate(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "karpenter-secret",
 					Namespace: "wrong-namespace",
-					Annotations: map[string]string{
-						hyperv1.NodePoolLabel: "clusters/karpenter",
+					Labels: map[string]string{
+						karpenterutil.ManagedForKarpenterLabel: "true",
 					},
 				},
 			},
@@ -406,27 +475,27 @@ func TestUserDataSecretPredicate(t *testing.T) {
 			expectedResult: false,
 		},
 		{
-			name:      "should reject secret without incorrect NodePoolLabel annotation",
-			namespace: "test-namespace",
-			secret: &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "other-secret",
-					Namespace: "test-namespace",
-					Annotations: map[string]string{
-						hyperv1.NodePoolLabel: "clusters/other",
-					},
-				},
-			},
-			eventType:      "Create",
-			expectedResult: false,
-		},
-		{
-			name:      "should reject secret without NodePoolLabel annotation",
+			name:      "should reject secret without ManagedForKarpenterLabel",
 			namespace: "test-namespace",
 			secret: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "regular-secret",
 					Namespace: "test-namespace",
+				},
+			},
+			eventType:      "Create",
+			expectedResult: false,
+		},
+		{
+			name:      "should reject secret with ManagedForKarpenterLabel set to false",
+			namespace: "test-namespace",
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "other-secret",
+					Namespace: "test-namespace",
+					Labels: map[string]string{
+						karpenterutil.ManagedForKarpenterLabel: "false",
+					},
 				},
 			},
 			eventType:      "Create",
@@ -459,6 +528,160 @@ func TestUserDataSecretPredicate(t *testing.T) {
 			}
 
 			g.Expect(result).To(Equal(tc.expectedResult))
+		})
+	}
+}
+
+func TestHCPNodePool(t *testing.T) {
+	testCases := []struct {
+		name                      string
+		hostedCluster             *hyperv1.HostedCluster
+		openshiftEC2NodeClass     *hyperkarpenterv1.OpenshiftEC2NodeClass
+		expectedName              string
+		expectedNamespace         string
+		expectedClusterName       string
+		expectedReleaseImage      string
+		expectedHasKarpenterLabel bool
+	}{
+		{
+			name: "should create nodepool with correct name suffix and karpenter label",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "clusters",
+				},
+			},
+			openshiftEC2NodeClass: &hyperkarpenterv1.OpenshiftEC2NodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "default",
+				},
+				Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+					OpenShiftReleaseImageVersion: "quay.io/openshift-release-dev/ocp-release:4.18.0",
+				},
+			},
+			expectedName:              "default-karpenter",
+			expectedNamespace:         "clusters",
+			expectedClusterName:       "test-cluster",
+			expectedReleaseImage:      "quay.io/openshift-release-dev/ocp-release:4.18.0",
+			expectedHasKarpenterLabel: true,
+		},
+		{
+			name: "should use openshiftEC2NodeClass name in nodepool name",
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "prod-cluster",
+					Namespace: "prod-ns",
+				},
+			},
+			openshiftEC2NodeClass: &hyperkarpenterv1.OpenshiftEC2NodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "gpu-nodes",
+				},
+				Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+					OpenShiftReleaseImageVersion: "quay.io/openshift-release-dev/ocp-release:4.19.0",
+				},
+			},
+			expectedName:              "gpu-nodes-karpenter",
+			expectedNamespace:         "prod-ns",
+			expectedClusterName:       "prod-cluster",
+			expectedReleaseImage:      "quay.io/openshift-release-dev/ocp-release:4.19.0",
+			expectedHasKarpenterLabel: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			np := hcpNodePool(tc.hostedCluster, tc.openshiftEC2NodeClass)
+
+			g.Expect(np.Name).To(Equal(tc.expectedName))
+			g.Expect(np.Namespace).To(Equal(tc.expectedNamespace))
+			g.Expect(np.Spec.ClusterName).To(Equal(tc.expectedClusterName))
+			g.Expect(np.Spec.Release.Image).To(Equal(tc.expectedReleaseImage))
+			g.Expect(np.Spec.Arch).To(Equal(hyperv1.ArchitectureAMD64))
+			g.Expect(*np.Spec.Replicas).To(Equal(int32(0)))
+
+			// Verify the karpenter label is set
+			if tc.expectedHasKarpenterLabel {
+				g.Expect(np.Labels).To(HaveKeyWithValue(karpenterutil.ManagedForKarpenterLabel, "true"))
+			}
+
+			// Verify annotations map is initialized (needed for config version tracking)
+			g.Expect(np.Annotations).NotTo(BeNil())
+		})
+	}
+}
+
+func TestUpdateConfigVersionAnnotation(t *testing.T) {
+	g := NewWithT(t)
+
+	scheme := runtime.NewScheme()
+	g.Expect(hyperkarpenterv1.AddToScheme(scheme)).To(Succeed())
+
+	testCases := []struct {
+		name                string
+		initialAnnotations  map[string]string
+		newVersion          string
+		expectedAnnotations map[string]string
+	}{
+		{
+			name:               "should set annotation when none exists",
+			initialAnnotations: nil,
+			newVersion:         "abc123",
+			expectedAnnotations: map[string]string{
+				openshiftEC2NodeClassAnnotationCurrentConfigVersion: "abc123",
+			},
+		},
+		{
+			name: "should update annotation when it exists",
+			initialAnnotations: map[string]string{
+				openshiftEC2NodeClassAnnotationCurrentConfigVersion: "old-hash",
+			},
+			newVersion: "new-hash",
+			expectedAnnotations: map[string]string{
+				openshiftEC2NodeClassAnnotationCurrentConfigVersion: "new-hash",
+			},
+		},
+		{
+			name: "should preserve other annotations",
+			initialAnnotations: map[string]string{
+				"other-annotation": "other-value",
+				openshiftEC2NodeClassAnnotationCurrentConfigVersion: "old-hash",
+			},
+			newVersion: "updated-hash",
+			expectedAnnotations: map[string]string{
+				"other-annotation": "other-value",
+				openshiftEC2NodeClassAnnotationCurrentConfigVersion: "updated-hash",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			openshiftEC2NodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-nodeclass",
+					Annotations: tc.initialAnnotations,
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(openshiftEC2NodeClass).
+				Build()
+
+			r := &EC2NodeClassReconciler{
+				guestClient: fakeClient,
+			}
+
+			err := r.updateConfigVersionAnnotation(t.Context(), openshiftEC2NodeClass, tc.newVersion)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			// Verify the annotation was updated
+			g.Expect(openshiftEC2NodeClass.Annotations).To(Equal(tc.expectedAnnotations))
 		})
 	}
 }

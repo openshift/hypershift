@@ -289,6 +289,7 @@ func (r *Reconciler) reconcileOpenshiftEC2NodeClassDefault(ctx context.Context, 
 
 	op, err := r.CreateOrUpdate(ctx, r.GuestClient, ec2NodeClass, func() error {
 		ec2NodeClass.Spec = hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+			OpenShiftReleaseImageVersion: hcp.Spec.ReleaseImage, // default nodeclass will always follow control plane
 			SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
 				{
 					Tags: map[string]string{

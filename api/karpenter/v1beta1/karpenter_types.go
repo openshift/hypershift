@@ -106,6 +106,10 @@ type OpenshiftEC2NodeClassSpec struct {
 	// DetailedMonitoring controls if detailed monitoring is enabled for instances that are launched
 	// +optional
 	DetailedMonitoring *bool `json:"detailedMonitoring,omitempty"`
+
+	// OpenShiftReleaseImageVersion is the release image version of the OpenshiftEC2NodeClass.
+	// This is used to determine the OpenShift version used for the nodes.
+	OpenShiftReleaseImageVersion string `json:"openShiftReleaseImageVersion,omitempty"`
 }
 
 // SubnetSelectorTerm defines selection logic for a subnet used by Karpenter to launch nodes.

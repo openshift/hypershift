@@ -19,6 +19,12 @@ status:
     status: "False"
     type: RolloutComplete
   resources:
+  - group: rbac.authorization.k8s.io
+    kind: Role
+    name: karpenter-operator
+  - group: rbac.authorization.k8s.io
+    kind: RoleBinding
+    name: karpenter-operator
   - group: ""
     kind: Secret
     name: karpenter-credentials

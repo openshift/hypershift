@@ -8,6 +8,8 @@ import (
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/util"
 
+	rbacv1 "k8s.io/api/rbac/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -18,8 +20,11 @@ const (
 var _ component.ComponentOptions = &KarpenterOperatorOptions{}
 
 type KarpenterOperatorOptions struct {
-	HyperShiftOperatorImage   string
-	ControlPlaneOperatorImage string
+	HyperShiftOperatorImage         string
+	ControlPlaneOperatorImage       string
+	HostedClusterNamespace          string
+	RegistryOverrides               map[string]string
+	OpenShiftImageRegistryOverrides map[string][]string
 }
 
 // IsRequestServing implements controlplanecomponent.ComponentOptions.
@@ -45,6 +50,12 @@ func NewComponent(options *KarpenterOperatorOptions) component.ControlPlaneCompo
 		).
 		WithManifestAdapter("podmonitor.yaml",
 			component.WithAdaptFunction(adaptPodMonitor),
+		).
+		WithManifestAdapter("hc_role.yaml",
+			component.WithAdaptFunction(options.adaptHCRole),
+		).
+		WithManifestAdapter("hc_rolebinding.yaml",
+			component.WithAdaptFunction(options.adaptHCRoleBinding),
 		).
 		WithPredicate(predicate).
 		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
@@ -76,4 +87,14 @@ func predicate(cpContext component.WorkloadContext) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func (c *KarpenterOperatorOptions) adaptHCRole(cpContext component.WorkloadContext, role *rbacv1.Role) error {
+	role.Namespace = c.HostedClusterNamespace
+	return nil
+}
+
+func (c *KarpenterOperatorOptions) adaptHCRoleBinding(cpContext component.WorkloadContext, roleBinding *rbacv1.RoleBinding) error {
+	roleBinding.Namespace = c.HostedClusterNamespace
+	return nil
 }
