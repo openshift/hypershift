@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
@@ -70,6 +69,7 @@ import (
 	"k8s.io/client-go/discovery"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/utils/ptr"
+	"k8s.io/utils/set"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -204,13 +204,13 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	log.Info("Starting hypershift-operator-manager", "version", supportedversion.String())
 
 	// Validate scale-from-zero configuration early
-	supportedProviders := []string{"aws"}
+	supportedProviders := set.New("aws")
 	if opts.ScaleFromZeroCreds != "" {
 		if opts.ScaleFromZeroProvider == "" {
 			return fmt.Errorf("--scale-from-zero-provider is required when using --scale-from-zero-creds")
 		}
-		if !slices.Contains(supportedProviders, strings.ToLower(opts.ScaleFromZeroProvider)) {
-			return fmt.Errorf("invalid --scale-from-zero-provider: %s (must be one of: %v)", opts.ScaleFromZeroProvider, supportedProviders)
+		if !supportedProviders.Has(strings.ToLower(opts.ScaleFromZeroProvider)) {
+			return fmt.Errorf("invalid --scale-from-zero-provider: %s (must be one of: %v)", opts.ScaleFromZeroProvider, supportedProviders.UnsortedList())
 		}
 		if _, err := os.Stat(opts.ScaleFromZeroCreds); err != nil {
 			if os.IsNotExist(err) {

@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -142,6 +141,11 @@ type Options struct {
 func (o *Options) Validate() error {
 	var errs []error
 
+	o.ScaleFromZeroProvider = strings.TrimSpace(o.ScaleFromZeroProvider)
+	if len(o.ScaleFromZeroProvider) != 0 {
+		o.ScaleFromZeroProvider = strings.ToLower(o.ScaleFromZeroProvider)
+	}
+
 	switch hyperv1.PlatformType(o.PrivatePlatform) {
 	case hyperv1.AWSPlatform:
 		if (len(o.AWSPrivateCreds) == 0 && len(o.AWSPrivateCredentialsSecret) == 0) || len(o.AWSPrivateRegion) == 0 {
@@ -191,7 +195,7 @@ func (o *Options) Validate() error {
 	}
 
 	// Validate scale-from-zero credentials
-	supportedProviders := []string{"aws"}
+	supportedProviders := set.New("aws")
 	if len(o.ScaleFromZeroCreds) != 0 || len(o.ScaleFromZeroCredentialsSecret) != 0 {
 		// Check mutual exclusivity - only one of file or secret should be provided
 		if len(o.ScaleFromZeroCreds) != 0 && len(o.ScaleFromZeroCredentialsSecret) != 0 {
@@ -201,8 +205,8 @@ func (o *Options) Validate() error {
 		// Provider is required when using scale-from-zero credentials
 		if len(o.ScaleFromZeroProvider) == 0 {
 			errs = append(errs, fmt.Errorf("--scale-from-zero-provider is required when using scale-from-zero credentials"))
-		} else if !slices.Contains(supportedProviders, strings.ToLower(o.ScaleFromZeroProvider)) {
-			errs = append(errs, fmt.Errorf("invalid --scale-from-zero-provider: %s (must be one of: %v)", o.ScaleFromZeroProvider, supportedProviders))
+		} else if !supportedProviders.Has(o.ScaleFromZeroProvider) {
+			errs = append(errs, fmt.Errorf("invalid --scale-from-zero-provider: %s (must be one of: %v)", o.ScaleFromZeroProvider, supportedProviders.UnsortedList()))
 		}
 
 		// Validate credentials file exists and is accessible if provided

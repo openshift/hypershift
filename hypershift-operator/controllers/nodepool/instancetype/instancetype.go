@@ -4,16 +4,6 @@ import (
 	"context"
 )
 
-// CPUArch represents a normalized CPU architecture type.
-type CPUArch string
-
-const (
-	// ArchAMD64 is the normalized architecture name for amd64/x86_64.
-	ArchAMD64 CPUArch = "amd64"
-	// ArchARM64 is the normalized architecture name for arm64/aarch64.
-	ArchARM64 CPUArch = "arm64"
-)
-
 // Provider knows how to fetch instance type information for a given cloud platform.
 // Different cloud providers (AWS, Azure, GCP, etc.) implement this interface to provide
 // instance type specifications needed for cluster autoscaler scale-from-zero functionality.
@@ -41,5 +31,5 @@ type InstanceTypeInfo struct {
 	GPU int32
 
 	// CPUArchitecture is the normalized CPU architecture
-	CPUArchitecture CPUArch
+	CPUArchitecture string
 }

@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+
+	"k8s.io/utils/ptr"
 )
 
 // Provider implements the instancetype.Provider interface for AWS.
@@ -58,11 +61,11 @@ func transformInstanceTypeInfo(rawInstanceType *ec2.InstanceTypeInfo) (*instance
 	if rawInstanceType == nil {
 		return nil, fmt.Errorf("rawInstanceType is nil")
 	}
-	if rawInstanceType.InstanceType == nil {
-		return nil, fmt.Errorf("instance type name is missing")
-	}
 
-	instanceTypeName := *rawInstanceType.InstanceType
+	instanceTypeName := ptr.Deref(rawInstanceType.InstanceType, "")
+	if instanceTypeName == "" {
+		return nil, fmt.Errorf("instance type name is missing or empty")
+	}
 	info := &instancetype.InstanceTypeInfo{
 		InstanceType: instanceTypeName,
 	}
@@ -88,25 +91,23 @@ func transformInstanceTypeInfo(rawInstanceType *ec2.InstanceTypeInfo) (*instance
 	info.MemoryMb = memoryMb
 
 	// Extract GPU information (optional, defaults to 0)
-	if rawInstanceType.GpuInfo != nil && len(rawInstanceType.GpuInfo.Gpus) > 0 {
-		info.GPU = getGpuCount(rawInstanceType.GpuInfo)
-	}
+	info.GPU = getGpuCount(rawInstanceType.GpuInfo)
 
-	// Extract and normalize CPU architecture (defaults to amd64)
-	if rawInstanceType.ProcessorInfo != nil && len(rawInstanceType.ProcessorInfo.SupportedArchitectures) > 0 {
-		architecture := *rawInstanceType.ProcessorInfo.SupportedArchitectures[0]
-		switch architecture {
-		case ec2.ArchitectureTypeX8664:
-			info.CPUArchitecture = instancetype.ArchAMD64
-		case ec2.ArchitectureTypeArm64:
-			info.CPUArchitecture = instancetype.ArchARM64
-		default:
-			// Default to amd64 for unknown architectures
-			info.CPUArchitecture = instancetype.ArchAMD64
-		}
-	} else {
-		// Default to amd64 if architecture information is not available
-		info.CPUArchitecture = instancetype.ArchAMD64
+	// Extract and normalize CPU architecture
+	if rawInstanceType.ProcessorInfo == nil || len(rawInstanceType.ProcessorInfo.SupportedArchitectures) == 0 {
+		return nil, fmt.Errorf("missing CPU architecture information for instance type %q", instanceTypeName)
+	}
+	if rawInstanceType.ProcessorInfo.SupportedArchitectures[0] == nil {
+		return nil, fmt.Errorf("CPU architecture is nil for instance type %q", instanceTypeName)
+	}
+	architecture := *rawInstanceType.ProcessorInfo.SupportedArchitectures[0]
+	switch architecture {
+	case ec2.ArchitectureTypeX8664:
+		info.CPUArchitecture = hyperv1.ArchitectureAMD64
+	case ec2.ArchitectureTypeArm64:
+		info.CPUArchitecture = hyperv1.ArchitectureARM64
+	default:
+		return nil, fmt.Errorf("unsupported CPU architecture %q for instance type %q", architecture, instanceTypeName)
 	}
 
 	return info, nil
@@ -114,10 +115,15 @@ func transformInstanceTypeInfo(rawInstanceType *ec2.InstanceTypeInfo) (*instance
 
 // getGpuCount counts all the GPUs in GpuInfo.
 // AWS instances can have multiple GPU devices, this sums them all.
+// Returns 0 if gpuInfo is nil or contains no valid GPU entries.
 func getGpuCount(gpuInfo *ec2.GpuInfo) int32 {
+	if gpuInfo == nil || gpuInfo.Gpus == nil {
+		return 0
+	}
+
 	gpuCountSum := int32(0)
 	for _, gpu := range gpuInfo.Gpus {
-		if gpu.Count != nil {
+		if gpu != nil && gpu.Count != nil {
 			gpuCountSum += int32(*gpu.Count)
 		}
 	}

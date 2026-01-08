@@ -1,7 +1,6 @@
 package nodepool
 
 import (
-	"cmp"
 	"context"
 	"fmt"
 	"os"
@@ -412,8 +411,9 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	// Set scale-from-zero annotations if provider is configured and platform is supported
 	// This works for both Replace (MachineDeployment) and InPlace (MachineSet) upgrade types
 	if isAutoscalingEnabled(nodePool) && r.InstanceTypeProvider != nil && supportedScaleFromZeroPlatform(nodePool.Spec.Platform.Type) {
-		if err = r.reconcileScaleFromZeroAnnotations(ctx, nodePool, controlPlaneNamespace); err != nil {
-			log.Error(err, "Failed to set scale-from-zero annotations")
+		if err = r.reconcileScaleFromZeroAnnotations(ctx, nodePool, capi); err != nil {
+			log.Error(err, "Failed to set scale-from-zero annotations, will retry")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 	}
 
@@ -1112,93 +1112,75 @@ func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]st
 	return nil
 }
 
-// reconcileScaleFromZeroAnnotations sets scale-from-zero annotations on MachineDeployment/MachineSet for AWS platform.
-func (r *NodePoolReconciler) reconcileScaleFromZeroAnnotations(ctx context.Context, nodePool *hyperv1.NodePool, controlPlaneNamespace string) error {
-	key := client.ObjectKey{
-		Namespace: controlPlaneNamespace,
-		Name:      nodePool.GetName(),
+// reconcileScaleFromZeroAnnotations sets scale-from-zero annotations on MachineDeployment/MachineSet.
+// It supports multiple platforms by switching on the NodePool's platform type.
+func (r *NodePoolReconciler) reconcileScaleFromZeroAnnotations(ctx context.Context, nodePool *hyperv1.NodePool, capi *CAPI) error {
+	// Get the platform-specific machine template
+	var machineTemplate interface{}
+	switch nodePool.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		awsMachineTemplate := &capiaws.AWSMachineTemplate{}
+		if err := capi.getExistingMachineTemplate(ctx, awsMachineTemplate); err != nil {
+			if apierrors.IsNotFound(err) {
+				// Machine template doesn't exist yet, skip annotation (it will be reconciled later)
+				return nil
+			}
+			return fmt.Errorf("failed to get AWSMachineTemplate: %w", err)
+		}
+		machineTemplate = awsMachineTemplate
+
+	// Future platform support can be added here:
+	// case hyperv1.AzurePlatform:
+	//     azureTemplate := &capiazure.AzureMachineTemplate{}
+	//     if err := capi.getExistingMachineTemplate(ctx, azureTemplate); err != nil {
+	//         if apierrors.IsNotFound(err) {
+	//             return nil
+	//         }
+	//         return fmt.Errorf("failed to get AzureMachineTemplate: %w", err)
+	//     }
+	//     machineTemplate = azureTemplate
+
+	default:
+		return fmt.Errorf("unsupported platform for scale-from-zero: %s", nodePool.Spec.Platform.Type)
 	}
 
+	// Get the appropriate CAPI object (MachineSet for InPlace, MachineDeployment for Replace)
+	var obj client.Object
 	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
 		// InPlace mode uses MachineSet
-		ms := &capiv1.MachineSet{}
-		if err := r.Get(ctx, key, ms); err != nil {
+		ms := capi.machineSet()
+		if err := capi.Get(ctx, client.ObjectKeyFromObject(ms), ms); err != nil {
 			if apierrors.IsNotFound(err) {
-				// MachineSet doesn't exist yet, skip annotation (it will be reconciled later)
+				// MachineSet doesn't exist yet, skip annotation
 				return nil
 			}
 			return fmt.Errorf("failed to get MachineSet: %w", err)
 		}
-
-		// Ensure annotations map is initialized
-		if ms.Annotations == nil {
-			ms.Annotations = make(map[string]string)
-		}
-
-		// Check if it's an AWS machine template
-		if ms.Spec.Template.Spec.InfrastructureRef.Kind != "AWSMachineTemplate" {
-			return nil // Not an AWS machine template, skip
-		}
-
-		// Fetch the AWSMachineTemplate
-		awsMachineTemplate := &capiaws.AWSMachineTemplate{}
-		templateKey := client.ObjectKey{
-			Namespace: cmp.Or(ms.Spec.Template.Spec.InfrastructureRef.Namespace, controlPlaneNamespace),
-			Name:      ms.Spec.Template.Spec.InfrastructureRef.Name,
-		}
-		if err := r.Get(ctx, templateKey, awsMachineTemplate); err != nil {
-			return fmt.Errorf("failed to get AWSMachineTemplate: %w", err)
-		}
-
-		// Set annotations on the MachineSet
-		if err := setScaleFromZeroAnnotationsOnObject(ctx, r.InstanceTypeProvider, nodePool, ms.Annotations, awsMachineTemplate); err != nil {
-			return fmt.Errorf("failed to set scale-from-zero annotations on MachineSet: %w", err)
-		}
-
-		// Update the MachineSet
-		if err := r.Update(ctx, ms); err != nil {
-			return fmt.Errorf("failed to update MachineSet with scale-from-zero annotations: %w", err)
-		}
+		obj = ms
 	} else {
 		// Replace mode uses MachineDeployment
-		md := &capiv1.MachineDeployment{}
-		if err := r.Get(ctx, key, md); err != nil {
+		md := capi.machineDeployment()
+		if err := capi.Get(ctx, client.ObjectKeyFromObject(md), md); err != nil {
 			if apierrors.IsNotFound(err) {
-				// MachineDeployment doesn't exist yet, skip annotation (it will be reconciled later)
+				// MachineDeployment doesn't exist yet, skip annotation
 				return nil
 			}
 			return fmt.Errorf("failed to get MachineDeployment: %w", err)
 		}
+		obj = md
+	}
 
-		// Ensure annotations map is initialized
-		if md.Annotations == nil {
-			md.Annotations = make(map[string]string)
-		}
+	// Create a patch base before modifying the object
+	patch := client.MergeFrom(obj.DeepCopyObject().(client.Object))
 
-		// Check if it's an AWS machine template
-		if md.Spec.Template.Spec.InfrastructureRef.Kind != "AWSMachineTemplate" {
-			return nil // Not an AWS machine template, skip
-		}
+	// Set scale-from-zero annotations on the object
+	if err := setScaleFromZeroAnnotationsOnObject(ctx, r.InstanceTypeProvider, nodePool, obj, machineTemplate); err != nil {
+		return fmt.Errorf("failed to set scale-from-zero annotations: %w", err)
+	}
 
-		// Fetch the AWSMachineTemplate
-		awsMachineTemplate := &capiaws.AWSMachineTemplate{}
-		templateKey := client.ObjectKey{
-			Namespace: cmp.Or(md.Spec.Template.Spec.InfrastructureRef.Namespace, controlPlaneNamespace),
-			Name:      md.Spec.Template.Spec.InfrastructureRef.Name,
-		}
-		if err := r.Get(ctx, templateKey, awsMachineTemplate); err != nil {
-			return fmt.Errorf("failed to get AWSMachineTemplate: %w", err)
-		}
-
-		// Set annotations on the MachineDeployment
-		if err := setScaleFromZeroAnnotationsOnObject(ctx, r.InstanceTypeProvider, nodePool, md.Annotations, awsMachineTemplate); err != nil {
-			return fmt.Errorf("failed to set scale-from-zero annotations on MachineDeployment: %w", err)
-		}
-
-		// Update the MachineDeployment
-		if err := r.Update(ctx, md); err != nil {
-			return fmt.Errorf("failed to update MachineDeployment with scale-from-zero annotations: %w", err)
-		}
+	// Patch only sends the diff, avoiding unnecessary API updates when annotations haven't changed
+	if err := capi.Patch(ctx, obj, patch); err != nil {
+		return fmt.Errorf("failed to patch with scale-from-zero annotations: %w", err)
 	}
 
 	return nil
