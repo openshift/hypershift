@@ -57,7 +57,7 @@ func (n *NetworkManager) GetBaseDomainID(ctx context.Context, baseDomain string)
 			}
 		}
 	}
-	return "", fmt.Errorf("could not find any DNS zones in subscription")
+	return "", fmt.Errorf("could not find DNS zone '%s' in subscription; ensure a public DNS zone for the base domain exists in the subscription", baseDomain)
 }
 
 // CreateSecurityGroup creates the security group the virtual network will use

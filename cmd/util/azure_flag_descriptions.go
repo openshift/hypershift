@@ -66,4 +66,13 @@ const (
 	LocationDestroyDescription          = "Azure region of the cluster. Inferred from the HostedCluster if it exists; only required if the cluster resource has already been deleted."
 	AzureCredsDestroyDescription        = "Path to an Azure credentials file (JSON format) used to authenticate and delete Azure resources."
 	ResourceGroupNameDestroyDescription = "Name of the resource group containing the cluster resources to delete. Inferred from the HostedCluster if it exists; only required if the cluster resource has already been deleted."
+
+	// Infrastructure command specific flags
+	AssignIdentityRolesDescription          = "Automatically assign required Azure RBAC roles to workload identities. This grants the identities permissions to manage Azure resources."
+	DisableClusterCapabilitiesDescription   = "Comma-separated list of cluster capabilities to disable (e.g. ImageRegistry). Disabled capabilities will not have corresponding workload identities created."
+	InfraIDDescription                      = "Unique identifier used to name and tag Azure resources. This ID will be incorporated into resource names and Azure tags."
+	BaseDomainInfraDescription              = "Base DNS domain for the cluster (e.g. example.com). A public DNS zone for this domain must exist in your Azure subscription."
+	InfraOutputFileDescription              = "Path to file where the infrastructure output will be saved in YAML format. Contains resource IDs and other information needed for cluster creation."
+	GenerateManagedIdentitiesDescription    = "Generate workload identities and save them to a JSON file instead of creating full infrastructure. Requires --oidc-issuer-url and --workload-identities-output-file."
+	WorkloadIdentitiesOutputFileDescription = "Path where generated workload identities JSON will be saved when using --generate-managed-identities."
 )
