@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/go-toolset:1.24.4-1754467841 AS builder
+FROM registry.redhat.io/rhel9/go-toolset:1.24.6-1763548439 AS builder
 
 WORKDIR /hypershift
 
@@ -16,7 +16,7 @@ RUN make product-cli-release && \
       done; \
     done
 
-FROM registry.redhat.io/ubi9/nginx-122:1-1743076774
+FROM registry.redhat.io/ubi9/nginx-124:1-1767745334
 
 COPY --from=builder /hypershift/bin/    /opt/app-root/src/
 RUN find /opt/app-root/src/ -type f ! -name "*.tar.gz" -delete
