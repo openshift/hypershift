@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -63,7 +62,7 @@ type rolloutConfig struct {
 }
 
 // NewConfigGenerator is the contract to create a new ConfigGenerator.
-func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, haproxyRawConfig string) (*ConfigGenerator, error) {
+func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage, haproxyRawConfig string, controlPlaneNamespace string) (*ConfigGenerator, error) {
 	if client == nil {
 		return nil, fmt.Errorf("client can't be nil")
 	}
@@ -81,7 +80,7 @@ func NewConfigGenerator(ctx context.Context, client client.Client, hostedCluster
 		Client:                client,
 		hostedCluster:         hostedCluster,
 		nodePool:              nodePool,
-		controlplaneNamespace: manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name),
+		controlplaneNamespace: controlPlaneNamespace,
 		rolloutConfig: &rolloutConfig{
 			releaseImage:     releaseImage,
 			pullSecretName:   hostedCluster.Spec.PullSecret.Name,

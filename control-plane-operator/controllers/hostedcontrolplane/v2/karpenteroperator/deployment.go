@@ -17,6 +17,28 @@ func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.Worklo
 
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Image = karp.HyperShiftOperatorImage
+
+		c.Args = append(c.Args,
+			"--control-plane-operator-image="+karp.ControlPlaneOperatorImage,
+			"--ignition-endpoint="+karp.IgnitionEndpoint,
+			"--registry-overrides="+util.ConvertRegistryOverridesToCommandLineFlag(karp.RegistryOverrides),
+		)
+
+		c.Env = append(c.Env,
+			corev1.EnvVar{
+				Name:  "OPENSHIFT_IMG_OVERRIDES",
+				Value: util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(karp.OpenShiftImageRegistryOverrides),
+			},
+		)
+
+		if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
+			c.Env = append(c.Env,
+				corev1.EnvVar{
+					Name:  rhobsmonitoring.EnvironmentVariable,
+					Value: "1",
+				},
+			)
+		}
 	})
 
 	switch hcp.Spec.Platform.Type {
@@ -52,17 +74,6 @@ func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.Worklo
 					MountPath: "/etc/provider",
 				},
 			)
-			c.Args = append(c.Args,
-				"--control-plane-operator-image="+karp.ControlPlaneOperatorImage,
-			)
-			if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" {
-				c.Env = append(c.Env,
-					corev1.EnvVar{
-						Name:  rhobsmonitoring.EnvironmentVariable,
-						Value: "1",
-					},
-				)
-			}
 		})
 	}
 

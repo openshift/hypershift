@@ -2050,7 +2050,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
-	if err := r.reconcileKarpenterOperator(cpContext, createOrUpdate, hcluster, r.HypershiftOperatorImage, controlPlaneOperatorImage); err != nil {
+	if err := r.reconcileKarpenterOperator(cpContext, createOrUpdate, hcluster, r.HypershiftOperatorImage, controlPlaneOperatorImage, releaseProvider); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile karpenter operator: %w", err)
 	}
 
@@ -3399,16 +3399,6 @@ func enqueueHostedClustersFunc(metricsSet metrics.MetricsSet, operatorNamespace 
 		case *hyperv1.NodePool:
 			return []reconcile.Request{{NamespacedName: types.NamespacedName{Name: typedObj.Spec.ClusterName, Namespace: typedObj.Namespace}}}
 		case *corev1.Secret:
-			// reconcile the karpenter token rotations to the userData secret, since the ignition-server/tokensecret_controller does not control it
-			if hcAnnotation, exists := typedObj.Annotations[hyperutil.HostedClusterAnnotation]; exists {
-				if nodePoolAnnotation, exists := typedObj.Annotations[hyperkarpenterv1.TokenSecretNodePoolAnnotation]; exists {
-					// only match tokenSecret with nodepool name karpenter and ignore changes to userDataSecret to avoid duplicate updates
-					if hyperutil.ParseNamespacedName(nodePoolAnnotation).Name == hyperkarpenterv1.KarpenterNodePool && strings.HasPrefix(typedObj.Name, "token-") {
-						// we still need to map the request to it's hostedcluster to trigger the reconcile
-						return []reconcile.Request{{NamespacedName: hyperutil.ParseNamespacedName(hcAnnotation)}}
-					}
-				}
-			}
 			if typedObj.Name == manifests.KASServingCertSecret("").Name {
 				for _, ownerRef := range typedObj.OwnerReferences {
 					if ownerRef.Kind == "HostedControlPlane" {

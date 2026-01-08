@@ -502,9 +502,8 @@ func joinDefaultPortIfMissing(addr string) (string, error) {
 	return parsedUrl.String(), nil
 }
 
-func (r *HAProxy) GenerateHAProxyRawConfig(ctx context.Context, hcluster *hyperv1.HostedCluster) (string, error) {
+func (r *HAProxy) GenerateHAProxyRawConfig(ctx context.Context, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) (string, error) {
 	var haproxyRawConfig string
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	isHAProxyIgnitionConfigManaged, cpoImage, err := r.isHAProxyIgnitionConfigManaged(ctx, hcluster)
 	if err != nil {
 		return "", fmt.Errorf("failed to check if we manage haproxy ignition config: %w", err)

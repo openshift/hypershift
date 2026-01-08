@@ -344,7 +344,7 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to generate config: %w", err)
 	}
@@ -426,6 +426,8 @@ func supportedScaleFromZeroPlatform(platform hyperv1.PlatformType) bool {
 }
 
 func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (*Token, error) {
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+
 	// Validate and get releaseImage.
 	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
 	if err != nil {
@@ -436,7 +438,7 @@ func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.Hosted
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate config: %w", err)
 	}
@@ -1030,7 +1032,8 @@ func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, nodeP
 		ReleaseProvider:         r.ReleaseProvider,
 		ImageMetadataProvider:   r.ImageMetadataProvider,
 	}
-	return haProxy.GenerateHAProxyRawConfig(ctx, hcluster)
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	return haProxy.GenerateHAProxyRawConfig(ctx, hcluster, controlPlaneNamespace)
 }
 
 // machinesByCreationTimestamp sorts a list of Machine by creation timestamp, using their names as a tie breaker.
