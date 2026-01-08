@@ -9,6 +9,9 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/releaseinfo"
+
+	imagev1 "github.com/openshift/api/image/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1006,6 +1009,170 @@ func TestCountAvailableNodes(t *testing.T) {
 			if result != tt.expected {
 				t.Errorf("expected %d available nodes, got %d", tt.expected, result)
 			}
+		})
+	}
+}
+
+// testReleaseProvider is a simple fake release provider for testing GetControlPlaneOperatorImage
+type testReleaseProvider struct {
+	version    string
+	components map[string]string
+}
+
+func (f *testReleaseProvider) Lookup(_ context.Context, _ string, _ []byte) (*releaseinfo.ReleaseImage, error) {
+	releaseImage := &releaseinfo.ReleaseImage{
+		ImageStream: &imagev1.ImageStream{
+			ObjectMeta: metav1.ObjectMeta{Name: f.version},
+			Spec:       imagev1.ImageStreamSpec{},
+		},
+	}
+	for name, image := range f.components {
+		releaseImage.ImageStream.Spec.Tags = append(releaseImage.ImageStream.Spec.Tags, imagev1.TagReference{
+			Name: name,
+			From: &corev1.ObjectReference{Name: image},
+		})
+	}
+	return releaseImage, nil
+}
+
+func TestGetControlPlaneOperatorImage(t *testing.T) {
+	const (
+		hoImage            = "quay.io/hypershift/hypershift-operator:latest"
+		payloadCPOImage    = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:abc123"
+		annotationCPOImage = "quay.io/custom/cpo:v1"
+	)
+
+	testCases := []struct {
+		name                    string
+		version                 string
+		hostedClusterAnnotation map[string]string
+		payloadHasHypershift    bool
+		cpoBinaryExists         bool
+		expectedImage           string
+	}{
+		{
+			name:    "When annotation is set it should use annotation image",
+			version: "4.20.0",
+			hostedClusterAnnotation: map[string]string{
+				hyperv1.ControlPlaneOperatorImageAnnotation: annotationCPOImage,
+			},
+			payloadHasHypershift: true,
+			cpoBinaryExists:      true,
+			expectedImage:        annotationCPOImage,
+		},
+		{
+			name:                 "When version is 4.20 and CPO binary exists it should use HO image",
+			version:              "4.20.0",
+			payloadHasHypershift: true,
+			cpoBinaryExists:      true,
+			expectedImage:        hoImage,
+		},
+		{
+			name:                 "When version is 4.21 and CPO binary exists it should use HO image",
+			version:              "4.21.0",
+			payloadHasHypershift: true,
+			cpoBinaryExists:      true,
+			expectedImage:        hoImage,
+		},
+		{
+			name:                 "When version is 4.22 and CPO binary exists it should use HO image",
+			version:              "4.22.5",
+			payloadHasHypershift: true,
+			cpoBinaryExists:      true,
+			expectedImage:        hoImage,
+		},
+		{
+			name:                 "When version is 4.20 but CPO binary does not exist it should use payload image",
+			version:              "4.20.0",
+			payloadHasHypershift: true,
+			cpoBinaryExists:      false,
+			expectedImage:        payloadCPOImage,
+		},
+		{
+			name:                 "When version is 4.19 with payload hypershift it should use payload image",
+			version:              "4.19.0",
+			payloadHasHypershift: true,
+			cpoBinaryExists:      true,
+			expectedImage:        payloadCPOImage,
+		},
+		{
+			name:                 "When version is 4.18 with payload hypershift it should use payload image",
+			version:              "4.18.5",
+			payloadHasHypershift: true,
+			cpoBinaryExists:      true,
+			expectedImage:        payloadCPOImage,
+		},
+		{
+			name:                 "When version is 4.14 with payload hypershift it should use payload image",
+			version:              "4.14.0",
+			payloadHasHypershift: true,
+			cpoBinaryExists:      true,
+			expectedImage:        payloadCPOImage,
+		},
+		{
+			name:                 "When version is 4.19 without payload hypershift it should fallback to HO image",
+			version:              "4.19.0",
+			payloadHasHypershift: false,
+			cpoBinaryExists:      true,
+			expectedImage:        hoImage,
+		},
+		{
+			name:                 "When version is 4.10 without payload hypershift it should fallback to HO image",
+			version:              "4.10.0",
+			payloadHasHypershift: false,
+			cpoBinaryExists:      true,
+			expectedImage:        hoImage,
+		},
+		{
+			name:                 "When version is 5.0 and CPO binary exists it should use HO image",
+			version:              "5.0.0",
+			payloadHasHypershift: true,
+			cpoBinaryExists:      true,
+			expectedImage:        hoImage,
+		},
+		{
+			name:                 "When version is 4.20.0-rc.1 and CPO binary exists it should use HO image",
+			version:              "4.20.0-rc.1",
+			payloadHasHypershift: true,
+			cpoBinaryExists:      true,
+			expectedImage:        hoImage,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Set the CPO binary existence for this test case
+			cpoBinaryExistsFunc = func() bool { return tc.cpoBinaryExists }
+			defer func() { cpoBinaryExistsFunc = nil }()
+
+			components := map[string]string{}
+			if tc.payloadHasHypershift {
+				components["hypershift"] = payloadCPOImage
+			}
+
+			releaseProvider := &testReleaseProvider{
+				version:    tc.version,
+				components: components,
+			}
+
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-cluster",
+					Namespace:   "test-ns",
+					Annotations: tc.hostedClusterAnnotation,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "quay.io/openshift-release-dev/ocp-release:4.20.0-x86_64",
+					},
+				},
+			}
+
+			image, err := GetControlPlaneOperatorImage(context.Background(), hc, releaseProvider, hoImage, nil)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(image).To(Equal(tc.expectedImage))
 		})
 	}
 }
