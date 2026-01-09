@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"github.com/openshift/api/tools/codegen/pkg/generation"
+	"k8s.io/gengo/v2/parser"
+	"k8s.io/gengo/v2/types"
 	"k8s.io/klog/v2"
 )
 
@@ -31,6 +33,13 @@ type Options struct {
 	// Verify determines whether the generator should verify the content instead
 	// of updating the generated file.
 	Verify bool
+
+	// GlobalParser is the parser for the global package.
+	// This loads all packages found in the base directory.
+	GlobalParser *parser.Parser
+
+	// Universe is the universe for the global package.
+	Universe types.Universe
 }
 
 // generator implements the generation.Generator interface.
@@ -40,6 +49,8 @@ type generator struct {
 	headerFilePath     string
 	outputBaseFileName string
 	verify             bool
+	globalParser       *parser.Parser
+	universe           types.Universe
 }
 
 // NewGenerator builds a new deepcopy generator.
@@ -54,6 +65,8 @@ func NewGenerator(opts Options) generation.Generator {
 		headerFilePath:     opts.HeaderFilePath,
 		outputBaseFileName: outputFileBaseName,
 		verify:             opts.Verify,
+		globalParser:       opts.GlobalParser,
+		universe:           opts.Universe,
 	}
 }
 
@@ -69,6 +82,8 @@ func (g *generator) ApplyConfig(config *generation.Config) generation.Generator 
 		HeaderFilePath:     config.Deepcopy.HeaderFilePath,
 		OutputFileBaseName: config.Deepcopy.OutputFileBaseName,
 		Verify:             g.verify,
+		GlobalParser:       g.globalParser,
+		Universe:           g.universe,
 	})
 }
 
@@ -106,7 +121,7 @@ func (g *generator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.
 
 		klog.V(1).Infof("%s deepcopy functions for for %s/%s", action, groupCtx.Name, version.Name)
 
-		if err := generateDeepcopyFunctions(version.Path, version.PackagePath, g.outputBaseFileName, headerFilePath, g.verify); err != nil {
+		if err := generateDeepcopyFunctions(g.globalParser, g.universe, version.Path, version.PackagePath, g.outputBaseFileName, headerFilePath, g.verify); err != nil {
 			return nil, fmt.Errorf("could not generate deepcopy functions for %s/%s: %w", groupCtx.Name, version.Name, err)
 		}
 	}
