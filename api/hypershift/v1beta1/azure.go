@@ -389,7 +389,6 @@ type AzurePlatformSpec struct {
 	//Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
 	//          ResourceGroupName is <resourceGroupName>.
 	//
-	// +kubebuilder:default:=default
 	// +required
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_()\-\.]{1,89}[a-zA-Z0-9_()\-]$`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ResourceGroupName is immutable"
@@ -580,7 +579,6 @@ type ManagedIdentity struct {
 	//
 	// +kubebuilder:validation:Enum:=utf-8;hex;base64
 	// +kubebuilder:default:="utf-8"
-	// +required
 	ObjectEncoding ObjectEncodingFormat `json:"objectEncoding"`
 
 	// credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON

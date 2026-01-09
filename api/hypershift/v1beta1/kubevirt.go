@@ -81,7 +81,7 @@ type KubevirtCachingStrategy struct {
 	// type is the type of the caching strategy
 	// +kubebuilder:default=None
 	// +kubebuilder:validation:Enum=None;PVC
-	// +required
+	// +optional
 	Type KubevirtCachingStrategyType `json:"type"`
 }
 
@@ -148,7 +148,7 @@ const (
 type KubevirtNodePoolPlatform struct {
 	// rootVolume represents values associated with the VM volume that will host rhcos
 	// +kubebuilder:default={persistent: {size: "32Gi"}, type: "Persistent"}
-	// +required
+	// +optional
 	RootVolume *KubevirtRootVolume `json:"rootVolume"`
 
 	// compute contains values representing the virtual hardware requested for the VM

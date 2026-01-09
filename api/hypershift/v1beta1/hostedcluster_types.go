@@ -610,7 +610,7 @@ type HostedClusterSpec struct {
 
 	// networking specifies network configuration for the hosted cluster.
 	// Defaults to OVNKubernetes with a cluster network of cidr: "10.132.0.0/14" and a service network of cidr: "172.31.0.0/16".
-	// +required
+	// +optional
 	// +kubebuilder:default={networkType: "OVNKubernetes", clusterNetwork: {{cidr: "10.132.0.0/14"}}, serviceNetwork: {{cidr: "172.31.0.0/16"}}}
 	Networking ClusterNetworking `json:"networking"`
 
@@ -630,7 +630,7 @@ type HostedClusterSpec struct {
 	// changed.
 	//
 	// +kubebuilder:default={managementType: "Managed", managed: {storage: {type: "PersistentVolume", persistentVolume: {size: "8Gi"}}}}
-	// +required
+	// +optional
 	// +immutable
 	Etcd EtcdSpec `json:"etcd"`
 

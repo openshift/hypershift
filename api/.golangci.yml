@@ -26,6 +26,8 @@ linters:
               - nomaps
               - statussubresource
               - arrayofstruct
+              - defaultorrequired
+              - statusoptional
           lintersConfig:
             conditions:
               isFirstField: Warn
@@ -149,40 +151,6 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/nodepool_types.go
         text: 'conditions: Conditions field in NodePoolStatus must be a slice of metav1.Condition'
-
-      # defaultorrequired (8 issues)
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/azure.go
-        text: 'defaultorrequired: field AzurePlatformSpec.ResourceGroupName has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/azure.go
-        text: 'defaultorrequired: field ManagedIdentity.ObjectEncoding has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/hosted_controlplane.go
-        text: 'defaultorrequired: field HostedControlPlaneStatus.Initialized has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/hosted_controlplane.go
-        text: 'defaultorrequired: field HostedControlPlaneStatus.Ready has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/hostedcluster_types.go
-        text: 'defaultorrequired: field HostedClusterSpec.Etcd has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/hostedcluster_types.go
-        text: 'defaultorrequired: field HostedClusterSpec.Networking has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/kubevirt.go
-        text: 'defaultorrequired: field KubevirtCachingStrategy.Type has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/kubevirt.go
-        text: 'defaultorrequired: field KubevirtNodePoolPlatform.RootVolume has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
 
       # duplicatemarkers (4 issues)
       - linters:
@@ -2087,16 +2055,6 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/openstack.go
         text: 'ssatags: SubnetSpec.DNSNameservers should have a listType marker for proper Server-Side Apply behavior'
-
-      # statusoptional (2 issues)
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/hosted_controlplane.go
-        text: 'statusoptional: status field "Initialized" must be marked as optional, not required'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/hosted_controlplane.go
-        text: 'statusoptional: status field "Ready" must be marked as optional, not required'
 
       # uniquemarkers (3 issues)
       - linters:
