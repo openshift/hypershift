@@ -307,7 +307,13 @@ spec:
           set -xeuo pipefail
 
           kc=/configs/management
-          kubectl --kubeconfig $kc config set clusters.default.server "https://[${KUBERNETES_SERVICE_HOST}]:${KUBERNETES_SERVICE_PORT}"
+          # Use brackets only for IPv6 addresses (contain colons), not for IPv4 or hostnames
+          # This is required for CVE-2025-47912 compliance: Go's net/url rejects IPv4 in brackets
+          case "${KUBERNETES_SERVICE_HOST}" in
+            *:*) server="https://[${KUBERNETES_SERVICE_HOST}]:${KUBERNETES_SERVICE_PORT}" ;;
+            *)   server="https://${KUBERNETES_SERVICE_HOST}:${KUBERNETES_SERVICE_PORT}" ;;
+          esac
+          kubectl --kubeconfig $kc config set clusters.default.server "$server"
           kubectl --kubeconfig $kc config set clusters.default.certificate-authority /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
           kubectl --kubeconfig $kc config set users.admin.tokenFile /var/run/secrets/kubernetes.io/serviceaccount/token
           kubectl --kubeconfig $kc config set contexts.default.cluster default
