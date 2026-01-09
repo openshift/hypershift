@@ -31,6 +31,7 @@ authentications.config.openshift.io:
   FeatureGates:
   - ExternalOIDC
   - ExternalOIDCWithUIDAndExtraClaimMappings
+  - ExternalOIDCWithUpstreamParity
   FilenameOperatorName: config-operator
   FilenameOperatorOrdering: "01"
   FilenameRunLevel: "0000_10"
@@ -141,6 +142,7 @@ clusterversions.config.openshift.io:
   Capability: ""
   Category: ""
   FeatureGates:
+  - ClusterUpdateAcceptRisks
   - ImageStreamImportMode
   - SignatureStores
   FilenameOperatorName: cluster-version-operator
@@ -408,6 +410,29 @@ ingresses.config.openshift.io:
   Scope: Cluster
   ShortNames: null
   TopLevelFeatureGates: []
+  Version: v1
+
+insightsdatagathers.config.openshift.io:
+  Annotations: {}
+  ApprovedPRNumber: https://github.com/openshift/api/pull/2448
+  CRDName: insightsdatagathers.config.openshift.io
+  Capability: ""
+  Category: ""
+  FeatureGates:
+  - InsightsConfig
+  FilenameOperatorName: config-operator
+  FilenameOperatorOrdering: "01"
+  FilenameRunLevel: "0000_10"
+  GroupName: config.openshift.io
+  HasStatus: false
+  KindName: InsightsDataGather
+  Labels: {}
+  PluralName: insightsdatagathers
+  PrinterColumns: []
+  Scope: Cluster
+  ShortNames: null
+  TopLevelFeatureGates:
+  - InsightsConfig
   Version: v1
 
 networks.config.openshift.io:
