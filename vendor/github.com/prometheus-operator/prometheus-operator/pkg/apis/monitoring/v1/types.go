@@ -15,9 +15,14 @@
 package v1
 
 import (
+	"errors"
 	"fmt"
+	"net/url"
+	"reflect"
+	"strings"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -34,11 +39,21 @@ const (
 // +kubebuilder:validation:Pattern:="(^0|([0-9]*[.])?[0-9]+((K|M|G|T|E|P)i?)?B)$"
 type ByteSize string
 
+func (bs *ByteSize) IsEmpty() bool {
+	return bs == nil || *bs == ""
+}
+
 // Duration is a valid time duration that can be parsed by Prometheus model.ParseDuration() function.
 // Supported units: y, w, d, h, m, s, ms
 // Examples: `30s`, `1m`, `1h20m15s`, `15d`
 // +kubebuilder:validation:Pattern:="^(0|(([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?)$"
 type Duration string
+
+// DurationPointer is a helper function to parse a Duration string into a *Duration.
+func DurationPointer(s string) *Duration {
+	d := Duration(s)
+	return &d
+}
 
 // NonEmptyDuration is a valid time duration that can be parsed by Prometheus model.ParseDuration() function.
 // Compared to Duration,  NonEmptyDuration enforces a minimum length of 1.
@@ -57,11 +72,11 @@ type GoDuration string
 // HostAlias holds the mapping between IP and hostnames that will be injected as an entry in the
 // pod's hosts file.
 type HostAlias struct {
-	// IP address of the host file entry.
-	// +kubebuilder:validation:Required
+	// ip defines the IP address of the host file entry.
+	// +required
 	IP string `json:"ip"`
-	// Hostnames for the above IP address.
-	// +kubebuilder:validation:Required
+	// hostnames defines hostnames for the above IP address.
+	// +required
 	Hostnames []string `json:"hostnames"`
 }
 
@@ -69,58 +84,107 @@ type HostAlias struct {
 // PrometheusRule names and their namespaces to be ignored while enforcing
 // namespace label for alerts and metrics.
 type PrometheusRuleExcludeConfig struct {
-	// Namespace of the excluded PrometheusRule object.
+	// ruleNamespace defines the namespace of the excluded PrometheusRule object.
+	// +required
 	RuleNamespace string `json:"ruleNamespace"`
-	// Name of the excluded PrometheusRule object.
+	// ruleName defines the name of the excluded PrometheusRule object.
+	// +required
 	RuleName string `json:"ruleName"`
 }
 
 type ProxyConfig struct {
-	// `proxyURL` defines the HTTP proxy server to use.
+	// proxyUrl defines the HTTP proxy server to use.
 	//
-	// It requires Prometheus >= v2.43.0.
-	// +kubebuilder:validation:Pattern:="^http(s)?://.+$"
+	// +kubebuilder:validation:Pattern:="^(http|https|socks5)://.+$"
 	// +optional
 	ProxyURL *string `json:"proxyUrl,omitempty"`
-	// `noProxy` is a comma-separated string that can contain IPs, CIDR notation, domain names
+	// noProxy defines a comma-separated string that can contain IPs, CIDR notation, domain names
 	// that should be excluded from proxying. IP and domain names can
 	// contain port numbers.
 	//
-	// It requires Prometheus >= v2.43.0.
+	// It requires Prometheus >= v2.43.0, Alertmanager >= v0.25.0 or Thanos >= v0.32.0.
 	// +optional
 	NoProxy *string `json:"noProxy,omitempty"`
-	// Whether to use the proxy configuration defined by environment variables (HTTP_PROXY, HTTPS_PROXY, and NO_PROXY).
-	// If unset, Prometheus uses its default value.
+	// proxyFromEnvironment defines whether to use the proxy configuration defined by environment variables (HTTP_PROXY, HTTPS_PROXY, and NO_PROXY).
 	//
-	// It requires Prometheus >= v2.43.0.
+	// It requires Prometheus >= v2.43.0, Alertmanager >= v0.25.0 or Thanos >= v0.32.0.
 	// +optional
 	ProxyFromEnvironment *bool `json:"proxyFromEnvironment,omitempty"`
-	// ProxyConnectHeader optionally specifies headers to send to
+	// proxyConnectHeader optionally specifies headers to send to
 	// proxies during CONNECT requests.
 	//
-	// It requires Prometheus >= v2.43.0.
+	// It requires Prometheus >= v2.43.0, Alertmanager >= v0.25.0 or Thanos >= v0.32.0.
 	// +optional
 	// +mapType:=atomic
 	ProxyConnectHeader map[string][]v1.SecretKeySelector `json:"proxyConnectHeader,omitempty"`
 }
 
+// Validate semantically validates the given ProxyConfig.
+func (pc *ProxyConfig) Validate() error {
+	if pc == nil {
+		return nil
+	}
+
+	if reflect.ValueOf(pc).IsZero() {
+		return nil
+	}
+
+	proxyFromEnvironmentDefined := pc.ProxyFromEnvironment != nil && *pc.ProxyFromEnvironment
+	proxyURLDefined := pc.ProxyURL != nil && *pc.ProxyURL != ""
+	noProxyDefined := pc.NoProxy != nil && *pc.NoProxy != ""
+
+	if len(pc.ProxyConnectHeader) > 0 && (!proxyFromEnvironmentDefined && !proxyURLDefined) {
+		return fmt.Errorf("if proxyConnectHeader is configured, proxyUrl or proxyFromEnvironment must also be configured")
+	}
+
+	if proxyFromEnvironmentDefined && proxyURLDefined {
+		return fmt.Errorf("if proxyFromEnvironment is configured, proxyUrl must not be configured")
+	}
+
+	if proxyFromEnvironmentDefined && noProxyDefined {
+		return fmt.Errorf("if proxyFromEnvironment is configured, noProxy must not be configured")
+	}
+
+	if !proxyURLDefined && noProxyDefined {
+		return fmt.Errorf("if noProxy is configured, proxyUrl must also be configured")
+	}
+
+	for k, v := range pc.ProxyConnectHeader {
+		if len(v) == 0 {
+			return fmt.Errorf("proxyConnetHeader[%s]: selector must not be empty", k)
+		}
+		for i, sel := range v {
+			if sel == (v1.SecretKeySelector{}) {
+				return fmt.Errorf("proxyConnectHeader[%s][%d]: selector must be defined", k, i)
+			}
+		}
+	}
+
+	if pc.ProxyURL != nil {
+		if _, err := url.Parse(*pc.ProxyURL); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ObjectReference references a PodMonitor, ServiceMonitor, Probe or PrometheusRule object.
 type ObjectReference struct {
-	// Group of the referent. When not specified, it defaults to `monitoring.coreos.com`
+	// group of the referent. When not specified, it defaults to `monitoring.coreos.com`
 	// +optional
 	// +kubebuilder:default:="monitoring.coreos.com"
 	// +kubebuilder:validation:Enum=monitoring.coreos.com
 	Group string `json:"group"`
-	// Resource of the referent.
-	// +kubebuilder:validation:Required
+	// resource of the referent.
+	// +required
 	// +kubebuilder:validation:Enum=prometheusrules;servicemonitors;podmonitors;probes;scrapeconfigs
 	Resource string `json:"resource"`
-	// Namespace of the referent.
+	// namespace of the referent.
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-	// +kubebuilder:validation:Required
+	// +required
 	// +kubebuilder:validation:MinLength=1
 	Namespace string `json:"namespace"`
-	// Name of the referent. When not set, all resources in the namespace are matched.
+	// name of the referent. When not set, all resources in the namespace are matched.
 	// +optional
 	Name string `json:"name,omitempty"`
 }
@@ -157,6 +221,12 @@ func (obj *ObjectReference) getGroup() string {
 // request by Prometheus to a malicious target. Denying the above would prevent the
 // attack, users can instead use the BearerTokenSecret field.
 type ArbitraryFSAccessThroughSMsConfig struct {
+	// deny prevents service monitors from accessing arbitrary files on the file system.
+	// When true, service monitors cannot use file-based configurations like BearerTokenFile
+	// that could potentially access sensitive files. When false (default), such access is allowed.
+	// Setting this to true enhances security by preventing potential credential theft attacks.
+	//
+	// +optional
 	Deny bool `json:"deny,omitempty"`
 }
 
@@ -164,29 +234,31 @@ type ArbitraryFSAccessThroughSMsConfig struct {
 // Prometheus, Alertmanager or ThanosRuler resource.
 // +k8s:deepcopy-gen=true
 type Condition struct {
-	// Type of the condition being reported.
+	// type of the condition being reported.
 	// +required
 	Type ConditionType `json:"type"`
-	// Status of the condition.
+	// status of the condition.
 	// +required
 	Status ConditionStatus `json:"status"`
 	// lastTransitionTime is the time of the last update to the current status property.
 	// +required
 	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
-	// Reason for the condition's last transition.
+	// reason for the condition's last transition.
 	// +optional
 	Reason string `json:"reason,omitempty"`
-	// Human-readable message indicating details for the condition's last transition.
+	// message defines human-readable message indicating details for the condition's last transition.
 	// +optional
 	Message string `json:"message,omitempty"`
-	// ObservedGeneration represents the .metadata.generation that the
+	// observedGeneration defines the .metadata.generation that the
 	// condition was set based upon. For instance, if `.metadata.generation` is
 	// currently 12, but the `.status.conditions[].observedGeneration` is 9, the
 	// condition is out of date with respect to the current state of the
 	// instance.
+	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
+// +kubebuilder:validation:MinLength=1
 type ConditionType string
 
 const (
@@ -205,8 +277,16 @@ const (
 	// - False: the reconciliation failed.
 	// - Unknown: the operator couldn't determine the condition status.
 	Reconciled ConditionType = "Reconciled"
+	// Accepted indicates whether the workload controller has successfully accepted
+	// the configuration resource and updated the configuration of the workload accordingly.
+	// The possible status values for this condition type are:
+	// - True: the configuration resource was successfully accepted by the controller and written to the configuration secret.
+	// - False: the controller rejected the configuration due to an error.
+	// - Unknown: the operator couldn't determine the condition status.
+	Accepted ConditionType = "Accepted"
 )
 
+// +kubebuilder:validation:MinLength=1
 type ConditionStatus string
 
 const (
@@ -219,44 +299,43 @@ const (
 // EmbeddedPersistentVolumeClaim is an embedded version of k8s.io/api/core/v1.PersistentVolumeClaim.
 // It contains TypeMeta and a reduced ObjectMeta.
 type EmbeddedPersistentVolumeClaim struct {
+	// TypeMeta defines the versioned schema of this representation of an object.
 	metav1.TypeMeta `json:",inline"`
-
-	// EmbeddedMetadata contains metadata relevant to an EmbeddedResource.
+	// metadata defines EmbeddedMetadata contains metadata relevant to an EmbeddedResource.
+	// +optional
 	EmbeddedObjectMetadata `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
-
-	// Defines the desired characteristics of a volume requested by a pod author.
+	// spec defines the specification of the  characteristics of a volume requested by a pod author.
 	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
 	// +optional
 	Spec v1.PersistentVolumeClaimSpec `json:"spec,omitempty" protobuf:"bytes,2,opt,name=spec"`
-
+	// status is deprecated: this field is never set.
 	// +optional
-	// Deprecated: this field is never set.
 	Status v1.PersistentVolumeClaimStatus `json:"status,omitempty" protobuf:"bytes,3,opt,name=status"`
 }
 
 // EmbeddedObjectMetadata contains a subset of the fields included in k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta
 // Only fields which are relevant to embedded resources are included.
 type EmbeddedObjectMetadata struct {
-	// Name must be unique within a namespace. Is required when creating resources, although
+	// name must be unique within a namespace. Is required when creating resources, although
 	// some resources may allow a client to request the generation of an appropriate name
 	// automatically. Name is primarily intended for creation idempotence and configuration
 	// definition.
 	// Cannot be updated.
-	// More info: http://kubernetes.io/docs/user-guide/identifiers#names
+	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/
 	// +optional
 	Name string `json:"name,omitempty" protobuf:"bytes,1,opt,name=name"`
 
-	// Map of string keys and values that can be used to organize and categorize
+	// labels define the map of string keys and values that can be used to organize and categorize
 	// (scope and select) objects. May match selectors of replication controllers
 	// and services.
-	// More info: http://kubernetes.io/docs/user-guide/labels
+	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 	// +optional
 	Labels map[string]string `json:"labels,omitempty" protobuf:"bytes,11,rep,name=labels"`
 
-	// Annotations is an unstructured key value map stored with a resource that may be
+	// annotations defines an unstructured key value map stored with a resource that may be
 	// set by external tools to store and retrieve arbitrary metadata. They are not
 	// queryable and should be preserved when modifying objects.
-	// More info: http://kubernetes.io/docs/user-guide/annotations
+	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty" protobuf:"bytes,12,rep,name=annotations"`
 }
@@ -264,125 +343,203 @@ type EmbeddedObjectMetadata struct {
 // WebConfigFileFields defines the file content for --web.config.file flag.
 // +k8s:deepcopy-gen=true
 type WebConfigFileFields struct {
-	// Defines the TLS parameters for HTTPS.
+	// tlsConfig defines the TLS parameters for HTTPS.
+	// +optional
 	TLSConfig *WebTLSConfig `json:"tlsConfig,omitempty"`
-	// Defines HTTP parameters for web server.
+	// httpConfig defines HTTP parameters for web server.
+	// +optional
 	HTTPConfig *WebHTTPConfig `json:"httpConfig,omitempty"`
 }
 
 // WebHTTPConfig defines HTTP parameters for web server.
 // +k8s:openapi-gen=true
 type WebHTTPConfig struct {
-	// Enable HTTP/2 support. Note that HTTP/2 is only supported with TLS.
+	// http2 enable HTTP/2 support. Note that HTTP/2 is only supported with TLS.
 	// When TLSConfig is not configured, HTTP/2 will be disabled.
 	// Whenever the value of the field changes, a rolling update will be triggered.
+	// +optional
 	HTTP2 *bool `json:"http2,omitempty"`
-	// List of headers that can be added to HTTP responses.
+	// headers defines a list of headers that can be added to HTTP responses.
+	// +optional
 	Headers *WebHTTPHeaders `json:"headers,omitempty"`
 }
 
 // WebHTTPHeaders defines the list of headers that can be added to HTTP responses.
 // +k8s:openapi-gen=true
 type WebHTTPHeaders struct {
-	// Set the Content-Security-Policy header to HTTP responses.
+	// contentSecurityPolicy defines the Content-Security-Policy header to HTTP responses.
 	// Unset if blank.
+	// +optional
 	ContentSecurityPolicy string `json:"contentSecurityPolicy,omitempty"`
-	// Set the X-Frame-Options header to HTTP responses.
+	// xFrameOptions defines the X-Frame-Options header to HTTP responses.
 	// Unset if blank. Accepted values are deny and sameorigin.
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options
-	//+kubebuilder:validation:Enum="";Deny;SameOrigin
+	// +kubebuilder:validation:Enum="";Deny;SameOrigin
+	// +optional
 	XFrameOptions string `json:"xFrameOptions,omitempty"`
-	// Set the X-Content-Type-Options header to HTTP responses.
+	// xContentTypeOptions defines the X-Content-Type-Options header to HTTP responses.
 	// Unset if blank. Accepted value is nosniff.
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options
-	//+kubebuilder:validation:Enum="";NoSniff
+	// +kubebuilder:validation:Enum="";NoSniff
+	// +optional
 	XContentTypeOptions string `json:"xContentTypeOptions,omitempty"`
-	// Set the X-XSS-Protection header to all responses.
+	// xXSSProtection defines the X-XSS-Protection header to all responses.
 	// Unset if blank.
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection
+	// +optional
 	XXSSProtection string `json:"xXSSProtection,omitempty"`
-	// Set the Strict-Transport-Security header to HTTP responses.
+	// strictTransportSecurity defines the Strict-Transport-Security header to HTTP responses.
 	// Unset if blank.
 	// Please make sure that you use this with care as this header might force
 	// browsers to load Prometheus and the other applications hosted on the same
 	// domain and subdomains over HTTPS.
 	// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Strict-Transport-Security
+	// +optional
 	StrictTransportSecurity string `json:"strictTransportSecurity,omitempty"`
 }
 
 // WebTLSConfig defines the TLS parameters for HTTPS.
 // +k8s:openapi-gen=true
 type WebTLSConfig struct {
-	// Secret containing the TLS key for the server.
-	KeySecret v1.SecretKeySelector `json:"keySecret"`
-	// Contains the TLS certificate for the server.
-	Cert SecretOrConfigMap `json:"cert"`
-	// Server policy for client authentication. Maps to ClientAuth Policies.
+	// cert defines the Secret or ConfigMap containing the TLS certificate for the web server.
+	//
+	// Either `keySecret` or `keyFile` must be defined.
+	//
+	// It is mutually exclusive with `certFile`.
+	//
+	// +optional
+	Cert SecretOrConfigMap `json:"cert,omitempty"`
+	// certFile defines the path to the TLS certificate file in the container for the web server.
+	//
+	// Either `keySecret` or `keyFile` must be defined.
+	//
+	// It is mutually exclusive with `cert`.
+	//
+	// +optional
+	CertFile *string `json:"certFile,omitempty"`
+
+	// keySecret defines the secret containing the TLS private key for the web server.
+	//
+	// Either `cert` or `certFile` must be defined.
+	//
+	// It is mutually exclusive with `keyFile`.
+	//
+	// +optional
+	KeySecret v1.SecretKeySelector `json:"keySecret,omitempty"`
+	// keyFile defines the path to the TLS private key file in the container for the web server.
+	//
+	// If defined, either `cert` or `certFile` must be defined.
+	//
+	// It is mutually exclusive with `keySecret`.
+	//
+	// +optional
+	KeyFile *string `json:"keyFile,omitempty"`
+
+	// client_ca defines the Secret or ConfigMap containing the CA certificate for client certificate
+	// authentication to the server.
+	//
+	// It is mutually exclusive with `clientCAFile`.
+	//
+	// +optional
+	//nolint:kubeapilinter // The json tag doesn't meet the conventions to be compatible with Prometheus format.
+	ClientCA SecretOrConfigMap `json:"client_ca,omitempty"`
+	// clientCAFile defines the path to the CA certificate file for client certificate authentication to
+	// the server.
+	//
+	// It is mutually exclusive with `client_ca`.
+	//
+	// +optional
+	ClientCAFile *string `json:"clientCAFile,omitempty"`
+	// clientAuthType defines the server policy for client TLS authentication.
+	//
 	// For more detail on clientAuth options:
 	// https://golang.org/pkg/crypto/tls/#ClientAuthType
-	ClientAuthType string `json:"clientAuthType,omitempty"`
-	// Contains the CA certificate for client certificate authentication to the server.
-	ClientCA SecretOrConfigMap `json:"client_ca,omitempty"`
-	// Minimum TLS version that is acceptable. Defaults to TLS12.
-	MinVersion string `json:"minVersion,omitempty"`
-	// Maximum TLS version that is acceptable. Defaults to TLS13.
-	MaxVersion string `json:"maxVersion,omitempty"`
-	// List of supported cipher suites for TLS versions up to TLS 1.2. If empty,
-	// Go default cipher suites are used. Available cipher suites are documented
-	// in the go documentation: https://golang.org/pkg/crypto/tls/#pkg-constants
+	//
+	// +optional
+	ClientAuthType *string `json:"clientAuthType,omitempty"`
+
+	// minVersion defines the minimum TLS version that is acceptable.
+	//
+	// +optional
+	MinVersion *string `json:"minVersion,omitempty"`
+	// maxVersion defines the Maximum TLS version that is acceptable.
+	//
+	// +optional
+	MaxVersion *string `json:"maxVersion,omitempty"`
+
+	// cipherSuites defines the list of supported cipher suites for TLS versions up to TLS 1.2.
+	//
+	// If not defined, the Go default cipher suites are used.
+	// Available cipher suites are documented in the Go documentation:
+	// https://golang.org/pkg/crypto/tls/#pkg-constants
+	//
+	// +optional
 	CipherSuites []string `json:"cipherSuites,omitempty"`
-	// Controls whether the server selects the
-	// client's most preferred cipher suite, or the server's most preferred
-	// cipher suite. If true then the server's preference, as expressed in
+
+	// preferServerCipherSuites defines whether the server selects the client's most preferred cipher
+	// suite, or the server's most preferred cipher suite.
+	//
+	// If true then the server's preference, as expressed in
 	// the order of elements in cipherSuites, is used.
+	//
+	// +optional
 	PreferServerCipherSuites *bool `json:"preferServerCipherSuites,omitempty"`
-	// Elliptic curves that will be used in an ECDHE handshake, in preference
-	// order. Available curves are documented in the go documentation:
+
+	// curvePreferences defines elliptic curves that will be used in an ECDHE handshake, in preference
+	// order.
+	//
+	// Available curves are documented in the Go documentation:
 	// https://golang.org/pkg/crypto/tls/#CurveID
+	//
+	// +optional
 	CurvePreferences []string `json:"curvePreferences,omitempty"`
 }
 
-// WebTLSConfigError is returned by WebTLSConfig.Validate() on
-// semantically invalid configurations.
-// +k8s:openapi-gen=false
-type WebTLSConfigError struct {
-	err string
-}
-
-func (e *WebTLSConfigError) Error() string {
-	return e.err
-}
-
+// Validate returns an error if one of the WebTLSConfig fields is invalid.
+// A valid WebTLSConfig should have (Cert or CertFile) and (KeySecret or KeyFile) fields which are not
+// zero values.
 func (c *WebTLSConfig) Validate() error {
 	if c == nil {
 		return nil
 	}
 
 	if c.ClientCA != (SecretOrConfigMap{}) {
+		if c.ClientCAFile != nil && *c.ClientCAFile != "" {
+			return errors.New("cannot specify both clientCAFile and clientCA")
+		}
+
 		if err := c.ClientCA.Validate(); err != nil {
-			msg := fmt.Sprintf("invalid web tls config: %s", err.Error())
-			return &WebTLSConfigError{msg}
+			return fmt.Errorf("invalid client CA: %w", err)
 		}
 	}
 
-	if c.Cert == (SecretOrConfigMap{}) {
-		return &WebTLSConfigError{"invalid web tls config: cert must be defined"}
-	} else if err := c.Cert.Validate(); err != nil {
-		msg := fmt.Sprintf("invalid web tls config: %s", err.Error())
-		return &WebTLSConfigError{msg}
+	if c.Cert != (SecretOrConfigMap{}) {
+		if c.CertFile != nil && *c.CertFile != "" {
+			return errors.New("cannot specify both cert and certFile")
+		}
+		if err := c.Cert.Validate(); err != nil {
+			return fmt.Errorf("invalid TLS certificate: %w", err)
+		}
 	}
 
-	if c.KeySecret == (v1.SecretKeySelector{}) {
-		return &WebTLSConfigError{"invalid web tls config: key must be defined"}
+	if c.KeyFile != nil && *c.KeyFile != "" && c.KeySecret != (v1.SecretKeySelector{}) {
+		return errors.New("cannot specify both keyFile and keySecret")
+	}
+
+	if (c.KeyFile == nil || *c.KeyFile == "") && c.KeySecret == (v1.SecretKeySelector{}) {
+		return errors.New("TLS private key must be defined")
+	}
+
+	if (c.CertFile == nil || *c.CertFile == "") && c.Cert == (SecretOrConfigMap{}) {
+		return errors.New("TLS certificate must be defined")
 	}
 
 	return nil
 }
 
-// LabelName is a valid Prometheus label name which may only contain ASCII
-// letters, numbers, as well as underscores.
-//
-// +kubebuilder:validation:Pattern:="^[a-zA-Z_][a-zA-Z0-9_]*$"
+// LabelName is a valid Prometheus label name.
+// For Prometheus 3.x, a label name is valid if it contains UTF-8 characters.
+// For Prometheus 2.x, a label name is only valid if it contains ASCII characters, letters, numbers, as well as underscores.
 type LabelName string
 
 // Endpoint defines an endpoint serving Prometheus metrics to be scraped by
@@ -390,57 +547,59 @@ type LabelName string
 //
 // +k8s:openapi-gen=true
 type Endpoint struct {
-	// Name of the Service port which this endpoint refers to.
+	// port defines the name of the Service port which this endpoint refers to.
 	//
 	// It takes precedence over `targetPort`.
+	// +optional
 	Port string `json:"port,omitempty"`
 
-	// Name or number of the target port of the `Pod` object behind the
+	// targetPort defines the name or number of the target port of the `Pod` object behind the
 	// Service. The port must be specified with the container's port property.
 	//
 	// +optional
 	TargetPort *intstr.IntOrString `json:"targetPort,omitempty"`
 
-	// HTTP path from which to scrape for metrics.
+	// path defines the HTTP path from which to scrape for metrics.
 	//
 	// If empty, Prometheus uses the default value (e.g. `/metrics`).
+	// +optional
 	Path string `json:"path,omitempty"`
 
-	// HTTP scheme to use for scraping.
+	// scheme defines the HTTP scheme to use when scraping the metrics.
 	//
-	// `http` and `https` are the expected values unless you rewrite the
-	// `__scheme__` label via relabeling.
-	//
-	// If empty, Prometheus uses the default value `http`.
-	//
-	// +kubebuilder:validation:Enum=http;https
-	Scheme string `json:"scheme,omitempty"`
+	// +optional
+	Scheme *Scheme `json:"scheme,omitempty"`
 
 	// params define optional HTTP URL parameters.
+	// +optional
 	Params map[string][]string `json:"params,omitempty"`
 
-	// Interval at which Prometheus scrapes the metrics from the target.
+	// interval at which Prometheus scrapes the metrics from the target.
 	//
 	// If empty, Prometheus uses the global scrape interval.
+	// +optional
 	Interval Duration `json:"interval,omitempty"`
 
-	// Timeout after which Prometheus considers the scrape to be failed.
+	// scrapeTimeout defines the timeout after which Prometheus considers the scrape to be failed.
 	//
 	// If empty, Prometheus uses the global scrape timeout unless it is less
 	// than the target's scrape interval value in which the latter is used.
+	// The value cannot be greater than the scrape interval otherwise the operator will reject the resource.
+	// +optional
 	ScrapeTimeout Duration `json:"scrapeTimeout,omitempty"`
 
-	// TLS configuration to use when scraping the target.
+	// tlsConfig defines the TLS configuration to use when scraping the target.
 	//
 	// +optional
 	TLSConfig *TLSConfig `json:"tlsConfig,omitempty"`
 
-	// File to read bearer token for scraping the target.
+	// bearerTokenFile defines the file to read bearer token for scraping the target.
 	//
 	// Deprecated: use `authorization` instead.
+	// +optional
 	BearerTokenFile string `json:"bearerTokenFile,omitempty"`
 
-	// `bearerTokenSecret` specifies a key of a Secret containing the bearer
+	// bearerTokenSecret defines a key of a Secret containing the bearer
 	// token for scraping targets. The secret needs to be in the same namespace
 	// as the ServiceMonitor object and readable by the Prometheus Operator.
 	//
@@ -449,7 +608,7 @@ type Endpoint struct {
 	// Deprecated: use `authorization` instead.
 	BearerTokenSecret *v1.SecretKeySelector `json:"bearerTokenSecret,omitempty"`
 
-	// `authorization` configures the Authorization header credentials to use when
+	// authorization configures the Authorization header credentials to use when
 	// scraping the target.
 	//
 	// Cannot be set at the same time as `basicAuth`, or `oauth2`.
@@ -457,17 +616,18 @@ type Endpoint struct {
 	// +optional
 	Authorization *SafeAuthorization `json:"authorization,omitempty"`
 
-	// When true, `honorLabels` preserves the metric's labels when they collide
+	// honorLabels defines when true the metric's labels when they collide
 	// with the target's labels.
+	// +optional
 	HonorLabels bool `json:"honorLabels,omitempty"`
 
-	// `honorTimestamps` controls whether Prometheus preserves the timestamps
+	// honorTimestamps defines whether Prometheus preserves the timestamps
 	// when exposed by the target.
 	//
 	// +optional
 	HonorTimestamps *bool `json:"honorTimestamps,omitempty"`
 
-	// `trackTimestampsStaleness` defines whether Prometheus tracks staleness of
+	// trackTimestampsStaleness defines whether Prometheus tracks staleness of
 	// the metrics that have an explicit timestamp present in scraped data.
 	// Has no effect if `honorTimestamps` is false.
 	//
@@ -476,7 +636,7 @@ type Endpoint struct {
 	// +optional
 	TrackTimestampsStaleness *bool `json:"trackTimestampsStaleness,omitempty"`
 
-	// `basicAuth` configures the Basic Authentication credentials to use when
+	// basicAuth defines the Basic Authentication credentials to use when
 	// scraping the target.
 	//
 	// Cannot be set at the same time as `authorization`, or `oauth2`.
@@ -484,7 +644,7 @@ type Endpoint struct {
 	// +optional
 	BasicAuth *BasicAuth `json:"basicAuth,omitempty"`
 
-	// `oauth2` configures the OAuth2 settings to use when scraping the target.
+	// oauth2 defines the OAuth2 settings to use when scraping the target.
 	//
 	// It requires Prometheus >= 2.27.0.
 	//
@@ -493,13 +653,13 @@ type Endpoint struct {
 	// +optional
 	OAuth2 *OAuth2 `json:"oauth2,omitempty"`
 
-	// `metricRelabelings` configures the relabeling rules to apply to the
+	// metricRelabelings defines the relabeling rules to apply to the
 	// samples before ingestion.
 	//
 	// +optional
 	MetricRelabelConfigs []RelabelConfig `json:"metricRelabelings,omitempty"`
 
-	// `relabelings` configures the relabeling rules to apply the target's
+	// relabelings defines the relabeling rules to apply the target's
 	// metadata labels.
 	//
 	// The Operator automatically adds relabelings for a few standard Kubernetes fields.
@@ -511,24 +671,21 @@ type Endpoint struct {
 	// +optional
 	RelabelConfigs []RelabelConfig `json:"relabelings,omitempty"`
 
-	// `proxyURL` configures the HTTP Proxy URL (e.g.
-	// "http://proxyserver:2195") to go through when scraping the target.
-	//
 	// +optional
-	ProxyURL *string `json:"proxyUrl,omitempty"`
+	ProxyConfig `json:",inline"`
 
-	// `followRedirects` defines whether the scrape requests should follow HTTP
+	// followRedirects defines whether the scrape requests should follow HTTP
 	// 3xx redirects.
 	//
 	// +optional
 	FollowRedirects *bool `json:"followRedirects,omitempty"`
 
-	// `enableHttp2` can be used to disable HTTP2 when scraping the target.
+	// enableHttp2 can be used to disable HTTP2 when scraping the target.
 	//
 	// +optional
 	EnableHttp2 *bool `json:"enableHttp2,omitempty"`
 
-	// When true, the pods which are not running (e.g. either in Failed or
+	// filterRunning when true, the pods which are not running (e.g. either in Failed or
 	// Succeeded state) are dropped during the target discovery.
 	//
 	// If unset, the filtering is enabled.
@@ -540,8 +697,11 @@ type Endpoint struct {
 }
 
 type AttachMetadata struct {
-	// When set to true, Prometheus must have the `get` permission on the
-	// `Nodes` objects.
+	// node when set to true, Prometheus attaches node metadata to the discovered
+	// targets.
+	//
+	// The Prometheus service account must have the `list` and `watch`
+	// permissions on the `Nodes` objects.
 	//
 	// +optional
 	Node *bool `json:"node,omitempty"`
@@ -551,52 +711,65 @@ type AttachMetadata struct {
 //
 // +k8s:openapi-gen=true
 type OAuth2 struct {
-	// `clientId` specifies a key of a Secret or ConfigMap containing the
+	// clientId defines a key of a Secret or ConfigMap containing the
 	// OAuth2 client's ID.
+	// +required
 	ClientID SecretOrConfigMap `json:"clientId"`
 
-	// `clientSecret` specifies a key of a Secret containing the OAuth2
+	// clientSecret defines a key of a Secret containing the OAuth2
 	// client's secret.
+	// +required
 	ClientSecret v1.SecretKeySelector `json:"clientSecret"`
 
-	// `tokenURL` configures the URL to fetch the token from.
+	// tokenUrl defines the URL to fetch the token from.
 	//
 	// +kubebuilder:validation:MinLength=1
+	// +required
 	TokenURL string `json:"tokenUrl"`
 
-	// `scopes` defines the OAuth2 scopes used for the token request.
+	// scopes defines the OAuth2 scopes used for the token request.
 	//
 	// +optional.
 	Scopes []string `json:"scopes,omitempty"`
 
-	// `endpointParams` configures the HTTP parameters to append to the token
+	// endpointParams configures the HTTP parameters to append to the token
 	// URL.
 	//
 	// +optional
 	EndpointParams map[string]string `json:"endpointParams,omitempty"`
-}
 
-type OAuth2ValidationError struct {
-	err string
-}
+	// tlsConfig defines the TLS configuration to use when connecting to the OAuth2 server.
+	// It requires Prometheus >= v2.43.0.
+	//
+	// +optional
+	TLSConfig *SafeTLSConfig `json:"tlsConfig,omitempty"`
 
-func (e *OAuth2ValidationError) Error() string {
-	return e.err
+	// Proxy configuration to use when connecting to the OAuth2 server.
+	// It requires Prometheus >= v2.43.0.
+	//
+	// +optional
+	ProxyConfig `json:",inline"`
 }
 
 func (o *OAuth2) Validate() error {
+	if o == nil {
+		return nil
+	}
+
 	if o.TokenURL == "" {
-		return &OAuth2ValidationError{err: "OAuth2 token url must be specified"}
+		return errors.New("OAuth2 tokenURL must be specified")
 	}
 
 	if o.ClientID == (SecretOrConfigMap{}) {
-		return &OAuth2ValidationError{err: "OAuth2 client id must be specified"}
+		return errors.New("OAuth2 clientID must be specified")
 	}
 
 	if err := o.ClientID.Validate(); err != nil {
-		return &OAuth2ValidationError{
-			err: fmt.Sprintf("invalid OAuth2 client id: %s", err.Error()),
-		}
+		return fmt.Errorf("invalid OAuth2 clientID: %w", err)
+	}
+
+	if err := o.TLSConfig.Validate(); err != nil {
+		return fmt.Errorf("invalid OAuth2 tlsConfig: %w", err)
 	}
 
 	return nil
@@ -606,20 +779,24 @@ func (o *OAuth2) Validate() error {
 //
 // +k8s:openapi-gen=true
 type BasicAuth struct {
-	// `username` specifies a key of a Secret containing the username for
+	// username defines a key of a Secret containing the username for
 	// authentication.
+	// +optional
 	Username v1.SecretKeySelector `json:"username,omitempty"`
 
-	// `password` specifies a key of a Secret containing the password for
+	// password defines a key of a Secret containing the password for
 	// authentication.
+	// +optional
 	Password v1.SecretKeySelector `json:"password,omitempty"`
 }
 
 // SecretOrConfigMap allows to specify data as a Secret or ConfigMap. Fields are mutually exclusive.
 type SecretOrConfigMap struct {
-	// Secret containing data to use for the targets.
+	// secret defines the Secret containing data to use for the targets.
+	// +optional
 	Secret *v1.SecretKeySelector `json:"secret,omitempty"`
-	// ConfigMap containing data to use for the targets.
+	// configMap defines the ConfigMap containing data to use for the targets.
+	// +optional
 	ConfigMap *v1.ConfigMapKeySelector `json:"configMap,omitempty"`
 }
 
@@ -651,29 +828,58 @@ func (c *SecretOrConfigMap) String() string {
 	return "<empty>"
 }
 
+// +kubebuilder:validation:Enum=TLS10;TLS11;TLS12;TLS13
+type TLSVersion string
+
+const (
+	TLSVersion10 TLSVersion = "TLS10"
+	TLSVersion11 TLSVersion = "TLS11"
+	TLSVersion12 TLSVersion = "TLS12"
+	TLSVersion13 TLSVersion = "TLS13"
+)
+
 // SafeTLSConfig specifies safe TLS configuration parameters.
 // +k8s:openapi-gen=true
 type SafeTLSConfig struct {
-	// Certificate authority used when verifying server certificates.
+	// ca defines the Certificate authority used when verifying server certificates.
+	// +optional
 	CA SecretOrConfigMap `json:"ca,omitempty"`
 
-	// Client certificate to present when doing client-authentication.
+	// cert defines the Client certificate to present when doing client-authentication.
+	// +optional
 	Cert SecretOrConfigMap `json:"cert,omitempty"`
 
-	// Secret containing the client key file for the targets.
+	// keySecret defines the Secret containing the client key file for the targets.
+	// +optional
 	KeySecret *v1.SecretKeySelector `json:"keySecret,omitempty"`
 
-	// Used to verify the hostname for the targets.
-	//+optional
+	// serverName is used to verify the hostname for the targets.
+	// +optional
 	ServerName *string `json:"serverName,omitempty"`
 
-	// Disable target certificate validation.
-	//+optional
+	// insecureSkipVerify defines how to disable target certificate validation.
+	// +optional
 	InsecureSkipVerify *bool `json:"insecureSkipVerify,omitempty"`
+
+	// minVersion defines the minimum acceptable TLS version.
+	//
+	// It requires Prometheus >= v2.35.0 or Thanos >= v0.28.0.
+	// +optional
+	MinVersion *TLSVersion `json:"minVersion,omitempty"`
+
+	// maxVersion defines the maximum acceptable TLS version.
+	//
+	// It requires Prometheus >= v2.41.0 or Thanos >= v0.31.0.
+	// +optional
+	MaxVersion *TLSVersion `json:"maxVersion,omitempty"`
 }
 
 // Validate semantically validates the given SafeTLSConfig.
 func (c *SafeTLSConfig) Validate() error {
+	if c == nil {
+		return nil
+	}
+
 	if c.CA != (SecretOrConfigMap{}) {
 		if err := c.CA.Validate(); err != nil {
 			return fmt.Errorf("ca %s: %w", c.CA.String(), err)
@@ -694,23 +900,35 @@ func (c *SafeTLSConfig) Validate() error {
 		return fmt.Errorf("client key specified without client cert")
 	}
 
+	if c.MaxVersion != nil && c.MinVersion != nil && strings.Compare(string(*c.MaxVersion), string(*c.MinVersion)) == -1 {
+		return fmt.Errorf("maxVersion must more than or equal to minVersion")
+	}
+
 	return nil
 }
 
 // TLSConfig extends the safe TLS configuration with file parameters.
 // +k8s:openapi-gen=true
 type TLSConfig struct {
+	// +optional
 	SafeTLSConfig `json:",inline"`
-	// Path to the CA cert in the Prometheus container to use for the targets.
+	// caFile defines the path to the CA cert in the Prometheus container to use for the targets.
+	// +optional
 	CAFile string `json:"caFile,omitempty"`
-	// Path to the client cert file in the Prometheus container for the targets.
+	// certFile defines the path to the client cert file in the Prometheus container for the targets.
+	// +optional
 	CertFile string `json:"certFile,omitempty"`
-	// Path to the client key file in the Prometheus container for the targets.
+	// keyFile defines the path to the client key file in the Prometheus container for the targets.
+	// +optional
 	KeyFile string `json:"keyFile,omitempty"`
 }
 
 // Validate semantically validates the given TLSConfig.
 func (c *TLSConfig) Validate() error {
+	if c == nil {
+		return nil
+	}
+
 	if c.CA != (SecretOrConfigMap{}) {
 		if c.CAFile != "" {
 			return fmt.Errorf("cannot specify both caFile and ca")
@@ -744,6 +962,10 @@ func (c *TLSConfig) Validate() error {
 		return fmt.Errorf("cannot specify client key without client cert")
 	}
 
+	if c.MaxVersion != nil && c.MinVersion != nil && strings.Compare(string(*c.MaxVersion), string(*c.MinVersion)) == -1 {
+		return fmt.Errorf("maxVersion must more than or equal to minVersion")
+	}
+
 	return nil
 }
 
@@ -754,10 +976,12 @@ func (c *TLSConfig) Validate() error {
 // selected from the current namespace.
 // +k8s:openapi-gen=true
 type NamespaceSelector struct {
-	// Boolean describing whether all namespaces are selected in contrast to a
+	// any defines the boolean describing whether all namespaces are selected in contrast to a
 	// list restricting them.
+	// +optional
 	Any bool `json:"any,omitempty"`
-	// List of namespace names to select from.
+	// matchNames defines the list of namespace names to select from.
+	// +optional
 	MatchNames []string `json:"matchNames,omitempty"`
 
 	// TODO(fabxc): this should embed metav1.LabelSelector eventually.
@@ -768,10 +992,12 @@ type NamespaceSelector struct {
 // Argument as part of the AdditionalArgs list.
 // +k8s:openapi-gen=true
 type Argument struct {
-	// Name of the argument, e.g. "scrape.discovery-reload-interval".
+	// name of the argument, e.g. "scrape.discovery-reload-interval".
 	// +kubebuilder:validation:MinLength=1
+	// +required
 	Name string `json:"name"`
-	// Argument value, e.g. 30s. Can be empty for name-only arguments (e.g. --storage.tsdb.no-lockfile)
+	// value defines the argument value, e.g. 30s. Can be empty for name-only arguments (e.g. --storage.tsdb.no-lockfile)
+	// +optional
 	Value string `json:"value,omitempty"`
 }
 
@@ -783,4 +1009,134 @@ const (
 	RoleEndpoint      = "endpoints"
 	RoleEndpointSlice = "endpointslice"
 	RoleIngress       = "ingress"
+)
+
+// NativeHistogramConfig extends the native histogram configuration settings.
+// +k8s:openapi-gen=true
+type NativeHistogramConfig struct {
+	// scrapeClassicHistograms defines whether to scrape a classic histogram that is also exposed as a native histogram.
+	// It requires Prometheus >= v2.45.0.
+	//
+	// Notice: `scrapeClassicHistograms` corresponds to the `always_scrape_classic_histograms` field in the Prometheus configuration.
+	//
+	// +optional
+	ScrapeClassicHistograms *bool `json:"scrapeClassicHistograms,omitempty"`
+
+	// nativeHistogramBucketLimit defines ff there are more than this many buckets in a native histogram,
+	// buckets will be merged to stay within the limit.
+	// It requires Prometheus >= v2.45.0.
+	//
+	// +optional
+	NativeHistogramBucketLimit *uint64 `json:"nativeHistogramBucketLimit,omitempty"`
+
+	// nativeHistogramMinBucketFactor defines if the growth factor of one bucket to the next is smaller than this,
+	// buckets will be merged to increase the factor sufficiently.
+	// It requires Prometheus >= v2.50.0.
+	//
+	// +optional
+	NativeHistogramMinBucketFactor *resource.Quantity `json:"nativeHistogramMinBucketFactor,omitempty"`
+
+	// convertClassicHistogramsToNHCB defines whether to convert all scraped classic histograms into a native histogram with custom buckets.
+	// It requires Prometheus >= v3.0.0.
+	//
+	// +optional
+	ConvertClassicHistogramsToNHCB *bool `json:"convertClassicHistogramsToNHCB,omitempty"`
+}
+
+// +kubebuilder:validation:Enum=RelabelConfig;RoleSelector
+type SelectorMechanism string
+
+const (
+	SelectorMechanismRelabel SelectorMechanism = "RelabelConfig"
+	SelectorMechanismRole    SelectorMechanism = "RoleSelector"
+)
+
+// ConfigResourceStatus is the most recent observed status of the Configuration Resource (ServiceMonitor, PodMonitor, Probes, ScrapeConfig, PrometheusRule or AlertmanagerConfig). Read-only.
+// More info:
+// https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md#spec-and-status
+// +k8s:openapi-gen=true
+type ConfigResourceStatus struct {
+	// bindings defines the list of workload resources (Prometheus, PrometheusAgent, ThanosRuler or Alertmanager) which select the configuration resource.
+	// +listType=map
+	// +listMapKey=group
+	// +listMapKey=resource
+	// +listMapKey=name
+	// +listMapKey=namespace
+	// +optional
+	Bindings []WorkloadBinding `json:"bindings,omitempty"`
+}
+
+// WorkloadBinding is a link between a configuration resource and a workload resource.
+// +k8s:openapi-gen=true
+type WorkloadBinding struct {
+	// group defines the group of the referenced resource.
+	// +kubebuilder:validation:Enum=monitoring.coreos.com
+	// +required
+	Group string `json:"group"`
+	// resource defines the type of resource being referenced (e.g. Prometheus, PrometheusAgent, ThanosRuler or Alertmanager).
+	// +kubebuilder:validation:Enum=prometheuses;prometheusagents;thanosrulers;alertmanagers
+	// +required
+	Resource string `json:"resource"`
+	// name defines the name of the referenced object.
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	Name string `json:"name"`
+	// namespace defines the namespace of the referenced object.
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	Namespace string `json:"namespace"`
+	// conditions defines the current state of the configuration resource when bound to the referenced Workload object.
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []ConfigResourceCondition `json:"conditions,omitempty"`
+}
+
+// ConfigResourceCondition describes the status of configuration resources linked to Prometheus, PrometheusAgent, Alertmanager or ThanosRuler.
+// +k8s:deepcopy-gen=true
+type ConfigResourceCondition struct {
+	// type of the condition being reported.
+	// Currently, only "Accepted" is supported.
+	// +kubebuilder:validation:Enum=Accepted
+	// +required
+	Type ConditionType `json:"type"`
+	// status of the condition.
+	// +required
+	Status ConditionStatus `json:"status"`
+	// lastTransitionTime defines the time of the last update to the current status property.
+	// +required
+	LastTransitionTime metav1.Time `json:"lastTransitionTime"`
+	// reason for the condition's last transition.
+	// +optional
+	Reason string `json:"reason,omitempty"`
+	// message defines the human-readable message indicating details for the condition's last transition.
+	// +optional
+	Message string `json:"message,omitempty"`
+	// observedGeneration defines the .metadata.generation that the
+	// condition was set based upon. For instance, if `.metadata.generation` is
+	// currently 12, but the `.status.conditions[].observedGeneration` is 9, the
+	// condition is out of date with respect to the current state of the object.
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+}
+
+// Supported values are `HTTP` and `HTTPS`. You can also rewrite the
+// `__scheme__` label via relabeling configuration.
+//
+// If empty, the value defaults to `HTTP`.
+//
+// +kubebuilder:validation:Enum=http;https;HTTP;HTTPS
+type Scheme string
+
+func (s *Scheme) String() string {
+	if s == nil {
+		return ""
+	}
+
+	return strings.ToLower(string(*s))
+}
+
+const (
+	SchemeHTTP  Scheme = "HTTP"
+	SchemeHTTPS Scheme = "HTTPS"
 )
