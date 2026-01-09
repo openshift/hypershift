@@ -159,28 +159,48 @@ func run(pass *analysis.Pass) (any, error) {
 		return nil, kalerrors.ErrCouldNotCreateMarkers
 	}
 
-	inspect.Preorder(nodeFilter, func(n ast.Node) {
-		switch typ := n.(type) {
-		case *ast.GenDecl:
-			// Find the file this declaration belongs to.
-			// For most packages, there are only a few files (typically 1-10),
-			// so a simple linear search is efficient and clear.
-			var file *ast.File
+	// Pre-compute field Doc comment ownership map to avoid O(n²) complexity.
+	// This maps each field's Doc comment to the field itself, allowing O(1)
+	// lookups instead of full AST traversals in isDocCommentForField.
+	fieldDocComments := make(map[*ast.CommentGroup]*ast.Field)
 
-			for _, f := range pass.Files {
-				if f.Pos() <= typ.Pos() && typ.End() <= f.End() {
-					file = f
-					break
+	for _, file := range pass.Files {
+		ast.Inspect(file, func(n ast.Node) bool {
+			if field, ok := n.(*ast.Field); ok {
+				if field.Doc != nil {
+					fieldDocComments[field.Doc] = field
 				}
 			}
 
+			return true
+		})
+	}
+
+	inspect.Preorder(nodeFilter, func(n ast.Node) {
+		switch typ := n.(type) {
+		case *ast.GenDecl:
+			file := findFileForNode(typ, pass.Files)
 			extractGenDeclMarkers(typ, file, pass.Fset, results)
 		case *ast.Field:
-			extractFieldMarkers(typ, results)
+			file := findFileForNode(typ, pass.Files)
+			extractFieldMarkers(typ, file, pass.Fset, results, fieldDocComments)
 		}
 	})
 
 	return results, nil
+}
+
+// findFileForNode finds the file that contains the given AST node.
+// For most packages, there are only a few files (typically 1-10),
+// so a simple linear search is efficient and clear.
+func findFileForNode(node ast.Node, files []*ast.File) *ast.File {
+	for _, f := range files {
+		if f.Pos() <= node.Pos() && node.End() <= f.End() {
+			return f
+		}
+	}
+
+	return nil
 }
 
 func extractGenDeclMarkers(typ *ast.GenDecl, file *ast.File, fset *token.FileSet, results *markers) {
@@ -219,7 +239,7 @@ func extractGenDeclMarkers(typ *ast.GenDecl, file *ast.File, fset *token.FileSet
 // that are separated by a blank line. Only the immediately preceding comment group is checked,
 // and it must be within maxMarkerSeparationLines lines of the godoc comment.
 //
-// This handles the "second level comment bug" (issue #53) where markers are separated from type
+// This handles the "second level comment bug" where markers are separated from type
 // declarations by blank lines, which commonly occurs in real-world Kubernetes API code.
 //
 // Example scenario this handles:
@@ -257,6 +277,95 @@ func extractOrphanedMarkers(docGroup *ast.CommentGroup, file *ast.File, fset *to
 			declMarkers.Insert(marker)
 		}
 	}
+}
+
+// extractOrphanedFieldMarkers finds markers in the comment group immediately before a field's doc comment
+// that are separated by a blank line. This is a specialized version for fields that is more conservative
+// than extractOrphanedMarkers to avoid picking up markers from previous fields.
+//
+// This handles the "second level comment bug" for struct fields where markers are separated
+// from field declarations by blank lines.
+//
+// Example scenario this handles:
+//
+//	type FooStatus struct {
+//	    // +optional
+//	    // +listType=map
+//	    // +listMapKey=type
+//	    // +patchStrategy=merge
+//	    // +patchMergeKey=type
+//
+//	    // Conditions update as changes occur in the status.
+//	    Conditions []metav1.Condition `json:"conditions,omitempty"`
+//	}
+//
+// The markers will be detected even though separated by a blank line from the field doc comment.
+func extractOrphanedFieldMarkers(docGroup *ast.CommentGroup, file *ast.File, fset *token.FileSet, fieldMarkers MarkerSet, fieldDocComments map[*ast.CommentGroup]*ast.Field) {
+	if file == nil || fset == nil {
+		return
+	}
+
+	prevGroup := findPreviousCommentGroup(docGroup, file)
+	if prevGroup == nil {
+		return
+	}
+
+	// For fields, only consider comment groups that contain ONLY markers (no prose documentation)
+	// and are not Doc comments for other declarations or fields
+	if !isProperlySeparated(prevGroup, docGroup, fset) {
+		return
+	}
+
+	if !containsOnlyMarkers(prevGroup) {
+		return
+	}
+
+	if isDocCommentForDeclaration(prevGroup, file) || isDocCommentForField(prevGroup, fieldDocComments) {
+		return
+	}
+
+	// Extract markers from the previous comment group
+	for _, comment := range prevGroup.List {
+		if marker := extractMarker(comment); marker.Identifier != "" {
+			fieldMarkers.Insert(marker)
+		}
+	}
+}
+
+// containsOnlyMarkers checks if a comment group contains ONLY markers and no prose documentation.
+// This is a stricter version of containsMarkers used for field orphaned marker detection.
+func containsOnlyMarkers(group *ast.CommentGroup) bool {
+	if len(group.List) == 0 {
+		return false
+	}
+
+	hasMarker := false
+
+	// Every comment line must be a marker
+	for _, comment := range group.List {
+		text := strings.TrimPrefix(comment.Text, "//")
+		text = strings.TrimSpace(text)
+
+		// Empty lines are OK (e.g., blank comment lines)
+		if text == "" {
+			continue
+		}
+
+		// If it doesn't start with +, it's not a marker
+		if !strings.HasPrefix(text, "+") {
+			return false
+		}
+
+		// Check if this is a valid marker using regex (more efficient than full parsing)
+		markerContent := strings.TrimPrefix(text, "+")
+		if !validMarkerStart.MatchString(markerContent) {
+			return false
+		}
+
+		hasMarker = true
+	}
+
+	return hasMarker
 }
 
 // findPreviousCommentGroup finds the comment group immediately before the given docGroup.
@@ -464,18 +573,31 @@ func isDocCommentForDeclaration(group *ast.CommentGroup, file *ast.File) bool {
 	return false
 }
 
-func extractFieldMarkers(field *ast.Field, results *markers) {
-	if field == nil || field.Doc == nil {
-		return
-	}
+// isDocCommentForField checks if the comment group is a Doc comment for any field.
+// Uses a pre-computed map for O(1) lookup instead of O(n) AST traversal.
+func isDocCommentForField(group *ast.CommentGroup, fieldDocComments map[*ast.CommentGroup]*ast.Field) bool {
+	_, found := fieldDocComments[group]
+	return found
+}
 
+func extractFieldMarkers(field *ast.Field, file *ast.File, fset *token.FileSet, results *markers, fieldDocComments map[*ast.CommentGroup]*ast.Field) {
 	fieldMarkers := NewMarkerSet()
 
-	for _, comment := range field.Doc.List {
-		marker := extractMarker(comment)
-		if marker.Identifier != "" {
-			fieldMarkers.Insert(marker)
+	// Extract markers from the field's Doc field (comments directly attached to the field)
+	if field != nil && field.Doc != nil {
+		for _, comment := range field.Doc.List {
+			marker := extractMarker(comment)
+			if marker.Identifier != "" {
+				fieldMarkers.Insert(marker)
+			}
 		}
+
+		// Also collect markers from the comment group immediately before the field's doc comment
+		// if separated by a blank line (orphaned markers).
+		// For fields, we use a specialized version that only checks if the markers are immediately
+		// above the doc comment (within the same logical block) to avoid picking up markers from
+		// previous fields.
+		extractOrphanedFieldMarkers(field.Doc, file, fset, fieldMarkers, fieldDocComments)
 	}
 
 	results.insertFieldMarkers(field, fieldMarkers)
@@ -736,7 +858,7 @@ type Marker struct {
 	// Pos is the starting position in the file for the comment line containing the marker.
 	Pos token.Pos
 
-	// End is the ending position in the file for the coment line containing the marker.
+	// End is the ending position in the file for the comment line containing the marker.
 	End token.Pos
 }
 

@@ -25,7 +25,7 @@ This is confusing and error-prone.
 It is recommended instead to use a string type with a set of constants to represent the different states,
 creating an enum.
 
-By using an enum, not only can you provide meaningul names for the various states of the API,
+By using an enum, not only can you provide meaningful names for the various states of the API,
 but you can also add additional states in the future without breaking the API.
 */
 package nobools

@@ -41,7 +41,7 @@ func Initializer() initializer.AnalyzerInitializer {
 	)
 }
 
-// Init returns the intialized Analyzer.
+// Init returns the initialized Analyzer.
 func initAnalyzer(stc *SSATagsConfig) (*analysis.Analyzer, error) {
 	return newAnalyzer(stc), nil
 }
