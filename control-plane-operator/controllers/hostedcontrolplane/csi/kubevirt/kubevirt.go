@@ -240,6 +240,11 @@ func reconcileController(controller *appsv1.Deployment, releaseImageProvider ima
 		return fmt.Errorf("unable to detect csi-external-snapshotter image from release payload")
 	}
 
+	csiExternalResizerImage, exists := releaseImageProvider.ImageExist("csi-external-resizer")
+	if !exists {
+		return fmt.Errorf("unable to detect csi-external-resizer image from release payload")
+	}
+
 	for i, container := range controller.Spec.Template.Spec.Containers {
 		if len(container.Resources.Requests) == 0 && len(container.Resources.Limits) == 0 {
 			controller.Spec.Template.Spec.Containers[i].Resources = defaultResourceRequirements
@@ -256,6 +261,8 @@ func reconcileController(controller *appsv1.Deployment, releaseImageProvider ima
 			controller.Spec.Template.Spec.Containers[i].Image = csiLivenessProbeImage
 		case "csi-snapshotter":
 			controller.Spec.Template.Spec.Containers[i].Image = csiExternalSnapshotterImage
+		case "csi-resizer":
+			controller.Spec.Template.Spec.Containers[i].Image = csiExternalResizerImage
 		}
 	}
 
