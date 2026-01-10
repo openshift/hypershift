@@ -129,6 +129,49 @@ You must provide exactly one of the following identity configurations:
 ### For Generate Mode:
 - `--generate-managed-identities` with `--oidc-issuer-url`, `--workload-identities-output-file`, and `--resource-group-name`
 
+## RBAC and Role Assignment Flags
+
+When creating infrastructure with workload identities, you can optionally enable automatic RBAC role assignment:
+
+### Enabling Automatic Role Assignment
+
+```bash
+hypershift create infra azure \
+  --name my-cluster \
+  --infra-id my-cluster-infra \
+  --azure-creds /path/to/azure-creds.json \
+  --base-domain example.com \
+  --location eastus \
+  --oidc-issuer-url https://my-oidc-issuer.com \
+  --assign-identity-roles \
+  --dns-zone-rg-name my-dns-zone-rg \
+  --output-file infra-output.yaml
+```
+
+### RBAC Flag Reference
+
+- `--assign-identity-roles`: Automatically assign required Azure RBAC roles to workload identities. This grants the identities permissions to manage Azure resources (DNS, networking, storage) for the cluster.
+- `--dns-zone-rg-name`: Name of the resource group containing your Azure DNS zone. Required when using `--assign-identity-roles` for the ingress controller to create DNS records.
+- `--assign-custom-hcp-roles`: Use custom Azure HCP role definitions instead of the default Contributor role for workload identities.
+- `--disable-cluster-capabilities`: Comma-separated list of cluster capabilities to disable (e.g., `ImageRegistry`). Disabled capabilities will not have corresponding workload identities created.
+
+### Example with Custom Roles and Disabled Capabilities
+
+```bash
+hypershift create infra azure \
+  --name my-cluster \
+  --infra-id my-cluster-infra \
+  --azure-creds /path/to/azure-creds.json \
+  --base-domain example.com \
+  --location eastus \
+  --oidc-issuer-url https://my-oidc-issuer.com \
+  --assign-identity-roles \
+  --assign-custom-hcp-roles \
+  --dns-zone-rg-name my-dns-zone-rg \
+  --disable-cluster-capabilities ImageRegistry \
+  --output-file infra-output.yaml
+```
+
 ## Flag Conflicts
 
 The following flags are mutually exclusive:

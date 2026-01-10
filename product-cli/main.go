@@ -25,10 +25,18 @@ import (
 	"github.com/openshift/hypershift/product-cli/cmd/create"
 	"github.com/openshift/hypershift/product-cli/cmd/destroy"
 
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+
 	"github.com/spf13/cobra"
+	"go.uber.org/zap/zapcore"
 )
 
 func main() {
+	ctrl.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+		o.EncodeTime = zapcore.RFC3339TimeEncoder
+	})))
+
 	cmd := &cobra.Command{
 		Use:              "hcp",
 		SilenceUsage:     true,
