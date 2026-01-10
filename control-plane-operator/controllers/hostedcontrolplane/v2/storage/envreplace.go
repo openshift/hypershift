@@ -1,12 +1,12 @@
 package storage
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/strings/slices"
 )
 
 var (
