@@ -190,6 +190,7 @@ var (
         "elasticloadbalancing:DetachLoadBalancerFromSubnets",
         "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
         "elasticloadbalancing:ModifyLoadBalancerAttributes",
+        "elasticloadbalancing:ModifyTargetGroupAttributes",
         "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
         "elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer",
         "elasticloadbalancing:AddTags",
@@ -201,6 +202,7 @@ var (
         "elasticloadbalancing:DescribeListeners",
         "elasticloadbalancing:DescribeLoadBalancerPolicies",
         "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTargetGroupAttributes",
         "elasticloadbalancing:DescribeTargetHealth",
         "elasticloadbalancing:ModifyListener",
         "elasticloadbalancing:ModifyTargetGroup",
@@ -924,6 +926,38 @@ func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient ia
 			PolicyDocument: aws.String(policy),
 		}); err != nil {
 			return nil, fmt.Errorf("failed to create role policy %q: with permission policy %s: %v", ingressRoleName, policy, err)
+		}
+
+		// Cloud Controller Manager's (CCM) managed policy needs to be updated on ROSA to allow new permissions downstream controllers to work.
+		// The permissions are:
+		// - elasticloadbalancing:DescribeTargetGroupAttributes
+		// - elasticloadbalancing:ModifyTargetGroupAttributes
+		//
+		// https://issues.redhat.com/browse/OCPBUGS-65885
+		//
+		// This inline policy must be removed when the following issue is resolved:
+		// https://issues.redhat.com/browse/SREP-2895
+		// https://redhat-internal.slack.com/archives/C03SZLX3A10/p1765396356482459
+		ccmPolicy := `{
+			"Version": "2012-10-17",
+			"Statement": [
+				{
+					"Effect": "Allow",
+					"Action": [
+						"elasticloadbalancing:DescribeTargetGroupAttributes",
+						"elasticloadbalancing:ModifyTargetGroupAttributes"
+					],
+					"Resource": "*"
+				}
+			]
+		}`
+		ccmRoleName := output.Roles.KubeCloudControllerARN[strings.LastIndex(output.Roles.KubeCloudControllerARN, "/")+1:]
+		if _, err := iamClient.PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
+			PolicyName:     aws.String(ccmRoleName),
+			RoleName:       aws.String(ccmRoleName),
+			PolicyDocument: aws.String(ccmPolicy),
+		}); err != nil {
+			return nil, fmt.Errorf("failed to create role policy %q: with permission policy %s: %v", ccmRoleName, ccmPolicy, err)
 		}
 	}
 
