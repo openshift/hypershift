@@ -181,6 +181,7 @@ func (s *GlobalPullSecretSyncer) syncPullSecret() error {
 }
 
 // checkAndFixFile reads the current file content and updates it if it differs from the desired content (global pull secret content).
+// This function merges auths from the existing on-disk file with the desired pull secret to preserve any external modifications.
 func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 	s.log.Info("Checking Kubelet's config.json file content")
 
@@ -189,21 +190,50 @@ func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 		return fmt.Errorf("invalid docker config.json content: %w", err)
 	}
 
+	// Parse the desired pull secret
+	desiredConfig, err := parseDockerConfigJSON(pullSecretBytes)
+	if err != nil {
+		return fmt.Errorf("failed to parse desired pull secret: %w", err)
+	}
+
 	// Read existing content if file exists
 	existingContent, err := readFileFunc(s.kubeletConfigJsonPath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to read existing file: %w", err)
 	}
 
-	// Preserve trailing newline if it exists in the original file
-	contentToWrite := pullSecretBytes
-	if len(existingContent) > 0 && existingContent[len(existingContent)-1] == '\n' {
-		if len(pullSecretBytes) == 0 || pullSecretBytes[len(pullSecretBytes)-1] != '\n' {
-			contentToWrite = append(pullSecretBytes, '\n')
+	// Determine if we need to preserve trailing newline
+	preserveNewline := len(existingContent) > 0 && existingContent[len(existingContent)-1] == '\n'
+
+	// Merge with existing config if it exists
+	var mergedConfig *dockerConfigJSON
+	if len(existingContent) > 0 {
+		existingConfig, err := parseDockerConfigJSON(existingContent)
+		if err != nil {
+			s.log.Info("Failed to parse existing config.json, will use desired config only", "error", err)
+			mergedConfig = desiredConfig
+		} else {
+			// Merge configs, with existing auths taking precedence
+			mergedConfig = mergeDockerConfigs(existingConfig, desiredConfig, s.log)
 		}
+	} else {
+		// No existing file, use desired config
+		mergedConfig = desiredConfig
 	}
 
-	// If file content is different, write the desired content
+	// Marshal the merged config
+	mergedBytes, err := json.Marshal(mergedConfig)
+	if err != nil {
+		return fmt.Errorf("failed to marshal merged config: %w", err)
+	}
+
+	// Preserve trailing newline if it existed in the original file
+	contentToWrite := mergedBytes
+	if preserveNewline && (len(mergedBytes) == 0 || mergedBytes[len(mergedBytes)-1] != '\n') {
+		contentToWrite = append(mergedBytes, '\n')
+	}
+
+	// If file content is different, write the merged content
 	if string(existingContent) != string(contentToWrite) {
 		s.log.Info("file content is different, updating it")
 		// Save original content for potential rollback
@@ -279,6 +309,11 @@ func readPullSecretFromFile(filePath string) ([]byte, error) {
 	return content, nil
 }
 
+// dockerConfigJSON represents the structure of a Docker config.json file
+type dockerConfigJSON struct {
+	Auths map[string]interface{} `json:"auths"`
+}
+
 func validateDockerConfigJSON(b []byte) error {
 	var m map[string]any
 	if err := json.Unmarshal(b, &m); err != nil {
@@ -288,6 +323,50 @@ func validateDockerConfigJSON(b []byte) error {
 		return fmt.Errorf("missing 'auths' key")
 	}
 	return nil
+}
+
+// parseDockerConfigJSON parses a Docker config.json byte slice
+func parseDockerConfigJSON(b []byte) (*dockerConfigJSON, error) {
+	var config dockerConfigJSON
+	if err := json.Unmarshal(b, &config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal docker config: %w", err)
+	}
+	if config.Auths == nil {
+		config.Auths = make(map[string]interface{})
+	}
+	return &config, nil
+}
+
+// mergeDockerConfigs merges two Docker configs with the following precedence rules:
+// - Desired config auths always take precedence (HyperShift manages these registries)
+// - Existing auths are preserved ONLY if they're not in the desired config (external systems manage these)
+// This allows HyperShift to update its own auths while preserving external modifications.
+func mergeDockerConfigs(existing, desired *dockerConfigJSON, log logr.Logger) *dockerConfigJSON {
+	merged := &dockerConfigJSON{
+		Auths: make(map[string]interface{}),
+	}
+
+	// First, add all auths from the desired config (these always win)
+	for registry, auth := range desired.Auths {
+		merged.Auths[registry] = auth
+	}
+
+	// Then, add auths from existing config ONLY if they're not in desired
+	externalRegistries := make([]string, 0)
+	for registry, auth := range existing.Auths {
+		if _, inDesired := desired.Auths[registry]; !inDesired {
+			// This registry is unknown to HyperShift, preserve the external auth
+			log.Info("Preserving external auth from on-disk file", "registry", registry)
+			merged.Auths[registry] = auth
+			externalRegistries = append(externalRegistries, registry)
+		}
+	}
+
+	if len(externalRegistries) > 0 {
+		log.Info("Preserved external auths from on-disk file", "registryCount", len(externalRegistries))
+	}
+
+	return merged
 }
 
 func writeAtomic(path string, data []byte, perm os.FileMode) error {
