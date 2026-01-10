@@ -40,7 +40,20 @@ func (r *RequireDocChecker) Apply(actx *model.AnalysisContext) error {
 	for _, ir := range util.AnalysisApplicableFiles(actx, includeTests, model.RuleSet{}.Add(requireDocRule)) {
 		for _, decl := range ir.SymbolDecl {
 			isExported := ast.IsExported(decl.Name)
+			if decl.IsMethod && decl.MethodRecvBaseTypeName != "" {
+				// A method is considered exported (in terms of godoc visibility)
+				// only if both the method name and the base type name are exported.
+				isExported = isExported && ast.IsExported(decl.MethodRecvBaseTypeName)
+			}
+
 			if isExported && !requirePublic || !isExported && !requirePrivate {
+				continue
+			}
+
+			if decl.Name == "_" {
+				// Blank identifiers should be ignored; e.g.:
+				//
+				//   var _ = 0
 				continue
 			}
 

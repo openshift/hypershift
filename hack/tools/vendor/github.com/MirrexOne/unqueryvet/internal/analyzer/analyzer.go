@@ -12,6 +12,7 @@ import (
 	"golang.org/x/tools/go/analysis/passes/inspect"
 	"golang.org/x/tools/go/ast/inspector"
 
+	"github.com/MirrexOne/unqueryvet/internal/analyzer/sqlbuilders"
 	"github.com/MirrexOne/unqueryvet/pkg/config"
 )
 
@@ -24,6 +25,15 @@ const (
 	columnsKeyword = "Columns"
 	// defaultWarningMessage is the standard warning for SELECT * usage
 	defaultWarningMessage = "avoid SELECT * - explicitly specify needed columns for better performance, maintainability and stability"
+)
+
+// Precompiled regex patterns for performance
+var (
+	// aliasedWildcardPattern matches SELECT alias.* patterns like "SELECT t.*", "SELECT u.*, o.*"
+	aliasedWildcardPattern = regexp.MustCompile(`(?i)SELECT\s+(?:[A-Za-z_][A-Za-z0-9_]*\s*\.\s*\*\s*,?\s*)+`)
+
+	// subquerySelectStarPattern matches SELECT * in subqueries like "(SELECT * FROM ...)"
+	subquerySelectStarPattern = regexp.MustCompile(`(?i)\(\s*SELECT\s+\*`)
 )
 
 // NewAnalyzer creates the Unqueryvet analyzer with enhanced logic for production use
@@ -59,16 +69,38 @@ func RunWithConfig(pass *analysis.Pass, cfg *config.UnqueryvetSettings) (any, er
 		cfg = &defaultSettings
 	}
 
+	// Create filter context for efficient filtering
+	filter, err := NewFilterContext(cfg)
+	if err != nil {
+		// If filter creation fails, continue without filtering
+		filter = nil
+	}
+
+	// Check if current file should be ignored
+	if filter != nil && len(pass.Files) > 0 {
+		fileName := pass.Fset.File(pass.Files[0].Pos()).Name()
+		if filter.IsIgnoredFile(fileName) {
+			return nil, nil
+		}
+	}
+
+	// Create SQL builder registry for checking SQL builder patterns
+	var builderRegistry *sqlbuilders.Registry
+	if cfg.CheckSQLBuilders {
+		builderRegistry = sqlbuilders.NewRegistry(&cfg.SQLBuilders)
+	}
+
 	// Define AST node types we're interested in
 	nodeFilter := []ast.Node{
 		(*ast.CallExpr)(nil),   // Function/method calls
 		(*ast.File)(nil),       // Files (for SQL builder analysis)
 		(*ast.AssignStmt)(nil), // Assignment statements for standalone literals
+		(*ast.GenDecl)(nil),    // General declarations (const, var, type)
+		(*ast.BinaryExpr)(nil), // Binary expressions for string concatenation
 	}
 
 	// Walk through all AST nodes and analyze them
 	insp.Preorder(nodeFilter, func(n ast.Node) {
-
 		switch node := n.(type) {
 		case *ast.File:
 			// Analyze SQL builders only if enabled in configuration
@@ -78,9 +110,50 @@ func RunWithConfig(pass *analysis.Pass, cfg *config.UnqueryvetSettings) (any, er
 		case *ast.AssignStmt:
 			// Check assignment statements for standalone SQL literals
 			checkAssignStmt(pass, node, cfg)
+		case *ast.GenDecl:
+			// Check constant and variable declarations
+			checkGenDecl(pass, node, cfg)
 		case *ast.CallExpr:
+			// Check if function should be ignored
+			if filter != nil && filter.IsIgnoredFunction(node) {
+				return
+			}
+
+			// Check format functions (fmt.Sprintf, etc.)
+			if cfg.CheckFormatStrings && CheckFormatFunction(pass, node, cfg) {
+				pass.Report(analysis.Diagnostic{
+					Pos:     node.Pos(),
+					Message: getDetailedWarningMessage("format_string"),
+				})
+				return
+			}
+
+			// Check SQL builder patterns
+			if builderRegistry != nil && builderRegistry.HasCheckers() {
+				violations := builderRegistry.Check(node)
+				for _, v := range violations {
+					pass.Report(analysis.Diagnostic{
+						Pos:     v.Pos,
+						End:     v.End,
+						Message: v.Message,
+					})
+				}
+				if len(violations) > 0 {
+					return
+				}
+			}
+
 			// Analyze function calls for SQL with SELECT * usage
 			checkCallExpr(pass, node, cfg)
+
+		case *ast.BinaryExpr:
+			// Check string concatenation for SELECT *
+			if cfg.CheckStringConcat && CheckConcatenation(pass, node, cfg) {
+				pass.Report(analysis.Diagnostic{
+					Pos:     node.Pos(),
+					Message: getDetailedWarningMessage("concat"),
+				})
+			}
 		}
 	})
 
@@ -96,6 +169,7 @@ func run(pass *analysis.Pass) (any, error) {
 		(*ast.CallExpr)(nil),   // Function/method calls
 		(*ast.File)(nil),       // Files (for SQL builder analysis)
 		(*ast.AssignStmt)(nil), // Assignment statements for standalone literals
+		(*ast.GenDecl)(nil),    // General declarations (const, var)
 	}
 
 	// Always use default settings since passing settings through ResultOf doesn't work reliably
@@ -104,7 +178,6 @@ func run(pass *analysis.Pass) (any, error) {
 
 	// Walk through all AST nodes and analyze them
 	insp.Preorder(nodeFilter, func(n ast.Node) {
-
 		switch node := n.(type) {
 		case *ast.File:
 			// Analyze SQL builders only if enabled in configuration
@@ -114,6 +187,9 @@ func run(pass *analysis.Pass) (any, error) {
 		case *ast.AssignStmt:
 			// Check assignment statements for standalone SQL literals
 			checkAssignStmt(pass, node, cfg)
+		case *ast.GenDecl:
+			// Check constant and variable declarations
+			checkGenDecl(pass, node, cfg)
 		case *ast.CallExpr:
 			// Analyze function calls for SQL with SELECT * usage
 			checkCallExpr(pass, node, cfg)
@@ -140,10 +216,40 @@ func checkAssignStmt(pass *analysis.Pass, stmt *ast.AssignStmt, cfg *config.Unqu
 	}
 }
 
+// checkGenDecl checks general declarations (const, var) for SELECT * in SQL queries
+func checkGenDecl(pass *analysis.Pass, decl *ast.GenDecl, cfg *config.UnqueryvetSettings) {
+	// Only check const and var declarations
+	if decl.Tok != token.CONST && decl.Tok != token.VAR {
+		return
+	}
+
+	// Iterate through all specifications in the declaration
+	for _, spec := range decl.Specs {
+		// Type assert to ValueSpec (const/var specifications)
+		valueSpec, ok := spec.(*ast.ValueSpec)
+		if !ok {
+			continue
+		}
+
+		// Check all values in the specification
+		for _, value := range valueSpec.Values {
+			// Only check direct string literals
+			if lit, ok := value.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				content := normalizeSQLQuery(lit.Value)
+				if isSelectStarQuery(content, cfg) {
+					pass.Report(analysis.Diagnostic{
+						Pos:     lit.Pos(),
+						Message: getWarningMessage(),
+					})
+				}
+			}
+		}
+	}
+}
+
 // checkCallExpr analyzes function calls for SQL with SELECT * usage
 // Includes checking arguments and SQL builders
 func checkCallExpr(pass *analysis.Pass, call *ast.CallExpr, cfg *config.UnqueryvetSettings) {
-
 	// Check SQL builders for SELECT * in arguments
 	if cfg.CheckSQLBuilders && isSQLBuilderSelectStar(call) {
 		pass.Report(analysis.Diagnostic{
@@ -241,8 +347,9 @@ func isSelectStarQuery(query string, cfg *config.UnqueryvetSettings) bool {
 		}
 	}
 
-	// Check for SELECT * in query (case-insensitive)
 	upperQuery := strings.ToUpper(query)
+
+	// Check for SELECT * in query (case-insensitive)
 	if strings.Contains(upperQuery, "SELECT *") { //nolint:unqueryvet
 		// Ensure this is actually an SQL query by checking for SQL keywords
 		sqlKeywords := []string{"FROM", "WHERE", "JOIN", "GROUP", "ORDER", "HAVING", "UNION", "LIMIT"}
@@ -258,7 +365,28 @@ func isSelectStarQuery(query string, cfg *config.UnqueryvetSettings) bool {
 			return true
 		}
 	}
+
+	// Check for SELECT alias.* patterns (e.g., SELECT t.*, SELECT u.*, o.*)
+	if cfg.CheckAliasedWildcard && isSelectAliasStarQuery(query) {
+		return true
+	}
+
+	// Check for SELECT * in subqueries (e.g., (SELECT * FROM ...))
+	if cfg.CheckSubqueries && isSelectStarInSubquery(query) {
+		return true
+	}
+
 	return false
+}
+
+// isSelectAliasStarQuery detects SELECT alias.* patterns like "SELECT t.*", "SELECT u.*, o.*"
+func isSelectAliasStarQuery(query string) bool {
+	return aliasedWildcardPattern.MatchString(query)
+}
+
+// isSelectStarInSubquery detects SELECT * in subqueries like "(SELECT * FROM ...)"
+func isSelectStarInSubquery(query string) bool {
+	return subquerySelectStarPattern.MatchString(query)
 }
 
 // getWarningMessage returns informative warning message
@@ -275,6 +403,14 @@ func getDetailedWarningMessage(context string) string {
 		return "avoid SELECT * in subquery - can cause performance issues and unexpected results when schema changes"
 	case "empty_select":
 		return "SQL builder Select() without columns defaults to SELECT * - add specific columns with .Columns() method"
+	case "aliased_wildcard":
+		return "avoid SELECT alias.* - explicitly specify columns like alias.id, alias.name for better maintainability"
+	case "subquery":
+		return "avoid SELECT * in subquery - specify columns explicitly to prevent issues when schema changes"
+	case "concat":
+		return "avoid SELECT * in concatenated query - explicitly specify needed columns"
+	case "format_string":
+		return "avoid SELECT * in format string - explicitly specify needed columns"
 	default:
 		return defaultWarningMessage
 	}
