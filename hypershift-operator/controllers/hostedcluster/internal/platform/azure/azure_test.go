@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -410,4 +411,155 @@ func TestReconcileCredentials(t *testing.T) {
 			}
 		})
 	}
+}
+
+// mockResourceGroupChecker implements resourceGroupChecker for testing.
+type mockResourceGroupChecker struct {
+	exists bool
+}
+
+func (m *mockResourceGroupChecker) Exists(context.Context, string, string) (bool, error) {
+	return m.exists, nil
+}
+
+// newTestAzureMachine creates a test AzureMachine with optional deletion timestamp.
+func newTestAzureMachine(name, namespace string, deleting bool) *capiazure.AzureMachine {
+	m := &capiazure.AzureMachine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       name,
+			Namespace:  namespace,
+			Finalizers: []string{capiazure.MachineFinalizer},
+		},
+	}
+	if deleting {
+		now := metav1.NewTime(time.Now())
+		m.DeletionTimestamp = &now
+	}
+	return m
+}
+
+func TestDeleteOrphanedMachines(t *testing.T) {
+	const controlPlaneNamespace = "test-cp-ns"
+
+	tests := []struct {
+		name                    string
+		rgExists                bool
+		machines                []*capiazure.AzureMachine
+		expectMachinesDeleted   int
+		expectMachinesRemaining int
+	}{
+		{
+			name:     "When resource group exists it should not remove finalizers",
+			rgExists: true,
+			machines: []*capiazure.AzureMachine{
+				newTestAzureMachine("m1", controlPlaneNamespace, true),
+			},
+			expectMachinesDeleted:   0,
+			expectMachinesRemaining: 1,
+		},
+		{
+			name:     "When resource group is not found it should remove finalizers from deleting machines",
+			rgExists: false,
+			machines: []*capiazure.AzureMachine{
+				newTestAzureMachine("m1", controlPlaneNamespace, true),
+				newTestAzureMachine("m2", controlPlaneNamespace, true),
+			},
+			// When finalizers are removed from objects with deletion timestamps,
+			// the fake client garbage collects them immediately
+			expectMachinesDeleted:   2,
+			expectMachinesRemaining: 0,
+		},
+		{
+			name:     "When resource group is not found it should not touch non-deleting machines",
+			rgExists: false,
+			machines: []*capiazure.AzureMachine{
+				newTestAzureMachine("m1", controlPlaneNamespace, false),
+			},
+			expectMachinesDeleted:   0,
+			expectMachinesRemaining: 1,
+		},
+		{
+			name:     "When resource group is not found it should only remove finalizers from deleting machines",
+			rgExists: false,
+			machines: []*capiazure.AzureMachine{
+				newTestAzureMachine("m1", controlPlaneNamespace, true),
+				newTestAzureMachine("m2", controlPlaneNamespace, false),
+			},
+			expectMachinesDeleted:   1,
+			expectMachinesRemaining: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			initialMachineCount := len(tt.machines)
+
+			// Create fake client with machines
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			for _, m := range tt.machines {
+				clientBuilder = clientBuilder.WithObjects(m)
+			}
+			fakeClient := clientBuilder.Build()
+
+			// Create hosted cluster
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hc",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Azure: &hyperv1.AzurePlatformSpec{
+							SubscriptionID:    "test-sub",
+							ResourceGroupName: "test-rg",
+							Cloud:             "AzurePublicCloud",
+						},
+					},
+				},
+			}
+
+			// Create mock checker
+			checker := &mockResourceGroupChecker{exists: tt.rgExists}
+
+			// Call the function under test
+			azure := Azure{}
+			err := azure.deleteOrphanedMachinesWithChecker(t.Context(), fakeClient, hc, controlPlaneNamespace, checker)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// Count remaining machines
+			var machineList capiazure.AzureMachineList
+			err = fakeClient.List(t.Context(), &machineList, client.InNamespace(controlPlaneNamespace))
+			g.Expect(err).ToNot(HaveOccurred())
+
+			machinesRemaining := len(machineList.Items)
+			machinesDeleted := initialMachineCount - machinesRemaining
+
+			g.Expect(machinesDeleted).To(Equal(tt.expectMachinesDeleted))
+			g.Expect(machinesRemaining).To(Equal(tt.expectMachinesRemaining))
+		})
+	}
+}
+
+func TestDeleteOrphanedMachines_NilAzurePlatform(t *testing.T) {
+	g := NewWithT(t)
+
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hc",
+			Namespace: "test-ns",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Azure: nil, // No Azure platform
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+	azure := Azure{}
+
+	err := azure.deleteOrphanedMachinesWithChecker(t.Context(), fakeClient, hc, "test-ns", nil)
+	g.Expect(err).ToNot(HaveOccurred())
 }
