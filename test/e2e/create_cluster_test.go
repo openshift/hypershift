@@ -2886,6 +2886,9 @@ func testCreateClusterPrivate(t *testing.T, enableExternalDNS bool) {
 	}
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		// Validate that kube-apiserver deployment has pre-pull init containers
+		e2eutil.EnsureKubeAPIServerPrePullInitContainers(t, ctx, mgtClient, hostedCluster)
+
 		// Private -> PublicAndPrivate
 		t.Run("SwitchFromPrivateToPublic", testSwitchEndpointAccess(ctx, mgtClient, hostedCluster, hyperv1.PublicAndPrivate, expectGuestKubeconfHostChange))
 		// PublicAndPrivate -> Private
