@@ -4440,8 +4440,9 @@ func (r *HostedClusterReconciler) reconcileServiceAccountSigningKey(ctx context.
 	}
 	cpSigningKeySecret := controlplaneoperator.ServiceAccountSigningKeySecret(targetNamespace)
 	_, err = createOrUpdate(ctx, r.Client, cpSigningKeySecret, func() error {
-		existingKeyBytes, hasKey := cpSigningKeySecret.Data[controlplaneoperator.ServiceSignerPrivateKey]
-		if hasKey && bytes.Equal(existingKeyBytes, privateBytes) {
+		// If the private and public keys are the same as the existing ones, do nothing
+		if bytes.Equal(cpSigningKeySecret.Data[controlplaneoperator.ServiceSignerPrivateKey], privateBytes) &&
+			bytes.Equal(cpSigningKeySecret.Data[controlplaneoperator.ServiceSignerPublicKey], publicBytes) {
 			return nil
 		}
 
@@ -4464,28 +4465,9 @@ func (r *HostedClusterReconciler) validateServiceAccountSigningKey(ctx context.C
 		return fmt.Errorf("the IssuerURL must be set when specifying a service account signing key")
 	}
 
-	privateBytes, _, err := r.serviceAccountSigningKeyBytes(ctx, hc)
-	if err != nil {
-		return err
-	}
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
-	cpSigningKeySecret := controlplaneoperator.ServiceAccountSigningKeySecret(controlPlaneNamespace)
-	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(cpSigningKeySecret), cpSigningKeySecret); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("cannot get control plane signing key secret %s/%s: %w", cpSigningKeySecret.Namespace, cpSigningKeySecret.Name, err)
-		}
-		return nil
-	}
-	if cpSigningKeySecret.Data != nil {
-		existingKeyBytes, hasKey := cpSigningKeySecret.Data[controlplaneoperator.ServiceSignerPrivateKey]
-		if !hasKey {
-			return nil
-		}
-		if !bytes.Equal(existingKeyBytes, privateBytes) {
-			return fmt.Errorf("existing control plane service account signing key does not match private key")
-		}
-	}
-	return nil
+	// Validate the service account signing key secret has a valid private key
+	_, _, err := r.serviceAccountSigningKeyBytes(ctx, hc)
+	return err
 }
 
 func (r *HostedClusterReconciler) serviceAccountSigningKeyBytes(ctx context.Context, hc *hyperv1.HostedCluster) ([]byte, []byte, error) {
@@ -4508,7 +4490,16 @@ func (r *HostedClusterReconciler) serviceAccountSigningKeyBytes(ctx context.Cont
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot serialize public key from private key %s: %w", signingKeySecret.Name, err)
 	}
-	return privateKeyPEMBytes, publicKeyPEMBytes, nil
+
+	// Combine all public keys into a single PEM file.
+	// kube-apiserver accepts multiple PEM-encoded keys in one file for token verification,
+	// which enables key rotation by allowing tokens signed with the old key to still validate.
+	combinedPublicKeys := publicKeyPEMBytes
+	if oldPublicKeyPEMBytes, hasOldPublicKey := signingKeySecret.Data[hyperv1.ServiceAccountOldPublicKeySecretKey]; hasOldPublicKey {
+		combinedPublicKeys = append(combinedPublicKeys, oldPublicKeyPEMBytes...)
+	}
+
+	return privateKeyPEMBytes, combinedPublicKeys, nil
 }
 
 func (r *HostedClusterReconciler) reconcileKubevirtPlatformDefaultSettings(ctx context.Context, hc *hyperv1.HostedCluster, createOrUpdate upsert.CreateOrUpdateFN, logger logr.Logger) error {
