@@ -1,0 +1,66 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: cilium-olm
+  namespace: cilium
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
+    verbs:
+      - get
+  - apiGroups:
+      - cilium.io
+    resources:
+      - ciliumconfigs
+      - ciliumconfigs/status
+    verbs:
+      - list
+  - apiGroups:
+      - cilium.io
+    resources:
+      - ciliumconfigs
+      - ciliumconfigs/status
+      - ciliumconfigs/finalizers
+    verbs:
+      - get
+      - patch
+      - update
+      - watch
+      - list
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - '*'
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+      - configmaps
+      - secrets
+      - services
+    verbs:
+      - '*'
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+      - daemonsets
+    verbs:
+      - '*'
+  - apiGroups:
+      - monitoring.coreos.com
+    resources:
+      - servicemonitors
+    verbs:
+      - '*'
