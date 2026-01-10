@@ -118,11 +118,12 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 
 	t.Log("All NodePool ImageType tests passed successfully")
 
-	// Cleanup: Wait for NodePool to stabilize before framework's final validation
-	// After switching ImageType from Linux to Windows and doing update tests,
-	// we need to wait for old machines to be deleted and platform template update to complete
-	t.Log("Waiting for NodePool to stabilize (machines deleted, platform template updated)")
-	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("wait for nodepool %s/%s to stabilize", nodePool.Namespace, nodePool.Name),
+	// Wait for platform template update to complete before framework's final validation
+	// Note: We don't wait for AllMachinesReady or AllNodesHealthy since those are
+	// always False for 0-replica NodePools, and our fix to ExpectedNodePoolConditions()
+	// makes the framework correctly expect False for those conditions.
+	t.Log("Waiting for platform template update to complete")
+	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("wait for nodepool %s/%s platform template update to complete", nodePool.Namespace, nodePool.Name),
 		func(ctx context.Context) (*hyperv1.NodePool, error) {
 			np := &hyperv1.NodePool{}
 			err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)
@@ -133,18 +134,10 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 				Type:   hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
 				Status: v1.ConditionFalse,
 			}),
-			e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
-				Type:   hyperv1.NodePoolAllMachinesReadyConditionType,
-				Status: v1.ConditionTrue,
-			}),
-			e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
-				Type:   hyperv1.NodePoolAllNodesHealthyConditionType,
-				Status: v1.ConditionTrue,
-			}),
 		},
-		e2eutil.WithInterval(30*time.Second), e2eutil.WithTimeout(20*time.Minute),
+		e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
 	)
-	t.Log("✓ NodePool stabilized successfully")
+	t.Log("✓ Platform template update completed successfully")
 }
 
 func (it *NodePoolImageTypeTest) testWindowsImageTypeCreation(t *testing.T, g *WithT, ctx context.Context, nodePool hyperv1.NodePool) {
