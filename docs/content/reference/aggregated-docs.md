@@ -3,7 +3,7 @@
 This file contains all HyperShift documentation aggregated into a single file
 for use with AI tools like NotebookLM.
 
-Total documents: 245
+Total documents: 248
 
 ---
 
@@ -8902,6 +8902,67 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
+---
+
+## Source: docs/content/how-to/azure/index.md
+
+# Azure
+
+This section provides guides for deploying HyperShift hosted clusters on Microsoft Azure. There are two deployment models available, each with different management cluster platforms and authentication mechanisms.
+
+## Deployment Models
+
+### ARO HCP (Managed Azure)
+
+ARO HCP (Azure Red Hat OpenShift Hosted Control Planes) uses an AKS (Azure Kubernetes Service) cluster as the management platform. This model uses Azure Managed Identities with certificate-based authentication, with credentials stored in Azure Key Vault.
+
+**Guides:**
+
+- [Create an Azure Hosted Cluster on AKS](create-azure-cluster-on-aks.md) - Step-by-step setup guide
+- [Azure Hosted Cluster with Options](create-azure-cluster-with-options.md) - Advanced configuration options
+
+### Self-Managed Azure
+
+Self-managed Azure uses an OpenShift cluster (running on any platform - AWS, Azure, bare metal, etc.) as the management platform. This model uses Azure Workload Identity with OIDC federation for tokenless authentication.
+
+!!! note "Developer Preview in OCP 4.21"
+
+    Self-managed Azure HostedClusters are available as a Developer Preview feature in OpenShift Container Platform 4.21.
+
+**Guides:**
+
+- [Self-Managed Azure Overview](self-managed-azure-index.md) - Architecture and deployment workflow
+- [Azure Workload Identity Setup](azure-workload-identity-setup.md) - Set up managed identities and OIDC federation
+- [Setup Azure Management Cluster](setup-management-cluster.md) - Install HyperShift operator
+- [Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md) - Deploy your first hosted cluster
+
+## Comparison
+
+| Aspect | ARO HCP | Self-Managed Azure |
+|--------|---------|-------------------|
+| **Management Cluster** | AKS | OpenShift (any platform) |
+| **Control Plane Auth** | Certificate-based (Key Vault) | Workload Identity (OIDC) |
+| **Data Plane Auth** | Federated Identity (OIDC) | Workload Identity (OIDC) |
+| **Credential Storage** | Azure Key Vault | None (tokenless via OIDC) |
+| **Identity Configuration** | Managed identities file + data plane identities file | Workload identities file |
+| **Secrets Access** | Secrets Store CSI Driver | Projected ServiceAccount tokens |
+| **Setup Complexity** | Higher (Key Vault, service principals, CSI driver) | Moderate (OIDC federation only) |
+| **Automation Scripts** | Available in `contrib/managed-azure/` | Available in `contrib/self-managed-azure/` |
+
+## Infrastructure Reference
+
+For detailed information about the Azure infrastructure resources required for each deployment model, see:
+
+- [ARO HCP Infrastructure](../../reference/infrastructure/azure-aro-hcp.md)
+- [Self-Managed Azure Infrastructure](../../reference/infrastructure/azure-self-managed.md)
+
+## Additional Resources
+
+- [Azure Workload Identity Documentation](https://azure.github.io/azure-workload-identity/docs/)
+- [Azure Managed Identities Documentation](https://learn.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview)
+- [Secrets Store CSI Driver](https://secrets-store-csi-driver.sigs.k8s.io/)
+
 
 ---
 
@@ -42004,6 +42065,617 @@ And these are samples for each one of the roles Hypershift uses:
         ]
     }
     ```
+
+
+---
+
+## Source: docs/content/reference/infrastructure/azure-aro-hcp.md
+
+# ARO HCP (Managed Azure) Infrastructure
+
+This section describes the infrastructure requirements for ARO HCP (Azure Red Hat OpenShift Hosted Control Planes) deployments. ARO HCP uses an AKS (Azure Kubernetes Service) management cluster to host OpenShift control planes with Azure worker nodes.
+
+## Overview
+
+ARO HCP deployments consist of:
+
+1. **Management Cluster**: An AKS cluster that hosts the HyperShift operator and control planes
+2. **Control Plane**: OpenShift control plane components running as pods on the AKS management cluster
+3. **Data Plane**: Worker nodes running as Azure Virtual Machines in the customer's Azure subscription
+
+The architecture uses Azure Managed Identities with certificate-based authentication for secure communication between OpenShift components and Azure services. Credentials are stored in Azure Key Vault and accessed via the Secrets Store CSI driver.
+
+## Infrastructure Stages
+
+### Pre-required Infrastructure (Unmanaged)
+
+The following infrastructure must exist before creating an ARO HCP HostedCluster:
+
+#### Required Azure Permissions
+
+A service principal with the following permissions is required for creating infrastructure:
+
+| Role | Scope | Purpose |
+|------|-------|---------|
+| `Contributor` | Subscription | Create and manage Azure resources |
+| `User Access Administrator` | Subscription | Assign roles to managed identities |
+
+Additionally, Microsoft Graph API permissions are required:
+
+| Permission | Type | Purpose |
+|------------|------|---------|
+| `Application.ReadWrite.OwnedBy` | Application | Create and manage service principals |
+
+#### Shared Resources (Per Management Cluster)
+
+A resource group for shared resources that are reusable across HostedCluster creation and deletion cycles:
+
+| Resource | Purpose |
+|----------|---------|
+| Azure Key Vault | Stores service principal certificates |
+| Service Principals | Control plane component authentication |
+| OIDC Issuer Storage Account | Hosts OIDC discovery documents |
+| Data Plane Managed Identities | Data plane component authentication |
+| Azure DNS Zones | DNS management |
+
+!!! warning "Resource Reusability"
+
+    These resources should be created once and **reused when recreating the same HostedCluster** to avoid Azure quota limits. They can also be shared across multiple HostedClusters if desired.
+
+#### AKS Management Cluster
+
+An AKS cluster that hosts the HyperShift operator and control planes. For production deployments, the following features are recommended:
+
+| Feature | Configuration |
+|---------|---------------|
+| Azure Key Vault Secrets Provider | Enabled for credential mounting |
+| OIDC Issuer | Enabled for workload identity |
+| Managed Identity | Cluster and kubelet managed identities |
+| Autoscaling | Node pool autoscaling enabled |
+| Node Pools | Appropriately sized for control plane workloads |
+
+### Control Plane Identities
+
+ARO HCP uses service principals with certificate-based authentication for control plane components. These credentials are stored in Azure Key Vault and mounted into pods via the Secrets Store CSI driver.
+
+| Component | Operator/Controller | Key Vault Secret Name |
+|-----------|--------------------|-----------------------|
+| **Control Plane Operator** | control-plane-operator | `<name>-cpo` |
+| **Node Pool Management** | Cluster API Provider Azure | `<name>-nodepool-mgmt` |
+| **Cloud Provider** | Azure Cloud Controller Manager | `<name>-cloud-provider` |
+| **Azure Disk CSI** | Azure Disk CSI Driver | `<name>-disk` |
+| **Azure File CSI** | Azure File CSI Driver | `<name>-file` |
+| **Ingress** | Cluster Ingress Operator | `<name>-ingress` |
+| **Network** | Cloud Network Config Controller | `<name>-network` |
+| **Image Registry** | Cluster Image Registry Operator | `<name>-image-registry` |
+
+Each control plane identity includes:
+
+- **Client ID**: UUID identifying the service principal
+- **Certificate**: X.509 certificate for authentication
+- **Object Encoding**: Format of the certificate in Key Vault (utf-8, hex, or base64)
+
+The control plane identities are provided in a JSON file with the following format:
+
+```json
+{
+  "controlPlane": {
+    "managedIdentitiesKeyVault": {
+      "name": "<key-vault-name>",
+      "tenantID": "<tenant-id>"
+    },
+    "cloudProvider": {
+      "clientID": "<uuid>",
+      "credentialsSecretName": "<secret-name>",
+      "objectEncoding": "utf-8"
+    },
+    "nodePoolManagement": { ... },
+    "controlPlaneOperator": { ... },
+    "imageRegistry": { ... },
+    "ingress": { ... },
+    "network": { ... },
+    "disk": { ... },
+    "file": { ... }
+  },
+  "dataPlane": {
+    "imageRegistryMSIClientID": "<uuid>",
+    "diskMSIClientID": "<uuid>",
+    "fileMSIClientID": "<uuid>"
+  }
+}
+```
+
+### Data Plane Identities
+
+Data plane identities are Azure managed identities with federated credentials for components running on worker nodes. Each managed identity is assigned an Azure built-in role that grants the specific permissions required by that component:
+
+| Component | Purpose | Azure Built-in Role |
+|-----------|---------|---------------------|
+| **Image Registry** | Image registry operations from worker nodes | Azure Red Hat OpenShift Image Registry Operator |
+| **Azure Disk CSI** | Disk operations from worker nodes | Azure Red Hat OpenShift Azure Disk CSI Driver Operator |
+| **Azure File CSI** | File operations from worker nodes | Azure Red Hat OpenShift Azure Files CSI Driver Operator |
+
+!!! note "Azure Built-in Roles"
+
+    These roles are Azure built-in roles created specifically for Azure Red Hat OpenShift. Each role has a unique role definition ID (GUID) that HyperShift uses when creating role assignments. For detailed permissions granted by each role, see the [Azure built-in roles documentation](https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles).
+
+The data plane identities are provided in a JSON file with the following format:
+
+```json
+{
+  "imageRegistryMSIClientID": "<uuid>",
+  "diskMSIClientID": "<uuid>",
+  "fileMSIClientID": "<uuid>"
+}
+```
+
+#### OIDC Issuer
+
+An OIDC issuer is required for data plane workload identity federation (see [Data Plane Authentication](#data-plane-authentication-federated-identity) for how this works). Setting up an OIDC issuer requires:
+
+- Azure Blob Storage account configured as OIDC issuer
+- RSA key pair for service account token signing
+- Created using the Cloud Credential Operator (CCO) tool
+
+### Infrastructure Required Before HostedCluster Creation
+
+The following Azure infrastructure must exist before creating a HostedCluster resource:
+
+!!! tip "Creating Infrastructure with the CLI"
+
+    When using the `hypershift` CLI for cluster creation, this infrastructure gets automatically created whether via the `hypershift create infra azure` or the `hypershift create cluster azure` command. See [Create an Azure Hosted Cluster on AKS](../../how-to/azure/create-azure-cluster-on-aks.md) for details.
+
+#### Resource Groups
+
+| Resource Group | Purpose | Default Naming |
+|----------------|---------|----------------|
+| Managed RG | Primary cluster infrastructure (VMs, disks, load balancers) | `<name>-<infra-id>` |
+| VNet RG | Virtual network resources | `<name>-<infra-id>-vnet` |
+| NSG RG | Network security group | `<name>-<infra-id>-nsg` |
+
+#### Networking Resources
+
+| Resource | Configuration | Notes |
+|----------|---------------|-------|
+| **Virtual Network (VNet)** | Any valid address space | Contains the subnet for worker nodes |
+| **Subnet** | Any valid address prefix within the VNet | Attached to NSG |
+| **Network Security Group (NSG)** | Empty rules by default | Additional rules added by cloud provider as needed |
+
+!!! note "CLI Defaults"
+
+    The CLI creates a VNet with address prefix `10.0.0.0/16` and a subnet named `default` with address prefix `10.0.0.0/24`. Use `--vnet-id`, `--subnet-id`, and `--network-security-group-id` to bring your own resources.
+
+#### DNS Resources
+
+Internal cluster DNS resolution requires a Private DNS Zone and a Virtual Network Link connecting the worker VNet to that zone.
+
+| Resource | Configuration | Purpose |
+|----------|---------------|---------|
+| **Private DNS Zone** | `<name>-azurecluster.<baseDomain>` | Hosts internal DNS records for the hosted cluster |
+| **Virtual Network Link** | Links to worker VNet | Connects the VNet to the zone for DNS resolution |
+
+!!! note "CLI Defaults"
+
+    The CLI creates both resources with `location: global` and the Virtual Network Link with automatic VM registration disabled.
+
+#### Load Balancer Resources
+
+| Resource | Configuration | Notes |
+|----------|---------------|-------|
+| **Public IP Address** | SKU: Standard, Static allocation, IPv4 | 4-minute idle timeout |
+| **Load Balancer** | SKU: Standard | For guest cluster egress |
+
+The load balancer is configured with:
+
+- **Frontend IP Configuration**: Associated with the public IP
+- **Backend Address Pool**: For worker node NICs
+- **Health Probe**: HTTP probe on port 30595, path `/healthz`, 5-second interval
+- **Outbound Rule**: All protocols, 1024 allocated ports per instance, TCP reset enabled, 4-minute idle timeout
+
+### Infrastructure Managed by Kubernetes
+
+The following resources are created and managed by Kubernetes controllers running in the hosted cluster:
+
+#### Networking
+
+- **Azure Load Balancers**: Created for ingress (default router) and services of type `LoadBalancer`
+- **Public IP Addresses**: Allocated for load balancer frontends
+- **Security Group Rules**: Added to the NSG for service traffic
+
+#### Storage
+
+- **Azure Disks**: Managed disks for persistent volumes (via Azure Disk CSI driver)
+- **Azure File Shares**: File shares for ReadWriteMany persistent volumes (via Azure File CSI driver)
+- **Storage Accounts**: Created as needed for Azure File storage
+
+#### Compute
+
+- **Azure Virtual Machines**: Worker nodes managed by Cluster API Provider Azure
+- **Network Interfaces**: NICs attached to worker VMs
+- **OS Disks**: Managed disks for VM operating systems
+
+## Managed Identity Authentication
+
+ARO HCP uses a two-tier authentication model:
+
+### Control Plane Authentication (Certificate-Based)
+
+Control plane components authenticate using service principal certificates stored in Azure Key Vault:
+
+```mermaid
+sequenceDiagram
+    participant CSI as Secrets Store<br/>CSI Driver
+    participant KV as Azure Key Vault
+    participant Pod as Control Plane Pod
+    participant Entra as Azure Entra ID
+    participant Azure as Azure APIs
+
+    CSI->>KV: 1. Fetch certificate secret
+    KV->>CSI: 2. Return certificate
+    CSI->>Pod: 3. Mount certificate to volume
+    Pod->>Entra: 4. Authenticate with certificate
+    Entra->>Pod: 5. Issue access token
+    Pod->>Azure: 6. Call APIs with access token
+```
+
+The Key Vault integration uses:
+
+- **SecretProviderClass**: Defines which secrets to mount from Key Vault
+- **CSI Volume**: Mounts secrets into pod filesystem at `/etc/kubernetes/azure/`
+- **Managed Identity**: AKS cluster identity authorized to read from Key Vault
+
+### Data Plane Authentication (Federated Identity)
+
+Data plane components use federated managed identities similar to self-managed Azure:
+
+```mermaid
+sequenceDiagram
+    participant Pod as Worker Node Pod
+    participant K8s as Kubernetes API
+    participant OIDC as OIDC Issuer<br/>(Blob Storage)
+    participant Entra as Azure Entra ID
+    participant Azure as Azure APIs
+
+    Pod->>K8s: 1. Request ServiceAccount token
+    K8s->>Pod: 2. Issue signed JWT token
+    Pod->>Entra: 3. Present token for exchange
+    Entra->>OIDC: 4. Fetch JWKS for validation
+    OIDC->>Entra: 5. Return public keys
+    Entra->>Pod: 6. Issue Azure access token
+    Pod->>Azure: 7. Call APIs with access token
+```
+
+## Resource Group Strategy
+
+ARO HCP deployments use multiple resource groups with different lifecycles:
+
+### Persistent Resources (Reused Across Clusters)
+
+```
+Persistent Resource Group (e.g., os4-common)
+├── Azure Key Vault
+│   └── Service Principal Certificates
+├── OIDC Issuer Storage Account
+├── Data Plane Managed Identities
+│   ├── Image Registry Identity
+│   ├── Disk CSI Identity
+│   └── File CSI Identity
+└── DNS Zones
+```
+
+### AKS Management Cluster Resources
+
+```
+AKS Resource Group
+├── AKS Cluster
+├── Node Pools
+├── Cluster Managed Identity
+└── Kubelet Managed Identity
+```
+
+### Cluster-Specific Resources (Created/Deleted Per Cluster)
+
+By default, HyperShift creates separate resource groups for different resource types. However, all resources can be placed in a single managed resource group if preferred.
+
+**Default (Separate Resource Groups):**
+
+```
+Managed Resource Group (<name>-<infra-id>)
+├── Virtual Machines (worker nodes)
+├── Managed Disks (OS and data disks)
+├── Network Interfaces
+└── Load Balancers (ingress, services)
+
+VNet Resource Group (<name>-<infra-id>-vnet)
+├── Virtual Network
+├── Subnet
+├── Private DNS Zone
+└── Private DNS Zone Link
+
+NSG Resource Group (<name>-<infra-id>-nsg)
+└── Network Security Group
+```
+
+**Single Resource Group (Alternative):**
+
+You can use an existing VNet and NSG from the same resource group, which places all cluster resources in a single resource group.
+
+## Related Documentation
+
+- [Create an Azure Hosted Cluster on AKS](../../how-to/azure/create-azure-cluster-on-aks.md) - Step-by-step setup guide
+- [Azure Hosted Cluster with Options](../../how-to/azure/create-azure-cluster-with-options.md) - Advanced configuration options
+- [Self-Managed Azure Infrastructure](azure-self-managed.md) - Alternative deployment model
+
+
+---
+
+## Source: docs/content/reference/infrastructure/azure-self-managed.md
+
+# Self-Managed Azure Infrastructure
+
+This section describes the infrastructure requirements for self-managed Azure HyperShift deployments. Self-managed Azure allows you to deploy hosted clusters with Azure worker nodes using an OpenShift management cluster that you provision and manage.
+
+!!! note "Developer Preview in OCP 4.21"
+
+    Self-managed Azure HostedClusters are available as a Developer Preview feature in OpenShift Container Platform 4.21.
+
+## Overview
+
+Self-managed Azure HyperShift deployments consist of:
+
+1. **Management Cluster**: An OpenShift cluster (can run on any platform - AWS, Azure, bare metal, etc.) that hosts the HyperShift operator and control planes
+2. **Control Plane**: Kubernetes control plane components running as pods on the management cluster
+3. **Data Plane**: Worker nodes running as Azure Virtual Machines in your Azure subscription
+
+The architecture uses [Azure Workload Identity](https://azure.github.io/azure-workload-identity/docs/) for secure, credential-free authentication between OpenShift components and Azure services.
+
+## Infrastructure Stages
+
+### Pre-required Infrastructure (Unmanaged)
+
+The following infrastructure must exist before creating a self-managed Azure HostedCluster:
+
+#### Management Cluster Requirements
+
+| Requirement | Description |
+|-------------|-------------|
+| OpenShift Cluster | Version 4.17+ with HyperShift operator installed. Can run on any platform (AWS, Azure, bare metal, etc.) |
+| OpenShift CLI | `oc` or `kubectl` for cluster management |
+| HyperShift CLI | `hypershift` binary for cluster creation |
+| Pull Secret | Valid OpenShift pull secret |
+
+#### Azure Subscription Requirements
+
+| Requirement | Description |
+|-------------|-------------|
+| Azure Subscription | Active subscription with sufficient quota |
+| Azure CLI | `az` CLI installed and configured |
+| `jq` | Command-line JSON processor |
+| CCO Tool | [Cloud Credential Operator CLI](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md#azure) for OIDC setup |
+
+#### Required Azure Permissions
+
+The service principal or user creating infrastructure requires:
+
+| Role | Scope | Purpose |
+|------|-------|---------|
+| `Contributor` | Subscription | Create and manage Azure resources |
+| `User Access Administrator` | Subscription | Assign roles to managed identities |
+
+#### Persistent Resource Group (Optional)
+
+A persistent resource group is not required, but is recommended for shared resources that can be reused across multiple HostedClusters:
+
+| Resource | Purpose | Lifecycle |
+|----------|---------|-----------|
+| OIDC Issuer Storage Account | Hosts OIDC discovery documents and JWKS | Can be reused |
+| Workload Identities | Managed identities with federated credentials | Can be reused |
+| Azure DNS Zones | Parent DNS zone for External DNS (optional) | Can be reused |
+
+!!! tip "Resource Reuse"
+
+    While you can create these resources per-cluster, placing workload identities and OIDC issuer in a persistent resource group allows you to reuse them across multiple hosted clusters. This reduces setup time, avoids unnecessary resource recreation, and helps stay within Azure quota limits.
+
+#### OIDC Issuer
+
+An OIDC issuer is required for workload identity federation. This is an Azure Blob Storage account configured to host:
+
+- OIDC discovery document (`.well-known/openid-configuration`)
+- JSON Web Key Set (JWKS) for token validation
+- RSA key pair for service account token signing
+
+The OIDC issuer is created using the Cloud Credential Operator (CCO) tool:
+
+```bash
+ccoctl azure create-oidc-issuer \
+  --name=<name> \
+  --region=<azure-region> \
+  --subscription-id=<subscription-id> \
+  --resource-group-name=<persistent-rg> \
+  --storage-account-name=<oidc-storage-account> \
+  --output-dir=<output-directory>
+```
+
+### Workload Identities
+
+Self-managed Azure requires 7 managed identities with federated credentials for OpenShift components:
+
+| Identity | Operator | Service Accounts | Azure Role |
+|----------|----------|------------------|------------|
+| **Disk** | Azure Disk CSI Driver | `azure-disk-csi-driver-node-sa`, `azure-disk-csi-driver-operator`, `azure-disk-csi-driver-controller-sa` | Azure Disk Role (`5b7237c5-45e1-49d6-bc18-a1f62f400748`) |
+| **File** | Azure File CSI Driver | `azure-file-csi-driver-node-sa`, `azure-file-csi-driver-operator`, `azure-file-csi-driver-controller-sa` | Azure File Role (`0d7aedc0-15fd-4a67-a412-efad370c947e`) |
+| **Image Registry** | Cluster Image Registry Operator | `registry`, `cluster-image-registry-operator` | Image Registry Role (`8b32b316-c2f5-4ddf-b05b-83dacd2d08b5`) |
+| **Ingress** | Cluster Ingress Operator | `ingress-operator` | Ingress Role (`0336e1d3-7a87-462b-b6db-342b63f7802c`) |
+| **Cloud Provider** | Azure Cloud Provider | `azure-cloud-provider` | Cloud Provider Role (`a1f96423-95ce-4224-ab27-4e3dc72facd4`) |
+| **Node Pool Management** | Cluster API Provider Azure | `capi-provider` | Contributor (`b24988ac-6180-42a0-ab88-20f7382dd24c`) |
+| **Network** | Cloud Network Config Controller | `cloud-network-config-controller` | Network Role (`be7a6435-15ae-4171-8f30-4a343eff9e8f`) |
+
+Each identity is configured with:
+
+- **Federated Identity Credentials**: Trust relationship between Azure Entra ID and OpenShift service accounts
+- **Audience**: `openshift`
+- **Issuer**: Your OIDC issuer URL
+
+#### Role Assignment Scopes
+
+Identities receive role assignments across multiple resource groups depending on their function:
+
+| Identity | Managed RG | VNet RG | NSG RG | DNS Zone RG |
+|----------|------------|---------|--------|-------------|
+| Cloud Provider | Yes | Yes | Yes | No |
+| Ingress | No | Yes | No | Yes |
+| Azure File | Yes | Yes | Yes | No |
+| Azure Disk | Yes | No | No | No |
+| Network (CNCC) | Yes | Yes | No | No |
+| Image Registry | Yes | No | No | No |
+| Node Pool Management | Yes | Yes | No | No |
+
+### Infrastructure Created by HyperShift
+
+The `hypershift create cluster azure` command (or `hypershift create infra azure`) creates the following resources:
+
+#### Resource Groups
+
+| Resource Group | Purpose | Default Naming |
+|----------------|---------|----------------|
+| Managed RG | Primary cluster infrastructure (VMs, disks, load balancers) | `<name>-<infra-id>` |
+| VNet RG | Virtual network resources | `<name>-<infra-id>-vnet` |
+| NSG RG | Network security group | `<name>-<infra-id>-nsg` |
+
+#### Networking Resources
+
+| Resource | Configuration | Notes |
+|----------|---------------|-------|
+| **Virtual Network (VNet)** | Address prefix: `10.0.0.0/16` | Contains the subnet for worker nodes |
+| **Subnet** | Address prefix: `10.0.0.0/24` | Named `default`, attached to NSG |
+| **Network Security Group (NSG)** | Empty rules by default | Additional rules added by cloud provider as needed |
+
+#### DNS Resources
+
+| Resource | Configuration | Notes |
+|----------|---------------|-------|
+| **Private DNS Zone** | `<name>-azurecluster.<baseDomain>` | For internal cluster DNS resolution |
+| **Private DNS Zone Link** | Location: `global` | Links private zone to VNet, registration disabled |
+
+#### Load Balancer Resources
+
+| Resource | Configuration | Notes |
+|----------|---------------|-------|
+| **Public IP Address** | SKU: Standard, Static allocation, IPv4 | 4-minute idle timeout |
+| **Load Balancer** | SKU: Standard | For guest cluster egress |
+
+The load balancer is configured with:
+
+- **Frontend IP Configuration**: Associated with the public IP
+- **Backend Address Pool**: For worker node NICs
+- **Health Probe**: HTTP probe on port 30595, path `/healthz`, 5-second interval
+- **Outbound Rule**: All protocols, 1024 allocated ports per instance, TCP reset enabled, 4-minute idle timeout
+
+### Infrastructure Managed by Kubernetes
+
+The following resources are created and managed by Kubernetes controllers running in the hosted cluster:
+
+#### Networking
+
+- **Azure Load Balancers**: Created for ingress (default router) and services of type `LoadBalancer`
+- **Public IP Addresses**: Allocated for load balancer frontends
+- **Security Group Rules**: Added to the NSG for service traffic
+
+#### Storage
+
+- **Azure Disks**: Managed disks for persistent volumes (via Azure Disk CSI driver)
+- **Azure File Shares**: File shares for ReadWriteMany persistent volumes (via Azure File CSI driver)
+- **Storage Accounts**: Created as needed for Azure File storage
+
+#### Compute
+
+- **Azure Virtual Machines**: Worker nodes managed by Cluster API Provider Azure
+- **Network Interfaces**: NICs attached to worker VMs
+- **OS Disks**: Managed disks for VM operating systems
+
+## Workload Identity Authentication
+
+Self-managed Azure uses workload identity federation for secure authentication. This eliminates long-lived credentials and follows Azure's modern authentication best practices.
+
+### Authentication Flow
+
+```mermaid
+sequenceDiagram
+    participant Pod as OpenShift Pod
+    participant K8s as Kubernetes API
+    participant OIDC as OIDC Issuer<br/>(Blob Storage)
+    participant Entra as Azure Entra ID
+    participant Azure as Azure APIs
+
+    Pod->>K8s: 1. Request ServiceAccount token
+    K8s->>Pod: 2. Issue signed JWT token
+    Pod->>Entra: 3. Present token for exchange
+    Entra->>OIDC: 4. Fetch JWKS for validation
+    OIDC->>Entra: 5. Return public keys
+    Entra->>Entra: 6. Validate token signature & claims
+    Entra->>Pod: 7. Issue Azure access token
+    Pod->>Azure: 8. Call APIs with access token
+```
+
+### Federated Credential Configuration
+
+Each managed identity has one or more federated identity credentials configured:
+
+```json
+{
+  "issuer": "https://<storage-account>.blob.core.windows.net/<container>",
+  "subject": "system:serviceaccount:<namespace>:<service-account>",
+  "audiences": ["openshift"]
+}
+```
+
+## Resource Group Strategy
+
+Self-managed Azure deployments use multiple resource groups with different lifecycles:
+
+### Persistent Resources (Reused Across Clusters)
+
+```
+Persistent Resource Group (e.g., os4-common)
+├── OIDC Issuer Storage Account
+├── Workload Identities (7 managed identities)
+├── Federated Identity Credentials
+└── DNS Zones (optional, for External DNS)
+```
+
+### Cluster-Specific Resources (Created/Deleted Per Cluster)
+
+By default, HyperShift creates separate resource groups for different resource types. However, all resources can be placed in a single managed resource group if preferred.
+
+**Default (Separate Resource Groups):**
+
+```
+Managed Resource Group (<name>-<infra-id>)
+├── Virtual Machines (worker nodes)
+├── Managed Disks (OS and data disks)
+├── Network Interfaces
+└── Load Balancers (ingress, services)
+
+VNet Resource Group (<name>-<infra-id>-vnet)
+├── Virtual Network
+├── Subnet
+├── Private DNS Zone
+└── Private DNS Zone Link
+
+NSG Resource Group (<name>-<infra-id>-nsg)
+└── Network Security Group
+```
+
+**Single Resource Group (Alternative):**
+
+You can use an existing VNet and NSG from the same resource group, which places all cluster resources in a single resource group.
+
+## Related Documentation
+
+- [Azure Workload Identity Setup](../../how-to/azure/azure-workload-identity-setup.md) - Set up managed identities and OIDC federation
+- [Setup Azure Management Cluster for HyperShift](../../how-to/azure/setup-management-cluster.md) - Install HyperShift operator
+- [Create a Self-Managed Azure HostedCluster](../../how-to/azure/create-self-managed-azure-cluster.md) - Deploy your first hosted cluster
+- [Self-Managed Azure Overview](../../how-to/azure/self-managed-azure-index.md) - Comprehensive overview
 
 
 ---

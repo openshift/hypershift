@@ -117,6 +117,7 @@ nav:
         - how-to/aws/troubleshooting/debug-nodes.md
         - how-to/aws/troubleshooting/troubleshooting-disaster-recovery.md
   - 'Azure':
+    - how-to/azure/index.md
     - 'Managed Azure':
       - how-to/azure/create-azure-cluster-on-aks.md
       - how-to/azure/create-azure-cluster-with-options.md
@@ -301,6 +302,8 @@ nav:
   - "Infrastructure":
     - reference/infrastructure/index.md
     - "AWS": reference/infrastructure/aws.md
+    - "Azure (Self-Managed)": reference/infrastructure/azure-self-managed.md
+    - "Azure (ARO HCP)": reference/infrastructure/azure-aro-hcp.md
     - "Agent": reference/infrastructure/agent.md
   - reference/index.md
   - reference/konnectivity.md
