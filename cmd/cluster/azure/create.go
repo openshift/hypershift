@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	azureinfra "github.com/openshift/hypershift/cmd/infra/azure"
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/azureutil"
 
 	corev1 "k8s.io/api/core/v1"
@@ -76,16 +77,18 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
-	// managed Azure only flags; these flags should not be used for self-managed Azure
+	// ARO HCP (managed Azure) only flags; these flags should not be used for self-managed Azure
 	flags.StringVar(&opts.KMSUserAssignedCredsSecretName, "kms-credentials-secret-name", opts.KMSUserAssignedCredsSecretName, "The name of a secret, in Azure KeyVault, containing the JSON UserAssignedIdentityCredentials used in KMS to authenticate to Azure.")
 	flags.StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the managed identities configuration in json format.")
 	flags.StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.DataPlaneIdentitiesFile, "Path to a file containing the client IDs of the managed identities for the data plane configured in json format.")
-	// TODO CNTRLPLANE-1389 - this needs to be renamed. In ARO HCP, we are using service principals in the control plane, but in self-managed Azure, we are using managed identities.
-	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-service-principal-roles", opts.AssignServicePrincipalRoles, "Assign the service principal roles to the managed identities.")
 	flags.BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, "Assign custom roles to HCP identities")
 
-	// self-managed Azure only flags; these flags should not be used for managed Azure
+	// self-managed Azure only flags; these flags should not be used for ARO HCP (managed Azure)
 	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, "Path to a file containing the workload identity client IDs configuration in json format for self-managed Azure.")
+
+	// flags used for both ARO HCP and self-managed Azure
+	// In ARO HCP, it assigns roles to managed identities; in self-managed Azure, it assigns roles to workload identities. The self-managed HCP CLI version of this flage is named assign-identity-roles.
+	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-service-principal-roles", opts.AssignServicePrincipalRoles, "Assign required Azure RBAC roles to identities (managed identities for ARO HCP, workload identities for self-managed).")
 
 	// general flags used for both managed and self-managed Azure
 	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, "Path to an Azure credentials file (required). This file is used to extract the subscription ID, tenant ID, and its credentials are used to create the necessary Azure resources for the HostedCluster.")
@@ -105,6 +108,34 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 // BindDeveloperOptions binds developer/development only options for the Azure create cluster command
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	bindCoreOptions(opts, flags)
+}
+
+// BindProductFlags binds customer-facing flags for self-managed Azure in the product CLI
+func BindProductFlags(opts *RawCreateOptions, flags *pflag.FlagSet) {
+	// Required credentials
+	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, util.AzureCredsDescription)
+
+	// General flags used for self-managed Azure
+	flags.StringVar(&opts.Location, "location", opts.Location, util.LocationDescription)
+	flags.StringSliceVar(&opts.AvailabilityZones, "availability-zones", opts.AvailabilityZones, util.AvailabilityZonesDescription)
+	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, util.ResourceGroupNameDescription)
+	flags.StringVar(&opts.VnetID, "vnet-id", opts.VnetID, util.VnetIDDescription)
+	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, util.SubnetIDDescription)
+	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, util.NetworkSecurityGroupIDDescription)
+	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, util.ResourceGroupTagsDescription)
+	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, util.DNSZoneRGNameDescription)
+
+	// Self-managed Azure identity flags
+	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, util.WorkloadIdentitiesFileDescription)
+	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", util.OIDCIssuerURLDescription)
+	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", util.SATokenIssuerKeyPathDescription)
+	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-identity-roles", opts.AssignServicePrincipalRoles, util.AssignIdentityRolesDescription)
+
+	// Encryption
+	flags.StringVar(&opts.EncryptionKeyID, "encryption-key-id", opts.EncryptionKeyID, util.EncryptionKeyIDDescription)
+
+	// Nodepool flags
+	azurenodepool.BindProductFlags(opts.NodePoolOpts, flags)
 }
 
 // Validate validates the Azure create cluster command options
