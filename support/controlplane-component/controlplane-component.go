@@ -59,6 +59,8 @@ type ControlPlaneContext struct {
 	// OmitOwnerReference determines whether the HCP OwnerReference should be omitted from resources deployed by this component.
 	// This is useful when the component is not managed by the same HostedControlPlane controller like capi and the CPO itself.
 	OmitOwnerReference bool
+	// DefaultIngressDomain is the default ingress domain of the management cluster.
+	DefaultIngressDomain string
 
 	// SkipPredicate is used for the generic unit test, so we can always generate a fixture for the components deployment/statefulset.
 	SkipPredicate bool
@@ -84,6 +86,7 @@ type WorkloadContext struct {
 	DefaultSecurityContextUID int64
 	EnableCIDebugOutput       bool
 	MetricsSet                metrics.MetricsSet
+	DefaultIngressDomain      string
 
 	// skip generation of certificates for unit tests
 	SkipCertificateSigning bool
@@ -103,6 +106,7 @@ func (cp *ControlPlaneContext) workloadContext() WorkloadContext {
 		MetricsSet:                cp.MetricsSet,
 		ImageMetadataProvider:     cp.ImageMetadataProvider,
 		SkipCertificateSigning:    cp.SkipCertificateSigning,
+		DefaultIngressDomain:      cp.DefaultIngressDomain,
 	}
 }
 
