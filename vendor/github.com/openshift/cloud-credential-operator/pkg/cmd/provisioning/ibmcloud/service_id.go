@@ -3,7 +3,6 @@ package ibmcloud
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
@@ -173,7 +172,7 @@ func (s *ServiceID) Dump(targetDir string) error {
 		return errors.Wrapf(err, "Failed to marshal the secret for the serviceID: %s", s.name)
 	}
 
-	if err := ioutil.WriteFile(filePath, data, 0600); err != nil {
+	if err := os.WriteFile(filePath, data, 0600); err != nil {
 		return errors.Wrap(err, "Failed to save Secret file")
 	}
 
