@@ -19,6 +19,16 @@ const (
 	RandomExpander     ExpanderString = "Random"
 )
 
+// CordonNodeBeforeTerminatingMode represents the mode for cordoning nodes before terminating.
+// +kubebuilder:validation:Enum=Enabled;Disabled
+type CordonNodeBeforeTerminatingMode string
+
+// These constants define the valid values for CordonNodeBeforeTerminatingMode
+const (
+	CordonNodeBeforeTerminatingModeEnabled  CordonNodeBeforeTerminatingMode = "Enabled"
+	CordonNodeBeforeTerminatingModeDisabled CordonNodeBeforeTerminatingMode = "Disabled"
+)
+
 // ClusterAutoscalerSpec defines the desired state of ClusterAutoscaler
 type ClusterAutoscalerSpec struct {
 	// Constraints of autoscaling resources
@@ -26,6 +36,9 @@ type ClusterAutoscalerSpec struct {
 
 	// Configuration of scale down operation
 	ScaleDown *ScaleDownConfig `json:"scaleDown,omitempty"`
+
+	// Configuration of scale up operation
+	ScaleUp *ScaleUpConfig `json:"scaleUp,omitempty"`
 
 	// Gives pods graceful termination time before scaling down
 	MaxPodGracePeriod *int32 `json:"maxPodGracePeriod,omitempty"`
@@ -182,4 +195,13 @@ type ScaleDownConfig struct {
 	// Node utilization level, defined as sum of requested resources divided by capacity, below which a node can be considered for scale down
 	// +kubebuilder:validation:Pattern=(0.[0-9]+)
 	UtilizationThreshold *string `json:"utilizationThreshold,omitempty"`
+
+	// CordonNodeBeforeTerminating enables/disables cordoning nodes before terminating during scale down.
+	CordonNodeBeforeTerminating *CordonNodeBeforeTerminatingMode `json:"cordonNodeBeforeTerminating,omitempty"`
+}
+
+type ScaleUpConfig struct {
+	// Scale up delay for new pods, if omitted defaults to 0 seconds
+	// +kubebuilder:validation:Pattern=([0-9]*(\.[0-9]*)?[a-z]+)+
+	NewPodScaleUpDelay *string `json:"newPodScaleUpDelay,omitempty"`
 }
