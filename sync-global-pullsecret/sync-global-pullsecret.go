@@ -15,6 +15,7 @@ import (
 	"github.com/coreos/go-systemd/dbus"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
+	"github.com/gofrs/flock"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -180,7 +181,33 @@ func (s *GlobalPullSecretSyncer) syncPullSecret() error {
 	return nil
 }
 
+// acquireFileLock acquires an exclusive lock on the file at the given path.
+// It returns a *flock.Flock instance that should be used to release the lock when done.
+func acquireFileLock(path string) (*flock.Flock, error) {
+	fileLock := flock.New(path)
+
+	// Try to acquire exclusive lock with timeout and retry
+	const lockTimeout = 30 * time.Second
+	const retryInterval = 100 * time.Millisecond
+	deadline := time.Now().Add(lockTimeout)
+
+	for time.Now().Before(deadline) {
+		locked, err := fileLock.TryLock()
+		if err != nil {
+			return nil, fmt.Errorf("failed to acquire lock: %w", err)
+		}
+		if locked {
+			return fileLock, nil
+		}
+		time.Sleep(retryInterval)
+	}
+
+	return nil, fmt.Errorf("timeout acquiring lock on %s after %v", path, lockTimeout)
+}
+
 // checkAndFixFile reads the current file content and updates it if it differs from the desired content (global pull secret content).
+// This function merges auths from the existing on-disk file with the desired pull secret to preserve any external modifications.
+// It uses file locking to prevent race conditions with external processes modifying the file.
 func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 	s.log.Info("Checking Kubelet's config.json file content")
 
@@ -189,27 +216,70 @@ func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 		return fmt.Errorf("invalid docker config.json content: %w", err)
 	}
 
-	// Read existing content if file exists
+	// Parse the desired pull secret
+	desiredConfig, err := parseDockerConfigJSON(pullSecretBytes)
+	if err != nil {
+		return fmt.Errorf("failed to parse desired pull secret: %w", err)
+	}
+
+	// Acquire exclusive lock on the file to prevent race conditions
+	fileLock, err := acquireFileLock(s.kubeletConfigJsonPath)
+	if err != nil {
+		return fmt.Errorf("failed to acquire file lock: %w", err)
+	}
+	defer func() {
+		if err := fileLock.Unlock(); err != nil {
+			s.log.Error(err, "Failed to release file lock")
+		}
+	}()
+
+	// Read existing content while holding the lock
 	existingContent, err := readFileFunc(s.kubeletConfigJsonPath)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to read existing file: %w", err)
 	}
 
-	// Preserve trailing newline if it exists in the original file
-	contentToWrite := pullSecretBytes
-	if len(existingContent) > 0 && existingContent[len(existingContent)-1] == '\n' {
-		if len(pullSecretBytes) == 0 || pullSecretBytes[len(pullSecretBytes)-1] != '\n' {
-			contentToWrite = append(pullSecretBytes, '\n')
+	// Determine if we need to preserve trailing newline
+	preserveNewline := len(existingContent) > 0 && existingContent[len(existingContent)-1] == '\n'
+
+	// Merge with existing config if it exists
+	var mergedConfig *dockerConfigJSON
+	if len(existingContent) > 0 {
+		existingConfig, err := parseDockerConfigJSON(existingContent)
+		if err != nil {
+			s.log.Info("Existing kubelet config corrupted - external auths will be lost",
+				"file", s.kubeletConfigJsonPath,
+				"error", err,
+				"action", "using cluster-provided config only")
+			mergedConfig = desiredConfig
+		} else {
+			// Merge configs, with desired auths taking precedence for known registries
+			mergedConfig = mergeDockerConfigs(existingConfig, desiredConfig, s.log)
 		}
+	} else {
+		// No existing file, use desired config
+		mergedConfig = desiredConfig
 	}
 
-	// If file content is different, write the desired content
+	// Marshal the merged config
+	mergedBytes, err := json.Marshal(mergedConfig)
+	if err != nil {
+		return fmt.Errorf("failed to marshal merged config: %w", err)
+	}
+
+	// Preserve trailing newline if it existed in the original file
+	contentToWrite := mergedBytes
+	if preserveNewline && (len(mergedBytes) == 0 || mergedBytes[len(mergedBytes)-1] != '\n') {
+		contentToWrite = append(mergedBytes, '\n')
+	}
+
+	// If file content is different, write the merged content while still holding the lock
 	if string(existingContent) != string(contentToWrite) {
 		s.log.Info("file content is different, updating it")
 		// Save original content for potential rollback
 		originalContent := existingContent
 
-		// Write the new content
+		// Write the new content while holding the lock
 		if err := writeFileFunc(s.kubeletConfigJsonPath, contentToWrite, 0600); err != nil {
 			return fmt.Errorf("failed to write file: %w", err)
 		}
@@ -279,6 +349,11 @@ func readPullSecretFromFile(filePath string) ([]byte, error) {
 	return content, nil
 }
 
+// dockerConfigJSON represents the structure of a Docker config.json file
+type dockerConfigJSON struct {
+	Auths map[string]interface{} `json:"auths"`
+}
+
 func validateDockerConfigJSON(b []byte) error {
 	var m map[string]any
 	if err := json.Unmarshal(b, &m); err != nil {
@@ -288,6 +363,50 @@ func validateDockerConfigJSON(b []byte) error {
 		return fmt.Errorf("missing 'auths' key")
 	}
 	return nil
+}
+
+// parseDockerConfigJSON parses a Docker config.json byte slice
+func parseDockerConfigJSON(b []byte) (*dockerConfigJSON, error) {
+	var config dockerConfigJSON
+	if err := json.Unmarshal(b, &config); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal docker config: %w", err)
+	}
+	if config.Auths == nil {
+		config.Auths = make(map[string]interface{})
+	}
+	return &config, nil
+}
+
+// mergeDockerConfigs merges two Docker configs with the following precedence rules:
+// - Desired config auths always take precedence (HyperShift manages these registries)
+// - Existing auths are preserved ONLY if they're not in the desired config (external systems manage these)
+// This allows HyperShift to update its own auths while preserving external modifications.
+func mergeDockerConfigs(existing, desired *dockerConfigJSON, log logr.Logger) *dockerConfigJSON {
+	merged := &dockerConfigJSON{
+		Auths: make(map[string]interface{}),
+	}
+
+	// First, add all auths from the desired config (these always win)
+	for registry, auth := range desired.Auths {
+		merged.Auths[registry] = auth
+	}
+
+	// Then, add auths from existing config ONLY if they're not in desired
+	externalRegistries := make([]string, 0)
+	for registry, auth := range existing.Auths {
+		if _, inDesired := desired.Auths[registry]; !inDesired {
+			// This registry is unknown to HyperShift, preserve the external auth
+			log.Info("Preserving external auth from on-disk file", "registry", registry)
+			merged.Auths[registry] = auth
+			externalRegistries = append(externalRegistries, registry)
+		}
+	}
+
+	if len(externalRegistries) > 0 {
+		log.Info("Preserved external auths from on-disk file", "registryCount", len(externalRegistries))
+	}
+
+	return merged
 }
 
 func writeAtomic(path string, data []byte, perm os.FileMode) error {

@@ -37,8 +37,8 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:          true,
 		},
 		{
-			name:               "file exists with different content",
-			description:        "file exists with different content, kubelet restart fails, rollback succeeds",
+			name:               "file exists with different content - auths are merged",
+			description:        "file exists with different registry, kubelet restart fails, rollback succeeds with merged content",
 			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
 			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
 			rollbackShouldFail: false,
@@ -47,6 +47,32 @@ func TestCheckAndFixFile(t *testing.T) {
 				"rolled back changes",
 			},
 			expectedFinalContent: `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
+			expectError:          true,
+		},
+		{
+			name:               "merge auths from existing and desired - external auth preserved",
+			description:        "file has external auth, desired has different auth, both should be in merged result",
+			initialContent:     `{"auths":{"external.registry.com":{"auth":"ZXh0ZXJuYWw="}}}`,
+			secretContent:      `{"auths":{"hypershift.registry.com":{"auth":"aHlwZXJzaGlmdA=="}}}`,
+			rollbackShouldFail: false,
+			expectedErrorContains: []string{
+				"failed to restart kubelet after 3 attempts",
+				"rolled back changes",
+			},
+			expectedFinalContent: `{"auths":{"external.registry.com":{"auth":"ZXh0ZXJuYWw="}}}`,
+			expectError:          true,
+		},
+		{
+			name:               "desired auth takes precedence over existing auth for same registry",
+			description:        "both configs have auth for same registry, desired should win to allow HyperShift updates",
+			initialContent:     `{"auths":{"shared.registry.com":{"auth":"ZXhpc3Rpbmc="}}}`,
+			secretContent:      `{"auths":{"shared.registry.com":{"auth":"bmV3"}}}`,
+			rollbackShouldFail: false,
+			expectedErrorContains: []string{
+				"failed to restart kubelet after 3 attempts",
+				"rolled back changes",
+			},
+			expectedFinalContent: `{"auths":{"shared.registry.com":{"auth":"ZXhpc3Rpbmc="}}}`,
 			expectError:          true,
 		},
 		{
@@ -60,7 +86,7 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:           false,
 		},
 		{
-			name:               "rollback succeeds",
+			name:               "rollback succeeds with merged content",
 			description:        "kubelet restart fails but rollback succeeds, file should be restored to original content",
 			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
 			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
@@ -73,22 +99,36 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:          true,
 		},
 		{
-			name:               "rollback fails",
-			description:        "both kubelet restart and rollback fail, file should remain with new content",
-			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
-			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			name:               "merge reads multiple auths from disk and combines with desired",
+			description:        "file has 2 external auths, desired has 2 HyperShift auths, all 4 should be in final merged result verifying disk read",
+			initialContent:     `{"auths":{"external1.com":{"auth":"ZXh0MQ=="},"external2.com":{"auth":"ZXh0Mg=="}}}`,
+			secretContent:      `{"auths":{"hypershift1.io":{"auth":"aHlwZXIx"},"hypershift2.io":{"auth":"aHlwZXIy"}}}`,
 			rollbackShouldFail: true,
 			expectedErrorContains: []string{
 				"2 errors happened",
 				"the kubelet restart failed after 3 attempts",
 				"it failed to rollback the file",
 			},
-			expectedFinalContent: `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			expectedFinalContent: `{"auths":{"external1.com":{"auth":"ZXh0MQ=="},"external2.com":{"auth":"ZXh0Mg=="},"hypershift1.io":{"auth":"aHlwZXIx"},"hypershift2.io":{"auth":"aHlwZXIy"}}}`,
 			expectError:          true,
 		},
 		{
-			name:               "preserve trailing newline when original file has one",
-			description:        "file has trailing newline, new content doesn't, should preserve newline",
+			name:               "desired auth overwrites same registry from disk",
+			description:        "file has auth for registry.io, desired has different auth for same registry, desired wins proving disk is read but not blindly preserved",
+			initialContent:     `{"auths":{"registry.io":{"auth":"b2xkVmFsdWU="}}}`,
+			secretContent:      `{"auths":{"registry.io":{"auth":"bmV3VmFsdWU="}}}`,
+			rollbackShouldFail: true,
+			expectedErrorContains: []string{
+				"2 errors happened",
+				"the kubelet restart failed after 3 attempts",
+				"it failed to rollback the file",
+			},
+			expectedFinalContent: `{"auths":{"registry.io":{"auth":"bmV3VmFsdWU="}}}`,
+			expectError:          true,
+		},
+		{
+			name:               "preserve trailing newline when original file has one - with merge",
+			description:        "file has trailing newline and different auth, merged content should preserve newline",
 			initialContent:     "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
 			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
 			rollbackShouldFail: false,
@@ -100,8 +140,8 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:          true,
 		},
 		{
-			name:               "preserve single newline when both have newlines",
-			description:        "both original file and new content have trailing newlines, should preserve single newline",
+			name:               "preserve single newline when both have newlines - with merge",
+			description:        "both original file and new content have trailing newlines, merged content should preserve single newline",
 			initialContent:     "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
 			secretContent:      "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
 			rollbackShouldFail: false,
@@ -113,8 +153,8 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:          true,
 		},
 		{
-			name:               "no newline when original file has none",
-			description:        "original file has no newline, new content has newline, should preserve new content format",
+			name:               "no newline when original file has none - with merge",
+			description:        "original file has no newline, merged content should have no newline",
 			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
 			secretContent:      "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
 			rollbackShouldFail: false,
@@ -126,8 +166,8 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:          true,
 		},
 		{
-			name:               "no newlines preserved",
-			description:        "neither original file nor new content have newlines, should preserve format",
+			name:               "no newlines preserved - with merge",
+			description:        "neither original file nor new content have newlines, merged content should have no newline",
 			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
 			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
 			rollbackShouldFail: false,
@@ -147,6 +187,67 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectedErrorContains: []string{},
 			expectedFinalContent:  "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
 			expectError:           false,
+		},
+		{
+			name:               "multiple external auths preserved",
+			description:        "file has multiple external auths, all should be preserved in merge",
+			initialContent:     `{"auths":{"external1.com":{"auth":"ZXh0MQ=="},"external2.com":{"auth":"ZXh0Mg=="}}}`,
+			secretContent:      `{"auths":{"hypershift.io":{"auth":"aHlwZXI="}}}`,
+			rollbackShouldFail: false,
+			expectedErrorContains: []string{
+				"failed to restart kubelet after 3 attempts",
+				"rolled back changes",
+			},
+			expectedFinalContent: `{"auths":{"external1.com":{"auth":"ZXh0MQ=="},"external2.com":{"auth":"ZXh0Mg=="}}}`,
+			expectError:          true,
+		},
+		{
+			name:               "corrupted config with potential external auths logs clear warning",
+			description:        "existing file is corrupted (could have had external auths), logs warning about loss",
+			initialContent:     `{"auths":{"external.registry.com":{"auth":"corrupt`,
+			secretContent:      `{"auths":{"hypershift.io":{"auth":"aHlwZXJzaGlmdA=="}}}`,
+			rollbackShouldFail: true,
+			expectedErrorContains: []string{
+				"2 errors happened",
+				"the kubelet restart failed after 3 attempts",
+				"it failed to rollback the file",
+			},
+			expectedFinalContent: `{"auths":{"hypershift.io":{"auth":"aHlwZXJzaGlmdA=="}}}`,
+			expectError:          true,
+			// Note: This scenario demonstrates the enhanced error logging:
+			// When existing config is corrupted (malformed JSON), the code:
+			// 1. Logs: "Existing kubelet config corrupted - external auths will be lost"
+			//    with file path, error details, and action taken
+			// 2. Falls back to cluster-provided config only (external auths are lost)
+			// 3. Continues operation (doesn't fail the sync)
+			// This warning is critical because external systems may have added auths
+			// that are now being discarded due to file corruption.
+		},
+		{
+			name:               "invalid existing config falls back to desired and logs warning",
+			description:        "existing file has invalid JSON, should use desired config only and log that external auths will be lost",
+			initialContent:     `{"auths":{"invalid json`,
+			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			rollbackShouldFail: false,
+			expectedErrorContains: []string{
+				"failed to restart kubelet after 3 attempts",
+				"rolled back changes",
+			},
+			expectedFinalContent: `{"auths":{"invalid json`,
+			expectError:          true,
+		},
+		{
+			name:               "complex merge with multiple overlapping and non-overlapping auths",
+			description:        "both configs have multiple auths, some overlap, desired wins conflicts but external auth preserved",
+			initialContent:     `{"auths":{"shared.io":{"auth":"b2xk"},"external.io":{"auth":"ZXh0"}}}`,
+			secretContent:      `{"auths":{"shared.io":{"auth":"bmV3"},"hypershift.io":{"auth":"aHlwZXI="}}}`,
+			rollbackShouldFail: false,
+			expectedErrorContains: []string{
+				"failed to restart kubelet after 3 attempts",
+				"rolled back changes",
+			},
+			expectedFinalContent: `{"auths":{"shared.io":{"auth":"b2xk"},"external.io":{"auth":"ZXh0"}}}`,
+			expectError:          true,
 		},
 	}
 
@@ -480,6 +581,202 @@ func TestValidateDockerConfigJSON(t *testing.T) {
 				g.Expect(err).To(HaveOccurred(), "Expected error for test case: %s", tt.description)
 			} else {
 				g.Expect(err).To(BeNil(), "Expected no error for test case: %s, but got: %v", tt.description, err)
+			}
+		})
+	}
+}
+
+func TestParseDockerConfigJSON(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       []byte
+		expectError bool
+		expectAuths map[string]interface{}
+		description string
+	}{
+		{
+			name:        "valid config with single auth",
+			input:       []byte(`{"auths":{"registry.io":{"auth":"dGVzdA=="}}}`),
+			expectError: false,
+			expectAuths: map[string]interface{}{
+				"registry.io": map[string]interface{}{"auth": "dGVzdA=="},
+			},
+			description: "should parse valid config with one auth",
+		},
+		{
+			name:        "valid config with multiple auths",
+			input:       []byte(`{"auths":{"reg1.io":{"auth":"YXV0aDE="},"reg2.io":{"auth":"YXV0aDI="}}}`),
+			expectError: false,
+			expectAuths: map[string]interface{}{
+				"reg1.io": map[string]interface{}{"auth": "YXV0aDE="},
+				"reg2.io": map[string]interface{}{"auth": "YXV0aDI="},
+			},
+			description: "should parse valid config with multiple auths",
+		},
+		{
+			name:        "valid config with empty auths",
+			input:       []byte(`{"auths":{}}`),
+			expectError: false,
+			expectAuths: map[string]interface{}{},
+			description: "should parse valid config with empty auths object",
+		},
+		{
+			name:        "invalid JSON",
+			input:       []byte(`{"auths":{"invalid`),
+			expectError: true,
+			description: "should fail on invalid JSON",
+		},
+		{
+			name:        "missing auths key defaults to empty",
+			input:       []byte(`{}`),
+			expectError: false,
+			expectAuths: map[string]interface{}{},
+			description: "should create empty auths map when key is missing",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			config, err := parseDockerConfigJSON(tt.input)
+
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred(), tt.description)
+			} else {
+				g.Expect(err).To(BeNil(), tt.description)
+				g.Expect(config).ToNot(BeNil())
+				g.Expect(len(config.Auths)).To(Equal(len(tt.expectAuths)))
+			}
+		})
+	}
+}
+
+func TestMergeDockerConfigs(t *testing.T) {
+	tests := []struct {
+		name            string
+		existing        *dockerConfigJSON
+		desired         *dockerConfigJSON
+		expectedAuthLen int
+		checkRegistry   string
+		expectedAuth    interface{}
+		description     string
+	}{
+		{
+			name: "merge non-overlapping auths",
+			existing: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"external.io": map[string]interface{}{"auth": "ZXh0ZXJuYWw="},
+				},
+			},
+			desired: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"hypershift.io": map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
+				},
+			},
+			expectedAuthLen: 2,
+			checkRegistry:   "external.io",
+			expectedAuth:    map[string]interface{}{"auth": "ZXh0ZXJuYWw="},
+			description:     "should contain both auths when there's no overlap",
+		},
+		{
+			name: "desired auth wins on conflict",
+			existing: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"shared.io": map[string]interface{}{"auth": "ZXhpc3Rpbmc="},
+				},
+			},
+			desired: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"shared.io": map[string]interface{}{"auth": "bmV3"},
+				},
+			},
+			expectedAuthLen: 1,
+			checkRegistry:   "shared.io",
+			expectedAuth:    map[string]interface{}{"auth": "bmV3"},
+			description:     "desired auth should win when both have same registry to allow HyperShift updates",
+		},
+		{
+			name: "merge with empty existing",
+			existing: &dockerConfigJSON{
+				Auths: map[string]interface{}{},
+			},
+			desired: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"hypershift.io": map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
+				},
+			},
+			expectedAuthLen: 1,
+			checkRegistry:   "hypershift.io",
+			expectedAuth:    map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
+			description:     "should use desired when existing is empty",
+		},
+		{
+			name: "merge with empty desired",
+			existing: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"external.io": map[string]interface{}{"auth": "ZXh0ZXJuYWw="},
+				},
+			},
+			desired: &dockerConfigJSON{
+				Auths: map[string]interface{}{},
+			},
+			expectedAuthLen: 1,
+			checkRegistry:   "external.io",
+			expectedAuth:    map[string]interface{}{"auth": "ZXh0ZXJuYWw="},
+			description:     "should preserve existing when desired is empty",
+		},
+		{
+			name: "complex merge with overlaps",
+			existing: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"shared.io":   map[string]interface{}{"auth": "b2xk"},
+					"external.io": map[string]interface{}{"auth": "ZXh0"},
+				},
+			},
+			desired: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"shared.io":     map[string]interface{}{"auth": "bmV3"},
+					"hypershift.io": map[string]interface{}{"auth": "aHlwZXI="},
+				},
+			},
+			expectedAuthLen: 3,
+			checkRegistry:   "shared.io",
+			expectedAuth:    map[string]interface{}{"auth": "bmV3"},
+			description:     "should merge all auths with desired winning conflicts and external auth preserved",
+		},
+		{
+			name: "hypershift can update its own auth even if file was modified",
+			existing: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"hypershift.io": map[string]interface{}{"auth": "b2xkVmFsdWU="},
+				},
+			},
+			desired: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"hypershift.io": map[string]interface{}{"auth": "bmV3VmFsdWU="},
+				},
+			},
+			expectedAuthLen: 1,
+			checkRegistry:   "hypershift.io",
+			expectedAuth:    map[string]interface{}{"auth": "bmV3VmFsdWU="},
+			description:     "desired auth should always win for known registries to allow updates",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			merged := mergeDockerConfigs(tt.existing, tt.desired, logr.Discard())
+
+			g.Expect(merged).ToNot(BeNil())
+			g.Expect(len(merged.Auths)).To(Equal(tt.expectedAuthLen), tt.description)
+
+			if tt.checkRegistry != "" {
+				auth, exists := merged.Auths[tt.checkRegistry]
+				g.Expect(exists).To(BeTrue(), "Registry %s should exist in merged config", tt.checkRegistry)
+				g.Expect(auth).To(Equal(tt.expectedAuth))
 			}
 		})
 	}
