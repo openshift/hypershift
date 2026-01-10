@@ -169,6 +169,8 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 		podTemplateSpec.Spec.NodeSelector = hcp.Spec.NodeSelector
 	}
 
+	podTemplateSpec.Spec.HostUsers = ptr.To(false)
+
 	c.setLabels(podTemplateSpec, hcp)
 	c.setAnnotations(podTemplateSpec, hcp)
 	c.setControlPlaneIsolation(podTemplateSpec, hcp)
