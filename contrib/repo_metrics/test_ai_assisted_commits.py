@@ -74,7 +74,7 @@ class MockGitCommandRunner(GitCommandRunner):
 
     def run(self, args: List[str]) -> str:
         """Mock git command execution."""
-        if args[0] == 'log' and '--since=' in args[1]:
+        if args[0] == 'log' and any(arg.startswith('--since=') or arg.startswith('--until=') for arg in args):
             return '\n'.join(self.commits.keys())
         elif args[0] == 'show' and args[1] in self.commits:
             return self.commits[args[1]]['full_message']
@@ -165,6 +165,22 @@ class TestAIAssistedCommits(unittest.TestCase):
 
         self.assertGreaterEqual(stats.ai_assisted_commits, stats.ai_assisted_merge)
         self.assertGreaterEqual(stats.ai_assisted_commits, stats.ai_assisted_non_merge)
+
+    def test_analyze_commits_with_until(self):
+        """Test commit analysis with until parameter."""
+        stats = analyze_commits(self.git_runner, since='4 weeks ago', until='1 week ago')
+
+        self.assertIsInstance(stats, CommitStats)
+        # Should still get commits from test data
+        self.assertEqual(stats.total_commits, 50)
+
+    def test_analyze_commits_with_only_until(self):
+        """Test commit analysis with only until parameter."""
+        stats = analyze_commits(self.git_runner, since='', until='1 week ago')
+
+        self.assertIsInstance(stats, CommitStats)
+        # Should still get commits from test data
+        self.assertEqual(stats.total_commits, 50)
 
 
 if __name__ == '__main__':
