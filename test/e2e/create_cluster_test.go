@@ -1688,6 +1688,81 @@ func TestOnCreateAPIUX(t *testing.T) {
 					},
 				},
 			},
+			{
+				name: "when AWS HostedCluster resource tags have duplicate keys, it should fail",
+				file: "hostedcluster-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.HostedCluster)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when duplicate tag keys are provided, it should reject with appropriate error",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform = hyperv1.PlatformSpec{
+								Type: hyperv1.AWSPlatform,
+								AWS: &hyperv1.AWSPlatformSpec{
+									Region: "us-east-1",
+									CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
+										VPC: "vpc-12345",
+										Subnet: &hyperv1.AWSResourceReference{
+											ID: ptr.To("subnet-12345"),
+										},
+										Zone: "us-east-1a",
+									},
+									RolesRef: hyperv1.AWSRolesRef{
+										IngressARN:              "arn:aws:iam::123456789012:role/ingress",
+										ImageRegistryARN:        "arn:aws:iam::123456789012:role/registry",
+										StorageARN:              "arn:aws:iam::123456789012:role/storage",
+										NetworkARN:              "arn:aws:iam::123456789012:role/network",
+										KubeCloudControllerARN:  "arn:aws:iam::123456789012:role/cloud-controller",
+										NodePoolManagementARN:   "arn:aws:iam::123456789012:role/nodepool",
+										ControlPlaneOperatorARN: "arn:aws:iam::123456789012:role/cpo",
+									},
+									ResourceTags: []hyperv1.AWSResourceTag{
+										{Key: "environment", Value: "production"},
+										{Key: "environment", Value: "staging"},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "Duplicate value",
+					},
+					{
+						name: "when valid unique tags are provided, it should succeed",
+						mutateInput: func(hc *hyperv1.HostedCluster) {
+							hc.Spec.Platform = hyperv1.PlatformSpec{
+								Type: hyperv1.AWSPlatform,
+								AWS: &hyperv1.AWSPlatformSpec{
+									Region: "us-east-1",
+									CloudProviderConfig: &hyperv1.AWSCloudProviderConfig{
+										VPC: "vpc-12345",
+										Subnet: &hyperv1.AWSResourceReference{
+											ID: ptr.To("subnet-12345"),
+										},
+										Zone: "us-east-1a",
+									},
+									RolesRef: hyperv1.AWSRolesRef{
+										IngressARN:              "arn:aws:iam::123456789012:role/ingress",
+										ImageRegistryARN:        "arn:aws:iam::123456789012:role/registry",
+										StorageARN:              "arn:aws:iam::123456789012:role/storage",
+										NetworkARN:              "arn:aws:iam::123456789012:role/network",
+										KubeCloudControllerARN:  "arn:aws:iam::123456789012:role/cloud-controller",
+										NodePoolManagementARN:   "arn:aws:iam::123456789012:role/nodepool",
+										ControlPlaneOperatorARN: "arn:aws:iam::123456789012:role/cpo",
+									},
+									ResourceTags: []hyperv1.AWSResourceTag{
+										{Key: "environment", Value: "production"},
+										{Key: "team", Value: "platform"},
+										{Key: "cost-center", Value: "engineering"},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
 		}
 
 		for _, tc := range testCases {
@@ -2450,6 +2525,51 @@ func TestOnCreateAPIUX(t *testing.T) {
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.AutoScaling = nil
 							np.Spec.Replicas = ptr.To[int32](1)
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
+			{
+				name: "when AWS resource tags have duplicate keys, it should fail",
+				file: "nodepool-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.NodePool)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when duplicate tag keys are provided, it should reject with appropriate error",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AWSPlatform
+							np.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
+								InstanceType: "m5.large",
+								Subnet: hyperv1.AWSResourceReference{
+									ID: ptr.To("subnet-12345"),
+								},
+								ResourceTags: []hyperv1.AWSResourceTag{
+									{Key: "environment", Value: "production"},
+									{Key: "environment", Value: "staging"},
+								},
+							}
+						},
+						expectedErrorSubstring: "Duplicate value",
+					},
+					{
+						name: "when valid unique tags are provided, it should succeed",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.Type = hyperv1.AWSPlatform
+							np.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
+								InstanceType: "m5.large",
+								Subnet: hyperv1.AWSResourceReference{
+									ID: ptr.To("subnet-12345"),
+								},
+								ResourceTags: []hyperv1.AWSResourceTag{
+									{Key: "environment", Value: "production"},
+									{Key: "team", Value: "platform"},
+									{Key: "cost-center", Value: "engineering"},
+								},
+							}
 						},
 						expectedErrorSubstring: "",
 					},

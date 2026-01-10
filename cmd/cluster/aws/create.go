@@ -118,7 +118,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 	}
 
 	if o.UseROSAManagedPolicies {
-		o.AdditionalTags = append(o.AdditionalTags, "red-hat-managed=true")
+		o.AdditionalTags = util.AddUniqueTag(o.AdditionalTags, "red-hat-managed=true")
 	}
 
 	if opts.EtcdStorageClass == "" {
