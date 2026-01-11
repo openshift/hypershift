@@ -134,11 +134,10 @@ func ExpectedNodePoolConditions(nodePool *hyperv1.NodePool) map[string]corev1.Co
 	}
 
 	// For NodePools with 0 replicas, certain conditions are expected to be False
-	// Note: ReachedIgnitionEndpoint is not included because it can be True even at 0 replicas
-	// if machines previously reached the ignition endpoint before scaling down
 	if nodePool.Spec.Replicas != nil && *nodePool.Spec.Replicas == 0 {
 		conditions[hyperv1.NodePoolAllMachinesReadyConditionType] = corev1.ConditionFalse
 		conditions[hyperv1.NodePoolAllNodesHealthyConditionType] = corev1.ConditionFalse
+		conditions[hyperv1.NodePoolReachedIgnitionEndpoint] = corev1.ConditionFalse
 	}
 
 	return conditions
