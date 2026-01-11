@@ -697,6 +697,11 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		etcdCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdAvailable))
 		kubeAPIServerCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.KubeAPIServerAvailable))
 		healthCheckErr := r.healthCheckKASLoadBalancers(ctx, hostedControlPlane)
+		componentsNotRolledOutMsg, componentsErr := r.controlPlaneComponentsRolledOut(ctx, hostedControlPlane)
+
+		// Check if the HostedControlPlaneAvailable condition is already True
+		availableCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
+		alreadyAvailable := availableCondition != nil && availableCondition.Status == metav1.ConditionTrue
 
 		status := metav1.ConditionFalse
 		var reason, message string
@@ -719,6 +724,14 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		case healthCheckErr != nil:
 			reason = hyperv1.KASLoadBalancerNotReachableReason
 			message = healthCheckErr.Error()
+		case componentsErr != nil:
+			reason = hyperv1.ControlPlaneComponentsRollingOutReason
+			message = fmt.Sprintf("Failed to check control plane components rollout: %v", componentsErr)
+		case componentsNotRolledOutMsg != "" && !alreadyAvailable:
+			// Only block availability if we haven't already reached available state.
+			// Once available, component rollouts (e.g., during upgrades) should not flip the condition back to false.
+			reason = hyperv1.ControlPlaneComponentsRollingOutReason
+			message = componentsNotRolledOutMsg
 		default:
 			reason = hyperv1.AsExpectedReason
 			message = ""
@@ -895,6 +908,39 @@ func healthCheckKASEndpoint(ingressPoint string, port int) error {
 		return fmt.Errorf("APIServer endpoint %s is not healthy", ingressPoint)
 	}
 	return nil
+}
+
+// controlPlaneComponentsRolledOut checks that all ControlPlaneComponents in the namespace
+// have their RolloutComplete condition set to True.
+// Returns an empty string if all components are rolled out, otherwise returns a message describing
+// which components are not yet rolled out.
+func (r *HostedControlPlaneReconciler) controlPlaneComponentsRolledOut(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+	componentsList := &hyperv1.ControlPlaneComponentList{}
+	if err := r.Client.List(ctx, componentsList, client.InNamespace(hcp.Namespace)); err != nil {
+		return "", fmt.Errorf("failed to list control plane components: %w", err)
+	}
+
+	// If there are no components yet, return a message indicating they haven't been created
+	if len(componentsList.Items) == 0 {
+		return "Control plane components have not been created yet", nil
+	}
+
+	var notRolledOut []string
+	for _, component := range componentsList.Items {
+		rolloutCondition := meta.FindStatusCondition(component.Status.Conditions, string(hyperv1.ControlPlaneComponentRolloutComplete))
+		if rolloutCondition == nil || rolloutCondition.Status != metav1.ConditionTrue {
+			r.Log.Info("Control plane component rollout not complete",
+				"component", component.Name,
+				"rolloutCondition", rolloutCondition)
+			notRolledOut = append(notRolledOut, component.Name)
+		}
+	}
+
+	if len(notRolledOut) > 0 {
+		return fmt.Sprintf("Waiting for components to roll out: %s", strings.Join(notRolledOut, ", ")), nil
+	}
+
+	return "", nil
 }
 
 func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
