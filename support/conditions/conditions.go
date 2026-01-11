@@ -134,6 +134,13 @@ func ExpectedNodePoolConditions(nodePool *hyperv1.NodePool) map[string]corev1.Co
 		conditions[hyperv1.NodePoolAutorepairEnabledConditionType] = corev1.ConditionFalse
 	}
 
+	// For NodePools with 0 replicas, certain conditions are expected to be False
+	if nodePool.Spec.Replicas != nil && *nodePool.Spec.Replicas == 0 {
+		conditions[hyperv1.NodePoolAllMachinesReadyConditionType] = corev1.ConditionFalse
+		conditions[hyperv1.NodePoolAllNodesHealthyConditionType] = corev1.ConditionFalse
+		conditions[hyperv1.NodePoolReachedIgnitionEndpoint] = corev1.ConditionFalse
+	}
+
 	return conditions
 }
 
