@@ -427,6 +427,8 @@ type HyperShiftOperatorDeployment struct {
 	OIDCBucketRegion                        string
 	OIDCStorageProviderS3Secret             *corev1.Secret
 	OIDCStorageProviderS3SecretKey          string
+	OperatorTolerations                     []string
+	OperatorNodeSelectors                   map[string]string
 	MetricsSet                              metrics.MetricsSet
 	IncludeVersion                          bool
 	UWMTelemetry                            bool
@@ -468,6 +470,8 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 	var volumeMounts []corev1.VolumeMount
 	var initVolumeMounts []corev1.VolumeMount
 	var volumes []corev1.Volume
+	var tolerations []corev1.Toleration
+	var nodeSelectors = make(map[string]string)
 	envVars := []corev1.EnvVar{
 		{
 			Name: "MY_NAMESPACE",
@@ -652,6 +656,19 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				Name:  envVar,
 				Value: ref,
 			})
+		}
+	}
+
+	for _, tolerationStr := range o.OperatorTolerations {
+		toleration := cmdutil.ParseTolerationString(tolerationStr)
+		if toleration != nil {
+			tolerations = append(tolerations, *toleration)
+		}
+	}
+
+	for key, value := range o.OperatorNodeSelectors {
+		if key != "" {
+			nodeSelectors[key] = value
 		}
 	}
 
@@ -864,6 +881,14 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				},
 			},
 		},
+	}
+
+	if len(tolerations) > 0 {
+		deployment.Spec.Template.Spec.Tolerations = tolerations
+	}
+
+	if len(nodeSelectors) > 0 {
+		deployment.Spec.Template.Spec.NodeSelector = nodeSelectors
 	}
 
 	if o.IncludeVersion {
