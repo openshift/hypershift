@@ -128,18 +128,15 @@ type GrpcPodConfig struct {
 	// SecurityContextConfig can be one of `legacy` or `restricted`. The CatalogSource's pod is either injected with the
 	// right pod.spec.securityContext and pod.spec.container[*].securityContext values to allow the pod to run in Pod
 	// Security Admission (PSA) `restricted` mode, or doesn't set these values at all, in which case the pod can only be
-	// run in PSA `baseline` or `privileged` namespaces. Currently if the SecurityContextConfig is unspecified, the default
-	// value of `legacy` is used. Specifying a value other than `legacy` or `restricted` result in a validation error.
-	// When using older catalog images, which could not be run in `restricted` mode, the SecurityContextConfig should be
-	// set to `legacy`.
+	// run in PSA `baseline` or `privileged` namespaces. If the SecurityContextConfig is unspecified, the mode will be
+	// determined by the namespace's PSA configuration. If the namespace is enforcing `restricted` mode, then the pod
+	// will be configured as if `restricted` was specified. Otherwise, it will be configured as if `legacy` was
+	// specified. Specifying a value other than `legacy` or `restricted` result in a validation error. When using older
+	// catalog images, which can not run in `restricted` mode, the SecurityContextConfig should be set to `legacy`.
 	//
-	// In a future version will the default will be set to `restricted`, catalog maintainers should rebuild their catalogs
-	// with a version of opm that supports running catalogSource pods in `restricted` mode to prepare for these changes.
-	//
-	// More information about PSA can be found here: https://kubernetes.io/docs/concepts/security/pod-security-admission/'
+	// More information about PSA can be found here: https://kubernetes.io/docs/concepts/security/pod-security-admission/
 	// +optional
 	// +kubebuilder:validation:Enum=legacy;restricted
-	// +kubebuilder:default:=legacy
 	SecurityContextConfig SecurityConfig `json:"securityContextConfig,omitempty"`
 
 	// MemoryTarget configures the $GOMEMLIMIT value for the gRPC catalog Pod. This is a soft memory limit for the server,
@@ -166,8 +163,8 @@ type GrpcPodConfig struct {
 
 // ExtractContentConfig configures context extraction from a file-based catalog index image.
 type ExtractContentConfig struct {
-	// CacheDir is the directory storing the pre-calculated API cache.
-	CacheDir string `json:"cacheDir"`
+	// CacheDir is the (optional) directory storing the pre-calculated API cache.
+	CacheDir string `json:"cacheDir,omitempty"`
 	// CatalogDir is the directory storing the file-based catalog contents.
 	CatalogDir string `json:"catalogDir"`
 }
@@ -239,9 +236,12 @@ type CatalogSourceStatus struct {
 	// The last time the CatalogSource image registry has been polled to ensure the image is up-to-date
 	LatestImageRegistryPoll *metav1.Time `json:"latestImageRegistryPoll,omitempty"`
 
-	ConfigMapResource     *ConfigMapResourceReference `json:"configMapReference,omitempty"`
-	RegistryServiceStatus *RegistryServiceStatus      `json:"registryService,omitempty"`
-	GRPCConnectionState   *GRPCConnectionState        `json:"connectionState,omitempty"`
+	// ConfigMapReference (deprecated) is the reference to the ConfigMap containing the catalog source's configuration, when the catalog source is a ConfigMap
+	ConfigMapResource *ConfigMapResourceReference `json:"configMapReference,omitempty"`
+	// RegistryService represents the current state of the GRPC service used to serve the catalog
+	RegistryServiceStatus *RegistryServiceStatus `json:"registryService,omitempty"`
+	// ConnectionState represents the current state of the CatalogSource's connection to the registry
+	GRPCConnectionState *GRPCConnectionState `json:"connectionState,omitempty"`
 
 	// Represents the state of a CatalogSource. Note that Message and Reason represent the original
 	// status information, which may be migrated to be conditions based in the future. Any new features
