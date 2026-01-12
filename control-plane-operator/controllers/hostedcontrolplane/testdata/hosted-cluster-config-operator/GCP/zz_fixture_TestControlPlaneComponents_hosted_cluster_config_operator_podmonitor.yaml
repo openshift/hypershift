@@ -16,9 +16,7 @@ spec:
     matchNames:
     - hcp-namespace
   podMetricsEndpoints:
-  - bearerTokenSecret:
-      key: ""
-    metricRelabelings:
+  - metricRelabelings:
     - action: replace
       replacement: ""
       targetLabel: _id
