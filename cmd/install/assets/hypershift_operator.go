@@ -1059,7 +1059,7 @@ func (o ExternalDNSPodMonitor) Build() *prometheusoperatorv1.PodMonitor {
 				},
 			},
 			PodMetricsEndpoints: []prometheusoperatorv1.PodMetricsEndpoint{{
-				Port:     "metrics",
+				Port:     ptr.To("metrics"),
 				Interval: "30s",
 			},
 			},
