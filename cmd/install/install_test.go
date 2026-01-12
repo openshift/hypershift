@@ -140,6 +140,49 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
+		"when valid operator tolerations are set there is no error": {
+			inputOptions: Options{
+				PrivatePlatform:     string(hyperv1.NonePlatform),
+				OperatorTolerations: []string{"key1=value1:NoSchedule:3600", "key2:PreferNoSchedule", "key3=value3:NoExecute"},
+			},
+			expectError: false,
+		},
+		"when invalid operator tolerations are set it errors": {
+			inputOptions: Options{
+				PrivatePlatform:     string(hyperv1.NonePlatform),
+				OperatorTolerations: []string{"invalidtolerationstring", "key2=value2", "key1=value1:NoSchedule:xxx"},
+			},
+			expectError: true,
+		},
+		"when mixed valid and invalid operator tolerations are set it errors": {
+			inputOptions: Options{
+				PrivatePlatform:     string(hyperv1.NonePlatform),
+				OperatorTolerations: []string{"key1=value1:NoSchedule:3600", "invalidtolerationstring"},
+			},
+			expectError: true,
+		},
+		"when invalid node selector is set it errors": {
+			inputOptions: Options{
+				PrivatePlatform:       string(hyperv1.NonePlatform),
+				OperatorNodeSelectors: map[string]string{"&&invalidkey": "value"},
+			},
+			expectError: true,
+		},
+		"when valid node selector is set there is no error": {
+			inputOptions: Options{
+				PrivatePlatform:       string(hyperv1.NonePlatform),
+				OperatorNodeSelectors: map[string]string{"validkey": "value"},
+			},
+			expectError: false,
+		},
+		"when both valid operator tolerations and node selectors are set there is no error": {
+			inputOptions: Options{
+				PrivatePlatform:       string(hyperv1.NonePlatform),
+				OperatorTolerations:   []string{"key1=value1:NoSchedule:3600", "key2:PreferNoSchedule"},
+				OperatorNodeSelectors: map[string]string{"validkey": "value", "anotherkey": ""},
+			},
+			expectError: false,
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
