@@ -1969,6 +1969,47 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		g.Expect(err).NotTo(HaveOccurred(), "failed to wait for DaemonSets to be ready")
 	})
 
+	// Test auth merging: inject mock on-disk auth before global pull secret sync
+	t.Run("Inject mock on-disk auth to test merging behavior", func(t *testing.T) {
+		t.Log("Creating mock auth injector DaemonSet to write pre-existing auth")
+		err := InjectMockOnDiskAuth(ctx, guestClient, dsImage)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create mock auth injector")
+
+		// Wait for the injector to complete on all nodes
+		t.Log("Waiting for mock auth injection to complete on all nodes")
+		availableNodesCount, err := hyperutil.CountAvailableNodes(ctx, guestClient)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to count available nodes")
+
+		// The injector DaemonSet uses RestartPolicy OnFailure, so we wait for all pods to succeed
+		g.Eventually(func() bool {
+			ds := &appsv1.DaemonSet{}
+			if err := guestClient.Get(ctx, crclient.ObjectKey{
+				Name:      "mock-auth-injector",
+				Namespace: "kube-system",
+			}, ds); err != nil {
+				t.Logf("Failed to get mock-auth-injector DaemonSet: %v", err)
+				return false
+			}
+			// Check that NumberReady matches the number of nodes
+			ready := ds.Status.NumberReady == availableNodesCount
+			if !ready {
+				t.Logf("Mock auth injector: %d/%d pods ready", ds.Status.NumberReady, availableNodesCount)
+			}
+			return ready
+		}, 5*time.Minute, 5*time.Second).Should(BeTrue(), "mock auth injector did not complete on all nodes")
+
+		t.Log("Mock on-disk auth injected successfully on all nodes")
+
+		// Clean up the injector DaemonSet
+		err = guestClient.Delete(ctx, &appsv1.DaemonSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "mock-auth-injector",
+				Namespace: "kube-system",
+			},
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to delete mock auth injector")
+	})
+
 	// Create a pod which uses the restricted image, should fail
 	t.Run("Create a pod which uses the restricted image, should fail", func(t *testing.T) {
 		shouldFail := true
@@ -2009,6 +2050,12 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 
 		err := waitForDaemonSetsReady(t, ctx, guestClient, daemonSetsToCheck, nodeCount)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to wait for DaemonSets to be ready")
+	})
+
+	// Verify that mock on-disk auth was preserved after global pull secret sync
+	t.Run("Verify mock on-disk auth preserved after sync", func(t *testing.T) {
+		t.Log("Verifying that mock on-disk auth was preserved during global pull secret sync")
+		VerifyMockAuthPreservedAfterSync(t, ctx, guestClient, dsImage)
 	})
 
 	// Check if we can run a pod with the restricted image

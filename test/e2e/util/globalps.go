@@ -23,6 +23,7 @@ import (
 const (
 	KubeletConfigVerifierDaemonSetName = "kubelet-config-verifier"
 	KubeletConfigVerifierNamespace     = "kube-system"
+	MockAuthRegistry                   = "mock-registry.example.com"
 	NodePullSecretPath                 = "/var/lib/kubelet/config.json"
 )
 
@@ -264,4 +265,229 @@ func OpenshiftOVNKubeDaemonSet() *appsv1.DaemonSet {
 			Namespace: "openshift-ovn-kubernetes",
 		},
 	}
+}
+
+// InjectMockOnDiskAuth creates a one-shot DaemonSet that appends mock auth to existing config.json
+// This simulates pre-existing on-disk auth that should be preserved during global pull secret sync
+func InjectMockOnDiskAuth(ctx context.Context, guestClient crclient.Client, dsImage string) error {
+	// Mock auth is base64("mockuser:mockpassword")
+	mockAuth := "bW9ja3VzZXI6bW9ja3Bhc3N3b3Jk"
+
+	daemonSet := &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mock-auth-injector",
+			Namespace: KubeletConfigVerifierNamespace,
+		},
+		Spec: appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": "mock-auth-injector",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"name": "mock-auth-injector",
+					},
+				},
+				Spec: corev1.PodSpec{
+					SecurityContext: &corev1.PodSecurityContext{},
+					DNSPolicy:       corev1.DNSDefault,
+					Tolerations:     []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
+					Containers: []corev1.Container{
+						{
+							Name:            "injector",
+							Image:           dsImage,
+							ImagePullPolicy: corev1.PullIfNotPresent,
+							Command:         []string{"/bin/sh", "-c"},
+							Args: []string{
+								fmt.Sprintf(`
+									set -e
+									CONFIG_PATH="%s"
+
+									echo "Injecting mock auth for %s into $CONFIG_PATH"
+
+									# Read existing config or create empty one
+									if [ -f "$CONFIG_PATH" ]; then
+										EXISTING=$(cat "$CONFIG_PATH")
+										echo "Existing config found"
+									else
+										EXISTING='{"auths":{}}'
+										echo "No existing config, creating new one"
+									fi
+
+									# Use jq to merge in the mock auth (or fallback to manual JSON manipulation)
+									if command -v jq >/dev/null 2>&1; then
+										echo "$EXISTING" | jq '.auths["%s"] = {"auth":"%s"}' > "$CONFIG_PATH"
+									else
+										# Fallback: simple append (assumes auths object exists)
+										cat > "$CONFIG_PATH" <<EOF
+{"auths":{"%s":{"auth":"%s"}}}
+EOF
+									fi
+
+									echo "Successfully injected mock auth"
+									cat "$CONFIG_PATH"
+									echo "Injection complete, keeping pod running..."
+
+									# Keep pod running
+									while true; do sleep 30; done
+								`, NodePullSecretPath, MockAuthRegistry, MockAuthRegistry, mockAuth, MockAuthRegistry, mockAuth),
+							},
+							SecurityContext: &corev1.SecurityContext{
+								Privileged: ptr.To(true),
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "kubelet-config",
+									MountPath: "/var/lib/kubelet",
+								},
+							},
+							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("40Mi"),
+									corev1.ResourceCPU:    resource.MustParse("20m"),
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "kubelet-config",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/var/lib/kubelet",
+									Type: ptr.To(corev1.HostPathDirectory),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	return guestClient.Create(ctx, daemonSet)
+}
+
+// VerifyMockAuthPreservedAfterSync verifies that the mock registry auth is still present after sync
+func VerifyMockAuthPreservedAfterSync(t *testing.T, ctx context.Context, guestClient crclient.Client, dsImage string) {
+	g := NewWithT(t)
+
+	daemonSet := &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mock-auth-verifier",
+			Namespace: KubeletConfigVerifierNamespace,
+		},
+		Spec: appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": "mock-auth-verifier",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"name": "mock-auth-verifier",
+					},
+				},
+				Spec: corev1.PodSpec{
+					SecurityContext: &corev1.PodSecurityContext{},
+					DNSPolicy:       corev1.DNSDefault,
+					Tolerations:     []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
+					Containers: []corev1.Container{
+						{
+							Name:            "verifier",
+							Image:           dsImage,
+							ImagePullPolicy: corev1.PullIfNotPresent,
+							Command:         []string{"/bin/sh", "-c"},
+							Args: []string{
+								fmt.Sprintf(`
+									set -e
+									CONFIG_PATH="%s"
+
+									echo "Verifying mock auth preservation in $CONFIG_PATH"
+
+									if [ ! -f "$CONFIG_PATH" ]; then
+										echo "ERROR: config.json does not exist"
+										exit 1
+									fi
+
+									echo "Current config.json contents:"
+									cat "$CONFIG_PATH"
+
+									# Verify mock registry is present
+									if ! grep -q '"%s"' "$CONFIG_PATH"; then
+										echo "ERROR: Mock registry %s NOT found in config.json"
+										echo "On-disk auth was NOT preserved during sync!"
+										exit 1
+									fi
+
+									echo "SUCCESS: Mock registry %s found - on-disk auth was preserved!"
+
+									# Keep pod running
+									while true; do sleep 30; done
+								`, NodePullSecretPath, MockAuthRegistry, MockAuthRegistry, MockAuthRegistry),
+							},
+							SecurityContext: &corev1.SecurityContext{
+								Privileged: ptr.To(true),
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "kubelet-config",
+									MountPath: "/var/lib/kubelet",
+								},
+							},
+							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("40Mi"),
+									corev1.ResourceCPU:    resource.MustParse("20m"),
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "kubelet-config",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/var/lib/kubelet",
+									Type: ptr.To(corev1.HostPathDirectory),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err := guestClient.Create(ctx, daemonSet)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to create mock auth verifier")
+
+	// Wait for verification to complete
+	t.Log("Waiting for mock auth verification DaemonSet to be ready")
+	availableNodesCount, err := hyperutil.CountAvailableNodes(ctx, guestClient)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to count available nodes")
+
+	daemonSetsToCheck := []DaemonSetManifest{
+		{GetFunc: func() *appsv1.DaemonSet {
+			return &appsv1.DaemonSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "mock-auth-verifier",
+					Namespace: KubeletConfigVerifierNamespace,
+				},
+			}
+		}, AllowPartialNodes: true},
+	}
+
+	err = waitForDaemonSetsReady(t, ctx, guestClient, daemonSetsToCheck, availableNodesCount)
+	g.Expect(err).NotTo(HaveOccurred(), "mock auth verification failed")
+
+	t.Log("SUCCESS: Mock auth was preserved after global pull secret sync")
+
+	// Clean up
+	g.Expect(guestClient.Delete(ctx, daemonSet)).To(Succeed())
 }
