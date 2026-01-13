@@ -76,7 +76,7 @@ func TestAutoscaling(t *testing.T) {
 		t.Run("TestAutoscaling", testAutoscaling(ctx, mgtClient, hostedCluster, clusterOpts.NodePoolReplicas, clusterOpts.NodePoolReplicas+2))
 
 		t.Run("TestAutoscalingBalancing", testAutoscalingBalancing(ctx, mgtClient, hostedCluster, clusterOpts.NodePoolReplicas*2, additionalNP))
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "autoscaling", globalOpts.ServiceAccountSigningKey)
+	}).WithAssetReader(content.ReadFile).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "autoscaling", globalOpts.ServiceAccountSigningKey)
 
 }
 
