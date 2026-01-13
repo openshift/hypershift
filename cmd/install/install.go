@@ -132,13 +132,19 @@ type Options struct {
 	PlatformsToInstall                        []string
 	ImagePullPolicy                           string
 	EnableAuditLogPersistence                 bool
-	ScaleFromZeroAWSCreds                     string
-	ScaleFromZeroAWSCredentialsSecret         string
-	ScaleFromZeroAWSCredentialsSecretKey      string
+	ScaleFromZeroProvider                     string
+	ScaleFromZeroCreds                        string
+	ScaleFromZeroCredentialsSecret            string
+	ScaleFromZeroCredentialsSecretKey         string
 }
 
 func (o *Options) Validate() error {
 	var errs []error
+
+	o.ScaleFromZeroProvider = strings.TrimSpace(o.ScaleFromZeroProvider)
+	if len(o.ScaleFromZeroProvider) != 0 {
+		o.ScaleFromZeroProvider = strings.ToLower(o.ScaleFromZeroProvider)
+	}
 
 	switch hyperv1.PlatformType(o.PrivatePlatform) {
 	case hyperv1.AWSPlatform:
@@ -189,19 +195,27 @@ func (o *Options) Validate() error {
 	}
 
 	// Validate scale-from-zero credentials
-	if len(o.ScaleFromZeroAWSCreds) != 0 || len(o.ScaleFromZeroAWSCredentialsSecret) != 0 {
+	supportedProviders := set.New("aws")
+	if len(o.ScaleFromZeroCreds) != 0 || len(o.ScaleFromZeroCredentialsSecret) != 0 {
 		// Check mutual exclusivity - only one of file or secret should be provided
-		if len(o.ScaleFromZeroAWSCreds) != 0 && len(o.ScaleFromZeroAWSCredentialsSecret) != 0 {
-			errs = append(errs, fmt.Errorf("only one of --scale-from-zero-aws-creds or --scale-from-zero-aws-secret is supported"))
+		if len(o.ScaleFromZeroCreds) != 0 && len(o.ScaleFromZeroCredentialsSecret) != 0 {
+			errs = append(errs, fmt.Errorf("only one of --scale-from-zero-creds or --scale-from-zero-secret is supported"))
+		}
+
+		// Provider is required when using scale-from-zero credentials
+		if len(o.ScaleFromZeroProvider) == 0 {
+			errs = append(errs, fmt.Errorf("--scale-from-zero-provider is required when using scale-from-zero credentials"))
+		} else if !supportedProviders.Has(o.ScaleFromZeroProvider) {
+			errs = append(errs, fmt.Errorf("invalid --scale-from-zero-provider: %s (must be one of: %v)", o.ScaleFromZeroProvider, supportedProviders.UnsortedList()))
 		}
 
 		// Validate credentials file exists and is accessible if provided
-		if len(o.ScaleFromZeroAWSCreds) > 0 {
-			if _, err := os.Stat(o.ScaleFromZeroAWSCreds); err != nil {
+		if len(o.ScaleFromZeroCreds) > 0 {
+			if _, err := os.Stat(o.ScaleFromZeroCreds); err != nil {
 				if os.IsNotExist(err) {
-					errs = append(errs, fmt.Errorf("--scale-from-zero-aws-creds file does not exist: %s", o.ScaleFromZeroAWSCreds))
+					errs = append(errs, fmt.Errorf("--scale-from-zero-creds file does not exist: %s", o.ScaleFromZeroCreds))
 				} else {
-					errs = append(errs, fmt.Errorf("--scale-from-zero-aws-creds file is not accessible: %w", err))
+					errs = append(errs, fmt.Errorf("--scale-from-zero-creds file is not accessible: %w", err))
 				}
 			}
 		}
@@ -309,9 +323,10 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringSliceVar(&opts.PlatformsToInstall, "limit-crd-install", opts.PlatformsToInstall, "Used to limit the CRDs that are installed to a per platform basis (example: --limit-crd-install=AWS,Azure). If this flag is not specified, all CRDs for all platforms will be installed. Valid, case-insensitive values are: AWS, Azure, IBMCloud, KubeVirt, Agent, OpenStack.")
 	cmd.PersistentFlags().StringToStringVar(&opts.AdditionalOperatorEnvVars, "additional-operator-env-vars", opts.AdditionalOperatorEnvVars, "Set of additional environment variables to be set on the HyperShift Operator deployment.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAuditLogPersistence, "enable-audit-log-persistence", opts.EnableAuditLogPersistence, "If true, enables persistent audit logs with automatic snapshots for kube-apiserver pods")
-	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroAWSCreds, "scale-from-zero-aws-creds", opts.ScaleFromZeroAWSCreds, "Path to AWS credentials file for EC2 instance type queries (optional credentials for scale-from-zero controller)")
-	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroAWSCredentialsSecret, "scale-from-zero-aws-secret", opts.ScaleFromZeroAWSCredentialsSecret, "Name of existing secret containing scale-from-zero AWS credentials (alternative to --scale-from-zero-aws-creds)")
-	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroAWSCredentialsSecretKey, "scale-from-zero-aws-secret-key", opts.ScaleFromZeroAWSCredentialsSecretKey, "Key within the scale-from-zero AWS credentials secret (default: credentials)")
+	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroProvider, "scale-from-zero-provider", opts.ScaleFromZeroProvider, "Platform type for scale-from-zero autoscaling (aws)")
+	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCreds, "scale-from-zero-creds", opts.ScaleFromZeroCreds, "Path to credentials file for scale-from-zero instance type queries")
+	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecret, "scale-from-zero-secret", opts.ScaleFromZeroCredentialsSecret, "Name of existing secret containing scale-from-zero credentials (alternative to --scale-from-zero-creds)")
+	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecretKey, "scale-from-zero-secret-key", opts.ScaleFromZeroCredentialsSecretKey, "Key within the scale-from-zero credentials secret (default: credentials)")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		return InstallHyperShiftOperator(cmd.Context(), cmd.OutOrStdout(), opts)
@@ -365,7 +380,7 @@ func InstallHyperShiftOperator(ctx context.Context, out io.Writer, opts Options)
 func NewInstallOptionsWithDefaults() Options {
 	opts := Options{}
 	opts.AWSPrivateCredentialsSecretKey = "credentials"
-	opts.ScaleFromZeroAWSCredentialsSecretKey = "credentials"
+	opts.ScaleFromZeroCredentialsSecretKey = "credentials"
 	opts.CertRotationScale = 24 * time.Hour
 	opts.Development = false
 	opts.EnableAdminRBACGeneration = false
@@ -862,8 +877,9 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		PlatformsInstalled:                      strings.Join(opts.PlatformsToInstall, ","),
 		ImagePullPolicy:                         opts.ImagePullPolicy,
 		EnableAuditLogPersistence:               opts.EnableAuditLogPersistence,
-		ScaleFromZeroAWSSecret:                  scaleFromZeroSecret,
-		ScaleFromZeroAWSSecretKey:               opts.ScaleFromZeroAWSCredentialsSecretKey,
+		ScaleFromZeroSecret:                     scaleFromZeroSecret,
+		ScaleFromZeroSecretKey:                  opts.ScaleFromZeroCredentialsSecretKey,
+		ScaleFromZeroProvider:                   opts.ScaleFromZeroProvider,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
 		Namespace: operatorNamespace,
@@ -1173,24 +1189,25 @@ func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secre
 		)
 	}
 
-	// Setup scale-from-zero AWS credentials
-	if opts.ScaleFromZeroAWSCreds != "" {
-		credBytes, err := os.ReadFile(opts.ScaleFromZeroAWSCreds)
+	// Setup scale-from-zero credentials
+	if opts.ScaleFromZeroCreds != "" {
+		credBytes, err := os.ReadFile(opts.ScaleFromZeroCreds)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
 
-		scaleFromZeroSecret = assets.ScaleFromZeroAWSCredentialsSecret{
+		scaleFromZeroSecret = assets.ScaleFromZeroCredentialsSecret{
 			Namespace:  operatorNamespace,
 			CredsBytes: credBytes,
-			CredsKey:   opts.ScaleFromZeroAWSCredentialsSecretKey,
+			CredsKey:   opts.ScaleFromZeroCredentialsSecretKey,
+			Provider:   opts.ScaleFromZeroProvider,
 		}.Build()
 		objects = append(objects, scaleFromZeroSecret)
-	} else if opts.ScaleFromZeroAWSCredentialsSecret != "" {
+	} else if opts.ScaleFromZeroCredentialsSecret != "" {
 		scaleFromZeroSecret = &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: operatorNamespace.Name,
-				Name:      opts.ScaleFromZeroAWSCredentialsSecret,
+				Name:      opts.ScaleFromZeroCredentialsSecret,
 			},
 		}
 	}

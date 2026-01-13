@@ -399,15 +399,15 @@ func TestNodePoolAutoscalingScaleFromZero(t *testing.T) {
 	}
 
 	// Check if scale-from-zero is enabled by looking for the credentials secret
-	// The MachineDeployment controller is enabled when this secret is set
+	// The instance type provider is enabled when this secret is set
 	scaleFromZeroSecret := &corev1.Secret{}
 	err = mgtClient.Get(testContext, crclient.ObjectKey{
 		Namespace: "hypershift",
-		Name:      "hypershift-operator-scale-from-zero-aws-credentials",
+		Name:      "hypershift-operator-scale-from-zero-credentials",
 	}, scaleFromZeroSecret)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			t.Skip("test requires scale-from-zero to be enabled on the HyperShift Operator (secret hypershift-operator-scale-from-zero-aws-credentials not found)")
+			t.Skip("test requires scale-from-zero to be enabled on the HyperShift Operator (secret hypershift-operator-scale-from-zero-credentials not found)")
 		}
 		t.Fatalf("failed to check for scale-from-zero secret: %v", err)
 	}
