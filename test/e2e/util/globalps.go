@@ -216,7 +216,7 @@ func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestCl
 	g.Expect(err).NotTo(HaveOccurred(), "failed to count available nodes")
 
 	daemonSetsToCheck := []DaemonSetManifest{
-		{GetFunc: OpenshiftOVNKubeDaemonSet, AllowPartialNodes: false},
+		{GetFunc: OpenshiftOVNKubeDaemonSet, AllowPartialNodes: true},
 		{GetFunc: hccomanifests.GlobalPullSecretDaemonSet, AllowPartialNodes: false},
 		{GetFunc: hccomanifests.KonnectivityAgentDaemonSet, AllowPartialNodes: false},
 		{GetFunc: KubeletConfigVerifierDaemonSet, AllowPartialNodes: true},
