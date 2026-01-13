@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +11,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/azureutil"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
@@ -36,6 +36,8 @@ var (
 )
 
 const (
+	// CiliumCNIProvider is the name of the Cilium CNI provider.
+	CiliumCNIProvider = "cilium"
 	// Generic timeouts and intervals for Cilium tests
 	CiliumDefaultTimeout           = 10 * time.Minute
 	CiliumLongTimeout              = 20 * time.Minute
@@ -46,27 +48,27 @@ const (
 )
 
 const (
-	// CiliumNamespace is the namespace where Cilium agent pods run.
-	CiliumNamespace = "cilium"
-	// CiliumTestNamespace is the namespace created for Cilium connectivity tests.
-	CiliumTestNamespace = "cilium-test"
-	// CiliumTestServiceAccount is the name of the service account used for Cilium connectivity tests.
-	CiliumTestServiceAccount = "default"
-	// CiliumConfigGroup is the group for CiliumConfig.
-	CiliumConfigGroup = "cilium.io"
-	// CiliumConfigVersion is the version for CiliumConfig.
-	CiliumConfigVersion = "v1alpha1"
-	// CiliumConfigKind is the kind for CiliumConfig.
-	CiliumConfigKind = "CiliumConfig"
-	// CiliumConfigName is the name of the CiliumConfig resource.
-	CiliumConfigName = "cilium"
+	// ciliumNamespace is the namespace where Cilium agent pods run.
+	ciliumNamespace = "cilium"
+	// ciliumTestNamespace is the namespace created for Cilium connectivity tests.
+	ciliumTestNamespace = "cilium-test"
+	// ciliumTestServiceAccount is the name of the service account used for Cilium connectivity tests.
+	ciliumTestServiceAccount = "default"
+	// ciliumConfigGroup is the group for CiliumConfig.
+	ciliumConfigGroup = "cilium.io"
+	// ciliumConfigVersion is the version for CiliumConfig.
+	ciliumConfigVersion = "v1alpha1"
+	// ciliumConfigKind is the kind for CiliumConfig.
+	ciliumConfigKind = "CiliumConfig"
+	// ciliumConfigName is the name of the CiliumConfig resource.
+	ciliumConfigName = "cilium"
 )
 
-// CiliumNamespaceManifest returns the cilium namespace with the required PodSecurity labels.
-func CiliumNamespaceManifest() *corev1.Namespace {
+// ciliumNamespaceManifest returns the cilium namespace with the required PodSecurity labels.
+func ciliumNamespaceManifest() *corev1.Namespace {
 	return &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: CiliumNamespace,
+			Name: ciliumNamespace,
 			Labels: map[string]string{
 				"security.openshift.io/scc.podSecurityLabelSync": "false",
 				"pod-security.kubernetes.io/enforce":             "privileged",
@@ -77,8 +79,8 @@ func CiliumNamespaceManifest() *corev1.Namespace {
 	}
 }
 
-// CiliumSCCManifest returns the SecurityContextConstraints for Cilium.
-func CiliumSCCManifest() *securityv1.SecurityContextConstraints {
+// ciliumSCCManifest returns the SecurityContextConstraints for Cilium.
+func ciliumSCCManifest() *securityv1.SecurityContextConstraints {
 	return &securityv1.SecurityContextConstraints{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "cilium-scc",
@@ -113,9 +115,9 @@ func CiliumSCCManifest() *securityv1.SecurityContextConstraints {
 	}
 }
 
-// CiliumManifests returns the list of Cilium manifest paths or URLs for a given version.
-func CiliumManifests(version string) []string {
-	files := []string{
+// ciliumManifestFiles returns the list of Cilium manifest file names for a given version.
+func ciliumManifestFiles() []string {
+	return []string{
 		"cluster-network-03-cilium-ciliumconfigs-crd.yaml",
 		"cluster-network-06-cilium-00000-cilium-namespace.yaml",
 		"cluster-network-06-cilium-00001-cilium-olm-serviceaccount.yaml",
@@ -130,25 +132,11 @@ func CiliumManifests(version string) []string {
 		"cluster-network-06-cilium-00010-cilium-cilium-olm-clusterrolebinding.yaml",
 		"cluster-network-06-cilium-00011-cilium-cilium-clusterrolebinding.yaml",
 	}
-
-	var manifests []string
-	localBase := fmt.Sprintf("test/e2e/assets/cilium/v%s", version)
-	remoteBase := fmt.Sprintf("https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v%s", version)
-
-	for _, f := range files {
-		localPath := filepath.Join(localBase, f)
-		if _, err := os.Stat(localPath); err == nil {
-			manifests = append(manifests, localPath)
-		} else {
-			manifests = append(manifests, fmt.Sprintf("%s/%s", remoteBase, f))
-		}
-	}
-	return manifests
 }
 
 // InstallCilium validates that Cilium network policies are properly enforced
 // in ARO HCP guest clusters. This test covers:Verifying Cilium installation
-func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster, reader assets.AssetReader) {
 	t.Run("InstallCilium", func(t *testing.T) {
 		if !azureutil.IsAroHCP() {
 			t.Skip("test only supported on ARO HCP clusters")
@@ -158,9 +146,9 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 			g := NewWithT(t)
 			t.Log("Configuring cilium namespace with PodSecurity labels")
 			ciliumNs := &corev1.Namespace{}
-			err := guestClient.Get(ctx, crclient.ObjectKey{Name: "cilium"}, ciliumNs)
+			err := guestClient.Get(ctx, crclient.ObjectKey{Name: ciliumNamespace}, ciliumNs)
 
-			manifest := CiliumNamespaceManifest()
+			manifest := ciliumNamespaceManifest()
 
 			if apierrors.IsNotFound(err) {
 				// Namespace doesn't exist, create it with labels
@@ -191,7 +179,7 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 
 			t.Log("Creating SecurityContextConstraints for Cilium")
 			// Create SCC for Cilium namespace
-			ciliumSCC := CiliumSCCManifest()
+			ciliumSCC := ciliumSCCManifest()
 
 			err := guestClient.Create(ctx, ciliumSCC)
 			if err != nil && !apierrors.IsAlreadyExists(err) {
@@ -205,31 +193,33 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 			g := NewWithT(t)
 			t.Logf("Installing Cilium operator version %s", CiliumVersion)
 			// Install Cilium operator manifests
-			manifests := CiliumManifests(CiliumVersion)
+			manifestFiles := ciliumManifestFiles()
 
-			for _, manifest := range manifests {
-				t.Logf("Applying manifest from %s", manifest)
-				err := ApplyYAML(ctx, guestClient, manifest)
-				g.Expect(err).ToNot(HaveOccurred(), "failed to apply manifest from %s", manifest)
+			for _, filename := range manifestFiles {
+				manifestPath := fmt.Sprintf("assets/cilium/v%s/%s", CiliumVersion, filename)
+				t.Logf("Applying manifest from %s", manifestPath)
+				yamlContent := assets.MustAsset(reader, manifestPath)
+				err := ApplyYAMLBytes(ctx, guestClient, yamlContent)
+				g.Expect(err).ToNot(HaveOccurred(), "failed to apply manifest from %s", manifestPath)
 			}
 
 			// Verify critical resources were created successfully
 			t.Log("Verifying Cilium resources creation")
 			// Verify Deployment exists
 			deployment := &appsv1.Deployment{}
-			err := guestClient.Get(ctx, crclient.ObjectKey{Name: "cilium-olm", Namespace: "cilium"}, deployment)
+			err := guestClient.Get(ctx, crclient.ObjectKey{Name: "cilium-olm", Namespace: ciliumNamespace}, deployment)
 			if err != nil {
 				t.Logf("Failed to get Deployment cilium-olm: %v", err)
 			}
 			// Wait for cilium-olm deployment to be ready
-			WaitForDeploymentAvailable(ctx, t, guestClient, "cilium-olm", "cilium", CiliumDefaultTimeout, CiliumDefaultPollInterval)
+			WaitForDeploymentAvailable(ctx, t, guestClient, "cilium-olm", ciliumNamespace, CiliumDefaultTimeout, CiliumDefaultPollInterval)
 
 			// Get cluster network configuration from guest cluster
-			podCIDR, hostPrefix := GetCiliumNetworkConfig(ctx, guestClient)
+			podCIDR, hostPrefix := getCiliumNetworkConfig(ctx, guestClient)
 
 			// Create CiliumConfig
 			t.Log("Creating CiliumConfig with pod CIDR and host prefix")
-			ciliumConfig := CreateCiliumConfig(podCIDR, hostPrefix)
+			ciliumConfig := createCiliumConfig(podCIDR, hostPrefix)
 			err = guestClient.Create(ctx, ciliumConfig)
 			if err != nil {
 				if apierrors.IsAlreadyExists(err) {
@@ -237,11 +227,11 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 					t.Log("CiliumConfig already exists, updating it with correct configuration")
 					existingConfig := &unstructured.Unstructured{}
 					existingConfig.SetGroupVersionKind(schema.GroupVersionKind{
-						Group:   CiliumConfigGroup,
-						Version: CiliumConfigVersion,
-						Kind:    CiliumConfigKind,
+						Group:   ciliumConfigGroup,
+						Version: ciliumConfigVersion,
+						Kind:    ciliumConfigKind,
 					})
-					err = guestClient.Get(ctx, crclient.ObjectKey{Name: CiliumConfigName, Namespace: CiliumNamespace}, existingConfig)
+					err = guestClient.Get(ctx, crclient.ObjectKey{Name: ciliumConfigName, Namespace: ciliumNamespace}, existingConfig)
 					g.Expect(err).ToNot(HaveOccurred(), "failed to get existing CiliumConfig")
 
 					// Update the spec with our desired configuration
@@ -259,11 +249,11 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 			g.Eventually(func() bool {
 				ciliumConfig := &unstructured.Unstructured{}
 				ciliumConfig.SetGroupVersionKind(schema.GroupVersionKind{
-					Group:   CiliumConfigGroup,
-					Version: CiliumConfigVersion,
-					Kind:    CiliumConfigKind,
+					Group:   ciliumConfigGroup,
+					Version: ciliumConfigVersion,
+					Kind:    ciliumConfigKind,
 				})
-				err := guestClient.Get(ctx, crclient.ObjectKey{Name: CiliumConfigName, Namespace: CiliumNamespace}, ciliumConfig)
+				err := guestClient.Get(ctx, crclient.ObjectKey{Name: ciliumConfigName, Namespace: ciliumNamespace}, ciliumConfig)
 				if err != nil {
 					t.Logf("CiliumConfig not found yet: %v", err)
 					return false
@@ -293,7 +283,7 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 				if maskSize != int64(hostPrefix) {
 					t.Logf("CiliumConfig clusterPoolIPv4MaskSize is %d, expected %d. Updating...", maskSize, hostPrefix)
 					// Update it again if the operator overwrote it
-					desiredConfig := CreateCiliumConfig(podCIDR, hostPrefix)
+					desiredConfig := createCiliumConfig(podCIDR, hostPrefix)
 					ciliumConfig.Object["spec"] = desiredConfig.Object["spec"]
 					err = guestClient.Update(ctx, ciliumConfig)
 					if err != nil {
@@ -311,7 +301,7 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 			var ciliumDaemonSet *appsv1.DaemonSet
 			g.Eventually(func() bool {
 				dsList := &appsv1.DaemonSetList{}
-				err := guestClient.List(ctx, dsList, crclient.InNamespace(CiliumNamespace))
+				err := guestClient.List(ctx, dsList, crclient.InNamespace(ciliumNamespace))
 				if err != nil {
 					t.Logf("Failed to list DaemonSets: %v", err)
 					return false
@@ -343,14 +333,14 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 
 // EnsureCiliumConnectivityTestResources performs the Cilium connectivity tests.
 // It returns a cleanup function.
-func EnsureCiliumConnectivityTestResources(t *testing.T, ctx context.Context, guestClient crclient.Client) func() {
+func EnsureCiliumConnectivityTestResources(t *testing.T, ctx context.Context, guestClient crclient.Client, reader assets.AssetReader) func() {
 	t.Run("CheckCiliumPodsRunning", func(t *testing.T) {
 		g := NewWithT(t)
 
 		t.Log("Check cilium pods to be running")
 		g.Eventually(func(g Gomega) {
 			podList := &corev1.PodList{}
-			err := guestClient.List(ctx, podList, crclient.InNamespace(CiliumNamespace))
+			err := guestClient.List(ctx, podList, crclient.InNamespace(ciliumNamespace))
 			g.Expect(err).NotTo(HaveOccurred(), "failed to list Cilium pods")
 
 			g.Expect(podList.Items).NotTo(BeEmpty(), "no Cilium pods found yet")
@@ -389,7 +379,7 @@ func EnsureCiliumConnectivityTestResources(t *testing.T, ctx context.Context, gu
 			RequiredDropCapabilities: []corev1.Capability{},
 			RunAsUser:                securityv1.RunAsUserStrategyOptions{Type: securityv1.RunAsUserStrategyMustRunAsRange},
 			SELinuxContext:           securityv1.SELinuxContextStrategyOptions{Type: securityv1.SELinuxStrategyMustRunAs},
-			Users:                    []string{fmt.Sprintf("system:serviceaccount:%s:%s", CiliumTestNamespace, CiliumTestServiceAccount)},
+			Users:                    []string{fmt.Sprintf("system:serviceaccount:%s:%s", ciliumTestNamespace, ciliumTestServiceAccount)},
 		}
 
 		err := guestClient.Create(ctx, scc)
@@ -406,7 +396,7 @@ func EnsureCiliumConnectivityTestResources(t *testing.T, ctx context.Context, gu
 		t.Log("Creating cilium-test namespace")
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
-				Name: CiliumTestNamespace,
+				Name: ciliumTestNamespace,
 				Labels: map[string]string{"security.openshift.io/scc.podSecurityLabelSync": "false",
 					"pod-security.kubernetes.io/enforce": "privileged",
 					"pod-security.kubernetes.io/audit":   "privileged",
@@ -428,14 +418,10 @@ func EnsureCiliumConnectivityTestResources(t *testing.T, ctx context.Context, gu
 
 		t.Logf("Deploying Cilium connectivity test from version %s", CiliumVersion)
 
-		localPath := fmt.Sprintf("test/e2e/assets/cilium/v%s/connectivity-check.yaml", CiliumVersion)
-		manifestPath := fmt.Sprintf("https://raw.githubusercontent.com/cilium/cilium/%s/examples/kubernetes/connectivity-check/connectivity-check.yaml", CiliumVersion)
+		manifestPath := fmt.Sprintf("assets/cilium/v%s/connectivity-check.yaml", CiliumVersion)
+		yamlContent := assets.MustAsset(reader, manifestPath)
 
-		if _, err := os.Stat(localPath); err == nil {
-			manifestPath = localPath
-		}
-
-		err := ApplyYAML(ctx, guestClient, manifestPath, CiliumTestNamespace)
+		err := ApplyYAMLBytes(ctx, guestClient, yamlContent, ciliumTestNamespace)
 		g.Expect(err).ToNot(HaveOccurred(), "failed to apply connectivity test manifest")
 
 		t.Log("Connectivity test manifests applied successfully")
@@ -447,7 +433,7 @@ func EnsureCiliumConnectivityTestResources(t *testing.T, ctx context.Context, gu
 		t.Log("Waiting for connectivity test pods to be ready")
 		g.Eventually(func(g Gomega) {
 			podList := &corev1.PodList{}
-			err := guestClient.List(ctx, podList, crclient.InNamespace(CiliumTestNamespace))
+			err := guestClient.List(ctx, podList, crclient.InNamespace(ciliumTestNamespace))
 			g.Expect(err).NotTo(HaveOccurred(), "failed to list pods")
 			g.Expect(podList.Items).NotTo(BeEmpty(), "no pods found in cilium-test namespace yet")
 
@@ -475,7 +461,7 @@ func EnsureCiliumConnectivityTestResources(t *testing.T, ctx context.Context, gu
 
 		t.Log("Verifying all test pods are still running")
 		podList := &corev1.PodList{}
-		err := guestClient.List(ctx, podList, crclient.InNamespace(CiliumTestNamespace))
+		err := guestClient.List(ctx, podList, crclient.InNamespace(ciliumTestNamespace))
 		g.Expect(err).ToNot(HaveOccurred(), "should be able to list test pods")
 
 		failedPods := []string{}
@@ -499,9 +485,9 @@ func EnsureCiliumConnectivityTestResources(t *testing.T, ctx context.Context, gu
 	}
 }
 
-// GetCiliumNetworkConfig extracts pod CIDR and host prefix from guest cluster
+// getCiliumNetworkConfig extracts pod CIDR and host prefix from guest cluster
 // In dual-stack environments, this function ensures we return the IPv4 network
-func GetCiliumNetworkConfig(ctx context.Context, guestClient crclient.Client) (podCIDR string, hostPrefix int32) {
+func getCiliumNetworkConfig(ctx context.Context, guestClient crclient.Client) (podCIDR string, hostPrefix int32) {
 	podCIDR = "10.132.0.0/14"
 	hostPrefix = 23
 
@@ -543,7 +529,7 @@ func CleanupCiliumConnectivityTestResources(ctx context.Context, t *testing.T, g
 	// Delete namespace
 	ns := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: CiliumTestNamespace,
+			Name: ciliumTestNamespace,
 		},
 	}
 	if _, err := hyperutil.DeleteIfNeeded(ctx, guestClient, ns); err != nil {
@@ -557,15 +543,15 @@ func ptrBool(b bool) *bool {
 	return &b
 }
 
-// CreateCiliumConfig creates a CiliumConfig custom resource
-func CreateCiliumConfig(podCIDR string, hostPrefix int32) *unstructured.Unstructured {
+// createCiliumConfig creates a CiliumConfig custom resource
+func createCiliumConfig(podCIDR string, hostPrefix int32) *unstructured.Unstructured {
 	ciliumConfig := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": fmt.Sprintf("%s/%s", CiliumConfigGroup, CiliumConfigVersion),
-			"kind":       CiliumConfigKind,
+			"apiVersion": fmt.Sprintf("%s/%s", ciliumConfigGroup, ciliumConfigVersion),
+			"kind":       ciliumConfigKind,
 			"metadata": map[string]interface{}{
-				"name":      CiliumConfigName,
-				"namespace": CiliumNamespace,
+				"name":      ciliumConfigName,
+				"namespace": ciliumNamespace,
 			},
 			"spec": map[string]interface{}{
 				"debug": map[string]interface{}{

@@ -36,8 +36,8 @@ func TestCiliumConnectivity(t *testing.T) {
 		t.Skip("Skipping test because it requires Azure platform")
 	}
 
-	if globalOpts.ExternalCNIProvider != "cilium" {
-		t.Skipf("skip cilium connection test if e2e.external-cni-provider is not cilium")
+	if globalOpts.ExternalCNIProvider != e2eutil.CiliumCNIProvider {
+		t.Skipf("skip cilium connection test if e2e.external-cni-provider is not %s", e2eutil.CiliumCNIProvider)
 	}
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -46,7 +46,7 @@ func TestCiliumConnectivity(t *testing.T) {
 		}
 		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
 
-		cleanup := e2eutil.EnsureCiliumConnectivityTestResources(t, ctx, guestClient)
+		cleanup := e2eutil.EnsureCiliumConnectivityTestResources(t, ctx, guestClient, content.ReadFile)
 		defer cleanup()
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "cilium-connectivity", globalOpts.ServiceAccountSigningKey)
+	}).WithAssetReader(content.ReadFile).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "cilium-connectivity", globalOpts.ServiceAccountSigningKey)
 }

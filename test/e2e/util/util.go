@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
 	"reflect"
 	"slices"
@@ -4216,76 +4215,41 @@ func WaitForDaemonSetReady(ctx context.Context, t *testing.T, client crclient.Cl
 	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("DaemonSet %s/%s should be ready", namespace, name))
 }
 
-// ApplyYAML reads YAML content from a URL or local file and applies it to the cluster.
-// It supports multi-document YAMLs and Server-Side Apply.
-func ApplyYAML(ctx context.Context, c crclient.Client, pathOrURL string, defaultNamespace ...string) error {
-	var yamlContent []byte
-	var err error
-
-	if strings.HasPrefix(pathOrURL, "http://") || strings.HasPrefix(pathOrURL, "https://") {
-		// Download YAML content
-		resp, err := http.Get(pathOrURL)
-		if err != nil {
-			return fmt.Errorf("failed to download manifest from %s: %w", pathOrURL, err)
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("failed to download manifest from %s: HTTP %d", pathOrURL, resp.StatusCode)
-		}
-		yamlContent, err = io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("failed to read manifest content: %w", err)
-		}
-	} else {
-		// Read local file
-		yamlContent, err = os.ReadFile(pathOrURL)
-		if err != nil {
-			return fmt.Errorf("failed to read manifest file from %s: %w", pathOrURL, err)
-		}
+// ApplyYAMLBytes applies YAML content to the cluster using Server-Side Apply.
+func ApplyYAMLBytes(ctx context.Context, c crclient.Client, yamlContent []byte, defaultNamespace ...string) error {
+	defaultNS := ""
+	if len(defaultNamespace) > 0 {
+		defaultNS = defaultNamespace[0]
 	}
 
-	// Split multi-document YAML using yaml decoder
 	decoder := k8syaml.NewYAMLOrJSONDecoder(bytes.NewReader(yamlContent), 4096)
-
 	for {
 		obj := &unstructured.Unstructured{}
-		err := decoder.Decode(obj)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
+		if err := decoder.Decode(obj); err != nil {
+			if err == io.EOF {
+				return nil
+			}
 			return fmt.Errorf("failed to decode YAML: %w", err)
 		}
+
 		if len(obj.Object) == 0 {
 			continue
 		}
-		// Set default namespace if provided and the resource doesn't have one
-		if len(defaultNamespace) > 0 && obj.GetNamespace() == "" {
-			isNamespaced := false
-			gvk := obj.GroupVersionKind()
 
-			// Check if the resource is namespaced using RESTMapper
-			mapping, err := c.RESTMapper().RESTMapping(gvk.GroupKind(), gvk.Version)
+		// Set namespace if needed
+		if defaultNS != "" && obj.GetNamespace() == "" {
+			mapping, err := c.RESTMapper().RESTMapping(obj.GroupVersionKind().GroupKind(), obj.GroupVersionKind().Version)
 			if err != nil {
-				return fmt.Errorf("failed to get mapping for %s: %w", gvk, err)
+				return fmt.Errorf("failed to get mapping: %w", err)
 			}
 			if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
-				isNamespaced = true
-			}
-			if isNamespaced {
-				obj.SetNamespace(defaultNamespace[0])
+				obj.SetNamespace(defaultNS)
 			}
 		}
 
-		// Apply the resource using Server-Side Apply
-		patchOpts := []crclient.PatchOption{
-			crclient.ForceOwnership,
-			crclient.FieldOwner("hypershift-e2e"),
-		}
-		err = c.Patch(ctx, obj, crclient.Apply, patchOpts...)
-		if err != nil {
-			return fmt.Errorf("failed to apply %s/%s: %w", obj.GetKind(), obj.GetName(), err)
+		// Apply the resource
+		if err := c.Patch(ctx, obj, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-e2e")); err != nil {
+			return fmt.Errorf("failed to apply %s %s/%s: %w", obj.GetKind(), obj.GetNamespace(), obj.GetName(), err)
 		}
 	}
-	return nil
 }

@@ -26,6 +26,7 @@ import (
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
+	"github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/util"
 
@@ -55,8 +56,9 @@ type PlatformAgnosticOptions struct {
 type hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
 type hypershiftTest struct {
 	*testing.T
-	ctx    context.Context
-	client crclient.Client
+	ctx         context.Context
+	client      crclient.Client
+	assetReader assets.AssetReader
 
 	test hypershiftTestFunc
 
@@ -75,6 +77,11 @@ func NewHypershiftTest(t *testing.T, ctx context.Context, test hypershiftTestFun
 		client: client,
 		test:   test,
 	}
+}
+
+func (h *hypershiftTest) WithAssetReader(reader assets.AssetReader) *hypershiftTest {
+	h.assetReader = reader
+	return h
 }
 
 func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1.PlatformType, artifactDir, name string, serviceAccountSigningKey []byte) {
@@ -138,7 +145,7 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 				ValidateAuthenticationSpec(t, h.ctx, h.client, hostedCluster, opts.ExtOIDCConfig)
 			}
 		}
-		if opts.ExternalCNIProvider == "cilium" {
+		if opts.ExternalCNIProvider == CiliumCNIProvider {
 			// Only install Cilium when there are worker nodes configured.
 			// The cilium-olm deployment requires worker nodes to schedule its pods.
 			// TestNodePool sets NodePoolReplicas=0 and creates NodePools later in individual tests,
@@ -147,8 +154,11 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 				if opts.NodePoolReplicas == 0 {
 					t.Fatal("NodePool replicas must be positive for Cilium to install.")
 				}
+				if h.assetReader == nil {
+					t.Fatal("AssetReader is required for Cilium installation. Call WithAssetReader() on the test instance.")
+				}
 				guestClient := WaitForGuestClient(t, context.Background(), h.client, hostedCluster)
-				InstallCilium(t, context.Background(), guestClient, hostedCluster)
+				InstallCilium(t, context.Background(), guestClient, hostedCluster, h.assetReader)
 				// wait hosted cluster ready
 				WaitForNReadyNodes(t, context.Background(), guestClient, opts.NodePoolReplicas, platform)
 				WaitForImageRollout(t, context.Background(), h.client, hostedCluster)
