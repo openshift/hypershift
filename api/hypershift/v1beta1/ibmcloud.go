@@ -14,6 +14,8 @@ type IBMCloudKMSSpec struct {
 	// keyList defines the list of keys used for data encryption
 	// +kubebuilder:validation:MaxItems=100
 	// +required
+	// +listType=map
+	// +listMapKey=keyVersion
 	KeyList []IBMCloudKMSKeyEntry `json:"keyList"`
 }
 

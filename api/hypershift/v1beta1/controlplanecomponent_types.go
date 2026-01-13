@@ -71,6 +71,10 @@ type ControlPlaneComponentStatus struct {
 	// resources is a list of the resources reconciled by this component.
 	// +optional
 	// +kubebuilder:validation:MaxItems=100
+	// +listType=map
+	// +listMapKey=group
+	// +listMapKey=kind
+	// +listMapKey=name
 	Resources []ComponentResource `json:"resources,omitempty"`
 }
 

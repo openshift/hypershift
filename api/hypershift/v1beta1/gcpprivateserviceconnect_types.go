@@ -60,6 +60,7 @@ type GCPPrivateServiceConnectSpec struct {
 	// +kubebuilder:validation:MaxItems=50
 	// +kubebuilder:validation:items:MaxLength=30
 	// +kubebuilder:validation:items:Pattern=`^([a-z][a-z0-9-]{4,28}[a-z0-9]|[0-9]{6,12})$`
+	// +listType=set
 	ConsumerAcceptList []string `json:"consumerAcceptList"`
 
 	// natSubnet is the subnet used for NAT by the Service Attachment
@@ -114,6 +115,7 @@ type GCPPrivateServiceConnectStatus struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	// +kubebuilder:validation:items:MaxLength=253
+	// +listType=set
 	DNSRecords []string `json:"dnsRecords,omitempty"`
 }
 

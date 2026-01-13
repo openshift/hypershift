@@ -161,6 +161,8 @@ type HostedControlPlaneSpec struct {
 	// in the management cluster.
 	// +required
 	// +kubebuilder:validation:MaxItems=6
+	// +listType=map
+	// +listMapKey=service
 	Services []ServicePublishingStrategyMapping `json:"services"`
 
 	// auditWebhook contains metadata for configuring an audit webhook
@@ -190,6 +192,8 @@ type HostedControlPlaneSpec struct {
 	// imageContentSources lists sources/repositories for the release-image content.
 	// +optional
 	// +kubebuilder:validation:MaxItems=255
+	// +listType=map
+	// +listMapKey=source
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 
 	// additionalTrustBundle references a ConfigMap containing a PEM-encoded X.509 certificate bundle
@@ -239,6 +243,7 @@ type HostedControlPlaneSpec struct {
 	//
 	// +optional
 	// +kubebuilder:validation:MaxItems=25
+	// +listType=atomic
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 
 	// labels when specified, define what custom labels are added to the hcp pods.

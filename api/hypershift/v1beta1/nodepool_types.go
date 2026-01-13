@@ -173,6 +173,7 @@ type NodePoolSpec struct {
 	// +rollout
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
+	// +listType=atomic
 	Config []corev1.LocalObjectReference `json:"config,omitempty"`
 
 	// nodeDrainTimeout is the maximum amount of time that the controller will spend on retrying to drain a node until it succeeds.
@@ -197,6 +198,7 @@ type NodePoolSpec struct {
 	// These taints are additive to the ones applied by other controllers
 	// +kubebuilder:validation:MaxItems=50
 	// +optional
+	// +listType=atomic
 	Taints []Taint `json:"taints,omitempty"`
 
 	// pausedUntil is a field that can be used to pause reconciliation on the NodePool controller. Resulting in any change to the NodePool being ignored.
@@ -223,6 +225,7 @@ type NodePoolSpec struct {
 	// Changing this field will trigger a NodePool rollout.
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
+	// +listType=atomic
 	TuningConfig []corev1.LocalObjectReference `json:"tuningConfig,omitempty"`
 
 	// arch is the preferred processor architecture for the NodePool. Different platforms might have different supported architectures.
@@ -258,6 +261,8 @@ type NodePoolStatus struct {
 	// current state.
 	// +kubebuilder:validation:MaxItems=100
 	// +optional
+	// +listType=map
+	// +listMapKey=type
 	Conditions []NodePoolCondition `json:"conditions,omitempty"`
 }
 
