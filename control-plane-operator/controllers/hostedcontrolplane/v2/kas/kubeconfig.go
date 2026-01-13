@@ -120,8 +120,7 @@ func adapExternalAdminKubeconfigSecret(cpContext component.WorkloadContext, secr
 
 func adaptCustomAdminKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	hcp := cpContext.HCP
-	apiServerPort := util.KASPodPort(hcp)
-	url := customExternalURL(hcp.Spec.KubeAPIServerDNSName, apiServerPort)
+	url := customExternalURL(hcp.Spec.KubeAPIServerDNSName, cpContext.InfraStatus.APIPort)
 
 	totalRootCA, err := combineRootCAWithServingCerts(cpContext)
 	if err != nil {
