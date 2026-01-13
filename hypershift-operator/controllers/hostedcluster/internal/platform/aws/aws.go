@@ -103,7 +103,7 @@ func (p AWS) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, hcp *hy
 	featureGates := []string{
 		"EKS=false",
 	}
-	if p.payloadVersion != nil && p.payloadVersion.Major == 4 && p.payloadVersion.Minor > 15 {
+	if p.payloadVersion != nil && (p.payloadVersion.Major >= 5 || (p.payloadVersion.Major == 4 && p.payloadVersion.Minor > 15)) {
 		featureGates = append(featureGates, "ROSA=false")
 	}
 
