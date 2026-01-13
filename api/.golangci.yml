@@ -29,6 +29,7 @@ linters:
               - defaultorrequired
               - statusoptional
               - ssatags
+              - duplicatemarkers
           lintersConfig:
             conditions:
               isFirstField: Warn
@@ -152,24 +153,6 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/nodepool_types.go
         text: 'conditions: Conditions field in NodePoolStatus must be a slice of metav1.Condition'
-
-      # duplicatemarkers (4 issues)
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/azure.go
-        text: 'duplicatemarkers: Diagnostics.StorageAccountType has duplicated markers kubebuilder:validation:Enum'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/azure.go
-        text: 'duplicatemarkers: ManagedIdentity.ObjectEncoding has duplicated markers kubebuilder:default'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/azure.go
-        text: 'duplicatemarkers: ManagedIdentity.ObjectEncoding has duplicated markers kubebuilder:validation:Enum'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/hostedcluster_types.go
-        text: 'duplicatemarkers: ProvisionerConfig.Name has duplicated markers kubebuilder:validation:Enum'
 
       # integers (6 issues)
       - linters:
