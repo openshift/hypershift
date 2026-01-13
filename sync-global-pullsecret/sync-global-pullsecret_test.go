@@ -9,8 +9,26 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/go-logr/logr"
-	"go.uber.org/mock/gomock"
 )
+
+// mockDbusConn is a handmade mock implementation of dbusConn interface
+type mockDbusConn struct {
+	restartUnitFunc func(name, mode string, ch chan<- string) (int, error)
+	closeFunc       func()
+}
+
+func (m *mockDbusConn) RestartUnit(name, mode string, ch chan<- string) (int, error) {
+	if m.restartUnitFunc != nil {
+		return m.restartUnitFunc(name, mode, ch)
+	}
+	return 0, nil
+}
+
+func (m *mockDbusConn) Close() {
+	if m.closeFunc != nil {
+		m.closeFunc()
+	}
+}
 
 func TestCheckAndFixFile(t *testing.T) {
 	tests := []struct {
@@ -225,94 +243,82 @@ func TestCheckAndFixFile(t *testing.T) {
 func TestRestartKubelet(t *testing.T) {
 	tests := []struct {
 		name          string
-		setupMock     func(*MockdbusConn)
+		setupMock     func(*mockDbusConn)
 		expectedError string
 		description   string
 	}{
 		{
 			name: "Success",
-			setupMock: func(mock *MockdbusConn) {
-				mock.EXPECT().
-					RestartUnit(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(name, mode string, ch chan<- string) (int, error) {
-						go func() { ch <- "done" }()
-						return 0, nil
-					})
+			setupMock: func(mock *mockDbusConn) {
+				mock.restartUnitFunc = func(name, mode string, ch chan<- string) (int, error) {
+					go func() { ch <- "done" }()
+					return 0, nil
+				}
 			},
 			expectedError: "",
 			description:   "systemd job completed successfully",
 		},
 		{
 			name: "RestartUnit returns an error",
-			setupMock: func(mock *MockdbusConn) {
-				mock.EXPECT().
-					RestartUnit(gomock.Any(), gomock.Any(), gomock.Any()).
-					Return(0, fmt.Errorf("dbus error"))
+			setupMock: func(mock *mockDbusConn) {
+				mock.restartUnitFunc = func(name, mode string, ch chan<- string) (int, error) {
+					return 0, fmt.Errorf("dbus error")
+				}
 			},
 			expectedError: "failed to restart kubelet: dbus error",
 			description:   "dbus call itself failed",
 		},
 		{
 			name: "Job failed",
-			setupMock: func(mock *MockdbusConn) {
-				mock.EXPECT().
-					RestartUnit(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(name, mode string, ch chan<- string) (int, error) {
-						go func() { ch <- "failed" }()
-						return 0, nil
-					})
+			setupMock: func(mock *mockDbusConn) {
+				mock.restartUnitFunc = func(name, mode string, ch chan<- string) (int, error) {
+					go func() { ch <- "failed" }()
+					return 0, nil
+				}
 			},
 			expectedError: "failed to restart kubelet, result: failed",
 			description:   "systemd job failed",
 		},
 		{
 			name: "Job timeout",
-			setupMock: func(mock *MockdbusConn) {
-				mock.EXPECT().
-					RestartUnit(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(name, mode string, ch chan<- string) (int, error) {
-						go func() { ch <- "timeout" }()
-						return 0, nil
-					})
+			setupMock: func(mock *mockDbusConn) {
+				mock.restartUnitFunc = func(name, mode string, ch chan<- string) (int, error) {
+					go func() { ch <- "timeout" }()
+					return 0, nil
+				}
 			},
 			expectedError: "failed to restart kubelet, result: timeout",
 			description:   "systemd job timed out",
 		},
 		{
 			name: "Job canceled",
-			setupMock: func(mock *MockdbusConn) {
-				mock.EXPECT().
-					RestartUnit(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(name, mode string, ch chan<- string) (int, error) {
-						go func() { ch <- "canceled" }()
-						return 0, nil
-					})
+			setupMock: func(mock *mockDbusConn) {
+				mock.restartUnitFunc = func(name, mode string, ch chan<- string) (int, error) {
+					go func() { ch <- "canceled" }()
+					return 0, nil
+				}
 			},
 			expectedError: "failed to restart kubelet, result: canceled",
 			description:   "systemd job was canceled",
 		},
 		{
 			name: "Job dependency failed",
-			setupMock: func(mock *MockdbusConn) {
-				mock.EXPECT().
-					RestartUnit(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(name, mode string, ch chan<- string) (int, error) {
-						go func() { ch <- "dependency" }()
-						return 0, nil
-					})
+			setupMock: func(mock *mockDbusConn) {
+				mock.restartUnitFunc = func(name, mode string, ch chan<- string) (int, error) {
+					go func() { ch <- "dependency" }()
+					return 0, nil
+				}
 			},
 			expectedError: "failed to restart kubelet, result: dependency",
 			description:   "systemd job dependency failed",
 		},
 		{
 			name: "Job skipped",
-			setupMock: func(mock *MockdbusConn) {
-				mock.EXPECT().
-					RestartUnit(gomock.Any(), gomock.Any(), gomock.Any()).
-					DoAndReturn(func(name, mode string, ch chan<- string) (int, error) {
-						go func() { ch <- "skipped" }()
-						return 0, nil
-					})
+			setupMock: func(mock *mockDbusConn) {
+				mock.restartUnitFunc = func(name, mode string, ch chan<- string) (int, error) {
+					go func() { ch <- "skipped" }()
+					return 0, nil
+				}
 			},
 			expectedError: "failed to restart kubelet, result: skipped",
 			description:   "systemd job was skipped",
@@ -321,10 +327,7 @@ func TestRestartKubelet(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
-
-			mock := NewMockdbusConn(ctrl)
+			mock := &mockDbusConn{}
 			tt.setupMock(mock)
 
 			err := restartKubelet(mock)
