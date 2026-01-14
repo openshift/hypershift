@@ -197,7 +197,7 @@ func (o *Options) Validate() error {
 	}
 
 	// Validate scale-from-zero credentials
-	supportedProviders := set.New("aws")
+	supportedProviders := set.New("aws", "azure")
 	if len(o.ScaleFromZeroCreds) != 0 || len(o.ScaleFromZeroCredentialsSecret) != 0 {
 		// Check mutual exclusivity - only one of file or secret should be provided
 		if len(o.ScaleFromZeroCreds) != 0 && len(o.ScaleFromZeroCredentialsSecret) != 0 {
@@ -330,7 +330,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringSliceVar(&opts.PlatformsToInstall, "limit-crd-install", opts.PlatformsToInstall, "Used to limit the CRDs that are installed to a per platform basis (example: --limit-crd-install=AWS,Azure). If this flag is not specified, all CRDs for all platforms will be installed. Valid, case-insensitive values are: AWS, Azure, IBMCloud, KubeVirt, Agent, OpenStack, GCP.")
 	cmd.PersistentFlags().StringToStringVar(&opts.AdditionalOperatorEnvVars, "additional-operator-env-vars", opts.AdditionalOperatorEnvVars, "Set of additional environment variables to be set on the HyperShift Operator deployment.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAuditLogPersistence, "enable-audit-log-persistence", opts.EnableAuditLogPersistence, "If true, enables persistent audit logs with automatic snapshots for kube-apiserver pods")
-	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroProvider, "scale-from-zero-provider", opts.ScaleFromZeroProvider, "Platform type for scale-from-zero autoscaling (aws)")
+	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroProvider, "scale-from-zero-provider", opts.ScaleFromZeroProvider, "Platform type for scale-from-zero autoscaling (aws, azure)")
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCreds, "scale-from-zero-creds", opts.ScaleFromZeroCreds, "Path to credentials file for scale-from-zero instance type queries")
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecret, "scale-from-zero-secret", opts.ScaleFromZeroCredentialsSecret, "Name of existing secret containing scale-from-zero credentials (alternative to --scale-from-zero-creds)")
 	cmd.PersistentFlags().StringVar(&opts.ScaleFromZeroCredentialsSecretKey, "scale-from-zero-secret-key", opts.ScaleFromZeroCredentialsSecretKey, "Key within the scale-from-zero credentials secret (default: credentials)")

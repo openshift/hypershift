@@ -16,6 +16,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 
@@ -23,6 +24,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 )
 
 // AzureEncryptionKey represents the information needed to access an encryption key in Azure Key Vault
@@ -31,6 +33,58 @@ type AzureEncryptionKey struct {
 	KeyVaultName string
 	KeyName      string
 	KeyVersion   string
+}
+
+// NewScaleFromZeroCredential creates an Azure ClientSecretCredential specifically for
+// scale-from-zero instance type queries. This function supports both OpenShift installer
+// format and Azure standard format for credentials files.
+func NewScaleFromZeroCredential(credentialsPath string) (*azidentity.ClientSecretCredential, string, error) {
+	// Internal struct to support multiple credential formats
+	type credentialFile struct {
+		SubscriptionID string `json:"subscriptionId,omitempty"`
+		TenantID       string `json:"tenantId,omitempty"`
+
+		// OpenShift installer format
+		ClientID     string `json:"clientId,omitempty"`
+		ClientSecret string `json:"clientSecret,omitempty"`
+
+		// Azure standard format (preferred)
+		AADClientID     string `json:"aadClientId,omitempty"`
+		AADClientSecret string `json:"aadClientSecret,omitempty"`
+	}
+
+	raw, err := os.ReadFile(credentialsPath)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read credentials from %s: %w", credentialsPath, err)
+	}
+
+	var cf credentialFile
+	if err := yaml.Unmarshal(raw, &cf); err != nil {
+		return nil, "", fmt.Errorf("failed to unmarshal credentials: %w", err)
+	}
+
+	// Normalize: prefer Azure standard format over installer format
+	clientID := cf.ClientID
+	clientSecret := cf.ClientSecret
+
+	if cf.AADClientID != "" {
+		clientID = cf.AADClientID
+	}
+	if cf.AADClientSecret != "" {
+		clientSecret = cf.AADClientSecret
+	}
+
+	// Validate required fields
+	if cf.TenantID == "" || cf.SubscriptionID == "" || clientID == "" || clientSecret == "" {
+		return nil, "", fmt.Errorf("invalid credentials: missing required fields (tenantId, subscriptionId, clientId/aadClientId, clientSecret/aadClientSecret)")
+	}
+
+	cred, err := azidentity.NewClientSecretCredential(cf.TenantID, clientID, clientSecret, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to create Azure credentials: %w", err)
+	}
+
+	return cred, cf.SubscriptionID, nil
 }
 
 // GetAzureCloudConfiguration converts a cloud name string to the Azure SDK cloud.Configuration.
