@@ -29,6 +29,8 @@ import (
 	"sigs.k8s.io/kube-api-linter/pkg/markers"
 )
 
+const stringTypeName = "string"
+
 // IsBasicType checks if the type of the given identifier is a basic type.
 // Basic types are types like int, string, bool, etc.
 func IsBasicType(pass *analysis.Pass, expr ast.Expr) bool {
@@ -46,7 +48,7 @@ func IsStringType(pass *analysis.Pass, expr ast.Expr) bool {
 		return false
 	}
 
-	if ident.Name == "string" {
+	if ident.Name == stringTypeName {
 		return true
 	}
 

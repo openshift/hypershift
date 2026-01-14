@@ -38,7 +38,7 @@ func Initializer() initializer.AnalyzerInitializer {
 	)
 }
 
-// Init returns the intialized Analyzer.
+// Init returns the initialized Analyzer.
 func initAnalyzer(umc *UniqueMarkersConfig) (*analysis.Analyzer, error) {
 	return newAnalyzer(umc), nil
 }
