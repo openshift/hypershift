@@ -8,7 +8,9 @@ RUN make hypershift \
   && make hypershift-no-cgo \
   && make hypershift-operator \
   && make product-cli \
-  && make karpenter-operator
+  && make karpenter-operator \
+  && make control-plane-operator \
+  && make control-plane-pki-operator
 
 FROM registry.access.redhat.com/ubi9:latest
 COPY --from=builder /hypershift/bin/hypershift \
@@ -16,6 +18,8 @@ COPY --from=builder /hypershift/bin/hypershift \
                     /hypershift/bin/hcp \
                     /hypershift/bin/hypershift-operator \
                     /hypershift/bin/karpenter-operator \
+                    /hypershift/bin/control-plane-operator \
+                    /hypershift/bin/control-plane-pki-operator \
      /usr/bin/
 
 ENTRYPOINT ["/usr/bin/hypershift"]

@@ -3,15 +3,18 @@ package cvo
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -27,7 +30,10 @@ import (
 )
 
 func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
-	if cvo.enableCVOManagementClusterMetricsAccess {
+	// Enable CVO metrics access if either RHOBS monitoring is enabled or the explicit flag is set
+	enableMetricsAccess := os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" || cvo.enableCVOManagementClusterMetricsAccess
+
+	if enableMetricsAccess {
 		if deployment.Spec.Template.Labels == nil {
 			deployment.Spec.Template.Labels = map[string]string{}
 		}
@@ -93,10 +99,20 @@ func (cvo *clusterVersionOperator) adaptDeployment(cpContext component.WorkloadC
 		if updateService := cpContext.HCP.Spec.UpdateService; updateService != "" {
 			c.Args = append(c.Args, "--update-service", string(updateService))
 		}
-		if cvo.enableCVOManagementClusterMetricsAccess {
+
+		if enableMetricsAccess {
 			c.Args = append(c.Args, "--use-dns-for-services=true")
-			c.Args = append(c.Args, "--metrics-ca-bundle-file=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt")
-			c.Args = append(c.Args, fmt.Sprintf("--metrics-url=https://thanos-querier.openshift-monitoring.svc:9092?namespace=%s", cpContext.HCP.Namespace))
+
+			// Configure metrics endpoint based on monitoring stack
+			if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" && awsutil.IsROSAHCP(cpContext.HCP) {
+				// RHOBS Prometheus uses HTTP without TLS (ROSA HCP specific)
+				c.Args = append(c.Args, "--metrics-ca-bundle-file=")
+				c.Args = append(c.Args, "--metrics-url=http://hypershift-monitoring-stack-prometheus.openshift-observability-operator.svc:9090")
+			} else {
+				// OCP Thanos Query uses HTTPS with service CA
+				c.Args = append(c.Args, "--metrics-ca-bundle-file=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt")
+				c.Args = append(c.Args, fmt.Sprintf("--metrics-url=https://thanos-querier.openshift-monitoring.svc:9092?namespace=%s", cpContext.HCP.Namespace))
+			}
 		}
 	})
 
