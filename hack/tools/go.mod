@@ -303,7 +303,7 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/api v0.34.2 // indirect
-	k8s.io/apiextensions-apiserver v0.33.2 // indirect
+	k8s.io/apiextensions-apiserver v0.34.0-beta.0 // indirect
 	k8s.io/apimachinery v0.34.2 // indirect
 	k8s.io/apiserver v0.34.2 // indirect
 	k8s.io/client-go v0.34.2 // indirect
@@ -323,7 +323,7 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace sigs.k8s.io/controller-tools => github.com/openshift/controller-tools v0.12.1-0.20250402141027-24f590ca0886
+replace sigs.k8s.io/controller-tools => github.com/openshift/controller-tools v0.12.1-0.20251016051350-840138b18461
 
 // pin these versions to match the main module even if golangci-lint v2 wants newer versions
 replace (

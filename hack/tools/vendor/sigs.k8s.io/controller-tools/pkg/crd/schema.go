@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	apiext "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	crdmarkers "sigs.k8s.io/controller-tools/pkg/crd/markers"
 	"sigs.k8s.io/controller-tools/pkg/loader"
 	"sigs.k8s.io/controller-tools/pkg/markers"
@@ -56,6 +57,9 @@ type applyFirstMarker interface {
 	ApplyFirst()
 }
 
+// schemaFetcher is a function that fetches a schema for a given type.
+type schemaFetcher func(TypeIdent) *apiext.JSONSchemaProps
+
 // schemaRequester knows how to marker that another schema (e.g. via an external reference) is necessary.
 type schemaRequester interface {
 	NeedSchemaFor(typ TypeIdent)
@@ -67,6 +71,7 @@ type schemaContext struct {
 	info *markers.TypeInfo
 
 	schemaRequester schemaRequester
+	schemaFetcher   schemaFetcher
 	PackageMarkers  markers.MarkerValues
 
 	allowDangerousTypes    bool
@@ -75,11 +80,12 @@ type schemaContext struct {
 
 // newSchemaContext constructs a new schemaContext for the given package and schema requester.
 // It must have type info added before use via ForInfo.
-func newSchemaContext(pkg *loader.Package, req schemaRequester, allowDangerousTypes, ignoreUnexportedFields bool) *schemaContext {
+func newSchemaContext(pkg *loader.Package, req schemaRequester, fetcher schemaFetcher, allowDangerousTypes, ignoreUnexportedFields bool) *schemaContext {
 	pkg.NeedTypesInfo()
 	return &schemaContext{
 		pkg:                    pkg,
 		schemaRequester:        req,
+		schemaFetcher:          fetcher,
 		allowDangerousTypes:    allowDangerousTypes,
 		ignoreUnexportedFields: ignoreUnexportedFields,
 	}
@@ -92,6 +98,7 @@ func (c *schemaContext) ForInfo(info *markers.TypeInfo) *schemaContext {
 		pkg:                    c.pkg,
 		info:                   info,
 		schemaRequester:        c.schemaRequester,
+		schemaFetcher:          c.schemaFetcher,
 		allowDangerousTypes:    c.allowDangerousTypes,
 		ignoreUnexportedFields: c.ignoreUnexportedFields,
 	}
@@ -233,7 +240,9 @@ func typeToSchema(ctx *schemaContext, rawType ast.Expr) *apiext.JSONSchemaProps 
 		return &apiext.JSONSchemaProps{}
 	}
 
-	props.Description = ctx.info.Doc
+	if ctx.info.Doc != "" {
+		props.Description = ctx.info.Doc
+	}
 
 	applyMarkers(ctx, ctx.info.Markers, props, rawType)
 
@@ -269,6 +278,7 @@ func localNamedToSchema(ctx *schemaContext, ident *ast.Ident) *apiext.JSONSchema
 	if aliasInfo, isAlias := typeInfo.(*types.Alias); isAlias {
 		typeInfo = aliasInfo.Rhs()
 	}
+
 	if basicInfo, isBasic := typeInfo.(*types.Basic); isBasic {
 		typ, fmt, err := builtinToType(basicInfo, ctx.allowDangerousTypes)
 		if err != nil {
@@ -280,32 +290,21 @@ func localNamedToSchema(ctx *schemaContext, ident *ast.Ident) *apiext.JSONSchema
 		// > Otherwise, the alias information is only in the type name, which
 		// > points directly to the actual (aliased) type.
 		if basicInfo.Name() != ident.Name {
-			ctx.requestSchema("", ident.Name)
-			link := TypeRefLink("", ident.Name)
-			return &apiext.JSONSchemaProps{
-				Type:   typ,
-				Format: fmt,
-				Ref:    &link,
-			}
+			return ctx.schemaFetcher(TypeIdent{
+				Package: ctx.pkg,
+				Name:    ident.Name,
+			})
 		}
 		return &apiext.JSONSchemaProps{
 			Type:   typ,
 			Format: fmt,
 		}
 	}
-	// NB(directxman12): if there are dot imports, this might be an external reference,
-	// so use typechecking info to get the actual object
-	typeNameInfo := typeInfo.(interface{ Obj() *types.TypeName }).Obj()
-	pkg := typeNameInfo.Pkg()
-	pkgPath := loader.NonVendorPath(pkg.Path())
-	if pkg == ctx.pkg.Types {
-		pkgPath = ""
-	}
-	ctx.requestSchema(pkgPath, typeNameInfo.Name())
-	link := TypeRefLink(pkgPath, typeNameInfo.Name())
-	return &apiext.JSONSchemaProps{
-		Ref: &link,
-	}
+
+	return ctx.schemaFetcher(TypeIdent{
+		Package: ctx.pkg,
+		Name:    ident.Name,
+	})
 }
 
 // namedSchema creates a schema (ref) for an explicitly external type reference.
@@ -397,6 +396,8 @@ func mapToSchema(ctx *schemaContext, mapType *ast.MapType) *apiext.JSONSchemaPro
 
 // structToSchema creates a schema for the given struct.  Embedded fields are placed in AllOf,
 // and can be flattened later with a Flattener.
+//
+//nolint:gocyclo
 func structToSchema(ctx *schemaContext, structType *ast.StructType) *apiext.JSONSchemaProps {
 	props := &apiext.JSONSchemaProps{
 		Type:       "object",
@@ -405,6 +406,17 @@ func structToSchema(ctx *schemaContext, structType *ast.StructType) *apiext.JSON
 
 	if ctx.info.RawSpec.Type != structType {
 		ctx.pkg.AddError(loader.ErrFromNode(fmt.Errorf("encountered non-top-level struct (possibly embedded), those aren't allowed"), structType))
+		return props
+	}
+
+	exactlyOneOf, err := oneOfValuesToSet(ctx.info.Markers[crdmarkers.ValidationExactlyOneOfPrefix])
+	if err != nil {
+		ctx.pkg.AddError(loader.ErrFromNode(err, structType))
+		return props
+	}
+	atMostOneOf, err := oneOfValuesToSet(ctx.info.Markers[crdmarkers.ValidationAtMostOneOfPrefix])
+	if err != nil {
+		ctx.pkg.AddError(loader.ErrFromNode(err, structType))
 		return props
 	}
 
@@ -453,11 +465,19 @@ func structToSchema(ctx *schemaContext, structType *ast.StructType) *apiext.JSON
 		case field.Markers.Get("kubebuilder:validation:Optional") != nil:
 			// explicitly optional - kubebuilder
 		case field.Markers.Get("kubebuilder:validation:Required") != nil:
+			if exactlyOneOf.Has(fieldName) || atMostOneOf.Has(fieldName) {
+				ctx.pkg.AddError(loader.ErrFromNode(fmt.Errorf("field %s is part of OneOf constraint and cannot be marked as required", fieldName), structType))
+				return props
+			}
 			// explicitly required - kubebuilder
 			props.Required = append(props.Required, fieldName)
 		case field.Markers.Get("optional") != nil:
 			// explicitly optional - kubernetes
 		case field.Markers.Get("required") != nil:
+			if exactlyOneOf.Has(fieldName) || atMostOneOf.Has(fieldName) {
+				ctx.pkg.AddError(loader.ErrFromNode(fmt.Errorf("field %s is part of OneOf constraint and cannot be marked as required", fieldName), structType))
+				return props
+			}
 			// explicitly required - kubernetes
 			props.Required = append(props.Required, fieldName)
 
@@ -465,6 +485,10 @@ func structToSchema(ctx *schemaContext, structType *ast.StructType) *apiext.JSON
 		case defaultMode == "required":
 			// ...everything that's not inline / omitempty is required
 			if !inline && !omitEmpty {
+				if exactlyOneOf.Has(fieldName) || atMostOneOf.Has(fieldName) {
+					ctx.pkg.AddError(loader.ErrFromNode(fmt.Errorf("field %s is part of OneOf constraint and must have omitempty tag", fieldName), structType))
+					return props
+				}
 				props.Required = append(props.Required, fieldName)
 			}
 
@@ -479,7 +503,9 @@ func structToSchema(ctx *schemaContext, structType *ast.StructType) *apiext.JSON
 		} else {
 			propSchema = typeToSchema(ctx.ForInfo(&markers.TypeInfo{}), field.RawField.Type)
 		}
-		propSchema.Description = field.Doc
+		if field.Doc != "" {
+			propSchema.Description = field.Doc
+		}
 
 		applyMarkers(ctx, field.Markers, propSchema, field.RawField)
 
@@ -491,7 +517,45 @@ func structToSchema(ctx *schemaContext, structType *ast.StructType) *apiext.JSON
 		props.Properties[fieldName] = *propSchema
 	}
 
+	// Ensure the required fields are always listed alphabetically.
+	sort.Strings(props.Required)
+
 	return props
+}
+
+func oneOfValuesToSet(oneOfGroups []any) (sets.Set[string], error) {
+	set := sets.New[string]()
+	for _, oneOf := range oneOfGroups {
+		switch vals := oneOf.(type) {
+		case crdmarkers.ExactlyOneOf:
+			if err := validateOneOfValues(vals...); err != nil {
+				return nil, fmt.Errorf("%s: %w", crdmarkers.ValidationExactlyOneOfPrefix, err)
+			}
+			set.Insert(vals...)
+		case crdmarkers.AtMostOneOf:
+			if err := validateOneOfValues(vals...); err != nil {
+				return nil, fmt.Errorf("%s: %w", crdmarkers.ValidationAtMostOneOfPrefix, err)
+			}
+			set.Insert(vals...)
+		default:
+			return nil, fmt.Errorf("expected ExactlyOneOf or AtMostOneOf, got %T", oneOf)
+		}
+	}
+	return set, nil
+}
+
+func validateOneOfValues(fields ...string) error {
+	var invalid []string
+	for _, field := range fields {
+		if strings.Contains(field, ".") {
+			// nested fields are not allowed in OneOf validation markers
+			invalid = append(invalid, field)
+		}
+	}
+	if len(invalid) > 0 {
+		return fmt.Errorf("cannot reference nested fields: %s", strings.Join(invalid, ","))
+	}
+	return nil
 }
 
 // builtinToType converts builtin basic types to their equivalent JSON schema form.

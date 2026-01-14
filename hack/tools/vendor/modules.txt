@@ -1966,7 +1966,7 @@ k8s.io/api/admissionregistration/v1
 k8s.io/api/authentication/v1
 k8s.io/api/core/v1
 k8s.io/api/rbac/v1
-# k8s.io/apiextensions-apiserver v0.33.2 => k8s.io/apiextensions-apiserver v0.34.2
+# k8s.io/apiextensions-apiserver v0.34.0-beta.0 => k8s.io/apiextensions-apiserver v0.34.2
 ## explicit; go 1.24.0
 k8s.io/apiextensions-apiserver/pkg/apihelpers
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions
@@ -2214,15 +2214,17 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/common/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/proto/client
-# sigs.k8s.io/controller-tools v0.15.0 => github.com/openshift/controller-tools v0.12.1-0.20250402141027-24f590ca0886
-## explicit; go 1.23.0
+# sigs.k8s.io/controller-tools v0.15.0 => github.com/openshift/controller-tools v0.12.1-0.20251016051350-840138b18461
+## explicit; go 1.24.0
 sigs.k8s.io/controller-tools/cmd/controller-gen
+sigs.k8s.io/controller-tools/pkg/applyconfiguration
 sigs.k8s.io/controller-tools/pkg/crd
 sigs.k8s.io/controller-tools/pkg/crd/markers
 sigs.k8s.io/controller-tools/pkg/deepcopy
 sigs.k8s.io/controller-tools/pkg/genall
 sigs.k8s.io/controller-tools/pkg/genall/help
 sigs.k8s.io/controller-tools/pkg/genall/help/pretty
+sigs.k8s.io/controller-tools/pkg/internal/crd
 sigs.k8s.io/controller-tools/pkg/loader
 sigs.k8s.io/controller-tools/pkg/markers
 sigs.k8s.io/controller-tools/pkg/rbac
@@ -2294,7 +2296,7 @@ sigs.k8s.io/structured-merge-diff/v6/value
 # sigs.k8s.io/yaml v1.6.0
 ## explicit; go 1.22
 sigs.k8s.io/yaml
-# sigs.k8s.io/controller-tools => github.com/openshift/controller-tools v0.12.1-0.20250402141027-24f590ca0886
+# sigs.k8s.io/controller-tools => github.com/openshift/controller-tools v0.12.1-0.20251016051350-840138b18461
 # github.com/google/cel-go => github.com/google/cel-go v0.26.0
 # k8s.io/api => k8s.io/api v0.34.2
 # k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.34.2
