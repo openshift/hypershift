@@ -32,6 +32,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 	awsinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/aws"
+	azureinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/azure"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/gcp"
@@ -60,6 +61,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -166,7 +169,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableUWMTelemetryRemoteWrite, "enable-uwm-telemetry-remote-write", opts.EnableUWMTelemetryRemoteWrite, "If true, enables a controller that ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes")
 	cmd.Flags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", false, "Enable webhook for validating hypershift API types")
 	cmd.Flags().BoolVar(&opts.EnableDedicatedRequestServingIsolation, "enable-dedicated-request-serving-isolation", true, "If true, enables scheduling of request serving components to dedicated nodes")
-	cmd.Flags().StringVar(&opts.ScaleFromZeroProvider, "scale-from-zero-provider", opts.ScaleFromZeroProvider, "Platform type for scale-from-zero autoscaling (aws)")
+	cmd.Flags().StringVar(&opts.ScaleFromZeroProvider, "scale-from-zero-provider", opts.ScaleFromZeroProvider, "Platform type for scale-from-zero autoscaling (aws, azure)")
 	cmd.Flags().StringVar(&opts.ScaleFromZeroCreds, "scale-from-zero-creds", opts.ScaleFromZeroCreds, "Path to credentials file for scale-from-zero instance type queries")
 
 	// Attempt to determine featureset prior to adding featuregate flags.
@@ -205,7 +208,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	log.Info("Starting hypershift-operator-manager", "version", supportedversion.String())
 
 	// Validate scale-from-zero configuration early
-	supportedProviders := set.New("aws")
+	supportedProviders := set.New("aws", "azure")
 	if opts.ScaleFromZeroCreds != "" {
 		if opts.ScaleFromZeroProvider == "" {
 			return fmt.Errorf("--scale-from-zero-provider is required when using --scale-from-zero-creds")
@@ -427,14 +430,24 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	var instanceTypeProvider instancetype.Provider
 
 	if opts.ScaleFromZeroCreds != "" && opts.ScaleFromZeroProvider != "" {
-		switch strings.ToLower(opts.ScaleFromZeroProvider) {
-		case "aws":
+		if strings.EqualFold(opts.ScaleFromZeroProvider, "aws") {
 			awsSession := awsutil.NewSession("hypershift-operator-scale-from-zero", opts.ScaleFromZeroCreds, "", "", "")
 			awsConfig := awsutil.NewConfig()
 			scaleFromZeroEC2Client := ec2.New(awsSession, awsConfig)
 			instanceTypeProvider = awsinstancetype.NewProvider(scaleFromZeroEC2Client)
 			log.Info("Instance type provider initialized", "provider", opts.ScaleFromZeroProvider)
-		default:
+		} else if strings.EqualFold(opts.ScaleFromZeroProvider, "azure") {
+			azureCred, subscriptionID, cloudCfg, err := azureutil.NewScaleFromZeroCredential(opts.ScaleFromZeroCreds)
+			if err != nil {
+				return fmt.Errorf("failed to create Azure credentials for scale-from-zero: %w", err)
+			}
+			azureSKUClient, err := armcompute.NewResourceSKUsClient(subscriptionID, azureCred, azureutil.NewARMClientOptions(cloudCfg, "hypershift-ho"))
+			if err != nil {
+				return fmt.Errorf("failed to create Azure SKU client for scale-from-zero: %w", err)
+			}
+			instanceTypeProvider = azureinstancetype.NewProvider(azureSKUClient)
+			log.Info("Instance type provider initialized", "provider", opts.ScaleFromZeroProvider)
+		} else {
 			// Should not happen due to validation, but handle gracefully
 			log.Info("WARNING: Unsupported scale-from-zero provider", "provider", opts.ScaleFromZeroProvider)
 		}

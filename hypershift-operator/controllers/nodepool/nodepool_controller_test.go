@@ -12,6 +12,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 	ignserver "github.com/openshift/hypershift/ignition-server/controllers"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
@@ -34,6 +35,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -2320,6 +2323,203 @@ func TestNodePoolReconciler_reconcile(t *testing.T) {
 						t.Errorf("Condition %s should not be set due to early exit, but was found", condType)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestReconcileScaleFromZeroAnnotations(t *testing.T) {
+	t.Parallel()
+
+	const cpNamespace = "test-ns-test-cluster"
+	const templateName = "test-aws-template"
+
+	newAWSObjects := func() []client.Object {
+		return []client.Object{
+			&capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodepool", Namespace: cpNamespace},
+				Spec: capiv1.MachineDeploymentSpec{
+					Template: capiv1.MachineTemplateSpec{
+						Spec: capiv1.MachineSpec{
+							InfrastructureRef: corev1.ObjectReference{Name: templateName, Namespace: cpNamespace},
+						},
+					},
+				},
+			},
+			&capiaws.AWSMachineTemplate{
+				ObjectMeta: metav1.ObjectMeta{Name: templateName, Namespace: cpNamespace},
+				Spec: capiaws.AWSMachineTemplateSpec{
+					Template: capiaws.AWSMachineTemplateResource{
+						Spec: capiaws.AWSMachineSpec{InstanceType: "m5.large"},
+					},
+				},
+			},
+		}
+	}
+
+	newAzureObjects := func() []client.Object {
+		return []client.Object{
+			&capiv1.MachineDeployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodepool", Namespace: cpNamespace},
+				Spec: capiv1.MachineDeploymentSpec{
+					Template: capiv1.MachineTemplateSpec{
+						Spec: capiv1.MachineSpec{
+							InfrastructureRef: corev1.ObjectReference{Name: templateName, Namespace: cpNamespace},
+						},
+					},
+				},
+			},
+			&capiazure.AzureMachineTemplate{
+				ObjectMeta: metav1.ObjectMeta{Name: templateName, Namespace: cpNamespace},
+				Spec: capiazure.AzureMachineTemplateSpec{
+					Template: capiazure.AzureMachineTemplateResource{
+						Spec: capiazure.AzureMachineSpec{VMSize: "Standard_D4s_v5"},
+					},
+				},
+			},
+		}
+	}
+
+	tests := []struct {
+		name         string
+		platform     hyperv1.PlatformType
+		objects      []client.Object
+		provider     instancetype.Provider
+		expectErr    bool
+		errSubstring string
+		validate     func(g Gomega, c client.Client)
+	}{
+		{
+			name:         "When platform is unsupported, it should return an error",
+			platform:     hyperv1.KubevirtPlatform,
+			provider:     &mockProvider{},
+			expectErr:    true,
+			errSubstring: "unsupported platform",
+		},
+		{
+			name:     "When MachineDeployment does not exist, it should skip gracefully",
+			platform: hyperv1.AWSPlatform,
+			provider: &mockProvider{},
+		},
+		{
+			name:     "When AWS template and MachineDeployment exist, it should set annotations on MachineDeployment",
+			platform: hyperv1.AWSPlatform,
+			objects:  newAWSObjects(),
+			provider: &mockProvider{info: &instancetype.InstanceTypeInfo{
+				VCPU: 2, MemoryMb: 8192, CPUArchitecture: "amd64",
+			}},
+			validate: func(g Gomega, c client.Client) {
+				md := &capiv1.MachineDeployment{}
+				g.Expect(c.Get(context.Background(), client.ObjectKey{Namespace: cpNamespace, Name: "test-nodepool"}, md)).To(Succeed())
+				g.Expect(md.GetAnnotations()).To(HaveKeyWithValue(cpuKey, "2"))
+				g.Expect(md.GetAnnotations()).To(HaveKeyWithValue(memoryKey, "8192"))
+			},
+		},
+		{
+			name:     "When provider is nil, it should not set annotations",
+			platform: hyperv1.AWSPlatform,
+			objects:  newAWSObjects(),
+			validate: func(g Gomega, c client.Client) {
+				md := &capiv1.MachineDeployment{}
+				g.Expect(c.Get(context.Background(), client.ObjectKey{Namespace: cpNamespace, Name: "test-nodepool"}, md)).To(Succeed())
+				g.Expect(md.GetAnnotations()).ToNot(HaveKey(cpuKey))
+			},
+		},
+		{
+			name:     "When Azure template and MachineDeployment exist, it should set annotations on MachineDeployment",
+			platform: hyperv1.AzurePlatform,
+			objects:  newAzureObjects(),
+			provider: &mockProvider{info: &instancetype.InstanceTypeInfo{
+				VCPU: 4, MemoryMb: 16384, CPUArchitecture: "amd64",
+			}},
+			validate: func(g Gomega, c client.Client) {
+				md := &capiv1.MachineDeployment{}
+				g.Expect(c.Get(context.Background(), client.ObjectKey{Namespace: cpNamespace, Name: "test-nodepool"}, md)).To(Succeed())
+				g.Expect(md.GetAnnotations()).To(HaveKeyWithValue(cpuKey, "4"))
+				g.Expect(md.GetAnnotations()).To(HaveKeyWithValue(memoryKey, "16384"))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+
+			np := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-nodepool", Namespace: "test-ns"},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Platform:    hyperv1.NodePoolPlatform{Type: tt.platform},
+					Management:  hyperv1.NodePoolManagement{UpgradeType: hyperv1.UpgradeTypeReplace},
+				},
+			}
+
+			builder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if len(tt.objects) > 0 {
+				builder = builder.WithObjects(tt.objects...)
+			}
+			c := builder.Build()
+
+			capi := &CAPI{
+				Token: &Token{
+					ConfigGenerator: &ConfigGenerator{
+						Client:                c,
+						nodePool:              np,
+						controlplaneNamespace: cpNamespace,
+					},
+				},
+				capiClusterName: "test-cluster",
+			}
+
+			r := &NodePoolReconciler{
+				Client:               c,
+				InstanceTypeProvider: tt.provider,
+			}
+
+			err := r.reconcileScaleFromZeroAnnotations(t.Context(), np, capi)
+			if tt.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tt.errSubstring))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				if tt.validate != nil {
+					tt.validate(g, c)
+				}
+			}
+		})
+	}
+}
+
+func TestSupportedScaleFromZeroPlatform(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		platform hyperv1.PlatformType
+		want     bool
+	}{
+		{
+			name:     "When platform is AWS, it should be supported",
+			platform: hyperv1.AWSPlatform,
+			want:     true,
+		},
+		{
+			name:     "When platform is Azure, it should be supported",
+			platform: hyperv1.AzurePlatform,
+			want:     true,
+		},
+		{
+			name:     "When platform is KubeVirt, it should not be supported",
+			platform: hyperv1.KubevirtPlatform,
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if got := supportedScaleFromZeroPlatform(tt.platform); got != tt.want {
+				t.Errorf("supportedScaleFromZeroPlatform(%s) = %v, want %v", tt.platform, got, tt.want)
 			}
 		})
 	}

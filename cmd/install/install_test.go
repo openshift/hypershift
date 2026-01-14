@@ -191,6 +191,15 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
+		"when scale-from-zero provider is azure with secret reference there is no error": {
+			inputOptions: Options{
+				PrivatePlatform:                   string(hyperv1.NonePlatform),
+				ScaleFromZeroProvider:             "azure",
+				ScaleFromZeroCredentialsSecret:    "my-azure-secret",
+				ScaleFromZeroCredentialsSecretKey: "credentials",
+			},
+			expectError: false,
+		},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -3,6 +3,7 @@ package azureutil
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"testing"
 
@@ -546,19 +547,19 @@ func TestNewARMClientOptions(t *testing.T) {
 		wantCloudActiveDir string
 	}{
 		{
-			name:               "When public cloud is provided it should return options with correct cloud and telemetry",
+			name:               "When public cloud is provided, it should return options with correct cloud and telemetry",
 			cloudConfig:        cloud.AzurePublic,
 			wantApplicationID:  CPOUserAgent,
 			wantCloudActiveDir: cloud.AzurePublic.ActiveDirectoryAuthorityHost,
 		},
 		{
-			name:               "When government cloud is provided it should return options with correct cloud and telemetry",
+			name:               "When government cloud is provided, it should return options with correct cloud and telemetry",
 			cloudConfig:        cloud.AzureGovernment,
 			wantApplicationID:  CPOUserAgent,
 			wantCloudActiveDir: cloud.AzureGovernment.ActiveDirectoryAuthorityHost,
 		},
 		{
-			name:               "When China cloud is provided it should return options with correct cloud and telemetry",
+			name:               "When China cloud is provided, it should return options with correct cloud and telemetry",
 			cloudConfig:        cloud.AzureChina,
 			wantApplicationID:  CPOUserAgent,
 			wantCloudActiveDir: cloud.AzureChina.ActiveDirectoryAuthorityHost,
@@ -568,7 +569,7 @@ func TestNewARMClientOptions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			got := NewARMClientOptions(tt.cloudConfig)
+			got := NewARMClientOptions(tt.cloudConfig, CPOUserAgent)
 
 			g.Expect(got).NotTo(BeNil())
 			g.Expect(got.Cloud.ActiveDirectoryAuthorityHost).To(Equal(tt.wantCloudActiveDir))
@@ -637,4 +638,205 @@ func TestGetAzureCloudConfiguration(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestNewScaleFromZeroCredential(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name                  string
+		credFileContent       string
+		wantSubscriptionID    string
+		wantCloudCfg          cloud.Configuration
+		wantErr               bool
+		wantErrContains       string
+		credentialShouldExist bool
+	}{
+		{
+			name: "When using OpenShift installer format, it should succeed",
+			credFileContent: `{
+				"tenantId": "test-tenant-id",
+				"subscriptionId": "test-subscription-id",
+				"clientId": "test-client-id",
+				"clientSecret": "test-client-secret"
+			}`,
+			wantSubscriptionID:    "test-subscription-id",
+			wantCloudCfg:          cloud.AzurePublic,
+			wantErr:               false,
+			credentialShouldExist: true,
+		},
+		{
+			name: "When using Azure standard format, it should succeed",
+			credFileContent: `{
+				"tenantId": "test-tenant-id",
+				"subscriptionId": "test-subscription-id",
+				"aadClientId": "test-aad-client-id",
+				"aadClientSecret": "test-aad-client-secret"
+			}`,
+			wantSubscriptionID:    "test-subscription-id",
+			wantCloudCfg:          cloud.AzurePublic,
+			wantErr:               false,
+			credentialShouldExist: true,
+		},
+		{
+			name: "When using YAML format, it should succeed",
+			credFileContent: `
+tenantId: test-tenant-id
+subscriptionId: test-subscription-id
+clientId: test-client-id
+clientSecret: test-client-secret
+`,
+			wantSubscriptionID:    "test-subscription-id",
+			wantCloudCfg:          cloud.AzurePublic,
+			wantErr:               false,
+			credentialShouldExist: true,
+		},
+		{
+			name: "When using mixed format, it should prefer Azure standard format",
+			credFileContent: `{
+				"tenantId": "test-tenant-id",
+				"subscriptionId": "test-subscription-id",
+				"clientId": "old-client-id",
+				"clientSecret": "old-secret",
+				"aadClientId": "new-client-id",
+				"aadClientSecret": "new-secret"
+			}`,
+			wantSubscriptionID:    "test-subscription-id",
+			wantCloudCfg:          cloud.AzurePublic,
+			wantErr:               false,
+			credentialShouldExist: true,
+		},
+		{
+			name: "When file contains optional fields, it should succeed",
+			credFileContent: `{
+				"tenantId": "test-tenant-id",
+				"subscriptionId": "test-subscription-id",
+				"aadClientId": "test-client-id",
+				"aadClientSecret": "test-secret",
+				"resourceGroup": "test-rg",
+				"location": "eastus"
+			}`,
+			wantSubscriptionID:    "test-subscription-id",
+			wantCloudCfg:          cloud.AzurePublic,
+			wantErr:               false,
+			credentialShouldExist: true,
+		},
+		{
+			name: "When cloud is specified, it should use the corresponding config",
+			credFileContent: `{
+				"tenantId": "test-tenant-id",
+				"subscriptionId": "test-subscription-id",
+				"clientId": "test-client-id",
+				"clientSecret": "test-client-secret",
+				"cloud": "AzureUSGovernmentCloud"
+			}`,
+			wantSubscriptionID:    "test-subscription-id",
+			wantCloudCfg:          cloud.AzureGovernment,
+			wantErr:               false,
+			credentialShouldExist: true,
+		},
+		{
+			name: "When missing tenantId, it should return error",
+			credFileContent: `{
+				"subscriptionId": "test-subscription-id",
+				"clientId": "test-client-id",
+				"clientSecret": "test-client-secret"
+			}`,
+			wantErr:         true,
+			wantErrContains: "missing required fields",
+		},
+		{
+			name: "When missing subscriptionId, it should return error",
+			credFileContent: `{
+				"tenantId": "test-tenant-id",
+				"clientId": "test-client-id",
+				"clientSecret": "test-client-secret"
+			}`,
+			wantErr:         true,
+			wantErrContains: "missing required fields",
+		},
+		{
+			name: "When missing both client ID formats, it should return error",
+			credFileContent: `{
+				"tenantId": "test-tenant-id",
+				"subscriptionId": "test-subscription-id",
+				"clientSecret": "test-client-secret"
+			}`,
+			wantErr:         true,
+			wantErrContains: "missing required fields",
+		},
+		{
+			name: "When missing both client secret formats, it should return error",
+			credFileContent: `{
+				"tenantId": "test-tenant-id",
+				"subscriptionId": "test-subscription-id",
+				"clientId": "test-client-id"
+			}`,
+			wantErr:         true,
+			wantErrContains: "missing required fields",
+		},
+		{
+			name: "When missing all required fields, it should return error",
+			credFileContent: `{
+				"resourceGroup": "test-rg"
+			}`,
+			wantErr:         true,
+			wantErrContains: "missing required fields",
+		},
+		{
+			name:            "When file contains invalid JSON, it should return error",
+			credFileContent: `{ invalid json }`,
+			wantErr:         true,
+			wantErrContains: "missing required fields",
+		},
+		{
+			name:            "When file is empty, it should return error",
+			credFileContent: "",
+			wantErr:         true,
+			wantErrContains: "missing required fields",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			// Create a temporary file with the credential content
+			tmpDir := t.TempDir()
+			credFile := fmt.Sprintf("%s/creds.json", tmpDir)
+
+			err := os.WriteFile(credFile, []byte(tt.credFileContent), 0600)
+			g.Expect(err).To(BeNil())
+
+			// Call the function under test
+			cred, subscriptionID, cloudCfg, err := NewScaleFromZeroCredential(credFile)
+
+			// Verify error expectations
+			if tt.wantErr {
+				g.Expect(err).To(Not(BeNil()))
+				if tt.wantErrContains != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tt.wantErrContains))
+				}
+				return
+			}
+
+			// Verify success expectations
+			g.Expect(err).To(BeNil())
+			g.Expect(subscriptionID).To(Equal(tt.wantSubscriptionID))
+			g.Expect(cloudCfg).To(Equal(tt.wantCloudCfg))
+
+			if tt.credentialShouldExist {
+				g.Expect(cred).To(Not(BeNil()))
+			}
+		})
+	}
+}
+
+func TestNewScaleFromZeroCredential_FileNotFound(t *testing.T) {
+	t.Parallel()
+	g := NewGomegaWithT(t)
+
+	_, _, _, err := NewScaleFromZeroCredential("/nonexistent/path/to/creds.json")
+
+	g.Expect(err).To(Not(BeNil()))
+	g.Expect(err.Error()).To(ContainSubstring("failed to read credentials"))
 }

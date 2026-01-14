@@ -1995,6 +1995,59 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 				Expect(err.Error()).To(ContainSubstring("publisher, offer, sku and version must either be all set, or all omitted"))
 			})
 		})
+
+		Context("AutoScaling validation", Label("AutoScaling"), func() {
+			It("should accept scale-from-zero (autoScaling.min=0) for AWS platform", func() {
+				err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
+					np.Spec.Replicas = nil
+					np.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
+						Min: ptr.To[int32](0),
+						Max: 5,
+					}
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("should accept scale-from-zero (autoScaling.min=0) for Azure platform", func() {
+				err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
+					np.Spec.Replicas = nil
+					np.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
+						Min: ptr.To[int32](0),
+						Max: 5,
+					}
+					np.Spec.Platform.Type = hyperv1.AzurePlatform
+					np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+						VMSize: "Standard_D4s_v5",
+						Image: hyperv1.AzureVMImage{
+							Type: hyperv1.AzureMarketplace,
+							AzureMarketplace: &hyperv1.AzureMarketplaceImage{
+								ImageGeneration: ptr.To(hyperv1.Gen2),
+							},
+						},
+						OSDisk: hyperv1.AzureNodePoolOSDisk{
+							DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+						},
+						SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+					}
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("should reject scale-from-zero (autoScaling.min=0) for unsupported platforms", func() {
+				err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
+					np.Spec.Replicas = nil
+					np.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
+						Min: ptr.To[int32](0),
+						Max: 5,
+					}
+					np.Spec.Platform = hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Scale-from-zero (autoScaling.min=0) is currently only supported for AWS and Azure platforms"))
+			})
+		})
 	})
 })
 
