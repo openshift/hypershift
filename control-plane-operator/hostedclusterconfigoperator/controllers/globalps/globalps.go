@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
@@ -282,8 +283,6 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling global pull secret daemon set")
 
-	enableECR := ecrRegistries != ""
-
 	if _, err := createOrUpdate(ctx, c, daemonSet, func() error {
 		podSpec := corev1.PodSpec{
 			AutomountServiceAccountToken: ptr.To(false),
@@ -295,12 +294,6 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 			NodeSelector: map[string]string{
 				globalPSLabelKey: "true",
 			},
-		}
-
-		// Enable host networking if ECR is enabled (required for IMDSv2 access at 169.254.169.254)
-		if enableECR {
-			podSpec.HostNetwork = true
-			podSpec.DNSPolicy = corev1.DNSClusterFirstWithHostNet
 		}
 
 		// Build container with ECR env var if enabled
@@ -333,8 +326,10 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 			},
 		}
 
-		// Add ECR registries environment variable if enabled
-		if enableECR {
+		// Add ECR registries environment variable if enabled, and enabling host networking
+		if len(strings.Split(ecrRegistries, ",")) > 0 {
+			podSpec.HostNetwork = true
+			podSpec.DNSPolicy = corev1.DNSClusterFirstWithHostNet
 			container.Env = []corev1.EnvVar{
 				{
 					Name:  "ECR_REGISTRIES",
