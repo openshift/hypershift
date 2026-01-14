@@ -31,20 +31,20 @@ import (
 )
 
 var (
-	// CiliumVersion is read from CILIUM_VERSION at runtime. When empty, the Cilium tests should skip.
-	CiliumVersion = os.Getenv("CILIUM_VERSION")
+	// ciliumVersion is read from CILIUM_VERSION at runtime. When empty, the Cilium tests should skip.
+	ciliumVersion = os.Getenv("CILIUM_VERSION")
 )
 
 const (
 	// CiliumCNIProvider is the name of the Cilium CNI provider.
 	CiliumCNIProvider = "cilium"
 	// Generic timeouts and intervals for Cilium tests
-	CiliumDefaultTimeout           = 10 * time.Minute
-	CiliumLongTimeout              = 20 * time.Minute
-	CiliumShortTimeout             = 2 * time.Minute
-	CiliumDefaultPollInterval      = 10 * time.Second
-	CiliumLongPollInterval         = 15 * time.Second
-	CiliumConnectivityWaitDuration = 60 * time.Second
+	ciliumDefaultTimeout           = 10 * time.Minute
+	ciliumLongTimeout              = 20 * time.Minute
+	ciliumShortTimeout             = 2 * time.Minute
+	ciliumDefaultPollInterval      = 10 * time.Second
+	ciliumLongPollInterval         = 15 * time.Second
+	ciliumConnectivityWaitDuration = 60 * time.Second
 )
 
 const (
@@ -191,12 +191,12 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 
 		t.Run("InstallCilium", func(t *testing.T) {
 			g := NewWithT(t)
-			t.Logf("Installing Cilium operator version %s", CiliumVersion)
+			t.Logf("Installing Cilium operator version %s", ciliumVersion)
 			// Install Cilium operator manifests
 			manifestFiles := ciliumManifestFiles()
 
 			for _, filename := range manifestFiles {
-				manifestPath := fmt.Sprintf("assets/cilium/v%s/%s", CiliumVersion, filename)
+				manifestPath := fmt.Sprintf("assets/cilium/v%s/%s", ciliumVersion, filename)
 				t.Logf("Applying manifest from %s", manifestPath)
 				yamlContent := assets.MustAsset(reader, manifestPath)
 				err := ApplyYAMLBytes(ctx, guestClient, yamlContent)
@@ -212,7 +212,7 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 				t.Logf("Failed to get Deployment cilium-olm: %v", err)
 			}
 			// Wait for cilium-olm deployment to be ready
-			WaitForDeploymentAvailable(ctx, t, guestClient, "cilium-olm", ciliumNamespace, CiliumDefaultTimeout, CiliumDefaultPollInterval)
+			WaitForDeploymentAvailable(ctx, t, guestClient, "cilium-olm", ciliumNamespace, ciliumDefaultTimeout, ciliumDefaultPollInterval)
 
 			// Get cluster network configuration from guest cluster
 			podCIDR, hostPrefix := getCiliumNetworkConfig(ctx, guestClient)
@@ -294,7 +294,7 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 
 				t.Logf("CiliumConfig has correct clusterPoolIPv4MaskSize: %d", maskSize)
 				return true
-			}, CiliumShortTimeout, CiliumDefaultPollInterval).Should(BeTrue(), "CiliumConfig should have correct configuration")
+			}, ciliumShortTimeout, ciliumDefaultPollInterval).Should(BeTrue(), "CiliumConfig should have correct configuration")
 
 			// Wait for operator to create DaemonSet
 			t.Log("Waiting for Cilium DaemonSet to be created by operator")
@@ -320,11 +320,11 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 
 				t.Log("Cilium DaemonSet not created by operator yet")
 				return false
-			}, CiliumDefaultTimeout, CiliumDefaultPollInterval).Should(BeTrue(), "cilium-olm operator should create Cilium DaemonSet")
+			}, ciliumDefaultTimeout, ciliumDefaultPollInterval).Should(BeTrue(), "cilium-olm operator should create Cilium DaemonSet")
 
 			// Now wait for DaemonSet pods to be ready
 			t.Log("Waiting for Cilium agent pods from DaemonSet to be ready")
-			WaitForDaemonSetReady(ctx, t, guestClient, ciliumDaemonSet.Name, ciliumDaemonSet.Namespace, CiliumLongTimeout, CiliumLongPollInterval)
+			WaitForDaemonSetReady(ctx, t, guestClient, ciliumDaemonSet.Name, ciliumDaemonSet.Namespace, ciliumLongTimeout, ciliumLongPollInterval)
 
 			t.Log("Cilium installation completed successfully")
 		})
@@ -355,7 +355,7 @@ func EnsureCiliumConnectivityTestResources(t *testing.T, ctx context.Context, gu
 					),
 				)),
 			), "not all Cilium pods are ready")
-		}, CiliumLongTimeout, CiliumDefaultPollInterval).Should(Succeed(), "all Cilium pods should be running")
+		}, ciliumLongTimeout, ciliumDefaultPollInterval).Should(Succeed(), "all Cilium pods should be running")
 
 		t.Log("All Cilium pods are running")
 	})
@@ -416,9 +416,9 @@ func EnsureCiliumConnectivityTestResources(t *testing.T, ctx context.Context, gu
 	t.Run("DeployCiliumConnectivityTest", func(t *testing.T) {
 		g := NewWithT(t)
 
-		t.Logf("Deploying Cilium connectivity test from version %s", CiliumVersion)
+		t.Logf("Deploying Cilium connectivity test from version %s", ciliumVersion)
 
-		manifestPath := fmt.Sprintf("assets/cilium/v%s/connectivity-check.yaml", CiliumVersion)
+		manifestPath := fmt.Sprintf("assets/cilium/v%s/connectivity-check.yaml", ciliumVersion)
 		yamlContent := assets.MustAsset(reader, manifestPath)
 
 		err := ApplyYAMLBytes(ctx, guestClient, yamlContent, ciliumTestNamespace)
@@ -448,7 +448,7 @@ func EnsureCiliumConnectivityTestResources(t *testing.T, ctx context.Context, gu
 					),
 				)),
 			), "some pods are not ready")
-		}, CiliumDefaultTimeout, CiliumLongPollInterval).Should(Succeed(), "all connectivity test pods should be ready")
+		}, ciliumDefaultTimeout, ciliumLongPollInterval).Should(Succeed(), "all connectivity test pods should be ready")
 
 		t.Log("All connectivity test pods are ready")
 	})
@@ -456,8 +456,8 @@ func EnsureCiliumConnectivityTestResources(t *testing.T, ctx context.Context, gu
 	t.Run("WaitForConnectivityTestCompletion", func(t *testing.T) {
 		g := NewWithT(t)
 
-		t.Logf("Waiting %v for connectivity tests to run", CiliumConnectivityWaitDuration)
-		time.Sleep(CiliumConnectivityWaitDuration)
+		t.Logf("Waiting %v for connectivity tests to run", ciliumConnectivityWaitDuration)
+		time.Sleep(ciliumConnectivityWaitDuration)
 
 		t.Log("Verifying all test pods are still running")
 		podList := &corev1.PodList{}
