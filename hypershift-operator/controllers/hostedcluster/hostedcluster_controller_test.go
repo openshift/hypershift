@@ -2,6 +2,10 @@ package hostedcluster
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
@@ -4861,6 +4865,182 @@ func TestValidateNodePortVsServiceNetwork(t *testing.T) {
 			actual := validateNodePortVsServiceNetwork(tc.hostedCluster)
 			if diff := cmp.Diff(actual, tc.expectedErrorList, equateErrorMessage); diff != "" {
 				t.Errorf("actual validation result differs from expected: %s", diff)
+			}
+		})
+	}
+}
+
+func TestServiceAccountSigningKeyBytes(t *testing.T) {
+	g := NewWithT(t)
+
+	// Helper function to generate a test RSA key pair
+	generateTestKeyPair := func() (privateKeyPEM []byte, publicKeyPEM []byte) {
+		key, err := rsa.GenerateKey(rand.Reader, 2048)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		privateKeyPEM = pem.EncodeToMemory(&pem.Block{
+			Type:  "RSA PRIVATE KEY",
+			Bytes: x509.MarshalPKCS1PrivateKey(key),
+		})
+
+		publicKeyBytes, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		publicKeyPEM = pem.EncodeToMemory(&pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: publicKeyBytes,
+		})
+		return
+	}
+
+	// Helper function to count PEM blocks in data
+	countPEMBlocks := func(data []byte) int {
+		count := 0
+		for {
+			block, rest := pem.Decode(data)
+			if block == nil {
+				break
+			}
+			count++
+			data = rest
+		}
+		return count
+	}
+
+	// Helper function to validate that a PEM block can be parsed as a public key
+	validatePublicKeyPEM := func(data []byte) bool {
+		block, _ := pem.Decode(data)
+		if block == nil {
+			return false
+		}
+		_, err := x509.ParsePKIXPublicKey(block.Bytes)
+		return err == nil
+	}
+
+	testCases := []struct {
+		name                   string
+		secretData             map[string][]byte
+		secretExists           bool
+		expectedError          string
+		expectedPublicKeyCount int
+	}{
+		{
+			name:          "When secret does not exist it should return an error",
+			secretExists:  false,
+			expectedError: "failed to get hostedcluster ServiceAccountSigningKey secret",
+		},
+		{
+			name:          "When secret has no private key it should return an error",
+			secretExists:  true,
+			secretData:    map[string][]byte{},
+			expectedError: "cannot find service account key",
+		},
+		{
+			name:         "When secret has invalid private key PEM it should return an error",
+			secretExists: true,
+			secretData: map[string][]byte{
+				hyperv1.ServiceAccountSigningKeySecretKey: []byte("invalid-pem-data"),
+			},
+			expectedError: "cannot decode private key",
+		},
+		{
+			name:         "When only primary key exists it should return combined public key with one key",
+			secretExists: true,
+			secretData: func() map[string][]byte {
+				privateKeyPEM, _ := generateTestKeyPair()
+				return map[string][]byte{
+					hyperv1.ServiceAccountSigningKeySecretKey: privateKeyPEM,
+				}
+			}(),
+			expectedPublicKeyCount: 1,
+		},
+		{
+			name:         "When primary and old keys exist it should return combined public key with both keys",
+			secretExists: true,
+			secretData: func() map[string][]byte {
+				privateKeyPEM, _ := generateTestKeyPair()
+				_, oldPublicKeyPEM := generateTestKeyPair()
+				return map[string][]byte{
+					hyperv1.ServiceAccountSigningKeySecretKey:   privateKeyPEM,
+					hyperv1.ServiceAccountOldPublicKeySecretKey: oldPublicKeyPEM,
+				}
+			}(),
+			expectedPublicKeyCount: 2,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := context.Background()
+
+			namespace := "test-namespace"
+			secretName := "test-signing-key"
+
+			// Create the HostedCluster
+			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: namespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					ServiceAccountSigningKey: &corev1.LocalObjectReference{
+						Name: secretName,
+					},
+				},
+			}
+
+			// Build the fake client
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if tc.secretExists {
+				secret := &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      secretName,
+						Namespace: namespace,
+					},
+					Data: tc.secretData,
+				}
+				clientBuilder = clientBuilder.WithObjects(secret)
+			}
+			fakeClient := clientBuilder.Build()
+
+			// Create the reconciler
+			r := &HostedClusterReconciler{
+				Client: fakeClient,
+			}
+
+			// Call the function under test
+			privateBytes, publicBytes, err := r.serviceAccountSigningKeyBytes(ctx, hc)
+
+			// Validate results
+			if tc.expectedError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectedError))
+				g.Expect(privateBytes).To(BeNil())
+				g.Expect(publicBytes).To(BeNil())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(privateBytes).NotTo(BeNil())
+				g.Expect(publicBytes).NotTo(BeNil())
+
+				// Validate the private key can be parsed
+				privateBlock, _ := pem.Decode(privateBytes)
+				g.Expect(privateBlock).NotTo(BeNil(), "private key should be valid PEM")
+				_, err := x509.ParsePKCS1PrivateKey(privateBlock.Bytes)
+				g.Expect(err).NotTo(HaveOccurred(), "private key should be a valid RSA private key")
+
+				// Validate the combined public key contains the expected number of keys
+				pemCount := countPEMBlocks(publicBytes)
+				g.Expect(pemCount).To(Equal(tc.expectedPublicKeyCount),
+					"combined public key should contain %d PEM block(s)", tc.expectedPublicKeyCount)
+
+				// Validate all public keys in the combined PEM are valid
+				remaining := publicBytes
+				for i := 0; i < tc.expectedPublicKeyCount; i++ {
+					g.Expect(validatePublicKeyPEM(remaining)).To(BeTrue(),
+						"public key block %d should be valid", i+1)
+					_, remaining = pem.Decode(remaining)
+				}
 			}
 		})
 	}

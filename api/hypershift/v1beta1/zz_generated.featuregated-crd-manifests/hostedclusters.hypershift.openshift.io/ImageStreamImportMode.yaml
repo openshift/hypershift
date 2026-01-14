@@ -5769,6 +5769,10 @@ spec:
                   be generated automatically for the cluster.
                   When specifying a service account signing key, an IssuerURL must also be specified.
                   If the reference is set but none of the above requirements are met, the HostedCluster will enter a degraded state.
+
+                  For key rotation, the secret may optionally contain an "old-key.pub" key whose content is the PEM-encoded
+                  public key of the previous signing key. When present, the kube-apiserver will accept tokens signed by
+                  both the current and previous keys, allowing for graceful key rotation without invalidating existing tokens.
                 properties:
                   name:
                     default: ""
