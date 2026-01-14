@@ -218,21 +218,20 @@ func (s *GlobalPullSecretSyncer) refreshECRCredentialsIfNeeded(ctx context.Conte
 
 	needsRefresh := false
 
-	// Check if any cached credentials are expiring soon
+	// Check if any cached credentials are expiring soon or if cache is empty
 	s.ecrCredCache.mu.RLock()
-	for registry, cred := range s.ecrCredCache.credentials {
-		if !cred.isValid() {
-			s.log.Info("ECR credential needs refresh", "registry", registry)
-			needsRefresh = true
-			break
+	if len(s.ecrCredCache.credentials) == 0 {
+		needsRefresh = true
+	} else {
+		for registry, cred := range s.ecrCredCache.credentials {
+			if !cred.isValid() {
+				s.log.Info("ECR credential needs refresh", "registry", registry)
+				needsRefresh = true
+				break
+			}
 		}
 	}
 	s.ecrCredCache.mu.RUnlock()
-
-	// Also refresh if cache is empty
-	if len(s.ecrCredCache.credentials) == 0 {
-		needsRefresh = true
-	}
 
 	if needsRefresh {
 		_, err := s.fetchECRCredentials(ctx)
