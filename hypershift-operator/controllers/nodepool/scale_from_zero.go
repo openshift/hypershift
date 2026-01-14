@@ -26,7 +26,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 
-	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capa "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capz "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -77,13 +78,13 @@ func setScaleFromZeroAnnotationsOnObject(ctx context.Context, provider instancet
 	var statusCapacity map[corev1.ResourceName]resource.Quantity
 
 	switch template := machineTemplate.(type) {
-	case *infrav1.AWSMachineTemplate:
+	case *capa.AWSMachineTemplate:
 		instanceType = template.Spec.Template.Spec.InstanceType
 		statusCapacity = template.Status.Capacity
-	// Future platform support can be added here:
-	// case *capiazure.AzureMachineTemplate:
-	//     instanceType = template.Spec.Template.Spec.VMSize
-	//     statusCapacity = template.Status.Capacity
+	case *capz.AzureMachineTemplate:
+		instanceType = template.Spec.Template.Spec.VMSize
+		// Azure CAPI provider doesn't support Status.Capacity, so statusCapacity remains nil
+		statusCapacity = nil
 	default:
 		return fmt.Errorf("unsupported machine template type: %T", machineTemplate)
 	}

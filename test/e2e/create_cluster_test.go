@@ -2338,7 +2338,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 						expectedErrorSubstring: "",
 					},
 					{
-						name: "when autoScaling min=0 on Azure platform it should fail",
+						name: "when autoScaling min=0 on Azure platform it should pass",
 						mutateInput: func(np *hyperv1.NodePool) {
 							np.Spec.Replicas = nil
 							np.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
@@ -2359,7 +2359,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
 							}
 						},
-						expectedErrorSubstring: "Scale-from-zero (autoScaling.min=0) is currently only supported for AWS platform",
+						expectedErrorSubstring: "",
 					},
 					{
 						name: "when autoScaling min=0 on Agent platform it should fail",
@@ -2373,7 +2373,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 							np.Spec.Platform.AWS = nil
 							np.Spec.Platform.Agent = &hyperv1.AgentNodePoolPlatform{}
 						},
-						expectedErrorSubstring: "Scale-from-zero (autoScaling.min=0) is currently only supported for AWS platform",
+						expectedErrorSubstring: "Scale-from-zero (autoScaling.min=0) is currently only supported for AWS and Azure platforms",
 					},
 					{
 						name: "when autoScaling min=0 on KubeVirt platform it should fail",
@@ -2396,7 +2396,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 								},
 							}
 						},
-						expectedErrorSubstring: "Scale-from-zero (autoScaling.min=0) is currently only supported for AWS platform",
+						expectedErrorSubstring: "Scale-from-zero (autoScaling.min=0) is currently only supported for AWS and Azure platforms",
 					},
 					{
 						name: "when autoScaling min=1 on Azure platform it should pass",
