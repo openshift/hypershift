@@ -1,8 +1,6 @@
 package openshiftmanager
 
 import (
-	"fmt"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -15,5 +13,6 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return fmt.Errorf("not implemented")
+	inputResInitializer := newInputResourceInitializer(mgr.GetRESTMapper(), mgr.GetCache())
+	return mgr.Add(inputResInitializer)
 }
