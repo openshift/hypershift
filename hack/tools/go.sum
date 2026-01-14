@@ -869,8 +869,8 @@ k8s.io/code-generator v0.34.2/go.mod h1:dnDDEd6S/z4uZ+PG1aE58ySCi/lR4+qT3a4DddE4
 k8s.io/component-base v0.34.2 h1:HQRqK9x2sSAsd8+R4xxRirlTjowsg6fWCPwWYeSvogQ=
 k8s.io/component-base v0.34.2/go.mod h1:9xw2FHJavUHBFpiGkZoKuYZ5pdtLKe97DEByaA+hHbM=
 k8s.io/gengo v0.0.0-20201203183100-97869a43a9d9/go.mod h1:FiNAH4ZV3gBg2Kwh89tzAEV2be7d5xI0vBa/VySYy3E=
-k8s.io/gengo v0.0.0-20250704022524-ddb642e17a28 h1:h9dq9Ju6ULPsxzNi1D56nI4qwFIHpyeW9WJ6yk2Yl08=
-k8s.io/gengo v0.0.0-20250704022524-ddb642e17a28/go.mod h1:FiNAH4ZV3gBg2Kwh89tzAEV2be7d5xI0vBa/VySYy3E=
+k8s.io/gengo v0.0.0-20251215205346-5ee0d033ba5b h1:X0Afwan8Q1l7bMcNgh6DAah2jKCQ2irT7EoAXIChFqk=
+k8s.io/gengo v0.0.0-20251215205346-5ee0d033ba5b/go.mod h1:FiNAH4ZV3gBg2Kwh89tzAEV2be7d5xI0vBa/VySYy3E=
 k8s.io/gengo/v2 v2.0.0-20250922181213-ec3ebc5fd46b h1:gMplByicHV/TJBizHd9aVEsTYoJBnnUAT5MHlTkbjhQ=
 k8s.io/gengo/v2 v2.0.0-20250922181213-ec3ebc5fd46b/go.mod h1:CgujABENc3KuTrcsdpGmrrASjtQsWCT7R99mEV4U/fM=
 k8s.io/klog v0.2.0/go.mod h1:Gq+BEi5rUBO/HRz0bTSXDUcqjScdoY3a9IHpCEIOOfk=
