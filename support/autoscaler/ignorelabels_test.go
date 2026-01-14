@@ -22,6 +22,7 @@ func TestGetIgnoreLabels(t *testing.T) {
 				CommonIgnoredLabelAzureDiskZone,
 				CommonIgnoredLabelIBMCloudWorkerID,
 				CommonIgnoredLabelVPCBlockCSIDriver,
+				CommonIgnoredLabelGlobalPSENABLED,
 			},
 			expectedPlatformSpecificLabels: []string{
 				AwsIgnoredLabelK8sEniconfig,
@@ -38,6 +39,7 @@ func TestGetIgnoreLabels(t *testing.T) {
 				CommonIgnoredLabelAzureDiskZone,
 				CommonIgnoredLabelIBMCloudWorkerID,
 				CommonIgnoredLabelVPCBlockCSIDriver,
+				CommonIgnoredLabelGlobalPSENABLED,
 			},
 			expectedPlatformSpecificLabels: []string{
 				AzureNodepoolLegacyLabel,
@@ -53,6 +55,7 @@ func TestGetIgnoreLabels(t *testing.T) {
 				CommonIgnoredLabelAzureDiskZone,
 				CommonIgnoredLabelIBMCloudWorkerID,
 				CommonIgnoredLabelVPCBlockCSIDriver,
+				CommonIgnoredLabelGlobalPSENABLED,
 			},
 			expectedPlatformSpecificLabels: []string{},
 		},
