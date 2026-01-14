@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/support/thirdparty/kubernetes/pkg/credentialprovider"
 	"github.com/openshift/hypershift/support/upsert"
@@ -81,6 +82,18 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("reconciling global pull secret")
 
+	// Get HostedCluster to check ECR enablement
+	hcp := &hyperv1.HostedCluster{}
+	if err = r.hcUncachedClient.Get(ctx, crclient.ObjectKey{
+		Namespace: r.hcpNamespace,
+		Name:      "cluster",
+	}, hcp); err != nil {
+		return fmt.Errorf("failed to get HostedCluster: %w", err)
+	}
+
+	// Check for ECR registries annotation (comma-separated list)
+	ecrRegistries := hcp.Annotations["hypershift.openshift.io/inject-ecr-registries-auth"]
+
 	// Get the original pull secret once at the beginning (used in both scenarios)
 	originalPullSecret := manifests.PullSecret(r.hcpNamespace)
 	if err := r.cpClient.Get(ctx, crclient.ObjectKeyFromObject(originalPullSecret), originalPullSecret); err != nil {
@@ -130,7 +143,7 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 
 		// Reconcile DaemonSet with only original pull secret (global-pull-secret will be optional and empty)
 		daemonSet := manifests.GlobalPullSecretDaemonSet()
-		if err := reconcileDaemonSet(ctx, daemonSet, "", originalSecret.Name, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
+		if err := reconcileDaemonSet(ctx, daemonSet, "", originalSecret.Name, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage, ecrRegistries); err != nil {
 			return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
 		}
 
@@ -180,7 +193,7 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 	// Generate a hash of the global pull secret content to trigger pod recreation when content changes
 	configSeed := util.HashSimple(globalPullSecretBytes)
 	daemonSet := manifests.GlobalPullSecretDaemonSet()
-	if err := reconcileDaemonSet(ctx, daemonSet, secret.Name, originalSecret.Name, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
+	if err := reconcileDaemonSet(ctx, daemonSet, secret.Name, originalSecret.Name, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage, ecrRegistries); err != nil {
 		return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
 	}
 
@@ -265,11 +278,74 @@ func (r *Reconciler) labelNodesForGlobalPullSecret(ctx context.Context) error {
 	return nil
 }
 
-func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, globalPullSecretName string, originalPullSecretName string, configSeed string, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, hccoImage string) error {
+func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, globalPullSecretName string, originalPullSecretName string, configSeed string, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, hccoImage string, ecrRegistries string) error {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling global pull secret daemon set")
 
+	enableECR := ecrRegistries != ""
+
 	if _, err := createOrUpdate(ctx, c, daemonSet, func() error {
+		podSpec := corev1.PodSpec{
+			AutomountServiceAccountToken: ptr.To(false),
+			SecurityContext:              &corev1.PodSecurityContext{},
+			DNSPolicy:                    corev1.DNSDefault,
+			PriorityClassName:            openshiftUserCriticalPriorityClass,
+			Tolerations:                  []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
+			// Use nodeSelector to only include nodes that are explicitly enabled for GlobalPullSecret
+			NodeSelector: map[string]string{
+				globalPSLabelKey: "true",
+			},
+		}
+
+		// Enable host networking if ECR is enabled (required for IMDSv2 access at 169.254.169.254)
+		if enableECR {
+			podSpec.HostNetwork = true
+			podSpec.DNSPolicy = corev1.DNSClusterFirstWithHostNet
+		}
+
+		// Build container with ECR env var if enabled
+		container := corev1.Container{
+			Name:            manifests.GlobalPullSecretDSName,
+			Image:           hccoImage,
+			ImagePullPolicy: corev1.PullIfNotPresent,
+			Command: []string{
+				"/usr/bin/control-plane-operator",
+			},
+			Args: []string{
+				"sync-global-pullsecret",
+			},
+			SecurityContext: &corev1.SecurityContext{
+				// Privileged mode is required for the following operations:
+				// 1. Write access to /var/lib/kubelet/config.json (kubelet configuration file)
+				// 2. DBus connection to systemd for kubelet service management
+				// 3. Restart kubelet.service via systemd (requires root privileges)
+				// These operations cannot be performed with specific capabilities due to
+				// the combination of file system access and systemd service management.
+				Privileged: ptr.To(true),
+			},
+			VolumeMounts:             buildGlobalPSVolumeMounts(globalPullSecretName),
+			TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("35Mi"),
+					corev1.ResourceCPU:    resource.MustParse("5m"),
+				},
+			},
+		}
+
+		// Add ECR registries environment variable if enabled
+		if enableECR {
+			container.Env = []corev1.EnvVar{
+				{
+					Name:  "ECR_REGISTRIES",
+					Value: ecrRegistries,
+				},
+			}
+		}
+
+		podSpec.Containers = []corev1.Container{container}
+		podSpec.Volumes = buildGlobalPSVolumes(globalPullSecretName, originalPullSecretName)
+
 		daemonSet.Spec = appsv1.DaemonSetSpec{
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
@@ -283,48 +359,7 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 						configSeedLabelKey: configSeed,
 					},
 				},
-				Spec: corev1.PodSpec{
-					AutomountServiceAccountToken: ptr.To(false),
-					SecurityContext:              &corev1.PodSecurityContext{},
-					DNSPolicy:                    corev1.DNSDefault,
-					PriorityClassName:            openshiftUserCriticalPriorityClass,
-					Tolerations:                  []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
-					// Use nodeSelector to only include nodes that are explicitly enabled for GlobalPullSecret
-					NodeSelector: map[string]string{
-						globalPSLabelKey: "true",
-					},
-					Containers: []corev1.Container{
-						{
-							Name:            manifests.GlobalPullSecretDSName,
-							Image:           hccoImage,
-							ImagePullPolicy: corev1.PullIfNotPresent,
-							Command: []string{
-								"/usr/bin/control-plane-operator",
-							},
-							Args: []string{
-								"sync-global-pullsecret",
-							},
-							SecurityContext: &corev1.SecurityContext{
-								// Privileged mode is required for the following operations:
-								// 1. Write access to /var/lib/kubelet/config.json (kubelet configuration file)
-								// 2. DBus connection to systemd for kubelet service management
-								// 3. Restart kubelet.service via systemd (requires root privileges)
-								// These operations cannot be performed with specific capabilities due to
-								// the combination of file system access and systemd service management.
-								Privileged: ptr.To(true),
-							},
-							VolumeMounts:             buildGlobalPSVolumeMounts(globalPullSecretName),
-							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
-							Resources: corev1.ResourceRequirements{
-								Requests: corev1.ResourceList{
-									corev1.ResourceMemory: resource.MustParse("35Mi"),
-									corev1.ResourceCPU:    resource.MustParse("5m"),
-								},
-							},
-						},
-					},
-					Volumes: buildGlobalPSVolumes(globalPullSecretName, originalPullSecretName),
-				},
+				Spec: podSpec,
 			},
 		}
 

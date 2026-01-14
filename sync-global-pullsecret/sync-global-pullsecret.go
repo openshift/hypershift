@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 // syncGlobalPullSecretOptions contains the configuration options for the sync-global-pullsecret command
 type syncGlobalPullSecretOptions struct {
 	kubeletConfigJsonPath string
+	ecrRegistries         string
 }
 
 //go:generate ../hack/tools/bin/mockgen -destination=sync-global-pullsecret_mock.go -package=syncglobalpullsecret . dbusConn
@@ -35,6 +37,11 @@ type dbusConn interface {
 type GlobalPullSecretSyncer struct {
 	kubeletConfigJsonPath string
 	log                   logr.Logger
+
+	// ECR-specific fields
+	ecrClient     ecrClient
+	ecrRegistries []string
+	ecrCredCache  *ecrCredentialCache
 }
 
 const (
@@ -72,6 +79,7 @@ func NewRunCommand() *cobra.Command {
 
 	opts := syncGlobalPullSecretOptions{
 		kubeletConfigJsonPath: defaultKubeletConfigJsonPath,
+		ecrRegistries:         os.Getenv("ECR_REGISTRIES"),
 	}
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -112,6 +120,11 @@ func (o *syncGlobalPullSecretOptions) run(ctx context.Context) error {
 		log:                   logger,
 	}
 
+	// Parse ECR registries from environment variable (comma-separated list)
+	if o.ecrRegistries != "" {
+		syncer.ecrRegistries = parseECRRegistries(o.ecrRegistries)
+	}
+
 	// Start the sync loop
 	return syncer.runSyncLoop(ctx)
 }
@@ -119,6 +132,14 @@ func (o *syncGlobalPullSecretOptions) run(ctx context.Context) error {
 // runSyncLoop runs the main synchronization loop with backoff
 func (s *GlobalPullSecretSyncer) runSyncLoop(ctx context.Context) error {
 	s.log.Info("Starting global pull secret sync loop")
+
+	// Initialize ECR if registries are configured
+	if len(s.ecrRegistries) > 0 {
+		if err := s.initializeECR(ctx); err != nil {
+			s.log.Error(err, "Failed to initialize ECR, continuing without ECR credentials")
+			s.ecrRegistries = nil
+		}
+	}
 
 	// Initial sync
 	if err := s.syncPullSecret(); err != nil {
@@ -129,18 +150,100 @@ func (s *GlobalPullSecretSyncer) runSyncLoop(ctx context.Context) error {
 	ticker := time.NewTicker(tickerPace)
 	defer ticker.Stop()
 
+	// Add ECR refresh ticker
+	var ecrTicker *time.Ticker
+	if len(s.ecrRegistries) > 0 {
+		ecrTicker = time.NewTicker(ecrRefreshInterval)
+		defer ecrTicker.Stop()
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
 			s.log.Info("Context canceled, stopping sync loop")
 			return nil
 		case <-ticker.C:
+			// Check if ECR credentials need refresh (based on expiration)
+			if len(s.ecrRegistries) > 0 {
+				if err := s.refreshECRCredentialsIfNeeded(ctx); err != nil {
+					s.log.Error(err, "ECR credential refresh check failed")
+				}
+			}
+
 			if err := s.syncPullSecret(); err != nil {
 				s.log.Error(err, "Sync failed")
 				// Continue the loop even if sync fails
 			}
+		case <-ecrTicker.C:
+			// Periodic ECR refresh (every 6 hours)
+			s.log.Info("Periodic ECR credential refresh")
+			if _, err := s.fetchECRCredentials(ctx); err != nil {
+				s.log.Error(err, "Periodic ECR credential refresh failed")
+			}
 		}
 	}
+}
+
+// initializeECR sets up ECR client and fetches initial credentials
+func (s *GlobalPullSecretSyncer) initializeECR(ctx context.Context) error {
+	s.log.Info("Initializing ECR credential injection", "registryCount", len(s.ecrRegistries))
+
+	// Initialize ECR client
+	client, err := newECRClient(ctx, s.log)
+	if err != nil {
+		return fmt.Errorf("failed to create ECR client: %w", err)
+	}
+	s.ecrClient = client
+
+	// Initialize credential cache
+	s.ecrCredCache = &ecrCredentialCache{
+		credentials: make(map[string]*cachedCredential),
+	}
+
+	// Fetch initial credentials
+	_, err = s.fetchECRCredentials(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to fetch initial ECR credentials: %w", err)
+	}
+
+	s.log.Info("ECR credential injection initialized successfully")
+	return nil
+}
+
+// refreshECRCredentialsIfNeeded checks cache and refreshes if needed
+func (s *GlobalPullSecretSyncer) refreshECRCredentialsIfNeeded(ctx context.Context) error {
+	if len(s.ecrRegistries) == 0 || s.ecrCredCache == nil {
+		return nil
+	}
+
+	needsRefresh := false
+
+	// Check if any cached credentials are expiring soon
+	s.ecrCredCache.mu.RLock()
+	for registry, cred := range s.ecrCredCache.credentials {
+		if !cred.isValid() {
+			s.log.Info("ECR credential needs refresh", "registry", registry)
+			needsRefresh = true
+			break
+		}
+	}
+	s.ecrCredCache.mu.RUnlock()
+
+	// Also refresh if cache is empty
+	if len(s.ecrCredCache.credentials) == 0 {
+		needsRefresh = true
+	}
+
+	if needsRefresh {
+		_, err := s.fetchECRCredentials(ctx)
+		if err != nil {
+			// Log error but don't fail - use cached credentials if available
+			s.log.Error(err, "Failed to refresh ECR credentials, using cached credentials if available")
+			return err
+		}
+	}
+
+	return nil
 }
 
 // syncPullSecret handles the synchronization logic for the GlobalPullSecret
@@ -173,7 +276,18 @@ func (s *GlobalPullSecretSyncer) syncPullSecret() error {
 		}
 	}
 
-	if err := s.checkAndFixFile(globalPullSecretBytes); err != nil {
+	// Merge ECR credentials if enabled
+	finalPullSecretBytes := globalPullSecretBytes
+	if len(s.ecrRegistries) > 0 {
+		finalPullSecretBytes, err = s.buildDockerConfigWithECR(context.Background(), globalPullSecretBytes)
+		if err != nil {
+			// Log error but continue with original pull secret
+			s.log.Error(err, "Failed to merge ECR credentials, using pull secret without ECR")
+			finalPullSecretBytes = globalPullSecretBytes
+		}
+	}
+
+	if err := s.checkAndFixFile(finalPullSecretBytes); err != nil {
 		return fmt.Errorf("failed to check and fix file: %w", err)
 	}
 
@@ -314,4 +428,22 @@ func writeAtomic(path string, data []byte, perm os.FileMode) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// parseECRRegistries parses a comma-separated list of ECR registries
+func parseECRRegistries(registries string) []string {
+	if registries == "" {
+		return nil
+	}
+
+	// Split by comma and trim whitespace
+	var result []string
+	for _, registry := range strings.Split(registries, ",") {
+		registry = strings.TrimSpace(registry)
+		if registry != "" {
+			result = append(result, registry)
+		}
+	}
+
+	return result
 }
