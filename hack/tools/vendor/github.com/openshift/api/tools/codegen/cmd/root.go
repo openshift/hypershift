@@ -45,7 +45,7 @@ var rootCmd = &cobra.Command{
 			return fmt.Errorf("could not build generation context: %w", err)
 		}
 
-		generators := allGenerators()
+		generators := allGenerators(genCtx)
 		if verify {
 			generators = append(generators, allVerifiers()...)
 		}
@@ -54,7 +54,7 @@ var rootCmd = &cobra.Command{
 			return fmt.Errorf("could not run generators: %w", err)
 		}
 
-		return executeMultiGroupGenerators(genCtx, allMultiGroupGenerators()...)
+		return executeMultiGroupGenerators(genCtx, allMultiGroupGenerators(genCtx)...)
 	},
 }
 
@@ -131,12 +131,15 @@ func executeMultiGroupGenerators(genCtx generation.Context, generators ...genera
 
 // allGenerators returns an ordered list of generators to run when
 // the root command is executed.
-func allGenerators() []generation.Generator {
+func allGenerators(genCtx generation.Context) []generation.Generator {
 	return []generation.Generator{
 		newCompatibilityGenerator(),
-		newDeepcopyGenerator(),
+		newDeepcopyGenerator(genCtx),
 		newSwaggerDocsGenerator(),
+		// The empty partial schema, schema patch and manifest merge must run in order.
+		newEmptyPartialSchemaGenerator(genCtx),
 		newSchemaPatchGenerator(),
+		newCRDManifestMerger(),
 	}
 }
 
@@ -144,14 +147,19 @@ func allGenerators() []generation.Generator {
 // the root command is executed with the --verify flag.
 func allVerifiers() []generation.Generator {
 	return []generation.Generator{
-		newSchemaCheckGenerator(),
+		// Schema checker and crdify are invoked separately as we can override these
+		// depending on circumstances.
+		// All generators/verifiers that are part of codegen and executed with a bare
+		// codegen invocation must be absolutely required/not overrideable.
+		// newSchemaCheckGenerator(),
+		// newCrdifyGenerator(),
 	}
 }
 
 // allMultiGroupGenerators returns an ordered list of multi-group
 // generators to run when the root command is executed.
-func allMultiGroupGenerators() []generation.MultiGroupGenerator {
+func allMultiGroupGenerators(genCtx generation.Context) []generation.MultiGroupGenerator {
 	return []generation.MultiGroupGenerator{
-		newOpenAPIGenerator(),
+		newOpenAPIGenerator(genCtx),
 	}
 }

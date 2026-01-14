@@ -26,7 +26,7 @@ var deepcopyCmd = &cobra.Command{
 			return fmt.Errorf("could not build generation context: %w", err)
 		}
 
-		gen := newDeepcopyGenerator()
+		gen := newDeepcopyGenerator(genCtx)
 
 		return executeGenerators(genCtx, gen)
 	},
@@ -40,10 +40,12 @@ func init() {
 }
 
 // newDeepcopyhGenerator builds a new deepcopy generator.
-func newDeepcopyGenerator() generation.Generator {
+func newDeepcopyGenerator(genCtx generation.Context) generation.Generator {
 	return deepcopy.NewGenerator(deepcopy.Options{
 		HeaderFilePath:     deepcopyHeaderFilePath,
 		OutputFileBaseName: deepcopyOutputFileBaseName,
 		Verify:             verify,
+		GlobalParser:       genCtx.GlobalParser,
+		Universe:           genCtx.Universe,
 	})
 }

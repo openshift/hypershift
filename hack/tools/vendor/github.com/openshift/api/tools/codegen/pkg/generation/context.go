@@ -3,16 +3,18 @@ package generation
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
-	"go/token"
 	"io/fs"
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 
 	"golang.org/x/tools/go/packages"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/gengo/v2"
+	"k8s.io/gengo/v2/parser"
+	"k8s.io/gengo/v2/types"
 	"k8s.io/klog/v2"
 )
 
@@ -31,6 +33,13 @@ type Context struct {
 	// APIGroups contains a list of API Groups and information regarding
 	// their generation.
 	APIGroups []APIGroupContext
+
+	// GlobalParser is the parser for the global package.
+	// This loads all packages found in the base directory.
+	GlobalParser *parser.Parser
+
+	// Universe is the universe for the global package.
+	Universe types.Universe
 }
 
 // APIGroupContext is the context gathered for a particular API group.
@@ -88,9 +97,16 @@ func NewContext(opts Options) (Context, error) {
 		return Context{}, fmt.Errorf("could not get API Group configs: %w", err)
 	}
 
+	p, universe, err := newGlobalGengoParser(apiGroups)
+	if err != nil {
+		return Context{}, fmt.Errorf("could not create global Gengo parser: %w", err)
+	}
+
 	return Context{
-		BaseDir:   baseDir,
-		APIGroups: apiGroups,
+		BaseDir:      baseDir,
+		APIGroups:    apiGroups,
+		GlobalParser: p,
+		Universe:     universe,
 	}, nil
 }
 
@@ -127,8 +143,7 @@ func newAPIGroupsContext(baseDir string, requiredGroupVersions []string) ([]APIG
 // loadPackagesFromDir walks through a list of directories and looks for those
 // that look like Go packages.
 func loadPackagesFromDir(baseDir string) (map[string]*packages.Package, error) {
-	outPkgs := make(map[string]*packages.Package)
-
+	var loadDirs []string
 	if err := filepath.WalkDir(baseDir, func(path string, dirEntry fs.DirEntry, _ error) error {
 		if !dirEntry.IsDir() {
 			// We only care about directories.
@@ -140,32 +155,38 @@ func loadPackagesFromDir(baseDir string) (map[string]*packages.Package, error) {
 			return filepath.SkipDir
 		}
 
-		cfg := &packages.Config{
-			Dir:  path,
-			Logf: klog.V(4).Infof,
-		}
-
-		pkgs, err := packages.Load(cfg)
-		if err != nil {
-			return fmt.Errorf("could not load package at path %s: %w", path, err)
-		}
-
-		if len(pkgs) != 1 {
-			return fmt.Errorf("unexpected number of go packages found for path %s: %d", path, len(pkgs))
-		}
-
-		if len(pkgs[0].GoFiles) == 0 {
-			// No go files means there's nothing parse, skip this directory but continue to subfolders.
-			return nil
-		}
-
-		outPkgs[path] = pkgs[0]
-
-		klog.V(3).Infof("Found directory: %s and package: %+v", path, pkgs[0])
+		loadDirs = append(loadDirs, path)
 
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("could not walk directory %s: %w", baseDir, err)
+	}
+
+	cfg := &packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax,
+		Logf: klog.V(4).Infof,
+	}
+
+	pkgs, err := packages.Load(cfg, loadDirs...)
+	if err != nil {
+		return nil, fmt.Errorf("could not load packages from dirs %s: %w", strings.Join(loadDirs, ", "), err)
+	}
+
+	outPkgs := make(map[string]*packages.Package, len(pkgs))
+	for _, pkg := range pkgs {
+		if pkg.Dir == "" {
+			klog.V(3).Infof("skipping package with no directory: %s", pkg.Name)
+			continue
+		}
+
+		if len(pkg.GoFiles) == 0 {
+			klog.V(3).Infof("skipping package with no go files: %s", pkg.Name)
+			continue
+		}
+
+		outPkgs[pkg.Dir] = pkg
+
+		klog.V(3).Infof("Found package %s in directory %s", pkg.Name, pkg.Dir)
 	}
 
 	return outPkgs, nil
@@ -181,16 +202,9 @@ func findAPIGroups(goPackages map[string]*packages.Package, desiredGroupVersions
 	desired := sets.NewString(desiredGroupVersions...)
 
 	for pkgPath, pkg := range goPackages {
-		fileSet := token.NewFileSet()
-
-		pkgs, err := parser.ParseDir(fileSet, pkgPath, nil, parser.ParseComments)
-		if err != nil {
-			return nil, fmt.Errorf("could not parse directory for package %s: %+v", pkgPath, pkgs)
-		}
-
-		for _, p := range pkgs {
+		for _, file := range pkg.Syntax {
 			gvv := &groupVersionVisitor{}
-			ast.Walk(gvv, p)
+			ast.Walk(gvv, file)
 
 			// If a group was found and either the desired list is empty or contains this group version,
 			// add it to the output.
@@ -203,7 +217,7 @@ func findAPIGroups(goPackages map[string]*packages.Package, desiredGroupVersions
 					Name:        version,
 					Path:        pkgPath,
 					PackagePath: pkg.PkgPath,
-					PackageName: p.Name,
+					PackageName: pkg.Name,
 				})
 			} else {
 				klog.V(3).Infof("No GroupVersion found in path %s", pkgPath)
@@ -325,4 +339,47 @@ func getValueOf(value *ast.CompositeLit, name string) (string, error) {
 	}
 
 	return "", nil
+}
+
+func newGlobalGengoParser(apiGroups []APIGroupContext) (*parser.Parser, types.Universe, error) {
+	// inputPaths contains the default list of input paths for the OpenAPI generator.
+	// We can't import from the openapi package as it will cause a circular dependency.
+	inputPaths := []string{
+		"k8s.io/apimachinery/pkg/apis/meta/v1",
+		"k8s.io/apimachinery/pkg/runtime",
+		"k8s.io/apimachinery/pkg/util/intstr",
+		"k8s.io/apimachinery/pkg/api/resource",
+		"k8s.io/apimachinery/pkg/version/...", // Make version optional as it is not imported anywhere. It will be picked up if somebody starts using it in the future.
+		"k8s.io/api/core/v1",
+		"k8s.io/api/rbac/v1",
+		"k8s.io/api/authorization/v1",
+		"k8s.io/api/admissionregistration/v1",
+	}
+
+	for _, group := range apiGroups {
+		for _, version := range group.Versions {
+			inputPaths = append(inputPaths, version.PackagePath)
+		}
+	}
+
+	p, err := newGengoParser(inputPaths...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed making a parser: %v", err)
+	}
+
+	universe, err := p.NewUniverse()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed making a universe: %v", err)
+	}
+
+	return p, universe, nil
+}
+
+func newGengoParser(pkgPaths ...string) (*parser.Parser, error) {
+	p := parser.NewWithOptions(parser.Options{BuildTags: []string{gengo.StdBuildTag}})
+	if err := p.LoadPackages(pkgPaths...); err != nil {
+		return nil, fmt.Errorf("failed making a parser: %v", err)
+	}
+
+	return p, nil
 }

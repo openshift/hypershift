@@ -6,7 +6,8 @@ import (
 	"strings"
 
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"k8s.io/gengo/types"
+	"k8s.io/gengo/v2"
+	"k8s.io/gengo/v2/types"
 )
 
 // known tags that are handled by empty partial schema generation.
@@ -103,7 +104,7 @@ func extractNamedValuesForType(t *types.Type, tagName string) (map[string]string
 }
 
 func extractNamedValues(comments []string, tagName string) (map[string]string, error) {
-	tagVals := types.ExtractCommentTags("+", comments)[tagName]
+	tagVals := gengo.ExtractCommentTags("+", comments)[tagName]
 	if len(tagVals) > 1 {
 		return nil, fmt.Errorf("too many tag values: %d", len(tagVals))
 	}
@@ -212,7 +213,7 @@ func extractStringTagForType(t *types.Type, tagName string) string {
 }
 
 func extractStringTagFromComments(comments []string, tagName string) (string, bool, error) {
-	tagVals := types.ExtractCommentTags("+", comments)[tagName]
+	tagVals := gengo.ExtractCommentTags("+", comments)[tagName]
 	if tagVals == nil {
 		// No match for the tag.
 		return "", false, nil
@@ -231,7 +232,7 @@ func extractStringSliceTagForType(t *types.Type, tagName string) []string {
 
 func extractStringSliceTagFromComments(comments []string, tagName string) []string {
 	ret := []string{}
-	tagVals := types.ExtractCommentTags("+", comments)[tagName]
+	tagVals := gengo.ExtractCommentTags("+", comments)[tagName]
 	for _, tagVal := range tagVals {
 		values := strings.Split(tagVal, ",")
 		for _, curr := range values {
@@ -248,7 +249,7 @@ func tagExistsForType(t *types.Type, tagName string) bool {
 }
 
 func tagExistsFromComments(comments []string, tagName string) bool {
-	_, ok := types.ExtractCommentTags("+", comments)[tagName]
+	_, ok := gengo.ExtractCommentTags("+", comments)[tagName]
 	return ok
 }
 

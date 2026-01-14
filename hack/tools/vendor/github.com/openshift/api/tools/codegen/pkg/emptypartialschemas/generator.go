@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 
 	"github.com/openshift/api/tools/codegen/pkg/generation"
-	"github.com/openshift/api/tools/codegen/pkg/utils"
-	"k8s.io/gengo/args"
+	"k8s.io/gengo/v2/generator"
+	"k8s.io/gengo/v2/parser"
+	"k8s.io/gengo/v2/types"
 	"k8s.io/klog/v2"
 )
 
@@ -25,14 +26,23 @@ type Options struct {
 	// Verify determines whether the generator should verify the content instead
 	// of updating the generated file.
 	Verify bool
+
+	// GlobalParser is the parser for the global package.
+	// This loads all packages found in the base directory.
+	GlobalParser *parser.Parser
+
+	// Universe is the universe for the global package.
+	Universe types.Universe
 }
 
-// generator implements the generation.Generator interface.
+// emptyPartialSchemasGenerator implements the generation.Generator interface.
 // It is designed to generate empty-partial-schemas function for a particular API group.
-type generator struct {
+type emptyPartialSchemasGenerator struct {
 	disabled           bool
 	outputBaseFileName string
 	verify             bool
+	globalParser       *parser.Parser
+	universe           types.Universe
 }
 
 // NewGenerator builds a new empty-partial-schemas generator.
@@ -42,16 +52,18 @@ func NewGenerator(opts Options) generation.Generator {
 		outputFileBaseName = opts.OutputFileBaseName
 	}
 
-	return &generator{
+	return &emptyPartialSchemasGenerator{
 		disabled:           opts.Disabled,
 		outputBaseFileName: outputFileBaseName,
 		verify:             opts.Verify,
+		globalParser:       opts.GlobalParser,
+		universe:           opts.Universe,
 	}
 }
 
 // ApplyConfig creates returns a new generator based on the configuration passed.
 // If the empty-partial-schemas configuration is empty, the existing generation is returned.
-func (g *generator) ApplyConfig(config *generation.Config) generation.Generator {
+func (g *emptyPartialSchemasGenerator) ApplyConfig(config *generation.Config) generation.Generator {
 	if config == nil || config.EmptyPartialSchema == nil {
 		return g
 	}
@@ -60,16 +72,18 @@ func (g *generator) ApplyConfig(config *generation.Config) generation.Generator 
 		Disabled:           config.EmptyPartialSchema.Disabled,
 		OutputFileBaseName: g.outputBaseFileName,
 		Verify:             g.verify,
+		GlobalParser:       g.globalParser,
+		Universe:           g.universe,
 	})
 }
 
 // Name returns the name of the generator.
-func (g *generator) Name() string {
+func (g *emptyPartialSchemasGenerator) Name() string {
 	return "partial-crd-manifests"
 }
 
 // GenGroup runs the empty-partial-schemas generator against the given group context.
-func (g *generator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.Result, error) {
+func (g *emptyPartialSchemasGenerator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.Result, error) {
 	if g.disabled {
 		klog.V(2).Infof("Skipping %q generation for %s", g.Name(), groupCtx.Name)
 		return nil, nil
@@ -83,7 +97,7 @@ func (g *generator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.
 
 		klog.Infof("%s %q functions for for %s/%s", action, g.Name(), groupCtx.Name, version.Name)
 
-		if err := g.generatePartialSchemaFiles(version.Path, version.PackagePath, g.verify); err != nil {
+		if err := g.generatePartialSchemaFiles(g.globalParser, g.universe, version.Path, version.PackagePath, g.verify); err != nil {
 			return nil, fmt.Errorf("could not generate %v functions for %s/%s: %w", g.Name(), groupCtx.Name, version.Name, err)
 		}
 	}
@@ -92,7 +106,7 @@ func (g *generator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.
 }
 
 // generatePartialSchemaFiles generates the DeepCopy functions for the given API package paths.
-func (g *generator) generatePartialSchemaFiles(path, packagePath string, verify bool) error {
+func (g *emptyPartialSchemasGenerator) generatePartialSchemaFiles(p *parser.Parser, universe types.Universe, path, packagePath string, verify bool) error {
 	wd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %w", err)
@@ -107,30 +121,22 @@ func (g *generator) generatePartialSchemaFiles(path, packagePath string, verify 
 	// by the generator.
 	inputPath = fmt.Sprintf(".%s%s", string(os.PathSeparator), inputPath)
 
-	pathPrefix, err := utils.GetPathPrefix(wd, inputPath, packagePath)
-	if err != nil {
-		return fmt.Errorf("failed to get path prefix: %w", err)
-	}
-
-	arguments := args.GeneratorArgs{
-		InputDirs:                  []string{inputPath},
-		OutputFileBaseName:         g.outputBaseFileName,
-		TrimPathPrefix:             pathPrefix,
-		GeneratedBuildTag:          "",
-		GeneratedByCommentTemplate: "",
-		GoHeaderFilePath:           "",
-		VerifyOnly:                 verify,
-	}
-
-	// we do this so that we can store the results of the generator traversal to make decisions about the expected content
-	// of the partial schema directory.
-	gengoGeneratorResults := generatorResultGatherer{
+	// Create result gatherer to collect CRD information during generation
+	gengoGeneratorResults := &generatorResultGatherer{
 		crdNamesToFeatureGates: map[string]*CRDInfo{},
+		boundingDirs:           []string{inputPath},
+		outputFileBaseName:     g.outputBaseFileName,
 	}
-	if err := arguments.Execute(
+
+	myTargets := func(context *generator.Context) []generator.Target {
+		return gengoGeneratorResults.GetTargets(context)
+	}
+
+	if err := generation.Execute(p, universe,
 		NameSystems(),
 		DefaultNameSystem(),
-		gengoGeneratorResults.Packages,
+		myTargets,
+		[]string{packagePath},
 	); err != nil {
 		return fmt.Errorf("error executing %v generator: %w", g.Name(), err)
 	}

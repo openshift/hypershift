@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	gengogenerator "k8s.io/gengo/generator"
+	gengogenerator "k8s.io/gengo/v2/generator"
 )
 
 type jsonFile struct {
@@ -37,7 +37,7 @@ func (a jsonFile) VerifyFile(f *gengogenerator.File, path string) error {
 	if err != nil {
 		return fmt.Errorf("unable to read file %q for comparison: %v", path, err)
 	}
-	if bytes.Compare(formatted, existing) == 0 {
+	if bytes.Equal(formatted, existing) {
 		return nil
 	}
 
