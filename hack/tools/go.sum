@@ -8,8 +8,8 @@ codeberg.org/chavacava/garif v0.2.0 h1:F0tVjhYbuOCnvNcU3YSpO6b3Waw6Bimy4K0mM8y6M
 codeberg.org/chavacava/garif v0.2.0/go.mod h1:P2BPbVbT4QcvLZrORc2T29szK3xEOlnl0GiPTJmEqBQ=
 codeberg.org/polyfloyd/go-errorlint v1.9.0 h1:VkdEEmA1VBpH6ecQoMR4LdphVI3fA4RrCh2an7YmodI=
 codeberg.org/polyfloyd/go-errorlint v1.9.0/go.mod h1:GPRRu2LzVijNn4YkrZYJfatQIdS+TrcK8rL5Xs24qw8=
-dario.cat/mergo v1.0.0 h1:AGCNq9Evsj31mOgNPcLyXc+4PNABt905YmuqPYYpBWk=
-dario.cat/mergo v1.0.0/go.mod h1:uNxQE+84aUszobStD9th8a29P2fMDhsBdgRYvZOxGmk=
+dario.cat/mergo v1.0.2 h1:85+piFYR1tMbRrLcDwR18y4UKJ3aH1Tbzi24VRW1TK8=
+dario.cat/mergo v1.0.2/go.mod h1:E/hbnu0NxMFBjpMIE34DRGLWqDy0g5FuKDhCb31ngxA=
 dev.gaijin.team/go/exhaustruct/v4 v4.0.0 h1:873r7aNneqoBB3IaFIzhvt2RFYTuHgmMjoKfwODoI1Y=
 dev.gaijin.team/go/exhaustruct/v4 v4.0.0/go.mod h1:aZ/k2o4Y05aMJtiux15x8iXaumE88YdiB0Ai4fXOzPI=
 dev.gaijin.team/go/golib v0.6.0 h1:v6nnznFTs4bppib/NyU1PQxobwDHwCXXl15P7DV5Zgo=

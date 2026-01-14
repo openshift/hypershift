@@ -13,7 +13,7 @@ codeberg.org/chavacava/garif
 # codeberg.org/polyfloyd/go-errorlint v1.9.0
 ## explicit; go 1.24.0
 codeberg.org/polyfloyd/go-errorlint/errorlint
-# dario.cat/mergo v1.0.0
+# dario.cat/mergo v1.0.2
 ## explicit; go 1.13
 dario.cat/mergo
 # dev.gaijin.team/go/exhaustruct/v4 v4.0.0
