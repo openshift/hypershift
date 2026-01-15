@@ -1423,6 +1423,17 @@ func (r *HostedControlPlaneReconciler) reconcileOLMPackageServerService(ctx cont
 
 func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
 	if !routerv2.UseHCPRouter(hcp, r.DefaultIngressDomain) {
+		// Clean up the router services if they exist. This handles upgrade scenarios
+		// where the router was previously created but is no longer needed (e.g., when route
+		// hostnames are subdomains of the management cluster's apps domain).
+		// This is important because orphaned LoadBalancer services continue to incur cloud
+		// costs or consume MetalLB IP addresses from finite address pools.
+		if _, err := util.DeleteIfNeeded(ctx, r.Client, manifests.RouterPublicService(hcp.Namespace)); err != nil {
+			return fmt.Errorf("failed to cleanup public router service: %w", err)
+		}
+		if _, err := util.DeleteIfNeeded(ctx, r.Client, manifests.PrivateRouterService(hcp.Namespace)); err != nil {
+			return fmt.Errorf("failed to cleanup private router service: %w", err)
+		}
 		return nil
 	}
 

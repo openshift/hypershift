@@ -66,7 +66,6 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/zapr"
-	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zaptest"
 )
@@ -1502,6 +1501,185 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 	}
 }
 
+// TestReconcileHCPRouterServicesDeletesOrphanedService verifies that orphaned router services
+// are cleaned up when UseHCPRouter() returns false. This handles upgrade scenarios where the
+// router was previously created but is no longer needed (e.g., when route hostnames are
+// subdomains of the management cluster's apps domain).
+func TestReconcileHCPRouterServicesDeletesOrphanedService(t *testing.T) {
+	const namespace = "test-ns"
+
+	t.Run("When cloud HCP uses apps domain hostname it should delete orphaned router services", func(t *testing.T) {
+		// Simulates AWS/GCP cloud environment where orphaned LoadBalancer incurs ongoing costs
+		existingPublicRouterService := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "router",
+				Namespace: namespace,
+				Annotations: map[string]string{
+					"service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
+				},
+				Labels: map[string]string{"app": "private-router"},
+			},
+			Spec: corev1.ServiceSpec{
+				Type:     corev1.ServiceTypeLoadBalancer,
+				Selector: map[string]string{"app": "private-router"},
+				Ports: []corev1.ServicePort{
+					{Name: "https", Port: 443, TargetPort: intstr.FromString("https"), Protocol: corev1.ProtocolTCP},
+				},
+			},
+		}
+
+		existingPrivateRouterService := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "private-router",
+				Namespace: namespace,
+				Annotations: map[string]string{
+					"service.beta.kubernetes.io/aws-load-balancer-internal": "true",
+				},
+				Labels: map[string]string{"app": "private-router"},
+			},
+			Spec: corev1.ServiceSpec{
+				Type:     corev1.ServiceTypeLoadBalancer,
+				Selector: map[string]string{"app": "private-router"},
+				Ports: []corev1.ServicePort{
+					{Name: "https", Port: 443, TargetPort: intstr.FromString("https"), Protocol: corev1.ProtocolTCP},
+				},
+			},
+		}
+
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "hcp",
+				Namespace: namespace,
+			},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+					AWS: &hyperv1.AWSPlatformSpec{
+						EndpointAccess: hyperv1.Public,
+					},
+				},
+				Services: []hyperv1.ServicePublishingStrategyMapping{
+					{
+						Service: hyperv1.APIServer,
+						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type: hyperv1.Route,
+							Route: &hyperv1.RoutePublishingStrategy{
+								Hostname: "apiserver.apps.example.com",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(existingPublicRouterService, existingPrivateRouterService, hcp).Build()
+
+		r := HostedControlPlaneReconciler{
+			Client:               c,
+			Log:                  ctrl.LoggerFrom(ctx),
+			DefaultIngressDomain: "apps.example.com",
+		}
+
+		if err := r.reconcileHCPRouterServices(ctx, hcp, controllerutil.CreateOrUpdate); err != nil {
+			t.Fatalf("reconcileHCPRouterServices failed: %v", err)
+		}
+
+		var services corev1.ServiceList
+		if err := c.List(ctx, &services); err != nil {
+			t.Fatalf("failed to list services: %v", err)
+		}
+
+		if len(services.Items) != 0 {
+			t.Errorf("expected both router services to be deleted, but %d still exist: %v", len(services.Items), services.Items)
+		}
+	})
+
+	t.Run("When bare metal with MetalLB uses apps domain hostname it should delete orphaned router services", func(t *testing.T) {
+		// Simulates bare metal environment where orphaned LoadBalancer consumes MetalLB IP from finite pool
+		existingPublicRouterService := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "router",
+				Namespace: namespace,
+				Annotations: map[string]string{
+					"metallb.universe.tf/address-pool": "lab-network",
+				},
+				Labels: map[string]string{"app": "private-router"},
+			},
+			Spec: corev1.ServiceSpec{
+				Type:     corev1.ServiceTypeLoadBalancer,
+				Selector: map[string]string{"app": "private-router"},
+				Ports: []corev1.ServicePort{
+					{Name: "https", Port: 443, TargetPort: intstr.FromString("https"), Protocol: corev1.ProtocolTCP},
+				},
+			},
+		}
+
+		existingPrivateRouterService := &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "private-router",
+				Namespace: namespace,
+				Annotations: map[string]string{
+					"metallb.universe.tf/address-pool": "lab-network-internal",
+				},
+				Labels: map[string]string{"app": "private-router"},
+			},
+			Spec: corev1.ServiceSpec{
+				Type:     corev1.ServiceTypeLoadBalancer,
+				Selector: map[string]string{"app": "private-router"},
+				Ports: []corev1.ServicePort{
+					{Name: "https", Port: 443, TargetPort: intstr.FromString("https"), Protocol: corev1.ProtocolTCP},
+				},
+			},
+		}
+
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "hcp",
+				Namespace: namespace,
+			},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.NonePlatform,
+				},
+				Services: []hyperv1.ServicePublishingStrategyMapping{
+					{
+						Service: hyperv1.APIServer,
+						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type: hyperv1.Route,
+							Route: &hyperv1.RoutePublishingStrategy{
+								Hostname: "apiserver.apps.example.com",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
+		c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(existingPublicRouterService, existingPrivateRouterService, hcp).Build()
+
+		r := HostedControlPlaneReconciler{
+			Client:               c,
+			Log:                  ctrl.LoggerFrom(ctx),
+			DefaultIngressDomain: "apps.example.com",
+		}
+
+		if err := r.reconcileHCPRouterServices(ctx, hcp, controllerutil.CreateOrUpdate); err != nil {
+			t.Fatalf("reconcileHCPRouterServices failed: %v", err)
+		}
+
+		var services corev1.ServiceList
+		if err := c.List(ctx, &services); err != nil {
+			t.Fatalf("failed to list services: %v", err)
+		}
+
+		if len(services.Items) != 0 {
+			t.Errorf("expected both router services to be deleted, but %d still exist: %v", len(services.Items), services.Items)
+		}
+	})
+}
+
 func TestSetKASCustomKubeconfigStatus(t *testing.T) {
 	hcp := sampleHCP(t)
 	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
@@ -2187,166 +2365,6 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 	fakeComponents = append(fakeComponents, pullSecret.DeepCopy())
 
 	return fakeComponents
-}
-
-func TestUseHCPRouter(t *testing.T) {
-	testsCases := []struct {
-		name           string
-		hcp            *hyperv1.HostedControlPlane
-		expectedResult bool
-	}{
-		{
-			name: "Provider is IBM Cloud",
-			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.IBMCloudPlatform,
-					},
-				},
-			},
-			expectedResult: false,
-		},
-		{
-			name: "Provider is NonePlatform, services are exposed with Routes",
-			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.NonePlatform,
-					},
-					Services: []hyperv1.ServicePublishingStrategyMapping{
-						{
-							Service: hyperv1.APIServer,
-							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-								Type: hyperv1.Route,
-								Route: &hyperv1.RoutePublishingStrategy{
-									Hostname: "cluster1.api.tenant1.com",
-								},
-							},
-						},
-						{
-							Service: hyperv1.Konnectivity,
-							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-								Type: hyperv1.Route,
-								Route: &hyperv1.RoutePublishingStrategy{
-									Hostname: "cluster1.tunnel.tenant1.com",
-								},
-							},
-						},
-						{
-							Service: hyperv1.Ignition,
-							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-								Type: hyperv1.Route,
-								Route: &hyperv1.RoutePublishingStrategy{
-									Hostname: "cluster1.ignition.tenant1.com",
-								},
-							},
-						},
-						{
-							Service: hyperv1.OAuthServer,
-							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-								Type: hyperv1.Route,
-								Route: &hyperv1.RoutePublishingStrategy{
-									Hostname: "cluster1.oauth.tenant1.com",
-								},
-							},
-						},
-					},
-				},
-			},
-			expectedResult: true,
-		},
-		{
-			name: "Provider is AWS, Public and Private",
-			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AWSPlatform,
-						AWS: &hyperv1.AWSPlatformSpec{
-							EndpointAccess: hyperv1.PublicAndPrivate,
-						},
-					},
-				},
-			},
-			expectedResult: true,
-		},
-		{
-			name: "Provider is AWS, Private",
-			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AWSPlatform,
-						AWS: &hyperv1.AWSPlatformSpec{
-							EndpointAccess: hyperv1.Private,
-						},
-					},
-				},
-			},
-			expectedResult: true,
-		},
-		{
-			name: "Provider is GCP, Private",
-			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.GCPPlatform,
-						GCP: &hyperv1.GCPPlatformSpec{
-							EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
-						},
-					},
-				},
-			},
-			expectedResult: true,
-		},
-		{
-			name: "Provider is GCP, PublicAndPrivate",
-			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.GCPPlatform,
-						GCP: &hyperv1.GCPPlatformSpec{
-							EndpointAccess: hyperv1.GCPEndpointAccessPublicAndPrivate,
-						},
-					},
-				},
-			},
-			expectedResult: true,
-		},
-	}
-	for _, tc := range testsCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.expectedResult, useHCPRouter(tc.hcp))
-		})
-	}
 }
 
 func TestControlPlaneComponentsAvailable(t *testing.T) {
