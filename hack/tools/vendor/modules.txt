@@ -743,7 +743,7 @@ github.com/golangci/swaggoswag
 # github.com/golangci/unconvert v0.0.0-20250410112200-a129a6e6413e
 ## explicit; go 1.23.0
 github.com/golangci/unconvert
-# github.com/google/cel-go v0.26.0 => github.com/google/cel-go v0.26.0
+# github.com/google/cel-go v0.26.1 => github.com/google/cel-go v0.26.1
 ## explicit; go 1.22.0
 github.com/google/cel-go/cel
 github.com/google/cel-go/checker
@@ -2295,7 +2295,7 @@ sigs.k8s.io/structured-merge-diff/v6/value
 ## explicit; go 1.22
 sigs.k8s.io/yaml
 # sigs.k8s.io/controller-tools => github.com/openshift/controller-tools v0.12.1-0.20250402141027-24f590ca0886
-# github.com/google/cel-go => github.com/google/cel-go v0.26.0
+# github.com/google/cel-go => github.com/google/cel-go v0.26.1
 # k8s.io/api => k8s.io/api v0.34.2
 # k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.34.2
 # k8s.io/apimachinery => k8s.io/apimachinery v0.34.2
