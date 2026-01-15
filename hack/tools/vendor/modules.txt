@@ -22,7 +22,7 @@ dev.gaijin.team/go/exhaustruct/v4/analyzer
 dev.gaijin.team/go/exhaustruct/v4/internal/comment
 dev.gaijin.team/go/exhaustruct/v4/internal/pattern
 dev.gaijin.team/go/exhaustruct/v4/internal/structure
-# dev.gaijin.team/go/golib v0.6.0
+# dev.gaijin.team/go/golib v0.8.1
 ## explicit; go 1.24
 dev.gaijin.team/go/golib/e
 dev.gaijin.team/go/golib/fields
