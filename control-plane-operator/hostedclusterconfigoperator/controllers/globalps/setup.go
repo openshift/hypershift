@@ -98,6 +98,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		hcUncachedClient:       uncachedClient,
 		kubeSystemSecretClient: kubeSystemClient,
 		nodeClient:             nodeClient,
+		hcpName:                opts.HCPName,
 		hcpNamespace:           opts.Namespace,
 		hccoImage:              hccoImage,
 		CreateOrUpdateProvider: opts.TargetCreateOrUpdateProvider,

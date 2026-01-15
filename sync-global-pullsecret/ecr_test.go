@@ -72,7 +72,7 @@ func TestParseECRToken(t *testing.T) {
 					t.Errorf("parseECRToken() expected error but got none")
 					return
 				}
-				if tt.errContains != "" && !containsString(err.Error(), tt.errContains) {
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
 					t.Errorf("parseECRToken() error = %v, want error containing %v", err, tt.errContains)
 				}
 				return
@@ -143,7 +143,7 @@ func TestValidateECRRegistry(t *testing.T) {
 					t.Errorf("validateECRRegistry() expected error but got none")
 					return
 				}
-				if tt.errContains != "" && !containsString(err.Error(), tt.errContains) {
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
 					t.Errorf("validateECRRegistry() error = %v, want error containing %v", err, tt.errContains)
 				}
 				return
@@ -290,7 +290,7 @@ func TestFetchECRCredentials(t *testing.T) {
 					t.Errorf("fetchECRCredentials() expected error but got none")
 					return
 				}
-				if tt.errContains != "" && !containsString(err.Error(), tt.errContains) {
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
 					t.Errorf("fetchECRCredentials() error = %v, want error containing %v", err, tt.errContains)
 				}
 				return
@@ -429,13 +429,13 @@ func TestBuildDockerConfigWithECR(t *testing.T) {
 				log: testLogger(t),
 			}
 
-			result, err := syncer.buildDockerConfigWithECR(context.Background(), basePullSecretBytes)
+			result, err := syncer.buildDockerConfigWithECR(basePullSecretBytes)
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("buildDockerConfigWithECR() expected error but got none")
 					return
 				}
-				if tt.errContains != "" && !containsString(err.Error(), tt.errContains) {
+				if tt.errContains != "" && !strings.Contains(err.Error(), tt.errContains) {
 					t.Errorf("buildDockerConfigWithECR() error = %v, want error containing %v", err, tt.errContains)
 				}
 				return
@@ -652,10 +652,6 @@ func stringPtr(s string) *string {
 
 func timePtr(t time.Time) *time.Time {
 	return &t
-}
-
-func containsString(s, substr string) bool {
-	return strings.Contains(s, substr)
 }
 
 func testLogger(t *testing.T) logr.Logger {

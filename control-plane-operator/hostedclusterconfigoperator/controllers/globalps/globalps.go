@@ -44,6 +44,7 @@ type Reconciler struct {
 	kubeSystemSecretClient crclient.Client
 	nodeClient             crclient.Client
 	hcUncachedClient       crclient.Client
+	hcpName                string
 	hcpNamespace           string
 	hccoImage              string
 
@@ -87,7 +88,7 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 	hcp := &hyperv1.HostedCluster{}
 	if err = r.hcUncachedClient.Get(ctx, crclient.ObjectKey{
 		Namespace: r.hcpNamespace,
-		Name:      "cluster",
+		Name:      r.hcpName,
 	}, hcp); err != nil {
 		return fmt.Errorf("failed to get HostedCluster: %w", err)
 	}

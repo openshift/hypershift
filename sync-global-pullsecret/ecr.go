@@ -162,7 +162,7 @@ func (s *GlobalPullSecretSyncer) getCachedCredentials() map[string]string {
 }
 
 // buildDockerConfigWithECR merges ECR credentials with existing pull secret
-func (s *GlobalPullSecretSyncer) buildDockerConfigWithECR(ctx context.Context, basePullSecretBytes []byte) ([]byte, error) {
+func (s *GlobalPullSecretSyncer) buildDockerConfigWithECR(basePullSecretBytes []byte) ([]byte, error) {
 	// Check cache length under read lock
 	s.ecrCredCache.mu.RLock()
 	cacheIsEmpty := len(s.ecrCredCache.credentials) == 0

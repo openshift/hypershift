@@ -278,7 +278,7 @@ func (s *GlobalPullSecretSyncer) syncPullSecret() error {
 	// Merge ECR credentials if enabled
 	finalPullSecretBytes := globalPullSecretBytes
 	if len(s.ecrRegistries) > 0 {
-		finalPullSecretBytes, err = s.buildDockerConfigWithECR(context.Background(), globalPullSecretBytes)
+		finalPullSecretBytes, err = s.buildDockerConfigWithECR(globalPullSecretBytes)
 		if err != nil {
 			// Log error but continue with original pull secret
 			s.log.Error(err, "Failed to merge ECR credentials, using pull secret without ECR")
