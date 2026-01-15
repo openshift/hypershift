@@ -1181,8 +1181,8 @@ github.com/sirupsen/logrus
 # github.com/sivchari/containedctx v1.0.3
 ## explicit; go 1.17
 github.com/sivchari/containedctx
-# github.com/skeema/knownhosts v1.3.0
-## explicit; go 1.17
+# github.com/skeema/knownhosts v1.3.2
+## explicit; go 1.24.0
 github.com/skeema/knownhosts
 # github.com/sonatard/noctx v0.4.0
 ## explicit; go 1.23.0
