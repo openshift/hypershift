@@ -2676,6 +2676,158 @@ func TestPauseHostedControlPlane(t *testing.T) {
 	}
 }
 
+func TestPauseCAPICluster(t *testing.T) {
+	fakeHCName := "cluster1"
+	fakeHCNamespace := "master"
+	fakeInfraID := "infra-123"
+	controlPlaneNamespace := hcpmanifests.HostedControlPlaneNamespace(fakeHCNamespace, fakeHCName)
+
+	testsCases := []struct {
+		name                string
+		inputHostedCluster  *hyperv1.HostedCluster
+		inputObjects        []crclient.Object
+		paused              bool
+		expectedCAPICluster *v1beta1.Cluster
+	}{
+		{
+			name: "When CAPI cluster exists and is paused, it should unpause when paused=false",
+			inputHostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fakeHCName,
+					Namespace: fakeHCNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: fakeInfraID,
+				},
+			},
+			inputObjects: []crclient.Object{
+				&v1beta1.Cluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: controlPlaneNamespace,
+						Name:      fakeInfraID,
+					},
+					Spec: v1beta1.ClusterSpec{
+						Paused: true,
+					},
+				},
+			},
+			paused: false,
+			expectedCAPICluster: &v1beta1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: controlPlaneNamespace,
+					Name:      fakeInfraID,
+				},
+				Spec: v1beta1.ClusterSpec{
+					Paused: false,
+				},
+			},
+		},
+		{
+			name: "When CAPI cluster exists and is not paused, it should pause when paused=true",
+			inputHostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fakeHCName,
+					Namespace: fakeHCNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: fakeInfraID,
+				},
+			},
+			inputObjects: []crclient.Object{
+				&v1beta1.Cluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: controlPlaneNamespace,
+						Name:      fakeInfraID,
+					},
+					Spec: v1beta1.ClusterSpec{
+						Paused: false,
+					},
+				},
+			},
+			paused: true,
+			expectedCAPICluster: &v1beta1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: controlPlaneNamespace,
+					Name:      fakeInfraID,
+				},
+				Spec: v1beta1.ClusterSpec{
+					Paused: true,
+				},
+			},
+		},
+		{
+			name: "When CAPI cluster does not exist, it should not return an error",
+			inputHostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fakeHCName,
+					Namespace: fakeHCNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: fakeInfraID,
+				},
+			},
+			inputObjects:        []crclient.Object{},
+			paused:              false,
+			expectedCAPICluster: nil,
+		},
+		{
+			name:                "When HostedCluster is nil, it should not return an error",
+			inputHostedCluster:  nil,
+			inputObjects:        []crclient.Object{},
+			paused:              false,
+			expectedCAPICluster: nil,
+		},
+		{
+			name: "When CAPI cluster is already in desired state, it should not update",
+			inputHostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      fakeHCName,
+					Namespace: fakeHCNamespace,
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: fakeInfraID,
+				},
+			},
+			inputObjects: []crclient.Object{
+				&v1beta1.Cluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: controlPlaneNamespace,
+						Name:      fakeInfraID,
+					},
+					Spec: v1beta1.ClusterSpec{
+						Paused: true,
+					},
+				},
+			},
+			paused: true,
+			expectedCAPICluster: &v1beta1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: controlPlaneNamespace,
+					Name:      fakeInfraID,
+				},
+				Spec: v1beta1.ClusterSpec{
+					Paused: true,
+				},
+			},
+		},
+	}
+	for _, tc := range testsCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.inputObjects...).Build()
+			err := pauseCAPICluster(t.Context(), c, tc.inputHostedCluster, tc.paused)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectedCAPICluster != nil {
+				capiCluster := controlplaneoperator.CAPICluster(controlPlaneNamespace, fakeInfraID)
+				err = c.Get(t.Context(), crclient.ObjectKeyFromObject(capiCluster), capiCluster)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(capiCluster.Spec.Paused).To(Equal(tc.expectedCAPICluster.Spec.Paused))
+			}
+		})
+	}
+}
+
 func TestDefaultClusterIDsIfNeeded(t *testing.T) {
 	testHC := func(infraID, clusterID string) *hyperv1.HostedCluster {
 		return &hyperv1.HostedCluster{
