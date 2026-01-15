@@ -24,7 +24,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-ocpbugs-63638:on-pr-{{revision}}
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-hotfix-{{.versionName}}:on-pr-{{revision}}
   - name: image-expires-after
     value: 5d
   - name: build-platforms
@@ -389,7 +389,7 @@ spec:
         - name: name
           value: ecosystem-cert-preflight-checks
         - name: bundle
-          value: quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks:0.2@sha256:da4f6a586d06a19fcd581ce01d53910c750743124c7d09b1cdf97cb3caa71ff7
+          value: quay.io/konflux-ci/tekton-catalog/task-ecosystem-cert-preflight-checks:0.2@sha256:b612fd73d81822113e2c12f44a72eed218540aaa8e9f3e42223bddb01a0689cb
         - name: kind
           value: task
         resolver: bundles
