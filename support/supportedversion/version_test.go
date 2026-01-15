@@ -590,44 +590,59 @@ func TestRetrieveSupportedOCPVersion(t *testing.T) {
 	}
 }
 
-func TestIsMultiArchStream(t *testing.T) {
+func TestGetArchFromStream(t *testing.T) {
 	testCases := []struct {
-		name           string
-		releaseStream  string
-		expectedResult bool
+		name          string
+		releaseStream string
+		expectedArch  string
 	}{
 		{
-			name:           "When stream ends with -multi, it should be identified as multi-arch",
-			releaseStream:  "4-stable-multi",
-			expectedResult: true,
+			name:          "When stream ends with -multi, it should return multi",
+			releaseStream: "4-stable-multi",
+			expectedArch:  "multi",
 		},
 		{
-			name:           "When stream ends with -multi (different version), it should be identified as multi-arch",
-			releaseStream:  "4.19-stable-multi",
-			expectedResult: true,
+			name:          "When stream ends with -multi (different version), it should return multi",
+			releaseStream: "4.19-stable-multi",
+			expectedArch:  "multi",
 		},
 		{
-			name:           "When stream does not end with -multi, it should not be identified as multi-arch",
-			releaseStream:  "4-stable",
-			expectedResult: false,
+			name:          "When stream ends with -arm64, it should return arm64",
+			releaseStream: "4-stable-arm64",
+			expectedArch:  "arm64",
 		},
 		{
-			name:           "When stream is 4-dev-preview, it should not be identified as multi-arch",
-			releaseStream:  "4-dev-preview",
-			expectedResult: false,
+			name:          "When stream ends with -ppc64le, it should return ppc64le",
+			releaseStream: "4-stable-ppc64le",
+			expectedArch:  "ppc64le",
 		},
 		{
-			name:           "When stream is empty, it should not be identified as multi-arch",
-			releaseStream:  "",
-			expectedResult: false,
+			name:          "When stream ends with -s390x, it should return s390x",
+			releaseStream: "4-stable-s390x",
+			expectedArch:  "s390x",
+		},
+		{
+			name:          "When stream does not end with recognized suffix, it should return amd64",
+			releaseStream: "4-stable",
+			expectedArch:  "amd64",
+		},
+		{
+			name:          "When stream is 4-dev-preview, it should return amd64",
+			releaseStream: "4-dev-preview",
+			expectedArch:  "amd64",
+		},
+		{
+			name:          "When stream is empty, it should return amd64",
+			releaseStream: "",
+			expectedArch:  "amd64",
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			result := isMultiArchStream(tc.releaseStream)
-			g.Expect(result).To(Equal(tc.expectedResult))
+			result := getArchFromStream(tc.releaseStream)
+			g.Expect(result).To(Equal(tc.expectedArch))
 		})
 	}
 }
@@ -645,7 +660,7 @@ func TestRetrieveSupportedOCPVersionWithRCFiltering(t *testing.T) {
 		},
 	}
 
-	// Mock HTTP server that returns release tags with RC versions
+	// Mock HTTP server that returns release tags with RC versions (simulates /tags endpoint)
 	mockServerWithRC := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Simulate the scenario from JIRA where RC versions appear before GA versions
 		response := `{
@@ -682,12 +697,27 @@ func TestRetrieveSupportedOCPVersionWithRCFiltering(t *testing.T) {
 	}))
 	defer mockServerWithRC.Close()
 
-	// Mock HTTP server that returns single version with RC
-	mockServerSingleRC := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Mock HTTP server that returns tags for amd64 stream with RC versions
+	mockServerAmd64WithRC := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		response := `{
-			"name": "4.20.0-rc.5",
-			"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.20.0-rc.5",
-			"downloadURL": "https://example.com/4.20.0-rc.5"
+			"name": "4-stable",
+			"tags": [
+				{
+					"name": "4.21.0-rc.0",
+					"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.21.0-rc.0-x86_64",
+					"downloadURL": "https://example.com/4.21.0-rc.0"
+				},
+				{
+					"name": "4.20.11",
+					"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.20.11-x86_64",
+					"downloadURL": "https://example.com/4.20.11"
+				},
+				{
+					"name": "4.19.5",
+					"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.5-x86_64",
+					"downloadURL": "https://example.com/4.19.5"
+				}
+			]
 		}`
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -696,14 +726,29 @@ func TestRetrieveSupportedOCPVersionWithRCFiltering(t *testing.T) {
 			t.Fatalf("failed to write response: %v", err)
 		}
 	}))
-	defer mockServerSingleRC.Close()
+	defer mockServerAmd64WithRC.Close()
 
-	// Mock HTTP server that returns single version without RC
-	mockServerSingleGA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Mock HTTP server that returns tags for arm64 stream with RC versions
+	mockServerArm64WithRC := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		response := `{
-			"name": "4.19.5",
-			"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.5",
-			"downloadURL": "https://example.com/4.19.5"
+			"name": "4-stable-arm64",
+			"tags": [
+				{
+					"name": "4.21.0-rc.2",
+					"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.21.0-rc.2-aarch64",
+					"downloadURL": "https://example.com/4.21.0-rc.2"
+				},
+				{
+					"name": "4.19.8",
+					"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.19.8-aarch64",
+					"downloadURL": "https://example.com/4.19.8"
+				},
+				{
+					"name": "4.18.10",
+					"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.18.10-aarch64",
+					"downloadURL": "https://example.com/4.18.10"
+				}
+			]
 		}`
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -712,14 +757,24 @@ func TestRetrieveSupportedOCPVersionWithRCFiltering(t *testing.T) {
 			t.Fatalf("failed to write response: %v", err)
 		}
 	}))
-	defer mockServerSingleGA.Close()
+	defer mockServerArm64WithRC.Close()
 
-	// Mock HTTP server that returns single version not supported
-	mockServerUnsupported := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Mock HTTP server that returns only RC versions (no GA versions available)
+	mockServerOnlyRC := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		response := `{
-			"name": "4.20.5",
-			"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.20.5",
-			"downloadURL": "https://example.com/4.20.5"
+			"name": "4-stable",
+			"tags": [
+				{
+					"name": "4.21.0-rc.5",
+					"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.21.0-rc.5-x86_64",
+					"downloadURL": "https://example.com/4.21.0-rc.5"
+				},
+				{
+					"name": "4.21.0-rc.4",
+					"pullSpec": "quay.io/openshift-release-dev/ocp-release:4.21.0-rc.4-x86_64",
+					"downloadURL": "https://example.com/4.21.0-rc.4"
+				}
+			]
 		}`
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
@@ -728,7 +783,7 @@ func TestRetrieveSupportedOCPVersionWithRCFiltering(t *testing.T) {
 			t.Fatalf("failed to write response: %v", err)
 		}
 	}))
-	defer mockServerUnsupported.Close()
+	defer mockServerOnlyRC.Close()
 
 	testCases := []struct {
 		name               string
@@ -739,7 +794,7 @@ func TestRetrieveSupportedOCPVersionWithRCFiltering(t *testing.T) {
 		expectedOCPVersion ocpVersion
 	}{
 		{
-			name:       "When latest releases include RC versions, expect latest non-RC supported version (/tags endpoint)",
+			name:       "When multi-arch stream has RC versions, expect latest non-RC supported version",
 			cm:         supportedVersionsCM,
 			releaseURL: mockServerWithRC.URL,
 			expectErr:  false,
@@ -749,28 +804,31 @@ func TestRetrieveSupportedOCPVersionWithRCFiltering(t *testing.T) {
 			},
 		},
 		{
-			name:           "When single version is RC, expect error (/latest endpoint)",
-			cm:             supportedVersionsCM,
-			releaseURL:     mockServerSingleRC.URL,
-			expectErr:      true,
-			expectedErrMsg: "is a release candidate",
-		},
-		{
-			name:       "When single version is GA and supported, expect success (/latest endpoint)",
+			name:       "When amd64 stream has RC versions, expect latest non-RC supported version",
 			cm:         supportedVersionsCM,
-			releaseURL: mockServerSingleGA.URL,
+			releaseURL: mockServerAmd64WithRC.URL,
 			expectErr:  false,
 			expectedOCPVersion: ocpVersion{
 				Name:     "4.19.5",
-				PullSpec: "quay.io/openshift-release-dev/ocp-release:4.19.5",
+				PullSpec: "quay.io/openshift-release-dev/ocp-release:4.19.5-x86_64",
 			},
 		},
 		{
-			name:           "When single version is not supported by HO, expect error",
+			name:       "When arm64 stream has RC versions, expect latest non-RC supported version",
+			cm:         supportedVersionsCM,
+			releaseURL: mockServerArm64WithRC.URL,
+			expectErr:  false,
+			expectedOCPVersion: ocpVersion{
+				Name:     "4.19.8",
+				PullSpec: "quay.io/openshift-release-dev/ocp-release:4.19.8-aarch64",
+			},
+		},
+		{
+			name:           "When stream has only RC versions, expect error",
 			cm:             supportedVersionsCM,
-			releaseURL:     mockServerUnsupported.URL,
+			releaseURL:     mockServerOnlyRC.URL,
 			expectErr:      true,
-			expectedErrMsg: "is not supported by this HyperShift Operator",
+			expectedErrMsg: "failed to find the latest supported OCP version",
 		},
 	}
 
