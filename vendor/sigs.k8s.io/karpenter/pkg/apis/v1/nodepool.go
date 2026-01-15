@@ -61,7 +61,7 @@ type Disruption struct {
 	// ConsolidateAfter is the duration the controller will wait
 	// before attempting to terminate nodes that are underutilized.
 	// Refer to ConsolidationPolicy for how underutilization is considered.
-	// +kubebuilder:validation:Pattern=`^(([0-9]+(s|m|h))+)|(Never)$`
+	// +kubebuilder:validation:Pattern=`^(([0-9]+(s|m|h))+|Never)$`
 	// +kubebuilder:validation:Type="string"
 	// +kubebuilder:validation:Schemaless
 	// +required
@@ -206,7 +206,7 @@ type NodeClaimTemplateSpec struct {
 	// is useful to implement features like eventually consistent node upgrade,
 	// memory leak protection, and disruption testing.
 	// +kubebuilder:default:="720h"
-	// +kubebuilder:validation:Pattern=`^(([0-9]+(s|m|h))+)|(Never)$`
+	// +kubebuilder:validation:Pattern=`^(([0-9]+(s|m|h))+|Never)$`
 	// +kubebuilder:validation:Type="string"
 	// +kubebuilder:validation:Schemaless
 	// +optional
@@ -217,8 +217,8 @@ type NodeClaimTemplateSpec struct {
 func (in *NodeClaimTemplate) ToNodeClaim() *NodeClaim {
 	return &NodeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Labels:      in.ObjectMeta.Labels,
-			Annotations: in.ObjectMeta.Annotations,
+			Labels:      in.Labels,
+			Annotations: in.Annotations,
 		},
 		Spec: NodeClaimSpec{
 			Taints:                 in.Spec.Taints,
