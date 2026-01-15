@@ -18,6 +18,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -162,11 +163,37 @@ func (r *NodePoolReconciler) setPlatformConditions(ctx context.Context, hcluster
 
 func (r *NodePoolReconciler) autoscalerEnabledCondition(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	if isAutoscalingEnabled(nodePool) {
+		// Check if autoscaling from zero (min=0) is being used
+		if nodePool.Spec.AutoScaling.Min != nil && *nodePool.Spec.AutoScaling.Min == 0 {
+			// Check platform-specific support
+			var supported bool
+			switch nodePool.Spec.Platform.Type {
+			case hyperv1.AWSPlatform:
+				// AWS supports scale-from-zero either natively (when CPO supports it)
+				// or via MachineDeployment controller workaround annotations
+				supported = true
+			default:
+				// Other platforms don't support autoscaling from zero yet
+				supported = false
+			}
+
+			if !supported {
+				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
+					Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
+					Status:             corev1.ConditionFalse,
+					Reason:             hyperv1.NodePoolValidationFailedReason,
+					Message:            fmt.Sprintf("Autoscaling from zero (min=0) is not supported for %s platform", nodePool.Spec.Platform.Type),
+					ObservedGeneration: nodePool.Generation,
+				})
+				return nil, nil
+			}
+		}
+
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolAutoscalingEnabledConditionType,
 			Status:             corev1.ConditionTrue,
 			Reason:             hyperv1.AsExpectedReason,
-			Message:            fmt.Sprintf("Maximum nodes: %v, Minimum nodes: %v", nodePool.Spec.AutoScaling.Max, nodePool.Spec.AutoScaling.Min),
+			Message:            fmt.Sprintf("Maximum nodes: %v, Minimum nodes: %v", nodePool.Spec.AutoScaling.Max, ptr.Deref(nodePool.Spec.AutoScaling.Min, 0)),
 			ObservedGeneration: nodePool.Generation,
 		})
 	} else {
