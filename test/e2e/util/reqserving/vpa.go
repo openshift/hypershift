@@ -3,11 +3,11 @@ package reqserving
 import (
 	"context"
 	"fmt"
+	"testing"
 	"time"
 
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,10 +44,7 @@ const (
 // - VerticalPodAutoscalerController 'default' is configured with:
 //   - spec.recommendationOnly=true
 //   - spec.deploymentOverrides.recommender.container.args set for e2e test requirements
-func EnsureVPAOperatorInstalled(ctx context.Context, t interface {
-	Helper()
-	Logf(string, ...any)
-}, c crclient.Client) error {
+func EnsureVPAOperatorInstalled(ctx context.Context, t *testing.T, c crclient.Client) error {
 	t.Helper()
 	t.Logf("[VPA] Starting install/verification via OLM")
 
@@ -124,9 +121,7 @@ func EnsureVPAOperatorInstalled(ctx context.Context, t interface {
 
 	// 6) Wait for recommender Deployment Available
 	t.Logf("[VPA] Waiting for %q deployment to be Available", vpaRecommenderName)
-	if err := waitForDeploymentAvailable(ctx, c, vpaNamespaceName, vpaRecommenderName); err != nil {
-		return fmt.Errorf("waiting for vpa-recommender-default available: %w", err)
-	}
+	e2eutil.WaitForDeploymentAvailable(ctx, t, c, vpaRecommenderName, vpaNamespaceName, 15*time.Minute, 10*time.Second)
 	t.Logf("[VPA] %q deployment is Available", vpaRecommenderName)
 
 	// 7) Configure VerticalPodAutoscalerController for e2e test requirements
@@ -186,21 +181,6 @@ func waitForVPAResource(ctx context.Context) error {
 			return false, nil
 		}
 		return true, nil
-	})
-}
-
-func waitForDeploymentAvailable(ctx context.Context, c crclient.Client, namespace, name string) error {
-	return wait.PollUntilContextTimeout(ctx, 10*time.Second, 15*time.Minute, true, func(ctx context.Context) (bool, error) {
-		dep := &appsv1.Deployment{}
-		if err := c.Get(ctx, crclient.ObjectKey{Namespace: namespace, Name: name}, dep); err != nil {
-			return false, crclient.IgnoreNotFound(err)
-		}
-		for _, cond := range dep.Status.Conditions {
-			if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
-				return true, nil
-			}
-		}
-		return false, nil
 	})
 }
 

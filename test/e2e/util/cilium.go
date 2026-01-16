@@ -324,7 +324,21 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 
 			// Now wait for DaemonSet pods to be ready
 			t.Log("Waiting for Cilium agent pods from DaemonSet to be ready")
-			WaitForDaemonSetReady(ctx, t, guestClient, ciliumDaemonSet.Name, ciliumDaemonSet.Namespace, ciliumLongTimeout, ciliumLongPollInterval)
+			nodeCount, err := hyperutil.CountAvailableNodes(ctx, guestClient)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to count available nodes")
+			err = waitForDaemonSetsReady(t, ctx, guestClient, []DaemonSetManifest{
+				{
+					GetFunc: func() *appsv1.DaemonSet {
+						return &appsv1.DaemonSet{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      ciliumDaemonSet.Name,
+								Namespace: ciliumDaemonSet.Namespace,
+							},
+						}
+					},
+				},
+			}, nodeCount)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to wait for Cilium DaemonSet to be ready")
 
 			t.Log("Cilium installation completed successfully")
 		})
@@ -456,8 +470,15 @@ func EnsureCiliumConnectivityTestResources(t *testing.T, ctx context.Context, gu
 	t.Run("WaitForConnectivityTestCompletion", func(t *testing.T) {
 		g := NewWithT(t)
 
-		t.Logf("Waiting %v for connectivity tests to run", ciliumConnectivityWaitDuration)
-		time.Sleep(ciliumConnectivityWaitDuration)
+		t.Log("Waiting for connectivity tests to run")
+		g.Eventually(func(g Gomega) {
+			podList := &corev1.PodList{}
+			err := guestClient.List(ctx, podList, crclient.InNamespace(ciliumTestNamespace))
+			g.Expect(err).ToNot(HaveOccurred(), "should be able to list test pods")
+			for _, pod := range podList.Items {
+				g.Expect(pod.Status.Phase).To(Equal(corev1.PodRunning), "pod %s is not running", pod.Name)
+			}
+		}, ciliumConnectivityWaitDuration, ciliumDefaultPollInterval).Should(Succeed(), "connectivity test pods should be running")
 
 		t.Log("Verifying all test pods are still running")
 		podList := &corev1.PodList{}
