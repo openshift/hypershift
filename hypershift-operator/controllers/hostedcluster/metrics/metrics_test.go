@@ -12,6 +12,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
 	"github.com/openshift/hypershift/support/api"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -964,7 +965,7 @@ func TestProxyCAValidity(t *testing.T) {
 						Name:      tc.caConfigMap,
 						Namespace: "any",
 					},
-					Data: map[string]string{ProxyCAConfigMapKey: tc.caCertificate},
+					Data: map[string]string{proxy.ProxyCAConfigMapKey: tc.caCertificate},
 				}
 				objects = append(objects, configMap)
 			}
@@ -1054,7 +1055,7 @@ func TestProxyCAExpiry(t *testing.T) {
 						Name:      tc.caConfigMap,
 						Namespace: "any",
 					},
-					Data: map[string]string{ProxyCAConfigMapKey: tc.caCertificate},
+					Data: map[string]string{proxy.ProxyCAConfigMapKey: tc.caCertificate},
 				}
 				objects = append(objects, configMap)
 			}
