@@ -324,15 +324,13 @@ func InjectMockOnDiskAuth(ctx context.Context, guestClient crclient.Client, dsIm
 										echo "No existing config, creating new one"
 									fi
 
-									# Use jq to merge in the mock auth (or fallback to manual JSON manipulation)
-									if command -v jq >/dev/null 2>&1; then
-										echo "$EXISTING" | jq '.auths["%s"] = {"auth":"%s"}' > "$CONFIG_PATH"
-									else
-										# Fallback: simple append (assumes auths object exists)
-										cat > "$CONFIG_PATH" <<EOF
-{"auths":{"%s":{"auth":"%s"}}}
-EOF
+									# Use jq to merge in the mock auth
+									if ! command -v jq >/dev/null 2>&1; then
+										echo "ERROR: jq is required but not found in PATH"
+										exit 1
 									fi
+
+									echo "$EXISTING" | jq '.auths["%s"] = {"auth":"%s"}' > "$CONFIG_PATH"
 
 									echo "Successfully injected mock auth"
 									cat "$CONFIG_PATH"
@@ -340,7 +338,7 @@ EOF
 
 									# Keep pod running
 									while true; do sleep 30; done
-								`, NodePullSecretPath, MockAuthRegistry, MockAuthRegistry, mockAuth, MockAuthRegistry, mockAuth),
+								`, NodePullSecretPath, MockAuthRegistry, MockAuthRegistry, mockAuth),
 							},
 							SecurityContext: &corev1.SecurityContext{
 								Privileged: ptr.To(true),
