@@ -4200,21 +4200,6 @@ func WaitForDeploymentAvailable(ctx context.Context, t *testing.T, client crclie
 	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("deployment %s/%s should be ready", namespace, name))
 }
 
-// WaitForDaemonSetReady waits for a DaemonSet to be ready.
-func WaitForDaemonSetReady(ctx context.Context, t *testing.T, client crclient.Client, name, namespace string, timeout, interval time.Duration) {
-	g := NewWithT(t)
-	t.Logf("Waiting for DaemonSet %s/%s to be ready", namespace, name)
-	g.Eventually(func() bool {
-		ds := &appsv1.DaemonSet{}
-		err := client.Get(ctx, crclient.ObjectKey{Name: name, Namespace: namespace}, ds)
-		if err != nil {
-			t.Logf("Failed to get DaemonSet %s/%s: %v", namespace, name, err)
-			return false
-		}
-		return ds.Status.NumberReady > 0
-	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("DaemonSet %s/%s should be ready", namespace, name))
-}
-
 // ApplyYAMLBytes applies YAML content to the cluster using Server-Side Apply.
 func ApplyYAMLBytes(ctx context.Context, c crclient.Client, yamlContent []byte, defaultNamespace ...string) error {
 	defaultNS := ""
