@@ -224,8 +224,11 @@ func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 		return fmt.Errorf("failed to parse desired pull secret: %w", err)
 	}
 
-	// Acquire exclusive lock on the file to prevent race conditions
-	fileLock, err := acquireFileLock(s.kubeletConfigJsonPath)
+	// Acquire exclusive lock on a stable lock file to prevent race conditions
+	// We use a separate .lock file because writeAtomic replaces the target file via os.Rename,
+	// which would invalidate a lock on the target path itself
+	lockPath := s.kubeletConfigJsonPath + ".lock"
+	fileLock, err := acquireFileLock(lockPath)
 	if err != nil {
 		return fmt.Errorf("failed to acquire file lock: %w", err)
 	}

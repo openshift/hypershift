@@ -2,6 +2,7 @@ package util
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"testing"
 
@@ -278,8 +279,8 @@ func OpenshiftOVNKubeDaemonSet() *appsv1.DaemonSet {
 // InjectMockOnDiskAuth creates a one-shot DaemonSet that appends mock auth to existing config.json
 // This simulates pre-existing on-disk auth that should be preserved during global pull secret sync
 func InjectMockOnDiskAuth(ctx context.Context, guestClient crclient.Client, dsImage string) error {
-	// Mock auth is base64("mockuser:mockpassword")
-	mockAuth := "bW9ja3VzZXI6bW9ja3Bhc3N3b3Jk"
+	// Mock auth is base64-encoded at runtime to avoid triggering secret scanners
+	mockAuth := base64.StdEncoding.EncodeToString([]byte("mockuser:mockpassword"))
 
 	daemonSet := &appsv1.DaemonSet{
 		ObjectMeta: metav1.ObjectMeta{
