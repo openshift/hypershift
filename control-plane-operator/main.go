@@ -29,6 +29,7 @@ import (
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
 	"github.com/openshift/hypershift/support/util"
+	syncglobalpullsecret "github.com/openshift/hypershift/sync-global-pullsecret"
 	tokenminter "github.com/openshift/hypershift/token-minter"
 	"go.uber.org/zap/zapcore"
 	appsv1 "k8s.io/api/apps/v1"
@@ -90,6 +91,8 @@ func commandFor(name string) *cobra.Command {
 		cmd = tokenminter.NewStartCommand()
 	case "etcd-defrag-controller":
 		cmd = etcddefrag.NewStartCommand()
+	case "sync-global-pullsecret":
+		cmd = syncglobalpullsecret.NewRunCommand()
 	default:
 		// for the default case, there is no need
 		// to convert flags, return immediately
@@ -140,6 +143,7 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(kubernetesdefaultproxy.NewStartCommand())
 	cmd.AddCommand(dnsresolver.NewCommand())
 	cmd.AddCommand(etcdbackup.NewStartCommand())
+	cmd.AddCommand(syncglobalpullsecret.NewRunCommand())
 
 	return cmd
 }
