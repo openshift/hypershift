@@ -18,18 +18,25 @@ func ReconcileKubeAPIServerServiceMonitor(serviceMonitor *prometheusoperatorv1.S
 			"component": "apiserver",
 		},
 	}
+	https := prometheusoperatorv1.Scheme("https")
 	serviceMonitor.Spec.Endpoints = []prometheusoperatorv1.Endpoint{
 		{
 			BearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token",
-			TLSConfig: &prometheusoperatorv1.TLSConfig{
-				SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
-					ServerName: ptr.To("kubernetes.default.svc"),
+			Scheme:          &https,
+			Port:            "https",
+			Path:            "/metrics",
+			HTTPConfigWithProxyAndTLSFiles: prometheusoperatorv1.HTTPConfigWithProxyAndTLSFiles{
+				HTTPConfigWithTLSFiles: prometheusoperatorv1.HTTPConfigWithTLSFiles{
+					TLSConfig: &prometheusoperatorv1.TLSConfig{
+						SafeTLSConfig: prometheusoperatorv1.SafeTLSConfig{
+							ServerName: ptr.To("kubernetes.default.svc"),
+						},
+						TLSFilesConfig: prometheusoperatorv1.TLSFilesConfig{
+							CAFile: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
+						},
+					},
 				},
-				CAFile: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
 			},
-			Scheme:               "https",
-			Port:                 "https",
-			Path:                 "/metrics",
 			MetricRelabelConfigs: metrics.KASRelabelConfigs(metrics.MetricsSetAll),
 		},
 	}

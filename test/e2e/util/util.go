@@ -1553,7 +1553,7 @@ func GetMetricsFromPod(ctx context.Context, c crclient.Client, componentName, co
 		return nil, fmt.Errorf("no metrics found")
 	}
 
-	var parser expfmt.TextParser
+	parser := expfmt.NewTextParser(model.UTF8Validation)
 	return parser.TextToMetricFamilies(strings.NewReader(cmdOutput))
 }
 
