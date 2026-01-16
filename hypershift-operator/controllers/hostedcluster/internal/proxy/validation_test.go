@@ -9,6 +9,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -136,7 +137,7 @@ func TestValidateProxyCAValidity(t *testing.T) {
 				t.Errorf("Expected no error but got: %v", err)
 			}
 			if tc.expectError && err != nil && tc.errorContains != "" {
-				if !containsString(err.Error(), tc.errorContains) {
+				if !strings.Contains(err.Error(), tc.errorContains) {
 					t.Errorf("Expected error to contain %q but got: %v", tc.errorContains, err)
 				}
 			}
@@ -173,8 +174,4 @@ func generateCertPEM(t *testing.T, notAfter time.Time) string {
 	}
 
 	return certPEM.String()
-}
-
-func containsString(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) == 0 || bytes.Contains([]byte(s), []byte(substr)))
 }
