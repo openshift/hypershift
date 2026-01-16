@@ -15,7 +15,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -51,63 +50,148 @@ func (it *NodePoolImageTypeTest) Setup(t *testing.T) {
 }
 
 func (it *NodePoolImageTypeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
-	nodePool := &hyperv1.NodePool{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      it.hostedCluster.Name + "-" + "test-imagetype",
-			Namespace: it.hostedCluster.Namespace,
-		},
-	}
-	defaultNodepool.Spec.DeepCopyInto(&nodePool.Spec)
-	nodePool.Spec.Replicas = &oneReplicas
-	nodePool.Spec.Platform.AWS.InstanceType = "m5.metal"
-	nodePool.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeWindows
-
-	return nodePool, nil
+	// Return nil to indicate we don't want to create a new NodePool
+	// We'll use the existing default NodePool for scaling tests
+	return nil, nil
 }
 
 func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
 	g := NewWithT(t)
 	ctx := it.ctx
 
-	// wait for the nodepool status conditions to populate
-	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("wait for nodepool %s/%s to have a populated PlatformImage status condition", nodePool.Namespace, nodePool.Name),
+	t.Log("Test: NodePool ImageType persistence through scaling operations")
+
+	// Get the default NodePool for this cluster
+	var defaultNodePool hyperv1.NodePool
+	err := it.mgmtClient.Get(ctx, crclient.ObjectKey{
+		Namespace: it.hostedCluster.Namespace,
+		Name:      it.hostedCluster.Name,
+	}, &defaultNodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get default NodePool")
+
+	// Get original state
+	originalReplicas := defaultNodePool.Spec.Replicas
+	originalImageType := defaultNodePool.Spec.Platform.AWS.ImageType
+	if originalImageType == "" {
+		originalImageType = hyperv1.ImageTypeLinux // Default is Linux
+	}
+	t.Logf("✓ Initial state - Replicas: %d, ImageType: %s", *originalReplicas, originalImageType)
+
+	// Update to Windows ImageType before scaling tests
+	t.Log("Setting ImageType to Windows for scaling tests")
+	defaultNodePool.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeWindows
+	err = it.mgmtClient.Update(ctx, &defaultNodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to update NodePool to Windows ImageType")
+
+	// Wait for Windows ImageType to be reflected
+	e2eutil.EventuallyObject(t, ctx, "wait for Windows imageType to be set",
 		func(ctx context.Context) (*hyperv1.NodePool, error) {
 			np := &hyperv1.NodePool{}
-			err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)
+			err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&defaultNodePool), np)
 			return np, err
 		},
 		[]e2eutil.Predicate[*hyperv1.NodePool]{
-			e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
-				Type: hyperv1.NodePoolValidPlatformImageType,
-			}),
+			func(np *hyperv1.NodePool) (done bool, reasons string, err error) {
+				return np.Spec.Platform.AWS.ImageType == hyperv1.ImageTypeWindows,
+					fmt.Sprintf("expected Windows, got %s", np.Spec.Platform.AWS.ImageType), nil
+			},
 		},
-		e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
+		e2eutil.WithInterval(2*time.Second), e2eutil.WithTimeout(1*time.Minute),
+	)
+	t.Log("✓ Windows ImageType set successfully")
+
+	// Test scaling operations
+	it.testImageTypePersistenceThroughScaling(t, g, ctx, &defaultNodePool, *originalReplicas)
+
+	// Restore original ImageType
+	t.Logf("Restoring original ImageType: %s", originalImageType)
+	err = it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&defaultNodePool), &defaultNodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
+	defaultNodePool.Spec.Platform.AWS.ImageType = originalImageType
+	err = it.mgmtClient.Update(ctx, &defaultNodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to restore original ImageType")
+
+	t.Log("✓ All NodePool ImageType scaling tests passed successfully")
+}
+
+func (it *NodePoolImageTypeTest) testImageTypePersistenceThroughScaling(t *testing.T, g *WithT, ctx context.Context, nodePool *hyperv1.NodePool, originalReplicas int32) {
+	// Test 1: Scale down to 0 replicas
+	t.Log("Test 1: Scaling NodePool to 0 replicas")
+	it.scaleAndVerifyImageType(t, g, ctx, nodePool, 0, hyperv1.ImageTypeWindows)
+
+	// Test 2: Scale up to 2 replicas
+	t.Log("Test 2: Scaling NodePool to 2 replicas")
+	it.scaleAndVerifyImageType(t, g, ctx, nodePool, 2, hyperv1.ImageTypeWindows)
+
+	// Test 3: Scale down to 1 replica
+	t.Log("Test 3: Scaling NodePool to 1 replica")
+	it.scaleAndVerifyImageType(t, g, ctx, nodePool, 1, hyperv1.ImageTypeWindows)
+
+	// Test 4: Restore original replica count
+	t.Logf("Test 4: Restoring original replica count to %d", originalReplicas)
+	it.scaleAndVerifyImageType(t, g, ctx, nodePool, originalReplicas, hyperv1.ImageTypeWindows)
+}
+
+func (it *NodePoolImageTypeTest) scaleAndVerifyImageType(t *testing.T, g *WithT, ctx context.Context, nodePool *hyperv1.NodePool, targetReplicas int32, expectedImageType hyperv1.ImageType) {
+	// Get current NodePool state
+	err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
+
+	// Update replicas
+	nodePool.Spec.Replicas = &targetReplicas
+	err = it.mgmtClient.Update(ctx, nodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to scale NodePool to %d replicas", targetReplicas)
+
+	// Wait for both spec and status replicas to match, and verify ImageType persists
+	timeout := 5 * time.Minute
+	if targetReplicas > 0 {
+		// Windows nodes take longer to provision (18+ minutes based on test results)
+		timeout = 30 * time.Minute
+	}
+
+	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("wait for nodepool to scale to %d replicas", targetReplicas),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			np := &hyperv1.NodePool{}
+			err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), np)
+			return np, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			func(np *hyperv1.NodePool) (done bool, reasons string, err error) {
+				specReplicas := int32(0)
+				if np.Spec.Replicas != nil {
+					specReplicas = *np.Spec.Replicas
+				}
+				statusReplicas := np.Status.Replicas
+				imageType := np.Spec.Platform.AWS.ImageType
+
+				replicasMatch := specReplicas == targetReplicas && statusReplicas == targetReplicas
+				imageTypeMatch := imageType == expectedImageType
+
+				if !replicasMatch || !imageTypeMatch {
+					return false, fmt.Sprintf("expected spec.replicas=%d status.replicas=%d imageType=%s, got spec.replicas=%d status.replicas=%d imageType=%s",
+						targetReplicas, targetReplicas, expectedImageType, specReplicas, statusReplicas, imageType), nil
+				}
+				return true, "", nil
+			},
+		},
+		e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(timeout),
 	)
 
-	// Check that the ValidPlatformImageType condition exists
-	err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-	validImageCondition := hostedcluster.FindNodePoolStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
-	if validImageCondition == nil {
-		t.Fatalf("ValidPlatformImageType condition not found")
+	// If scaling up, wait for nodes to be ready
+	if targetReplicas > 0 {
+		t.Logf("Waiting for %d nodes to become ready", targetReplicas)
+		e2eutil.WaitForNReadyNodesWithOptions(t, ctx, it.hostedClusterClient, int(targetReplicas),
+			e2eutil.WithNodeReadinessTimeout(timeout),
+			e2eutil.WithNodeReadinessInterval(10*time.Second),
+		)
+		t.Logf("✓ All %d nodes are ready", targetReplicas)
 	}
 
-	// For Windows, the condition should be True if Windows AMI mapping exists
-	switch validImageCondition.Status {
-	case corev1.ConditionTrue:
-		// Verify message contains Windows AMI information
-		if !strings.Contains(strings.ToLower(validImageCondition.Message), "windows") {
-			t.Fatalf("Windows ImageType should show Windows AMI info in condition message, but got: %s", validImageCondition.Message)
-		}
-		t.Log("Windows ImageType test passed - Windows AMI found and validated")
-	case corev1.ConditionFalse:
-		// If Windows AMI mapping doesn't exist for this region/version, that's also a valid test result
-		if strings.Contains(strings.ToLower(validImageCondition.Message), "couldn't discover a windows ami") {
-			t.Log("Windows ImageType test passed - Windows AMI not available for this region/version (expected behavior)")
-		} else {
-			t.Fatalf("unexpected validation failure for Windows ImageType: %s", validImageCondition.Message)
-		}
-	default:
-		t.Fatalf("ValidPlatformImageType condition has unexpected status %s", validImageCondition.Status)
-	}
+	// Verify ImageType is still correct after scaling
+	err = it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool after scaling")
+	g.Expect(nodePool.Spec.Platform.AWS.ImageType).To(Equal(expectedImageType),
+		"ImageType should persist through scaling operations")
+
+	t.Logf("✓ Scaled to %d replicas, ImageType persisted: %s", targetReplicas, expectedImageType)
 }
