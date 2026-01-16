@@ -19,27 +19,28 @@ const (
 )
 
 func main() {
-	// Create registry and extension
 	registry := e.NewRegistry()
 	extension := e.NewExtension("openshift", "payload", extensionName)
-
-	// Build test specs from Ginkgo suite
 	specs, err := g.BuildExtensionTestSpecsFromOpenShiftGinkgoSuite()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error building test specs: %v\n", err)
 		os.Exit(1)
 	}
-	// inspect each spec and add labels without filtering
 	specs = specs.Walk(func(spec *et.ExtensionTestSpec) {
 		// add spec labels
 		if et.NameContains("smoke")(spec) {
 			spec.Labels.Insert("smoke")
 		}
+
+		if et.NameContains("HyperShiftMGMT")(spec) {
+			spec.Labels.Insert("HyperShiftMGMT")
+		}
+
+		if et.NameContains("Critical")(spec) {
+			spec.Labels.Insert("Critical")
+		}
 	})
-
-	// Add the suite prefix label to all specs
 	specs = specs.AddLabel(fmt.Sprintf("%s/all", extensionName))
-
 	extension.AddSuite(e.Suite{
 		Name: fmt.Sprintf("%s/all", extensionName),
 	})
@@ -49,10 +50,22 @@ func main() {
 			`labels.exists(l, l=="smoke")`,
 		},
 	})
+	extension.AddSuite(e.Suite{
+		Name: fmt.Sprintf("%s/HyperShiftMGMT", extensionName),
+		Qualifiers: []string{
+			`labels.exists(l, l=="HyperShiftMGMT")`,
+		},
+	})
+	extension.AddSuite(e.Suite{
+		Name: fmt.Sprintf("%s/Critical", extensionName),
+		Qualifiers: []string{
+			`labels.exists(l, l=="Critical")`,
+		},
+	})
 	extension.AddSpecs(specs)
 	registry.Register(extension)
 	root := &cobra.Command{
-		Use:   "hypershift-extend-test",
+		Use:   "hypershift-test-extend",
 		Short: "HyperShift extend test runner",
 		Long: `A test runner for HyperShift extend tests using the openshift-tests-extension framework.
 
@@ -60,16 +73,16 @@ This tool allows to discover, list, and run HyperShift extend tests in a standar
 
 Examples:
   # List all available test suites
-  hypershift-extend-test list suites
+  hypershift-test-extend list suites
 
   # List all tests
-  hypershift-extend-test list tests
+  hypershift-test-extend list tests
 
   # Run suite
-  hypershift-extend-test run-suite hypershift/smoke
+  hypershift-test-extend run-suite hypershift/smoke
 
   # Run test
-  hypershift-extend-test run-test "run-test "[sig-hypershift] Hypershift openshift-test-extension smoke test"`,
+  hypershift-test-extend run-test "[sig-hypershift] Hypershift openshift-test-extension smoke test"`,
 	}
 
 	root.AddCommand(cmd.DefaultExtensionCommands(registry)...)
