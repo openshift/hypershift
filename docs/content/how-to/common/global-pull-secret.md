@@ -2,13 +2,16 @@
 
 ## Overview
 
-The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature allows you to merge your custom pull secret with the original HostedCluster pull secret, making it available to all nodes in the cluster.
+The Global Pull Secret functionality enables Hosted Cluster administrators to include additional pull secrets for accessing container images from private registries without requiring assistance from the Management Cluster administrator. This feature supports two methods:
 
-The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster). The system then merges this secret with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
+1. **Manual Pull Secret Addition**: Add custom pull secrets by creating an `additional-pull-secret` in the `kube-system` namespace
+2. **AWS ECR Credential Injection**: Automatically inject AWS Elastic Container Registry (ECR) credentials using EC2 instance IAM roles (AWS-only)
+
+The implementation uses a DaemonSet approach that automatically detects when you create an `additional-pull-secret` in the `kube-system` namespace of your DataPlane (Hosted Cluster) or when ECR credential injection is enabled via annotation. The system then merges these credentials with the original pull secret and deploys the merged result to all nodes via a DaemonSet that updates the kubelet configuration.
 
 !!! note
 
-    This feature is designed to work autonomously - once you create the additional pull secret, the system automatically handles the rest without requiring Management Cluster administrator intervention.
+    This feature is designed to work autonomously - once you create the additional pull secret or enable ECR credential injection, the system automatically handles the rest without requiring Management Cluster administrator intervention.
 
 ## Adding your Pull Secret
 
@@ -82,6 +85,83 @@ kubectl get secret global-pull-secret -n kube-system
 kubectl get pods -n kube-system -l name=global-pull-secret-syncer
 ```
 
+## AWS ECR Credential Injection
+
+!!! info "AWS-Only Feature"
+
+    This feature is only available for HostedClusters running on AWS infrastructure.
+
+In addition to manually adding custom pull secrets, HyperShift can automatically inject AWS Elastic Container Registry (ECR) credentials for HostedClusters running on AWS.
+
+### Overview
+
+The ECR credential injection feature:
+
+- **Automatically fetches ECR credentials** using the AWS Instance Metadata Service (IMDS)
+- **Refreshes credentials periodically** before they expire (ECR tokens have a 12-hour lifetime and are refreshed every 6 hours)
+- **Requires no static credentials** - uses the EC2 instance's IAM role automatically
+
+### Configuration
+
+To enable ECR credential injection, add an annotation to your HostedCluster resource:
+
+```yaml
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: my-cluster
+  namespace: clusters
+  annotations:
+    hypershift.openshift.io/inject-ecr-registries-auth: "123456789012.dkr.ecr.us-east-1.amazonaws.com,123456789012.dkr.ecr.us-west-2.amazonaws.com"
+spec:
+  # ... rest of HostedCluster spec
+```
+
+The annotation value is a **comma-separated list** of ECR registry URLs for which credentials should be injected.
+
+!!! tip "ECR Registry Format"
+
+    ECR registry URLs follow the format: `<aws-account-id>.dkr.ecr.<region>.amazonaws.com`
+
+    Example: `123456789012.dkr.ecr.us-east-1.amazonaws.com`
+
+### Requirements
+
+For ECR credential injection to work:
+
+1. **AWS EC2 Infrastructure**: Nodes must be running on AWS EC2 instances with IMDS available
+2. **IAM Permissions**: The EC2 instance IAM role must have permissions to call `ecr:GetAuthorizationToken`
+3. **Host Networking**: The Global Pull Secret DaemonSet runs with host networking enabled when ECR is configured
+
+### Example IAM Policy
+
+Your EC2 instance IAM role should include permissions similar to:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+### Combining ECR with Manual Pull Secrets
+
+ECR credential injection works seamlessly alongside the manual `additional-pull-secret` approach:
+
+1. **Original pull secret** from HostedControlPlane (highest precedence)
+2. **Manual additional-pull-secret** from `kube-system` namespace
+3. **Auto-injected ECR credentials** (lowest precedence)
+
+This means you can use ECR credential injection for AWS ECR registries while also adding manual credentials for other private registries like Quay.io or Docker Hub.
+
 ## How it works
 
 The Global Pull Secret functionality operates through a multi-component system:
@@ -96,6 +176,7 @@ The Global Pull Secret functionality operates through a multi-component system:
 - Your additional pull secret is merged with the original one
 - **If there are conflicting registry entries, the original pull secret takes precedence** (the additional pull secret entry is ignored for conflicting registries)
 - The system supports namespace-specific registry entries (e.g., `quay.io/namespace`) for better credential specificity
+- If ECR credential injection is enabled (via the `hypershift.openshift.io/inject-ecr-registries-auth` annotation), ECR credentials are automatically fetched and merged at the node level with the lowest precedence
 
 ### Deployment Process
 - A `global-pull-secret` is created in the `kube-system` namespace containing the merged result
@@ -115,6 +196,11 @@ The Global Pull Secret functionality operates through a multi-component system:
 ### Node-Level Synchronization
 - Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
 - When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+- If ECR credential injection is enabled, the DaemonSet:
+  - Runs with host networking to access the EC2 Instance Metadata Service (IMDS)
+  - Fetches ECR authorization tokens using the node's IAM role
+  - Merges ECR credentials with existing pull secrets (original and additional)
+  - Refreshes ECR credentials every 6 hours before the 12-hour expiration
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
@@ -200,6 +286,10 @@ The implementation consists of several key components working together:
    - Runs as a DaemonSet on each node
    - Watches for changes to the `global-pull-secret` in `kube-system` namespace
    - Accesses the original `pull-secret` in `openshift-config` namespace
+   - **ECR Credential Management** (when enabled):
+     - Fetches ECR authorization tokens using the EC2 instance's IAM role via IMDS
+     - Caches credentials with automatic refresh before expiration
+     - Merges ECR credentials with existing pull secrets
    - Updates the kubelet configuration file
    - Manages kubelet service restarts via DBus
 
@@ -307,10 +397,16 @@ graph TB
 - **Efficiency**
   - Only updates when there are actual changes
   - The globalPullSecret implementation has their own controller so it cannot interfere with the HCCO reonciliation
+- **AWS ECR Integration** (optional):
+  - Automatic ECR credential injection
+  - Periodic credential refresh (6-hour intervals)
+  - No static credentials required - uses EC2 instance IAM roles
+  - Seamlessly merges with manual pull secrets
 - **Security considerations**: Uses specific RBAC for only the required resources in each namespace. The DaemonSet containers run in privileged mode due to the need to:
   - Write to `/var/lib/kubelet/config.json` (kubelet configuration file)
   - Connect to systemd via DBus for service management
-  - Restart kubelet.service, which requires root privileges
+  - Restart `kubelet.service`, which requires root privileges
+  - Access IMDS for ECR credentials (when ECR injection is enabled, requires host networking)
 - **Smart node targeting**: Automatically excludes nodes from InPlace NodePools to prevent MCD conflicts
 
 ### InPlace NodePool Handling

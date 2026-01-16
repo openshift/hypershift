@@ -61,12 +61,11 @@ func (c *cachedCredential) isValid() bool {
 	return time.Now().Add(ecrCacheCheckBuffer).Before(c.expiresAt)
 }
 
-// newECRClient creates an ECR client using EC2 instance credentials with IMDSv2
+// newECRClient creates an ECR client using EC2 instance credentials
 func newECRClient(ctx context.Context, log logr.Logger) (ecrClient, error) {
-	// Load AWS config with IMDSv2 enabled by default
-	// AWS SDK v2 uses IMDSv2 by default (EC2IMDSv1Disabled: true in ec2rolecreds)
+	// Load AWS config using IMDS for credentials and region
 	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithEC2IMDSRegion(), // Auto-detect region from IMDS
+		config.WithEC2IMDSRegion(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
@@ -85,7 +84,7 @@ func newECRClient(ctx context.Context, log logr.Logger) (ecrClient, error) {
 		return nil, fmt.Errorf("not running on AWS EC2 instance (IMDS unavailable): %w", err)
 	}
 
-	log.Info("Successfully initialized ECR client with IMDSv2")
+	log.Info("Successfully initialized ECR client using IMDS")
 	return &awsECRClient{
 		client: ecr.NewFromConfig(cfg),
 	}, nil
