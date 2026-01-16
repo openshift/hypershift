@@ -17,9 +17,13 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
+	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
 	"github.com/openshift/hypershift/support/util"
+	fakeimagemetadataprovider "github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
 	configv1 "github.com/openshift/api/config/v1"
+	docker10 "github.com/openshift/api/image/docker10"
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -33,8 +37,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/yaml"
 
+	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
 	"github.com/google/go-cmp/cmp"
+	"github.com/vincent-petithory/dataurl"
 )
 
 func TestIsUpdatingConfig(t *testing.T) {
@@ -1579,18 +1586,73 @@ func TestResolveHAProxyImage(t *testing.T) {
 				},
 			}
 
+			// Create kubeconfig secret
+			kubeconfigSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kk",
+					Namespace: "clusters",
+				},
+				Data: map[string][]byte{
+					"kubeconfig": []byte(`apiVersion: v1
+clusters:
+- cluster:
+    server: https://kubeconfig-host:443
+  name: cluster
+contexts:
+- context:
+    cluster: cluster
+    user: ""
+    namespace: default
+  name: cluster
+current-context: cluster
+kind: Config`),
+				},
+			}
+
 			// Create fake pull secret
 			pullSecret := &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "pull-secret",
+					Name:      "pull-secret",
+					Namespace: "clusters",
 				},
 				Data: map[string][]byte{
 					corev1.DockerConfigJsonKey: []byte(`{"auths":{"test":{"auth":"dGVzdDp0ZXN0"}}}`),
 				},
 			}
 
+			// Create list of objects for the fake client
+			objects := []client.Object{kubeconfigSecret, pullSecret}
+
+			// Add router service if shared ingress is enabled
+			if tc.useSharedIngress {
+				routerService := &corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "router",
+						Namespace: "hypershift-sharedingress",
+					},
+					Spec: corev1.ServiceSpec{
+						Ports: []corev1.ServicePort{
+							{
+								Name: "https",
+								Port: 443,
+							},
+						},
+					},
+					Status: corev1.ServiceStatus{
+						LoadBalancer: corev1.LoadBalancerStatus{
+							Ingress: []corev1.LoadBalancerIngress{
+								{
+									IP: "192.0.2.1",
+								},
+							},
+						},
+					},
+				}
+				objects = append(objects, routerService)
+			}
+
 			// Create fake client
-			c := fake.NewClientBuilder().WithObjects(pullSecret).Build()
+			c := fake.NewClientBuilder().WithObjects(objects...).Build()
 
 			// Create fake release provider with component images
 			releaseProvider := &fakereleaseprovider.FakeReleaseProvider{
@@ -1601,12 +1663,44 @@ func TestResolveHAProxyImage(t *testing.T) {
 
 			// Create test HostedCluster
 			hc := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hc",
+					Namespace: "clusters",
+				},
 				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							EndpointAccess: hyperv1.Public,
+						},
+					},
+					Networking: hyperv1.ClusterNetworking{
+						ServiceNetwork: []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}},
+					},
 					PullSecret: corev1.LocalObjectReference{
 						Name: "pull-secret",
 					},
 					Release: hyperv1.Release{
 						Image: "test-release:latest",
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					KubeConfig: &corev1.LocalObjectReference{Name: "kk"},
+				},
+			}
+
+			// Create NodePoolReconciler
+			reconciler := &NodePoolReconciler{
+				Client:                  c,
+				ReleaseProvider:         releaseProvider,
+				HypershiftOperatorImage: "hypershift-operator:latest",
+				ImageMetadataProvider: &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+					Result: &dockerv1client.DockerImageConfig{
+						Config: &docker10.DockerConfig{
+							Labels: map[string]string{
+								haproxy.ControlPlaneOperatorSkipsHAProxyConfigGenerationLabel: "true",
+							},
+						},
 					},
 				},
 			}
@@ -1616,12 +1710,37 @@ func TestResolveHAProxyImage(t *testing.T) {
 			releaseImage := fakereleaseprovider.GetReleaseImage(ctx, hc, c, releaseProvider)
 			g.Expect(releaseImage).ToNot(BeNil())
 
-			// Call resolveHAProxyImage
-			image, err := resolveHAProxyImage(nodePool, releaseImage)
-
-			// Verify no error and correct image
+			// Call generateHAProxyRawConfig
+			cfg, err := reconciler.generateHAProxyRawConfig(ctx, nodePool, hc, releaseImage)
 			g.Expect(err).ToNot(HaveOccurred())
-			g.Expect(image).To(Equal(tc.expectedImage))
+			g.Expect(cfg).ToNot(BeEmpty())
+
+			// Unmarshal MachineConfig
+			mcfg := &mcfgv1.MachineConfig{}
+			err = yaml.Unmarshal([]byte(cfg), mcfg)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// Unmarshal Ignition config
+			ignitionCfg := &ignitionapi.Config{}
+			err = yaml.Unmarshal(mcfg.Spec.Config.Raw, ignitionCfg)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// Find the kube-apiserver-proxy.yaml file
+			var kubeAPIServerProxyManifest *dataurl.DataURL
+			for _, file := range ignitionCfg.Storage.Files {
+				if file.Path == "/etc/kubernetes/manifests/kube-apiserver-proxy.yaml" {
+					kubeAPIServerProxyManifest, err = dataurl.DecodeString(*file.Contents.Source)
+					g.Expect(err).ToNot(HaveOccurred())
+					break
+				}
+			}
+
+			g.Expect(kubeAPIServerProxyManifest).ToNot(BeNil(), "couldn't find /etc/kubernetes/manifests/kube-apiserver-proxy.yaml in ignition config")
+
+			// Verify the expected HAProxy image is present in the manifest
+			manifestContent := string(kubeAPIServerProxyManifest.Data)
+			g.Expect(manifestContent).To(ContainSubstring(tc.expectedImage),
+				"expected HAProxy image %q to be present in kube-apiserver-proxy.yaml manifest", tc.expectedImage)
 		})
 	}
 }
