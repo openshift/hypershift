@@ -40,6 +40,7 @@ func (r *inputResourceInitializer) Start(ctx context.Context) error {
 	if err = r.checkSupportedInputResources(inputResources); err != nil {
 		return err
 	}
+	// TODO: register filters for dispatcher based on inputRes
 	return r.startAndWaitForInformersFor(ctx, inputResources)
 }
 
