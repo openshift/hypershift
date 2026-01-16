@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -12,6 +13,13 @@ import (
 const (
 	docsContentDir = "docs/content"
 	outputFile     = "docs/content/reference/aggregated-docs.md"
+)
+
+var (
+	// markdownLinkRegex matches markdown links: [text](url)
+	markdownLinkRegex = regexp.MustCompile(`\[([^\]]+)\]\([^)]+\)`)
+	// markdownImageRegex matches markdown images: ![alt](url) including empty alt text
+	markdownImageRegex = regexp.MustCompile(`!\[[^\]]*\]\([^)]+\)`)
 )
 
 func main() {
@@ -50,7 +58,8 @@ func run() error {
 		// Write separator and source header
 		builder.WriteString("---\n\n")
 		builder.WriteString(fmt.Sprintf("## Source: %s\n\n", filePath))
-		builder.WriteString(string(content))
+		// Strip markdown links to avoid broken link warnings in aggregated file
+		builder.WriteString(stripMarkdownLinks(string(content)))
 		builder.WriteString("\n\n")
 	}
 
@@ -96,4 +105,15 @@ func findMarkdownFiles(root string) ([]string, error) {
 	}
 
 	return files, nil
+}
+
+// stripMarkdownLinks converts markdown links [text](url) to just the text,
+// and removes markdown images ![alt](url) entirely.
+// This prevents broken link warnings when all docs are aggregated into one file,
+// since relative links no longer resolve correctly in the aggregated context.
+func stripMarkdownLinks(content string) string {
+	// First remove images (they reference relative paths that won't work)
+	content = markdownImageRegex.ReplaceAllString(content, "")
+	// Then convert links to plain text (preserve the link text)
+	return markdownLinkRegex.ReplaceAllString(content, "$1")
 }
