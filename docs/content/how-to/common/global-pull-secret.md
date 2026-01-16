@@ -269,16 +269,6 @@ Note that:
 - `registry.redhat.io` is added from the cluster-provided secret
 - `registry.example.com` is preserved from the on-disk file since it's not managed by HyperShift
 
-### Thread Safety and Consistency
-
-To ensure safe concurrent access to the kubelet config file:
-
-- **File locking**: The sync process uses a separate `.lock` file (`/var/lib/kubelet/config.json.lock`) to coordinate access across multiple processes
-- **Atomic writes**: File updates use atomic rename operations to prevent partial writes
-- **Lock stability**: The lock file path remains constant across updates, ensuring all processes lock the same inode
-
-This thread-safe design allows external processes to safely modify the kubelet config file alongside the Global Pull Secret sync process.
-
 ## Implementation details
 
 The implementation consists of several key components working together:

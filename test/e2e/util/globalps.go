@@ -377,4 +377,3 @@ func InjectMockOnDiskAuth(ctx context.Context, guestClient crclient.Client, dsIm
 
 	return guestClient.Create(ctx, daemonSet)
 }
-

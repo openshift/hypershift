@@ -2390,7 +2390,10 @@ The Global Pull Secret functionality operates through a multi-component system:
 
 ### Node-Level Synchronization
 - Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+- When changes are detected, it reads the existing `/var/lib/kubelet/config.json` on the node
+- **Merges on-disk auths** with cluster-provided auths, preserving external registry credentials (see On-Disk Authentication Preservation)
+- Uses file locking (`.lock` file) to prevent race conditions with external processes
+- Updates the kubelet configuration file atomically
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
@@ -2459,6 +2462,89 @@ To avoid conflicts and ensure your credentials are used, consider these strategi
 
 Note how the `quay.io` entry keeps the original credentials, but `quay.io/mycompany` is added from your additional secret.
 
+## On-Disk Authentication Preservation
+
+In addition to the control-plane level merging described above, the Global Pull Secret system also preserves external registry authentications that may be added directly to nodes. This feature allows external processes, automation tools, or manual interventions to add registry credentials to nodes that will be preserved across Global Pull Secret synchronizations.
+
+### How On-Disk Preservation Works
+
+When the Global Pull Secret DaemonSet synchronizes the pull secret to a node's `/var/lib/kubelet/config.json`, it:
+
+1. **Reads the existing on-disk configuration** with file locking to prevent race conditions
+2. **Merges existing auths** from the on-disk file with the cluster-provided auths
+3. **Preserves external auths** that are not managed by HyperShift
+4. **Writes the merged result** atomically to maintain consistency
+
+### Node-Level Precedence Rules
+
+The node-level merge follows these precedence rules:
+
+- **Cluster-provided auths (from HyperShift) ALWAYS take precedence** for registries managed by the cluster
+- **External/on-disk auths are preserved** ONLY if they're for registries NOT in the cluster-provided pull secret
+- If both the cluster and on-disk config have an entry for the same registry, the cluster-provided auth wins
+
+This design allows HyperShift to maintain full control over its managed registries while preserving external modifications for other registries.
+
+### Use Cases for On-Disk Auth Preservation
+
+This feature is useful in scenarios where:
+
+1. **External automation adds node-specific credentials**: Tools like image pre-puller utilities or node provisioning scripts can add registry credentials that persist across Global Pull Secret syncs
+2. **Temporary troubleshooting access**: Site reliability engineers can manually add credentials to nodes for debugging without those credentials being removed on the next sync
+3. **Third-party integrations**: External systems that manage their own registry credentials can coexist with HyperShift's Global Pull Secret management
+
+### Example On-Disk Merge Scenario
+
+**Cluster-provided Pull Secret** (from global-pull-secret in kube-system):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    }
+  }
+}
+```
+
+**Existing On-Disk config.json** (added by external process):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "external-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+**Resulting Merged config.json**:
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+Note that:
+- `quay.io` uses cluster-provided credentials (HyperShift takes precedence)
+- `registry.redhat.io` is added from the cluster-provided secret
+- `registry.example.com` is preserved from the on-disk file since it's not managed by HyperShift
+
 ## Implementation details
 
 The implementation consists of several key components working together:
@@ -2476,7 +2562,9 @@ The implementation consists of several key components working together:
    - Runs as a DaemonSet on each node
    - Watches for changes to the `global-pull-secret` in `kube-system` namespace
    - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - **Merges on-disk auths** from existing kubelet config with cluster-provided auths
+   - Uses file locking (`.lock` file) for thread-safe concurrent access
+   - Updates the kubelet configuration file atomically
    - Manages kubelet service restarts via DBus
 
 3. **Hosted Cluster Config Operator Integration**
@@ -2633,6 +2721,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
@@ -6342,7 +6431,10 @@ The Global Pull Secret functionality operates through a multi-component system:
 
 ### Node-Level Synchronization
 - Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+- When changes are detected, it reads the existing `/var/lib/kubelet/config.json` on the node
+- **Merges on-disk auths** with cluster-provided auths, preserving external registry credentials (see On-Disk Authentication Preservation)
+- Uses file locking (`.lock` file) to prevent race conditions with external processes
+- Updates the kubelet configuration file atomically
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
@@ -6411,6 +6503,89 @@ To avoid conflicts and ensure your credentials are used, consider these strategi
 
 Note how the `quay.io` entry keeps the original credentials, but `quay.io/mycompany` is added from your additional secret.
 
+## On-Disk Authentication Preservation
+
+In addition to the control-plane level merging described above, the Global Pull Secret system also preserves external registry authentications that may be added directly to nodes. This feature allows external processes, automation tools, or manual interventions to add registry credentials to nodes that will be preserved across Global Pull Secret synchronizations.
+
+### How On-Disk Preservation Works
+
+When the Global Pull Secret DaemonSet synchronizes the pull secret to a node's `/var/lib/kubelet/config.json`, it:
+
+1. **Reads the existing on-disk configuration** with file locking to prevent race conditions
+2. **Merges existing auths** from the on-disk file with the cluster-provided auths
+3. **Preserves external auths** that are not managed by HyperShift
+4. **Writes the merged result** atomically to maintain consistency
+
+### Node-Level Precedence Rules
+
+The node-level merge follows these precedence rules:
+
+- **Cluster-provided auths (from HyperShift) ALWAYS take precedence** for registries managed by the cluster
+- **External/on-disk auths are preserved** ONLY if they're for registries NOT in the cluster-provided pull secret
+- If both the cluster and on-disk config have an entry for the same registry, the cluster-provided auth wins
+
+This design allows HyperShift to maintain full control over its managed registries while preserving external modifications for other registries.
+
+### Use Cases for On-Disk Auth Preservation
+
+This feature is useful in scenarios where:
+
+1. **External automation adds node-specific credentials**: Tools like image pre-puller utilities or node provisioning scripts can add registry credentials that persist across Global Pull Secret syncs
+2. **Temporary troubleshooting access**: Site reliability engineers can manually add credentials to nodes for debugging without those credentials being removed on the next sync
+3. **Third-party integrations**: External systems that manage their own registry credentials can coexist with HyperShift's Global Pull Secret management
+
+### Example On-Disk Merge Scenario
+
+**Cluster-provided Pull Secret** (from global-pull-secret in kube-system):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    }
+  }
+}
+```
+
+**Existing On-Disk config.json** (added by external process):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "external-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+**Resulting Merged config.json**:
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+Note that:
+- `quay.io` uses cluster-provided credentials (HyperShift takes precedence)
+- `registry.redhat.io` is added from the cluster-provided secret
+- `registry.example.com` is preserved from the on-disk file since it's not managed by HyperShift
+
 ## Implementation details
 
 The implementation consists of several key components working together:
@@ -6428,7 +6603,9 @@ The implementation consists of several key components working together:
    - Runs as a DaemonSet on each node
    - Watches for changes to the `global-pull-secret` in `kube-system` namespace
    - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - **Merges on-disk auths** from existing kubelet config with cluster-provided auths
+   - Uses file locking (`.lock` file) for thread-safe concurrent access
+   - Updates the kubelet configuration file atomically
    - Manages kubelet service restarts via DBus
 
 3. **Hosted Cluster Config Operator Integration**
@@ -6585,6 +6762,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
@@ -8659,7 +8837,10 @@ The Global Pull Secret functionality operates through a multi-component system:
 
 ### Node-Level Synchronization
 - Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+- When changes are detected, it reads the existing `/var/lib/kubelet/config.json` on the node
+- **Merges on-disk auths** with cluster-provided auths, preserving external registry credentials (see On-Disk Authentication Preservation)
+- Uses file locking (`.lock` file) to prevent race conditions with external processes
+- Updates the kubelet configuration file atomically
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
@@ -8728,6 +8909,89 @@ To avoid conflicts and ensure your credentials are used, consider these strategi
 
 Note how the `quay.io` entry keeps the original credentials, but `quay.io/mycompany` is added from your additional secret.
 
+## On-Disk Authentication Preservation
+
+In addition to the control-plane level merging described above, the Global Pull Secret system also preserves external registry authentications that may be added directly to nodes. This feature allows external processes, automation tools, or manual interventions to add registry credentials to nodes that will be preserved across Global Pull Secret synchronizations.
+
+### How On-Disk Preservation Works
+
+When the Global Pull Secret DaemonSet synchronizes the pull secret to a node's `/var/lib/kubelet/config.json`, it:
+
+1. **Reads the existing on-disk configuration** with file locking to prevent race conditions
+2. **Merges existing auths** from the on-disk file with the cluster-provided auths
+3. **Preserves external auths** that are not managed by HyperShift
+4. **Writes the merged result** atomically to maintain consistency
+
+### Node-Level Precedence Rules
+
+The node-level merge follows these precedence rules:
+
+- **Cluster-provided auths (from HyperShift) ALWAYS take precedence** for registries managed by the cluster
+- **External/on-disk auths are preserved** ONLY if they're for registries NOT in the cluster-provided pull secret
+- If both the cluster and on-disk config have an entry for the same registry, the cluster-provided auth wins
+
+This design allows HyperShift to maintain full control over its managed registries while preserving external modifications for other registries.
+
+### Use Cases for On-Disk Auth Preservation
+
+This feature is useful in scenarios where:
+
+1. **External automation adds node-specific credentials**: Tools like image pre-puller utilities or node provisioning scripts can add registry credentials that persist across Global Pull Secret syncs
+2. **Temporary troubleshooting access**: Site reliability engineers can manually add credentials to nodes for debugging without those credentials being removed on the next sync
+3. **Third-party integrations**: External systems that manage their own registry credentials can coexist with HyperShift's Global Pull Secret management
+
+### Example On-Disk Merge Scenario
+
+**Cluster-provided Pull Secret** (from global-pull-secret in kube-system):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    }
+  }
+}
+```
+
+**Existing On-Disk config.json** (added by external process):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "external-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+**Resulting Merged config.json**:
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+Note that:
+- `quay.io` uses cluster-provided credentials (HyperShift takes precedence)
+- `registry.redhat.io` is added from the cluster-provided secret
+- `registry.example.com` is preserved from the on-disk file since it's not managed by HyperShift
+
 ## Implementation details
 
 The implementation consists of several key components working together:
@@ -8745,7 +9009,9 @@ The implementation consists of several key components working together:
    - Runs as a DaemonSet on each node
    - Watches for changes to the `global-pull-secret` in `kube-system` namespace
    - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - **Merges on-disk auths** from existing kubelet config with cluster-provided auths
+   - Uses file locking (`.lock` file) for thread-safe concurrent access
+   - Updates the kubelet configuration file atomically
    - Manages kubelet service restarts via DBus
 
 3. **Hosted Cluster Config Operator Integration**
@@ -8902,6 +9168,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
@@ -10060,7 +10327,10 @@ The Global Pull Secret functionality operates through a multi-component system:
 
 ### Node-Level Synchronization
 - Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+- When changes are detected, it reads the existing `/var/lib/kubelet/config.json` on the node
+- **Merges on-disk auths** with cluster-provided auths, preserving external registry credentials (see On-Disk Authentication Preservation)
+- Uses file locking (`.lock` file) to prevent race conditions with external processes
+- Updates the kubelet configuration file atomically
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
@@ -10129,6 +10399,89 @@ To avoid conflicts and ensure your credentials are used, consider these strategi
 
 Note how the `quay.io` entry keeps the original credentials, but `quay.io/mycompany` is added from your additional secret.
 
+## On-Disk Authentication Preservation
+
+In addition to the control-plane level merging described above, the Global Pull Secret system also preserves external registry authentications that may be added directly to nodes. This feature allows external processes, automation tools, or manual interventions to add registry credentials to nodes that will be preserved across Global Pull Secret synchronizations.
+
+### How On-Disk Preservation Works
+
+When the Global Pull Secret DaemonSet synchronizes the pull secret to a node's `/var/lib/kubelet/config.json`, it:
+
+1. **Reads the existing on-disk configuration** with file locking to prevent race conditions
+2. **Merges existing auths** from the on-disk file with the cluster-provided auths
+3. **Preserves external auths** that are not managed by HyperShift
+4. **Writes the merged result** atomically to maintain consistency
+
+### Node-Level Precedence Rules
+
+The node-level merge follows these precedence rules:
+
+- **Cluster-provided auths (from HyperShift) ALWAYS take precedence** for registries managed by the cluster
+- **External/on-disk auths are preserved** ONLY if they're for registries NOT in the cluster-provided pull secret
+- If both the cluster and on-disk config have an entry for the same registry, the cluster-provided auth wins
+
+This design allows HyperShift to maintain full control over its managed registries while preserving external modifications for other registries.
+
+### Use Cases for On-Disk Auth Preservation
+
+This feature is useful in scenarios where:
+
+1. **External automation adds node-specific credentials**: Tools like image pre-puller utilities or node provisioning scripts can add registry credentials that persist across Global Pull Secret syncs
+2. **Temporary troubleshooting access**: Site reliability engineers can manually add credentials to nodes for debugging without those credentials being removed on the next sync
+3. **Third-party integrations**: External systems that manage their own registry credentials can coexist with HyperShift's Global Pull Secret management
+
+### Example On-Disk Merge Scenario
+
+**Cluster-provided Pull Secret** (from global-pull-secret in kube-system):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    }
+  }
+}
+```
+
+**Existing On-Disk config.json** (added by external process):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "external-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+**Resulting Merged config.json**:
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+Note that:
+- `quay.io` uses cluster-provided credentials (HyperShift takes precedence)
+- `registry.redhat.io` is added from the cluster-provided secret
+- `registry.example.com` is preserved from the on-disk file since it's not managed by HyperShift
+
 ## Implementation details
 
 The implementation consists of several key components working together:
@@ -10146,7 +10499,9 @@ The implementation consists of several key components working together:
    - Runs as a DaemonSet on each node
    - Watches for changes to the `global-pull-secret` in `kube-system` namespace
    - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - **Merges on-disk auths** from existing kubelet config with cluster-provided auths
+   - Uses file locking (`.lock` file) for thread-safe concurrent access
+   - Updates the kubelet configuration file atomically
    - Manages kubelet service restarts via DBus
 
 3. **Hosted Cluster Config Operator Integration**
@@ -10303,6 +10658,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
@@ -16138,7 +16494,10 @@ The Global Pull Secret functionality operates through a multi-component system:
 
 ### Node-Level Synchronization
 - Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+- When changes are detected, it reads the existing `/var/lib/kubelet/config.json` on the node
+- **Merges on-disk auths** with cluster-provided auths, preserving external registry credentials (see On-Disk Authentication Preservation)
+- Uses file locking (`.lock` file) to prevent race conditions with external processes
+- Updates the kubelet configuration file atomically
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
@@ -16207,6 +16566,89 @@ To avoid conflicts and ensure your credentials are used, consider these strategi
 
 Note how the `quay.io` entry keeps the original credentials, but `quay.io/mycompany` is added from your additional secret.
 
+## On-Disk Authentication Preservation
+
+In addition to the control-plane level merging described above, the Global Pull Secret system also preserves external registry authentications that may be added directly to nodes. This feature allows external processes, automation tools, or manual interventions to add registry credentials to nodes that will be preserved across Global Pull Secret synchronizations.
+
+### How On-Disk Preservation Works
+
+When the Global Pull Secret DaemonSet synchronizes the pull secret to a node's `/var/lib/kubelet/config.json`, it:
+
+1. **Reads the existing on-disk configuration** with file locking to prevent race conditions
+2. **Merges existing auths** from the on-disk file with the cluster-provided auths
+3. **Preserves external auths** that are not managed by HyperShift
+4. **Writes the merged result** atomically to maintain consistency
+
+### Node-Level Precedence Rules
+
+The node-level merge follows these precedence rules:
+
+- **Cluster-provided auths (from HyperShift) ALWAYS take precedence** for registries managed by the cluster
+- **External/on-disk auths are preserved** ONLY if they're for registries NOT in the cluster-provided pull secret
+- If both the cluster and on-disk config have an entry for the same registry, the cluster-provided auth wins
+
+This design allows HyperShift to maintain full control over its managed registries while preserving external modifications for other registries.
+
+### Use Cases for On-Disk Auth Preservation
+
+This feature is useful in scenarios where:
+
+1. **External automation adds node-specific credentials**: Tools like image pre-puller utilities or node provisioning scripts can add registry credentials that persist across Global Pull Secret syncs
+2. **Temporary troubleshooting access**: Site reliability engineers can manually add credentials to nodes for debugging without those credentials being removed on the next sync
+3. **Third-party integrations**: External systems that manage their own registry credentials can coexist with HyperShift's Global Pull Secret management
+
+### Example On-Disk Merge Scenario
+
+**Cluster-provided Pull Secret** (from global-pull-secret in kube-system):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    }
+  }
+}
+```
+
+**Existing On-Disk config.json** (added by external process):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "external-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+**Resulting Merged config.json**:
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+Note that:
+- `quay.io` uses cluster-provided credentials (HyperShift takes precedence)
+- `registry.redhat.io` is added from the cluster-provided secret
+- `registry.example.com` is preserved from the on-disk file since it's not managed by HyperShift
+
 ## Implementation details
 
 The implementation consists of several key components working together:
@@ -16224,7 +16666,9 @@ The implementation consists of several key components working together:
    - Runs as a DaemonSet on each node
    - Watches for changes to the `global-pull-secret` in `kube-system` namespace
    - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - **Merges on-disk auths** from existing kubelet config with cluster-provided auths
+   - Uses file locking (`.lock` file) for thread-safe concurrent access
+   - Updates the kubelet configuration file atomically
    - Manages kubelet service restarts via DBus
 
 3. **Hosted Cluster Config Operator Integration**
@@ -16381,6 +16825,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
@@ -17570,7 +18015,10 @@ The Global Pull Secret functionality operates through a multi-component system:
 
 ### Node-Level Synchronization
 - Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+- When changes are detected, it reads the existing `/var/lib/kubelet/config.json` on the node
+- **Merges on-disk auths** with cluster-provided auths, preserving external registry credentials (see On-Disk Authentication Preservation)
+- Uses file locking (`.lock` file) to prevent race conditions with external processes
+- Updates the kubelet configuration file atomically
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
@@ -17639,6 +18087,89 @@ To avoid conflicts and ensure your credentials are used, consider these strategi
 
 Note how the `quay.io` entry keeps the original credentials, but `quay.io/mycompany` is added from your additional secret.
 
+## On-Disk Authentication Preservation
+
+In addition to the control-plane level merging described above, the Global Pull Secret system also preserves external registry authentications that may be added directly to nodes. This feature allows external processes, automation tools, or manual interventions to add registry credentials to nodes that will be preserved across Global Pull Secret synchronizations.
+
+### How On-Disk Preservation Works
+
+When the Global Pull Secret DaemonSet synchronizes the pull secret to a node's `/var/lib/kubelet/config.json`, it:
+
+1. **Reads the existing on-disk configuration** with file locking to prevent race conditions
+2. **Merges existing auths** from the on-disk file with the cluster-provided auths
+3. **Preserves external auths** that are not managed by HyperShift
+4. **Writes the merged result** atomically to maintain consistency
+
+### Node-Level Precedence Rules
+
+The node-level merge follows these precedence rules:
+
+- **Cluster-provided auths (from HyperShift) ALWAYS take precedence** for registries managed by the cluster
+- **External/on-disk auths are preserved** ONLY if they're for registries NOT in the cluster-provided pull secret
+- If both the cluster and on-disk config have an entry for the same registry, the cluster-provided auth wins
+
+This design allows HyperShift to maintain full control over its managed registries while preserving external modifications for other registries.
+
+### Use Cases for On-Disk Auth Preservation
+
+This feature is useful in scenarios where:
+
+1. **External automation adds node-specific credentials**: Tools like image pre-puller utilities or node provisioning scripts can add registry credentials that persist across Global Pull Secret syncs
+2. **Temporary troubleshooting access**: Site reliability engineers can manually add credentials to nodes for debugging without those credentials being removed on the next sync
+3. **Third-party integrations**: External systems that manage their own registry credentials can coexist with HyperShift's Global Pull Secret management
+
+### Example On-Disk Merge Scenario
+
+**Cluster-provided Pull Secret** (from global-pull-secret in kube-system):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    }
+  }
+}
+```
+
+**Existing On-Disk config.json** (added by external process):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "external-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+**Resulting Merged config.json**:
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+Note that:
+- `quay.io` uses cluster-provided credentials (HyperShift takes precedence)
+- `registry.redhat.io` is added from the cluster-provided secret
+- `registry.example.com` is preserved from the on-disk file since it's not managed by HyperShift
+
 ## Implementation details
 
 The implementation consists of several key components working together:
@@ -17656,7 +18187,9 @@ The implementation consists of several key components working together:
    - Runs as a DaemonSet on each node
    - Watches for changes to the `global-pull-secret` in `kube-system` namespace
    - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - **Merges on-disk auths** from existing kubelet config with cluster-provided auths
+   - Uses file locking (`.lock` file) for thread-safe concurrent access
+   - Updates the kubelet configuration file atomically
    - Manages kubelet service restarts via DBus
 
 3. **Hosted Cluster Config Operator Integration**
@@ -17813,6 +18346,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
@@ -18192,7 +18726,10 @@ The Global Pull Secret functionality operates through a multi-component system:
 
 ### Node-Level Synchronization
 - Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+- When changes are detected, it reads the existing `/var/lib/kubelet/config.json` on the node
+- **Merges on-disk auths** with cluster-provided auths, preserving external registry credentials (see On-Disk Authentication Preservation)
+- Uses file locking (`.lock` file) to prevent race conditions with external processes
+- Updates the kubelet configuration file atomically
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
@@ -18261,6 +18798,89 @@ To avoid conflicts and ensure your credentials are used, consider these strategi
 
 Note how the `quay.io` entry keeps the original credentials, but `quay.io/mycompany` is added from your additional secret.
 
+## On-Disk Authentication Preservation
+
+In addition to the control-plane level merging described above, the Global Pull Secret system also preserves external registry authentications that may be added directly to nodes. This feature allows external processes, automation tools, or manual interventions to add registry credentials to nodes that will be preserved across Global Pull Secret synchronizations.
+
+### How On-Disk Preservation Works
+
+When the Global Pull Secret DaemonSet synchronizes the pull secret to a node's `/var/lib/kubelet/config.json`, it:
+
+1. **Reads the existing on-disk configuration** with file locking to prevent race conditions
+2. **Merges existing auths** from the on-disk file with the cluster-provided auths
+3. **Preserves external auths** that are not managed by HyperShift
+4. **Writes the merged result** atomically to maintain consistency
+
+### Node-Level Precedence Rules
+
+The node-level merge follows these precedence rules:
+
+- **Cluster-provided auths (from HyperShift) ALWAYS take precedence** for registries managed by the cluster
+- **External/on-disk auths are preserved** ONLY if they're for registries NOT in the cluster-provided pull secret
+- If both the cluster and on-disk config have an entry for the same registry, the cluster-provided auth wins
+
+This design allows HyperShift to maintain full control over its managed registries while preserving external modifications for other registries.
+
+### Use Cases for On-Disk Auth Preservation
+
+This feature is useful in scenarios where:
+
+1. **External automation adds node-specific credentials**: Tools like image pre-puller utilities or node provisioning scripts can add registry credentials that persist across Global Pull Secret syncs
+2. **Temporary troubleshooting access**: Site reliability engineers can manually add credentials to nodes for debugging without those credentials being removed on the next sync
+3. **Third-party integrations**: External systems that manage their own registry credentials can coexist with HyperShift's Global Pull Secret management
+
+### Example On-Disk Merge Scenario
+
+**Cluster-provided Pull Secret** (from global-pull-secret in kube-system):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    }
+  }
+}
+```
+
+**Existing On-Disk config.json** (added by external process):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "external-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+**Resulting Merged config.json**:
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+Note that:
+- `quay.io` uses cluster-provided credentials (HyperShift takes precedence)
+- `registry.redhat.io` is added from the cluster-provided secret
+- `registry.example.com` is preserved from the on-disk file since it's not managed by HyperShift
+
 ## Implementation details
 
 The implementation consists of several key components working together:
@@ -18278,7 +18898,9 @@ The implementation consists of several key components working together:
    - Runs as a DaemonSet on each node
    - Watches for changes to the `global-pull-secret` in `kube-system` namespace
    - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - **Merges on-disk auths** from existing kubelet config with cluster-provided auths
+   - Uses file locking (`.lock` file) for thread-safe concurrent access
+   - Updates the kubelet configuration file atomically
    - Manages kubelet service restarts via DBus
 
 3. **Hosted Cluster Config Operator Integration**
@@ -18435,6 +19057,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
@@ -19665,7 +20288,10 @@ The Global Pull Secret functionality operates through a multi-component system:
 
 ### Node-Level Synchronization
 - Each DaemonSet pod runs a controller that watches the secrets under kube-system namespace
-- When changes are detected, it updates `/var/lib/kubelet/config.json` on the node
+- When changes are detected, it reads the existing `/var/lib/kubelet/config.json` on the node
+- **Merges on-disk auths** with cluster-provided auths, preserving external registry credentials (see On-Disk Authentication Preservation)
+- Uses file locking (`.lock` file) to prevent race conditions with external processes
+- Updates the kubelet configuration file atomically
 - The kubelet service is restarted via DBus to apply the new configuration
 - If the restart fails after 3 attempts, the system rolls back the file changes
 
@@ -19734,6 +20360,89 @@ To avoid conflicts and ensure your credentials are used, consider these strategi
 
 Note how the `quay.io` entry keeps the original credentials, but `quay.io/mycompany` is added from your additional secret.
 
+## On-Disk Authentication Preservation
+
+In addition to the control-plane level merging described above, the Global Pull Secret system also preserves external registry authentications that may be added directly to nodes. This feature allows external processes, automation tools, or manual interventions to add registry credentials to nodes that will be preserved across Global Pull Secret synchronizations.
+
+### How On-Disk Preservation Works
+
+When the Global Pull Secret DaemonSet synchronizes the pull secret to a node's `/var/lib/kubelet/config.json`, it:
+
+1. **Reads the existing on-disk configuration** with file locking to prevent race conditions
+2. **Merges existing auths** from the on-disk file with the cluster-provided auths
+3. **Preserves external auths** that are not managed by HyperShift
+4. **Writes the merged result** atomically to maintain consistency
+
+### Node-Level Precedence Rules
+
+The node-level merge follows these precedence rules:
+
+- **Cluster-provided auths (from HyperShift) ALWAYS take precedence** for registries managed by the cluster
+- **External/on-disk auths are preserved** ONLY if they're for registries NOT in the cluster-provided pull secret
+- If both the cluster and on-disk config have an entry for the same registry, the cluster-provided auth wins
+
+This design allows HyperShift to maintain full control over its managed registries while preserving external modifications for other registries.
+
+### Use Cases for On-Disk Auth Preservation
+
+This feature is useful in scenarios where:
+
+1. **External automation adds node-specific credentials**: Tools like image pre-puller utilities or node provisioning scripts can add registry credentials that persist across Global Pull Secret syncs
+2. **Temporary troubleshooting access**: Site reliability engineers can manually add credentials to nodes for debugging without those credentials being removed on the next sync
+3. **Third-party integrations**: External systems that manage their own registry credentials can coexist with HyperShift's Global Pull Secret management
+
+### Example On-Disk Merge Scenario
+
+**Cluster-provided Pull Secret** (from global-pull-secret in kube-system):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    }
+  }
+}
+```
+
+**Existing On-Disk config.json** (added by external process):
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "external-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+**Resulting Merged config.json**:
+```json
+{
+  "auths": {
+    "quay.io": {
+      "auth": "cluster-credentials"
+    },
+    "registry.redhat.io": {
+      "auth": "cluster-redhat-credentials"
+    },
+    "registry.example.com": {
+      "auth": "external-example-credentials"
+    }
+  }
+}
+```
+
+Note that:
+- `quay.io` uses cluster-provided credentials (HyperShift takes precedence)
+- `registry.redhat.io` is added from the cluster-provided secret
+- `registry.example.com` is preserved from the on-disk file since it's not managed by HyperShift
+
 ## Implementation details
 
 The implementation consists of several key components working together:
@@ -19751,7 +20460,9 @@ The implementation consists of several key components working together:
    - Runs as a DaemonSet on each node
    - Watches for changes to the `global-pull-secret` in `kube-system` namespace
    - Accesses the original `pull-secret` in `openshift-config` namespace
-   - Updates the kubelet configuration file
+   - **Merges on-disk auths** from existing kubelet config with cluster-provided auths
+   - Uses file locking (`.lock` file) for thread-safe concurrent access
+   - Updates the kubelet configuration file atomically
    - Manages kubelet service restarts via DBus
 
 3. **Hosted Cluster Config Operator Integration**
@@ -19908,6 +20619,7 @@ The system includes comprehensive error handling:
 - **Resource cleanup**: If the additional pull secret is deleted, the HCCO automatically removes the globalPullSecret
 
 This implementation provides a secure, autonomous solution that allows HostedCluster administrators to add private registry credentials without requiring Management Cluster administrator intervention.
+
 
 ---
 
