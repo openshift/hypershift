@@ -144,59 +144,46 @@ echo "Generating PR report since: $SINCE_DATE"
 python3 contrib/repo_metrics/weekly_pr_report.py "$SINCE_DATE"
 ```
 
-### Step 2: Query Jira for ticket hierarchy (in parallel)
+### Step 2: Jira Enrichment (Conditional)
 
-Extract all unique Jira ticket IDs from the generated PR data and query Jira for each ticket to build hierarchy and enhance impact statements.
+Check the script output to determine if Jira data was fetched directly:
 
-First, extract the unique tickets:
+**If script output shows "Fetching Jira data via REST API..."** (JIRA_TOKEN was set):
+- Jira hierarchy was populated automatically by the script
+- Skip to Step 3 (LLM Impact Analysis)
 
-```bash
-TICKETS=$(jq -r '.[].jiraTickets[]' /tmp/hypershift_pr_details_fast.json | sort -u)
-echo "Found tickets: $TICKETS"
-```
+**If script output shows "JIRA_TOKEN not set, loading from cache"**:
+- Extract unique tickets from PR data and query Jira using MCP tools
+- Use `mcp__atlassian-mcp__jira_get_issue` for EACH ticket (in parallel)
+- **Fields to request:** `summary,description,parent,customfield_12311140,customfield_12313140,issuelinks,labels,priority,status`
+- **Key custom fields:**
+  - `customfield_12311140` = Epic Link field
+  - `customfield_12313140` = OCPSTRAT Parent (e.g., "OCPSTRAT-2426")
+- Build hierarchy: ticket → Epic → OCPSTRAT
+- Save to `/tmp/jira_hierarchy.json`
+- Re-run the Python script to regenerate report with enriched data
 
-Now, for EACH ticket in the list, use `mcp__atlassian-mcp__jira_get_issue` to fetch:
+### Step 3: Generate LLM Impact Summaries
 
-**Fields to request:** `summary,description,parent,customfield_12311140,customfield_12313140,issuelinks,labels,priority,status`
+Read `/tmp/hypershift_pr_details_fast.json` and `/tmp/jira_hierarchy.json`.
 
-**Key custom fields:**
-- `customfield_12311140` = Epic Link field
-- `customfield_12313140` = OCPSTRAT Parent (simple string like "OCPSTRAT-2426")
+For PRs linked to OCPSTRAT initiatives, generate a 1-2 sentence **leadership-quality impact statement**:
 
-**Build the hierarchy for each ticket:**
+**Guidelines:**
+- Frame the work in terms of **business value**, not technical details
+- Reference the strategic initiative goal when available
+- Use language suitable for leadership updates and stakeholder communication
+- Focus on customer impact, cost savings, reliability improvements, or feature enablement
 
-1. Query the ticket itself to get summary, description, Epic Link
-2. If Epic Link exists (customfield_12311140), query that Epic ticket to get its summary and OCPSTRAT parent
-3. Build a JSON structure like:
-```json
-{
-  "TICKET-123": {
-    "summary": "Ticket summary text",
-    "description": "Full ticket description",
-    "epic": "EPIC-456",
-    "epicSummary": "Epic summary text",
-    "ocpstrat": "OCPSTRAT-789",
-    "ocpstratSummary": "OCPSTRAT summary text"
-  }
-}
-```
+**Example transformations:**
 
-4. Save ALL ticket hierarchies to `/tmp/jira_hierarchy.json`
+| Before (Technical) | After (Business Impact) |
+|-------------------|------------------------|
+| "OCPBUGS-70320: NodePool with InPlace node upgrade type cannot scale up if autocluster min to zero" | "Enables cost optimization for ROSA HCP customers by fixing autoscaling from zero with InPlace upgrades, advancing the scale-to-zero initiative" |
+| "OCPBUGS-72411: fix(cno): use brackets only for IPv6 in server URL" | "Resolves critical CNO startup failures affecting IPv4 deployments, restoring cluster network functionality after Go 1.24.8 CVE fix" |
+| "CNTRLPLANE-1768: feat(api): add support for graceful service account signing key rotation" | "Enables seamless OIDC signing key rotation for ARO-HCP clusters, meeting Microsoft security requirements without service disruption" |
 
-**IMPORTANT:** Query all Epics and tickets in PARALLEL using multiple concurrent `mcp__atlassian-mcp__jira_get_issue` calls for maximum performance.
-
-### Step 3: Regenerate report with Jira enrichment
-
-Once Jira hierarchy is saved, re-run the Python script to regenerate the report with enriched impact statements:
-
-```bash
-python3 contrib/repo_metrics/weekly_pr_report.py "$SINCE_DATE"
-```
-
-The script will now use the Jira data to:
-- Show complete ticket → Epic → OCPSTRAT hierarchy
-- Generate better impact statements using ticket summaries and OCPSTRAT context
-- Group PRs by their OCPSTRAT parent initiatives
+Generate these impact summaries for the top OCPSTRAT-linked PRs and include them in the final report summary
 
 ## Script Features
 
@@ -210,5 +197,25 @@ The Python script uses:
 
 - Requires `aiohttp` Python package: `pip install aiohttp`
 - Falls back to synchronous mode if aiohttp is not available (slower but functional)
-- Jira hierarchy is loaded from cache (`/tmp/jira_hierarchy.json`) if available
-- For full Jira integration, ensure Jira MCP tools are configured
+
+### Jira Integration Modes
+
+**Mode 1: Direct API (Recommended for automation)**
+- Set `JIRA_TOKEN` environment variable with a Jira Personal Access Token
+- Script fetches Jira data directly via REST API with batch queries
+- No MCP tool calls needed - fully automated
+- Example: `export JIRA_TOKEN="your-pat-here"`
+
+**Mode 2: MCP Fallback (Interactive use)**
+- When `JIRA_TOKEN` is not set, script outputs ticket list only
+- Claude uses MCP tools (`mcp__atlassian-mcp__jira_get_issue`) to fetch hierarchy
+- Requires Jira MCP server to be configured
+- Good for interactive sessions where MCP is already available
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `JIRA_TOKEN` | No | Jira Personal Access Token (enables direct API mode) |
+| `JIRA_URL` | No | Jira server URL (defaults to `https://issues.redhat.com`) |
+| `GITHUB_TOKEN` | No | GitHub token (falls back to `gh auth token` if not set) |
