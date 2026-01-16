@@ -69,6 +69,7 @@ spec:
         - 0.0.0.0:8080
         - --enable-ci-debug-output=false
         - --registry-overrides=
+        - --image-overrides==
         command:
         - /usr/bin/control-plane-operator
         env:
