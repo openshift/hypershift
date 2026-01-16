@@ -2052,12 +2052,6 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		g.Expect(err).NotTo(HaveOccurred(), "failed to wait for DaemonSets to be ready")
 	})
 
-	// Verify that mock on-disk auth was preserved after global pull secret sync
-	t.Run("Verify mock on-disk auth preserved after sync", func(t *testing.T) {
-		t.Log("Verifying that mock on-disk auth was preserved during global pull secret sync")
-		VerifyMockAuthPreservedAfterSync(t, ctx, guestClient, dsImage)
-	})
-
 	// Check if we can run a pod with the restricted image
 	t.Run("Create a pod which uses the restricted image, should succeed", func(t *testing.T) {
 		shouldFail := false

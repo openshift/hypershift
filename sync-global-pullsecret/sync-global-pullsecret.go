@@ -51,6 +51,10 @@ const (
 
 	// systemd job completion state as documented in go-systemd/dbus
 	systemdJobDone = "done" // Job completed successfully
+
+	// Values used for handling file locking
+	lockTimeout   = 30 * time.Second
+	retryInterval = 100 * time.Millisecond
 )
 
 var (
@@ -187,8 +191,6 @@ func acquireFileLock(path string) (*flock.Flock, error) {
 	fileLock := flock.New(path)
 
 	// Try to acquire exclusive lock with timeout and retry
-	const lockTimeout = 30 * time.Second
-	const retryInterval = 100 * time.Millisecond
 	deadline := time.Now().Add(lockTimeout)
 
 	for time.Now().Before(deadline) {
