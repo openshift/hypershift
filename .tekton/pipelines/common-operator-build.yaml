@@ -34,13 +34,11 @@ spec:
     name: output-image
     type: string
   - default: .
-    description: Path to the source code of an application's component from where
-      to build image.
+    description: Path to the source code of an application's component from where to build image.
     name: path-context
     type: string
   - default: Dockerfile
-    description: Path to the Dockerfile inside the context specified by parameter
-      path-context
+    description: Path to the Dockerfile inside the context specified by parameter path-context
     name: dockerfile
     type: string
   - default: ""
@@ -48,8 +46,7 @@ spec:
     name: prefetch-input
     type: string
   - default: ""
-    description: Image tag expiration time, time values could be something like
-      1h, 2d, 3w for hours, days, and weeks, respectively.
+    description: Image tag expiration time, time values could be something like 1h, 2d, 3w for hours, days, and weeks, respectively.
     name: image-expires-after
     type: string
   - default: "false"
@@ -58,8 +55,7 @@ spec:
     type: string
   - default:
     - linux/x86_64
-    description: List of platforms to build the container images on. The available
-      set of values is determined by the configuration of the multi-platform-controller.
+    description: List of platforms to build the container images on. The available set of values is determined by the configuration of the multi-platform-controller.
     name: build-platforms
     type: array
   results:
@@ -221,7 +217,6 @@ spec:
       operator: in
       values:
       - "true"
-
   - name: deprecated-base-image-check
     params:
     - name: IMAGE_URL
@@ -244,7 +239,12 @@ spec:
       operator: in
       values:
       - "false"
-  - name: clair-scan
+  - matrix:
+      params:
+      - name: image-platform
+        value:
+        - $(params.build-platforms)
+    name: clair-scan
     params:
     - name: image-digest
       value: $(tasks.build-image-index.results.IMAGE_DIGEST)
@@ -257,7 +257,7 @@ spec:
       - name: name
         value: clair-scan
       - name: bundle
-        value: quay.io/konflux-ci/tekton-catalog/task-clair-scan:0.3@sha256:ee558db6af779ab162163ec88f288a5c1b2d5f70c3361f3690a474866e3bdc74
+        value: quay.io/konflux-ci/tekton-catalog/task-clair-scan:0.3@sha256:654b989d7cdc03d082e56f216a29de04847215ee379a8d9ca315e453ad2b15c2
       - name: kind
         value: task
       resolver: bundles
@@ -373,7 +373,7 @@ spec:
       - name: name
         value: sast-coverity-check-oci-ta
       - name: bundle
-        value: quay.io/konflux-ci/tekton-catalog/task-sast-coverity-check-oci-ta:0.3@sha256:cdbe1a968676e4f5519b082bf1e27a4cdcf66dd60af66dbc26b3e604f957f7e9
+        value: quay.io/konflux-ci/tekton-catalog/task-sast-coverity-check-oci-ta:0.3@sha256:9978b6163d54473a72ded5eb9b75d9ffae92118e544c7b96dc805cd66870b12d
       - name: kind
         value: task
       resolver: bundles
