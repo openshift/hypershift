@@ -7,7 +7,7 @@ COPY . .
 RUN make control-plane-operator \
   && make control-plane-pki-operator
 
-FROM registry.ci.openshift.org/ocp/4.22:base-rhel9
+FROM registry.ci.openshift.org/ocp/4.22:base-rhel9-minimal
 COPY --from=builder /hypershift/bin/control-plane-operator /usr/bin/control-plane-operator
 COPY --from=builder /hypershift/bin/control-plane-pki-operator /usr/bin/control-plane-pki-operator
 
