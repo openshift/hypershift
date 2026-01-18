@@ -316,22 +316,10 @@ func InjectMockOnDiskAuth(ctx context.Context, guestClient crclient.Client, dsIm
 
 									echo "Injecting mock auth for %s into $CONFIG_PATH"
 
-									# Read existing config or create empty one
-									if [ -f "$CONFIG_PATH" ]; then
-										EXISTING=$(cat "$CONFIG_PATH")
-										echo "Existing config found"
-									else
-										EXISTING='{"auths":{}}'
-										echo "No existing config, creating new one"
-									fi
-
-									# Use jq to merge in the mock auth
-									if ! command -v jq >/dev/null 2>&1; then
-										echo "ERROR: jq is required but not found in PATH"
-										exit 1
-									fi
-
-									echo "$EXISTING" | jq '.auths["%s"] = {"auth":"%s"}' > "$CONFIG_PATH"
+									# Write the mock auth config
+									cat > "$CONFIG_PATH" <<EOF
+{"auths":{"%s":{"auth":"%s"}}}
+EOF
 
 									echo "Successfully injected mock auth"
 									cat "$CONFIG_PATH"
