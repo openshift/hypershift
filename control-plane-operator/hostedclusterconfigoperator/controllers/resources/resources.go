@@ -1537,15 +1537,22 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			}
 			return nil
 		}
-		for arn, secret := range map[string]*corev1.Secret{
-			hcp.Spec.Platform.AWS.RolesRef.IngressARN: manifests.AWSIngressCloudCredsSecret(),
-			hcp.Spec.Platform.AWS.RolesRef.StorageARN: manifests.AWSStorageCloudCredsSecret(),
+
+		// Sync ingress and storage credentials. When using a shared role ARN (same ARN for both components),
+		// we need to ensure both secrets are created with the same credentials.
+		for _, secretWithARN := range []struct {
+			secret *corev1.Secret
+			arn    string
+		}{
+			{manifests.AWSIngressCloudCredsSecret(), hcp.Spec.Platform.AWS.RolesRef.IngressARN},
+			{manifests.AWSStorageCloudCredsSecret(), hcp.Spec.Platform.AWS.RolesRef.StorageARN},
 		} {
-			err := syncSecret(secret, arn)
+			err := syncSecret(secretWithARN.secret, secretWithARN.arn)
 			if err != nil {
 				errs = append(errs, err)
 			}
 		}
+
 		if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
 			err := syncSecret(
 				manifests.AWSImageRegistryCloudCredsSecret(),
