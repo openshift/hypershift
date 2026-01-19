@@ -94,6 +94,7 @@ type OpenshiftEC2NodeClassSpec struct {
 	Tags map[string]string `json:"tags,omitempty"`
 
 	// BlockDeviceMappings to be applied to provisioned nodes.
+	// For OpenShift nodes, a default root volume size of 120Gi and type gp3 is set if no blockDeviceMapping overrides are specified.
 	// +kubebuilder:validation:XValidation:message="must have only one blockDeviceMappings with rootVolume",rule="self.filter(x, has(x.rootVolume)?x.rootVolume==true:false).size() <= 1"
 	// +kubebuilder:validation:MaxItems:=50
 	// +optional
