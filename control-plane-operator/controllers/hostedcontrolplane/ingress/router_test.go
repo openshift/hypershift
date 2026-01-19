@@ -120,6 +120,27 @@ func TestReconcileRouterService_AppliesLoadBalancerSourceRanges(t *testing.T) {
 			t.Fatalf("expected LoadBalancerSourceRanges to be empty when no allowedCIDRBlocks provided, got %v", svc.Spec.LoadBalancerSourceRanges)
 		}
 	})
+
+	// Test case 4: When allowedCIDRBlocks is removed, LoadBalancerSourceRanges should be cleared
+	t.Run("When allowedCIDRBlocks is removed it should clear existing LoadBalancerSourceRanges", func(t *testing.T) {
+		// Given a HostedControlPlane on AWS with no allowedCIDRBlocks
+		hcp := &hyperv1.HostedControlPlane{}
+		hcp.Spec.Platform.Type = hyperv1.AWSPlatform
+
+		// And a Service that already has LoadBalancerSourceRanges set (simulating previous reconciliation)
+		svc := &corev1.Service{}
+		svc.Spec.LoadBalancerSourceRanges = []string{"10.0.0.0/8", "192.168.1.0/24"}
+
+		// When reconciling an external router service with no allowedCIDRBlocks
+		if err := ReconcileRouterService(svc, false /* internal */, true /* cross-zone */, hcp); err != nil {
+			t.Fatalf("ReconcileRouterService returned error: %v", err)
+		}
+
+		// Then LoadBalancerSourceRanges should be cleared
+		if len(svc.Spec.LoadBalancerSourceRanges) > 0 {
+			t.Fatalf("expected LoadBalancerSourceRanges to be cleared when allowedCIDRBlocks is removed, got %v", svc.Spec.LoadBalancerSourceRanges)
+		}
+	})
 }
 
 // Test that GCP router service is configured with Internal Load Balancer
