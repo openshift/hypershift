@@ -26,6 +26,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -308,6 +309,20 @@ func reconcileEC2NodeClass(ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftE
 		}
 	}
 	ec2NodeClass.Spec.SecurityGroupSelectorTerms = securityGroupSelectorTerms
+
+	// Set default BlockDeviceMappings if not specified
+	if ec2NodeClass.Spec.BlockDeviceMappings == nil {
+		ec2NodeClass.Spec.BlockDeviceMappings = []*awskarpenterv1.BlockDeviceMapping{
+			{
+				DeviceName: ptr.To("/dev/xvda"),
+				EBS: &awskarpenterv1.BlockDevice{
+					VolumeSize: ptr.To(resource.MustParse("75Gi")),
+					VolumeType: ptr.To("gp3"),
+					Encrypted:  ptr.To(true),
+				},
+			},
+		}
+	}
 
 	return nil
 }

@@ -60,6 +60,16 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 						},
 					},
 				},
+				BlockDeviceMappings: []*awskarpenterv1.BlockDeviceMapping{
+					{
+						DeviceName: ptr.To("/dev/xvda"),
+						EBS: &awskarpenterv1.BlockDevice{
+							VolumeSize: ptr.To(resource.MustParse("75Gi")),
+							VolumeType: ptr.To("gp3"),
+							Encrypted:  ptr.To(true),
+						},
+					},
+				},
 			},
 		},
 		{
@@ -152,6 +162,16 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 						},
 					},
 				},
+				BlockDeviceMappings: []*awskarpenterv1.BlockDeviceMapping{
+					{
+						DeviceName: ptr.To("/dev/xvda"),
+						EBS: &awskarpenterv1.BlockDevice{
+							VolumeSize: ptr.To(resource.MustParse("75Gi")),
+							VolumeType: ptr.To("gp3"),
+							Encrypted:  ptr.To(true),
+						},
+					},
+				},
 				InstanceProfile: ptr.To("test-instance-profile"),
 			},
 		},
@@ -176,6 +196,16 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 						},
 					},
 				},
+				BlockDeviceMappings: []*awskarpenterv1.BlockDeviceMapping{
+					{
+						DeviceName: ptr.To("/dev/xvda"),
+						EBS: &awskarpenterv1.BlockDevice{
+							VolumeSize: ptr.To(resource.MustParse("75Gi")),
+							VolumeType: ptr.To("gp3"),
+							Encrypted:  ptr.To(true),
+						},
+					},
+				},
 			},
 		},
 		{
@@ -194,6 +224,16 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 					{
 						Tags: map[string]string{
 							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				BlockDeviceMappings: []*awskarpenterv1.BlockDeviceMapping{
+					{
+						DeviceName: ptr.To("/dev/xvda"),
+						EBS: &awskarpenterv1.BlockDevice{
+							VolumeSize: ptr.To(resource.MustParse("75Gi")),
+							VolumeType: ptr.To("gp3"),
+							Encrypted:  ptr.To(true),
 						},
 					},
 				},
