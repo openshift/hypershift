@@ -150,7 +150,7 @@ type reconciler struct {
 
 	// exposed for unit tests
 	GetPodLogs            func(context context.Context, clientset *clientset.Clientset, namespace, name, container string) ([]byte, error)
-	CheckPodKasConnection func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error)
+	CheckPodKasConnection func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error)
 	// The fake client doesn't properly handle metadata.Generation and metadata.ResourceVersion
 	// during Patch operations, which can cause false positives or failures when patching multiple
 	// conditions. See: https://github.com/kubernetes-sigs/controller-runtime/issues/1857
@@ -166,13 +166,27 @@ func getPodLogs(ctx context.Context, clientSet *clientset.Clientset, namespace, 
 	return clientSet.CoreV1().Pods(namespace).GetLogs(name, opts).DoRaw(ctx)
 }
 
-func checkPodKasConnection(ctx context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+func checkPodKasConnection(ctx context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
+
+	// Compute KAS address from service CIDR
+	serviceCIDR := util.FirstServiceCIDR(hcp.Spec.Networking.ServiceNetwork)
+	if serviceCIDR == "" {
+		return false, fmt.Errorf("no service CIDR found in HostedControlPlane spec")
+	}
+
+	kasIP, err := util.FirstUsableIP(serviceCIDR)
+	if err != nil {
+		return false, fmt.Errorf("failed to compute first usable IP from service CIDR %s: %w", serviceCIDR, err)
+	}
+
+	kasPort := util.KASPodPort(hcp)
+	kasURL := fmt.Sprintf("https://%s:%d/version", kasIP, kasPort)
 
 	httpStatusCode, stderr, err := util.ExecCommandInPod(ctx, restConfig, clientSet, namespace, name, container, []string{
 		"sh", "-c",
-		"curl -o /dev/null -s -w \"%{http_code}\" --connect-timeout 3 --max-time 5 --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt --header \"Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)\" https://kubernetes.default.svc/api",
+		fmt.Sprintf("curl -k -o /dev/null -s -w \"%%{http_code}\" --connect-timeout 5 --max-time 10 %s", kasURL),
 	})
 	if err != nil {
 		return false, fmt.Errorf("failed to execute curl command in %s/%s pod container %s, stderr: %s: %v", namespace, name, container, stderr, err)
@@ -1501,7 +1515,7 @@ func (r *reconciler) reconcileConnectionConditions(ctx context.Context, hcp *hyp
 			if err != nil {
 				log.Error(err,
 					fmt.Sprintf("failed to get logs for konnectivity-agent pod %s/%s", pod.Namespace, pod.Name))
-				data = []byte{} // reset data in case of error we can'tt conitinue 'cause we need to check kas connection
+				data = []byte{} // reset data in case of error we can't continue 'cause we need to check kas connection
 			}
 			if len(data) > 0 {
 				dataPlaneConnectionCondition.Status = metav1.ConditionTrue
@@ -1510,7 +1524,7 @@ func (r *reconciler) reconcileConnectionConditions(ctx context.Context, hcp *hyp
 			}
 		}
 		if controlPlaneConnectionCondition.Status != metav1.ConditionTrue { // skip in case kasCoonection already detected
-			kasConnectionFound, err := r.CheckPodKasConnection(ctx, r.restConfig, r.clientSet, pod.Namespace, pod.Name, "konnectivity-agent")
+			kasConnectionFound, err := r.CheckPodKasConnection(ctx, r.restConfig, r.clientSet, pod.Namespace, pod.Name, "konnectivity-agent", hcp)
 			if err != nil {
 				log.Error(err, "failed to check connectivity from Pod to kas")
 				continue

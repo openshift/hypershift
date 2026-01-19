@@ -32383,6 +32383,12 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 </tr><tr><td><p>&#34;RolloutComplete&#34;</p></td>
 <td><p>ControlPlaneComponentRolloutComplete indicates whether the ControlPlaneComponent has completed its rollout.</p>
 </td>
+</tr><tr><td><p>&#34;ControlPlaneConnectionAvailable&#34;</p></td>
+<td><p>ControlPlaneConnectionAvailable indicates whether the data plane workloads has a successful
+network connect to the the control plane components.
+<strong>True</strong> means the data plane workload can sucefully reach the control plane.
+<strong>False</strong> means there are issues preventing data plane connect to control plane</p>
+</td>
 </tr><tr><td><p>&#34;DataPlaneConnectionAvailable&#34;</p></td>
 <td><p>DataPlaneConnectionAvailable indicates whether the control plane has a successful
 network connection to the data plane components.
