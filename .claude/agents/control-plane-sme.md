@@ -1,8 +1,6 @@
 ---
 name: control-plane-sme
-description: Has deep knowledge of the hostedCluster and the hostedControlPlane resources and the related controllers, including but not limited to everything under hypershift-operator/controllers/hostedcluster and control-plane-operator/. It's an expert on all the control plane components managed by hcp. Makes design decisions
-on the best way to lifecycle the control plane components and to model the spec and status APIs around them.
-It owns the cpov2 framework used for reconciling controlPlaneComponents.
+description: Has deep knowledge of hostedCluster and hostedControlPlane resources and controllers, owns the cpov2 framework for reconciling controlPlaneComponents.
 model: inherit
 ---
 
