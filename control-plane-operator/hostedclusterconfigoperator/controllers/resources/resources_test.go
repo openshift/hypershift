@@ -2434,7 +2434,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 		nodes                                   []corev1.Node
 		simulateListPodError                    bool
 		mockedGetPodLogs                        func(context context.Context, clientet *clientset.Clientset, namespace, name, container string) ([]byte, error)
-		mockedCheckPodKasConnection             func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error)
+		mockedCheckPodKasConnection             func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error)
 	}{
 		{
 			name:    "no worker nodes Condition Unknown",
@@ -2451,7 +2451,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return nil, nil
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
 				return false, fmt.Errorf("it fails")
 			},
 		},
@@ -2472,7 +2472,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return nil, nil
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
 				return false, nil
 			},
 		},
@@ -2492,7 +2492,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return nil, nil
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
 				return false, fmt.Errorf("it fails")
 			},
 		},
@@ -2512,7 +2512,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return nil, nil
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
 				return false, fmt.Errorf("it fails")
 			},
 		},
@@ -2532,7 +2532,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return []byte("this is the log my friend"), nil
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
 				return false, fmt.Errorf("it fails")
 			},
 		},
@@ -2556,7 +2556,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return []byte("this is the log my friend"), nil
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
 				return false, fmt.Errorf("it fails")
 			},
 		},
@@ -2577,7 +2577,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return nil, fmt.Errorf("this time we fail")
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
 				return false, fmt.Errorf("it fails")
 			},
 		},
@@ -2598,7 +2598,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return nil, nil
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
 				return false, fmt.Errorf("it fails")
 			},
 		},
@@ -2618,7 +2618,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return []byte("this is the log my friend"), nil
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
 				return false, fmt.Errorf("failed to check kas connection")
 			},
 		},
@@ -2638,7 +2638,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return []byte("this is the log my friend"), nil
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
 				return true, nil
 			},
 		},
@@ -2658,7 +2658,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return []byte("this is the log my friend"), nil
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string) (bool, error) {
+			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
 				return false, nil
 			},
 		},
