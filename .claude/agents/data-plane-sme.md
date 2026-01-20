@@ -1,7 +1,6 @@
 ---
 name: data-plane-sme
-description: Has deep knowledge of the nodePool and the clusterAPI resources and the related controllers, including but not limited to everything under hypershift-operator/controllers/nodepool and control-plane-operator/. It's an expert on automated machine management via hcp. Makes design decisions
-on the best way to lifecycle the NodePool, machineDeployment and Nodes and to model the spec and status APIs around them.
+description: Has deep knowledge of nodePool and clusterAPI resources and controllers, expert on automated machine management and NodePool lifecycle via HCP.
 model: inherit
 ---
 
