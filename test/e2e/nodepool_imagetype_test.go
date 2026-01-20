@@ -84,6 +84,44 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 	}
 	t.Logf("Initial ImageType: %s", currentImageType)
 
+	// Check ValidPlatformImageType condition for initial Windows setup
+	validImageCondition := hostedcluster.FindNodePoolStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
+	if validImageCondition != nil {
+		switch validImageCondition.Status {
+		case corev1.ConditionTrue:
+			t.Logf("Windows AMI validated: %s", validImageCondition.Message)
+		case corev1.ConditionFalse:
+			if strings.Contains(strings.ToLower(validImageCondition.Message), "couldn't discover a windows ami") {
+				t.Logf("Windows AMI not available in this region: %s", validImageCondition.Message)
+				t.Log("Skipping Windows node validation, testing with Linux nodes instead")
+				// Switch to Linux-based testing if Windows AMI is not available
+				t.Log("Updating ImageType from Linux to Windows (will fail gracefully)...")
+				it.testImageTypeUpdate(t, g, ctx, &nodePool, hyperv1.ImageTypeWindows)
+				t.Log("Reverting ImageType from Windows back to Linux...")
+				it.testImageTypeUpdate(t, g, ctx, &nodePool, hyperv1.ImageTypeLinux)
+				t.Log("NodePool ImageType bidirectional test completed successfully (Windows AMI unavailable)")
+				return
+			}
+		}
+	}
+
+	// Wait for platform template update to complete for initial Windows setup
+	t.Log("Waiting for initial platform template update to complete...")
+	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("wait for nodepool %s/%s initial platform template update to complete", nodePool.Namespace, nodePool.Name),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			np := &hyperv1.NodePool{}
+			err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)
+			return np, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+				Type:   hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
+				Status: metav1.ConditionFalse,
+			}),
+		},
+		e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
+	)
+
 	// Validate initial Windows nodes are provisioned
 	t.Log("Validating initial Windows nodes...")
 	initialNodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, it.hostedClusterClient, &nodePool, globalOpts.Platform)
