@@ -188,33 +188,6 @@ func (f *fakeCache) WaitForCacheSync(_ context.Context) bool {
 	return f.waitForCacheSyncResult
 }
 
-func fakeRESTMapperFor(gvk schema.GroupVersionKind, resource string) meta.RESTMapper {
-	groupResources := []*restmapper.APIGroupResources{
-		{
-			Group: metav1.APIGroup{
-				Name: gvk.Group,
-				Versions: []metav1.GroupVersionForDiscovery{
-					{GroupVersion: gvk.GroupVersion().String(), Version: gvk.Version},
-				},
-				PreferredVersion: metav1.GroupVersionForDiscovery{
-					GroupVersion: gvk.GroupVersion().String(),
-					Version:      gvk.Version,
-				},
-			},
-			VersionedResources: map[string][]metav1.APIResource{
-				gvk.Version: {
-					{
-						Name:       resource,
-						Kind:       gvk.Kind,
-						Namespaced: true,
-					},
-				},
-			},
-		},
-	}
-	return restmapper.NewDiscoveryRESTMapper(groupResources)
-}
-
 func fakeRESTMapperForResources(gvkResources map[schema.GroupVersionKind]string) meta.RESTMapper {
 	groupResources := map[string]*restmapper.APIGroupResources{}
 	for gvk, resource := range gvkResources {
@@ -289,7 +262,7 @@ func TestStartAndWaitForInformersFor(t *testing.T) {
 					},
 				},
 			},
-			fakeMapper:             fakeRESTMapperFor(wellKnownGVK, wellKnownGVR.Resource),
+			fakeMapper:             fakeRESTMapperForResources(map[schema.GroupVersionKind]string{wellKnownGVK: wellKnownGVR.Resource}),
 			waitForCacheSyncResult: true,
 			expectedGVKs:           []schema.GroupVersionKind{wellKnownGVK},
 		},
@@ -304,7 +277,7 @@ func TestStartAndWaitForInformersFor(t *testing.T) {
 		{
 			name:                   "returns informer error",
 			inputResources:         map[string]*libraryinputresources.InputResources{"operator-a": {ApplyConfigurationResources: libraryinputresources.ResourceList{ExactResources: []libraryinputresources.ExactResourceID{wellKnownExactResourceID}}}},
-			fakeMapper:             fakeRESTMapperFor(wellKnownGVK, wellKnownGVR.Resource),
+			fakeMapper:             fakeRESTMapperForResources(map[schema.GroupVersionKind]string{wellKnownGVK: wellKnownGVR.Resource}),
 			getInformerForKindErr:  errors.New("cache error"),
 			waitForCacheSyncResult: false,
 			expectedGVKs:           []schema.GroupVersionKind{wellKnownGVK},
@@ -313,7 +286,7 @@ func TestStartAndWaitForInformersFor(t *testing.T) {
 		{
 			name:                   "returns cache sync failure when not canceled",
 			inputResources:         map[string]*libraryinputresources.InputResources{"operator-a": {ApplyConfigurationResources: libraryinputresources.ResourceList{ExactResources: []libraryinputresources.ExactResourceID{wellKnownExactResourceID}}}},
-			fakeMapper:             fakeRESTMapperFor(wellKnownGVK, wellKnownGVR.Resource),
+			fakeMapper:             fakeRESTMapperForResources(map[schema.GroupVersionKind]string{wellKnownGVK: wellKnownGVR.Resource}),
 			waitForCacheSyncResult: false,
 			expectedGVKs:           []schema.GroupVersionKind{wellKnownGVK},
 			expectedErr:            "caches did not sync",
