@@ -69,47 +69,38 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 	g := NewWithT(t)
 	ctx := it.ctx
 
-	// This test creates a new NodePool with Windows ImageType and tests bidirectional updates
-	// It validates that ImageType changes actually result in nodes being provisioned with the correct OS
-	// Following the manual test case from CNTRLPLANE-2277
-	t.Log("Test Case 4: Update Existing NodePool ImageType (CNTRLPLANE-2277)")
+	t.Logf("Testing NodePool ImageType bidirectional updates: %s/%s", nodePool.Namespace, nodePool.Name)
 
-	// Log the NodePool name to confirm we're using the one created by BuildNodePoolManifest
-	t.Logf("Testing with NodePool: %s/%s (created by BuildNodePoolManifest)", nodePool.Namespace, nodePool.Name)
-
-	// Verify NodePool exists with Windows ImageType
+	// Verify NodePool was created with Windows ImageType
 	err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
 
-	// Add nil check for Platform.AWS as suggested by CodeRabbit
 	var currentImageType hyperv1.ImageType
 	if nodePool.Spec.Platform.AWS != nil {
 		currentImageType = nodePool.Spec.Platform.AWS.ImageType
 	}
 	if currentImageType == "" {
-		currentImageType = hyperv1.ImageTypeLinux // Default is Linux
+		currentImageType = hyperv1.ImageTypeLinux
 	}
-	t.Logf("✓ Checkpoint 2: NodePool '%s' has ImageType: %s (ready to update to Linux)", nodePool.Name, currentImageType)
+	t.Logf("Initial ImageType: %s", currentImageType)
 
-	// Wait for Windows node to be ready (if Windows AMI is available)
-	t.Log("Waiting for initial Windows node to be ready")
+	// Validate initial Windows nodes are provisioned
+	t.Log("Validating initial Windows nodes...")
 	initialNodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, it.hostedClusterClient, &nodePool, globalOpts.Platform)
 	it.waitForNodesWithImageType(t, ctx, &nodePool, hyperv1.ImageTypeWindows, initialNodes)
 
-	// Update imageType from Windows to Linux and verify Linux nodes are provisioned
-	t.Log("Step 4: Update imageType from Windows to Linux")
+	// Test update from Windows to Linux
+	t.Log("Updating ImageType from Windows to Linux...")
 	it.testImageTypeUpdate(t, g, ctx, &nodePool, hyperv1.ImageTypeLinux)
 
-	// Revert imageType back to Windows and verify Windows nodes are provisioned
-	t.Log("Step 7: Revert imageType back to Windows (cleanup)")
+	// Test revert from Linux back to Windows
+	t.Log("Reverting ImageType from Linux back to Windows...")
 	it.testImageTypeUpdate(t, g, ctx, &nodePool, hyperv1.ImageTypeWindows)
 
-	t.Logf("✓ Checkpoint 8: NodePool returned to stable state with ImageType: %s", hyperv1.ImageTypeWindows)
-	t.Log("✓ Test Result: PASSED")
+	t.Log("NodePool ImageType bidirectional test completed successfully")
 }
 
 func (it *NodePoolImageTypeTest) testImageTypeUpdate(t *testing.T, g *WithT, ctx context.Context, nodePool *hyperv1.NodePool, targetImageType hyperv1.ImageType) {
-	// Get current NodePool configuration
 	err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
 
@@ -120,19 +111,17 @@ func (it *NodePoolImageTypeTest) testImageTypeUpdate(t *testing.T, g *WithT, ctx
 	if currentImageType == "" {
 		currentImageType = hyperv1.ImageTypeLinux
 	}
-	t.Logf("✓ Checkpoint 3: NodePool YAML exported, current instanceType and imageType verified")
 
-	t.Logf("Updating ImageType from %s to %s", currentImageType, targetImageType)
+	t.Logf("Current ImageType: %s, Target ImageType: %s", currentImageType, targetImageType)
 
-	// Update the ImageType (equivalent to oc patch)
+	// Update the ImageType
 	nodePool.Spec.Platform.AWS.ImageType = targetImageType
 	err = it.mgmtClient.Update(ctx, nodePool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to update NodePool ImageType")
-	t.Logf("✓ Checkpoint 4: imageType successfully updated to '%s'", targetImageType)
 
-	// Verify platform configuration after update using extracted helper
+	// Wait for ImageType to be reflected in spec
 	it.waitForImageTypeInSpec(t, ctx, nodePool, targetImageType)
-	t.Logf("✓ Checkpoint 5: imageType '%s' persisted in configuration", targetImageType)
+	t.Logf("ImageType updated to %s in NodePool spec", targetImageType)
 
 	// Verify the ValidPlatformImageType condition is set
 	err = it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
@@ -141,33 +130,30 @@ func (it *NodePoolImageTypeTest) testImageTypeUpdate(t *testing.T, g *WithT, ctx
 	validImageCondition := hostedcluster.FindNodePoolStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
 	g.Expect(validImageCondition).NotTo(BeNil(), "ValidPlatformImageType condition should be set")
 
-	// Validate the condition status
+	// Validate the AMI/image condition
 	switch validImageCondition.Status {
 	case corev1.ConditionTrue:
-		// Condition True means AMI was found successfully
-		// For Windows, verify the message contains an AMI ID
 		if targetImageType == hyperv1.ImageTypeWindows {
 			if !strings.Contains(strings.ToLower(validImageCondition.Message), "ami-") {
-				t.Logf("Warning: Windows ImageType condition True but message doesn't contain AMI ID: %s", validImageCondition.Message)
+				t.Logf("Warning: Windows AMI condition True but no AMI ID in message: %s", validImageCondition.Message)
 			} else {
-				t.Logf("✓ %s AMI validated: %s", targetImageType, validImageCondition.Message)
+				t.Logf("Windows AMI found: %s", validImageCondition.Message)
 			}
 		} else {
-			t.Logf("✓ %s ImageType validated: %s", targetImageType, validImageCondition.Message)
+			t.Logf("Linux AMI validated: %s", validImageCondition.Message)
 		}
 	case corev1.ConditionFalse:
-		// For Windows, it's acceptable if AMI is not available in the region
 		if targetImageType == hyperv1.ImageTypeWindows && strings.Contains(strings.ToLower(validImageCondition.Message), "couldn't discover a windows ami") {
-			t.Logf("✓ Windows AMI not available for this region/version (expected behavior): %s", validImageCondition.Message)
+			t.Logf("Windows AMI not available in this region (expected): %s", validImageCondition.Message)
 		} else {
-			t.Fatalf("unexpected validation failure for %s ImageType: %s", targetImageType, validImageCondition.Message)
+			t.Fatalf("AMI validation failed for %s: %s", targetImageType, validImageCondition.Message)
 		}
 	default:
-		t.Fatalf("ValidPlatformImageType condition has unexpected status %s", validImageCondition.Status)
+		t.Fatalf("ValidPlatformImageType condition has unexpected status: %s", validImageCondition.Status)
 	}
 
-	// Check NodePool status for update activity
-	t.Logf("Step 6: Check NodePool status for update activity")
+	// Wait for platform template update to complete
+	t.Log("Waiting for platform template update to complete...")
 	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("wait for nodepool %s/%s platform template update to complete", nodePool.Namespace, nodePool.Name),
 		func(ctx context.Context) (*hyperv1.NodePool, error) {
 			np := &hyperv1.NodePool{}
@@ -182,12 +168,12 @@ func (it *NodePoolImageTypeTest) testImageTypeUpdate(t *testing.T, g *WithT, ctx
 		},
 		e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
 	)
-	t.Logf("✓ Checkpoint 6: NodePool update status recorded")
 
-	// Wait for nodes with the target ImageType to be ready
-	t.Logf("Waiting for nodes with %s ImageType to be ready", targetImageType)
+	// Validate nodes with the target ImageType
+	t.Logf("Validating %s nodes are provisioned...", targetImageType)
 	updatedNodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, it.hostedClusterClient, nodePool, globalOpts.Platform)
 	it.waitForNodesWithImageType(t, ctx, nodePool, targetImageType, updatedNodes)
+	t.Logf("Successfully validated %s nodes", targetImageType)
 }
 
 // waitForImageTypeInSpec waits for the ImageType to be reflected in the NodePool spec
@@ -217,35 +203,32 @@ func (it *NodePoolImageTypeTest) waitForImageTypeInSpec(t *testing.T, ctx contex
 }
 
 // waitForNodesWithImageType validates that nodes are provisioned with the correct OS for the ImageType
-// For Windows, it checks for "Windows Server" in the OS image
+// For Windows, it checks for "windows" in the OS image
 // For Linux, it checks for "Red Hat" or "CoreOS" in the OS image
 func (it *NodePoolImageTypeTest) waitForNodesWithImageType(t *testing.T, ctx context.Context, nodePool *hyperv1.NodePool, expectedImageType hyperv1.ImageType, nodes []corev1.Node) {
-	// Check if we should skip node validation
+	// Skip validation if Windows AMI is not available
 	validImageCondition := hostedcluster.FindNodePoolStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
 	if validImageCondition != nil && validImageCondition.Status == corev1.ConditionFalse {
 		if expectedImageType == hyperv1.ImageTypeWindows && strings.Contains(strings.ToLower(validImageCondition.Message), "couldn't discover a windows ami") {
-			t.Logf("Skipping node validation: Windows AMI not available for this region/version")
+			t.Log("Skipping node OS validation: Windows AMI not available in this region")
 			return
 		}
 	}
 
-	t.Logf("Validating that nodes have correct OS for ImageType: %s", expectedImageType)
-
 	for _, node := range nodes {
 		osImage := node.Status.NodeInfo.OSImage
-		t.Logf("Node %s has OSImage: %s", node.Name, osImage)
 
 		switch expectedImageType {
 		case hyperv1.ImageTypeWindows:
 			if !strings.Contains(strings.ToLower(osImage), "windows") {
-				t.Fatalf("Expected Windows OS image for ImageType Windows, but got: %s", osImage)
+				t.Fatalf("Expected Windows OS, got: %s (node: %s)", osImage, node.Name)
 			}
-			t.Logf("✓ Node %s confirmed as Windows: %s", node.Name, osImage)
+			t.Logf("Node %s running Windows: %s", node.Name, osImage)
 		case hyperv1.ImageTypeLinux:
 			if !strings.Contains(strings.ToLower(osImage), "red hat") && !strings.Contains(strings.ToLower(osImage), "coreos") {
-				t.Fatalf("Expected Linux (Red Hat/CoreOS) OS image for ImageType Linux, but got: %s", osImage)
+				t.Fatalf("Expected Linux (RHCOS), got: %s (node: %s)", osImage, node.Name)
 			}
-			t.Logf("✓ Node %s confirmed as Linux: %s", node.Name, osImage)
+			t.Logf("Node %s running Linux: %s", node.Name, osImage)
 		}
 	}
 }
