@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/openshift/multi-operator-manager/pkg/library/libraryinputresources"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -123,4 +124,41 @@ func (r *inputResourceInitializer) checkSupportedInputResources(inputResources m
 		}
 	}
 	return nil
+}
+
+// buildInputResourceFilters prepares matchers to filter cluster(s) resources based on inputResources
+func (r *inputResourceInitializer) buildInputResourceFilters(inputResources map[string]*libraryinputresources.InputResources) (map[schema.GroupVersionKind][]inputResourceEventFilter, error) {
+	filters := make(map[schema.GroupVersionKind][]inputResourceEventFilter)
+	for operator, resources := range inputResources {
+		// note that for the POC we are only interested in ApplyConfigurationResources.ExactResources
+		// the checkSupportedInputResources ensures no other resources were provided.
+		//
+		// TODO: in the future we need to extend to full list
+		for _, exactResource := range resources.ApplyConfigurationResources.ExactResources {
+			gvr := schema.GroupVersionResource{
+				Group:    exactResource.Group,
+				Version:  exactResource.Version,
+				Resource: exactResource.Resource,
+			}
+			gvk, err := r.managementClusterRESTMapper.KindFor(gvr)
+			if err != nil {
+				return nil, fmt.Errorf("unable to find Kind for %#v, for %s operator, err: %w", exactResource, operator, err)
+			}
+			filters[gvk] = append(filters[gvk], matchExactResourceFilter(exactResource))
+		}
+	}
+	return filters, nil
+}
+
+// matchExactResourceFilter returns a matcher that checks namespace and name when provided
+func matchExactResourceFilter(def libraryinputresources.ExactResourceID) inputResourceEventFilter {
+	return func(obj client.Object) bool {
+		if def.Namespace != "" && obj.GetNamespace() != def.Namespace {
+			return false
+		}
+		if def.Name != "" && obj.GetName() != def.Name {
+			return false
+		}
+		return true
+	}
 }
