@@ -31,11 +31,11 @@ const (
 
 var _ core.Platform = (*CreateOptions)(nil)
 
-func DefaultOptions() (*RawCreateOptions, error) {
+func DefaultOptions() *RawCreateOptions {
 	return &RawCreateOptions{
 		Location:     "eastus",
 		NodePoolOpts: azurenodepool.DefaultOptions(),
-	}, nil
+	}
 }
 
 func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
@@ -45,11 +45,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	azureOpts, err := DefaultOptions()
-	if err != nil {
-		opts.Log.Error(err, "Failed to create default options")
-		return nil
-	}
+	azureOpts := DefaultOptions()
 	BindOptions(azureOpts, cmd.Flags())
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")
 
@@ -78,31 +74,32 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 
 func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	// ARO HCP (managed Azure) only flags; these flags should not be used for self-managed Azure
-	flags.StringVar(&opts.KMSUserAssignedCredsSecretName, "kms-credentials-secret-name", opts.KMSUserAssignedCredsSecretName, "The name of a secret, in Azure KeyVault, containing the JSON UserAssignedIdentityCredentials used in KMS to authenticate to Azure.")
-	flags.StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to a file containing the managed identities configuration in json format.")
-	flags.StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.DataPlaneIdentitiesFile, "Path to a file containing the client IDs of the managed identities for the data plane configured in json format.")
-	flags.BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, "Assign custom roles to HCP identities")
+	flags.StringVar(&opts.KMSUserAssignedCredsSecretName, "kms-credentials-secret-name", opts.KMSUserAssignedCredsSecretName, util.KMSCredentialsSecretNameDescription)
+	flags.StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, util.ManagedIdentitiesFileDescription)
+	flags.StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.DataPlaneIdentitiesFile, util.DataPlaneIdentitiesFileDescription)
+	flags.BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, util.AssignCustomHCPRolesDescription)
 
 	// self-managed Azure only flags; these flags should not be used for ARO HCP (managed Azure)
-	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, "Path to a file containing the workload identity client IDs configuration in json format for self-managed Azure.")
+	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, util.WorkloadIdentitiesFileDescription)
 
 	// flags used for both ARO HCP and self-managed Azure
-	// In ARO HCP, it assigns roles to managed identities; in self-managed Azure, it assigns roles to workload identities. The self-managed HCP CLI version of this flage is named assign-identity-roles.
-	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-service-principal-roles", opts.AssignServicePrincipalRoles, "Assign required Azure RBAC roles to identities (managed identities for ARO HCP, workload identities for self-managed).")
+	// In ARO HCP, it assigns roles to managed identities; in self-managed Azure, it assigns roles to workload identities.
+	// The self-managed HCP CLI version of this flag is named assign-identity-roles.
+	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-service-principal-roles", opts.AssignServicePrincipalRoles, util.AssignServicePrincipalRolesDescription)
 
 	// general flags used for both managed and self-managed Azure
-	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, "Path to an Azure credentials file (required). This file is used to extract the subscription ID, tenant ID, and its credentials are used to create the necessary Azure resources for the HostedCluster.")
-	flags.StringVar(&opts.Location, "location", opts.Location, "Location for the HostedCluster. This is also used as the location for the Azure resources created for the HostedCluster.")
-	flags.StringVar(&opts.EncryptionKeyID, "encryption-key-id", opts.EncryptionKeyID, "etcd encryption key identifier in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion> used to set up KMSv2 for etcd encryption.")
-	flags.StringSliceVar(&opts.AvailabilityZones, "availability-zones", opts.AvailabilityZones, "The availability zones in which NodePools will be created. Must be left unspecified if the region does not support AZs. If set, one nodepool per zone will be created.")
-	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, "The resource group name to create the HostedCluster infrastructure resources under. If not provided, a new resource group will be created.")
-	flags.StringVar(&opts.VnetID, "vnet-id", opts.VnetID, "An existing VNET ID. If not provided, a new VNET will be created.")
-	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, "The Network Security Group ID to use in the default NodePool. If not provided, a new Network Security Group will be created.")
-	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, "Additional tags to apply to the resource group created (e.g. 'key1=value1,key2=value2')")
-	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The subnet ID where the VMs will be placed. If not provided, a new subnet will be created.")
-	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", "The OIDC provider issuer URL.")
-	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", "The file to the private key for the service account token issuer.")
-	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, "The name of the resource group where the DNS Zone resides. This is needed for the ingress controller. This is just the name and not the full ID of the resource group.")
+	flags.StringVar(&opts.CredentialsFile, "azure-creds", opts.CredentialsFile, util.AzureCredsDescription)
+	flags.StringVar(&opts.Location, "location", opts.Location, util.LocationDescription)
+	flags.StringVar(&opts.EncryptionKeyID, "encryption-key-id", opts.EncryptionKeyID, util.EncryptionKeyIDDescription)
+	flags.StringSliceVar(&opts.AvailabilityZones, "availability-zones", opts.AvailabilityZones, util.AvailabilityZonesDescription)
+	flags.StringVar(&opts.ResourceGroupName, "resource-group-name", opts.ResourceGroupName, util.ResourceGroupNameDescription)
+	flags.StringVar(&opts.VnetID, "vnet-id", opts.VnetID, util.VnetIDDescription)
+	flags.StringVar(&opts.NetworkSecurityGroupID, "network-security-group-id", opts.NetworkSecurityGroupID, util.NetworkSecurityGroupIDDescription)
+	flags.StringToStringVarP(&opts.ResourceGroupTags, "resource-group-tags", "t", opts.ResourceGroupTags, util.ResourceGroupTagsDescription)
+	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, util.SubnetIDDescription)
+	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", util.OIDCIssuerURLDescription)
+	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", util.SATokenIssuerKeyPathDescription)
+	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, util.DNSZoneRGNameDescription)
 }
 
 // BindDeveloperOptions binds developer/development only options for the Azure create cluster command
@@ -129,7 +126,7 @@ func BindProductFlags(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, util.WorkloadIdentitiesFileDescription)
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", util.OIDCIssuerURLDescription)
 	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", util.SATokenIssuerKeyPathDescription)
-	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-identity-roles", opts.AssignServicePrincipalRoles, util.AssignIdentityRolesDescription)
+	flags.BoolVar(&opts.AssignServicePrincipalRoles, "auto-assign-roles", opts.AssignServicePrincipalRoles, util.AutoAssignRolesDescription)
 
 	// Encryption
 	flags.StringVar(&opts.EncryptionKeyID, "encryption-key-id", opts.EncryptionKeyID, util.EncryptionKeyIDDescription)

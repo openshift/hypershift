@@ -8,7 +8,7 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 
-	"k8s.io/apimachinery/pkg/types"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"github.com/spf13/cobra"
 )
@@ -48,11 +48,14 @@ func (o *DestroyNodePoolOptions) Run(ctx context.Context) error {
 	}
 
 	nodePool := &hyperv1.NodePool{}
-	if err := client.Get(ctx, types.NamespacedName{Name: o.Name, Namespace: o.Namespace}, nodePool); err != nil {
-		return fmt.Errorf("failed to get NodePool %s/%s: %w", o.Namespace, o.Name, err)
-	}
+	nodePool.Name = o.Name
+	nodePool.Namespace = o.Namespace
 
 	if err := client.Delete(ctx, nodePool); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Log.Info("NodePool already deleted or not found", "name", o.Name, "namespace", o.Namespace)
+			return nil
+		}
 		return fmt.Errorf("failed to delete NodePool %s/%s: %w", o.Namespace, o.Name, err)
 	}
 

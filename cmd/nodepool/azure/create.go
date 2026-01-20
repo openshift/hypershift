@@ -28,7 +28,6 @@ type AzurePlatformCreateOptions struct {
 	EnableEphemeralOSDisk         bool
 	DiskStorageAccountType        string
 	SubnetID                      string
-	ImageID                       string
 	ImageGeneration               string
 	Arch                          string
 	EncryptionAtHost              string
@@ -147,7 +146,7 @@ func (o *RawAzurePlatformCreateOptions) Validate() (*ValidatedAzurePlatformCreat
 	}
 
 	if o.EncryptionAtHost != "" && o.EncryptionAtHost != "Enabled" && o.EncryptionAtHost != "Disabled" {
-		return nil, fmt.Errorf("flag --enable-encryption-at-host has an invalid value; accepted values are 'Enabled' and 'Disabled'")
+		return nil, fmt.Errorf("flag --encryption-at-host has an invalid value; accepted values are 'Enabled' and 'Disabled'")
 	}
 
 	if !slices.Contains([]string{"", "1", "2", "3"}, o.AvailabilityZone) {
@@ -204,38 +203,30 @@ func (o *CompletedAzurePlatformCreateOptions) UpdateNodePool(_ context.Context, 
 }
 
 func (o *CompletedAzurePlatformCreateOptions) NodePoolPlatform(nodePool *hyperv1.NodePool) *hyperv1.AzureNodePoolPlatform {
-	var vmImage hyperv1.AzureVMImage
-	if o.ImageID != "" {
-		vmImage = hyperv1.AzureVMImage{
-			Type:    hyperv1.ImageID,
-			ImageID: ptr.To(o.ImageID),
-		}
-	} else {
-		// Build marketplace image struct
-		marketplaceImage := &hyperv1.AzureMarketplaceImage{
-			Publisher: o.MarketplacePublisher,
-			Offer:     o.MarketplaceOffer,
-			SKU:       o.MarketplaceSKU,
-			Version:   o.MarketplaceVersion,
-		}
+	// Build marketplace image struct
+	marketplaceImage := &hyperv1.AzureMarketplaceImage{
+		Publisher: o.MarketplacePublisher,
+		Offer:     o.MarketplaceOffer,
+		SKU:       o.MarketplaceSKU,
+		Version:   o.MarketplaceVersion,
+	}
 
-		// Set ImageGeneration if specified by the user
-		if o.ImageGeneration != "" {
-			switch o.ImageGeneration {
-			case "Gen1":
-				marketplaceImage.ImageGeneration = ptr.To(hyperv1.Gen1)
-			case "Gen2":
-				marketplaceImage.ImageGeneration = ptr.To(hyperv1.Gen2)
-			default:
-				// This should never happen due to validation, but defensive programming
-				marketplaceImage.ImageGeneration = ptr.To(hyperv1.Gen2)
-			}
+	// Set ImageGeneration if specified by the user
+	if o.ImageGeneration != "" {
+		switch o.ImageGeneration {
+		case "Gen1":
+			marketplaceImage.ImageGeneration = ptr.To(hyperv1.Gen1)
+		case "Gen2":
+			marketplaceImage.ImageGeneration = ptr.To(hyperv1.Gen2)
+		default:
+			// This should never happen due to validation, but defensive programming
+			marketplaceImage.ImageGeneration = ptr.To(hyperv1.Gen2)
 		}
+	}
 
-		vmImage = hyperv1.AzureVMImage{
-			Type:             hyperv1.AzureMarketplace,
-			AzureMarketplace: marketplaceImage,
-		}
+	vmImage := hyperv1.AzureVMImage{
+		Type:             hyperv1.AzureMarketplace,
+		AzureMarketplace: marketplaceImage,
 	}
 
 	instanceType := o.completetedAzurePlatformCreateOptions.AzurePlatformCreateOptions.InstanceType

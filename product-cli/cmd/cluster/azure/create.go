@@ -2,10 +2,10 @@ package azure
 
 import (
 	"context"
-	"fmt"
 
 	hypershiftazure "github.com/openshift/hypershift/cmd/cluster/azure"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/support/config"
 
 	"github.com/spf13/cobra"
 )
@@ -17,15 +17,9 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	azureOpts, err := hypershiftazure.DefaultOptions()
-	if err != nil {
-		opts.Log.Error(err, "Failed to create default options")
-		cmd.RunE = func(cmd *cobra.Command, args []string) error {
-			return fmt.Errorf("failed to initialize Azure options: %w", err)
-		}
-		return cmd
-	}
+	opts.ReleaseStream = config.DefaultReleaseStream
 
+	azureOpts := hypershiftazure.DefaultOptions()
 	hypershiftazure.BindProductFlags(azureOpts, cmd.Flags())
 
 	_ = cmd.MarkFlagRequired("azure-creds")
@@ -39,11 +33,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 			defer cancel()
 		}
 
-		if err := core.CreateCluster(ctx, opts, azureOpts); err != nil {
-			opts.Log.Error(err, "Failed to create cluster")
-			return err
-		}
-		return nil
+		return core.CreateCluster(ctx, opts, azureOpts)
 	}
 
 	return cmd

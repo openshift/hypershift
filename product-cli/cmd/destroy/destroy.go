@@ -10,7 +10,7 @@ import (
 func NewCommand() *cobra.Command {
 	destroyCmd := &cobra.Command{
 		Use:          "destroy",
-		Short:        "Commands for destroying HostedClusters",
+		Short:        "Commands for destroying HostedClusters and NodePools",
 		SilenceUsage: true,
 	}
 
