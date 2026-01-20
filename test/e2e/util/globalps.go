@@ -303,6 +303,11 @@ func InjectMockOnDiskAuth(ctx context.Context, guestClient crclient.Client, dsIm
 					SecurityContext: &corev1.PodSecurityContext{},
 					DNSPolicy:       corev1.DNSDefault,
 					Tolerations:     []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
+					// Use nodeSelector to only include nodes that are eligible for GlobalPullSecret DaemonSet
+					// This ensures consistency with global-pull-secret-syncer
+					NodeSelector: map[string]string{
+						"hypershift.openshift.io/nodepool-globalps-enabled": "true",
+					},
 					Containers: []corev1.Container{
 						{
 							Name:            "injector",

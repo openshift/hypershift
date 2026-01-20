@@ -47,6 +47,10 @@ const (
 	originalPullSecretFilePath = "/etc/original-pull-secret/.dockerconfigjson"
 	globalPullSecretFilePath   = "/etc/global-pull-secret/.dockerconfigjson"
 
+	// Cache file path for tracking last-synced pull secret state
+	// This allows us to distinguish between external auths (preserve) and removed HyperShift auths (delete)
+	pullSecretCachePath = "/var/lib/kubelet/.hypershift-pullsecret-cache.json"
+
 	tickerPace = 30 * time.Second
 
 	// systemd job completion state as documented in go-systemd/dbus
@@ -247,6 +251,13 @@ func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 	// Determine if we need to preserve trailing newline
 	preserveNewline := len(existingContent) > 0 && existingContent[len(existingContent)-1] == '\n'
 
+	// Read cached state to detect removed auths
+	cachedConfig, err := readCachedPullSecret()
+	if err != nil {
+		s.log.Info("Failed to read cache, treating as first run", "error", err)
+		cachedConfig = nil
+	}
+
 	// Merge with existing config if it exists
 	var mergedConfig *dockerConfigJSON
 	if len(existingContent) > 0 {
@@ -258,8 +269,8 @@ func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 				"action", "using cluster-provided config only")
 			mergedConfig = desiredConfig
 		} else {
-			// Merge configs, with desired auths taking precedence for known registries
-			mergedConfig = mergeDockerConfigs(existingConfig, desiredConfig, s.log)
+			// Merge configs, using cache to distinguish external auths from removed HyperShift auths
+			mergedConfig = mergeDockerConfigs(existingConfig, desiredConfig, cachedConfig, s.log)
 		}
 	} else {
 		// No existing file, use desired config
@@ -303,6 +314,14 @@ func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 				}
 			} else {
 				s.log.Info("Successfully restarted Kubelet", "attempt", attempt)
+
+				// Update cache with the merged config we just wrote
+				// This allows us to detect removed auths on the next sync
+				if err := writeCachedPullSecret(mergedConfig); err != nil {
+					s.log.Info("Failed to update pull secret cache - auth removal detection may not work on next sync", "error", err)
+					// Don't fail the sync for a cache write error
+				}
+
 				return nil
 			}
 		}
@@ -382,11 +401,15 @@ func parseDockerConfigJSON(b []byte) (*dockerConfigJSON, error) {
 	return &config, nil
 }
 
-// mergeDockerConfigs merges two Docker configs with the following precedence rules:
+// mergeDockerConfigs merges Docker configs with the following precedence rules:
 // - Desired config auths always take precedence (HyperShift manages these registries)
-// - Existing auths are preserved ONLY if they're not in the desired config (external systems manage these)
-// This allows HyperShift to update its own auths while preserving external modifications.
-func mergeDockerConfigs(existing, desired *dockerConfigJSON, log logr.Logger) *dockerConfigJSON {
+// - Existing auths are preserved ONLY if they're truly external (not previously synced by HyperShift)
+// - Auths that were previously synced by HyperShift but removed are NOT preserved (prevents auth leakage)
+//
+// The cached parameter contains what HyperShift last synced to the node. This allows us to:
+// - Detect when HyperShift removes an auth (it was in cached, but not in desired)
+// - Preserve truly external auths (not in cached, not in desired, but on disk)
+func mergeDockerConfigs(existing, desired, cached *dockerConfigJSON, log logr.Logger) *dockerConfigJSON {
 	merged := &dockerConfigJSON{
 		Auths: make(map[string]interface{}),
 	}
@@ -396,19 +419,38 @@ func mergeDockerConfigs(existing, desired *dockerConfigJSON, log logr.Logger) *d
 		merged.Auths[registry] = auth
 	}
 
-	// Then, add auths from existing config ONLY if they're not in desired
+	// Then, add auths from existing config ONLY if they're truly external
 	externalRegistries := make([]string, 0)
+	removedRegistries := make([]string, 0)
+
 	for registry, auth := range existing.Auths {
-		if _, inDesired := desired.Auths[registry]; !inDesired {
-			// This registry is unknown to HyperShift, preserve the external auth
-			log.Info("Preserving external auth from on-disk file", "registry", registry)
-			merged.Auths[registry] = auth
-			externalRegistries = append(externalRegistries, registry)
+		if _, inDesired := desired.Auths[registry]; inDesired {
+			// Already in desired, skip
+			continue
 		}
+
+		// Check if this auth was previously synced by HyperShift
+		if cached != nil {
+			if _, wasCached := cached.Auths[registry]; wasCached {
+				// This auth was from a previous HyperShift sync but is now removed
+				// DO NOT preserve it - this prevents auth leakage when user removes from additional-pull-secret
+				log.Info("Removing previously-synced auth that was deleted from cluster config", "registry", registry)
+				removedRegistries = append(removedRegistries, registry)
+				continue
+			}
+		}
+
+		// This registry is truly external (never synced by HyperShift), preserve it
+		log.Info("Preserving external auth from on-disk file", "registry", registry)
+		merged.Auths[registry] = auth
+		externalRegistries = append(externalRegistries, registry)
 	}
 
 	if len(externalRegistries) > 0 {
 		log.Info("Preserved external auths from on-disk file", "registryCount", len(externalRegistries))
+	}
+	if len(removedRegistries) > 0 {
+		log.Info("Removed previously-synced auths that were deleted from cluster config", "registryCount", len(removedRegistries))
 	}
 
 	return merged
@@ -438,4 +480,46 @@ func writeAtomic(path string, data []byte, perm os.FileMode) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// readCachedPullSecret reads the cached pull secret state from disk.
+// This cache contains the last-synced pull secret content that HyperShift wrote to the node.
+// Returns nil if the cache doesn't exist (first run or cache was deleted).
+func readCachedPullSecret() (*dockerConfigJSON, error) {
+	content, err := readFileFunc(pullSecretCachePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Cache doesn't exist yet - this is normal on first run
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read cache file: %w", err)
+	}
+
+	if len(content) == 0 {
+		return nil, nil
+	}
+
+	cached, err := parseDockerConfigJSON(content)
+	if err != nil {
+		// Cache is corrupted - treat as if it doesn't exist
+		return nil, nil
+	}
+
+	return cached, nil
+}
+
+// writeCachedPullSecret writes the pull secret state to the cache file.
+// This cache is used to track what HyperShift last synced to the node, allowing
+// us to distinguish between external auths and removed HyperShift auths.
+func writeCachedPullSecret(config *dockerConfigJSON) error {
+	data, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal cache data: %w", err)
+	}
+
+	if err := writeFileFunc(pullSecretCachePath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write cache file: %w", err)
+	}
+
+	return nil
 }

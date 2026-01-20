@@ -657,6 +657,7 @@ func TestMergeDockerConfigs(t *testing.T) {
 		name            string
 		existing        *dockerConfigJSON
 		desired         *dockerConfigJSON
+		cached          *dockerConfigJSON
 		expectedAuthLen int
 		checkRegistry   string
 		expectedAuth    interface{}
@@ -674,6 +675,7 @@ func TestMergeDockerConfigs(t *testing.T) {
 					"hypershift.io": map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
 				},
 			},
+			cached:          nil,
 			expectedAuthLen: 2,
 			checkRegistry:   "external.io",
 			expectedAuth:    map[string]interface{}{"auth": "ZXh0ZXJuYWw="},
@@ -691,6 +693,7 @@ func TestMergeDockerConfigs(t *testing.T) {
 					"shared.io": map[string]interface{}{"auth": "bmV3"},
 				},
 			},
+			cached:          nil,
 			expectedAuthLen: 1,
 			checkRegistry:   "shared.io",
 			expectedAuth:    map[string]interface{}{"auth": "bmV3"},
@@ -706,6 +709,7 @@ func TestMergeDockerConfigs(t *testing.T) {
 					"hypershift.io": map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
 				},
 			},
+			cached:          nil,
 			expectedAuthLen: 1,
 			checkRegistry:   "hypershift.io",
 			expectedAuth:    map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
@@ -721,6 +725,7 @@ func TestMergeDockerConfigs(t *testing.T) {
 			desired: &dockerConfigJSON{
 				Auths: map[string]interface{}{},
 			},
+			cached:          nil,
 			expectedAuthLen: 1,
 			checkRegistry:   "external.io",
 			expectedAuth:    map[string]interface{}{"auth": "ZXh0ZXJuYWw="},
@@ -740,6 +745,7 @@ func TestMergeDockerConfigs(t *testing.T) {
 					"hypershift.io": map[string]interface{}{"auth": "aHlwZXI="},
 				},
 			},
+			cached:          nil,
 			expectedAuthLen: 3,
 			checkRegistry:   "shared.io",
 			expectedAuth:    map[string]interface{}{"auth": "bmV3"},
@@ -757,10 +763,101 @@ func TestMergeDockerConfigs(t *testing.T) {
 					"hypershift.io": map[string]interface{}{"auth": "bmV3VmFsdWU="},
 				},
 			},
+			cached:          nil,
 			expectedAuthLen: 1,
 			checkRegistry:   "hypershift.io",
 			expectedAuth:    map[string]interface{}{"auth": "bmV3VmFsdWU="},
 			description:     "desired auth should always win for known registries to allow updates",
+		},
+		{
+			name: "removed auth from additional-pull-secret should be deleted from node",
+			existing: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"removed-registry.io":  map[string]interface{}{"auth": "cmVtb3ZlZA=="},
+					"external-registry.io": map[string]interface{}{"auth": "ZXh0ZXJuYWw="},
+				},
+			},
+			desired: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"hypershift.io": map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
+				},
+			},
+			cached: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"removed-registry.io": map[string]interface{}{"auth": "cmVtb3ZlZA=="},
+					"hypershift.io":       map[string]interface{}{"auth": "b2xk"},
+				},
+			},
+			expectedAuthLen: 2,
+			checkRegistry:   "external-registry.io",
+			expectedAuth:    map[string]interface{}{"auth": "ZXh0ZXJuYWw="},
+			description:     "auth removed from cluster config (in cache but not in desired) should be deleted, but truly external auth preserved",
+		},
+		{
+			name: "all auths removed from additional-pull-secret should be deleted",
+			existing: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"removed1.io": map[string]interface{}{"auth": "cmVtMQ=="},
+					"removed2.io": map[string]interface{}{"auth": "cmVtMg=="},
+				},
+			},
+			desired: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"hypershift.io": map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
+				},
+			},
+			cached: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"removed1.io":   map[string]interface{}{"auth": "cmVtMQ=="},
+					"removed2.io":   map[string]interface{}{"auth": "cmVtMg=="},
+					"hypershift.io": map[string]interface{}{"auth": "b2xk"},
+				},
+			},
+			expectedAuthLen: 1,
+			checkRegistry:   "hypershift.io",
+			expectedAuth:    map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
+			description:     "all previously synced auths that are not in desired should be removed",
+		},
+		{
+			name: "external auth added after first sync should be preserved",
+			existing: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"hypershift.io":      map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
+					"new-external-io.io": map[string]interface{}{"auth": "bmV3ZXh0"},
+				},
+			},
+			desired: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"hypershift.io": map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
+				},
+			},
+			cached: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"hypershift.io": map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
+				},
+			},
+			expectedAuthLen: 2,
+			checkRegistry:   "new-external-io.io",
+			expectedAuth:    map[string]interface{}{"auth": "bmV3ZXh0"},
+			description:     "auth added externally (not in cache, not in desired) should be preserved",
+		},
+		{
+			name: "nil cache behaves like first run - preserves all external auths",
+			existing: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"unknown.io": map[string]interface{}{"auth": "dW5rbm93bg=="},
+				},
+			},
+			desired: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"hypershift.io": map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
+				},
+			},
+			cached:          nil,
+			expectedAuthLen: 2,
+			checkRegistry:   "unknown.io",
+			expectedAuth:    map[string]interface{}{"auth": "dW5rbm93bg=="},
+			description:     "nil cache should preserve all existing auths (treats as first run/external)",
 		},
 	}
 
@@ -768,7 +865,7 @@ func TestMergeDockerConfigs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			merged := mergeDockerConfigs(tt.existing, tt.desired, logr.Discard())
+			merged := mergeDockerConfigs(tt.existing, tt.desired, tt.cached, logr.Discard())
 
 			g.Expect(merged).ToNot(BeNil())
 			g.Expect(len(merged.Auths)).To(Equal(tt.expectedAuthLen), tt.description)
