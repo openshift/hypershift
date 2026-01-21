@@ -106,29 +106,10 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 		}
 	}
 
-	// Wait for platform template update and node replacement to complete for initial Windows setup
-	t.Log("Waiting for initial platform template update to complete...")
-	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("wait for nodepool %s/%s initial platform template update to complete", nodePool.Namespace, nodePool.Name),
-		func(ctx context.Context) (*hyperv1.NodePool, error) {
-			np := &hyperv1.NodePool{}
-			err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)
-			return np, err
-		},
-		[]e2eutil.Predicate[*hyperv1.NodePool]{
-			e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
-				Type:   hyperv1.NodePoolUpdatingPlatformMachineTemplateConditionType,
-				Status: metav1.ConditionFalse,
-			}),
-		},
-		e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
-	)
-
-	// Wait for node replacement (config update) to complete after ImageType change
-	t.Log("Waiting for Windows nodes to be provisioned (node replacement)...")
-	e2eutil.WaitForNodePoolConfigUpdateCompleteWithPlatform(t, ctx, it.mgmtClient, &nodePool, globalOpts.Platform)
-
-	// Wait for Windows nodes to be ready with correct OS
-	t.Log("Validating initial Windows nodes...")
+	// Wait for initial Windows nodes to be ready with correct OS
+	// Note: For initial provisioning, we don't wait for config update because nodes
+	// are created fresh, not replaced. Config update only happens when changing ImageType.
+	t.Log("Waiting for initial Windows nodes to be provisioned...")
 	_ = it.waitForNodesWithImageType(t, ctx, &nodePool, hyperv1.ImageTypeWindows)
 
 	// Test update from Windows to Linux
