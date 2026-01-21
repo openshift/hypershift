@@ -106,10 +106,28 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 		}
 	}
 
-	// Wait for initial Windows nodes to be ready with correct OS
-	// Note: For initial provisioning, we don't wait for config update because nodes
-	// are created fresh, not replaced. Config update only happens when changing ImageType.
+	// The test framework may have returned Linux nodes before Windows nodes were ready.
+	// We need to wait for Windows nodes to be provisioned and replace the initial Linux nodes.
 	t.Log("Waiting for initial Windows nodes to be provisioned...")
+
+	// First, wait for the NodePool to finish any ongoing updates from creation
+	t.Log("Waiting for NodePool to stabilize after creation...")
+	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("wait for nodepool %s/%s to stabilize", nodePool.Namespace, nodePool.Name),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			np := &hyperv1.NodePool{}
+			err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)
+			return np, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
+				Type:   hyperv1.NodePoolReadyConditionType,
+				Status: metav1.ConditionTrue,
+			}),
+		},
+		e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(15*time.Minute),
+	)
+
+	// Now wait for Windows nodes to be ready with correct OS
 	_ = it.waitForNodesWithImageType(t, ctx, &nodePool, hyperv1.ImageTypeWindows)
 
 	// Test update from Windows to Linux
