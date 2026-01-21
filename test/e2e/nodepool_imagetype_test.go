@@ -16,6 +16,7 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -126,10 +127,9 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 	t.Log("Waiting for Windows nodes to be provisioned (node replacement)...")
 	e2eutil.WaitForNodePoolConfigUpdateCompleteWithPlatform(t, ctx, it.mgmtClient, &nodePool, globalOpts.Platform)
 
-	// Validate initial Windows nodes are provisioned
+	// Wait for Windows nodes to be ready with correct OS
 	t.Log("Validating initial Windows nodes...")
-	initialNodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, it.hostedClusterClient, &nodePool, globalOpts.Platform)
-	it.waitForNodesWithImageType(t, ctx, &nodePool, hyperv1.ImageTypeWindows, initialNodes)
+	initialNodes := it.waitForNodesWithImageType(t, ctx, &nodePool, hyperv1.ImageTypeWindows)
 
 	// Test update from Windows to Linux
 	t.Log("Updating ImageType from Windows to Linux...")
@@ -215,10 +215,9 @@ func (it *NodePoolImageTypeTest) testImageTypeUpdate(t *testing.T, g *WithT, ctx
 	t.Logf("Waiting for %s nodes to be provisioned (node replacement)...", targetImageType)
 	e2eutil.WaitForNodePoolConfigUpdateCompleteWithPlatform(t, ctx, it.mgmtClient, nodePool, globalOpts.Platform)
 
-	// Validate nodes with the target ImageType
+	// Wait for nodes with the target ImageType to be ready
 	t.Logf("Validating %s nodes are provisioned...", targetImageType)
-	updatedNodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, it.hostedClusterClient, nodePool, globalOpts.Platform)
-	it.waitForNodesWithImageType(t, ctx, nodePool, targetImageType, updatedNodes)
+	_ = it.waitForNodesWithImageType(t, ctx, nodePool, targetImageType)
 	t.Logf("Successfully validated %s nodes", targetImageType)
 }
 
@@ -248,33 +247,54 @@ func (it *NodePoolImageTypeTest) waitForImageTypeInSpec(t *testing.T, ctx contex
 	)
 }
 
-// waitForNodesWithImageType validates that nodes are provisioned with the correct OS for the ImageType
+// waitForNodesWithImageType waits for nodes to be ready with the correct OS for the ImageType
 // For Windows, it checks for "windows" in the OS image
 // For Linux, it checks for "Red Hat" or "CoreOS" in the OS image
-func (it *NodePoolImageTypeTest) waitForNodesWithImageType(t *testing.T, ctx context.Context, nodePool *hyperv1.NodePool, expectedImageType hyperv1.ImageType, nodes []corev1.Node) {
+// Returns the nodes once they are ready with the correct OS
+func (it *NodePoolImageTypeTest) waitForNodesWithImageType(t *testing.T, ctx context.Context, nodePool *hyperv1.NodePool, expectedImageType hyperv1.ImageType) []corev1.Node {
 	// Skip validation if Windows AMI is not available
 	validImageCondition := hostedcluster.FindNodePoolStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
 	if validImageCondition != nil && validImageCondition.Status == corev1.ConditionFalse {
 		if expectedImageType == hyperv1.ImageTypeWindows && strings.Contains(strings.ToLower(validImageCondition.Message), "couldn't discover a windows ami") {
 			t.Log("Skipping node OS validation: Windows AMI not available in this region")
-			return
+			// Fall back to waiting for any ready nodes
+			return e2eutil.WaitForReadyNodesByNodePool(t, ctx, it.hostedClusterClient, nodePool, globalOpts.Platform)
 		}
 	}
 
+	// Wait for nodes with the expected OS to be ready
+	nodes := e2eutil.WaitForNReadyNodesWithOptions(t, ctx, it.hostedClusterClient, *nodePool.Spec.Replicas, globalOpts.Platform,
+		fmt.Sprintf("for NodePool %s/%s with %s OS", nodePool.Namespace, nodePool.Name, expectedImageType),
+		e2eutil.WithClientOptions(
+			crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: nodePool.Name})},
+		),
+		e2eutil.WithPredicates(
+			e2eutil.Predicate[*corev1.Node](func(node *corev1.Node) (done bool, reasons string, err error) {
+				osImage := node.Status.NodeInfo.OSImage
+
+				switch expectedImageType {
+				case hyperv1.ImageTypeWindows:
+					if !strings.Contains(strings.ToLower(osImage), "windows") {
+						return false, fmt.Sprintf("Expected Windows OS, got: %s (node: %s)", osImage, node.Name), nil
+					}
+					return true, fmt.Sprintf("Node %s running Windows: %s", node.Name, osImage), nil
+				case hyperv1.ImageTypeLinux:
+					if !strings.Contains(strings.ToLower(osImage), "red hat") && !strings.Contains(strings.ToLower(osImage), "coreos") {
+						return false, fmt.Sprintf("Expected Linux (RHCOS), got: %s (node: %s)", osImage, node.Name), nil
+					}
+					return true, fmt.Sprintf("Node %s running Linux: %s", node.Name, osImage), nil
+				default:
+					return false, fmt.Sprintf("Unknown ImageType: %s", expectedImageType), nil
+				}
+			}),
+		),
+	)
+
+	// Log the successful validation
 	for _, node := range nodes {
 		osImage := node.Status.NodeInfo.OSImage
-
-		switch expectedImageType {
-		case hyperv1.ImageTypeWindows:
-			if !strings.Contains(strings.ToLower(osImage), "windows") {
-				t.Fatalf("Expected Windows OS, got: %s (node: %s)", osImage, node.Name)
-			}
-			t.Logf("Node %s running Windows: %s", node.Name, osImage)
-		case hyperv1.ImageTypeLinux:
-			if !strings.Contains(strings.ToLower(osImage), "red hat") && !strings.Contains(strings.ToLower(osImage), "coreos") {
-				t.Fatalf("Expected Linux (RHCOS), got: %s (node: %s)", osImage, node.Name)
-			}
-			t.Logf("Node %s running Linux: %s", node.Name, osImage)
-		}
+		t.Logf("Node %s ready with OS: %s", node.Name, osImage)
 	}
+
+	return nodes
 }
