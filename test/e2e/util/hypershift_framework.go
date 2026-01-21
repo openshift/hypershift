@@ -191,7 +191,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		EnsureAllRoutesUseHCPRouter(t, context.Background(), h.client, hostedCluster)
 		EnsureNetworkPolicies(t, context.Background(), h.client, hostedCluster)
 		if capabilities.IsNodeTuningCapabilityEnabled(hostedCluster.Spec.Capabilities) {
-			EnsureNodeTuningOperatorMetricsPortConfiguration(t, context.Background(), h.client, hostedCluster)
+			EnsureNodeTuningOperatorMetricsEndpoint(t, context.Background(), h.client, hostedCluster)
 		}
 
 		if platform == hyperv1.AWSPlatform {
