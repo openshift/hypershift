@@ -176,12 +176,10 @@ func (it *NodePoolImageTypeTest) testImageTypeUpdate(t *testing.T, g *WithT, ctx
 		e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
 	)
 
-	// Wait for node replacement (config update) to complete after ImageType change
-	t.Logf("Waiting for %s nodes to be provisioned (node replacement)...", targetImageType)
-	e2eutil.WaitForNodePoolConfigUpdateCompleteWithPlatform(t, ctx, it.mgmtClient, nodePool, globalOpts.Platform)
-
 	// Wait for nodes with the target ImageType to be ready
-	t.Logf("Validating %s nodes are provisioned...", targetImageType)
+	// Note: ImageType changes trigger platform template updates, not config updates,
+	// so we wait for nodes directly using the OS predicate without waiting for config update
+	t.Logf("Waiting for %s nodes to be provisioned...", targetImageType)
 	_ = it.waitForNodesWithImageType(t, ctx, nodePool, targetImageType)
 	t.Logf("Successfully validated %s nodes", targetImageType)
 }
