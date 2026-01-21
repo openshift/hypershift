@@ -61,7 +61,8 @@ func (it *NodePoolImageTypeTest) BuildNodePoolManifest(defaultNodepool hyperv1.N
 	defaultNodepool.Spec.DeepCopyInto(&nodePool.Spec)
 	nodePool.Spec.Replicas = &oneReplicas
 	nodePool.Spec.Platform.AWS.InstanceType = "m5.metal"
-	nodePool.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeWindows
+	// Start with default Linux ImageType, we'll update to Windows in Run()
+	// ImageType intentionally not set - defaults to Linux
 
 	return nodePool, nil
 }
@@ -72,7 +73,7 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 
 	t.Logf("Testing NodePool ImageType bidirectional updates: %s/%s", nodePool.Namespace, nodePool.Name)
 
-	// Verify NodePool was created with Windows ImageType
+	// Verify NodePool was created with Linux ImageType (default)
 	err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
 
@@ -85,58 +86,23 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 	}
 	t.Logf("Initial ImageType: %s", currentImageType)
 
-	// Check ValidPlatformImageType condition for initial Windows setup
-	validImageCondition := hostedcluster.FindNodePoolStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
-	if validImageCondition != nil {
-		switch validImageCondition.Status {
-		case corev1.ConditionTrue:
-			t.Logf("Windows AMI validated: %s", validImageCondition.Message)
-		case corev1.ConditionFalse:
-			if strings.Contains(strings.ToLower(validImageCondition.Message), "couldn't discover a windows ami") {
-				t.Logf("Windows AMI not available in this region: %s", validImageCondition.Message)
-				t.Log("Skipping Windows node validation, testing with Linux nodes instead")
-				// Switch to Linux-based testing if Windows AMI is not available
-				t.Log("Updating ImageType from Linux to Windows (will fail gracefully)...")
-				it.testImageTypeUpdate(t, g, ctx, &nodePool, hyperv1.ImageTypeWindows)
-				t.Log("Reverting ImageType from Windows back to Linux...")
-				it.testImageTypeUpdate(t, g, ctx, &nodePool, hyperv1.ImageTypeLinux)
-				t.Log("NodePool ImageType bidirectional test completed successfully (Windows AMI unavailable)")
-				return
-			}
+	// Validate initial Linux nodes are ready (provided by test framework)
+	t.Logf("Validating %d initial Linux node(s) from test framework", len(nodes))
+	for _, node := range nodes {
+		osImage := node.Status.NodeInfo.OSImage
+		if !strings.Contains(strings.ToLower(osImage), "red hat") && !strings.Contains(strings.ToLower(osImage), "coreos") {
+			t.Fatalf("Expected Linux (RHCOS) node, got: %s (node: %s)", osImage, node.Name)
 		}
+		t.Logf("Node %s running Linux: %s", node.Name, osImage)
 	}
 
-	// The test framework may have returned Linux nodes before Windows nodes were ready.
-	// We need to wait for Windows nodes to be provisioned and replace the initial Linux nodes.
-	t.Log("Waiting for initial Windows nodes to be provisioned...")
-
-	// First, wait for the NodePool to finish any ongoing updates from creation
-	t.Log("Waiting for NodePool to stabilize after creation...")
-	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("wait for nodepool %s/%s to stabilize", nodePool.Namespace, nodePool.Name),
-		func(ctx context.Context) (*hyperv1.NodePool, error) {
-			np := &hyperv1.NodePool{}
-			err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)
-			return np, err
-		},
-		[]e2eutil.Predicate[*hyperv1.NodePool]{
-			e2eutil.ConditionPredicate[*hyperv1.NodePool](e2eutil.Condition{
-				Type:   hyperv1.NodePoolReadyConditionType,
-				Status: metav1.ConditionTrue,
-			}),
-		},
-		e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(15*time.Minute),
-	)
-
-	// Now wait for Windows nodes to be ready with correct OS
-	_ = it.waitForNodesWithImageType(t, ctx, &nodePool, hyperv1.ImageTypeWindows)
-
-	// Test update from Windows to Linux
-	t.Log("Updating ImageType from Windows to Linux...")
-	it.testImageTypeUpdate(t, g, ctx, &nodePool, hyperv1.ImageTypeLinux)
-
-	// Test revert from Linux back to Windows
-	t.Log("Reverting ImageType from Linux back to Windows...")
+	// Test update from Linux to Windows
+	t.Log("Updating ImageType from Linux to Windows...")
 	it.testImageTypeUpdate(t, g, ctx, &nodePool, hyperv1.ImageTypeWindows)
+
+	// Test revert from Windows back to Linux
+	t.Log("Reverting ImageType from Windows back to Linux...")
+	it.testImageTypeUpdate(t, g, ctx, &nodePool, hyperv1.ImageTypeLinux)
 
 	t.Log("NodePool ImageType bidirectional test completed successfully")
 }
