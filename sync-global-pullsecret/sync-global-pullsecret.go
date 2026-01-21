@@ -315,9 +315,9 @@ func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 			} else {
 				s.log.Info("Successfully restarted Kubelet", "attempt", attempt)
 
-				// Update cache with the merged config we just wrote
-				// This allows us to detect removed auths on the next sync
-				if err := writeCachedPullSecret(mergedConfig); err != nil {
+				// Update cache with the desired config (NOT merged config)
+				// Cache should only track what HyperShift provides to distinguish from external auths
+				if err := writeCachedPullSecret(desiredConfig); err != nil {
 					s.log.Info("Failed to update pull secret cache - auth removal detection may not work on next sync", "error", err)
 					// Don't fail the sync for a cache write error
 				}

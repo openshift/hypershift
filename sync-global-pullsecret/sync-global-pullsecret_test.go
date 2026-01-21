@@ -859,6 +859,31 @@ func TestMergeDockerConfigs(t *testing.T) {
 			expectedAuth:    map[string]interface{}{"auth": "dW5rbm93bg=="},
 			description:     "nil cache should preserve all existing auths (treats as first run/external)",
 		},
+		{
+			name: "external auth preserved across runs - cache should only track desired config",
+			existing: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"external.io":   map[string]interface{}{"auth": "ZXh0ZXJuYWw="},
+					"hypershift.io": map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
+				},
+			},
+			desired: &dockerConfigJSON{
+				Auths: map[string]interface{}{
+					"hypershift.io": map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
+				},
+			},
+			cached: &dockerConfigJSON{
+				// Cache should only have HyperShift-managed auths, NOT external ones
+				// This ensures external.io is preserved on subsequent runs
+				Auths: map[string]interface{}{
+					"hypershift.io": map[string]interface{}{"auth": "aHlwZXJzaGlmdA=="},
+				},
+			},
+			expectedAuthLen: 2,
+			checkRegistry:   "external.io",
+			expectedAuth:    map[string]interface{}{"auth": "ZXh0ZXJuYWw="},
+			description:     "external auth should be preserved when cache only contains HyperShift-managed auths (simulates proper caching behavior)",
+		},
 	}
 
 	for _, tt := range tests {
