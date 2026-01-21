@@ -1,0 +1,493 @@
+apiVersion: apidiscovery.k8s.io/v2
+items:
+- metadata:
+    creationTimestamp: null
+  versions:
+  - freshness: Current
+    resources:
+    - resource: bindings
+      responseKind:
+        group: ""
+        kind: Binding
+        version: ""
+      scope: Namespaced
+      singularResource: binding
+      verbs:
+      - create
+    - resource: componentstatuses
+      responseKind:
+        group: ""
+        kind: ComponentStatus
+        version: ""
+      scope: Cluster
+      shortNames:
+      - cs
+      singularResource: componentstatus
+      verbs:
+      - get
+      - list
+    - resource: configmaps
+      responseKind:
+        group: ""
+        kind: ConfigMap
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - cm
+      singularResource: configmap
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: endpoints
+      responseKind:
+        group: ""
+        kind: Endpoints
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - ep
+      singularResource: endpoints
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: events
+      responseKind:
+        group: ""
+        kind: Event
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - ev
+      singularResource: event
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: limitranges
+      responseKind:
+        group: ""
+        kind: LimitRange
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - limits
+      singularResource: limitrange
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: namespaces
+      responseKind:
+        group: ""
+        kind: Namespace
+        version: ""
+      scope: Cluster
+      shortNames:
+      - ns
+      singularResource: namespace
+      subresources:
+      - responseKind:
+          group: ""
+          kind: Namespace
+          version: ""
+        subresource: finalize
+        verbs:
+        - update
+      - responseKind:
+          group: ""
+          kind: Namespace
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: nodes
+      responseKind:
+        group: ""
+        kind: Node
+        version: ""
+      scope: Cluster
+      shortNames:
+      - "no"
+      singularResource: node
+      subresources:
+      - responseKind:
+          group: ""
+          kind: NodeProxyOptions
+          version: ""
+        subresource: proxy
+        verbs:
+        - create
+        - delete
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: ""
+          kind: Node
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: persistentvolumeclaims
+      responseKind:
+        group: ""
+        kind: PersistentVolumeClaim
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - pvc
+      singularResource: persistentvolumeclaim
+      subresources:
+      - responseKind:
+          group: ""
+          kind: PersistentVolumeClaim
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: persistentvolumes
+      responseKind:
+        group: ""
+        kind: PersistentVolume
+        version: ""
+      scope: Cluster
+      shortNames:
+      - pv
+      singularResource: persistentvolume
+      subresources:
+      - responseKind:
+          group: ""
+          kind: PersistentVolume
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - categories:
+      - all
+      resource: pods
+      responseKind:
+        group: ""
+        kind: Pod
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - po
+      singularResource: pod
+      subresources:
+      - responseKind:
+          group: ""
+          kind: PodAttachOptions
+          version: ""
+        subresource: attach
+        verbs:
+        - create
+        - get
+      - responseKind:
+          group: ""
+          kind: Binding
+          version: ""
+        subresource: binding
+        verbs:
+        - create
+      - responseKind:
+          group: ""
+          kind: Pod
+          version: ""
+        subresource: ephemeralcontainers
+        verbs:
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: policy
+          kind: Eviction
+          version: v1
+        subresource: eviction
+        verbs:
+        - create
+      - responseKind:
+          group: ""
+          kind: PodExecOptions
+          version: ""
+        subresource: exec
+        verbs:
+        - create
+        - get
+      - responseKind:
+          group: ""
+          kind: Pod
+          version: ""
+        subresource: log
+        verbs:
+        - get
+      - responseKind:
+          group: ""
+          kind: PodPortForwardOptions
+          version: ""
+        subresource: portforward
+        verbs:
+        - create
+        - get
+      - responseKind:
+          group: ""
+          kind: PodProxyOptions
+          version: ""
+        subresource: proxy
+        verbs:
+        - create
+        - delete
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: ""
+          kind: Pod
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: podtemplates
+      responseKind:
+        group: ""
+        kind: PodTemplate
+        version: ""
+      scope: Namespaced
+      singularResource: podtemplate
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - categories:
+      - all
+      resource: replicationcontrollers
+      responseKind:
+        group: ""
+        kind: ReplicationController
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - rc
+      singularResource: replicationcontroller
+      subresources:
+      - responseKind:
+          group: autoscaling
+          kind: Scale
+          version: v1
+        subresource: scale
+        verbs:
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: ""
+          kind: ReplicationController
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: resourcequotas
+      responseKind:
+        group: ""
+        kind: ResourceQuota
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - quota
+      singularResource: resourcequota
+      subresources:
+      - responseKind:
+          group: ""
+          kind: ResourceQuota
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: secrets
+      responseKind:
+        group: ""
+        kind: Secret
+        version: ""
+      scope: Namespaced
+      singularResource: secret
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - resource: serviceaccounts
+      responseKind:
+        group: ""
+        kind: ServiceAccount
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - sa
+      singularResource: serviceaccount
+      subresources:
+      - responseKind:
+          group: authentication.k8s.io
+          kind: TokenRequest
+          version: v1
+        subresource: token
+        verbs:
+        - create
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    - categories:
+      - all
+      resource: services
+      responseKind:
+        group: ""
+        kind: Service
+        version: ""
+      scope: Namespaced
+      shortNames:
+      - svc
+      singularResource: service
+      subresources:
+      - responseKind:
+          group: ""
+          kind: ServiceProxyOptions
+          version: ""
+        subresource: proxy
+        verbs:
+        - create
+        - delete
+        - get
+        - patch
+        - update
+      - responseKind:
+          group: ""
+          kind: Service
+          version: ""
+        subresource: status
+        verbs:
+        - get
+        - patch
+        - update
+      verbs:
+      - create
+      - delete
+      - deletecollection
+      - get
+      - list
+      - patch
+      - update
+      - watch
+    version: v1
+kind: APIGroupDiscoveryList
+metadata: {}
