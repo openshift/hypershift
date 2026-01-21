@@ -88,7 +88,8 @@ func TestInputResourceDispatcherHandle(t *testing.T) {
 
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
-			dispatcher := newInputResourceDispatcher(scenario.filters)
+			dispatcher := newInputResourceDispatcher()
+			dispatcher.SetFilters(scenario.filters)
 			// dispatch in a goroutine for simplicity with an unbuffered channel
 			go dispatcher.Handle(scenario.inputGVK, scenario.inputObj)
 

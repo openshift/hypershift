@@ -24,11 +24,14 @@ type inputResourceDispatcher struct {
 	filters  map[schema.GroupVersionKind][]inputResourceEventFilter
 }
 
-func newInputResourceDispatcher(filters map[schema.GroupVersionKind][]inputResourceEventFilter) *inputResourceDispatcher {
+func newInputResourceDispatcher() *inputResourceDispatcher {
 	return &inputResourceDispatcher{
 		eventsCh: make(chan event.TypedGenericEvent[string]),
-		filters:  filters,
 	}
+}
+
+func (d *inputResourceDispatcher) SetFilters(filters map[schema.GroupVersionKind][]inputResourceEventFilter) {
+	d.filters = filters
 }
 
 func (d *inputResourceDispatcher) Handle(gvk schema.GroupVersionKind, cObj client.Object) {

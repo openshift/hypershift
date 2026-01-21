@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/openshift/multi-operator-manager/pkg/library/libraryinputresources"
-
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -49,7 +48,8 @@ func (r *inputResourceInitializer) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	r.inputResourcesDispatcher = newInputResourceDispatcher(inputResFilters)
+	r.inputResourcesDispatcher = newInputResourceDispatcher()
+	r.inputResourcesDispatcher.SetFilters(inputResFilters)
 	return r.startAndWaitForInformersFor(ctx, inputResources)
 }
 
