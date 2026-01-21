@@ -3,9 +3,11 @@ package controlplaneoperator
 import (
 	"os"
 
+	"github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
 
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -13,6 +15,14 @@ import (
 
 func adaptRole(cpContext component.WorkloadContext, role *rbacv1.Role) error {
 	if os.Getenv(config.EnableCVOManagementClusterMetricsAccessEnvVar) == "1" {
+		role.Rules = append(role.Rules, rbacv1.PolicyRule{
+			APIGroups: []string{"metrics.k8s.io"},
+			Resources: []string{"pods"},
+			Verbs:     []string{"get"},
+		})
+	}
+
+	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" && awsutil.IsROSAHCP(cpContext.HCP) {
 		role.Rules = append(role.Rules, rbacv1.PolicyRule{
 			APIGroups: []string{"metrics.k8s.io"},
 			Resources: []string{"pods"},
