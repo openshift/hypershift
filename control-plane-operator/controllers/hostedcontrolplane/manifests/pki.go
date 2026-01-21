@@ -175,6 +175,15 @@ func AzureFileCsiDriverControllerMetricsService(ns string) *corev1.Service {
 	}
 }
 
+func AWSEBSCsiDriverControllerMetricsService(ns string) *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "aws-ebs-csi-driver-controller-metrics",
+			Namespace: ns,
+		},
+	}
+}
+
 func EtcdSignerSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "etcd-signer")
 }
@@ -349,6 +358,10 @@ func AzureDiskCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
 
 func AzureFileCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
 	return secretFor(ns, "azure-file-csi-driver-controller-metrics-serving-cert")
+}
+
+func AWSEBSCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "aws-ebs-csi-driver-controller-metrics-serving-cert")
 }
 
 func MultusAdmissionControllerServingCert(ns string) *corev1.Secret {
