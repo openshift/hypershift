@@ -3161,6 +3161,33 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 	return false, nil
 }
 
+// deleteGCPPrivateServiceConnect loops over GCPPrivateServiceConnectList items and sends a delete request for each.
+// It returns true if len(gcpPrivateServiceConnectList.Items) != 0.
+func deleteGCPPrivateServiceConnect(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, namespace string) (bool, error) {
+	log := ctrl.LoggerFrom(ctx)
+	var gcpPrivateServiceConnectList hyperv1.GCPPrivateServiceConnectList
+	if err := c.List(ctx, &gcpPrivateServiceConnectList, &client.ListOptions{Namespace: namespace}); err != nil && !apierrors.IsNotFound(err) {
+		return false, fmt.Errorf("error listing gcpprivateserviceconnects in namespace %s: %w", namespace, err)
+	}
+	for _, psc := range gcpPrivateServiceConnectList.Items {
+		if psc.DeletionTimestamp != nil {
+			continue
+		}
+
+		if err := c.Delete(ctx, &psc); err != nil && !apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("error deleting gcpprivateserviceconnect %s in namespace %s: %w", psc.Name, namespace, err)
+		}
+	}
+
+	if len(gcpPrivateServiceConnectList.Items) != 0 {
+		// GCP PSC CRs may have finalizers and should not be terminated until the resources are removed
+		log.Info("Waiting for gcpprivateserviceconnect deletion", "controlPlaneNamespace", namespace)
+		return true, nil
+	}
+
+	return false, nil
+}
+
 func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
 	if _, err := hyperutil.DeleteIfNeeded(ctx, c, &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-operator-" + controlPlaneNamespace, Namespace: rbacNamespace}}); err != nil {
 		return err
@@ -3266,6 +3293,17 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		}
 		if exists {
 			log.Info("Waiting for awsendpointservice deletion", "controlPlaneNamespace", controlPlaneNamespace)
+			return false, nil
+		}
+	}
+
+	if hc.Spec.Platform.Type == hyperv1.GCPPlatform {
+		exists, err := deleteGCPPrivateServiceConnect(ctx, r.Client, hc, controlPlaneNamespace)
+		if err != nil {
+			return false, err
+		}
+		if exists {
+			log.Info("Waiting for gcpprivateserviceconnect deletion", "controlPlaneNamespace", controlPlaneNamespace)
 			return false, nil
 		}
 	}

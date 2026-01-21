@@ -7,6 +7,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/upsert"
+	supportutil "github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -134,6 +135,14 @@ func (r *GCPPrivateServiceObserver) reconcileGCPPrivateServiceConnect(ctx contex
 			UID:        hcp.UID,
 			Controller: ptr.To(true),
 		}}
+
+		// Copy HostedCluster annotation from HCP for direct lookup by management-side controller
+		if gcpPSC.Annotations == nil {
+			gcpPSC.Annotations = make(map[string]string)
+		}
+		if hcAnnotation, exists := hcp.Annotations[supportutil.HostedClusterAnnotation]; exists {
+			gcpPSC.Annotations[supportutil.HostedClusterAnnotation] = hcAnnotation
+		}
 
 		// Set spec fields
 		gcpPSC.Spec.LoadBalancerIP = loadBalancerIP
