@@ -594,6 +594,12 @@ func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crc
 }
 
 func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	// Measure control plane rollout time by checking when components became ready
+	// This provides an independent metric for HCP readiness SLOs
+	t.Logf("Checking control plane rollout time for HostedCluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
+	cpRolloutDuration := measureControlPlaneRolloutTime(t, ctx, client, hostedCluster)
+	t.Logf("Control plane components became ready in %v after HostedCluster creation", cpRolloutDuration)
+
 	var lastVersionCompletionTime *metav1.Time
 	if hostedCluster.Status.Version != nil &&
 		len(hostedCluster.Status.Version.History) > 0 {
@@ -636,6 +642,57 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 	)
 }
 
+// measureControlPlaneRolloutTime calculates the duration from HostedCluster creation
+// to when all control plane components first became ready by examining their condition timestamps.
+// This provides the actual control plane rollout time even when called after the rollout is complete.
+func measureControlPlaneRolloutTime(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) time.Duration {
+	controlPlaneComponents := &hyperv1.ControlPlaneComponentList{}
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+	err := client.List(ctx, controlPlaneComponents, crclient.InNamespace(controlPlaneNamespace))
+	if err != nil {
+		t.Logf("Warning: failed to list control plane components: %v", err)
+		return 0
+	}
+
+	if len(controlPlaneComponents.Items) == 0 {
+		t.Logf("Warning: no control plane components found")
+		return 0
+	}
+
+	// Find the latest timestamp when a control plane component became ready
+	var latestReadyTime *metav1.Time
+	for _, cpComponent := range controlPlaneComponents.Items {
+		for _, condition := range cpComponent.Status.Conditions {
+			if condition.Type == string(hyperv1.ControlPlaneComponentRolloutComplete) &&
+				condition.Status == metav1.ConditionTrue {
+				if latestReadyTime == nil || condition.LastTransitionTime.After(latestReadyTime.Time) {
+					latestReadyTime = &condition.LastTransitionTime
+				}
+				break
+			}
+		}
+	}
+
+	if latestReadyTime == nil {
+		t.Logf("Warning: no control plane components have ControlPlaneComponentRolloutComplete=True yet")
+		return 0
+	}
+
+	// Calculate duration from HC creation to last component becoming ready
+	duration := latestReadyTime.Sub(hostedCluster.CreationTimestamp.Time)
+	if duration < 0 {
+		t.Logf("Warning: calculated negative duration, using 0")
+		return 0
+	}
+
+	return duration
+}
+
+// WaitForControlPlaneComponentRollout waits for all control plane components to complete their rollout.
+// The initialVersion parameter controls the version check behavior:
+//   - If empty (""), waits only for the ControlPlaneComponentRolloutComplete condition (use for initial cluster creation)
+//   - If non-empty, additionally waits for components to move away from the specified version (use for upgrades)
 func WaitForControlPlaneComponentRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, initialVersion string) {
 	controlPlaneComponents := &hyperv1.ControlPlaneComponentList{}
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
