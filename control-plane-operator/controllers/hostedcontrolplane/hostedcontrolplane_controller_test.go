@@ -22,6 +22,7 @@ import (
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -2345,6 +2346,173 @@ func TestUseHCPRouter(t *testing.T) {
 	for _, tc := range testsCases {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.Equal(t, tc.expectedResult, useHCPRouter(tc.hcp))
+		})
+	}
+}
+
+func TestValidateConfigAndClusterCapabilities(t *testing.T) {
+	testCases := []struct {
+		name                    string
+		hcp                     *hyperv1.HostedControlPlane
+		clusterCapabilities     capabilities.CapabiltyChecker
+		expectedReason          string
+		expectError             bool
+		expectedErrorSubstrings []string
+	}{
+		{
+			name: "When route capability missing it should return InsufficientClusterCapabilities",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					},
+				},
+			},
+			clusterCapabilities:     &fakecapabilities.FakeSupportNoCapabilities{},
+			expectedReason:          hyperv1.InsufficientClusterCapabilitiesReason,
+			expectError:             true,
+			expectedErrorSubstrings: []string{"cluster does not support Routes", "APIServer"},
+		},
+		{
+			name: "When authentication spec invalid it should return OIDCConfigurationInvalid",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					IssuerURL: "https://issuer.example.com",
+					Configuration: &hyperv1.ClusterConfiguration{
+						Authentication: &configv1.AuthenticationSpec{
+							Type: configv1.AuthenticationTypeOIDC,
+							OIDCProviders: []configv1.OIDCProvider{
+								{
+									Name:   "test-provider",
+									Issuer: configv1.TokenIssuer{URL: "https://issuer.example.com"},
+									// Invalid: missing required OIDCClients field
+								},
+							},
+						},
+					},
+				},
+			},
+			clusterCapabilities:     &fakecapabilities.FakeSupportAllCapabilities{},
+			expectedReason:          hyperv1.OIDCConfigurationInvalidReason,
+			expectError:             true,
+			expectedErrorSubstrings: []string{"authentication configuration validation failed"},
+		},
+		{
+			name: "When all validations pass it should return AsExpected",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			clusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+			expectedReason:      hyperv1.AsExpectedReason,
+			expectError:         false,
+		},
+		{
+			name: "When route capability present it should pass route validation",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			clusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+			expectedReason:      hyperv1.AsExpectedReason,
+			expectError:         false,
+		},
+		{
+			name: "When multiple services require routes it should validate all",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+						{
+							Service: hyperv1.OAuthServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					},
+				},
+			},
+			clusterCapabilities:     &fakecapabilities.FakeSupportNoCapabilities{},
+			expectedReason:          hyperv1.InsufficientClusterCapabilitiesReason,
+			expectError:             true,
+			expectedErrorSubstrings: []string{"cluster does not support Routes", "OAuthServer"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			fakeClient := fake.NewClientBuilder().Build()
+			r := &HostedControlPlaneReconciler{
+				Client:                        fakeClient,
+				Log:                           ctrl.LoggerFrom(t.Context()),
+				ManagementClusterCapabilities: tc.clusterCapabilities,
+			}
+
+			reason, err := r.validateConfigAndClusterCapabilities(context.Background(), tc.hcp)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				for _, substr := range tc.expectedErrorSubstrings {
+					g.Expect(err.Error()).To(ContainSubstring(substr))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+			g.Expect(reason).To(Equal(tc.expectedReason))
 		})
 	}
 }

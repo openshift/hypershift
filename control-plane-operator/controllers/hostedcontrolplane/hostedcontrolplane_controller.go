@@ -442,10 +442,10 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			Type:               string(hyperv1.ValidHostedControlPlaneConfiguration),
 			ObservedGeneration: hostedControlPlane.Generation,
 		}
-		if err := r.validateConfigAndClusterCapabilities(ctx, hostedControlPlane); err != nil {
+		if reason, err := r.validateConfigAndClusterCapabilities(ctx, hostedControlPlane); err != nil {
 			condition.Status = metav1.ConditionFalse
 			condition.Message = err.Error()
-			condition.Reason = hyperv1.InsufficientClusterCapabilitiesReason
+			condition.Reason = reason
 		} else {
 			condition.Status = metav1.ConditionTrue
 			condition.Message = "Configuration passes validation"
@@ -897,26 +897,29 @@ func healthCheckKASEndpoint(ingressPoint string, port int) error {
 	return nil
 }
 
-func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
 	for _, svc := range hcp.Spec.Services {
 		if svc.Type == hyperv1.Route && !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
-			return fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
+			return hyperv1.InsufficientClusterCapabilitiesReason,
+				fmt.Errorf("cluster does not support Routes, but service %q is exposed via a Route", svc.Service)
 		}
 	}
 
 	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform && hyperazureutil.IsAroHCP() {
 		if err := r.verifyResourceGroupLocationsMatch(ctx, hcp); err != nil {
-			return err
+			return hyperv1.InvalidAzureCredentialsReason,
+				fmt.Errorf("azure configuration validation failed: %w", err)
 		}
 	}
 
 	if hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Authentication != nil {
 		if err := validations.ValidateAuthenticationSpec(ctx, r.Client, hcp.Spec.Configuration.Authentication, hcp.Namespace, []string{hcp.Spec.IssuerURL}); err != nil {
-			return err
+			return hyperv1.OIDCConfigurationInvalidReason,
+				fmt.Errorf("authentication configuration validation failed: %w", err)
 		}
 	}
 
-	return nil
+	return hyperv1.AsExpectedReason, nil
 }
 
 func (r *HostedControlPlaneReconciler) LookupReleaseImage(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*releaseinfo.ReleaseImage, error) {
@@ -3443,7 +3446,11 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 		}
 		creds, err = dataplane.NewUserAssignedIdentityCredential(ctx, certPath, dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloudConfig}), dataplane.WithLogger(&log))
 		if err != nil {
-			return fmt.Errorf("failed to create azure creds to verify resource group locations: %v", err)
+			return fmt.Errorf("failed to create Azure credentials to verify resource group locations: %w. "+
+				"Verify that the credential file exists at the mounted path '%s' and contains valid certificate data. "+
+				"This path is constructed from the certificate mount directory (%s) and the secret name '%s'. "+
+				"Check that the SecretProviderClass is configured correctly and the certificate exists in the Azure Key Vault",
+				err, certPath, config.ManagedAzureCertificatePath, hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ControlPlaneOperator.CredentialsSecretName)
 		}
 
 		r.cpoAzureCredentialsLoaded.Store(key, creds)
