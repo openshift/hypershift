@@ -105,7 +105,7 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 		}
 	}
 
-	// Wait for platform template update to complete for initial Windows setup
+	// Wait for platform template update and node replacement to complete for initial Windows setup
 	t.Log("Waiting for initial platform template update to complete...")
 	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("wait for nodepool %s/%s initial platform template update to complete", nodePool.Namespace, nodePool.Name),
 		func(ctx context.Context) (*hyperv1.NodePool, error) {
@@ -121,6 +121,10 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 		},
 		e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
 	)
+
+	// Wait for node replacement (config update) to complete after ImageType change
+	t.Log("Waiting for Windows nodes to be provisioned (node replacement)...")
+	e2eutil.WaitForNodePoolConfigUpdateCompleteWithPlatform(t, ctx, it.mgmtClient, &nodePool, globalOpts.Platform)
 
 	// Validate initial Windows nodes are provisioned
 	t.Log("Validating initial Windows nodes...")
@@ -206,6 +210,10 @@ func (it *NodePoolImageTypeTest) testImageTypeUpdate(t *testing.T, g *WithT, ctx
 		},
 		e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
 	)
+
+	// Wait for node replacement (config update) to complete after ImageType change
+	t.Logf("Waiting for %s nodes to be provisioned (node replacement)...", targetImageType)
+	e2eutil.WaitForNodePoolConfigUpdateCompleteWithPlatform(t, ctx, it.mgmtClient, nodePool, globalOpts.Platform)
 
 	// Validate nodes with the target ImageType
 	t.Logf("Validating %s nodes are provisioned...", targetImageType)
