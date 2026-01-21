@@ -129,7 +129,7 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 
 	// Wait for Windows nodes to be ready with correct OS
 	t.Log("Validating initial Windows nodes...")
-	initialNodes := it.waitForNodesWithImageType(t, ctx, &nodePool, hyperv1.ImageTypeWindows)
+	_ = it.waitForNodesWithImageType(t, ctx, &nodePool, hyperv1.ImageTypeWindows)
 
 	// Test update from Windows to Linux
 	t.Log("Updating ImageType from Windows to Linux...")
