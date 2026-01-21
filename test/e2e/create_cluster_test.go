@@ -3123,7 +3123,7 @@ func TestCCMCreateCluster(t *testing.T) {
 						_ = guestClient.Delete(ctx, testNS)
 					}()
 
-					// Create a simple pod to back the service
+					// Create a simple pod to back the service with restricted security context
 					testPod := &corev1.Pod{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-ccm-nlb-sg-pod",
@@ -3144,6 +3144,22 @@ func TestCCMCreateCluster(t *testing.T) {
 										},
 									},
 									Command: []string{"/agnhost", "netexec", "--http-port=8080"},
+									SecurityContext: &corev1.SecurityContext{
+										AllowPrivilegeEscalation: ptr.To(false),
+										Capabilities: &corev1.Capabilities{
+											Drop: []corev1.Capability{"ALL"},
+										},
+										RunAsNonRoot: ptr.To(true),
+										SeccompProfile: &corev1.SeccompProfile{
+											Type: corev1.SeccompProfileTypeRuntimeDefault,
+										},
+									},
+								},
+							},
+							SecurityContext: &corev1.PodSecurityContext{
+								RunAsNonRoot: ptr.To(true),
+								SeccompProfile: &corev1.SeccompProfile{
+									Type: corev1.SeccompProfileTypeRuntimeDefault,
 								},
 							},
 						},
