@@ -353,6 +353,7 @@ type HyperShiftOperatorDeployment struct {
 	IncludeVersion                          bool
 	UWMTelemetry                            bool
 	RHOBSMonitoring                         bool
+	CVOPrometheusURL                        string
 	MonitoringDashboards                    bool
 	CertRotationScale                       time.Duration
 	EnableCVOManagementClusterMetricsAccess bool
@@ -541,6 +542,13 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 		envVars = append(envVars, corev1.EnvVar{
 			Name:  rhobsmonitoring.EnvironmentVariable,
 			Value: "1",
+		})
+	}
+
+	if o.CVOPrometheusURL != "" {
+		envVars = append(envVars, corev1.EnvVar{
+			Name:  config.CVOPrometheusURLEnvVar,
+			Value: o.CVOPrometheusURL,
 		})
 	}
 
@@ -883,6 +891,7 @@ func (o HyperShiftOperatorServiceAccount) Build() *corev1.ServiceAccount {
 
 type HyperShiftOperatorClusterRole struct {
 	EnableCVOManagementClusterMetricsAccess bool
+	RHOBSMonitoring                         bool
 }
 
 func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
@@ -1127,7 +1136,7 @@ func (o HyperShiftOperatorClusterRole) Build() *rbacv1.ClusterRole {
 			},
 		},
 	}
-	if o.EnableCVOManagementClusterMetricsAccess {
+	if o.EnableCVOManagementClusterMetricsAccess || o.RHOBSMonitoring {
 		role.Rules = append(role.Rules,
 			rbacv1.PolicyRule{
 				APIGroups: []string{"metrics.k8s.io"},
