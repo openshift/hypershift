@@ -24,11 +24,11 @@ func TestInputResourceDispatcherHandle(t *testing.T) {
 	}
 
 	scenarios := []struct {
-		name           string
-		filters        map[schema.GroupVersionKind][]inputResourceEventFilter
-		inputGVK       schema.GroupVersionKind
-		inputObj       client.Object
-		expectedEvents []event.GenericEvent
+		name                  string
+		filters               map[schema.GroupVersionKind][]inputResourceEventFilter
+		inputGVK              schema.GroupVersionKind
+		inputObj              client.Object
+		expectedOperatorNames []event.TypedGenericEvent[string]
 	}{
 		{
 			name: "dispatches matching filter",
@@ -41,8 +41,8 @@ func TestInputResourceDispatcherHandle(t *testing.T) {
 			},
 			inputGVK: wellKnownGVK,
 			inputObj: obj,
-			expectedEvents: []event.GenericEvent{
-				{Object: obj},
+			expectedOperatorNames: []event.TypedGenericEvent[string]{
+				{Object: "cluster-authentication-operator"},
 			},
 		},
 		{
@@ -62,8 +62,8 @@ func TestInputResourceDispatcherHandle(t *testing.T) {
 			filters:  map[schema.GroupVersionKind][]inputResourceEventFilter{},
 			inputGVK: wellKnownGVK,
 			inputObj: obj,
-			expectedEvents: []event.GenericEvent{
-				{Object: obj},
+			expectedOperatorNames: []event.TypedGenericEvent[string]{
+				{Object: "cluster-authentication-operator"},
 			},
 		},
 		{
@@ -80,8 +80,8 @@ func TestInputResourceDispatcherHandle(t *testing.T) {
 			},
 			inputGVK: wellKnownGVK,
 			inputObj: obj,
-			expectedEvents: []event.GenericEvent{
-				{Object: obj},
+			expectedOperatorNames: []event.TypedGenericEvent[string]{
+				{Object: "cluster-authentication-operator"},
 			},
 		},
 	}
@@ -92,19 +92,19 @@ func TestInputResourceDispatcherHandle(t *testing.T) {
 			// dispatch in a goroutine for simplicity with an unbuffered channel
 			go dispatcher.Handle(scenario.inputGVK, scenario.inputObj)
 
-			events := readEvents(t, dispatcher.ResultChan(), len(scenario.expectedEvents))
-			require.Equal(t, scenario.expectedEvents, events)
+			events := readEvents(t, dispatcher.ResultChan(), len(scenario.expectedOperatorNames))
+			require.Equal(t, scenario.expectedOperatorNames, events)
 			ensureNoMoreEvents(t, dispatcher.ResultChan())
 		})
 	}
 }
 
-func readEvents(t *testing.T, ch <-chan event.GenericEvent, expected int) []event.GenericEvent {
+func readEvents(t *testing.T, ch <-chan event.TypedGenericEvent[string], expected int) []event.TypedGenericEvent[string] {
 	if expected == 0 {
 		return nil
 	}
 
-	events := make([]event.GenericEvent, 0, expected)
+	events := make([]event.TypedGenericEvent[string], 0, expected)
 	for i := 0; i < expected; i++ {
 		select {
 		case evt := <-ch:
@@ -117,7 +117,7 @@ func readEvents(t *testing.T, ch <-chan event.GenericEvent, expected int) []even
 	return events
 }
 
-func ensureNoMoreEvents(t *testing.T, ch <-chan event.GenericEvent) {
+func ensureNoMoreEvents(t *testing.T, ch <-chan event.TypedGenericEvent[string]) {
 	select {
 	case ev := <-ch:
 		require.Failf(t, "unexpected event received", "got %+v", ev)
