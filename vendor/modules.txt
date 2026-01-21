@@ -488,7 +488,6 @@ github.com/aws/smithy-go/waiter
 github.com/awslabs/operatorpkg/metrics
 github.com/awslabs/operatorpkg/object
 github.com/awslabs/operatorpkg/option
-github.com/awslabs/operatorpkg/serrors
 github.com/awslabs/operatorpkg/status
 github.com/awslabs/operatorpkg/unstructured
 # github.com/beorn7/perks v1.0.1
@@ -2625,7 +2624,7 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/common/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/proto/client
-# sigs.k8s.io/cluster-api v1.10.7 => github.com/csrwng/cluster-api v1.10.3-0.20251126211330-81cd715cb87e
+# sigs.k8s.io/cluster-api v1.10.4 => github.com/csrwng/cluster-api v1.10.3-0.20251126211330-81cd715cb87e
 ## explicit; go 1.23.0
 sigs.k8s.io/cluster-api/api/addons/v1beta1
 sigs.k8s.io/cluster-api/api/v1beta1
@@ -2653,7 +2652,7 @@ sigs.k8s.io/cluster-api-provider-aws/v2/feature
 sigs.k8s.io/cluster-api-provider-aws/v2/iam/api/v1beta1
 sigs.k8s.io/cluster-api-provider-aws/v2/pkg/eks
 sigs.k8s.io/cluster-api-provider-aws/v2/pkg/hash
-# sigs.k8s.io/cluster-api-provider-azure v1.21.1
+# sigs.k8s.io/cluster-api-provider-azure v1.21.0
 ## explicit; go 1.24.0
 sigs.k8s.io/cluster-api-provider-azure/api/v1beta1
 sigs.k8s.io/cluster-api-provider-azure/feature
@@ -2725,8 +2724,8 @@ sigs.k8s.io/controller-runtime/pkg/webhook/internal/metrics
 ## explicit; go 1.23
 sigs.k8s.io/json
 sigs.k8s.io/json/internal/golang/encoding/json
-# sigs.k8s.io/karpenter v1.8.2
-## explicit; go 1.25.5
+# sigs.k8s.io/karpenter v1.2.1-0.20250212185021-45f73ec7a790
+## explicit; go 1.23.6
 sigs.k8s.io/karpenter/pkg/apis
 sigs.k8s.io/karpenter/pkg/apis/v1
 # sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96
@@ -2817,10 +2816,10 @@ sigs.k8s.io/kustomize/kyaml/yaml/walk
 ## explicit; go 1.18
 sigs.k8s.io/randfill
 sigs.k8s.io/randfill/bytesource
-# sigs.k8s.io/secrets-store-csi-driver v1.5.5
-## explicit; go 1.24.11
+# sigs.k8s.io/secrets-store-csi-driver v1.4.8
+## explicit; go 1.21
 sigs.k8s.io/secrets-store-csi-driver/apis/v1
-# sigs.k8s.io/structured-merge-diff/v6 v6.3.1
+# sigs.k8s.io/structured-merge-diff/v6 v6.3.0
 ## explicit; go 1.23
 sigs.k8s.io/structured-merge-diff/v6/fieldpath
 sigs.k8s.io/structured-merge-diff/v6/merge

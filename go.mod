@@ -1,6 +1,8 @@
 module github.com/openshift/hypershift
 
-go 1.25.5
+go 1.24.6
+
+toolchain go1.24.11
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0
@@ -104,16 +106,16 @@ require (
 	k8s.io/utils v0.0.0-20260108192941-914a6e750570
 	kubevirt.io/api v1.7.0
 	kubevirt.io/containerized-data-importer-api v1.63.1
-	sigs.k8s.io/cluster-api v1.10.7
+	sigs.k8s.io/cluster-api v1.10.4
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.8.2-0.20250820205306-645f38e4c152
-	sigs.k8s.io/cluster-api-provider-azure v1.21.1
+	sigs.k8s.io/cluster-api-provider-azure v1.21.0
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.11.0
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9
 	sigs.k8s.io/cluster-api-provider-openstack v0.12.1
 	sigs.k8s.io/controller-runtime v0.22.4
-	sigs.k8s.io/karpenter v1.8.2
-	sigs.k8s.io/secrets-store-csi-driver v1.5.5
-	sigs.k8s.io/structured-merge-diff/v6 v6.3.1
+	sigs.k8s.io/karpenter v1.2.1-0.20250212185021-45f73ec7a790
+	sigs.k8s.io/secrets-store-csi-driver v1.4.8
+	sigs.k8s.io/structured-merge-diff/v6 v6.3.0
 	sigs.k8s.io/yaml v1.6.0
 )
 

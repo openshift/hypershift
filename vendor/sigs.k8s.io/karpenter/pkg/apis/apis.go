@@ -34,11 +34,8 @@ var (
 	NodePoolCRD []byte
 	//go:embed crds/karpenter.sh_nodeclaims.yaml
 	NodeClaimCRD []byte
-	//go:embed crds/karpenter.sh_nodeoverlays.yaml
-	NodeOverlayCRD []byte
-	CRDs           = []*apiextensionsv1.CustomResourceDefinition{
+	CRDs         = []*apiextensionsv1.CustomResourceDefinition{
 		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](NodePoolCRD),
 		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](NodeClaimCRD),
-		object.Unmarshal[apiextensionsv1.CustomResourceDefinition](NodeOverlayCRD),
 	}
 )
