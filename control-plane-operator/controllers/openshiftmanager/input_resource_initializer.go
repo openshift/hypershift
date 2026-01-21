@@ -10,6 +10,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
 	k8scache "k8s.io/client-go/tools/cache"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,6 +34,7 @@ func newInputResourceInitializer(mgmtClusterRESTMapper meta.RESTMapper, mgmtClus
 	return &inputResourceInitializer{
 		managementClusterRESTMapper: mgmtClusterRESTMapper,
 		managementClusterCache:      mgmtClusterCache,
+		inputResourcesDispatcher:    newInputResourceDispatcher(),
 	}
 }
 
@@ -48,9 +50,14 @@ func (r *inputResourceInitializer) Start(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	r.inputResourcesDispatcher = newInputResourceDispatcher()
 	r.inputResourcesDispatcher.SetFilters(inputResFilters)
 	return r.startAndWaitForInformersFor(ctx, inputResources)
+}
+
+// ResultChan returns a channel on which
+// an operator name to reconcile will be sent
+func (r *inputResourceInitializer) ResultChan() <-chan event.TypedGenericEvent[string] {
+	return r.inputResourcesDispatcher.ResultChan()
 }
 
 func (r *inputResourceInitializer) discoverInputResources() (map[string]*libraryinputresources.InputResources, error) {
