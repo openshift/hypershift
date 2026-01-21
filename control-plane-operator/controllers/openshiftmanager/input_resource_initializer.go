@@ -5,13 +5,15 @@ import (
 	"fmt"
 
 	"github.com/openshift/multi-operator-manager/pkg/library/libraryinputresources"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/sets"
+	k8scache "k8s.io/client-go/tools/cache"
 
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // inputResourceInitializer is responsible for discovering input resources
@@ -24,6 +26,8 @@ import (
 type inputResourceInitializer struct {
 	managementClusterRESTMapper meta.RESTMapper
 	managementClusterCache      cache.Cache
+
+	inputResourcesDispatcher *inputResourceDispatcher
 }
 
 func newInputResourceInitializer(mgmtClusterRESTMapper meta.RESTMapper, mgmtClusterCache cache.Cache) *inputResourceInitializer {
@@ -41,7 +45,11 @@ func (r *inputResourceInitializer) Start(ctx context.Context) error {
 	if err = r.checkSupportedInputResources(inputResources); err != nil {
 		return err
 	}
-	// TODO: register filters for dispatcher based on inputRes
+	inputResFilters, err := r.buildInputResourceFilters(inputResources)
+	if err != nil {
+		return err
+	}
+	r.inputResourcesDispatcher = newInputResourceDispatcher(inputResFilters)
 	return r.startAndWaitForInformersFor(ctx, inputResources)
 }
 
@@ -67,11 +75,46 @@ func (r *inputResourceInitializer) startAndWaitForInformersFor(ctx context.Conte
 				continue
 			}
 
-			_, err = r.managementClusterCache.GetInformerForKind(ctx, gvk, cache.BlockUntilSynced(true))
+			informer, err := r.managementClusterCache.GetInformerForKind(ctx, gvk, cache.BlockUntilSynced(true))
 			if err != nil {
 				return err
 			}
-			// TODO: register informer event handlers
+
+			if _, err = informer.AddEventHandler(k8scache.ResourceEventHandlerFuncs{
+				AddFunc: func(obj interface{}) {
+					cObj, ok := obj.(client.Object)
+					if !ok {
+						utilruntime.HandleError(fmt.Errorf("added object: %#v is not client.Object", obj))
+						return
+					}
+					r.inputResourcesDispatcher.Handle(gvk, cObj)
+				},
+				UpdateFunc: func(_, newObj interface{}) {
+					cObj, ok := newObj.(client.Object)
+					if !ok {
+						utilruntime.HandleError(fmt.Errorf("updated object: %#v is not client.Object", newObj))
+						return
+					}
+					r.inputResourcesDispatcher.Handle(gvk, cObj)
+				},
+				DeleteFunc: func(obj interface{}) {
+					if cObj, ok := obj.(client.Object); ok {
+						r.inputResourcesDispatcher.Handle(gvk, cObj)
+						return
+					}
+					tombstone, ok := obj.(k8scache.DeletedFinalStateUnknown)
+					if ok {
+						cObj, ok := tombstone.Obj.(client.Object)
+						if ok {
+							r.inputResourcesDispatcher.Handle(gvk, cObj)
+							return
+						}
+					}
+					utilruntime.HandleError(fmt.Errorf("deleted object: %#v is not client.Object", obj))
+				},
+			}); err != nil {
+				return err
+			}
 
 			registeredGVK.Insert(gvk.String())
 		}

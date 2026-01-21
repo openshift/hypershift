@@ -12,6 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/restmapper"
+	k8scache "k8s.io/client-go/tools/cache"
 
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -177,15 +178,24 @@ type fakeCache struct {
 	getInformerForKindErr   error
 	waitForCacheSyncResult  bool
 	getInformerForKindCalls []schema.GroupVersionKind
+	informer                cache.Informer
 }
 
 func (f *fakeCache) GetInformerForKind(_ context.Context, gvk schema.GroupVersionKind, _ ...cache.InformerGetOption) (cache.Informer, error) {
 	f.getInformerForKindCalls = append(f.getInformerForKindCalls, gvk)
-	return nil, f.getInformerForKindErr
+	return f.informer, f.getInformerForKindErr
 }
 
 func (f *fakeCache) WaitForCacheSync(_ context.Context) bool {
 	return f.waitForCacheSyncResult
+}
+
+type fakeInformer struct {
+	cache.Informer
+}
+
+func (f *fakeInformer) AddEventHandler(_ k8scache.ResourceEventHandler) (k8scache.ResourceEventHandlerRegistration, error) {
+	return nil, nil
 }
 
 func fakeRESTMapperForResources(gvkResources map[schema.GroupVersionKind]string) meta.RESTMapper {
@@ -298,6 +308,7 @@ func TestStartAndWaitForInformersFor(t *testing.T) {
 			fCache := &fakeCache{
 				waitForCacheSyncResult: scenario.waitForCacheSyncResult,
 				getInformerForKindErr:  scenario.getInformerForKindErr,
+				informer:               &fakeInformer{},
 			}
 			initializer := &inputResourceInitializer{
 				managementClusterRESTMapper: scenario.fakeMapper,
