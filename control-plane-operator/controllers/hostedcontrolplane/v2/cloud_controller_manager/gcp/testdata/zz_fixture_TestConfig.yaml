@@ -1,0 +1,7 @@
+apiVersion: v1
+data:
+  cloud.conf: "[Global]\nproject-id = my-project\nnetwork-name = my-network\nsubnetwork-name
+    = \nnode-tags = my-infra-id-worker\ntoken-url = \"nil\""
+kind: ConfigMap
+metadata:
+  name: gcp-cloud-config
