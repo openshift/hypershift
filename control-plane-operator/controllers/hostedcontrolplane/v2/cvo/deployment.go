@@ -182,24 +182,35 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, 
 			fmt.Sprintf("rm -f %s/manifests/*-CustomNoUpgrade*.yaml", payloadDir),
 			fmt.Sprintf("rm -f %s/manifests/*-DevPreviewNoUpgrade*.yaml", payloadDir),
 			fmt.Sprintf("rm -f %s/manifests/*-TechPreviewNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-OKD*.yaml", payloadDir),
 		)
 	case configv1.CustomNoUpgrade:
 		stmts = append(stmts,
 			fmt.Sprintf("rm -f %s/manifests/*-Default*.yaml", payloadDir),
 			fmt.Sprintf("rm -f %s/manifests/*-DevPreviewNoUpgrade*.yaml", payloadDir),
 			fmt.Sprintf("rm -f %s/manifests/*-TechPreviewNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-OKD*.yaml", payloadDir),
 		)
 	case configv1.DevPreviewNoUpgrade:
 		stmts = append(stmts,
 			fmt.Sprintf("rm -f %s/manifests/*-Default*.yaml", payloadDir),
 			fmt.Sprintf("rm -f %s/manifests/*-CustomNoUpgrade*.yaml", payloadDir),
 			fmt.Sprintf("rm -f %s/manifests/*-TechPreviewNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-OKD*.yaml", payloadDir),
 		)
 	case configv1.TechPreviewNoUpgrade:
 		stmts = append(stmts,
 			fmt.Sprintf("rm -f %s/manifests/*-Default*.yaml", payloadDir),
 			fmt.Sprintf("rm -f %s/manifests/*-CustomNoUpgrade*.yaml", payloadDir),
 			fmt.Sprintf("rm -f %s/manifests/*-DevPreviewNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-OKD*.yaml", payloadDir),
+		)
+	case configv1.OKD:
+		stmts = append(stmts,
+			fmt.Sprintf("rm -f %s/manifests/*-Default*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-CustomNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-DevPreviewNoUpgrade*.yaml", payloadDir),
+			fmt.Sprintf("rm -f %s/manifests/*-TechPreviewNoUpgrade*.yaml", payloadDir),
 		)
 	}
 
