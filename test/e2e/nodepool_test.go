@@ -154,6 +154,61 @@ func TestNodePool(t *testing.T) {
 				}}
 			},
 		},
+		// KubeVirtDriverConfigTest needs a separate hosted cluster with storage class mappings configured
+		{
+			setup: func(t *testing.T) {
+				if globalOpts.Platform != hyperv1.KubevirtPlatform {
+					t.Skip("test only supported on platform KubeVirt")
+				}
+
+				// Configure BeforeApply to add storage class mappings to the HostedCluster
+				originalBeforeApply := globalOpts.BeforeApply
+				globalOpts.BeforeApply = func(o crclient.Object) {
+					if originalBeforeApply != nil {
+						originalBeforeApply(o)
+					}
+
+					if hc, ok := o.(*hyperv1.HostedCluster); ok {
+						// Configure KubeVirt storage driver with manual storage class mappings
+						// Using gp2 and gp3 which are common AWS EBS storage classes
+						if hc.Spec.Platform.Kubevirt == nil {
+							hc.Spec.Platform.Kubevirt = &hyperv1.KubevirtPlatformSpec{}
+						}
+						hc.Spec.Platform.Kubevirt.StorageDriver = &hyperv1.KubevirtStorageDriverSpec{
+							Type: hyperv1.ManualKubevirtStorageDriverConfigType,
+							Manual: &hyperv1.KubevirtManualStorageDriverConfig{
+								StorageClassMapping: []hyperv1.KubevirtStorageClassMapping{
+									{
+										InfraStorageClassName: "gp3-csi",
+										GuestStorageClassName: "gp3-csi",
+									},
+									{
+										InfraStorageClassName: "a-gp3-csi",
+										GuestStorageClassName: "a-gp3-csi",
+									},
+								},
+								VolumeSnapshotClassMapping: []hyperv1.KubevirtVolumeSnapshotClassMapping{
+									{
+										InfraVolumeSnapshotClassName: "csi-aws-vsc",
+										GuestVolumeSnapshotClassName: "csi-aws-vsc",
+									},
+										InfraVolumeSnapshotClassName: "a-csi-aws-vsc",
+										GuestVolumeSnapshotClassName: "a-csi-aws-vsc",
+									},
+								},
+							},
+						}
+						t.Logf("Configured HostedCluster with storage class mappings for driver-config test")
+					}
+				}
+			},
+			build: func(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hostedClusterClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions) []NodePoolTestCase {
+				return []NodePoolTestCase{{
+					name: "KubeVirtDriverConfigTest",
+					test: NewKubeVirtDriverConfigTest(ctx, mgtClient, hostedCluster),
+				}}
+			},
+		},
 	}
 
 	executeNodePoolTests(t, nodePoolTestCasesPerHostedCluster)
@@ -186,7 +241,7 @@ func TestNodePoolMultiArch(t *testing.T) {
 }
 
 func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []HostedClusterNodePoolTestCases) {
-	for i, _ := range nodePoolTestCasesPerHostedCluster {
+	for i := range nodePoolTestCasesPerHostedCluster {
 		t.Run(fmt.Sprintf("HostedCluster%d", i), func(t *testing.T) {
 			nodePoolTestCases := nodePoolTestCasesPerHostedCluster[i]
 			if nodePoolTestCases.setup != nil {
