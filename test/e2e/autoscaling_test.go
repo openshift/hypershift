@@ -388,6 +388,7 @@ func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, ima
 }
 
 func TestNodePoolAutoscalingScaleFromZero(t *testing.T) {
+	e2eutil.AtLeast(t, e2eutil.Version420)
 	if globalOpts.Platform != hyperv1.AWSPlatform {
 		t.Skip("test only supported on platform AWS")
 	}
