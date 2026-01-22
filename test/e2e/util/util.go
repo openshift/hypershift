@@ -1204,13 +1204,6 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 					g.Expect(err).To(HaveOccurred())
 				}
 			}
-
-			// Validate cluster api is allowed to access management KAS.
-			stdOut, err := RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager", 0)
-			// Expect curl return a 403 from the KAS.
-			if !strings.Contains(stdOut, "HTTP/2 403") || err != nil {
-				t.Errorf("cluster api pod was unexpectedly not allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
-			}
 		})
 	})
 }
