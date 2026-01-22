@@ -72,7 +72,7 @@ func (k *RollingUpgradeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodeP
 	nodePool.Spec.Replicas = &twoReplicas
 	switch globalOpts.Platform {
 	case hyperv1.AWSPlatform:
-		nodePool.Spec.Platform.AWS.InstanceType = "m5.large"
+		nodePool.Spec.Platform.AWS.InstanceType = "m5.xlarge"
 	case hyperv1.AzurePlatform:
 		nodePool.Spec.Platform.Azure.VMSize = "Standard_D2s_v3"
 	}
@@ -88,7 +88,7 @@ func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 	var vmSize string
 	switch globalOpts.Platform {
 	case hyperv1.AWSPlatform:
-		instanceType = "m5.xlarge"
+		instanceType = "m5.2xlarge"
 	case hyperv1.AzurePlatform:
 		vmSize = "Standard_D4s_v5"
 	}
