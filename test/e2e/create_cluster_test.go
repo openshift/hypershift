@@ -3223,7 +3223,7 @@ func TestCCMCreateCluster(t *testing.T) {
 
 					// Extract load balancer name from hostname
 					// AWS NLB hostname format: <name>-<id>.elb.<region>.amazonaws.com
-					lbName := strings.Split(lbHostname, ".")[0]
+					lbName := strings.Split(lbHostname, "-")[0]
 					t.Logf("Extracted load balancer name: %s", lbName)
 
 					// Use AWS SDK to describe the load balancer and verify security groups
