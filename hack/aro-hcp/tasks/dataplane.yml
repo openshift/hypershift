@@ -1,0 +1,216 @@
+version: '3'
+
+# This file handles Data Plane Managed Identities for workload identity
+
+vars:
+  # Data plane managed identity names
+  DP_MI_NAMES:
+    - '{{.AZURE_DISK_MI_NAME}}'
+    - '{{.AZURE_FILE_MI_NAME}}'
+    - '{{.IMAGE_REGISTRY_MI_NAME}}'
+
+  # Federated credential configurations
+  FEDERATED_CREDS:
+    - {identity: '{{.AZURE_DISK_MI_NAME}}', name: '{{.AZURE_DISK_MI_NAME}}-fed-id', subject: 'system:serviceaccount:openshift-cluster-csi-drivers:azure-disk-csi-driver-node-sa'}
+    - {identity: '{{.AZURE_FILE_MI_NAME}}', name: '{{.AZURE_FILE_MI_NAME}}-fed-id', subject: 'system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-node-sa'}
+    - {identity: '{{.IMAGE_REGISTRY_MI_NAME}}', name: '{{.IMAGE_REGISTRY_MI_NAME}}-fed-id', subject: 'system:serviceaccount:openshift-image-registry:registry'}
+
+tasks:
+  # === MANAGED IDENTITY CREATION ===
+
+  create-identity:
+    internal: true
+    requires:
+      vars: [MI_NAME]
+    cmds:
+      - az identity create --name {{.MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --output none
+
+  create-identities:
+    status:
+      - az identity show --name {{.AZURE_DISK_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} 2>/dev/null
+      - az identity show --name {{.AZURE_FILE_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} 2>/dev/null
+      - az identity show --name {{.IMAGE_REGISTRY_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} 2>/dev/null
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Creating Data Plane Managed Identities"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - for: {var: DP_MI_NAMES, as: mi_name}
+        task: create-identity
+        vars:
+          MI_NAME: '{{.mi_name}}'
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Data Plane Identities
+          Disk MI,{{.AZURE_DISK_MI_NAME}}
+          File MI,{{.AZURE_FILE_MI_NAME}}
+          Registry MI,{{.IMAGE_REGISTRY_MI_NAME}}
+          Resource Group,{{.PERSISTENT_RG_NAME}}
+          Status,✓ Created" | gum table --print --border rounded
+        silent: true
+
+  # === FEDERATED CREDENTIALS ===
+
+  create-federated-cred:
+    internal: true
+    requires:
+      vars: [IDENTITY_NAME, CRED_NAME, SUBJECT]
+    cmds:
+      - |
+        az identity federated-credential create \
+          --name {{.CRED_NAME}} \
+          --identity-name {{.IDENTITY_NAME}} \
+          --resource-group {{.PERSISTENT_RG_NAME}} \
+          --issuer {{.OIDC_ISSUER_URL}} \
+          --subject {{.SUBJECT}} \
+          --audience openshift \
+          --output none
+
+  create-federated-creds:
+    status:
+      - az identity federated-credential show --name {{.AZURE_DISK_MI_NAME}}-fed-id --identity-name {{.AZURE_DISK_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} 2>/dev/null
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Creating Federated Credentials"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - for: {var: FEDERATED_CREDS, as: cred}
+        task: create-federated-cred
+        vars:
+          IDENTITY_NAME: '{{.cred.identity}}'
+          CRED_NAME: '{{.cred.name}}'
+          SUBJECT: '{{.cred.subject}}'
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Federated Credentials
+          Disk Fed ID,{{.AZURE_DISK_MI_NAME}}-fed-id
+          File Fed ID,{{.AZURE_FILE_MI_NAME}}-fed-id
+          Registry Fed ID,{{.IMAGE_REGISTRY_MI_NAME}}-fed-id
+          OIDC Issuer,{{.OIDC_ISSUER_URL}}
+          Status,✓ Created" | gum table --print --border rounded
+        silent: true
+
+  # === DP-OUTPUT.JSON GENERATION ===
+
+  generate-dp-json:
+    vars:
+      DISK_CLIENT_ID:
+        sh: 'az identity show --name {{.AZURE_DISK_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --query clientId -o tsv'
+      FILE_CLIENT_ID:
+        sh: 'az identity show --name {{.AZURE_FILE_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --query clientId -o tsv'
+      IMAGE_REGISTRY_CLIENT_ID:
+        sh: 'az identity show --name {{.IMAGE_REGISTRY_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --query clientId -o tsv'
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Generating Data Plane Output"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - |
+        cat > {{.DP_OUTPUT_FILE}} <<EOF
+        {
+          "imageRegistryMSIClientID": "{{.IMAGE_REGISTRY_CLIENT_ID}}",
+          "diskMSIClientID": "{{.DISK_CLIENT_ID}}",
+          "fileMSIClientID": "{{.FILE_CLIENT_ID}}"
+        }
+        EOF
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Data Plane Output
+          File,{{.DP_OUTPUT_FILE}}
+          diskMSIClientID,{{.AZURE_DISK_MI_NAME}}
+          fileMSIClientID,{{.AZURE_FILE_MI_NAME}}
+          imageRegistryMSIClientID,{{.IMAGE_REGISTRY_MI_NAME}}
+          Status,✓ Generated" | gum table --print --border rounded
+        silent: true
+
+  # === ORCHESTRATION ===
+
+  create:
+    status:
+      - test -f {{.DP_OUTPUT_FILE}}
+    cmds:
+      - task: create-identities
+      - task: create-federated-creds
+      - task: generate-dp-json
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Data Plane Setup
+          Disk MI,{{.AZURE_DISK_MI_NAME}}
+          File MI,{{.AZURE_FILE_MI_NAME}}
+          Registry MI,{{.IMAGE_REGISTRY_MI_NAME}}
+          Output File,{{.DP_OUTPUT_FILE}}
+          Status,✓ Complete" | gum table --print --border rounded
+        silent: true
+
+  # === CLEANUP ===
+
+  delete-federated-cred:
+    desc: Delete a single federated credential
+    internal: true
+    requires:
+      vars: [IDENTITY_NAME, CRED_NAME]
+    cmds:
+      - cmd: az identity federated-credential delete --name {{.CRED_NAME}} --identity-name {{.IDENTITY_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --yes --output none
+        ignore_error: true
+
+  delete-identity:
+    desc: Delete a single managed identity
+    internal: true
+    requires:
+      vars: [MI_NAME]
+    cmds:
+      - cmd: az identity delete --name {{.MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --output none
+        ignore_error: true
+
+  delete:
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Deleting Data Plane Resources"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - for: {var: FEDERATED_CREDS, as: cred}
+        task: delete-federated-cred
+        vars:
+          IDENTITY_NAME: '{{.cred.identity}}'
+          CRED_NAME: '{{.cred.name}}'
+      - for: {var: DP_MI_NAMES, as: mi_name}
+        task: delete-identity
+        vars:
+          MI_NAME: '{{.mi_name}}'
+      - rm -f {{.DP_OUTPUT_FILE}}
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Data Plane Deletion
+          Disk MI,{{.AZURE_DISK_MI_NAME}}
+          File MI,{{.AZURE_FILE_MI_NAME}}
+          Registry MI,{{.IMAGE_REGISTRY_MI_NAME}}
+          Status,✓ Deleted" | gum table --print --border rounded
+        silent: true
+
+  show:
+    vars:
+      DISK_STATUS:
+        sh: 'az identity show --name {{.AZURE_DISK_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --query clientId -o tsv 2>/dev/null || echo "Not found"'
+      FILE_STATUS:
+        sh: 'az identity show --name {{.AZURE_FILE_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --query clientId -o tsv 2>/dev/null || echo "Not found"'
+      REGISTRY_STATUS:
+        sh: 'az identity show --name {{.IMAGE_REGISTRY_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --query clientId -o tsv 2>/dev/null || echo "Not found"'
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Data Plane Managed Identities"
+        silent: true
+      - cmd: |
+          echo "Identity,Client ID
+          {{.AZURE_DISK_MI_NAME}},{{.DISK_STATUS}}
+          {{.AZURE_FILE_MI_NAME}},{{.FILE_STATUS}}
+          {{.IMAGE_REGISTRY_MI_NAME}},{{.REGISTRY_STATUS}}" | gum table --print --border rounded
+        silent: true
