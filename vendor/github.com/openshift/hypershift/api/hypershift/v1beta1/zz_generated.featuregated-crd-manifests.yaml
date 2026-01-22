@@ -133,9 +133,11 @@ hostedclusters.hypershift.openshift.io:
   Category: ""
   FeatureGates:
   - AutoNodeKarpenter
+  - ClusterUpdateAcceptRisks
   - ClusterVersionOperatorConfiguration
   - ExternalOIDC
   - ExternalOIDCWithUIDAndExtraClaimMappings
+  - ExternalOIDCWithUpstreamParity
   - GCPPlatform
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
@@ -190,9 +192,11 @@ hostedcontrolplanes.hypershift.openshift.io:
   Category: cluster-api
   FeatureGates:
   - AutoNodeKarpenter
+  - ClusterUpdateAcceptRisks
   - ClusterVersionOperatorConfiguration
   - ExternalOIDC
   - ExternalOIDCWithUIDAndExtraClaimMappings
+  - ExternalOIDCWithUpstreamParity
   - GCPPlatform
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
