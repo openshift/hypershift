@@ -296,7 +296,7 @@ func TestReconcileHostedControlPlaneAdditionalTrustBundle(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			updated := test.controlPlane.DeepCopy()
-			err := reconcileHostedControlPlane(updated, &test.cluster, true, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(updated, &test.cluster, true, true, func() (map[string]string, error) { return nil, nil })
 			if err != nil {
 				t.Error(err)
 			}
@@ -398,7 +398,7 @@ func TestReconcileHostedControlPlaneUpgrades(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			updated := test.ControlPlane.DeepCopy()
-			err := reconcileHostedControlPlane(updated, &test.Cluster, true, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(updated, &test.Cluster, true, true, func() (map[string]string, error) { return nil, nil })
 			if err != nil {
 				t.Error(err)
 			}
@@ -536,7 +536,7 @@ func TestReconcileHostedControlPlaneAPINetwork(t *testing.T) {
 			hostedCluster := &hyperv1.HostedCluster{}
 			hostedCluster.Spec.Networking.APIServer = test.networking
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, func() (map[string]string, error) { return nil, nil })
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -594,7 +594,7 @@ func TestReconcileHostedControlPlaneConfiguration(t *testing.T) {
 			hostedControlPlane := &hyperv1.HostedControlPlane{}
 			g := NewGomegaWithT(t)
 
-			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, func() (map[string]string, error) { return nil, nil })
+			err := reconcileHostedControlPlane(hostedControlPlane, hostedCluster, true, true, func() (map[string]string, error) { return nil, nil })
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// DeepEqual to check that all ClusterConfiguration fields are deep copied to HostedControlPlane
@@ -605,12 +605,13 @@ func TestReconcileHostedControlPlaneConfiguration(t *testing.T) {
 
 func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 	type testCase struct {
-		name                   string
-		hcpAnnotations         map[string]string
-		hcAnnotations          map[string]string
-		isAutoscalingNeeded    bool
-		certRenewalAnnotations map[string]string
-		expectedAnnotations    map[string]string
+		name                              string
+		hcpAnnotations                    map[string]string
+		hcAnnotations                     map[string]string
+		isAutoscalingNeeded               bool
+		isAWSNodeTerminationHandlerNeeded bool
+		certRenewalAnnotations            map[string]string
+		expectedAnnotations               map[string]string
 	}
 
 	hcNamespace := "clusters"
@@ -624,10 +625,11 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				hyperv1.RestartDateAnnotation: "01012024",
 			},
 			expectedAnnotations: map[string]string{
-				hyperv1.RestartDateAnnotation:              "01012024",
-				previouslySyncedRestartDateAnnotation:      "01012024",
-				hyperutil.HostedClusterAnnotation:          hcKey,
-				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+				hyperv1.RestartDateAnnotation:                      "01012024",
+				previouslySyncedRestartDateAnnotation:              "01012024",
+				hyperutil.HostedClusterAnnotation:                  hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
 		},
 		{
@@ -640,10 +642,11 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				previouslySyncedRestartDateAnnotation: "01012024",
 			},
 			expectedAnnotations: map[string]string{
-				hyperv1.RestartDateAnnotation:              "05012024",
-				previouslySyncedRestartDateAnnotation:      "05012024",
-				hyperutil.HostedClusterAnnotation:          hcKey,
-				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+				hyperv1.RestartDateAnnotation:                      "05012024",
+				previouslySyncedRestartDateAnnotation:              "05012024",
+				hyperutil.HostedClusterAnnotation:                  hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
 		},
 		{
@@ -656,10 +659,11 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				previouslySyncedRestartDateAnnotation: "01012024",
 			},
 			expectedAnnotations: map[string]string{
-				hyperv1.RestartDateAnnotation:              "some other value",
-				previouslySyncedRestartDateAnnotation:      "01012024",
-				hyperutil.HostedClusterAnnotation:          hcKey,
-				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+				hyperv1.RestartDateAnnotation:                      "some other value",
+				previouslySyncedRestartDateAnnotation:              "01012024",
+				hyperutil.HostedClusterAnnotation:                  hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
 		},
 		{
@@ -672,10 +676,11 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				previouslySyncedRestartDateAnnotation: "01012024",
 			},
 			expectedAnnotations: map[string]string{
-				hyperv1.RestartDateAnnotation:              "05012024",
-				previouslySyncedRestartDateAnnotation:      "05012024",
-				hyperutil.HostedClusterAnnotation:          hcKey,
-				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+				hyperv1.RestartDateAnnotation:                      "05012024",
+				previouslySyncedRestartDateAnnotation:              "05012024",
+				hyperutil.HostedClusterAnnotation:                  hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
 		},
 		{
@@ -698,6 +703,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				hyperv1.RequestServingNodeAdditionalSelectorAnnotation:       "node-size=m5xl",
 				hyperutil.HostedClusterAnnotation:                            hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation:                   "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation:           "true",
 			},
 		},
 		{
@@ -717,6 +723,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				hyperv1.IdentityProviderOverridesAnnotationPrefix + "-test2": "test2",
 				hyperv1.RequestServingNodeAdditionalSelectorAnnotation:       "node-size=m5xl",
 				hyperutil.HostedClusterAnnotation:                            hcKey,
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation:           "true",
 			},
 			isAutoscalingNeeded: true,
 		},
@@ -729,8 +736,9 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				hyperv1.DisableClusterAutoscalerAnnotation: "true",
 			},
 			expectedAnnotations: map[string]string{
-				hyperutil.DebugDeploymentsAnnotation: "control-plane-operator",
-				hyperutil.HostedClusterAnnotation:    hcKey,
+				hyperutil.DebugDeploymentsAnnotation:               "control-plane-operator",
+				hyperutil.HostedClusterAnnotation:                  hcKey,
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
 			isAutoscalingNeeded: true,
 		},
@@ -762,6 +770,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				hyperv1.ResourceRequestOverrideAnnotationPrefix + "-override2": "override2",
 				hyperutil.HostedClusterAnnotation:                              hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation:                     "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation:             "true",
 				"unrelated": "test",
 			},
 		},
@@ -772,8 +781,42 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			},
 			hcpAnnotations: map[string]string{},
 			expectedAnnotations: map[string]string{
+				hyperutil.HostedClusterAnnotation:                  hcKey,
+				hyperv1.AWSKarpenterDefaultInstanceProfile:         "test-instance-profile",
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
+			name:                              "When AWS node termination handler is needed, disable annotation should not be set",
+			isAWSNodeTerminationHandlerNeeded: true,
+			hcAnnotations:                     map[string]string{},
+			hcpAnnotations:                    map[string]string{},
+			expectedAnnotations: map[string]string{
 				hyperutil.HostedClusterAnnotation:          hcKey,
-				hyperv1.AWSKarpenterDefaultInstanceProfile: "test-instance-profile",
+				hyperv1.DisableClusterAutoscalerAnnotation: "true",
+			},
+		},
+		{
+			name:                              "When AWS node termination handler is no longer needed, disable annotation should be added",
+			isAWSNodeTerminationHandlerNeeded: false,
+			hcAnnotations:                     map[string]string{},
+			hcpAnnotations:                    map[string]string{},
+			expectedAnnotations: map[string]string{
+				hyperutil.HostedClusterAnnotation:                  hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
+			name:                              "When AWS node termination handler becomes needed, existing disable annotation should be removed",
+			isAWSNodeTerminationHandlerNeeded: true,
+			hcAnnotations:                     map[string]string{},
+			hcpAnnotations: map[string]string{
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+			expectedAnnotations: map[string]string{
+				hyperutil.HostedClusterAnnotation:          hcKey,
 				hyperv1.DisableClusterAutoscalerAnnotation: "true",
 			},
 		},
@@ -788,7 +831,7 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			hcp := &hyperv1.HostedControlPlane{}
 			hcp.Annotations = tc.hcpAnnotations
 			hc.Annotations = tc.hcAnnotations
-			err := reconcileHostedControlPlaneAnnotations(hcp, hc, tc.isAutoscalingNeeded, func() (map[string]string, error) { return tc.certRenewalAnnotations, nil })
+			err := reconcileHostedControlPlaneAnnotations(hcp, hc, tc.isAutoscalingNeeded, tc.isAWSNodeTerminationHandlerNeeded, func() (map[string]string, error) { return tc.certRenewalAnnotations, nil })
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(hcp.Annotations).To(Equal(tc.expectedAnnotations))
 		})
@@ -5194,6 +5237,190 @@ func TestServiceAccountSigningKeyBytes(t *testing.T) {
 					_, remaining = pem.Decode(remaining)
 				}
 			}
+		})
+	}
+}
+
+func TestIsAWSNodeTerminationHandlerNeeded(t *testing.T) {
+	testCases := []struct {
+		name           string
+		hcluster       *hyperv1.HostedCluster
+		nodePools      []crclient.Object
+		expectedResult bool
+	}{
+		{
+			name: "When platform is not AWS it should return false",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			nodePools:      nil,
+			expectedResult: false,
+		},
+		{
+			name: "When AWS platform with no NodePools it should return false",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			nodePools:      nil,
+			expectedResult: false,
+		},
+		{
+			name: "When AWS platform with NodePool without spot annotation it should return false",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			nodePools: []crclient.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "nodepool-1",
+						Namespace: "test-namespace",
+					},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "test-cluster",
+					},
+				},
+			},
+			expectedResult: false,
+		},
+		{
+			name: "When AWS platform with NodePool with spot annotation it should return true",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			nodePools: []crclient.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "nodepool-1",
+						Namespace: "test-namespace",
+						Annotations: map[string]string{
+							"hypershift.openshift.io/enable-spot": "true",
+						},
+					},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "test-cluster",
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name: "When AWS platform with multiple NodePools and one has spot annotation it should return true",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			nodePools: []crclient.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "nodepool-1",
+						Namespace: "test-namespace",
+					},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "test-cluster",
+					},
+				},
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "nodepool-spot",
+						Namespace: "test-namespace",
+						Annotations: map[string]string{
+							"hypershift.openshift.io/enable-spot": "true",
+						},
+					},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "test-cluster",
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name: "When AWS platform with NodePool belonging to different cluster it should return false",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			nodePools: []crclient.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "nodepool-spot",
+						Namespace: "test-namespace",
+						Annotations: map[string]string{
+							"hypershift.openshift.io/enable-spot": "true",
+						},
+					},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "different-cluster",
+					},
+				},
+			},
+			expectedResult: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			clientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if len(tc.nodePools) > 0 {
+				clientBuilder = clientBuilder.WithObjects(tc.nodePools...)
+			}
+			client := clientBuilder.Build()
+
+			reconciler := &HostedClusterReconciler{
+				Client: client,
+			}
+
+			result, err := reconciler.isAWSNodeTerminationHandlerNeeded(context.Background(), tc.hcluster)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result).To(Equal(tc.expectedResult))
 		})
 	}
 }
