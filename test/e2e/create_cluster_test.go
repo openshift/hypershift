@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/elbv2"
 	. "github.com/onsi/gomega"
 	configv1 "github.com/openshift/api/config/v1"
@@ -3343,7 +3344,7 @@ func TestCCMCreateCluster(t *testing.T) {
 
 					// Extract load balancer name from hostname
 					// AWS NLB hostname format: <name>-<id>.elb.<region>.amazonaws.com
-					lbName := strings.Split(lbHostname, ".")[0]
+					lbName := strings.Split(lbHostname, "-")[0]
 					t.Logf("Extracted load balancer name: %s", lbName)
 
 					// Use AWS SDK to describe the load balancer and verify security groups
@@ -3358,11 +3359,39 @@ func TestCCMCreateCluster(t *testing.T) {
 					awsConfig := awsutil.NewConfig()
 					elbv2Client := elbv2.New(awsSession, awsConfig)
 
+					describeLBInput := &elbv2.DescribeLoadBalancersInput{
+						Names: []*string{&lbName},
+					}
+
+					// Wait for the load balancer to exist and become active before validating attributes like SecurityGroups.
+					// This avoids flakes where the Service is created but the LB is still provisioning.
+					t.Logf("Waiting for load balancer %q to become available (up to ~3 minutes)", lbName)
+					waiterDelay := func(attempt int) time.Duration {
+						// Backoff: 5s, 10s, 20s, then cap at 30s.
+						switch {
+						case attempt <= 1:
+							return 5 * time.Second
+						case attempt == 2:
+							return 10 * time.Second
+						case attempt == 3:
+							return 20 * time.Second
+						default:
+							return 30 * time.Second
+						}
+					}
+					// 9 attempts with the delay profile above waits ~215s between attempts (plus request time),
+					// satisfying the "wait at least 3 minutes" requirement before failing.
+					err = elbv2Client.WaitUntilLoadBalancerAvailableWithContext(
+						ctx,
+						describeLBInput,
+						request.WithWaiterMaxAttempts(9),
+						request.WithWaiterDelay(waiterDelay),
+					)
+					g.Expect(err).NotTo(HaveOccurred(), "load balancer did not become available in time")
+
 					// Describe the load balancer
 					t.Logf("Describing load balancer to check for security groups")
-					describeLBOutput, err := elbv2Client.DescribeLoadBalancersWithContext(ctx, &elbv2.DescribeLoadBalancersInput{
-						Names: []*string{&lbName},
-					})
+					describeLBOutput, err := elbv2Client.DescribeLoadBalancersWithContext(ctx, describeLBInput)
 					g.Expect(err).NotTo(HaveOccurred(), "failed to describe load balancer")
 					g.Expect(len(describeLBOutput.LoadBalancers)).To(BeNumerically(">", 0), "no load balancers found with name %s", lbName)
 
