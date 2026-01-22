@@ -1725,9 +1725,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to determine if autoscaler is needed: %w", err)
 	}
+	isAWSNodeTerminationHandlerNeeded, err := r.isAWSNodeTerminationHandlerNeeded(ctx, hcluster)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to determine if AWS node termination handler is needed: %w", err)
+	}
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded,
+		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
 			annotationsForCertRenewal(log,
 				hcp,
 				shouldCheckForStaleCerts(hcluster, defaultToControlPlaneV2),
@@ -2190,7 +2194,7 @@ func shouldCheckForStaleCerts(hc *hyperv1.HostedCluster, defaultingToControlPlan
 	}
 }
 
-func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
+func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, isAWSNodeTerminationHandlerNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
 	if hcp.Annotations == nil {
 		hcp.Annotations = map[string]string{}
 	}
@@ -2243,6 +2247,8 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.KubeAPIServerGoAwayChance,
 		hyperv1.KubeAPIServerServiceAccountTokenMaxExpiration,
 		hyperv1.HostedClusterRestoredFromBackupAnnotation,
+		// TODO: Remove this once the the input is in the HostedCluster AWS API.
+		"hypershift.openshift.io/aws-termination-handler-queue-url",
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]
@@ -2299,13 +2305,20 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		delete(hcp.Annotations, hyperv1.DisableClusterAutoscalerAnnotation)
 	}
 
+	// Set the DisableAWSNodeTerminationHandlerAnnotation if not needed
+	if !isAWSNodeTerminationHandlerNeeded {
+		hcp.Annotations[hyperv1.DisableAWSNodeTerminationHandlerAnnotation] = "true"
+	} else {
+		delete(hcp.Annotations, hyperv1.DisableAWSNodeTerminationHandlerAnnotation)
+	}
+
 	return nil
 }
 
 // reconcileHostedControlPlane reconciles the given HostedControlPlane, which
 // will be mutated.
-func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
-	if err := reconcileHostedControlPlaneAnnotations(hcp, hcluster, isAutoscalingNeeded, certRenewalAnnotations); err != nil {
+func reconcileHostedControlPlane(hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster, isAutoscalingNeeded bool, isAWSNodeTerminationHandlerNeeded bool, certRenewalAnnotations func() (map[string]string, error)) error {
+	if err := reconcileHostedControlPlaneAnnotations(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded, certRenewalAnnotations); err != nil {
 		return err
 	}
 
@@ -4296,6 +4309,29 @@ func (r *HostedClusterReconciler) isAutoscalingNeeded(ctx context.Context, hclus
 	for _, nodePool := range nodePools {
 		if nodePool.Spec.AutoScaling != nil {
 			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// isAWSNodeTerminationHandlerNeeded returns true if any NodePool has spot instances enabled.
+// The AWS Node Termination Handler is needed to handle spot interruption events.
+func (r *HostedClusterReconciler) isAWSNodeTerminationHandlerNeeded(ctx context.Context, hcluster *hyperv1.HostedCluster) (bool, error) {
+	// Only needed for AWS platform
+	if hcluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+		return false, nil
+	}
+
+	nodePools, err := listNodePools(ctx, r.Client, hcluster.Namespace, hcluster.Name)
+	if err != nil {
+		return false, fmt.Errorf("failed to get nodePools by cluster name for cluster %q: %w", hcluster.Name, err)
+	}
+
+	for _, nodePool := range nodePools {
+		if nodePool.Annotations != nil {
+			if _, ok := nodePool.Annotations["hypershift.openshift.io/enable-spot"]; ok {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
