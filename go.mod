@@ -23,7 +23,7 @@ require (
 	github.com/aws/aws-sdk-go v1.55.8
 	github.com/aws/aws-sdk-go-v2 v1.41.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.279.1
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.280.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.6
 	github.com/aws/karpenter-provider-aws v1.0.8
 	github.com/blang/semver v3.5.1+incompatible
@@ -32,7 +32,7 @@ require (
 	github.com/coreos/ignition/v2 v2.25.1
 	github.com/distribution/reference v0.6.0
 	github.com/docker/distribution v2.8.3+incompatible
-	github.com/elazarl/goproxy v1.7.2
+	github.com/elazarl/goproxy v1.8.0
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/go-jose/go-jose/v3 v3.0.4
 	github.com/go-logr/logr v1.4.3
@@ -45,7 +45,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/k-orc/openstack-resource-controller v1.0.0
 	github.com/kubernetes-csi/external-snapshotter/client/v6 v6.3.0
-	github.com/onsi/ginkgo/v2 v2.27.4
+	github.com/onsi/ginkgo/v2 v2.27.5
 	github.com/onsi/gomega v1.39.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
@@ -65,7 +65,7 @@ require (
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.88.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/prometheus/client_model v0.6.2
-	github.com/prometheus/common v0.66.1
+	github.com/prometheus/common v0.67.5
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
