@@ -118,7 +118,6 @@ type RegistryClientImageMetadataProvider struct {
 // The ICSPs/IDMSs are checked first for overrides and then the cache is checked using the image
 // pull spec. If not found in the cache, the manifest is looked up and added to the cache.
 func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, error) {
-
 	parsedImageRef, err := reference.Parse(imageRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
@@ -159,7 +158,6 @@ func (r *RegistryClientImageMetadataProvider) ImageMetadata(ctx context.Context,
 
 // GetOverride returns the image reference override based on the source/mirrors in the ICSPs/IDMSs
 func (r *RegistryClientImageMetadataProvider) GetOverride(ctx context.Context, imageRef string, pullSecret []byte) (*reference.DockerImageReference, error) {
-
 	var (
 		ref            *reference.DockerImageReference
 		parsedImageRef reference.DockerImageReference
@@ -177,7 +175,6 @@ func (r *RegistryClientImageMetadataProvider) GetOverride(ctx context.Context, i
 }
 
 func (r *RegistryClientImageMetadataProvider) GetDigest(ctx context.Context, imageRef string, pullSecret []byte) (digest.Digest, *reference.DockerImageReference, error) {
-
 	var (
 		repo           distribution.Repository
 		ref            *reference.DockerImageReference
@@ -245,7 +242,6 @@ func (r *RegistryClientImageMetadataProvider) GetDigest(ctx context.Context, ima
 // The ICSPs/IDMSs are checked first for overrides and then the cache is checked using the image
 // pull spec. If not found in the cache, the manifest is looked up and added to the cache.
 func (r *RegistryClientImageMetadataProvider) GetManifest(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Manifest, error) {
-
 	parsedImageRef, err := reference.Parse(imageRef)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse image reference %q: %w", imageRef, err)
@@ -272,7 +268,6 @@ func (r *RegistryClientImageMetadataProvider) GetManifest(ctx context.Context, i
 }
 
 func (r *RegistryClientImageMetadataProvider) GetMetadata(ctx context.Context, imageRef string, pullSecret []byte) (*dockerv1client.DockerImageConfig, []distribution.Descriptor, distribution.BlobStore, error) {
-
 	var (
 		ref            *reference.DockerImageReference
 		parsedImageRef reference.DockerImageReference
@@ -486,7 +481,11 @@ func GetRegistryOverrides(ctx context.Context, ref reference.DockerImageReferenc
 }
 
 func GetPayloadImage(ctx context.Context, releaseImageProvider releaseinfo.Provider, hc *hyperv1.HostedCluster, component string, pullSecret []byte) (string, error) {
-	releaseImage, err := releaseImageProvider.Lookup(ctx, HCControlPlaneReleaseImage(hc), pullSecret)
+	return GetPayloadImageFromRelease(ctx, releaseImageProvider, HCControlPlaneReleaseImage(hc), component, pullSecret)
+}
+
+func GetPayloadImageFromRelease(ctx context.Context, releaseImageProvider releaseinfo.Provider, release string, component string, pullSecret []byte) (string, error) {
+	releaseImage, err := releaseImageProvider.Lookup(ctx, release, pullSecret)
 	if err != nil {
 		return "", fmt.Errorf("failed to lookup release image: %w", err)
 	}
