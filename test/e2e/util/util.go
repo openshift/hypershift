@@ -2934,6 +2934,10 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		delete(expectedConditions, hyperv1.DataPlaneConnectionAvailable)
 	}
 
+	if IsLessThan(Version422) {
+		delete(expectedConditions, hyperv1.HostedClusterConfigSynced)
+	}
+
 	var predicates []Predicate[*hyperv1.HostedCluster]
 	for conditionType, conditionStatus := range expectedConditions {
 		predicates = append(predicates, ConditionPredicate[*hyperv1.HostedCluster](Condition{
