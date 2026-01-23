@@ -43,7 +43,7 @@ func New(settings any) (register.LinterPlugin, error) {
 // GolangCIPlugin constructs a new plugin for the golangci-lint
 // plugin pattern.
 // This allows golangci-lint to build a version of itself, containing
-// all of the anaylzers included in KAL.
+// all of the analyzers included in KAL.
 type GolangCIPlugin struct {
 	config config.GolangCIConfig
 }

@@ -37,7 +37,7 @@ type AnalyzerInitializer interface {
 	// It will be passed the complete LintersConfig and is expected to rely only on its own configuration.
 	Init(any) (*analysis.Analyzer, error)
 
-	// Default determines whether the inializer intializes an analyzer that should be
+	// Default determines whether the initializer initializes an analyzer that should be
 	// on by default, or not.
 	Default() bool
 }
@@ -64,7 +64,7 @@ func NewInitializer(name string, analyzer *analysis.Analyzer, isDefault bool) An
 	}
 }
 
-// NewConfigurableInitializer constructs a new initializer for intializing a
+// NewConfigurableInitializer constructs a new initializer for initializing a
 // configurable Analyzer.
 func NewConfigurableInitializer[T any](name string, initFunc InitializerFunc[T], isDefault bool, validateFunc ValidateFunc[T]) ConfigurableAnalyzerInitializer {
 	return configurableInitializer[T]{
@@ -88,7 +88,7 @@ func (i initializer[T]) Name() string {
 	return i.name
 }
 
-// Init returns a newly initializr analyzer.
+// Init returns a newly initialized analyzer.
 func (i initializer[T]) Init(_ any) (*analysis.Analyzer, error) {
 	var cfg *T
 
