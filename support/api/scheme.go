@@ -28,6 +28,9 @@ import (
 	securityv1 "github.com/openshift/api/security/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
 
+	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
+	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
+
 	batchv1 "k8s.io/api/batch/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -154,6 +157,14 @@ func init() {
 			&karpenterv1.NodePool{},
 			&karpenterv1.NodePoolList{},
 		)
+
+		awsKarpenterGroupVersion := schema.GroupVersion{Group: awskarpenterapis.Group, Version: "v1"}
+		metav1.AddToGroupVersion(scheme, awsKarpenterGroupVersion)
+		scheme.AddKnownTypes(awsKarpenterGroupVersion,
+			&awskarpenterv1.EC2NodeClass{},
+			&awskarpenterv1.EC2NodeClassList{},
+		)
+
 		_ = hyperkarpenterv1.AddToScheme(scheme)
 	}
 }
