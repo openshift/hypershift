@@ -110,7 +110,7 @@ github.com/a8m/envsubst/parse
 # github.com/ahmetb/gen-crd-api-reference-docs v0.3.0
 ## explicit; go 1.15
 github.com/ahmetb/gen-crd-api-reference-docs
-# github.com/alecthomas/chroma/v2 v2.21.1
+# github.com/alecthomas/chroma/v2 v2.23.1
 ## explicit; go 1.22
 github.com/alecthomas/chroma/v2
 github.com/alecthomas/chroma/v2/formatters
