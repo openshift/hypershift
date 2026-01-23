@@ -24,6 +24,7 @@ import (
 // OpenshiftEC2NodeClassSpecApplyConfiguration represents a declarative configuration of the OpenshiftEC2NodeClassSpec type for use
 // with apply.
 type OpenshiftEC2NodeClassSpecApplyConfiguration struct {
+	OpenshiftVersion           *string                                       `json:"openshiftVersion,omitempty"`
 	SubnetSelectorTerms        []SubnetSelectorTermApplyConfiguration        `json:"subnetSelectorTerms,omitempty"`
 	SecurityGroupSelectorTerms []SecurityGroupSelectorTermApplyConfiguration `json:"securityGroupSelectorTerms,omitempty"`
 	AssociatePublicIPAddress   *bool                                         `json:"associatePublicIPAddress,omitempty"`
@@ -37,6 +38,14 @@ type OpenshiftEC2NodeClassSpecApplyConfiguration struct {
 // apply.
 func OpenshiftEC2NodeClassSpec() *OpenshiftEC2NodeClassSpecApplyConfiguration {
 	return &OpenshiftEC2NodeClassSpecApplyConfiguration{}
+}
+
+// WithOpenshiftVersion sets the OpenshiftVersion field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OpenshiftVersion field is set to the value of the last call.
+func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithOpenshiftVersion(value string) *OpenshiftEC2NodeClassSpecApplyConfiguration {
+	b.OpenshiftVersion = &value
+	return b
 }
 
 // WithSubnetSelectorTerms adds the given value to the SubnetSelectorTerms field in the declarative configuration

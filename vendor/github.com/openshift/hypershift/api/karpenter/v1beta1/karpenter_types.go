@@ -62,6 +62,12 @@ const (
 // OpenshiftEC2NodeClassSpec defines the desired state of ClusterSizingConfiguration
 // This will contain configuration necessary to launch instances in AWS.
 type OpenshiftEC2NodeClassSpec struct {
+	// OpenshiftVersion specifies the OpenShift version for nodes launched by this NodeClass.
+	// Must be a valid semver version (e.g., "4.20.5", "4.21.0").
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]+\\\\.[0-9]+\\\\.[0-9]+$')",message="openshiftVersion must be a valid semver (e.g., '4.21.0')"
+	// +optional
+	OpenshiftVersion *string `json:"openshiftVersion,omitempty"`
+
 	// SubnetSelectorTerms is a list of or subnet selector terms. The terms are ORed.
 	// +kubebuilder:validation:XValidation:message="subnetSelectorTerms cannot be empty",rule="self.size() != 0"
 	// +kubebuilder:validation:XValidation:message="expected at least one, got none, ['tags', 'id']",rule="self.all(x, has(x.tags) || has(x.id))"

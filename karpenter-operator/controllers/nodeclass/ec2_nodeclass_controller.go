@@ -22,6 +22,8 @@ import (
 	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
+	"github.com/blang/semver"
+	"github.com/openshift/hypershift/support/supportedversion"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -147,7 +149,15 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// The below code is used to create a config generator and in-memory NodePool for each EC2NodeClass.
 	// This allows karpenter-operator to reconcile separate tokens, so that each NodeClass is able to track it's own openshift release image version.
 	np := hcpNodePool(hcp, openshiftEC2NodeClass)
-	cg, err := r.buildConfigGenerator(ctx, hcp, np, openshiftEC2NodeClass)
+
+	// Get the correct release image based on the OpenshiftEC2NodeClass's openshiftVersion
+	pullSpec, err := getReleaseImagePullSpec(ctx, hcp, openshiftEC2NodeClass)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get release image pullSpec: %w", err)
+	}
+	np.Spec.Release.Image = pullSpec
+
+	cg, err := r.buildConfigGenerator(ctx, hcp, np)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -533,9 +543,69 @@ func hostedClusterFromHCP(hcp *hyperv1.HostedControlPlane) *hyperv1.HostedCluste
 	return hc
 }
 
+// adapted from hypershift-operator/controllers/nodepool/conditions.go#supportedVersionSkewCondition
+func getHCPControlPlaneVersion(hcp *hyperv1.HostedControlPlane) (semver.Version, error) {
+	// Get the control plane version string
+	var controlPlaneVersion string
+	if len(hcp.Status.VersionStatus.History) == 0 {
+		// If the cluster is in the process of installation, there is no history
+		// Use the desired version as the control plane version
+		controlPlaneVersion = hcp.Status.VersionStatus.Desired.Version
+	} else {
+		// If the cluster is installed or upgrading
+		// Start with the most recent version from history as the default
+		controlPlaneVersion = hcp.Status.VersionStatus.History[0].Version
+		// Find the most recent Completed version
+		for _, history := range hcp.Status.VersionStatus.History {
+			if history.State == "Completed" {
+				controlPlaneVersion = history.Version
+				break
+			}
+		}
+	}
+	return semver.Parse(controlPlaneVersion)
+}
+
+// getReleaseImagePullSpec returns the release image pullSpec for the given OpenshiftEC2NodeClass.
+// If OpenshiftVersion is not specified, it falls back to the control plane version.
+// It also validates version skew between the nodeclass version and the control plane.
+func getReleaseImagePullSpec(ctx context.Context, hcp *hyperv1.HostedControlPlane, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass) (string, error) {
+	var nodeVersion semver.Version
+	var err error
+	if openshiftEC2NodeClass.Spec.OpenshiftVersion != nil {
+		nodeVersion, err = semver.Parse(*openshiftEC2NodeClass.Spec.OpenshiftVersion)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse OpenshiftVersion: %w", err)
+		}
+	} else {
+		// Fall back to control plane version
+		return hcp.Status.VersionStatus.Desired.Image, nil
+	}
+
+	controlPlaneVersion, err := getHCPControlPlaneVersion(hcp)
+	if err != nil {
+		return "", fmt.Errorf("failed to get control plane version: %w", err)
+	}
+
+	if err := supportedversion.ValidateVersionSkew(&controlPlaneVersion, &nodeVersion); err != nil {
+		return "", fmt.Errorf("version skew validation failed: %w", err)
+	}
+
+	// TODO(maxcao13): currently we don't validate versions other than skew
+	// supportedversion.IsValidReleaseVersion(&wantedVersion, &currentVersionParsed, hostedClusterVersion, &minSupportedVersion, hostedCluster.Spec.Networking.NetworkType, hostedCluster.Spec.Platform.Type)
+
+	// TODO(maxcao13): this is quite gross since we do internet lookups through this function
+	pullSpec, err := supportedversion.LookupReleaseImageFromVersion(ctx, nodeVersion)
+	if err != nil {
+		return "", fmt.Errorf("failed to lookup release image for version %s: %w", nodeVersion.String(), err)
+	}
+
+	return pullSpec, nil
+}
+
 // buildConfigGenerator creates a ConfigGenerator for the NodePool by looking up the release image,
 // generating HAProxy configuration, and combining all node configuration sources.
-func (r *EC2NodeClassReconciler) buildConfigGenerator(ctx context.Context, hcp *hyperv1.HostedControlPlane, np *hyperv1.NodePool, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass) (*nodepool.ConfigGenerator, error) {
+func (r *EC2NodeClassReconciler) buildConfigGenerator(ctx context.Context, hcp *hyperv1.HostedControlPlane, np *hyperv1.NodePool) (*nodepool.ConfigGenerator, error) {
 	// Convert HCP to a barebones HostedCluster for use with existing HostedCluster-based code paths.
 	hostedCluster := hostedClusterFromHCP(hcp)
 	hostedCluster.Status.IgnitionEndpoint = r.IgnitionEndpoint
@@ -550,8 +620,7 @@ func (r *EC2NodeClassReconciler) buildConfigGenerator(ctx context.Context, hcp *
 		return nil, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
 	}
 
-	// TODO(maxcao13): followup PR to use the OpenShiftVersion field on OpenshiftEC2NodeClass instead of the control plane version.
-	releaseImage, err := r.ReleaseProvider.Lookup(ctx, hostedCluster.Spec.Release.Image, pullSecretBytes)
+	releaseImage, err := r.ReleaseProvider.Lookup(ctx, np.Spec.Release.Image, pullSecretBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to lookup release image: %w", err)
 	}

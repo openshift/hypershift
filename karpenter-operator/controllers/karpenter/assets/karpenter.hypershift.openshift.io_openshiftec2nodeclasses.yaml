@@ -164,6 +164,14 @@ spec:
                 enum:
                 - RAID0
                 type: string
+              openshiftVersion:
+                description: |-
+                  OpenshiftVersion specifies the OpenShift version for nodes launched by this NodeClass.
+                  Must be a valid semver version (e.g., "4.20.5", "4.21.0").
+                type: string
+                x-kubernetes-validations:
+                - message: openshiftVersion must be a valid semver (e.g., '4.21.0')
+                  rule: self.matches('^[0-9]+\\.[0-9]+\\.[0-9]+$')
               securityGroupSelectorTerms:
                 description: SecurityGroupSelectorTerms is a list of or security group
                   selector terms. The terms are ORed.
