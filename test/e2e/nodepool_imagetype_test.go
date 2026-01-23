@@ -6,6 +6,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -86,6 +87,12 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 	}
 	t.Logf("Initial ImageType: %s", currentImageType)
 
+	// Get initial Linux AMI for comparison
+	linuxAMI := it.extractAMIFromCondition(t, &nodePool, hyperv1.ImageTypeLinux)
+	if linuxAMI != "" {
+		t.Logf("Initial Linux AMI: %s", linuxAMI)
+	}
+
 	// Validate initial Linux nodes are ready (provided by test framework)
 	t.Logf("Validating %d initial Linux node(s) from test framework", len(nodes))
 	for _, node := range nodes {
@@ -98,16 +105,20 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 
 	// Test update from Linux to Windows
 	t.Log("Updating ImageType from Linux to Windows...")
-	it.testImageTypeUpdate(t, g, ctx, &nodePool, hyperv1.ImageTypeWindows)
+	it.testImageTypeUpdate(t, g, ctx, &nodePool, hyperv1.ImageTypeWindows, linuxAMI)
 
 	// Test revert from Windows back to Linux
 	t.Log("Reverting ImageType from Windows back to Linux...")
-	it.testImageTypeUpdate(t, g, ctx, &nodePool, hyperv1.ImageTypeLinux)
+	// Get Windows AMI for comparison on revert
+	err = it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
+	windowsAMI := it.extractAMIFromCondition(t, &nodePool, hyperv1.ImageTypeWindows)
+	it.testImageTypeUpdate(t, g, ctx, &nodePool, hyperv1.ImageTypeLinux, windowsAMI)
 
 	t.Log("NodePool ImageType bidirectional test completed successfully")
 }
 
-func (it *NodePoolImageTypeTest) testImageTypeUpdate(t *testing.T, g *WithT, ctx context.Context, nodePool *hyperv1.NodePool, targetImageType hyperv1.ImageType) {
+func (it *NodePoolImageTypeTest) testImageTypeUpdate(t *testing.T, g *WithT, ctx context.Context, nodePool *hyperv1.NodePool, targetImageType hyperv1.ImageType, previousAMI string) {
 	err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
 
@@ -137,6 +148,9 @@ func (it *NodePoolImageTypeTest) testImageTypeUpdate(t *testing.T, g *WithT, ctx
 	validImageCondition := hostedcluster.FindNodePoolStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
 	g.Expect(validImageCondition).NotTo(BeNil(), "ValidPlatformImageType condition should be set")
 
+	// Extract new AMI and compare with previous
+	newAMI := it.extractAMIFromCondition(t, nodePool, targetImageType)
+
 	// Validate the AMI/image condition
 	switch validImageCondition.Status {
 	case corev1.ConditionTrue:
@@ -148,6 +162,14 @@ func (it *NodePoolImageTypeTest) testImageTypeUpdate(t *testing.T, g *WithT, ctx
 			}
 		} else {
 			t.Logf("Linux AMI validated: %s", validImageCondition.Message)
+		}
+
+		// CRITICAL CHECK: Verify AMI actually changed when switching ImageType
+		if previousAMI != "" && newAMI != "" {
+			if newAMI == previousAMI {
+				t.Fatalf("BUG DETECTED: AMI did not change after ImageType update! Both %s and %s use the same AMI: %s. This indicates the release image stream metadata has incorrect/missing Windows AMI data.", currentImageType, targetImageType, newAMI)
+			}
+			t.Logf("✓ AMI correctly changed: %s -> %s", previousAMI, newAMI)
 		}
 	case corev1.ConditionFalse:
 		if targetImageType == hyperv1.ImageTypeWindows && strings.Contains(strings.ToLower(validImageCondition.Message), "couldn't discover a windows ami") {
@@ -260,4 +282,23 @@ func (it *NodePoolImageTypeTest) waitForNodesWithImageType(t *testing.T, ctx con
 	}
 
 	return nodes
+}
+
+// extractAMIFromCondition extracts the AMI ID from ValidPlatformImageType condition message
+// Returns empty string if AMI cannot be extracted
+func (it *NodePoolImageTypeTest) extractAMIFromCondition(t *testing.T, nodePool *hyperv1.NodePool, imageType hyperv1.ImageType) string {
+	validImageCondition := hostedcluster.FindNodePoolStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformImageType)
+	if validImageCondition == nil || validImageCondition.Status != corev1.ConditionTrue {
+		return ""
+	}
+
+	// Extract AMI ID from message like "Bootstrap AMI is "ami-01095d1967818437c"" or "Bootstrap Windows AMI is "ami-xxx""
+	msg := validImageCondition.Message
+	// Look for pattern: ami-<17 hex chars>
+	re := regexp.MustCompile(`ami-[a-f0-9]{17}`)
+	match := re.FindString(msg)
+	if match == "" {
+		t.Logf("Warning: Could not extract AMI ID from condition message for %s: %s", imageType, msg)
+	}
+	return match
 }
