@@ -192,7 +192,7 @@ func TestValidateImageGeneration(t *testing.T) {
 			opts.InstanceType = testInstanceType
 			opts.SubnetID = testSubnetID
 
-			_, err := opts.Validate()
+			_, err := opts.Validate(t.Context(), nil)
 
 			if tc.shouldError {
 				if err == nil {
@@ -247,7 +247,7 @@ func TestAzureBoundaryConditions(t *testing.T) {
 			// Apply test-specific modifications
 			tc.modifyOpts(opts)
 
-			_, err := opts.Validate()
+			_, err := opts.Validate(t.Context(), nil)
 
 			if tc.shouldError {
 				if err == nil {

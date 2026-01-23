@@ -91,7 +91,9 @@ type ValidatedKubevirtPlatformCreateOptions struct {
 	*validatedKubevirtPlatformCreateOptions
 }
 
-func (o *RawKubevirtPlatformCreateOptions) Validate() (*ValidatedKubevirtPlatformCreateOptions, error) {
+// Validate validates the KubeVirt nodepool platform options.
+// This method uses the unified signature pattern defined in core.NodePoolPlatformValidator.
+func (o *RawKubevirtPlatformCreateOptions) Validate(_ context.Context, _ *core.CreateNodePoolOptions) (core.NodePoolPlatformCompleter, error) {
 	if o.CacheStrategyType != "" &&
 		o.CacheStrategyType != string(hyperv1.KubevirtCachingStrategyNone) &&
 		o.CacheStrategyType != string(hyperv1.KubevirtCachingStrategyPVC) {
@@ -148,7 +150,9 @@ type KubevirtPlatformCreateOptions struct {
 	*completetedKubevirtPlatformCreateOptions
 }
 
-func (o *ValidatedKubevirtPlatformCreateOptions) Complete() (*KubevirtPlatformCreateOptions, error) {
+// Complete completes the KubeVirt nodepool platform options.
+// This method uses the unified signature pattern defined in core.NodePoolPlatformCompleter.
+func (o *ValidatedKubevirtPlatformCreateOptions) Complete(_ context.Context, _ *core.CreateNodePoolOptions) (core.PlatformOptions, error) {
 	var multiQueue *hyperv1.MultiQueueSetting
 	switch value := hyperv1.MultiQueueSetting(o.NetworkInterfaceMultiQueue); value {
 	case "": // do nothing; value is nil
@@ -229,12 +233,13 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	}
 	BindDeveloperOptions(platformOpts, cmd.Flags())
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		validOpts, err := platformOpts.Validate()
+		ctx := cmd.Context()
+		validOpts, err := platformOpts.Validate(ctx, coreOpts)
 		if err != nil {
 			return err
 		}
 
-		opts, err := validOpts.Complete()
+		opts, err := validOpts.Complete(ctx, coreOpts)
 		if err != nil {
 			return err
 		}

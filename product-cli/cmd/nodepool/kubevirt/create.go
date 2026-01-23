@@ -16,12 +16,13 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	}
 	kubevirtnodepool.BindOptions(platformOpts, cmd.Flags())
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		validOpts, err := platformOpts.Validate()
+		ctx := cmd.Context()
+		validOpts, err := platformOpts.Validate(ctx, coreOpts)
 		if err != nil {
 			return err
 		}
 
-		opts, err := validOpts.Complete()
+		opts, err := validOpts.Complete(ctx, coreOpts)
 		if err != nil {
 			return err
 		}

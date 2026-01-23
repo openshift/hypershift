@@ -29,7 +29,7 @@ func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 		},
 	} {
 		var errString string
-		if _, err := test.input.Validate(); err != nil {
+		if _, err := test.input.Validate(t.Context(), nil); err != nil {
 			errString = err.Error()
 		}
 		if diff := cmp.Diff(test.expectedError, errString); diff != "" {
@@ -210,12 +210,12 @@ func TestValidatedKubevirtPlatformCreateOptions_Complete(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			validated, err := test.input.Validate()
+			validated, err := test.input.Validate(t.Context(), nil)
 			if err != nil {
 				t.Fatalf("Validate() failed: %v", err)
 			}
 			var errString string
-			output, err := validated.Complete()
+			platformOpts, err := validated.Complete(t.Context(), nil)
 			if err != nil {
 				errString = err.Error()
 			}
@@ -223,7 +223,8 @@ func TestValidatedKubevirtPlatformCreateOptions_Complete(t *testing.T) {
 				t.Errorf("got incorrect error: %v", diff)
 			}
 			var got []hypershiftv1beta1.KubevirtNetwork
-			if output != nil && output.completetedKubevirtPlatformCreateOptions != nil {
+			// Type assert to get the completed options back
+			if output, ok := platformOpts.(*KubevirtPlatformCreateOptions); ok && output != nil && output.completetedKubevirtPlatformCreateOptions != nil {
 				got = output.completetedKubevirtPlatformCreateOptions.AdditionalNetworks
 			}
 			if diff := cmp.Diff(test.output, got); diff != "" {

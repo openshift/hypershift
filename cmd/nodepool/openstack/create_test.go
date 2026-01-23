@@ -32,7 +32,7 @@ func TestRawOpenStackPlatformCreateOptions_Validate(t *testing.T) {
 		},
 	} {
 		var errString string
-		if _, err := test.input.Validate(); err != nil {
+		if _, err := test.input.Validate(t.Context(), nil); err != nil {
 			errString = err.Error()
 		}
 		if diff := cmp.Diff(test.expectedError, errString); diff != "" {

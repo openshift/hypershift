@@ -56,7 +56,9 @@ type ValidatedOpenStackPlatformCreateOptions struct {
 	*validatedOpenStackPlatformCreateOptions
 }
 
-func (o *ValidatedOpenStackPlatformCreateOptions) Complete() (*OpenStackPlatformCreateOptions, error) {
+// Complete completes the OpenStack nodepool platform options.
+// This method uses the unified signature pattern defined in core.NodePoolPlatformCompleter.
+func (o *ValidatedOpenStackPlatformCreateOptions) Complete(_ context.Context, _ *core.CreateNodePoolOptions) (core.PlatformOptions, error) {
 	return &OpenStackPlatformCreateOptions{
 		completedOpenStackPlatformCreateOptions: &completedOpenStackPlatformCreateOptions{
 			OpenStackPlatformOptions: o.OpenStackPlatformOptions,
@@ -65,7 +67,9 @@ func (o *ValidatedOpenStackPlatformCreateOptions) Complete() (*OpenStackPlatform
 	}, nil
 }
 
-func (o *RawOpenStackPlatformCreateOptions) Validate() (*ValidatedOpenStackPlatformCreateOptions, error) {
+// Validate validates the OpenStack nodepool platform options.
+// This method uses the unified signature pattern defined in core.NodePoolPlatformValidator.
+func (o *RawOpenStackPlatformCreateOptions) Validate(_ context.Context, _ *core.CreateNodePoolOptions) (core.NodePoolPlatformCompleter, error) {
 	if o.Flavor == "" {
 		return nil, fmt.Errorf("flavor is required")
 	}
@@ -106,12 +110,13 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	}
 	BindOptions(platformOpts, cmd.Flags())
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		validOpts, err := platformOpts.Validate()
+		ctx := cmd.Context()
+		validOpts, err := platformOpts.Validate(ctx, coreOpts)
 		if err != nil {
 			return err
 		}
 
-		opts, err := validOpts.Complete()
+		opts, err := validOpts.Complete(ctx, coreOpts)
 		if err != nil {
 			return err
 		}
