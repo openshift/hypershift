@@ -22,6 +22,111 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+// TestLoadCABundle tests the LoadCABundle function.
+func TestLoadCABundle(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+
+	tests := []struct {
+		name          string
+		configMap     corev1.ConfigMap
+		expectError   bool
+		errorContains string
+		expectCerts   int
+	}{
+		{
+			name: "When ConfigMap has valid certificate it should succeed",
+			configMap: corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-ca-bundle",
+					Namespace: "test-namespace",
+				},
+				Data: map[string]string{
+					ProxyCAConfigMapKey: generateCertPEM(t, now.Add(24*time.Hour)),
+				},
+			},
+			expectError: false,
+			expectCerts: 1,
+		},
+		{
+			name: "When ConfigMap has multiple certificates it should succeed",
+			configMap: corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-ca-bundle",
+					Namespace: "test-namespace",
+				},
+				Data: map[string]string{
+					ProxyCAConfigMapKey: generateCertPEM(t, now.Add(24*time.Hour)) + generateCertPEM(t, now.Add(48*time.Hour)),
+				},
+			},
+			expectError: false,
+			expectCerts: 2,
+		},
+		{
+			name: "When ConfigMap is missing ca-bundle.crt key it should fail",
+			configMap: corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-ca-bundle",
+					Namespace: "test-namespace",
+				},
+				Data: map[string]string{
+					"wrong-key": "some-data",
+				},
+			},
+			expectError:   true,
+			errorContains: "is missing \"ca-bundle.crt\"",
+		},
+		{
+			name: "When ConfigMap has empty ca-bundle.crt it should fail",
+			configMap: corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-ca-bundle",
+					Namespace: "test-namespace",
+				},
+				Data: map[string]string{
+					ProxyCAConfigMapKey: "",
+				},
+			},
+			expectError:   true,
+			errorContains: "is empty",
+		},
+		{
+			name: "When ConfigMap has invalid certificate data it should fail",
+			configMap: corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-ca-bundle",
+					Namespace: "test-namespace",
+				},
+				Data: map[string]string{
+					ProxyCAConfigMapKey: "invalid-cert-data",
+				},
+			},
+			expectError:   true,
+			errorContains: "failed parsing certificate data",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			certs, err := LoadCABundle(tc.configMap)
+
+			if tc.expectError && err == nil {
+				t.Errorf("Expected error but got none")
+			}
+			if !tc.expectError && err != nil {
+				t.Errorf("Expected no error but got: %v", err)
+			}
+			if tc.expectError && err != nil && tc.errorContains != "" {
+				if !strings.Contains(err.Error(), tc.errorContains) {
+					t.Errorf("Expected error to contain %q but got: %v", tc.errorContains, err)
+				}
+			}
+			if !tc.expectError && len(certs) != tc.expectCerts {
+				t.Errorf("Expected %d certificates but got %d", tc.expectCerts, len(certs))
+			}
+		})
+	}
+}
+
 // TestValidateProxyCAValidity tests the proxy CA validation logic.
 func TestValidateProxyCAValidity(t *testing.T) {
 	now := time.Now().Truncate(time.Second)
