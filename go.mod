@@ -1,8 +1,6 @@
 module github.com/openshift/hypershift
 
-go 1.24.6
-
-toolchain go1.24.11
+go 1.25.3
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0
@@ -25,7 +23,7 @@ require (
 	github.com/aws/aws-sdk-go v1.55.8
 	github.com/aws/aws-sdk-go-v2 v1.41.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.7
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.279.2
+	github.com/aws/aws-sdk-go-v2/service/ec2 v1.281.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.6
 	github.com/aws/karpenter-provider-aws v1.0.8
 	github.com/blang/semver v3.5.1+incompatible
@@ -34,7 +32,7 @@ require (
 	github.com/coreos/ignition/v2 v2.25.1
 	github.com/distribution/reference v0.6.0
 	github.com/docker/distribution v2.8.3+incompatible
-	github.com/elazarl/goproxy v1.7.2
+	github.com/elazarl/goproxy v1.8.0
 	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/go-jose/go-jose/v3 v3.0.4
 	github.com/go-logr/logr v1.4.3
@@ -61,7 +59,7 @@ require (
 	github.com/openshift/hypershift/api v0.0.0-20240604072534-cd2d5291e2b7
 	github.com/openshift/library-go v0.0.0-20251204132909-8814e976a023
 	github.com/openshift/multi-operator-manager v0.0.0-20260112172834-b64ebc8c627b
-	github.com/operator-framework/api v0.37.0
+	github.com/operator-framework/api v0.38.0
 	github.com/pkg/errors v0.9.1
 	github.com/ppc64le-cloud/powervs-utils v0.0.0-20250403153021-219b161805db
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.88.0
@@ -252,7 +250,7 @@ require (
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/samber/lo v1.51.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
 	github.com/stoewer/go-strcase v1.3.1 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20220101234140-673ab2c3ae75 // indirect
