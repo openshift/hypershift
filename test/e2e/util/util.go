@@ -594,11 +594,32 @@ func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crc
 }
 
 func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	WaitForImageRolloutWithMetrics(t, ctx, client, hostedCluster, "", "", "creation")
+}
+
+func WaitForImageRolloutWithMetrics(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, testName string, platform string, metricContext string) {
 	// Measure control plane rollout time by checking when components became ready
 	// This provides an independent metric for HCP readiness SLOs
 	t.Logf("Checking control plane rollout time for HostedCluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
 	cpRolloutDuration := measureControlPlaneRolloutTime(t, ctx, client, hostedCluster)
-	t.Logf("Control plane components became ready in %v after HostedCluster creation", cpRolloutDuration)
+
+	// Default to "creation" if metricContext is not provided
+	if metricContext == "" {
+		metricContext = "creation"
+	}
+
+	// Log with context-appropriate message
+	if metricContext == "upgrade" {
+		t.Logf("Control plane components became ready in %v after upgrade start", cpRolloutDuration)
+	} else {
+		t.Logf("Control plane components became ready in %v after HostedCluster creation", cpRolloutDuration)
+	}
+
+	// Output structured metric if test name and platform are provided
+	if testName != "" && platform != "" {
+		t.Logf("METRIC: control_plane_rollout_duration_seconds{test=%q,platform=%q,context=%q} %f",
+			testName, platform, metricContext, cpRolloutDuration.Seconds())
+	}
 
 	var lastVersionCompletionTime *metav1.Time
 	if hostedCluster.Status.Version != nil &&
@@ -642,8 +663,10 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 	)
 }
 
-// measureControlPlaneRolloutTime calculates the duration from HostedCluster creation
+// measureControlPlaneRolloutTime calculates the duration from the rollout start time
 // to when all control plane components first became ready by examining their condition timestamps.
+// For upgrades, it measures from the upgrade start time (version history StartedTime).
+// For fresh cluster creation, it measures from the HostedCluster creation timestamp.
 // This provides the actual control plane rollout time even when called after the rollout is complete.
 func measureControlPlaneRolloutTime(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) time.Duration {
 	controlPlaneComponents := &hyperv1.ControlPlaneComponentList{}
@@ -679,8 +702,20 @@ func measureControlPlaneRolloutTime(t *testing.T, ctx context.Context, client cr
 		return 0
 	}
 
-	// Calculate duration from HC creation to last component becoming ready
-	duration := latestReadyTime.Sub(hostedCluster.CreationTimestamp.Time)
+	// Determine the baseline time to measure from
+	// For upgrades: use the StartedTime from the most recent version history entry
+	// For fresh cluster creation: use the HC creation timestamp
+	baselineTime := hostedCluster.CreationTimestamp.Time
+	if hostedCluster.Status.Version != nil && len(hostedCluster.Status.Version.History) > 0 {
+		// Use the most recent version's start time (index 0 is the newest)
+		startedTime := hostedCluster.Status.Version.History[0].StartedTime
+		if !startedTime.IsZero() {
+			baselineTime = startedTime.Time
+		}
+	}
+
+	// Calculate duration from baseline to last component becoming ready
+	duration := latestReadyTime.Sub(baselineTime)
 	if duration < 0 {
 		t.Logf("Warning: calculated negative duration, using 0")
 		return 0
