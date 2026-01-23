@@ -23,7 +23,7 @@ However, where the zero value for a field is not a valid value (e.g. the empty s
 In this case, the field may not need to be a pointer, and, with the WhenRequired preference, the linter will point out where the fields do not need to be pointers.
 
 Structs are also inspected to determine if they require a pointer.
-If a struct has any required fields, or a minimum numebr of properties, then fields leveraging the struct should be pointers.
+If a struct has any required fields, or a minimum number of properties, then fields leveraging the struct should be pointers.
 
 Optional structs do not always need to be pointers, but may be marshalled as `{}` because the JSON marshaller in Go cannot determine whether a struct is empty or not.
 */

@@ -70,8 +70,8 @@ func validateConfig(cfg *Config, fldPath *field.Path) field.ErrorList {
 			errs = append(errs, field.Invalid(rulesPath.Index(i).Child("identifier"), rule.Identifier, "identifier marker cannot be empty"))
 		}
 
-		if len(rule.Dependents) == 0 {
-			errs = append(errs, field.Invalid(rulesPath.Index(i).Child("dependents"), rule.Dependents, "dependents list cannot be empty"))
+		if len(rule.DependsOn) == 0 {
+			errs = append(errs, field.Invalid(rulesPath.Index(i).Child("dependsOn"), rule.DependsOn, "dependsOn list cannot be empty"))
 		}
 
 		if rule.Type == "" {
