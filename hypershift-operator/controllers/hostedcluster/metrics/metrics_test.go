@@ -968,6 +968,16 @@ func TestProxyCAValidity(t *testing.T) {
 					Data: map[string]string{proxy.ProxyCAConfigMapKey: tc.caCertificate},
 				}
 				objects = append(objects, configMap)
+
+				// Set ValidProxyConfiguration condition based on expected metric value
+				conditionStatus := metav1.ConditionFalse
+				if tc.expected != nil && tc.expected.Metric[0].Gauge.Value != nil && *tc.expected.Metric[0].Gauge.Value == 1.0 {
+					conditionStatus = metav1.ConditionTrue
+				}
+				meta.SetStatusCondition(&hcBase.Status.Conditions, metav1.Condition{
+					Type:   string(hyperv1.ValidProxyConfiguration),
+					Status: conditionStatus,
+				})
 			}
 			clientBuilder = clientBuilder.WithObjects(objects...)
 			checkMetric(t,
