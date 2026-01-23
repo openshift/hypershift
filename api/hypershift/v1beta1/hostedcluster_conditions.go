@@ -215,6 +215,12 @@ const (
 	// firewall rules, missing data plane nodes, or problems with infrastructure
 	// components like the konnectivity-agent workload.
 	DataPlaneConnectionAvailable ConditionType = "DataPlaneConnectionAvailable"
+
+	// HostedClusterConfigSynced indicates whether the hosted cluster configuration
+	// (Infrastructure, DNS, Ingress, Network, etc.) is successfully synced to the guest cluster.
+	// **True** means all configuration resources are successfully synced.
+	// **False** means one or more configuration resources failed to sync.
+	HostedClusterConfigSynced ConditionType = "HostedClusterConfigSynced"
 )
 
 // Reasons.
@@ -279,6 +285,14 @@ const (
 	DataPlaneConnectionLogsAccessFailedReason = "LogsAccessFailed"
 
 	DataPlaneConnectionNoWorkerNodesAvailableReason = "NoWorkerNodesAvailable"
+
+	// HostedClusterConfigSynced reasons
+	ConfigSyncedReason             = "ConfigSynced"
+	InfrastructureSyncFailedReason = "InfrastructureSyncFailed"
+	DNSSyncFailedReason            = "DNSSyncFailed"
+	IngressSyncFailedReason        = "IngressSyncFailed"
+	NetworkSyncFailedReason        = "NetworkSyncFailed"
+	MultipleConfigSyncFailedReason = "MultipleConfigSyncFailed"
 )
 
 // Messages.

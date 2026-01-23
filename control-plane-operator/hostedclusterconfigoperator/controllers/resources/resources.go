@@ -411,8 +411,15 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling guest cluster global configuration")
-	if err := r.reconcileConfig(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile global configuration: %w", err))
+	configErr := r.reconcileConfig(ctx, hcp)
+	if configErr != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile global configuration: %w", configErr))
+	}
+
+	// Set the HostedClusterConfigSynced condition based on the result
+	if err := r.setHostedClusterConfigSyncedCondition(ctx, hcp, configErr); err != nil {
+		log.Error(err, "failed to set HostedClusterConfigSynced condition")
+		// Don't add to errs - this is a best-effort status update
 	}
 
 	log.Info("reconciling guest cluster namespaces")
@@ -870,8 +877,47 @@ func (r *reconciler) reconcileCRDs(ctx context.Context) error {
 	return utilerrors.NewAggregate(errs)
 }
 
+// truncateMessage truncates a message to the specified maximum length.
+func truncateMessage(msg string, maxLen int) string {
+	if len(msg) <= maxLen {
+		return msg
+	}
+	return msg[:maxLen-3] + "..."
+}
+
+// setHostedClusterConfigSyncedCondition sets the HostedClusterConfigSynced condition on the HCP
+// based on the result of reconcileConfig.
+func (r *reconciler) setHostedClusterConfigSyncedCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, configErr error) error {
+	condition := metav1.Condition{
+		Type:               string(hyperv1.HostedClusterConfigSynced),
+		ObservedGeneration: hcp.Generation,
+	}
+
+	if configErr != nil {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = determineConfigSyncReason(configErr)
+		condition.Message = truncateMessage(configErr.Error(), 1024)
+	} else {
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = hyperv1.ConfigSyncedReason
+		condition.Message = hyperv1.AllIsWellMessage
+	}
+
+	originalHCP := hcp.DeepCopy()
+	if !meta.SetStatusCondition(&hcp.Status.Conditions, condition) {
+		// No change needed
+		return nil
+	}
+
+	if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFrom(originalHCP)); err != nil {
+		return fmt.Errorf("failed to update HCP status with HostedClusterConfigSynced condition: %w", err)
+	}
+
+	return nil
+}
+
 func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	var errs []error
+	errs := &ConfigSyncErrors{}
 
 	apiServerAddress := hcp.Status.ControlPlaneEndpoint.Host
 
@@ -887,13 +933,13 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		globalconfig.ReconcileInfrastructure(infra, hcp)
 		return nil
 	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile infrastructure config spec: %w", err))
+		errs.Add(ConfigSyncErrorInfrastructure, "failed to reconcile infrastructure config spec", err)
 	} else {
 		// It is reconciled a second time to update its status
 		globalconfig.ReconcileInfrastructure(infra, hcp)
 		if !equality.Semantic.DeepEqual(infra.Status, currentInfra.Status) {
 			if err := r.client.Status().Update(ctx, infra); err != nil {
-				errs = append(errs, fmt.Errorf("failed to update infrastructure status: %w", err))
+				errs.Add(ConfigSyncErrorInfrastructure, "failed to update infrastructure status", err)
 			}
 		}
 	}
@@ -903,7 +949,7 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		globalconfig.ReconcileDNSConfig(dns, hcp)
 		return nil
 	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile dns config: %w", err))
+		errs.Add(ConfigSyncErrorDNS, "failed to reconcile dns config", err)
 	}
 
 	image := globalconfig.ImageConfig()
@@ -911,7 +957,7 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		globalconfig.ReconcileImageConfig(image, hcp)
 		return nil
 	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile image config: %w", err))
+		errs.Add(ConfigSyncErrorImage, "failed to reconcile image config", err)
 	}
 
 	ingress := globalconfig.IngressConfig()
@@ -919,22 +965,22 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		globalconfig.ReconcileIngressConfig(ingress, hcp)
 		return nil
 	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile ingress config: %w", err))
+		errs.Add(ConfigSyncErrorIngress, "failed to reconcile ingress config", err)
 	}
 
 	networkConfig := globalconfig.NetworkConfig()
 	if _, err := r.CreateOrUpdate(ctx, r.client, networkConfig, func() error {
 		if err := globalconfig.ReconcileNetworkConfig(networkConfig, hcp); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile network config: %w", err))
+			errs.Add(ConfigSyncErrorNetwork, "failed to reconcile network config", err)
 		}
 		return nil
 	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to create network config: %w", err))
+		errs.Add(ConfigSyncErrorNetwork, "failed to create network config", err)
 	}
 
 	// Copy proxy trustedCA to guest cluster.
 	if err := r.reconcileProxyTrustedCAConfigMap(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile proxy TrustedCA configmap: %w", err))
+		errs.Add(ConfigSyncErrorProxy, "failed to reconcile proxy TrustedCA configmap", err)
 	}
 
 	proxy := globalconfig.ProxyConfig()
@@ -942,12 +988,11 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		globalconfig.ReconcileInClusterProxyConfig(proxy, hcp.Spec.Configuration)
 		return nil
 	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile proxy config: %w", err))
+		errs.Add(ConfigSyncErrorProxy, "failed to reconcile proxy config", err)
 	}
 
-	err := r.reconcileImageContentPolicyType(ctx, hcp)
-	if err != nil {
-		errs = append(errs, err)
+	if err := r.reconcileImageContentPolicyType(ctx, hcp); err != nil {
+		errs.Add(ConfigSyncErrorImage, "failed to reconcile image content policy", err)
 	}
 
 	installConfigCM := manifests.InstallConfigConfigMap()
@@ -957,7 +1002,7 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		}
 		return nil
 	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile dns config: %w", err))
+		errs.Add(ConfigSyncErrorOther, "failed to reconcile install config", err)
 	}
 
 	cloudCredentialConfig := manifests.CloudCredential()
@@ -965,24 +1010,24 @@ func (r *reconciler) reconcileConfig(ctx context.Context, hcp *hyperv1.HostedCon
 		cco.ReconcileCloudCredentialConfig(cloudCredentialConfig)
 		return nil
 	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile cloud credential config: %w", err))
+		errs.Add(ConfigSyncErrorOther, "failed to reconcile cloud credential config", err)
 	}
 
 	authenticationConfig := globalconfig.AuthenticationConfiguration()
 	if _, err := r.CreateOrUpdate(ctx, r.client, authenticationConfig, func() error {
 		return globalconfig.ReconcileAuthenticationConfiguration(authenticationConfig, hcp.Spec.Configuration, hcp.Spec.IssuerURL)
 	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile authentication config: %w", err))
+		errs.Add(ConfigSyncErrorAuthentication, "failed to reconcile authentication config", err)
 	}
 
 	apiServerConfig := globalconfig.APIServerConfiguration()
 	if _, err := r.CreateOrUpdate(ctx, r.client, apiServerConfig, func() error {
 		return globalconfig.ReconcileAPIServerConfiguration(apiServerConfig, hcp.Spec.Configuration)
 	}); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile apiserver config: %w", err))
+		errs.Add(ConfigSyncErrorAPIServer, "failed to reconcile apiserver config", err)
 	}
 
-	return utilerrors.NewAggregate(errs)
+	return errs.ToError()
 }
 
 func (r *reconciler) reconcileProxyTrustedCAConfigMap(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {

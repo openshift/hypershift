@@ -1899,7 +1899,7 @@ addition to any security groups specified in the NodePool.</p>
 ###AWSResourceReference { #hypershift.openshift.io/v1beta1.AWSResourceReference }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AWSCloudProviderConfig">AWSCloudProviderConfig</a>, 
+<a href="#hypershift.openshift.io/v1beta1.AWSCloudProviderConfig">AWSCloudProviderConfig</a>,
 <a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>)
 </p>
 <p>
@@ -1948,7 +1948,7 @@ They are applied according to the rules defined by the AWS API:
 ###AWSResourceTag { #hypershift.openshift.io/v1beta1.AWSResourceTag }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1beta1.AWSNodePoolPlatform">AWSNodePoolPlatform</a>,
 <a href="#hypershift.openshift.io/v1beta1.AWSPlatformSpec">AWSPlatformSpec</a>)
 </p>
 <p>
@@ -2843,7 +2843,7 @@ string
 ###AutoNode { #hypershift.openshift.io/v1beta1.AutoNode }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -2875,7 +2875,7 @@ ProvisionerConfig
 ###AvailabilityPolicy { #hypershift.openshift.io/v1beta1.AvailabilityPolicy }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -3000,7 +3000,7 @@ This is only valid for self-managed Azure.</p>
 ###AzureClientID { #hypershift.openshift.io/v1beta1.AzureClientID }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">ManagedIdentity</a>, 
+<a href="#hypershift.openshift.io/v1beta1.ManagedIdentity">ManagedIdentity</a>,
 <a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">WorkloadIdentity</a>)
 </p>
 <p>
@@ -3952,7 +3952,7 @@ workload identity authentication.</p>
 ###Capabilities { #hypershift.openshift.io/v1beta1.Capabilities }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -4122,7 +4122,7 @@ of an instance</p>
 ###ClusterAutoscaling { #hypershift.openshift.io/v1beta1.ClusterAutoscaling }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -4297,7 +4297,7 @@ Maximum of 3 expanders can be specified.</p>
 ###ClusterConfiguration { #hypershift.openshift.io/v1beta1.ClusterConfiguration }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -4577,7 +4577,7 @@ This is only consumed when NetworkType is OVNKubernetes.</p>
 ###ClusterNetworking { #hypershift.openshift.io/v1beta1.ClusterNetworking }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -4737,7 +4737,7 @@ Defaults to &ldquo;Normal&rdquo;.</p>
 ###ClusterVersionStatus { #hypershift.openshift.io/v1beta1.ClusterVersionStatus }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
 </p>
 <p>
@@ -5005,6 +5005,12 @@ has been created for the specified Internal Load Balancer in the management VPC<
 control plane.
 When this is false for too long and there&rsquo;s no clear indication in the &ldquo;Reason&rdquo;, please check the remaining more granular conditions.</p>
 </td>
+</tr><tr><td><p>&#34;HostedClusterConfigSynced&#34;</p></td>
+<td><p>HostedClusterConfigSynced indicates whether the hosted cluster configuration
+(Infrastructure, DNS, Ingress, Network, etc.) is successfully synced to the guest cluster.
+<strong>True</strong> means all configuration resources are successfully synced.
+<strong>False</strong> means one or more configuration resources failed to sync.</p>
+</td>
 </tr><tr><td><p>&#34;Degraded&#34;</p></td>
 <td><p>HostedClusterDegraded indicates whether the HostedCluster is encountering
 an error that may require user intervention to resolve.</p>
@@ -5156,7 +5162,7 @@ and reports missing images if any.</p>
 ###ConfigurationStatus { #hypershift.openshift.io/v1beta1.ConfigurationStatus }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
 </p>
 <p>
@@ -5464,7 +5470,7 @@ ManagedIdentity
 ###DNSSpec { #hypershift.openshift.io/v1beta1.DNSSpec }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -5667,7 +5673,7 @@ and the user is responsible for doing so.</p>
 ###EtcdSpec { #hypershift.openshift.io/v1beta1.EtcdSpec }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -5831,8 +5837,8 @@ string
 ###FilterByNeutronTags { #hypershift.openshift.io/v1beta1.FilterByNeutronTags }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.NetworkFilter">NetworkFilter</a>, 
-<a href="#hypershift.openshift.io/v1beta1.RouterFilter">RouterFilter</a>, 
+<a href="#hypershift.openshift.io/v1beta1.NetworkFilter">NetworkFilter</a>,
+<a href="#hypershift.openshift.io/v1beta1.RouterFilter">RouterFilter</a>,
 <a href="#hypershift.openshift.io/v1beta1.SubnetFilter">SubnetFilter</a>)
 </p>
 <p>
@@ -8257,7 +8263,7 @@ call IBM Cloud KMS APIs</p>
 ###IBMCloudPlatformSpec { #hypershift.openshift.io/v1beta1.IBMCloudPlatformSpec }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.NodePoolPlatform">NodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1beta1.NodePoolPlatform">NodePoolPlatform</a>,
 <a href="#hypershift.openshift.io/v1beta1.PlatformSpec">PlatformSpec</a>)
 </p>
 <p>
@@ -8290,7 +8296,7 @@ github.com/openshift/api/config/v1.IBMCloudProviderType
 ###ImageContentSource { #hypershift.openshift.io/v1beta1.ImageContentSource }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -9136,7 +9142,7 @@ Value of Filesystem is implied when not included in claim spec.</p>
 ###KubevirtPlatformCredentials { #hypershift.openshift.io/v1beta1.KubevirtPlatformCredentials }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.KubeVirtNodePoolStatus">KubeVirtNodePoolStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.KubeVirtNodePoolStatus">KubeVirtNodePoolStatus</a>,
 <a href="#hypershift.openshift.io/v1beta1.KubevirtPlatformSpec">KubevirtPlatformSpec</a>)
 </p>
 <p>
@@ -9809,7 +9815,7 @@ is empty.</p>
 ###ManagedIdentity { #hypershift.openshift.io/v1beta1.ManagedIdentity }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.ControlPlaneManagedIdentities">ControlPlaneManagedIdentities</a>)
 </p>
 <p>
@@ -9993,7 +9999,7 @@ FilterByNeutronTags
 ###NetworkParam { #hypershift.openshift.io/v1beta1.NetworkParam }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">OpenStackPlatformSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.OpenStackPlatformSpec">OpenStackPlatformSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.PortSpec">PortSpec</a>)
 </p>
 <p>
@@ -10838,7 +10844,7 @@ assigned when the service is created.</p>
 ###OLMCatalogPlacement { #hypershift.openshift.io/v1beta1.OLMCatalogPlacement }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -11262,7 +11268,7 @@ This value must be a valid IPv4 or IPv6 address.</p>
 ###OperatorConfiguration { #hypershift.openshift.io/v1beta1.OperatorConfiguration }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -11488,7 +11494,7 @@ do not support Capacity Reservations. Compatible with &ldquo;default&rdquo; and 
 ###PlatformSpec { #hypershift.openshift.io/v1beta1.PlatformSpec }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -11634,7 +11640,7 @@ GCPPlatformSpec
 ###PlatformStatus { #hypershift.openshift.io/v1beta1.PlatformStatus }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
 </p>
 <p>
@@ -11667,8 +11673,8 @@ AWSPlatformStatus
 ###PlatformType { #hypershift.openshift.io/v1beta1.PlatformType }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">KarpenterConfig</a>, 
-<a href="#hypershift.openshift.io/v1beta1.NodePoolPlatform">NodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">KarpenterConfig</a>,
+<a href="#hypershift.openshift.io/v1beta1.NodePoolPlatform">NodePoolPlatform</a>,
 <a href="#hypershift.openshift.io/v1beta1.PlatformSpec">PlatformSpec</a>)
 </p>
 <p>
@@ -12232,7 +12238,7 @@ credentials for image registry operator to get authenticated with ibm cloud.</p>
 ###PowerVSResourceReference { #hypershift.openshift.io/v1beta1.PowerVSResourceReference }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.PowerVSNodePoolPlatform">PowerVSNodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1beta1.PowerVSNodePoolPlatform">PowerVSNodePoolPlatform</a>,
 <a href="#hypershift.openshift.io/v1beta1.PowerVSPlatformSpec">PowerVSPlatformSpec</a>)
 </p>
 <p>
@@ -12440,7 +12446,7 @@ KarpenterConfig
 ###Release { #hypershift.openshift.io/v1beta1.Release }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.NodePoolSpec">NodePoolSpec</a>)
 </p>
 <p>
@@ -12874,7 +12880,7 @@ When omitted, the autoscaler defaults to 50%.</p>
 ###SecretEncryptionSpec { #hypershift.openshift.io/v1beta1.SecretEncryptionSpec }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
@@ -13063,7 +13069,7 @@ The specifics of the setup are platform dependent.</p>
 ###ServicePublishingStrategyMapping { #hypershift.openshift.io/v1beta1.ServicePublishingStrategyMapping }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterSpec">HostedClusterSpec</a>,
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
