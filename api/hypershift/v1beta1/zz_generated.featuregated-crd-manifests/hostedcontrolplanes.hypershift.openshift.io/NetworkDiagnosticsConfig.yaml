@@ -3784,6 +3784,9 @@ spec:
                           type: object
                         maxItems: 25
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - key
+                        x-kubernetes-list-type: map
                       rolesRef:
                         description: |-
                           rolesRef contains references to various AWS IAM roles required to enable

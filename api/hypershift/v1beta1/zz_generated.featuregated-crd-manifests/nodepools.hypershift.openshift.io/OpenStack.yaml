@@ -561,6 +561,9 @@ spec:
                           type: object
                         maxItems: 25
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - key
+                        x-kubernetes-list-type: map
                       rootVolume:
                         description: rootVolume specifies configuration for the root
                           volume of node instances.

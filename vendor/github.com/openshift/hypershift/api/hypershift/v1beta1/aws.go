@@ -61,6 +61,8 @@ type AWSNodePoolPlatform struct {
 	// for the user.
 	//
 	// +kubebuilder:validation:MaxItems=25
+	// +listType=map
+	// +listMapKey=key
 	// +optional
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 
@@ -314,6 +316,8 @@ type AWSPlatformSpec struct {
 	// These take precedence over tags defined out of band (i.e., tags added manually or by other tools outside of HyperShift) in AWS in case of conflicts.
 	//
 	// +kubebuilder:validation:MaxItems=25
+	// +listType=map
+	// +listMapKey=key
 	// +optional
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 
