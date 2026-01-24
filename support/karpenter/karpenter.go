@@ -14,3 +14,11 @@ func IsKarpenterEnabled(autoNode *hyperv1.AutoNode) bool {
 		autoNode.Provisioner.Karpenter != nil &&
 		autoNode.Provisioner.Karpenter.Platform == hyperv1.AWSPlatform
 }
+
+const (
+	// ManagedByKarpenterLabel is a label set on the userData secrets as being managed for Karpenter
+	ManagedByKarpenterLabel = "hypershift.openshift.io/managed-by-karpenter"
+)
+
+// KarpenterTaintConfigMapName is the name of the configmap containing the karpenter taint config
+const KarpenterTaintConfigMapName = "set-karpenter-taint"
