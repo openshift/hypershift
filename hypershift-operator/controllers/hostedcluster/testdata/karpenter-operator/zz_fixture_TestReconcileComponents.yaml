@@ -56,6 +56,8 @@ spec:
       - args:
         - --target-kubeconfig=/mnt/kubeconfig/target-kubeconfig
         - --namespace=$(MY_NAMESPACE)
+        - --hypershift-operator-image=test-image
+        - --ignition-endpoint=
         - --control-plane-operator-image=cpo-image
         command:
         - /usr/bin/karpenter-operator

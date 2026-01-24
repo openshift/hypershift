@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
 
@@ -267,7 +268,7 @@ func TestKarpenterDeletion(t *testing.T) {
 			g.Expect(err).NotTo(HaveOccurred())
 
 			// verify HCP finalizers
-			hcp, err := r.getHCP(ctx)
+			hcp, err := karpenterutil.GetHCP(ctx, r.ManagementClient, r.Namespace)
 			g.Expect(err).NotTo(HaveOccurred())
 			if tc.eventuallyKarpenterFinalizerRemoved {
 				g.Expect(hcp.Finalizers).NotTo(ContainElement(karpenterFinalizer))
