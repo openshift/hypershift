@@ -3131,7 +3131,7 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 	}
 	for _, ep := range awsEndpointServiceList.Items {
 		if ep.DeletionTimestamp != nil {
-			if platformaws.ValidCredentials(hc) && time.Since(ep.DeletionTimestamp.Time) < awsEndpointDeletionGracePeriod {
+			if platformaws.GetCredentialStatus(hc) == platformaws.CredentialStatusValid && time.Since(ep.DeletionTimestamp.Time) < awsEndpointDeletionGracePeriod {
 				continue
 			}
 
