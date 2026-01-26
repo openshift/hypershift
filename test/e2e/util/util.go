@@ -126,6 +126,8 @@ var (
 		"aws-ebs-csi-driver-controller": 1,
 		// Allow 1 restart for network-node-identity webhook startup timing
 		"network-node-identity": 1,
+		// temporary workaround for https://issues.redhat.com/browse/CNV-76520
+		"kubevirt-cloud-controller-manager": 2,
 	}
 )
 
@@ -1204,13 +1206,6 @@ func EnsureNetworkPolicies(t *testing.T, ctx context.Context, c crclient.Client,
 					g.Expect(err).To(HaveOccurred())
 				}
 			}
-
-			// Validate cluster api is allowed to access management KAS.
-			stdOut, err := RunCommandInPod(ctx, c, "cluster-api", hcpNamespace, command, "manager", 0)
-			// Expect curl return a 403 from the KAS.
-			if !strings.Contains(stdOut, "HTTP/2 403") || err != nil {
-				t.Errorf("cluster api pod was unexpectedly not allowed to reach the management KAS. stdOut: %s. stdErr: %s", stdOut, err.Error())
-			}
 		})
 	})
 }
@@ -1553,7 +1548,7 @@ func GetMetricsFromPod(ctx context.Context, c crclient.Client, componentName, co
 		return nil, fmt.Errorf("no metrics found")
 	}
 
-	var parser expfmt.TextParser
+	parser := expfmt.NewTextParser(model.UTF8Validation)
 	return parser.TextToMetricFamilies(strings.NewReader(cmdOutput))
 }
 

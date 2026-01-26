@@ -564,22 +564,46 @@ func TestReportInvalidAwsCreds(t *testing.T) {
 		expected                                *dto.MetricFamily
 	}{
 		{
-			name:                                    "When ValidOIDCConfigurationCondition status is false, metric is reported with a value set to 1",
+			name:                                    "When both conditions are true, metric is reported with a value set to 0 (valid)",
+			ValidOIDCConfigurationConditionStatus:   metav1.ConditionTrue,
+			ValidAWSIdentityProviderConditionStatus: metav1.ConditionTrue,
+			expected:                                wrapExpectedValueAsMetric(0),
+		},
+		{
+			name:                                    "When ValidOIDCConfigurationCondition status is false, metric is reported with a value set to 1 (invalid)",
 			ValidOIDCConfigurationConditionStatus:   metav1.ConditionFalse,
 			ValidAWSIdentityProviderConditionStatus: metav1.ConditionTrue,
 			expected:                                wrapExpectedValueAsMetric(1),
 		},
 		{
-			name:                                    "When ValidAWSIdentityProviderCondition status is false, metric is reported with a value set to 1",
+			name:                                    "When ValidAWSIdentityProviderCondition status is false, metric is reported with a value set to 1 (invalid)",
 			ValidOIDCConfigurationConditionStatus:   metav1.ConditionTrue,
 			ValidAWSIdentityProviderConditionStatus: metav1.ConditionFalse,
 			expected:                                wrapExpectedValueAsMetric(1),
 		},
 		{
-			name:                                    "When both ValidAWSIdentityProviderCondition and ValidOIDCConfigurationCondition statuses is true, metric is reported with a value set to 0",
-			ValidOIDCConfigurationConditionStatus:   metav1.ConditionTrue,
+			name:                                    "When both conditions are false, metric is reported with a value set to 1 (invalid)",
+			ValidOIDCConfigurationConditionStatus:   metav1.ConditionFalse,
+			ValidAWSIdentityProviderConditionStatus: metav1.ConditionFalse,
+			expected:                                wrapExpectedValueAsMetric(1),
+		},
+		{
+			name:                                    "When ValidOIDCConfigurationCondition status is unknown, metric is reported with a value set to 2 (unknown)",
+			ValidOIDCConfigurationConditionStatus:   metav1.ConditionUnknown,
 			ValidAWSIdentityProviderConditionStatus: metav1.ConditionTrue,
-			expected:                                wrapExpectedValueAsMetric(0),
+			expected:                                wrapExpectedValueAsMetric(2),
+		},
+		{
+			name:                                    "When ValidAWSIdentityProviderCondition status is unknown, metric is reported with a value set to 2 (unknown)",
+			ValidOIDCConfigurationConditionStatus:   metav1.ConditionTrue,
+			ValidAWSIdentityProviderConditionStatus: metav1.ConditionUnknown,
+			expected:                                wrapExpectedValueAsMetric(2),
+		},
+		{
+			name:                                    "When both conditions are unknown, metric is reported with a value set to 2 (unknown)",
+			ValidOIDCConfigurationConditionStatus:   metav1.ConditionUnknown,
+			ValidAWSIdentityProviderConditionStatus: metav1.ConditionUnknown,
+			expected:                                wrapExpectedValueAsMetric(2),
 		},
 	}
 

@@ -422,7 +422,7 @@ func TestNodePoolAutoscalingScaleFromZero(t *testing.T) {
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		t.Run("TestScaleFromZero", testScaleFromZero(ctx, mgtClient, hostedCluster))
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "autoscaling-scale-from-zero", globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "scale-from-zero", globalOpts.ServiceAccountSigningKey)
 }
 
 func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) func(t *testing.T) {
@@ -487,9 +487,7 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 					if _, ok := md.Annotations["machine.openshift.io/memoryMb"]; !ok {
 						return false, "missing memoryMb annotation", nil
 					}
-					if _, ok := md.Annotations["machine.openshift.io/GPU"]; !ok {
-						return false, "missing GPU annotation", nil
-					}
+					// GPU annotation is optional - only set when instance type has GPUs
 					labels, ok := md.Annotations["capacity.cluster-autoscaler.kubernetes.io/labels"]
 					if !ok {
 						return false, "missing capacity labels annotation", nil
@@ -502,10 +500,14 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 			},
 			e2eutil.WithTimeout(5*time.Minute),
 		)
+		gpuValue := md.Annotations["machine.openshift.io/GPU"]
+		if gpuValue == "" {
+			gpuValue = "none (non-GPU instance)"
+		}
 		t.Logf("MachineDeployment has capacity annotations: vCPU=%s, memoryMb=%s, GPU=%s, labels=%s",
 			md.Annotations["machine.openshift.io/vCPU"],
 			md.Annotations["machine.openshift.io/memoryMb"],
-			md.Annotations["machine.openshift.io/GPU"],
+			gpuValue,
 			md.Annotations["capacity.cluster-autoscaler.kubernetes.io/labels"])
 
 		// Verify NodePool autoscaling is enabled

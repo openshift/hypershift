@@ -167,7 +167,7 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	if _, err := r.CreateOrUpdate(ctx, r.guestClient, ec2NodeClass, func() error {
-		return reconcileEC2NodeClass(ec2NodeClass, openshiftEC2NodeClass, hcp, userDataSecret)
+		return reconcileEC2NodeClass(ctx, ec2NodeClass, openshiftEC2NodeClass, hcp, userDataSecret)
 	}); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -218,7 +218,7 @@ func (r *EC2NodeClassReconciler) reconcileCRDs(ctx context.Context, onlyCreate b
 	return nil
 }
 
-func reconcileEC2NodeClass(ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, hcp *hyperv1.HostedControlPlane, userDataSecret *corev1.Secret) error {
+func reconcileEC2NodeClass(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, hcp *hyperv1.HostedControlPlane, userDataSecret *corev1.Secret) error {
 	ownerRef := config.OwnerRefFrom(openshiftEC2NodeClass)
 	ownerRef.ApplyTo(ec2NodeClass)
 
@@ -231,7 +231,7 @@ func reconcileEC2NodeClass(ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftE
 			},
 		},
 		AssociatePublicIPAddress: openshiftEC2NodeClass.Spec.AssociatePublicIPAddress,
-		Tags:                     openshiftEC2NodeClass.Spec.Tags,
+		Tags:                     mergeEC2NodeClassTags(ctx, openshiftEC2NodeClass, hcp),
 		DetailedMonitoring:       openshiftEC2NodeClass.Spec.DetailedMonitoring,
 		BlockDeviceMappings:      openshiftEC2NodeClass.Spec.KarpenterBlockDeviceMapping(),
 		InstanceStorePolicy:      openshiftEC2NodeClass.Spec.KarpenterInstanceStorePolicy(),
@@ -488,4 +488,69 @@ func (r *EC2NodeClassReconciler) mapToOpenShiftEC2NodeClasses(ctx context.Contex
 	}
 
 	return requests
+}
+
+// mergeEC2NodeClassTags merges platform tags from HostedControlPlane with OpenshiftEC2NodeClass tags.
+// Platform tags take precedence over nodeclass tags in case of conflicts.
+// Tags matching Karpenter's restricted patterns are filtered out to prevent validation errors.
+// Karpenter restricts the patterns because it manages those tags itself, so the result is not "the karpenter-managed tags won't be present",
+// the result is "the tags will still be present and managed by Karpenter"
+func mergeEC2NodeClassTags(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, hcp *hyperv1.HostedControlPlane) map[string]string {
+	log := ctrl.LoggerFrom(ctx)
+	tags := make(map[string]string)
+
+	// First add nodeclass tags
+	for k, v := range openshiftEC2NodeClass.Spec.Tags {
+		tags[k] = v
+	}
+
+	// Then add platform tags (these will override any conflicts)
+	if hcp.Spec.Platform.AWS != nil {
+		for _, tag := range hcp.Spec.Platform.AWS.ResourceTags {
+			tags[tag.Key] = tag.Value
+		}
+	}
+
+	// Filter out restricted tags that Karpenter manages automatically
+	filteredTags, removedTags := filterRestrictedTags(tags)
+
+	if len(removedTags) > 0 {
+		log.V(4).Info("Filtered restricted Karpenter tags", "removedTags", removedTags)
+	}
+
+	// If we were nil coming in, we should be nil going out, test case comparisons care, {} is
+	// not the same as nil
+	if openshiftEC2NodeClass.Spec.Tags == nil && len(filteredTags) == 0 {
+		return nil
+	}
+
+	return filteredTags
+}
+
+// filterRestrictedTags removes tags that match Karpenter's restricted tag patterns.
+// Karpenter manages certain tags automatically and prohibits users from setting them.
+// Returns a new map with restricted tags filtered out and a slice of removed tag keys.
+func filterRestrictedTags(tags map[string]string) (map[string]string, []string) {
+	if len(tags) == 0 {
+		return tags, nil
+	}
+
+	filteredTags := make(map[string]string)
+	removedTags := []string{}
+
+	for key, value := range tags {
+		isRestricted := false
+		for _, pattern := range awskarpenterv1.RestrictedTagPatterns {
+			if pattern.MatchString(key) {
+				isRestricted = true
+				removedTags = append(removedTags, key)
+				break
+			}
+		}
+		if !isRestricted {
+			filteredTags[key] = value
+		}
+	}
+
+	return filteredTags, removedTags
 }
