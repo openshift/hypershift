@@ -31,7 +31,7 @@ frontend dataplane-kas-svc
   {{- range $b := .Backends }}
   acl is_{{ $b.Name }} var(sess.cluster_id) -m str {{ $b.ClusterID }}
   {{- range $cidr := $b.AllowedCIDRs }}
-  acl is_{{ $b.Name }}_request_allowed src {{ $cidr }}
+  acl is_{{ $b.Name }}_request_allowed fc_src {{ $cidr }}
   {{- end }}
   {{- end }}
 
@@ -54,7 +54,7 @@ frontend external-dns
   {{- range $b := .ExternalDNSBackends }}
   acl is_{{ $b.Name }} req_ssl_sni -i {{ $b.HostName }}
   {{- range $cidr := $b.AllowedCIDRs }}
-  acl is_{{ $b.Name }}_request_allowed src {{ $cidr }}
+  acl is_{{ $b.Name }}_request_allowed fc_src {{ $cidr }}
   {{- end }}
   {{- end }}
 
