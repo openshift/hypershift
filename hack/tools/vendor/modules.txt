@@ -226,8 +226,8 @@ github.com/charmbracelet/x/ansi/parser
 # github.com/charmbracelet/x/cellbuf v0.0.13-0.20250311204145-2c3ea96c31dd
 ## explicit; go 1.18
 github.com/charmbracelet/x/cellbuf
-# github.com/charmbracelet/x/term v0.2.1
-## explicit; go 1.18
+# github.com/charmbracelet/x/term v0.2.2
+## explicit; go 1.24.0
 github.com/charmbracelet/x/term
 # github.com/ckaznocha/intrange v0.3.1
 ## explicit; go 1.23.0
