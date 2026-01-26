@@ -19,6 +19,7 @@ import (
 	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	controlplaneoperatoroverrides "github.com/openshift/hypershift/hypershift-operator/controlplaneoperator-overrides"
+	"github.com/openshift/hypershift/test/e2e/controlplanemetrics"
 	"github.com/openshift/hypershift/test/e2e/podtimingcontroller"
 	"github.com/openshift/hypershift/test/e2e/util"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -290,6 +291,10 @@ func e2eObserverControllers(ctx context.Context, log logr.Logger, artifactDir st
 	}
 	if err := podtimingcontroller.SetupWithManager(mgr, log, artifactDir); err != nil {
 		log.Error(err, "failed to set up podtimingcontroller")
+		return
+	}
+	if err := controlplanemetrics.SetupWithManager(mgr); err != nil {
+		log.Error(err, "failed to set up controlplanemetrics")
 		return
 	}
 
