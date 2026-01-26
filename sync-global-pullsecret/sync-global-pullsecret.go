@@ -47,10 +47,6 @@ const (
 	originalPullSecretFilePath = "/etc/original-pull-secret/.dockerconfigjson"
 	globalPullSecretFilePath   = "/etc/global-pull-secret/.dockerconfigjson"
 
-	// Cache file path for tracking last-synced pull secret state
-	// This allows us to distinguish between external auths (preserve) and removed HyperShift auths (delete)
-	pullSecretCachePath = "/var/lib/kubelet/.hypershift-pullsecret-cache.json"
-
 	tickerPace = 30 * time.Second
 
 	// systemd job completion state as documented in go-systemd/dbus
@@ -62,6 +58,11 @@ const (
 )
 
 var (
+	// Cache file path for tracking last-synced pull secret state
+	// This allows us to distinguish between external auths (preserve) and removed HyperShift auths (delete)
+	// Made a variable instead of const to allow test overrides
+	pullSecretCachePath = "/var/lib/kubelet/.hypershift-pullsecret-cache.json"
+
 	// writeFileFunc is a variable that holds the function used to write files.
 	// This allows tests to inject custom write functions for testing rollback scenarios.
 	writeFileFunc = writeAtomic
@@ -69,6 +70,10 @@ var (
 	// readFileFunc is a variable that holds the function used to read files.
 	// This allows tests to inject custom read functions for testing.
 	readFileFunc = os.ReadFile
+
+	// signalKubeletToRestartFunc is a variable that holds the function used to restart kubelet.
+	// This allows tests to inject custom restart functions for testing.
+	signalKubeletToRestartFunc = signalKubeletToRestartProcess
 )
 
 // NewRunCommand creates a new cobra.Command for the sync-global-pullsecret command
@@ -289,44 +294,91 @@ func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 		contentToWrite = append(mergedBytes, '\n')
 	}
 
-	// If file content is different, write the merged content while still holding the lock
-	if string(existingContent) != string(contentToWrite) {
-		s.log.Info("file content is different, updating it")
-		// Save original content for potential rollback
-		originalContent := existingContent
+	// Determine if file update and kubelet restart are needed
+	needsFileUpdate := string(existingContent) != string(contentToWrite)
 
-		// Write the new content while holding the lock
+	// Determine if kubelet restart is needed based on whether in-cluster auths changed
+	// We only restart when HyperShift-managed auths change, not when external auths are added
+	var needsKubeletRestart bool
+	if cachedConfig == nil {
+		// First run (no cache) - only restart if we're actually changing the file
+		needsKubeletRestart = needsFileUpdate
+		if needsKubeletRestart {
+			s.log.Info("First sync - file content differs, kubelet restart will be required")
+		} else {
+			s.log.Info("First sync - file content unchanged, no kubelet restart needed")
+		}
+	} else {
+		// Subsequent runs - restart only if in-cluster (HyperShift-managed) auths changed
+		needsKubeletRestart = !dockerConfigsEqual(desiredConfig, cachedConfig)
+		if needsKubeletRestart {
+			s.log.Info("In-cluster auths have changed, kubelet restart will be required")
+		} else {
+			s.log.Info("In-cluster auths unchanged, no kubelet restart needed")
+		}
+	}
+
+	// Track original content for potential rollback if we update the file
+	var originalContent []byte
+	fileWasUpdated := false
+
+	// Update file if content differs
+	if needsFileUpdate {
+		s.log.Info("File content is different, updating it")
+		originalContent = existingContent
+
 		if err := writeFileFunc(s.kubeletConfigJsonPath, contentToWrite, 0600); err != nil {
 			return fmt.Errorf("failed to write file: %w", err)
 		}
 		s.log.Info("Pull secret updated", "file", s.kubeletConfigJsonPath)
+		fileWasUpdated = true
+	}
 
-		// Attempt to restart Kubelet with retries
-		maxRetries := 3
-		var lastErr error
-		for attempt := 1; attempt <= maxRetries; attempt++ {
-			if err := signalKubeletToRestartProcess(); err != nil {
-				lastErr = err
-				if attempt < maxRetries {
-					s.log.Info(fmt.Sprintf("Attempt %d failed, retrying...: %v", attempt, err))
-					time.Sleep(time.Duration(attempt) * time.Second)
-					continue
-				}
-			} else {
-				s.log.Info("Successfully restarted Kubelet", "attempt", attempt)
-
-				// Update cache with the desired config (NOT merged config)
-				// Cache should only track what HyperShift provides to distinguish from external auths
-				if err := writeCachedPullSecret(desiredConfig); err != nil {
-					s.log.Info("Failed to update pull secret cache - auth removal detection may not work on next sync", "error", err)
-					// Don't fail the sync for a cache write error
-				}
-
-				return nil
-			}
+	// Restart kubelet if in-cluster auths changed
+	if needsKubeletRestart {
+		// If we just updated the file, we should rollback on restart failure
+		// If file wasn't updated, there's nothing to rollback
+		if err := s.restartKubeletWithRetries(originalContent, fileWasUpdated); err != nil {
+			return err
 		}
+	} else if fileWasUpdated {
+		s.log.Info("Pull secret file updated with external auths, but no kubelet restart required")
+	}
 
-		// If we reach this point, all retries failed - perform rollback
+	// Update cache to track current desired state
+	// We do this whenever file was updated OR kubelet was restarted
+	if fileWasUpdated || needsKubeletRestart {
+		if err := writeCachedPullSecret(desiredConfig); err != nil {
+			s.log.Info("Failed to update pull secret cache - auth removal detection may not work on next sync", "error", err)
+			// Don't fail the sync for a cache write error
+		}
+	}
+
+	return nil
+}
+
+// restartKubeletWithRetries attempts to restart kubelet with retries and rollback on failure.
+// Returns an error if all retry attempts fail.
+func (s *GlobalPullSecretSyncer) restartKubeletWithRetries(originalContent []byte, shouldRollback bool) error {
+	maxRetries := 3
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		if err := signalKubeletToRestartFunc(); err != nil {
+			lastErr = err
+			if attempt < maxRetries {
+				s.log.Info(fmt.Sprintf("Attempt %d failed, retrying...: %v", attempt, err))
+				time.Sleep(time.Duration(attempt) * time.Second)
+				continue
+			}
+		} else {
+			s.log.Info("Successfully restarted Kubelet", "attempt", attempt)
+			return nil
+		}
+	}
+
+	// All retries failed
+	if shouldRollback {
 		s.log.Info("Failed to restart Kubelet after some attempts, executing rollback", "maxRetries", maxRetries, "error", lastErr)
 		if err := writeFileFunc(s.kubeletConfigJsonPath, originalContent, 0600); err != nil {
 			return fmt.Errorf("2 errors happened: the kubelet restart failed after %d attempts and it failed to rollback the file: %w", maxRetries, err)
@@ -334,7 +386,8 @@ func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 		return fmt.Errorf("failed to restart kubelet after %d attempts, rolled back changes: %w", maxRetries, lastErr)
 	}
 
-	return nil
+	s.log.Info("Failed to restart Kubelet after some attempts", "maxRetries", maxRetries, "error", lastErr)
+	return fmt.Errorf("failed to restart kubelet after %d attempts: %w", maxRetries, lastErr)
 }
 
 // signalKubeletToRestartProcess signals Kubelet to reload the config by restarting the kubelet.service.
@@ -399,6 +452,32 @@ func parseDockerConfigJSON(b []byte) (*dockerConfigJSON, error) {
 		config.Auths = make(map[string]interface{})
 	}
 	return &config, nil
+}
+
+// dockerConfigsEqual compares two dockerConfigJSON structs for equality.
+// Returns true if both configs have the same auths (ignoring order).
+func dockerConfigsEqual(a, b *dockerConfigJSON) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if len(a.Auths) != len(b.Auths) {
+		return false
+	}
+
+	// Marshal both to JSON and compare - this handles nested maps correctly
+	aBytes, err := json.Marshal(a)
+	if err != nil {
+		return false
+	}
+	bBytes, err := json.Marshal(b)
+	if err != nil {
+		return false
+	}
+
+	return string(aBytes) == string(bBytes)
 }
 
 // mergeDockerConfigs merges Docker configs with the following precedence rules:

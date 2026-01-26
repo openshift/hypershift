@@ -282,9 +282,19 @@ func TestCheckAndFixFile(t *testing.T) {
 				log:                   logr.Discard(),
 			}
 
-			// Save original write function and restore it after test
+			// Save original functions and restore after test
 			originalWriteFileFunc := writeFileFunc
-			defer func() { writeFileFunc = originalWriteFileFunc }()
+			originalSignalKubelet := signalKubeletToRestartFunc
+			defer func() {
+				writeFileFunc = originalWriteFileFunc
+				signalKubeletToRestartFunc = originalSignalKubelet
+			}()
+
+			// Mock the restart function to always fail (simulating dbus failure)
+			// This matches the original test expectations
+			signalKubeletToRestartFunc = func() error {
+				return fmt.Errorf("simulated dbus connection failure")
+			}
 
 			// Set up custom write function for rollback failure scenario
 			if tt.rollbackShouldFail {
@@ -647,6 +657,159 @@ func TestParseDockerConfigJSON(t *testing.T) {
 				g.Expect(err).To(BeNil(), tt.description)
 				g.Expect(config).ToNot(BeNil())
 				g.Expect(len(config.Auths)).To(Equal(len(tt.expectAuths)))
+			}
+		})
+	}
+}
+
+func TestCheckAndFixFileWithCache(t *testing.T) {
+	tests := []struct {
+		name                  string
+		initialContent        string
+		secretContent         string
+		cacheContent          string
+		mockRestartSuccess    bool
+		expectedErrorContains []string
+		expectedFinalContent  string
+		expectError           bool
+		expectRestartAttempt  bool
+		description           string
+	}{
+		{
+			name:                 "external auth added - file updates but no restart",
+			description:          "user adds external auth, in-cluster config unchanged, file should update without kubelet restart",
+			initialContent:       `{"auths":{"external.io":{"auth":"ZXh0ZXJuYWw="},"hypershift.io":{"auth":"aHlwZXJzaGlmdA=="}}}`,
+			secretContent:        `{"auths":{"hypershift.io":{"auth":"aHlwZXJzaGlmdA=="}}}`,
+			cacheContent:         `{"auths":{"hypershift.io":{"auth":"aHlwZXJzaGlmdA=="}}}`,
+			mockRestartSuccess:   true,
+			expectedFinalContent: `{"auths":{"external.io":{"auth":"ZXh0ZXJuYWw="},"hypershift.io":{"auth":"aHlwZXJzaGlmdA=="}}}`,
+			expectError:          false,
+			expectRestartAttempt: false,
+		},
+		{
+			name:                 "in-cluster auth changed - restart even without file change",
+			description:          "in-cluster auth changes from cached value, kubelet restart required even if merged file content is same",
+			initialContent:       `{"auths":{"hypershift.io":{"auth":"bmV3QXV0aA=="}}}`,
+			secretContent:        `{"auths":{"hypershift.io":{"auth":"bmV3QXV0aA=="}}}`,
+			cacheContent:         `{"auths":{"hypershift.io":{"auth":"b2xkQXV0aA=="}}}`,
+			mockRestartSuccess:   true,
+			expectedFinalContent: `{"auths":{"hypershift.io":{"auth":"bmV3QXV0aA=="}}}`,
+			expectError:          false,
+			expectRestartAttempt: true,
+		},
+		{
+			name:                 "in-cluster auth removed - file updates and restart",
+			description:          "auth removed from in-cluster config, file should update removing it and kubelet restarts",
+			initialContent:       `{"auths":{"hypershift1.io":{"auth":"aHlwZXIx"},"hypershift2.io":{"auth":"aHlwZXIy"}}}`,
+			secretContent:        `{"auths":{"hypershift1.io":{"auth":"aHlwZXIx"}}}`,
+			cacheContent:         `{"auths":{"hypershift1.io":{"auth":"aHlwZXIx"},"hypershift2.io":{"auth":"aHlwZXIy"}}}`,
+			mockRestartSuccess:   true,
+			expectedFinalContent: `{"auths":{"hypershift1.io":{"auth":"aHlwZXIx"}}}`,
+			expectError:          false,
+			expectRestartAttempt: true,
+		},
+		{
+			name:                 "in-cluster auth added - file updates and restart",
+			description:          "new auth added to in-cluster config, file should update and kubelet restarts",
+			initialContent:       `{"auths":{"hypershift1.io":{"auth":"aHlwZXIx"}}}`,
+			secretContent:        `{"auths":{"hypershift1.io":{"auth":"aHlwZXIx"},"hypershift2.io":{"auth":"aHlwZXIy"}}}`,
+			cacheContent:         `{"auths":{"hypershift1.io":{"auth":"aHlwZXIx"}}}`,
+			mockRestartSuccess:   true,
+			expectedFinalContent: `{"auths":{"hypershift1.io":{"auth":"aHlwZXIx"},"hypershift2.io":{"auth":"aHlwZXIy"}}}`,
+			expectError:          false,
+			expectRestartAttempt: true,
+		},
+		{
+			name:                 "external auth and in-cluster unchanged - no file change, no restart",
+			description:          "file already has external auth merged, in-cluster unchanged, nothing to do",
+			initialContent:       `{"auths":{"external.io":{"auth":"ZXh0ZXJuYWw="},"hypershift.io":{"auth":"aHlwZXJzaGlmdA=="}}}`,
+			secretContent:        `{"auths":{"hypershift.io":{"auth":"aHlwZXJzaGlmdA=="}}}`,
+			cacheContent:         `{"auths":{"hypershift.io":{"auth":"aHlwZXJzaGlmdA=="}}}`,
+			mockRestartSuccess:   true,
+			expectedFinalContent: `{"auths":{"external.io":{"auth":"ZXh0ZXJuYWw="},"hypershift.io":{"auth":"aHlwZXJzaGlmdA=="}}}`,
+			expectError:          false,
+			expectRestartAttempt: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Create a temporary directory for test files
+			tempDir, err := os.MkdirTemp("", "sync-pullsecret-cache-test-*")
+			g.Expect(err).To(BeNil())
+			defer os.RemoveAll(tempDir)
+
+			// Create test file path
+			testFilePath := filepath.Join(tempDir, "config.json")
+
+			// Write initial content
+			if tt.initialContent != "" {
+				err = os.WriteFile(testFilePath, []byte(tt.initialContent), 0600)
+				g.Expect(err).To(BeNil())
+			}
+
+			// Set up cache path
+			cachePath := filepath.Join(tempDir, ".hypershift-pullsecret-cache.json")
+			if tt.cacheContent != "" {
+				err = os.WriteFile(cachePath, []byte(tt.cacheContent), 0600)
+				g.Expect(err).To(BeNil())
+			}
+
+			// Create syncer for testing
+			syncer := &GlobalPullSecretSyncer{
+				kubeletConfigJsonPath: testFilePath,
+				log:                   logr.Discard(),
+			}
+
+			// Save original functions and restore after test
+			originalWriteFileFunc := writeFileFunc
+			originalReadFileFunc := readFileFunc
+			originalSignalKubelet := signalKubeletToRestartFunc
+			defer func() {
+				writeFileFunc = originalWriteFileFunc
+				readFileFunc = originalReadFileFunc
+				signalKubeletToRestartFunc = originalSignalKubelet
+			}()
+
+			// Override cache path for testing
+			originalCachePath := pullSecretCachePath
+			pullSecretCachePath = cachePath
+			defer func() { pullSecretCachePath = originalCachePath }()
+
+			// Mock restart function to track if it was called
+			restartCalled := false
+			signalKubeletToRestartFunc = func() error {
+				restartCalled = true
+				if tt.mockRestartSuccess {
+					return nil
+				}
+				return fmt.Errorf("simulated restart failure")
+			}
+
+			// Run checkAndFixFile
+			err = syncer.checkAndFixFile([]byte(tt.secretContent))
+
+			// Check error expectations
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred())
+				for _, expectedError := range tt.expectedErrorContains {
+					g.Expect(err.Error()).To(ContainSubstring(expectedError))
+				}
+			} else {
+				g.Expect(err).To(BeNil())
+			}
+
+			// Verify restart was or wasn't called as expected
+			g.Expect(restartCalled).To(Equal(tt.expectRestartAttempt),
+				"Expected restart attempt: %v, got: %v", tt.expectRestartAttempt, restartCalled)
+
+			// Verify final file content
+			if tt.expectedFinalContent != "" {
+				content, err := os.ReadFile(testFilePath)
+				g.Expect(err).To(BeNil())
+				g.Expect(string(content)).To(Equal(tt.expectedFinalContent))
 			}
 		})
 	}
