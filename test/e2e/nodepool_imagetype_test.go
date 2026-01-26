@@ -149,7 +149,7 @@ func (it *NodePoolImageTypeTest) scaleAndVerifyImageType(t *testing.T, g *WithT,
 	// If scaling up, wait for nodes to be ready
 	if targetReplicas > 0 {
 		t.Logf("Waiting for %d nodes to become ready", targetReplicas)
-		e2eutil.WaitForNReadyNodesWithOptions(t, ctx, it.hostedClusterClient, targetReplicas, hyperv1.AWSPlatform, "")
+		e2eutil.WaitForReadyNodesByNodePool(t, ctx, it.hostedClusterClient, nodePool, hyperv1.AWSPlatform)
 		t.Logf("✓ All %d nodes are ready", targetReplicas)
 	}
 
