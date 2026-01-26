@@ -28,6 +28,17 @@ func GetLogger() *logging.Logger {
 	return log
 }
 
+func getContentValueByKey(content []*CandidateNode, key string) *CandidateNode {
+	for index := 0; index < len(content); index = index + 2 {
+		keyNode := content[index]
+		valueNode := content[index+1]
+		if keyNode.Value == key {
+			return valueNode
+		}
+	}
+	return nil
+}
+
 func recurseNodeArrayEqual(lhs *CandidateNode, rhs *CandidateNode) bool {
 	if len(lhs.Content) != len(rhs.Content) {
 		return false
@@ -173,6 +184,76 @@ func parseInt(numberString string) (int, error) {
 	}
 
 	return int(parsed), err
+}
+
+func processEscapeCharacters(original string) string {
+	if original == "" {
+		return original
+	}
+
+	var result strings.Builder
+	runes := []rune(original)
+
+	for i := 0; i < len(runes); i++ {
+		if runes[i] == '\\' && i < len(runes)-1 {
+			next := runes[i+1]
+			switch next {
+			case '\\':
+				// Check if followed by opening bracket - if so, preserve both backslashes
+				// this is required for string interpolation to work correctly.
+				if i+2 < len(runes) && runes[i+2] == '(' {
+					// Preserve \\ when followed by (
+					result.WriteRune('\\')
+					result.WriteRune('\\')
+					i++ // Skip the next backslash (we'll process the ( normally on next iteration)
+					continue
+				}
+				// Escaped backslash: \\ -> \
+				result.WriteRune('\\')
+				i++ // Skip the next backslash
+				continue
+			case '"':
+				result.WriteRune('"')
+				i++ // Skip the quote
+				continue
+			case 'n':
+				result.WriteRune('\n')
+				i++ // Skip the 'n'
+				continue
+			case 't':
+				result.WriteRune('\t')
+				i++ // Skip the 't'
+				continue
+			case 'r':
+				result.WriteRune('\r')
+				i++ // Skip the 'r'
+				continue
+			case 'f':
+				result.WriteRune('\f')
+				i++ // Skip the 'f'
+				continue
+			case 'v':
+				result.WriteRune('\v')
+				i++ // Skip the 'v'
+				continue
+			case 'b':
+				result.WriteRune('\b')
+				i++ // Skip the 'b'
+				continue
+			case 'a':
+				result.WriteRune('\a')
+				i++ // Skip the 'a'
+				continue
+			}
+		}
+		result.WriteRune(runes[i])
+	}
+
+	value := result.String()
+	if value != original {
+		log.Debug("processEscapeCharacters from [%v] to [%v]", original, value)
+	}
+	return value
 }
 
 func headAndLineComment(node *CandidateNode) string {
