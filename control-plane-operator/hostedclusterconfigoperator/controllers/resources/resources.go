@@ -170,17 +170,9 @@ func checkPodKasConnection(ctx context.Context, restConfig *rest.Config, clientS
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	// Compute KAS address from service CIDR
-	serviceCIDR := util.FirstServiceCIDR(hcp.Spec.Networking.ServiceNetwork)
-	if serviceCIDR == "" {
-		return false, fmt.Errorf("no service CIDR found in HostedControlPlane spec")
-	}
-
-	kasIP, err := util.FirstUsableIP(serviceCIDR)
-	if err != nil {
-		return false, fmt.Errorf("failed to compute first usable IP from service CIDR %s: %w", serviceCIDR, err)
-	}
-
+	// Use the advertise address where kube-apiserver-proxy actually listens
+	// This is the IP configured on the loopback interface of each node (172.20.0.1 for IPv4 or fd00::1 for IPv6)
+	kasIP := util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
 	kasPort := util.KASPodPort(hcp)
 	kasURL := "https://" + net.JoinHostPort(kasIP, fmt.Sprintf("%d", kasPort)) + "/version"
 
