@@ -299,8 +299,14 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	}
 	for _, f := range signalConditions {
 		result, err := f(ctx, nodePool, hcluster)
-		if result != nil || err != nil {
+		if err != nil {
+			if result == nil {
+				return ctrl.Result{}, err
+			}
 			return *result, err
+		}
+		if result != nil {
+			return *result, nil
 		}
 	}
 
