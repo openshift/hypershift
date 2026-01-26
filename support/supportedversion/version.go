@@ -24,8 +24,7 @@ import (
 
 // https://docs.ci.openshift.org/docs/getting-started/useful-links/#services
 const (
-	multiArchReleaseURLTemplate = "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/tags"
-	releaseURLTemplate          = "https://amd64.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/latest"
+	releaseURLTemplate = "https://%s.ocp.releases.ci.openshift.org/api/v1/releasestream/%s/tags"
 )
 
 // LatestSupportedVersion is the latest minor OCP version supported by the
@@ -153,36 +152,21 @@ type ocpVersion struct {
 //  1. When releaseStream is empty: Uses the default release stream (4-stable-multi) and looks up supported OCP versions
 //     from the HyperShift operator's ConfigMap to find the latest supported version that is not a release candidate.
 //
-//  2. When releaseStream is provided: Uses the specified release stream. Multi-arch streams (ending in "-multi")
-//     use the multi-arch endpoint, while single-arch streams use the amd64 endpoint. In both cases, the function
-//     validates the version against the supported-versions ConfigMap and filters out release candidates.
+//  2. When releaseStream is provided: Uses the specified release stream. The function detects the architecture from
+//     the stream suffix (e.g., "-multi", "-arm64", "-ppc64le", "-s390x") and routes to the appropriate endpoint.
+//     Streams without a recognized suffix default to the amd64 endpoint.
 //
-// This ensures compatibility with the currently installed HyperShift operator version and prevents the use of
-// unsupported release candidate versions.
+// All streams use the /tags endpoint which returns a list of versions, enabling proper RC filtering and version
+// validation against the supported-versions ConfigMap.
 func LookupDefaultOCPVersion(ctx context.Context, releaseStream string, client crclient.Client) (ocpVersion, error) {
-	var (
-		version    ocpVersion
-		err        error
-		releaseURL string
-	)
-
 	if len(releaseStream) == 0 {
-		// No release stream was provided, use default multi-arch stream
-		releaseURL = fmt.Sprintf(multiArchReleaseURLTemplate, config.DefaultReleaseStream)
-		version, err = retrieveSupportedOCPVersion(ctx, releaseURL, client)
-	} else {
-		// User provided a release stream - determine if it's multi-arch or single-arch
-		if isMultiArchStream(releaseStream) {
-			// Multi-arch streams use the /tags endpoint
-			releaseURL = fmt.Sprintf(multiArchReleaseURLTemplate, releaseStream)
-		} else {
-			// Single-arch streams use the /latest endpoint
-			releaseURL = fmt.Sprintf(releaseURLTemplate, releaseStream)
-		}
-		// Use retrieveSupportedOCPVersion for both to get RC filtering and version validation
-		version, err = retrieveSupportedOCPVersion(ctx, releaseURL, client)
+		releaseStream = config.DefaultReleaseStream
 	}
 
+	arch := getArchFromStream(releaseStream)
+	releaseURL := fmt.Sprintf(releaseURLTemplate, arch, releaseStream)
+
+	version, err := retrieveSupportedOCPVersion(ctx, releaseURL, client)
 	if err != nil {
 		return ocpVersion{}, fmt.Errorf("failed to get OCP version from release URL %s: %v", releaseURL, err)
 	}
@@ -190,10 +174,26 @@ func LookupDefaultOCPVersion(ctx context.Context, releaseStream string, client c
 	return version, nil
 }
 
-// isMultiArchStream returns true if the release stream is known to be multi-arch.
-// Multi-arch streams are identified by the "-multi" suffix in their name.
-func isMultiArchStream(releaseStream string) bool {
-	return strings.HasSuffix(releaseStream, "-multi")
+// getArchFromStream returns the architecture identifier for the release stream endpoint.
+// It detects the architecture from the stream suffix:
+//   - "-multi" -> "multi" (multi-arch images)
+//   - "-arm64" -> "arm64" (aarch64 images)
+//   - "-ppc64le" -> "ppc64le" (IBM Power images)
+//   - "-s390x" -> "s390x" (IBM Z images)
+//   - default -> "amd64" (x86_64 images)
+func getArchFromStream(releaseStream string) string {
+	switch {
+	case strings.HasSuffix(releaseStream, "-multi"):
+		return "multi"
+	case strings.HasSuffix(releaseStream, "-arm64"):
+		return "arm64"
+	case strings.HasSuffix(releaseStream, "-ppc64le"):
+		return "ppc64le"
+	case strings.HasSuffix(releaseStream, "-s390x"):
+		return "s390x"
+	default:
+		return "amd64"
+	}
 }
 
 // LookupLatestSupportedRelease picks the latest multi-arch image supported by this Hypershift Operator
@@ -338,12 +338,9 @@ func ValidateVersionSkew(hostedClusterVersion, nodePoolVersion *semver.Version) 
 // fetches release information from the provided release URL, and returns the latest supported OCP version that is
 // not a release candidate and is compatible with the currently installed HyperShift operator.
 //
-// The releaseURL can point to either:
-// - A /tags endpoint (returns list of tags) - used for multi-arch streams
-// - A /latest endpoint (returns single latest version) - used for single-arch streams
-//
-// In both cases, the function filters out release candidates and validates the version against the
-// supported-versions ConfigMap.
+// The releaseURL should point to a /tags endpoint which returns a list of all available versions for the stream.
+// The function filters out release candidates and validates versions against the supported-versions ConfigMap,
+// returning the newest supported non-RC version.
 func retrieveSupportedOCPVersion(ctx context.Context, releaseURL string, client crclient.Client) (ocpVersion, error) {
 	var supportedVersions *corev1.ConfigMap
 	var namespace string

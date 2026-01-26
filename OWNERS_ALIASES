@@ -19,6 +19,20 @@ aliases:
     - bryan-cox
     - jparrill
     - devguyio
+  karpenter-approvers:
+    - elmiko
+    - enxebre
+    - jkyros
+    - joelsmith
+    - maxcao13
+    - muraee
+  karpenter-reviewers:
+    - elmiko
+    - enxebre
+    - jkyros
+    - joelsmith
+    - maxcao13
+    - muraee
   konflux-approvers:
     - celebdor
   kubevirt-approvers:

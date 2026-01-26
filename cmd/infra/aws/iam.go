@@ -190,6 +190,7 @@ var (
         "elasticloadbalancing:DetachLoadBalancerFromSubnets",
         "elasticloadbalancing:DeregisterInstancesFromLoadBalancer",
         "elasticloadbalancing:ModifyLoadBalancerAttributes",
+        "elasticloadbalancing:ModifyTargetGroupAttributes",
         "elasticloadbalancing:RegisterInstancesWithLoadBalancer",
         "elasticloadbalancing:SetLoadBalancerPoliciesForBackendServer",
         "elasticloadbalancing:AddTags",
@@ -201,6 +202,7 @@ var (
         "elasticloadbalancing:DescribeListeners",
         "elasticloadbalancing:DescribeLoadBalancerPolicies",
         "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTargetGroupAttributes",
         "elasticloadbalancing:DescribeTargetHealth",
         "elasticloadbalancing:ModifyListener",
         "elasticloadbalancing:ModifyTargetGroup",
@@ -897,33 +899,86 @@ func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient ia
 		//
 		// Currently ingress operator managed policy is scoped to specific DNS domain names,
 		// which is why we need to create an additional policy on top to allow it to manage routes with the DNS basedomain specified by the CLI user.
-		policy := fmt.Sprintf(`{
-			"Version": "2012-10-17",
-			"Statement": [
-				{
-					"Effect": "Allow",
-					"Action": [
-						"route53:ChangeResourceRecordSets"
-					],
-					"Resource": "*",
-					"Condition": {
-						"ForAllValues:StringLike": {
-							"route53:ChangeResourceRecordSetsNormalizedRecordNames": [
-								"*.%s"
-							]
-						}
+		ingressPolicyStatement := fmt.Sprintf(
+			`{
+				"Effect": "Allow",
+				"Action": [
+					"route53:ChangeResourceRecordSets"
+				],
+				"Resource": "*",
+				"Condition": {
+					"ForAllValues:StringLike": {
+						"route53:ChangeResourceRecordSetsNormalizedRecordNames": [
+							"*.%s"
+						]
 					}
 				}
-			]
-		}`, o.BaseDomain)
-
+			}`, o.BaseDomain)
 		ingressRoleName := output.Roles.IngressARN[strings.LastIndex(output.Roles.IngressARN, "/")+1:]
-		if _, err := iamClient.PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
-			PolicyName:     aws.String(ingressRoleName),
-			RoleName:       aws.String(ingressRoleName),
-			PolicyDocument: aws.String(policy),
-		}); err != nil {
-			return nil, fmt.Errorf("failed to create role policy %q: with permission policy %s: %v", ingressRoleName, policy, err)
+
+		// Cloud Controller Manager's (CCM) managed policy needs to be updated on ROSA to allow new permissions downstream controllers to work.
+		// The permissions are:
+		// - elasticloadbalancing:DescribeTargetGroupAttributes
+		// - elasticloadbalancing:ModifyTargetGroupAttributes
+		//
+		// https://issues.redhat.com/browse/OCPBUGS-65885
+		//
+		// This inline policy must be removed when the following issue is resolved:
+		// https://issues.redhat.com/browse/SREP-2895
+		// https://redhat-internal.slack.com/archives/C03SZLX3A10/p1765396356482459
+		ccmPolicyStatement := `{
+				"Effect": "Allow",
+				"Action": [
+					"elasticloadbalancing:DescribeTargetGroupAttributes",
+					"elasticloadbalancing:ModifyTargetGroupAttributes"
+				],
+				"Resource": "*"
+			}`
+		ccmRoleName := output.Roles.KubeCloudControllerARN[strings.LastIndex(output.Roles.KubeCloudControllerARN, "/")+1:]
+
+		// Create the inline policy optimizing the policy documents.
+		// If the roles are the same (shared role), create a merged policy document to prevent race condition when updating the roles.
+		if ingressRoleName == ccmRoleName {
+			if _, err := iamClient.PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
+				PolicyName: aws.String(ingressRoleName),
+				RoleName:   aws.String(ingressRoleName),
+				PolicyDocument: aws.String(fmt.Sprintf(`{
+					"Version": "2012-10-17",
+					"Statement": [
+						%s,
+						%s
+					]
+				}`, ingressPolicyStatement, ccmPolicyStatement)),
+			}); err != nil {
+				return nil, fmt.Errorf("failed to create role policy %q: with permission policy %s: %v", ingressRoleName, ingressPolicyStatement, err)
+			}
+			logger.Info("Added inline shared policy to ROSA Managed Role", "role", ingressRoleName)
+		} else {
+			// Create the inline policy for the ingress role
+			if _, err := iamClient.PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
+				PolicyName: aws.String(ingressRoleName),
+				RoleName:   aws.String(ingressRoleName),
+				PolicyDocument: aws.String(fmt.Sprintf(`{
+					"Version": "2012-10-17",
+					"Statement": [%s]
+				}`, ingressPolicyStatement)),
+			}); err != nil {
+				return nil, fmt.Errorf("failed to create role policy %q: with permission policy %s: %v", ingressRoleName, ingressPolicyStatement, err)
+			}
+			logger.Info("Added inline policy to ROSA Ingress Managed Role", "role", ingressRoleName)
+
+			// Create the inline policy for the Cloud Controller Manager role
+			if _, err := iamClient.PutRolePolicyWithContext(ctx, &iam.PutRolePolicyInput{
+				PolicyName: aws.String(ccmRoleName),
+				RoleName:   aws.String(ccmRoleName),
+				PolicyDocument: aws.String(fmt.Sprintf(`{
+					"Version": "2012-10-17",
+					"Statement": [%s]
+				}`, ccmPolicyStatement)),
+			}); err != nil {
+				return nil, fmt.Errorf("failed to create role policy %q: with permission policy %s: %v", ccmRoleName, ccmPolicyStatement, err)
+			}
+			logger.Info("Added inline policy to ROSA Cloud Controller Manager Managed Role", "role", ccmRoleName)
 		}
 	}
 

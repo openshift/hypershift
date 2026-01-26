@@ -12,11 +12,11 @@ Total documents: 248
 ## OCP Branching Tasks for the HyperShift Team
 These are a set of tasks we need to perform on every OCP branching. We need to:
 
-1. Update the HyperShift Repository to add the latest supported OCP version - [Update Supported Version](#update-supported-version)
-1. Update the base images in our Dockerfiles (if they are available at branching) - [Update Dockerfiles](#update-dockerfiles)
-1. Update the Renovate configuration to include the new release branch - [Update Renovate](#update-renovate-configuration)
-1. Update the OpenShift Release repository to fix the step registry configuration files - [OpenShift/Release](#openshiftrelease-repository)
-1. Update TestGrid to include the new OCP version tests - [TestGrid](#update-testgrid)
+1. Update the HyperShift Repository to add the latest supported OCP version - Update Supported Version
+1. Update the base images in our Dockerfiles (if they are available at branching) - Update Dockerfiles
+1. Update the Renovate configuration to include the new release branch - Update Renovate
+1. Update the OpenShift Release repository to fix the step registry configuration files - OpenShift/Release
+1. Update TestGrid to include the new OCP version tests - TestGrid
 
 !!! danger
     If test platform are testing new OCP releases before the release is cut the hypershift test will fail and block payloads until:
@@ -33,12 +33,12 @@ We need to add the latest supported version in the `hypershift` repository. We n
 - `support/supportedversion/version.go` which contains the variable called `LatestSupportedVersion`. This one contains, as you can imagine, the Latest supported version. We need to put the new version here.
 - `support/supportedversion/version_test.go` contains the tests to validate the Latest version. It should comply with the established contract to support 2 versions prior to the Latest.
 
-[Example Supported Version Bump PR](https://github.com/openshift/hypershift/pull/5146/files)
+Example Supported Version Bump PR
 
 #### Update Dockerfiles
 We also need to bump the base images in our Dockerfiles.
 
-[Example Base Image Bump PR](https://github.com/openshift/hypershift/pull/5195/files)
+Example Base Image Bump PR
 
 #### Update Renovate Configuration
 We need to add the new release branch to the Renovate configuration so that security updates are automatically applied to the release branch.
@@ -83,22 +83,22 @@ Example change for release-4.21:
 
 ---
 
-### [Openshift/Release](https://github.com/openshift/release) Repository
+### Openshift/Release Repository
 The Step registry config should be updated by Test Platform. However, the Test Platform is not aware of custom configurations of the different version for specific hypershift tests.
 So, we need to check over the Step registry config and make sure that the hypershift tests are correctly configured. Below is an example of the necessary changes to the Step registry config after test platform bumps:
 
-[Example Release Repo PR](https://github.com/openshift/release/pull/59120/files)
+Example Release Repo PR
 
 We should also ensure that the latest release branch is using the Hypershift Operator and e2e from main.
 
-[Example Release Branch PR](https://github.com/openshift/release/pull/69341/files)
+Example Release Branch PR
 
 ---
 
 ### Update TestGrid
 We need to update TestGrid to include the new OCP version tests. 
 
-Here is an [Example PR](https://github.com/kubernetes/test-infra/pull/35535) to do that.
+Here is an Example PR to do that.
 
 
 ---
@@ -111,36 +111,36 @@ title: Contribute documentation
 
 # Contributing documentation
 
-HyperShift's documentation is based on [MkDocs](https://www.mkdocs.org) with the
-[Material theme](https://squidfunk.github.io) and roughly follows the
-[Diátaxis Framework](https://diataxis.fr) for content organization and stylistic
+HyperShift's documentation is based on MkDocs with the
+Material theme and roughly follows the
+Diátaxis Framework for content organization and stylistic
 approach.
 
-The documentation site is built and published automatically to [https://hypershift.pages.dev/](https://hypershift.pages.dev/).
+The documentation site is built and published automatically to https://hypershift.pages.dev/.
 
 ## Overview
 
-All documentation lives in the [`docs` directory](https://github.com/openshift/hypershift/tree/main/docs) of the Git repository.
+All documentation lives in the `docs` directory of the Git repository.
 
-All content should be Markdown files placed in the [`docs/content` directory](https://github.com/openshift/hypershift/tree/main/docs/content).
-The [MkDocs configuration file](https://github.com/openshift/hypershift/blob/main/docs/mkdocs.yml)
+All content should be Markdown files placed in the `docs/content` directory.
+The MkDocs configuration file
 contains all the MkDocs and Material theme configuration, including the navigation
 structure for the site.
 
-The `quay.io/hypershift/mkdocs-material:latest` image ([Dockerfile](https://github.com/openshift/hypershift/blob/main/docs/Dockerfile))
+The `quay.io/hypershift/mkdocs-material:latest` image (Dockerfile)
 is published to provide an easy and portable way to run `mkdocs` fully configured
 to preview the site equivalent to the published site.
 
 !!! note
 
-    The [`README.md`](https://github.com/openshift/hypershift/blob/main/README.md)
+    The `README.md`
     file in the repository root is a minimal overview which quickly links users to
     the latest published documentation. Most content should go in the docs.
 
 !!! important
 
-    The [API reference](../reference/api.md) is generated automatically. Do not
-    edit it manually. See the [API generation section](#generate-the-api-reference)
+    The API reference is generated automatically. Do not
+    edit it manually. See the API generation section
     section for details.
 
 ## Preview the site locally
@@ -153,7 +153,7 @@ response to local content and configuration changes, run the following from the
 make serve-containerized
 ```
 
-Visit the site at [http://0.0.0.0:8000](http://0.0.0.0:8000).
+Visit the site at http://0.0.0.0:8000.
 
 !!! note
 
@@ -161,26 +161,26 @@ Visit the site at [http://0.0.0.0:8000](http://0.0.0.0:8000).
     image with the local container runtime. Running `mkdocs` natively is possible
     but not supported.
 
-    If you need more control over the local preview server, consult [the Makefile](https://github.com/openshift/hypershift/blob/main/docs/Makefile)
+    If you need more control over the local preview server, consult the Makefile
     as a guide to constructing your own local server command.
 
 ## Generate the API reference
 
-The [API reference](../reference/api.md) is automatically generated by the
-[`gen-crd-api-reference-docs` tool](https://github.com/ahmetb/gen-crd-api-reference-docs).
+The API reference is automatically generated by the
+`gen-crd-api-reference-docs` tool.
 
-The `gen-crd-api-reference-docs` tool processes the [HyperShift API Go type
-definitions](https://github.com/openshift/hypershift/tree/main/api) and reads the
-[Kubernetes Custom Resource Definition](https://kubernetes.io/docs/concepts/extend-kubernetes/api-extension/custom-resources/)
+The `gen-crd-api-reference-docs` tool processes the HyperShift API Go type
+definitions and reads the
+Kubernetes Custom Resource Definition
 metadata associated with the API types. Then `gen-crd-api-reference-docs` executes
-a [Go template](https://github.com/openshift/hypershift/blob/main/docs/api-doc-gen/templates/pkg.tpl)
+a Go template
 which is provided with context about the processed Go packages. The output of
 template execution is the `docs/content/reference/api.md` file, which contains the
 API reference documentation content.
 
-- To change documentation of specific API types, edit the [API Go type definitions](https://github.com/openshift/hypershift/tree/main/api).
+- To change documentation of specific API types, edit the API Go type definitions.
 - To change the structure of the API reference page itself, edit the `gen-crd-api-reference-docs`
-  [Go templates](https://github.com/openshift/hypershift/blob/main/docs/api-doc-gen/templates).
+  Go templates.
 
 To run the API reference docs generator, run the following from the HyperShift
 Git repository root:
@@ -474,7 +474,7 @@ Because such in-cluster build/image/publish/redeploy development workflows can b
 very tedious and slow, the HyperShift project includes a few tools and techniques
 to help make the feedback loop as fast as possible.
 
-This guide makes use of the [ko](https://github.com/google/ko) tool to rapidly
+This guide makes use of the ko tool to rapidly
 build lightweight images which are then published directly into an OCP cluster's
 internal registry. This approach has the following properties which can speed up
 development:
@@ -489,7 +489,7 @@ development:
 
 - An OCP 4.9+ cluster
 - The `oc` CLI tool
-- The [ko](https://github.com/google/ko) CLI tool
+- The ko CLI tool
 
 For this workflow, the OCP cluster must be configured to expose its internal
 image registry externally so the `ko` tool can publish to it.
@@ -602,7 +602,7 @@ press `ctrl-c` to terminate and delete the pod.
 
 !!! note
 
-    See [Use custom operator images](./custom-images.md) to use your own registry.
+    See Use custom operator images to use your own registry.
 
 ## Configure a HostedCluster for iterative control plane development
 
@@ -660,7 +660,7 @@ oc annotate -n clusters HostedCluster test-cluster hypershift.openshift.io/pod-s
 ## Launch a custom `control-plane-operator` image interactively
 
 To iterate on the `control-plane-operator` binary in-cluster interactively, first
-[configure the HostedCluster](#configure-a-hostedcluster-for-iterative-control-plane-development)
+configure the HostedCluster
 to scale down the `control-plane-operator` deployment.
 
 Now, you can build and publish the `control-plane-operator` image and run it interactively
@@ -683,7 +683,7 @@ press `ctrl-c` to terminate and delete the pod.
 ## Launch a custom `ignition-server` interactively
 
 To iterate on the ignition server in-cluster interactively, first
-[configure the HostedCluster](#configure-a-hostedcluster-for-iterative-control-plane-development)
+configure the HostedCluster
 to scale down the `ignition-server` deployment.
 
 Now, you can build and publish the `control-plane-operator` image and run the
@@ -716,16 +716,16 @@ title: Contribute
 
 Use these resources to contribute to HyperShift.
 
-- [Contributing guidelines (GitHub)](https://github.com/openshift/hypershift/blob/main/.github/CONTRIBUTING.md)
-- [Release Process](release-process.md)
-- [Custom Images](custom-images.md)
-- [Onboard a Platform](onboard-a-platform.md)
-- [Run Tests](run-tests.md)
-- [Develop in Cluster](develop_in_cluster.md)
-- [Run hypershift-operator locally](run-hypershift-operator-locally.md)
-- [CPO Overrides](cpo-overrides.md)
-- [Contribute to docs](contribute-docs.md)
-- [Pre-commit hook help](precommit-hook-help.md)
+- Contributing guidelines (GitHub)
+- Release Process
+- Custom Images
+- Onboard a Platform
+- Run Tests
+- Develop in Cluster
+- Run hypershift-operator locally
+- CPO Overrides
+- Contribute to docs
+- Pre-commit hook help
 
 
 
@@ -743,27 +743,27 @@ title: Onboard a platform
 A Platform represents a series of assumptions and choices that HyperShift makes about the environment where it's running, e.g AWS, IBMCloud, Kubevirt.
 The implementation of a new platform crosses multiple controllers.
 
-The HostedCluster controller requires an implementation of the [Platform interface](https://github.com/openshift/hypershift/tree/main/hypershift-operator/controllers/hostedcluster/internal/platform) to shim a particular CAPI implementation and manage required cloud credentials.
+The HostedCluster controller requires an implementation of the Platform interface to shim a particular CAPI implementation and manage required cloud credentials.
 
-The NodePool controller requires an implementation of the [machine template reconciliation](https://github.com/openshift/hypershift/blob/58cabbac00c541b55c7e7925fe7e46f0a55b5ceb/hypershift-operator/controllers/nodepool/nodepool_controller.go#L496).
+The NodePool controller requires an implementation of the machine template reconciliation.
 
 The ControlPlane Operator requires the following:
 
-- [Implement cloud credentials](https://github.com/openshift/hypershift/blob/58cabbac00c541b55c7e7925fe7e46f0a55b5ceb/control-plane-operator/controllers/hostedcontrolplane/hostedcontrolplane_controller.go#L1039-L1049)
+- Implement cloud credentials
 
-- [Reconcile Kubernetes cloud provider config](https://github.com/openshift/hypershift/blob/58cabbac00c541b55c7e7925fe7e46f0a55b5ceb/control-plane-operator/controllers/hostedcontrolplane/hostedcontrolplane_controller.go#L1329)
+- Reconcile Kubernetes cloud provider config
 
-- [Reconcile the OCP Infrastructure CR](https://github.com/openshift/hypershift/blob/58cabbac00c541b55c7e7925fe7e46f0a55b5ceb/support/globalconfig/infrastructure.go#L21)
+- Reconcile the OCP Infrastructure CR
 
-- [Reconcile secret encryption (if your provider supports KMS)](https://github.com/openshift/hypershift/blob/37c45b83f9d453578e05bbd073bcb12437335efd/control-plane-operator/controllers/hostedcontrolplane/kas/deployment.go#L189-L206)
+- Reconcile secret encryption (if your provider supports KMS)
 
 ## End to end testing
 
-The end-to-end tests require an implementation of the [Cluster interface](https://github.com/openshift/hypershift/blob/fe6cde3472473f28ac5c95c3d4f6c5785d12ac16/test/e2e/util/cluster/cluster.go#L9-L14).
+The end-to-end tests require an implementation of the Cluster interface.
 As a starting point, check out
-the [None-Platform implementation](https://github.com/openshift/hypershift/blob/fe6cde3472473f28ac5c95c3d4f6c5785d12ac16/test/e2e/util/cluster/none/cluster.go)
+the None-Platform implementation
 and
-its [basic test](https://github.com/openshift/hypershift/blob/fe6cde3472473f28ac5c95c3d4f6c5785d12ac16/test/e2e/create_cluster_test.go#L60-L87)
+its basic test
 
 ## Supported platforms
 
@@ -780,7 +780,7 @@ and `unit` tests fail on your pull request. The following sections will walk you
 hooks, quickly uninstall the hooks, and how to bypass the hooks.
 
 ## Installing precommit hooks
-Once you have precommit installed on your machine([see this for more info](https://pre-commit.com/#install)), it's quite simple to install the precommit hooks.
+Once you have precommit installed on your machine(see this for more info), it's quite simple to install the precommit hooks.
 
 ```shell
 % pre-commit install
@@ -823,13 +823,13 @@ title: Release process
     This is a complex process that involves some changes in multiple repositories and will affect multiple teams daily basis work.
     Make sure you have multiple reviewers from Core dev team which could guide you in the full process.
 
-## Preparing a release in [Openshift/Hypershift](https://github.com/openshift/hypershift) repository
+## Preparing a release in Openshift/Hypershift repository
 
 ### Bumping release version and generating Release Notes
 
-The [hypershift repo]( https://github.com/openshift/hypershift) produces two different artifacts: Hypershift Operator (HO) and Control Plane Operator (CPO).
+The hypershift repo produces two different artifacts: Hypershift Operator (HO) and Control Plane Operator (CPO).
 
-The CPO release lifecycle is dictated by the [OCP release payload](https://access.redhat.com/support/policy/updates/openshift).
+The CPO release lifecycle is dictated by the OCP release payload.
 
 The HO has an independent release cadence. For consumer products:
 
@@ -848,16 +848,16 @@ This is a sample of how the release notes looks like added to the PR:
   ```
   ## area/control-plane-operator
 
-  - [cpo: cno: follow image name change in release payload](https://github.com/openshift/hypershift/pull/2230)
+  - cpo: cno: follow image name change in release payload
 
   ## area/hypershift-operator
 
-  - [Added documentation around supported-versions configmap](https://github.com/openshift/hypershift/pull/2220)
-  - [Add comment for BaseDomainPrefix](https://github.com/openshift/hypershift/pull/2219)
-  - [Add condition to NodePool indicating whether a security group for it is available](https://github.com/openshift/hypershift/pull/2216)
-  - [HOSTEDCP-827: Add root volume encryption e2e test](https://github.com/openshift/hypershift/pull/2192)
-  - [fix(hypershift): reduce CAPI rbac access](https://github.com/openshift/hypershift/pull/2173)
-  - [Validate Network Input for HostedCluster](https://github.com/openshift/hypershift/pull/2215)
+  - Added documentation around supported-versions configmap
+  - Add comment for BaseDomainPrefix
+  - Add condition to NodePool indicating whether a security group for it is available
+  - HOSTEDCP-827: Add root volume encryption e2e test
+  - fix(hypershift): reduce CAPI rbac access
+  - Validate Network Input for HostedCluster
   ```
 
 
@@ -904,7 +904,7 @@ To run the HyperShift Operator locally, follow these steps:
 
     `Default values are provided for HYPERSHIFT_REGION and HYPERSHIFT_BUCKET_NAME so Step #4 will function without requiring you to export any values.
 
-4. Install HyperShift in development mode which causes the operator deployment to be deployment scaled to zero so that it doesn't conflict with your local operator process (see [Prerequisites](../getting-started.md#prerequisites)):
+4. Install HyperShift in development mode which causes the operator deployment to be deployment scaled to zero so that it doesn't conflict with your local operator process (see Prerequisites):
   
 ```shell linenums="1"
   make hypershift-install-aws-dev
@@ -977,8 +977,8 @@ you should adjust to your own environment.
         ```
 2. Admin access to an OpenShift cluster (version 4.12+) specified by the `KUBECONFIG` environment variable.
 3. The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`). 
-4. A valid [pull secret](https://cloud.redhat.com/openshift/install/aws/installer-provisioned) file for the `quay.io/openshift-release-dev` repository. 
-5. AWS credentials with [permissions](/reference/infrastructure/aws.md) to create infrastructure for the cluster. You will need:
+4. A valid pull secret file for the `quay.io/openshift-release-dev` repository. 
+5. AWS credentials with permissions to create infrastructure for the cluster. You will need:
      - An IAM role ARN with the required permissions
      - STS credentials (session token) that can be generated using `aws sts get-session-token` 
 6. A Route53 public zone for cluster DNS records. To create a public zone:
@@ -1034,7 +1034,7 @@ you should adjust to your own environment.
         ```
 
 ## Install HyperShift Operator
-Install the HyperShift Operator into the management cluster, specifying the OIDC bucket, its region and credentials to access it (see [Prerequisites](#prerequisites)):
+Install the HyperShift Operator into the management cluster, specifying the OIDC bucket, its region and credentials to access it (see Prerequisites):
 
 ```shell linenums="1"
 REGION=us-east-1
@@ -1054,13 +1054,13 @@ hypershift install \
 
 ## Create a Hosted Cluster
 Create a new hosted cluster, specifying the domain of the public zone provided in the
-[Prerequisites](#prerequisites).
+Prerequisites.
 
 ### Set Up AWS Credentials
 
 The HyperShift CLI uses AWS STS (Security Token Service) for authentication. You need:
 
-1. An IAM role with the [required permissions](./reference/infrastructure/aws.md) to create cluster infrastructure
+1. An IAM role with the required permissions to create cluster infrastructure
 2. Temporary STS credentials to authenticate
 
 Create an IAM role using the HyperShift CLI. The `--aws-creds` flag points to the credentials file for your
@@ -1132,7 +1132,7 @@ hypershift create cluster aws \
     The cluster name (`--name`) _must be unique within the base domain_ to
     avoid unexpected and conflicting cluster management behavior.
 
-    The cluster name must also adhere to the [RFC1123 standard](https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#dns-label-names).
+    The cluster name must also adhere to the RFC1123 standard.
 
 !!! important
 
@@ -1193,7 +1193,7 @@ hypershift create nodepool aws \
 
 !!! important
 
-    The default infrastructure created for the cluster during [Create a HostedCluster](#create-a-hostedcluster)
+    The default infrastructure created for the cluster during Create a HostedCluster
     lives in a single availability zone. Any additional NodePool created for that
     cluster must be in the same availability zone and subnet.
 
@@ -1218,7 +1218,7 @@ oc scale nodepool/$NODEPOOL_NAME \
 
 !!! note
 
-    See the [Scale Down](./how-to/automated-machine-management/nodepool-lifecycle.md#scale-down) section of the [NodePool lifecycle page](./how-to/automated-machine-management/nodepool-lifecycle.md) for more details when scaling down NodePools.
+    See the Scale Down section of the NodePool lifecycle page for more details when scaling down NodePools.
 
 ## Delete a Hosted Cluster
 To delete a Hosted Cluster:
@@ -1245,14 +1245,14 @@ hypershift destroy cluster aws \
 
 This document explains how to create HostedClusters and NodePools using the Agent platform.
 
-The Agent platform uses the [Infrastructure Operator](https://github.com/openshift/assisted-service) (AKA Assisted Installer) to add
+The Agent platform uses the Infrastructure Operator (AKA Assisted Installer) to add
 worker nodes to a hosted cluster. For a primer on the Infrastructure Operator, see
-[here](https://github.com/openshift/assisted-service/blob/master/docs/hive-integration/kube-api-getting-started.md).
+here.
 
 ## Overview
 
-When you create a HostedCluster with the Agent platform, HyperShift will install the [Agent CAPI
-provider](https://github.com/openshift/cluster-api-provider-agent) in the Hosted Control Plane (HCP) namespace.
+When you create a HostedCluster with the Agent platform, HyperShift will install the Agent CAPI
+provider in the Hosted Control Plane (HCP) namespace.
 
 Upon scaling up a NodePool, a Machine will be created, and the CAPI provider will find a suitable Agent to match this Machine.
 Suitable means that the Agent is approved, is passing validations, is not currently bound (in use), and has the requirements
@@ -1268,8 +1268,8 @@ Before installing the HyperShift operator we need to get the HyperShift CLI. We 
 
 ### Method 1 - Build the HyperShift CLI
 
-Follow instructions for building the HyperShift CLI in [Getting
-Started](https://hypershift-docs.netlify.app/getting-started/#prerequisites)
+Follow instructions for building the HyperShift CLI in Getting
+Started
 
 ### Method 2 - Extract HyperShift CLI from the Operator Image
 
@@ -1310,7 +1310,7 @@ operator-55fffbd6-whkxs   1/1     Running   0          61s
 > **NOTE**: If Red Hat Advanced Cluster Management (RHACM) is already installed, this can be skipped as the Infrastructure Operator
 > and Hive Operator are dependencies of RHACM.
 
-We will leverage [`tasty`](https://github.com/karmab/tasty) to deploy the required operators easily.
+We will leverage `tasty` to deploy the required operators easily.
 
 Install tasty:
 
@@ -1372,7 +1372,7 @@ The API Server for the Hosted Cluster is exposed a Service of type NodePort.
 
 A DNS entry must exist for `api.${HOSTED_CLUSTER_NAME}.${BASEDOMAIN}` pointing to destination where the API Server can be reached.
 
-This can be as simple as an A record pointing to one of the nodes in the management cluster (i.e. the cluster running the HCP).  It can also point to a [load balancer](https://docs.openshift.com/container-platform/4.11/installing/installing_platform_agnostic/installing-platform-agnostic.html#installation-load-balancing-user-infra-example_installing-platform-agnostic) deployed to redirect incoming traffic to the ingress pods.
+This can be as simple as an A record pointing to one of the nodes in the management cluster (i.e. the cluster running the HCP).  It can also point to a load balancer deployed to redirect incoming traffic to the ingress pods.
 
 ### Example DNS Config
 
@@ -1569,7 +1569,7 @@ Second, we will create the BMH:
 
 > **INFO:** `infraenvs.agent-install.openshift.io` label is used to specify which InfraEnv is used to boot the BMH. `bmac.agent-install.openshift.io/hostname` is used to manually set a hostname.
 
-In case you want to manually specify the installation disk you can make use of the [rootDeviceHints](https://github.com/metal3-io/baremetal-operator/blob/main/docs/api.md#rootdevicehints) in the BMH Spec. If rootDeviceHints are not provided, the agent will pick the installation disk that better suits the installation requirements.
+In case you want to manually specify the installation disk you can make use of the rootDeviceHints in the BMH Spec. If rootDeviceHints are not provided, the agent will pick the installation disk that better suits the installation requirements.
 
 ~~~sh
 envsubst <<"EOF" | oc apply -f -
@@ -1751,7 +1751,7 @@ This option requires deploying MetalLB, configuring a new LoadBalancer service t
 
 #### Step 1 - Get the MetalLB Operator Deployed
 
-Set up [MetalLB](https://docs.openshift.com/container-platform/4.10/networking/metallb/about-metallb.html) so that when you create a service of type LoadBalancer, MetalLB will add an external IP address for the service.
+Set up MetalLB so that when you create a service of type LoadBalancer, MetalLB will add an external IP address for the service.
 
 ~~~sh
 cat <<"EOF" | oc --kubeconfig ${HOSTED_CLUSTER_NAME}.kubeconfig apply -f -
@@ -1799,7 +1799,7 @@ EOF
 
 We will create an `IPAddressPool` with a single IP address and L2Advertisement to advertise the LoadBalancer IPs provided by the `IPAddressPool` via L2.
 Since layer 2 mode relies on ARP and NDP, the IP address must be on the same subnet as the network used by the cluster nodes in order for the MetalLB to work.
-more information about metalLB configuration options is available [here](https://metallb.universe.tf/configuration/).
+more information about metalLB configuration options is available here.
 > **WARN:** Change `INGRESS_IP` env var to match your environments addressing.
 
 ~~~sh
@@ -2003,7 +2003,7 @@ If 10 minutes passes without requiring the additional capacity the agent will be
 # Create Heterogeneous NodePools on Agent HostedClusters
 
 This document explains how to create heterogeneous nodepools on agent platform. 
-Please [refer](create-agent-cluster.md) to set up the env for agent cluster, this document only covers the things you need to configure to have heterogeneous nodepools.
+Please refer to set up the env for agent cluster, this document only covers the things you need to configure to have heterogeneous nodepools.
 
 ## Configure AgentServiceConfig with two heterogeneous architecture OS images
 
@@ -2064,7 +2064,7 @@ When you are creating heterogeneous nodepool, please make sure the workers are r
 
 ## Create a Hosted Cluster
 
-Need to use multi arch release image while creating the cluster to use heterogeneous nodepools. Find the latest multi arch images from [here](https://multi.ocp.releases.ci.openshift.org) 
+Need to use multi arch release image while creating the cluster to use heterogeneous nodepools. Find the latest multi arch images from here 
 ~~~sh
 export CLUSTERS_NAMESPACE="clusters"
 export HOSTED_CLUSTER_NAME="example"
@@ -2160,7 +2160,7 @@ EOF
 ~~~
 This will create two infraenvs with x86_64 & ppc64le architectures. Before creating this, need to ensure respective architecture's OS image is added in `AgentServiceConfig`
 
-After this you can use the above infraenvs to get the minimal iso and follow the [create-agent-cluster.md](create-agent-cluster.md) to add them to your cluster as agents.
+After this you can use the above infraenvs to get the minimal iso and follow the create-agent-cluster.md to add them to your cluster as agents.
 
 ## Scale the NodePool
 
@@ -2267,7 +2267,7 @@ spec:
       type: Route
 ```
 
-If you wanna know more about how to expose the ingress service in the Data Plane side, please access [the Recipes section](../../recipes/index.md) to see how to do it with MetalLB.
+If you wanna know more about how to expose the ingress service in the Data Plane side, please access the Recipes section to see how to do it with MetalLB.
 
 
 ---
@@ -2656,7 +2656,7 @@ Versions used while writing this doc:
 ## Calico
 ### Deployment
 
-In this scenario we are using the Calico version v3.27.0 which is the last one at the time of this writing. The steps followed rely on the [docs](https://docs.tigera.io/calico/latest/getting-started/kubernetes/openshift/installation#generate-the-install-manifests) by Tigera to deploy Calico on OpenShift.
+In this scenario we are using the Calico version v3.27.0 which is the last one at the time of this writing. The steps followed rely on the docs by Tigera to deploy Calico on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
@@ -2780,7 +2780,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 ## Cilium
 ### Deployment
 
-In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the [docs](https://docs.cilium.io/en/stable/installation/k8s-install-openshift-okd/) by Cilium project to deploy Cilium on OpenShift.
+In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
@@ -3607,7 +3607,7 @@ title: Node tuning
 Manage node-level tuning with the Node Tuning Operator.
 
 ## Creating a simple TuneD profile for setting sysctl settings
-If you would like to set some node-level tuning on the nodes in your hosted cluster, you can use the [Node Tuning Operator](https://docs.openshift.com/container-platform/latest/scalability_and_performance/using-node-tuning-operator.html). In HyperShift, node tuning can be configured by creating ConfigMaps which contain Tuned objects, and referencing these ConfigMaps in your NodePools.
+If you would like to set some node-level tuning on the nodes in your hosted cluster, you can use the Node Tuning Operator. In HyperShift, node tuning can be configured by creating ConfigMaps which contain Tuned objects, and referencing these ConfigMaps in your NodePools.
 
 1. Create a ConfigMap which contains a valid Tuned manifest and reference it in a NodePool. The example Tuned manifest below defines a profile which sets `vm.dirty_ratio` to 55, on Nodes which contain the Node label `tuned-1-node-label` with any value.
 
@@ -3881,7 +3881,7 @@ There are three main areas that will trigger rolling upgrades across the Nodes w
 
 Some cluster config changes (e.g. proxy, certs) may also trigger a rolling upgrade if the change needs to be propagated to the node.
 
-NodePools support two types of rolling upgrades: Replace and InPlace, specified via [UpgradeType](../../reference/api.md#hypershift.openshift.io/v1beta1.UpgradeType).
+NodePools support two types of rolling upgrades: Replace and InPlace, specified via UpgradeType.
 
 !!! important
 
@@ -3969,7 +3969,7 @@ To prevent Nodes from becoming stuck when scaling down, set the `.spec.nodeDrain
 This forces Nodes to be removed once the timeout specified in the field has been reached, regardless of whether the node can be drained or the volumes can be detached successfully.
 
 !!! note
-    See the [Hypershift API reference page](../../reference/api.md) for more details.
+    See the Hypershift API reference page for more details.
 
 
 ---
@@ -3981,9 +3981,9 @@ This forces Nodes to be removed once the timeout specified in the field has been
 ## Intro
 
 The `Performance Profile controller`, formerly known as `Performance-Addon Operator`, is now part of `Node Tuning Operator`.
-[Performance Profile controller](https://github.com/openshift/cluster-node-tuning-operator/blob/master/docs/performanceprofile/performance_controller.md) allows you to optimize nodes in your hosted cluster for applications sensitive to CPU and network latency.
+Performance Profile controller allows you to optimize nodes in your hosted cluster for applications sensitive to CPU and network latency.
 
-In HyperShift, node profiling can be configured by creating ConfigMaps which contain [`PerformanceProfile`](https://docs.openshift.com/container-platform/latest/rest_api/node_apis/performanceprofile-performance-openshift-io-v2.html) objects, and referencing these ConfigMaps in your NodePools.
+In HyperShift, node profiling can be configured by creating ConfigMaps which contain `PerformanceProfile` objects, and referencing these ConfigMaps in your NodePools.
 
 ## Steps
 
@@ -4026,7 +4026,7 @@ In HyperShift, node profiling can be configured by creating ConfigMaps which con
                 realTime: true
     ```
 
-    > **_NOTE:_** See [PerformanceProfile Creator](https://docs.openshift.com/container-platform/latest/scalability_and_performance/cnf-create-performance-profiles.html) for help in creating this `PerformanceProfile` manifests.
+    > **_NOTE:_** See PerformanceProfile Creator for help in creating this `PerformanceProfile` manifests.
 
 2. Create the ConfigMap in the management cluster:
 
@@ -4055,7 +4055,7 @@ In HyperShift, node profiling can be configured by creating ConfigMaps which con
     > **_NOTE:_**  Remember one NodePool can only reference at most one `PerformanceProfile`
 
 4. Now that the ConfigMap containing a `PerformanceProfile` manifest has been created and referenced in a NodePool, the Performance Profile Controller will handle the `PerformanceProfile` object and will create the following elements:
-    - `MachineConfig`: This will be embedded into a ConfigMap that will be handled by NTO as any other ConfigMap with MachineConfig embedded (see [this PR](https://github.com/openshift/hypershift/pull/1729) for further info)
+    - `MachineConfig`: This will be embedded into a ConfigMap that will be handled by NTO as any other ConfigMap with MachineConfig embedded (see this PR for further info)
     - `KubeletConfig`: This will be embedded into a ConfigMap that will be handled by NTO in a similar way as a ConfigMap with a MachineConfig embedded
     - `Tuned`: This will be embedded into a ConfigMap and so handled directly by the NTO.
     - `RuntimeClass`: This will be created directly inside the guest cluster.
@@ -4336,7 +4336,7 @@ on AWS with AutoNode feature by Karpenter.
 
 ## Prerequisites
 
-- [Install the latest and greatest HyperShift CLI](https://hypershift-docs.netlify.app/getting-started/#prerequisites).
+- Install the latest and greatest HyperShift CLI.
     - Make sure all prerequisites have been satisfied (Pull Secret, Hosted Zone, OIDC Bucket, etc)
 - Ensure that the AWS service-linked role for Spot is enabled in the account where the hosted cluster will be installed. This is a one-time setup per account.
     - You can verify if the role already exists using the following command:
@@ -4369,7 +4369,7 @@ export OIDC_BUCKET_NAME="${CLUSTER_PREFIX}-oidc"
 
 This section describes hands on steps to install the Hypershift Operator with AutoNode feature by enabling the feature gate `tech-preview-no-upgrade`. See the following documents for more information:
 
-- [Install HyperShift Operator](https://hypershift-docs.netlify.app/getting-started/#install-hypershift-operator)
+- Install HyperShift Operator
 - [Feature Gates][featuregate]
 
 Steps:
@@ -4393,7 +4393,7 @@ oc get all -n hypershift
 
 Create the workload cluster with HyperShift AutoNode.
 
-Choose the desired target release image name ([release controller](https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com/)).
+Choose the desired target release image name (release controller).
 
 Create a hosted cluster, enabling the flag `--auto-node`:
 
@@ -4598,12 +4598,12 @@ title: Create AWS Hosted Cluster in Multiple Zones
 
 ## Prerequisites
 
-Complete the [Prerequisites](../../../getting-started/#prerequisites) and [Before you begin](../../../getting-started/#before-you-begin).
+Complete the Prerequisites and Before you begin.
 
 ## Creating the Hosted Cluster
 
 Create a new cluster, specifying the `BASE_DOMAIN` of the public zone provided in the
-[Prerequisites](../../../getting-started/#prerequisites):
+Prerequisites:
 
 ```shell linenums="1"  hl_lines="15"
 REGION=us-east-1
@@ -4627,7 +4627,7 @@ hypershift create cluster aws \
 
     The `--zones` flag must specify Availability Zones (AZs) within the region specified by the `--region` flag
 
-The `--zones` flag is also available on the  `hypershift create infra aws` command used to [create infrastructure separately](../create-infra-iam-separately/#creating-the-aws-infra).
+The `--zones` flag is also available on the  `hypershift create infra aws` command used to create infrastructure separately.
 
 The following per-zone infrastructure is created for all specified zones:
 
@@ -4686,7 +4686,7 @@ stringData:
 
 ## Create a HostedCluster using a credential secret
 
-[Prerequisites](#prerequisites):
+Prerequisites:
 
 ```shell linenums="1"
 REGION=us-east-1
@@ -4809,7 +4809,7 @@ where
     IAM resources such as roles. It does not have to be the same credentials specified to create
     the infrastructure but it does have to correspond to the same AWS account.
 * `OIDC_BUCKET_NAME` is the name of the bucket used to store OIDC documents. This bucket should have been
-    created as a prerequisite for installing Hypershift (See [Prerequisites](../../../getting-started/#Prerequisites))
+    created as a prerequisite for installing Hypershift (See Prerequisites)
     The name of the bucket is used to construct URLs for the OIDC provider created by this command.
 * `OIDC_BUCKET_REGION` is the region where the OIDC bucket lives.
 * `REGION` is the region where the infrastructure of the cluster will live. This is used to create a worker
@@ -4929,14 +4929,14 @@ By default, HyperShift guest clusters are publicly accessible through public DNS
 and the management cluster's default router.
 
 For private clusters on AWS, all communication with the guest cluster occur over
-[AWS PrivateLink](https://aws.amazon.com/privatelink). This guide will lead you
+AWS PrivateLink. This guide will lead you
 through the process of configuring HyperShift for private cluster support on AWS.
 
 ## Before you begin
 
 To enable private hosted clusters, HyperShift must be installed with private
 cluster support. This guide assumes you have performed all the
-[Getting started guide prerequisites](../../getting-started.md#prerequisites). The
+Getting started guide prerequisites. The
 following steps will reference elements of the steps you already performed.
 
 1. Create the private cluster IAM policy document.
@@ -5049,7 +5049,7 @@ following steps will reference elements of the steps you already performed.
 
     !!! note
 
-        Even if you already installed HyperShift using the [Getting started guide](../../getting-started.md), you
+        Even if you already installed HyperShift using the Getting started guide, you
         can safely run `hypershift install` again with private cluster support to update the existing installation.
 
     !!! important
@@ -5059,8 +5059,8 @@ following steps will reference elements of the steps you already performed.
 
 ## Create a private HostedCluster
 
-Create a new private cluster, specifying values used in the [Before you
-begin](#before-you-begin) section.
+Create a new private cluster, specifying values used in the Before you
+begin section.
 
 ```shell linenums="1" hl_lines="13"
 CLUSTER_NAME=example
@@ -5180,7 +5180,7 @@ Regarding the Workers nodes assigned to the cluster, during the migration they w
 These next arguments depend on how the Hypershift Operator has been deployed and how a Hosted Cluster has been created. E.G If we want to go ahead with the procedure and our cluster is **private** we need to make sure that our **Hypershift Operator** has been deployed with the arguments set in the **Private** tab for **Hypershift Operator Deployment access endpoints arguments** and our **Hosted Cluster** has been created using the arguments following the **Private** tab in the **Arguments of the CLI when creating a HostedCluster** section down below.
 
 !!! warning
-    Since this is a disaster recovery procedure, unexpected things could happen because of all the moving components involved. To assist, see this [troubleshooting section](./troubleshooting/troubleshooting-disaster-recovery.md) for the most common issues identified.
+    Since this is a disaster recovery procedure, unexpected things could happen because of all the moving components involved. To assist, see this troubleshooting section for the most common issues identified.
 
 - Hypershift Operator Deployment endpoint access arguments
 
@@ -5304,7 +5304,7 @@ EXTERNAL_DNS_DOMAIN="hc.jpdv.aws.kerbeross.com"
 
 And this is how the Migration workflow will happen
 
-![gif](../../images/hc-migration-workflow.gif)
+
 
 
 ### Backup
@@ -5353,7 +5353,7 @@ oc scale deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 kube-api
 
 3. Backup ETCD and Upload to S3 Bucket
 
-The whole process of this step is documented [here](https://hypershift-docs.netlify.app/how-to/aws/etc-backup-restore/), even with that we will go through the process in a more programmatically way.
+The whole process of this step is documented here, even with that we will go through the process in a more programmatically way.
 
 To do this programmatically it's a bit more complicated, but we will try to put all the necessary steps in a bash script
 
@@ -5963,7 +5963,7 @@ is a fully manual process and requires API downtime.
 
 ## Creating the Etcd snapshot
 
-First we must [Pause reconciliation](../pause-reconciliation.md) of the HostedCluster:
+First we must Pause reconciliation of the HostedCluster:
 
     oc patch -n clusters hostedclusters/${CLUSTER_NAME} -p '{"spec":{"pausedUntil":"'${PAUSED_UNTIL}'"}}' --type=merge
 
@@ -6071,7 +6071,7 @@ Having a DNS indirection layer on top of the `LoadBalancer` and `Route` publishi
 
 ## External-dns setup
 
-Hypershift uses [external-dns](https://github.com/openshift/external-dns) to achieve this indirection.
+Hypershift uses external-dns to achieve this indirection.
 
 `external-dns` is optionally deployed alongside the `hypershift-operator` in the `hypershift` namespace of the management cluster. It watches the cluster for `Services` or `Routes` with the `external-dns.alpha.kubernetes.io/hostname` annotation.  This value of this annotation is used to create a DNS record pointing to the `Service` (A record) or `Route` (CNAME record).
 
@@ -6091,21 +6091,21 @@ To create this Hosted Zone, you can do it in the AWS Route53 Management console:
 
 - Create a Hosted zone in your Management console
 
-![img](../../images/create-hosted-zone.png)
+
 
 - Grab the values from the zone created to configure them (in our case) in the subzone
 
-![img](../../images/hosted-zone-created.png)
+
 
 - In the main domain, create the NS record to redirect the DNS requests to that delegated zone (use the values from the previous step)
 
-![img](../../images/create-ns-record-in-domain.png)
+
 
 - In order to verify that all works fine, create a test entry in the new subzone and test it with a dig command
 
-![img](../../images/create-test-record-in-public-hz.png)
 
-![img](../../images/dig-test.png)
+
+
 
 ## HostedCluster with Service Hostnames
 
@@ -6145,7 +6145,7 @@ The resulting HostedCluster `services` block looks like this:
 
 When the `Services` and `Routes` are created by the Control Plane Operator (CPO), it will annotate them with the `external-dns.alpha.kubernetes.io/hostname` annotation. The value will be the `hostname` field in the `servicePublishingStrategy` for that type.  The CPO uses this name blindly for the service endpoints and assumes that if `hostname` is set, there is some mechanism external-dns or otherwise, that will create the DNS records.
 
-There is an interaction between the `spec.platform.aws.endpointAccess` and which services are permitted to set `hostname` when using [AWS Private clustering](deploy-aws-private-clusters.md).  Only *public* services can have service-level DNS indirection.  Private services use the `hypershift.local` private zone and it is not valid to set `hostname` for `services` that are private for a given `endpointAccess` type.
+There is an interaction between the `spec.platform.aws.endpointAccess` and which services are permitted to set `hostname` when using AWS Private clustering.  Only *public* services can have service-level DNS indirection.  Private services use the `hypershift.local` private zone and it is not valid to set `hostname` for `services` that are private for a given `endpointAccess` type.
 
 The following table notes when it is valid to set hostname for a particular `service` and `endpointAccess` combination:
 
@@ -6608,7 +6608,7 @@ Versions used while writing this doc:
 ## Calico
 ### Deployment
 
-In this scenario we are using the Calico version v3.27.0 which is the last one at the time of this writing. The steps followed rely on the [docs](https://docs.tigera.io/calico/latest/getting-started/kubernetes/openshift/installation#generate-the-install-manifests) by Tigera to deploy Calico on OpenShift.
+In this scenario we are using the Calico version v3.27.0 which is the last one at the time of this writing. The steps followed rely on the docs by Tigera to deploy Calico on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
@@ -6732,7 +6732,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 ## Cilium
 ### Deployment
 
-In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the [docs](https://docs.cilium.io/en/stable/installation/k8s-install-openshift-okd/) by Cilium project to deploy Cilium on OpenShift.
+In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
@@ -7050,11 +7050,11 @@ title: Shared VPC
 
 ## Background
 
-AWS allows [sharing a VPC's subnets](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-sharing.html) from one account to another.
+AWS allows sharing a VPC's subnets from one account to another.
 This enables a use case where network management can be done in a single AWS account, while workloads such as OpenShift clusters exist
 in a separate, satellite account.
 
-Creating a standalone OCP cluster is already [supported in ROSA classic](https://docs.openshift.com/rosa/rosa_install_access_delete_clusters/rosa-shared-vpc-config.html).
+Creating a standalone OCP cluster is already supported in ROSA classic.
 
 In hosted clusters, the shared VPC architecture is very similar to standalone OCP. However, hosted clusters require some new resources to be created.
 
@@ -7268,8 +7268,8 @@ you can check the following:
 # Troubleshooting HyperShift on AWS
 This section of the HyperShift documentation contains pages related to troubleshooting specific issues when using the AWS cloud provider.
 
-- [Debug Missing Nodes](debug-nodes.md)
-- [Debug Disaster Recovery Issues](troubleshooting-disaster-recovery.md)
+- Debug Missing Nodes
+- Debug Disaster Recovery Issues
 
 ---
 
@@ -7293,7 +7293,7 @@ oc get co
 oc get co <Operator's Name> -o yaml
 ```
 
-3. To solve the issue, we need to ensure the old Hosted Cluster is in pause ([we also need this](https://github.com/openshift/hypershift/pull/2265)) or deleted.
+3. To solve the issue, we need to ensure the old Hosted Cluster is in pause (we also need this) or deleted.
 
 4. Now we need to delete the OVN pods
 ```
@@ -7325,7 +7325,7 @@ oc delete pod -n hypershift -lapp=operator
 
 ## The nodes cannot join the new Hosted Cluster and stay in the older one
 
-We have 2 paths to follow, and it depends on if [this code](https://github.com/openshift/hypershift/pull/2265) is in your Hypershift Operator.
+We have 2 paths to follow, and it depends on if this code is in your Hypershift Operator.
 
 ### The PR is merged and my Hypershift Operator has that code running
 
@@ -7334,7 +7334,7 @@ If that's the case, you need to make sure your Hosted Cluster is paused:
 oc get hostedcluster -n <HC Namespace> <HC Name> -ojsonpath={.Spec.pausedUntil}
 ```
 
-If this command does not give you any output, make sure you've followed properly the "[Disaster Recovery](https://hypershift-docs.netlify.app/how-to/aws/disaster-recovery/)" procedure, more concretelly pausing the Hosted Cluster and NodePool.
+If this command does not give you any output, make sure you've followed properly the "Disaster Recovery" procedure, more concretelly pausing the Hosted Cluster and NodePool.
 
 Even if it's paused and is still in that situation, please **continue to the next section** because it's highly probable that you don't have the code which manages this situation properly.
 
@@ -7348,7 +7348,7 @@ Once you followed the Teardown procedure of the old Hosted Cluster, you will see
 
 ## Dependent resources block the old Hosted Cluster teardown
 
-To solve this issue you need to check all the objects in the HostedControlPlane Namespace and make sure all of them are being terminated. To do that we recommend to use an external tool called [ketall](https://github.com/corneliusweig/ketall) which gives you a complete overview of all resources in a kubernetes cluster.
+To solve this issue you need to check all the objects in the HostedControlPlane Namespace and make sure all of them are being terminated. To do that we recommend to use an external tool called ketall which gives you a complete overview of all resources in a kubernetes cluster.
 
 You need to know what object is preventing the Hosted Cluster from being deleted and ensure that the finalizer finishes successfully.
 
@@ -7683,7 +7683,7 @@ curl -s "${OIDC_ISSUER_URL}/.well-known/openid-configuration" | jq .
 
 After setting up workload identities, you can proceed to:
 
-- [Setup Azure Management Cluster for HyperShift](setup-management-cluster.md)
+- Setup Azure Management Cluster for HyperShift
 
 ---
 
@@ -7694,7 +7694,7 @@ After setting up workload identities, you can proceed to:
 This document describes how to set up an Azure Hosted Cluster on an AKS management cluster with an ExternalDNS setup. 
 Azure HostedClusters on AKS are supported from OCP 4.19.0+.
 
-This guide provides both automated script-based setup and manual step-by-step instructions. The automated scripts are located in the [/contrib/managed-azure folder in the HyperShift repo](https://github.com/openshift/hypershift/tree/main/contrib/managed-azure) and can significantly simplify the setup process.
+This guide provides both automated script-based setup and manual step-by-step instructions. The automated scripts are located in the /contrib/managed-azure folder in the HyperShift repo and can significantly simplify the setup process.
 
 ## Prerequisites
 - Azure CLI
@@ -7703,7 +7703,7 @@ This guide provides both automated script-based setup and manual step-by-step in
 - kubectl
 - ccoctl tool
   - The ccoctl tool provides various commands to assist with the creating and maintenance of cloud credentials from outside
-    a cluster. More information on the tool can be found [here](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md).
+    a cluster. More information on the tool can be found here.
 
 ## Automated Setup (Recommended)
 
@@ -7745,7 +7745,7 @@ For the quickest setup, you can use the automated scripts:
    ../contrib/managed-azure/setup_all.sh
    ```
    
-   View the script: [setup_all.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_all.sh)
+   View the script: setup_all.sh
 
 !!! note "Automatic Authentication"
     
@@ -7760,14 +7760,14 @@ For the quickest setup, you can use the automated scripts:
 
 The automated setup runs these scripts in sequence:
 
-- [vars.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/vars.sh) - Sources variables from user-vars.sh and sets up a few more required env variables such as PERSISTENT_RG_NAME
-- [setup_MIv3_kv.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_MIv3_kv.sh) - Sets up control plane identities and Key Vault
-- [setup_aks_cluster.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_aks_cluster.sh) - Creates the AKS management cluster  
-- [setup_external_dns.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_external_dns.sh) - Configures DNS zones and external DNS
-- [setup_install_ho_on_aks.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_install_ho_on_aks.sh) - Installs the HyperShift operator
-- [setup_oidc_provider.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_oidc_provider.sh) - Sets up OIDC issuer for workload identity
-- [setup_dataplane_identities.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_dataplane_identities.sh) - Creates data plane managed identities
-- [create_basic_hosted_cluster.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/create_basic_hosted_cluster.sh) - Creates the hosted cluster
+- vars.sh - Sources variables from user-vars.sh and sets up a few more required env variables such as PERSISTENT_RG_NAME
+- setup_MIv3_kv.sh - Sets up control plane identities and Key Vault
+- setup_aks_cluster.sh - Creates the AKS management cluster  
+- setup_external_dns.sh - Configures DNS zones and external DNS
+- setup_install_ho_on_aks.sh - Installs the HyperShift operator
+- setup_oidc_provider.sh - Sets up OIDC issuer for workload identity
+- setup_dataplane_identities.sh - Creates data plane managed identities
+- create_basic_hosted_cluster.sh - Creates the hosted cluster
 
 ## Manual Setup (Step-by-Step)
 
@@ -7824,7 +7824,7 @@ EOF
     
     Steps 3-5 create resources that should be **reused across multiple clusters** to avoid Azure quota limits: service principals and Key Vault (setup_MIv3_kv.sh), OIDC issuer (setup_oidc_provider.sh), and data plane identities (setup_dataplane_identities.sh). Only run these steps once per environment. For subsequent clusters, use `setup_all.sh` without the `--first-time` flag to skip these one-time setup steps.
 
-**Automated Script**: [setup_MIv3_kv.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_MIv3_kv.sh)
+**Automated Script**: setup_MIv3_kv.sh
 
 This script handles:
 
@@ -7837,7 +7837,7 @@ This script handles:
 ### 4. OIDC Provider Setup
 **Goal**: Create RSA keys and OIDC issuer for workload identity authentication.
 
-**Automated Script**: [setup_oidc_provider.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_oidc_provider.sh)
+**Automated Script**: setup_oidc_provider.sh
 
 This script handles:
 
@@ -7848,7 +7848,7 @@ This script handles:
 ### 5. Data Plane Identity Configuration
 **Goal**: Create managed identities for data plane components and configure federated identity credentials for workload identity.
 
-**Automated Script**: [setup_dataplane_identities.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_dataplane_identities.sh)
+**Automated Script**: setup_dataplane_identities.sh
 
 This script handles:
 
@@ -7859,7 +7859,7 @@ This script handles:
 ### 6. AKS Management Cluster Creation
 **Goal**: Create and configure the AKS cluster that will host the HyperShift operator and manage hosted clusters.
 
-**Automated Script**: [setup_aks_cluster.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_aks_cluster.sh)
+**Automated Script**: setup_aks_cluster.sh
 
 This script handles:
 
@@ -7872,7 +7872,7 @@ This script handles:
 ### 7. DNS Configuration Setup
 **Goal**: Create DNS zones and configure external DNS for cluster ingress and API access.
 
-**Automated Script**: [setup_external_dns.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_external_dns.sh)
+**Automated Script**: setup_external_dns.sh
 
 This script handles:
 
@@ -7884,7 +7884,7 @@ This script handles:
 ### 8. HyperShift Operator Installation
 **Goal**: Install the HyperShift operator on the AKS management cluster with proper external DNS and Azure integration.
 
-**Automated Script**: [setup_install_ho_on_aks.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/setup_install_ho_on_aks.sh)
+**Automated Script**: setup_install_ho_on_aks.sh
 
 This script handles:
 
@@ -7896,7 +7896,7 @@ This script handles:
 ### 9. Hosted Cluster Creation
 **Goal**: Create the actual hosted OpenShift cluster using all the previously configured infrastructure.
 
-**Automated Script**: [create_basic_hosted_cluster.sh](https://github.com/openshift/hypershift/blob/main/contrib/managed-azure/create_basic_hosted_cluster.sh)
+**Automated Script**: create_basic_hosted_cluster.sh
 
 This script handles:
 
@@ -7979,7 +7979,7 @@ For additional help, reach out to #project-hypershift on Red Hat Slack.
 # Create an Azure cluster with Additional Options
 This document describes how to set up an Azure cluster with Hypershift with additional options.
 
-Creating an Azure cluster with Hypershift without any additional flag options can be found [here](create-azure-cluster-on-aks.md).
+Creating an Azure cluster with Hypershift without any additional flag options can be found here.
 
 ## Prerequisites
 All sections assume you are:
@@ -8081,7 +8081,7 @@ To enable the ephemeral OS disk option on the Azure VMs in your HostedCluster, s
     You may need to adjust the disk size depending on the instance type used; to adjust the disk size, use the
     `root-disk-size` flag.
 
-    See [Ephemeral OS disks for Azure VMs](https://learn.microsoft.com/en-us/azure/virtual-machines/ephemeral-os-disks) for more details.
+    See Ephemeral OS disks for Azure VMs for more details.
 
 ```
 ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
@@ -8261,7 +8261,7 @@ This document describes how to create a self-managed Azure HostedCluster using w
 
 ## Overview
 
-Self-managed Azure HostedClusters use [Azure Workload Identity](https://azure.github.io/azure-workload-identity/docs/) for authentication.
+Self-managed Azure HostedClusters use Azure Workload Identity for authentication.
 
 ## Prerequisites
 
@@ -8273,15 +8273,15 @@ Before creating a self-managed Azure HostedCluster, ensure you have:
 - `jq` command-line JSON processor
 - An Azure OpenShift management cluster with HyperShift operator installed
 - Azure workload identities and OIDC issuer configured
-- Appropriate Azure permissions (see [Permission Requirements](#permission-requirements))
+- Appropriate Azure permissions (see Permission Requirements)
 - **Optional**: External DNS configured (only if you want automatic DNS management)
 
 !!! note "Setup Requirements"
 
     This guide assumes you have already completed the workload identity configuration and management cluster setup. Follow these guides in order:
 
-    1. [Azure Workload Identity Setup](azure-workload-identity-setup.md) - Workload identities and OIDC issuer configuration
-    2. [Setup Azure Management Cluster for HyperShift](setup-management-cluster.md) - HyperShift operator installation (with or without External DNS)
+    1. Azure Workload Identity Setup - Workload identities and OIDC issuer configuration
+    2. Setup Azure Management Cluster for HyperShift - HyperShift operator installation (with or without External DNS)
 
 ### Permission Requirements
 
@@ -8367,11 +8367,11 @@ GetSubnetID=$(az network vnet subnet show \
 
 !!! note "Federated Identity Prerequisites"
 
-    Before creating the cluster, ensure that all federated identity credentials have been set up for your workload identities as described in the [Azure Workload Identity Setup](azure-workload-identity-setup.md) guide. The cluster creation will fail if these are not properly configured.
+    Before creating the cluster, ensure that all federated identity credentials have been set up for your workload identities as described in the Azure Workload Identity Setup guide. The cluster creation will fail if these are not properly configured.
 
 !!! note "Azure Marketplace Images"
 
-    For OpenShift 4.20 and later, HyperShift automatically selects the appropriate Azure Marketplace image from the release payload. You no longer need to specify `--marketplace-*` flags unless you want to use a specific custom image. See [Configuring Azure Marketplace Images](#configuring-azure-marketplace-images) for more details.
+    For OpenShift 4.20 and later, HyperShift automatically selects the appropriate Azure Marketplace image from the release payload. You no longer need to specify `--marketplace-*` flags unless you want to use a specific custom image. See Configuring Azure Marketplace Images for more details.
 
 Create the HostedCluster:
 
@@ -8494,7 +8494,7 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create nodepool azure \
     - `--sa-token-issuer-private-key-path`: Path to the private key for service account token signing
     - `--oidc-issuer-url`: URL of the OIDC issuer created in the workload identity setup
     - `--vnet-id`, `--subnet-id`, `--network-security-group-id`: Custom networking infrastructure
-    - `--image-generation`: (Optional) VM generation (`Gen1` or `Gen2`, defaults to `Gen2`). For OCP 4.20+, omit to use release payload defaults. See [Configuring Azure Marketplace Images](#configuring-azure-marketplace-images)
+    - `--image-generation`: (Optional) VM generation (`Gen1` or `Gen2`, defaults to `Gen2`). For OCP 4.20+, omit to use release payload defaults. See Configuring Azure Marketplace Images
     - `--marketplace-publisher/offer/sku/version`: (Optional) Explicit Azure Marketplace image. Must specify all four flags together, or omit all to use defaults (OCP 4.20+)
     - `--dns-zone-rg-name`: Resource group containing the DNS zone (os4-common)
     - `--diagnostics-storage-account-type Managed`: Use Azure managed storage for diagnostics
@@ -8536,8 +8536,8 @@ hypershift destroy cluster azure \
 
 ## Related Documentation
 
-1. [Azure Workload Identity Setup](azure-workload-identity-setup.md) - Workload identities and OIDC issuer setup
-2. [Setup Azure Management Cluster for HyperShift](setup-management-cluster.md) - DNS and HyperShift operator setup
+1. Azure Workload Identity Setup - Workload identities and OIDC issuer setup
+2. Setup Azure Management Cluster for HyperShift - DNS and HyperShift operator setup
 
 ---
 
@@ -8919,8 +8919,8 @@ ARO HCP (Azure Red Hat OpenShift Hosted Control Planes) uses an AKS (Azure Kuber
 
 **Guides:**
 
-- [Create an Azure Hosted Cluster on AKS](create-azure-cluster-on-aks.md) - Step-by-step setup guide
-- [Azure Hosted Cluster with Options](create-azure-cluster-with-options.md) - Advanced configuration options
+- Create an Azure Hosted Cluster on AKS - Step-by-step setup guide
+- Azure Hosted Cluster with Options - Advanced configuration options
 
 ### Self-Managed Azure
 
@@ -8932,10 +8932,10 @@ Self-managed Azure uses an OpenShift cluster (running on any platform - AWS, Azu
 
 **Guides:**
 
-- [Self-Managed Azure Overview](self-managed-azure-index.md) - Architecture and deployment workflow
-- [Azure Workload Identity Setup](azure-workload-identity-setup.md) - Set up managed identities and OIDC federation
-- [Setup Azure Management Cluster](setup-management-cluster.md) - Install HyperShift operator
-- [Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md) - Deploy your first hosted cluster
+- Self-Managed Azure Overview - Architecture and deployment workflow
+- Azure Workload Identity Setup - Set up managed identities and OIDC federation
+- Setup Azure Management Cluster - Install HyperShift operator
+- Create a Self-Managed Azure HostedCluster - Deploy your first hosted cluster
 
 ## Comparison
 
@@ -8954,14 +8954,14 @@ Self-managed Azure uses an OpenShift cluster (running on any platform - AWS, Azu
 
 For detailed information about the Azure infrastructure resources required for each deployment model, see:
 
-- [ARO HCP Infrastructure](../../reference/infrastructure/azure-aro-hcp.md)
-- [Self-Managed Azure Infrastructure](../../reference/infrastructure/azure-self-managed.md)
+- ARO HCP Infrastructure
+- Self-Managed Azure Infrastructure
 
 ## Additional Resources
 
-- [Azure Workload Identity Documentation](https://azure.github.io/azure-workload-identity/docs/)
-- [Azure Managed Identities Documentation](https://learn.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview)
-- [Secrets Store CSI Driver](https://secrets-store-csi-driver.sigs.k8s.io/)
+- Azure Workload Identity Documentation
+- Azure Managed Identities Documentation
+- Secrets Store CSI Driver
 
 
 ---
@@ -9165,7 +9165,7 @@ Self-managed Azure HyperShift deployments consist of three key layers:
 2. **Control Plane**: Kubernetes control plane components running as pods on the management cluster
 3. **Data Plane**: Worker nodes running as Azure Virtual Machines in your Azure subscription
 
-The architecture uses [Azure Workload Identity](https://azure.github.io/azure-workload-identity/docs/) for secure, credential-free authentication between OpenShift components and Azure services. This eliminates the need to manage long-lived service principal credentials and provides better security through federated identity credentials.
+The architecture uses Azure Workload Identity for secure, credential-free authentication between OpenShift components and Azure services. This eliminates the need to manage long-lived service principal credentials and provides better security through federated identity credentials.
 
 ### Key Differences from Managed Azure
 
@@ -9210,7 +9210,7 @@ This phase creates the foundational security infrastructure required for your ho
 
 **When to Complete**: This is a one-time setup that can be reused across multiple hosted clusters. Complete this before proceeding to Phase 2.
 
-👉 **Guide**: [Azure Workload Identity Setup](azure-workload-identity-setup.md)
+👉 **Guide**: Azure Workload Identity Setup
 
 ### Phase 2: Management Cluster Setup
 
@@ -9226,7 +9226,7 @@ This phase installs the HyperShift operator with optional External DNS configura
 
 **When to Complete**: After Phase 1 is complete, but before creating any hosted clusters.
 
-👉 **Guide**: [Setup Azure Management Cluster for HyperShift](setup-management-cluster.md) - Includes both DNS approaches
+👉 **Guide**: Setup Azure Management Cluster for HyperShift - Includes both DNS approaches
 
 ### Phase 3: Create Hosted Clusters
 
@@ -9242,7 +9242,7 @@ This phase creates your actual hosted OpenShift clusters:
 
 **When to Complete**: After Phases 1 and 2 are fully configured and verified.
 
-👉 **Guide**: [Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md) - Includes both DNS approaches
+👉 **Guide**: Create a Self-Managed Azure HostedCluster - Includes both DNS approaches
 
 ## Prerequisites Summary
 
@@ -9307,17 +9307,17 @@ Self-managed Azure HyperShift implements several security best practices:
 
 Begin your self-managed Azure HyperShift deployment by following the guides in order:
 
-1. **[Azure Workload Identity Setup](azure-workload-identity-setup.md)** - Set up managed identities and OIDC federation
-2. **[Setup Azure Management Cluster for HyperShift](setup-management-cluster.md)** - Install HyperShift operator (with or without External DNS)
-3. **[Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md)** - Deploy your first hosted cluster
+1. **Azure Workload Identity Setup** - Set up managed identities and OIDC federation
+2. **Setup Azure Management Cluster for HyperShift** - Install HyperShift operator (with or without External DNS)
+3. **Create a Self-Managed Azure HostedCluster** - Deploy your first hosted cluster
 
 Each guide includes sections for both DNS approaches - simply follow the sections that match your choice.
 
 ## Additional Resources
 
-- [Azure Workload Identity Documentation](https://azure.github.io/azure-workload-identity/docs/)
-- [HyperShift Architecture Reference](../../reference/architecture/index.md)
-- [Managed Azure Documentation](../azure/create-azure-cluster-on-aks.md) - For comparison with AKS-based deployments
+- Azure Workload Identity Documentation
+- HyperShift Architecture Reference
+- Managed Azure Documentation - For comparison with AKS-based deployments
 
 
 ---
@@ -9363,7 +9363,7 @@ You can set up your management cluster with or without External DNS:
 
 !!! warning "External DNS Only"
 
-    This section is only required if you want automatic DNS management with External DNS. If you prefer a simpler setup, skip to [HyperShift Operator Installation (Without External DNS)](#hypershift-operator-installation-without-external-dns).
+    This section is only required if you want automatic DNS management with External DNS. If you prefer a simpler setup, skip to HyperShift Operator Installation (Without External DNS).
 
 Before creating HostedClusters with External DNS, you need to set up DNS zones and delegate DNS records for your clusters.
 
@@ -9419,7 +9419,7 @@ done
 
 !!! warning "External DNS Only"
 
-    This section is only required if you're using External DNS. Skip to [HyperShift Operator Installation (Without External DNS)](#hypershift-operator-installation-without-external-dns) if not.
+    This section is only required if you're using External DNS. Skip to HyperShift Operator Installation (Without External DNS) if not.
 
 Create a dedicated service principal for External DNS:
 
@@ -9564,7 +9564,7 @@ Verify your installation:
 
 Once the management cluster is set up, create hosted clusters:
 
-- [Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md) - Includes guidance for both DNS approaches
+- Create a Self-Managed Azure HostedCluster - Includes guidance for both DNS approaches
 
 ---
 
@@ -9633,7 +9633,7 @@ If the machines look like they have been provisioned correctly, you can directly
 # Troubleshooting HyperShift on Azure
 This section of the HyperShift documentation contains pages related to troubleshooting specific issues when using the Azure cloud provider.
 
-- [Debug Missing Nodes](debug-nodes.md)
+- Debug Missing Nodes
 
 ---
 
@@ -9649,9 +9649,9 @@ This document outlines the daily checks that should be performed each morning to
 ## 1. OCP Release Payload Controllers
 Check the status of OpenShift Container Platform release payload controllers for the **current** and **previous** OCP versions to ensure they are functioning properly.
 
-- Review [amd64 release payload controller](https://amd64.ocp.releases.ci.openshift.org/) to make sure HyperShift AWS and AKS jobs are passing, thus they are not blocking the CI and nightly payloads (both OCP versions)
-- Review [multi-arch release payload controller](https://multi.ocp.releases.ci.openshift.org/) to make sure HyperShift AKS job is passing, thus it is not blocking the nightly payload (both OCP versions)
-- Alternatively, you can view the same info on the Sippy Payload streams dashboard. [Here is an example](https://sippy.dptools.openshift.org/sippy-ng/release/4.21/streams) for OCP 4.21.
+- Review amd64 release payload controller to make sure HyperShift AWS and AKS jobs are passing, thus they are not blocking the CI and nightly payloads (both OCP versions)
+- Review multi-arch release payload controller to make sure HyperShift AKS job is passing, thus it is not blocking the nightly payload (both OCP versions)
+- Alternatively, you can view the same info on the Sippy Payload streams dashboard. Here is an example for OCP 4.21.
 
 !!! warning - "HyperShift job is failing and blocking a payload release"
 
@@ -9665,7 +9665,7 @@ Check the status of OpenShift Container Platform release payload controllers for
 ## 2. Periodic & Conformance Jobs
 Review periodic job status for the **current** and **previous** OCP versions to ensure long-running validation and maintenance tasks are healthy. We want to be passing 70% or higher.
 
-For each OCP version, click on the Jobs link on the left hand side of the screen in Sippy. [Here is an example for OCP 4.21](https://sippy.dptools.openshift.org/sippy-ng/jobs/4.21?filters=%257B%2522items%2522%253A%255B%257B%2522columnField%2522%253A%2522current_runs%2522%252C%2522operatorValue%2522%253A%2522%253E%253D%2522%252C%2522value%2522%253A%25227%2522%257D%252C%257B%2522columnField%2522%253A%2522variants%2522%252C%2522operatorValue%2522%253A%2522contains%2522%252C%2522value%2522%253A%2522never-stable%2522%252C%2522not%2522%253Atrue%257D%252C%257B%2522id%2522%253A99%252C%2522columnField%2522%253A%2522name%2522%252C%2522operatorValue%2522%253A%2522contains%2522%252C%2522value%2522%253A%2522hypershift%2522%257D%255D%257D&sort=asc&sortField=net_improvement) with the jobs filtered on *hypershift*.
+For each OCP version, click on the Jobs link on the left hand side of the screen in Sippy. Here is an example for OCP 4.21 with the jobs filtered on *hypershift*.
 
 We care about the following jobs (you can filter by these names if desired):
 
@@ -9688,7 +9688,7 @@ We care about the following jobs (you can filter by these names if desired):
 
     Open a chat thread in #team-ocp-hypershift to start a dialogue on what is happening and to begin root causing the problem.
 
-Alternatively, you can view the job runs in [TestGrid](https://testgrid.k8s.io/redhat-hypershift#Summary).
+Alternatively, you can view the job runs in TestGrid.
 
 ---
 
@@ -9699,13 +9699,13 @@ The best way to check to make sure the presubmit jobs are not permafailing are t
 
 The presubmit jobs we most care about are:
 
-- [pull-ci-openshift-hypershift-main-e2e-aws](https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-hypershift-main-e2e-aws)
-- [pull-ci-openshift-hypershift-main-e2e-aws-upgrade-hypershift-operator](https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-hypershift-main-e2e-aws-upgrade-hypershift-operator)
-- [pull-ci-openshift-hypershift-main-e2e-aks](https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-hypershift-main-e2e-aks)
-- [pull-ci-openshift-hypershift-main-e2e-aks-4-20](https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-hypershift-main-e2e-aks-4-20)
-- [pull-ci-openshift-hypershift-main-e2e-kubevirt-aws-ovn-reduced](https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-hypershift-main-e2e-kubevirt-aws-ovn-reduced)
-- [pull-ci-openshift-hypershift-main-verify](https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-hypershift-main-verify)
-- [pull-ci-openshift-hypershift-main-unit](https://prow.ci.openshift.org/job-history/gs/test-platform-results/pr-logs/directory/pull-ci-openshift-hypershift-main-unit)
+- pull-ci-openshift-hypershift-main-e2e-aws
+- pull-ci-openshift-hypershift-main-e2e-aws-upgrade-hypershift-operator
+- pull-ci-openshift-hypershift-main-e2e-aks
+- pull-ci-openshift-hypershift-main-e2e-aks-4-20
+- pull-ci-openshift-hypershift-main-e2e-kubevirt-aws-ovn-reduced
+- pull-ci-openshift-hypershift-main-verify
+- pull-ci-openshift-hypershift-main-unit
 
 !!! tip
 
@@ -9785,7 +9785,7 @@ HyperShift jobs use the `hypershift` cluster profile, which maps to `hypershift-
 cluster_profile: hypershift
 ```
 
-This cluster profile is defined in the [Boskos configuration](https://github.com/openshift/release/blob/master/core-services/prow/02_config/_boskos.yaml) and controls how many concurrent jobs can run.
+This cluster profile is defined in the Boskos configuration and controls how many concurrent jobs can run.
 
 ### Platform Separation
 
@@ -9814,7 +9814,7 @@ If jobs are queued waiting for resources, you'll see the "Acquiring leases" mess
 
 The HyperShift CI dashboard shows the current state of test clusters:
 
-[https://ci-dashboard-route-clusters.apps.rosa.hypershift-ci-2.1xls.p3.openshiftapps.com/](https://ci-dashboard-route-clusters.apps.rosa.hypershift-ci-2.1xls.p3.openshiftapps.com/)
+https://ci-dashboard-route-clusters.apps.rosa.hypershift-ci-2.1xls.p3.openshiftapps.com/
 
 This dashboard displays clusters provisioned by CI jobs.
 
@@ -9832,9 +9832,9 @@ Understanding the CI infrastructure helps when:
 
 ## References
 
-- [Boskos configuration](https://github.com/openshift/release/blob/master/core-services/prow/02_config/_boskos.yaml)
-- [HyperShift CI config](https://github.com/openshift/release/blob/master/ci-operator/config/openshift/hypershift/openshift-hypershift-main.yaml)
-- [CI Dashboard](https://ci-dashboard-route-clusters.apps.rosa.hypershift-ci-2.1xls.p3.openshiftapps.com/)
+- Boskos configuration
+- HyperShift CI config
+- CI Dashboard
 
 
 ---
@@ -9937,7 +9937,7 @@ spec:
       type: Route
 ```
 
-If you wanna know more about how to expose the ingress service in the Data Plane side, please access [the Recipes section](../../recipes/index.md) to see how to do it with MetalLB.
+If you wanna know more about how to expose the ingress service in the Data Plane side, please access the Recipes section to see how to do it with MetalLB.
 
 
 ---
@@ -10319,7 +10319,7 @@ the HostedCluster. This means a HostedCluster can manage NodePools with differen
     same NodePool.
 
 The most up-to-date information on what CPU types are supported on a platform can be found 
-by looking at the NodePool controller function to validate NodePool CPU and platform [here](https://github.com/openshift/hypershift/blob/2e7d5e357080c8e8d0f91fac71917723814440cc/hypershift-operator/controllers/nodepool/nodepool_controller.go#L1010).
+by looking at the NodePool controller function to validate NodePool CPU and platform here.
 
 As of September 2024:
 
@@ -10363,7 +10363,7 @@ This guide explains how to configure a custom DNS domain for your HyperShift clu
 - A running HyperShift cluster
 - Access to modify the HostedCluster resource
 - A custom DNS domain that you want to use for the Kube API Server
-- A custom certificate configured in the Kubeapi-server as we already explained [here](kubeapi-server.md)
+- A custom certificate configured in the Kubeapi-server as we already explained here
 
 ## Configuration
 
@@ -10452,20 +10452,20 @@ reconciled with what is specified in the HostedCluster.
 
 The configuration resources that should be specified in the HostedCluster are:
 
-* [APIServer](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/apiserver-config-openshift-io-v1.html) - Provides API server configuration such as certificates and certificate authorities.
-* [Authentication](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/authentication-config-openshift-io-v1.html) - Controls the identity provider and authentication configuration for the cluster.
-* [FeatureGate](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/featuregate-config-openshift-io-v1.html) - Enables FeatureGates so that you can use Tech Preview features.
-* [Ingress](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/ingress-config-openshift-io-v1.html) - Configuration details related to routing such as the default domain for routes.
-* [Image](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/image-config-openshift-io-v1.html) - Configures how specific image registries should be treated (allowed, disallowed, insecure, CA details).
-* [OAuth](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/oauth-config-openshift-io-v1.html) - Configures identity providers and other behavior related to internal OAuth server flows.
-* [Proxy](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/proxy-config-openshift-io-v1.html) - Defines proxies to be used by components needing external network access. Note: not all components currently consume this value.
-* [Scheduler](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/scheduler-config-openshift-io-v1.html) - Configures scheduler behavior such as policies and default node selectors.
-* [Network](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/network-config-openshift-io-v1.html) - Configures network properties for initial cluster creation.
+* APIServer - Provides API server configuration such as certificates and certificate authorities.
+* Authentication - Controls the identity provider and authentication configuration for the cluster.
+* FeatureGate - Enables FeatureGates so that you can use Tech Preview features.
+* Ingress - Configuration details related to routing such as the default domain for routes.
+* Image - Configures how specific image registries should be treated (allowed, disallowed, insecure, CA details).
+* OAuth - Configures identity providers and other behavior related to internal OAuth server flows.
+* Proxy - Defines proxies to be used by components needing external network access. Note: not all components currently consume this value.
+* Scheduler - Configures scheduler behavior such as policies and default node selectors.
+* Network - Configures network properties for initial cluster creation.
 Resources that should still be configured inside the guest cluster are:
 
-* [Build](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/build-config-openshift-io-v1.html) - Controls default and enforced configuration for all builds on the cluster.
-* [Console](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/console-config-openshift-io-v1.html) - Configures the behavior of the web console interface, including the logout behavior.
-* [Project](https://docs.openshift.com/container-platform/4.20/rest_api/config_apis/project-config-openshift-io-v1.html) - Configures how projects are created including the project template.
+* Build - Controls default and enforced configuration for all builds on the cluster.
+* Console - Configures the behavior of the web console interface, including the logout behavior.
+* Project - Configures how projects are created including the project template.
 
 ## Specifying Configuration in a HostedCluster
 
@@ -10552,7 +10552,7 @@ spec:
         type: OpenID
 ```
 
-For more details on the individual identity providers: refer to [upstream openshift documentation](https://docs.openshift.com/container-platform/4.20/authentication/understanding-identity-provider.html)
+For more details on the individual identity providers: refer to upstream openshift documentation
 
 ---
 
@@ -10656,9 +10656,9 @@ After applying the configuration, you can verify that the API server is using th
 
 ## References
 
-- Additional validation to prevent the SAN conflict [PR](https://github.com/openshift/hypershift/pull/5875)
-- Common error creating a custom certificate for the KAS - [Solution 6984698](https://access.redhat.com/solutions/6984698)
-- [OpenShift Documentation](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/security_and_compliance/configuring-certificates#customize-certificates-api-add-named_api-server-certificates)
+- Additional validation to prevent the SAN conflict PR
+- Common error creating a custom certificate for the KAS - Solution 6984698
+- OpenShift Documentation
 
 ---
 
@@ -10690,9 +10690,9 @@ Before configuring OAuth certificates:
 HyperShift’s control-plane-operator reads serving certificates through the shared function `GetNamedCertificates()`:
 
 - API Server implementation:
-[control-plane-operator/controllers/hostedcontrolplane/v2/kas/config.go#L76](https://github.com/openshift/hypershift/blob/main/control-plane-operator/controllers/hostedcontrolplane/v2/kas/config.go#L76)
-- OAuth Server implementation: [control-plane-operator/controllers/hostedcontrolplane/v2/oauth/config.go#L66](https://github.com/openshift/hypershift/blob/main/control-plane-operator/controllers/hostedcontrolplane/v2/oauth/config.go#L66)
-- Cluster config source: [api/hypershift/v1beta1/clusterconfig.go#L45-L50](https://github.com/openshift/hypershift/blob/main/api/hypershift/v1beta1/clusterconfig.go#L45-L50)
+control-plane-operator/controllers/hostedcontrolplane/v2/kas/config.go#L76
+- OAuth Server implementation: control-plane-operator/controllers/hostedcontrolplane/v2/oauth/config.go#L66
+- Cluster config source: api/hypershift/v1beta1/clusterconfig.go#L45-L50
 
 Both components read from:
 ```yaml
@@ -10861,7 +10861,7 @@ This proves:
 
 !!! important
 
-    This procedure differs from the regular disaster recovery (DR) process due to the use of an OADP plugin that automates many tasks. If you’re unable to deploy OADP 1.5 in your management cluster, please refer to [the regular DR procedure](./backup-and-restore-oadp.md).
+    This procedure differs from the regular disaster recovery (DR) process due to the use of an OADP plugin that automates many tasks. If you’re unable to deploy OADP 1.5 in your management cluster, please refer to the regular DR procedure.
 
 This guide outlines the steps for performing disaster recovery on a Hosted Cluster using the OpenShift API for Data Protection (OADP). It distinguishes between:
 
@@ -10882,7 +10882,7 @@ Ensure the following prerequisites are met on the Management cluster (connected 
 
 !!! warning "⚠️ HostedCluster Configuration"
 
-    The HostedCluster must be configured as `PublicAndPrivate` or `Private`. Public clusters without a hostname will cause restore failures. See [HostedCluster Configuration Requirements](#hostedcluster-configuration-requirements) for details.
+    The HostedCluster must be configured as `PublicAndPrivate` or `Private`. Public clusters without a hostname will cause restore failures. See HostedCluster Configuration Requirements for details.
 
 !!! Note "Note for Bare Metal Providers"
 
@@ -10899,14 +10899,14 @@ Ensure the following prerequisites are met on the Management cluster (connected 
 
 ## Deploying OpenShift ADP
 
-To deploy the OADP Operator, refer to the [official Red Hat documentation](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/oadp-installing-operator.html), which provides instructions based on your Management cluster version.
+To deploy the OADP Operator, refer to the official Red Hat documentation, which provides instructions based on your Management cluster version.
 After installation, create a DataProtectionApplication (DPA) object, which defines backup locations, Velero pod configurations, and more. This process varies depending on your cloud or remote storage provider. Relevant documentation is available here.
 This guide focuses on the following platforms:
 
-- [AWS](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-aws.html)
-- [Baremetal](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-mcg.html)
-- [Openstack](https://docs.redhat.com/en/documentation/openshift_container_platform/latest/html/installing/installing-on-openstack)
-- [KubeVirt](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-mcg.html)
+- AWS
+- Baremetal
+- Openstack
+- KubeVirt
 
 ### Creating Cloud Provider Credentials
 Begin by creating credentials for your backup storage platform. Specific instructions are available in the official documentation. For AWS S3 and MinIO, the basic steps are:
@@ -10923,7 +10923,7 @@ oc create secret generic cloud-credentials -n openshift-adp --from-file cloud=cr
 
 !!! note
 
-    If using AWS S3, additional AWS resources must be created to enable data backup and restoration. Follow [these instructions](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-aws.html#migration-configuring-aws-s3_installing-oadp-aws) to set up the necessary configurations.
+    If using AWS S3, additional AWS resources must be created to enable data backup and restoration. Follow these instructions to set up the necessary configurations.
 
 
 ### Sample DPA Configurations
@@ -11088,7 +11088,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
         If the workloads in the Data Plane are not crucial for you, it's safe to skip this step.
 
-    If you need to backup the applications running under the HostedCluster, it's advisable to follow [the official documentation for backup and restore of OpenShift applications](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/backing-up-applications.html)
+    If you need to backup the applications running under the HostedCluster, it's advisable to follow the official documentation for backup and restore of OpenShift applications
 
     The steps are the following:
 
@@ -11098,11 +11098,11 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
       We recommend checking if your workloads contain Persistent Volumes and if our StorageClass is compatible with CSI Volume Snapshots, which is one of the simplest ways to handle this aspect.
 
-    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize [`Kopia`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-about-kopia.html) as the backend tool for data snapshots, along with [`File System Backup`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-backing-up-applications-restic-doc.html). However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
+    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize `Kopia` as the backend tool for data snapshots, along with `File System Backup`. However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
 
     !!! Important
 
-        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the [References](#References) section.
+        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the References section.
 
     Once we have completed the backup of the Data Plane layer, we can proceed with the backup of the Hosted Control Plane (HCP).
 
@@ -11177,7 +11177,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
     - clusters-hosted
     ```
 
-    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
+    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the Watching section for more information.
 
     The backup process is considered complete when the `status.phase` is `Completed`.
 
@@ -11187,7 +11187,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
         If the workloads in the Data Plane are not crucial for you, it's safe to skip this step.
 
-    If you need to backup the applications running under the HostedCluster, it's advisable to follow [the official documentation for backup and restore of OpenShift applications](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/backing-up-applications.html)
+    If you need to backup the applications running under the HostedCluster, it's advisable to follow the official documentation for backup and restore of OpenShift applications
 
     The steps are the following:
 
@@ -11197,11 +11197,11 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
       We recommend checking if your workloads contain Persistent Volumes and if our StorageClass is compatible with CSI Volume Snapshots, which is one of the simplest ways to handle this aspect.
 
-    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize [`Kopia`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-about-kopia.html) as the backend tool for data snapshots, along with [`File System Backup`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-backing-up-applications-restic-doc.html). However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
+    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize `Kopia` as the backend tool for data snapshots, along with `File System Backup`. However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
 
     !!! Important
 
-        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the [References](#References) section.
+        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the References section.
 
     Once we have completed the backup of the Data Plane layer, we can proceed with the backup of the Hosted Control Plane (HCP).
 
@@ -11278,7 +11278,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
     - clusters-hosted
     ```
 
-    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
+    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the Watching section for more information.
 
     The backup process is considered complete when the `status.phase` is `Completed`.
 
@@ -11288,7 +11288,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
         If the workloads in the Data Plane are not crucial for you, it's safe to skip this step.
 
-    If you need to backup the applications running under the HostedCluster, it's advisable to follow [the official documentation for backup and restore of OpenShift applications](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/backing-up-applications.html)
+    If you need to backup the applications running under the HostedCluster, it's advisable to follow the official documentation for backup and restore of OpenShift applications
 
     The steps are the following:
 
@@ -11298,11 +11298,11 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
       We recommend checking if your workloads contain Persistent Volumes and if our StorageClass is compatible with CSI Volume Snapshots, which is one of the simplest ways to handle this aspect.
 
-    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize [`Kopia`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-about-kopia.html) as the backend tool for data snapshots, along with [`File System Backup`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-backing-up-applications-restic-doc.html). However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
+    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize `Kopia` as the backend tool for data snapshots, along with `File System Backup`. However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
 
     !!! Important
 
-        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the [References](#References) section.
+        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the References section.
 
     Once we have completed the backup of the Data Plane layer, we can proceed with the backup of the Hosted Control Plane (HCP).
 
@@ -11375,7 +11375,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
     - clusters-hosted
     ```
 
-    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
+    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the Watching section for more information.
 
     The backup process is considered complete when the `status.phase` is `Completed`.
 
@@ -11385,7 +11385,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
         If the workloads in the Data Plane are not crucial for you, it's safe to skip this step.
 
-    If you need to backup the applications running under the HostedCluster, it's advisable to follow [the official documentation for backup and restore of OpenShift applications](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/backing-up-applications.html)
+    If you need to backup the applications running under the HostedCluster, it's advisable to follow the official documentation for backup and restore of OpenShift applications
 
     The steps are the following:
 
@@ -11395,11 +11395,11 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
       We recommend checking if your workloads contain Persistent Volumes and if our StorageClass is compatible with CSI Volume Snapshots, which is one of the simplest ways to handle this aspect.
 
-    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize [`Kopia`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-about-kopia.html) as the backend tool for data snapshots, along with [`File System Backup`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-backing-up-applications-restic-doc.html). However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
+    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize `Kopia` as the backend tool for data snapshots, along with `File System Backup`. However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
 
     !!! Important
 
-        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the [References](#References) section.
+        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the References section.
 
     Once we have completed the backup of the Data Plane layer, we can proceed with the backup of the Hosted Control Plane (HCP).
 
@@ -11474,7 +11474,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
     - clusters-hosted
     ```
 
-    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
+    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the Watching section for more information.
 
     The backup process is considered complete when the `status.phase` is `Completed`.
 
@@ -11578,7 +11578,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
             operator: 'DoesNotExist'
         ```
 
-    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
+    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the Watching section for more information.
 
     The backup process is considered complete when the `status.phase` is `Completed`.
 
@@ -11631,7 +11631,7 @@ existingResourcePolicy: update
 - `restorePvs` will initiate the recovery of pods with the included persistent volumes.
 - Setting `existingResourcePolicy` to `update` ensures that any existing objects are overwritten with the backup content. This may cause issues with objects containing immutable fields, which is why we delete them in a previous step. If this policy is not set, the Velero engine will skip the restoration of objects that already exist.
 
-You can monitor the restoration process by checking the restore status field and following the Velero logs mentioned in the [Watching](#watching) section.
+You can monitor the restoration process by checking the restore status field and following the Velero logs mentioned in the Watching section.
 
 The restoration process is considered complete once the `status.phase` is `Completed`.
 
@@ -11711,7 +11711,7 @@ For troubleshooting purposes, it's crucial to identify where the process is stuc
 - Utilize the `velero` command with the `--details` flag to describe the backup/restore objects.
 - Check the backup/restore status directly in the respective object, which can provide valuable hints.
 - Examine the Events in the affected namespaces (in the previous examples, these were `clusters` and `clusters-hosted`).
-- Verify the status of all OADP objects using the command provided in the [Watching section](#watching).
+- Verify the status of all OADP objects using the command provided in the Watching section.
 
 ## Tips and Tricks
 
@@ -11809,7 +11809,7 @@ spec:
 
 !!! important
 
-    This procedure uses the Hypershift OADP plugin that automates many tasks. Here we assume you have oadp < 1.5 in your management cluster, if that's not the case, please refer to [the OADP-1.5 DR procedure](backup-and-restore-oadp-1-5.md).
+    This procedure uses the Hypershift OADP plugin that automates many tasks. Here we assume you have oadp < 1.5 in your management cluster, if that's not the case, please refer to the OADP-1.5 DR procedure.
 
 In this section, we will outline the procedures for performing disaster recovery tasks on a Hosted Cluster using the Openshift API for Data Protection (OADP). We will differentiate between the Control Plane (consisting of pods running in the Management cluster, which function as a Hosted Control Plane) and the Data Plane (the Hosted Cluster where customers add their workloads and develop their core business).
 
@@ -11826,7 +11826,7 @@ The first consideration is to ensure we meet the prerequisites. On the Managemen
 
 !!! warning "⚠️ HostedCluster Configuration"
 
-    The HostedCluster must be configured as `PublicAndPrivate` or `Private`. Public clusters without a hostname will cause restore failures. See [HostedCluster Configuration Requirements](#hostedcluster-configuration-requirements) for details.
+    The HostedCluster must be configured as `PublicAndPrivate` or `Private`. Public clusters without a hostname will cause restore failures. See HostedCluster Configuration Requirements for details.
 
 
 !!! important
@@ -11837,15 +11837,15 @@ The first consideration is to ensure we meet the prerequisites. On the Managemen
 
 ## Openshift-adp deployment
 
-To deploy the OADP operator, we kindly redirect you to the [Official Red Hat documentation](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/oadp-installing-operator.html), where they provide instructions based on the version of the Management Cluster you're using.
+To deploy the OADP operator, we kindly redirect you to the Official Red Hat documentation, where they provide instructions based on the version of the Management Cluster you're using.
 
-Once installed, you'll need to create an object called DPA (Data Protection Application), which essentially describes the backup locations, Velero pod configurations, etc. This process varies depending on the cloud/remote storage location. All relevant documentation is available [here](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/about-installing-oadp.html).
+Once installed, you'll need to create an object called DPA (Data Protection Application), which essentially describes the backup locations, Velero pod configurations, etc. This process varies depending on the cloud/remote storage location. All relevant documentation is available here.
 
 This guide will focus on three main platforms:
 
-- [AWS](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-aws.html)
-- [Baremetal](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-mcg.html)
-- [KubeVirt](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-mcg.html)
+- AWS
+- Baremetal
+- KubeVirt
 
 The first step is to create credentials for the platform where you'll upload the backups. Specific instructions can be found in the official documentation, but the basic steps are as follows:
 
@@ -11861,10 +11861,10 @@ oc create secret generic cloud-credentials -n openshift-adp --from-file cloud=cr
 
 !!! note
 
-    This applies to S3 and Minio platforms. For other providers, you can follow the instructions provided in [the official documentation](https://docs.openshift.com/container-platform/4.15/backup_and_restore/application_backup_and_restore/installing/about-installing-oadp.html).
+    This applies to S3 and Minio platforms. For other providers, you can follow the instructions provided in the official documentation.
 
 
-If you are using the AWS S3 provider, you will need to create additional objects in AWS to enable the push and pullback of data to S3. To accomplish this, follow [these instructions](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-aws.html#migration-configuring-aws-s3_installing-oadp-aws)
+If you are using the AWS S3 provider, you will need to create additional objects in AWS to enable the push and pullback of data to S3. To accomplish this, follow these instructions
 
 Below are some samples of DPA configurations for the mentioned platforms
 
@@ -12088,7 +12088,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
         If the workloads in the Data Plane are not crucial for you, it's safe to skip this step.
 
-    If you need to backup the applications running under the HostedCluster, it's advisable to follow [the official documentation for backup and restore of OpenShift applications](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/backing-up-applications.html)
+    If you need to backup the applications running under the HostedCluster, it's advisable to follow the official documentation for backup and restore of OpenShift applications
 
     The steps will indeed be quite similar:
 
@@ -12098,11 +12098,11 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
       We recommend checking if your workloads contain Persistent Volumes and if our StorageClass is compatible with CSI Volume Snapshots, which is one of the simplest ways to handle this aspect.
 
-    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize [`Kopia`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-about-kopia.html) as the backend tool for data snapshots, along with [`File System Backup`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-backing-up-applications-restic-doc.html). However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
+    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize `Kopia` as the backend tool for data snapshots, along with `File System Backup`. However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
 
     !!! Important
 
-        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the [References](#References) section.
+        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the References section.
 
     Once we have completed the backup of the Data Plane layer, we can proceed with the backup of the Hosted Control Plane (HCP).
 
@@ -12179,7 +12179,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
     - clusters-hosted
     ```
 
-    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
+    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the Watching section for more information.
 
     The backup process is considered complete when the `status.phase` is `Completed`.
 
@@ -12191,7 +12191,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
         If the workloads in the Data Plane are not crucial for you, it's safe to skip this step.
 
-    If you need to backup the applications running under the HostedCluster, it's advisable to follow [the official documentation for backup and restore of OpenShift applications](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/backing-up-applications.html)
+    If you need to backup the applications running under the HostedCluster, it's advisable to follow the official documentation for backup and restore of OpenShift applications
 
     The steps will indeed be quite similar:
 
@@ -12199,13 +12199,13 @@ Once you create any of these DPA objects, several pods will be instantiated in t
       - Create the DPA (Data Protection Application), with a manifest similar to the one provided earlier. It might be beneficial to adjust the `Prefix` or/and `Bucket` fields to keep the ControlPlane and DataPlane backups separated.
       - Create the backup manifest. This step varies depending on the complexity of the workloads in the Data Plane. It's essential to thoroughly examine how to back up the PersistentVolumes, the backend used, and ensure compatibility with our storage provisioner.
 
-      We recommend checking if your workloads contain Persistent Volumes and if our [StorageClass is compatible with CSI Volume Snapshots](https://kubernetes-csi.github.io/docs/drivers.html), which is one of the simplest ways to handle this aspect.
+      We recommend checking if your workloads contain Persistent Volumes and if our StorageClass is compatible with CSI Volume Snapshots, which is one of the simplest ways to handle this aspect.
 
-    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize [`Kopia`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-about-kopia.html) as the backend tool for data snapshots, along with [`File System Backup`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-backing-up-applications-restic-doc.html). However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
+    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize `Kopia` as the backend tool for data snapshots, along with `File System Backup`. However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
 
     !!! Important
 
-        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the [References](#References) section.
+        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the References section.
 
     Once we have completed the backup of the Data Plane layer, we can proceed with the backup of the Hosted Control Plane (HCP).
 
@@ -12263,7 +12263,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
     We will emphasize the most important fields:
 
-    - This particular field is crucial if you utilize a combination of CSI Volume Snapshot and fs-backup. It designates fs-backup as the default method for Persistent Volume backup. If you wish to continue using CSI Volume Snapshot (within the same backup manifest), you will need to add an annotation to the desired pods, including the PVs `backup.velero.io/backup-volumes-excludes=<pvc-name>`. Further information can be found [here](https://velero.io/docs/latest/file-system-backup/#using-the-opt-out-approach).
+    - This particular field is crucial if you utilize a combination of CSI Volume Snapshot and fs-backup. It designates fs-backup as the default method for Persistent Volume backup. If you wish to continue using CSI Volume Snapshot (within the same backup manifest), you will need to add an annotation to the desired pods, including the PVs `backup.velero.io/backup-volumes-excludes=<pvc-name>`. Further information can be found here.
 
     ```yaml
     defaultVolumesToFsBackup: true
@@ -12277,7 +12277,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
     - clusters-hosted
     ```
 
-    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
+    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the Watching section for more information.
 
     The backup process is considered complete when the `status.phase` is `Completed`.
 
@@ -12289,7 +12289,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
         If the workloads in the Data Plane are not crucial for you, it's safe to skip this step.
 
-    If you need to backup the applications running under the HostedCluster, it's advisable to follow [the official documentation for backup and restore of OpenShift applications](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/backing-up-applications.html)
+    If you need to backup the applications running under the HostedCluster, it's advisable to follow the official documentation for backup and restore of OpenShift applications
 
     The steps will indeed be quite similar:
 
@@ -12299,11 +12299,11 @@ Once you create any of these DPA objects, several pods will be instantiated in t
 
       We recommend checking if your workloads contain Persistent Volumes and if our StorageClass is compatible with CSI Volume Snapshots, which is one of the simplest ways to handle this aspect.
 
-    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize [`Kopia`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-about-kopia.html) as the backend tool for data snapshots, along with [`File System Backup`](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/oadp-backing-up-applications-restic-doc.html). However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
+    As a standard approach to maintain consistency in the backup layer for the Hosted Control Plane, we will utilize `Kopia` as the backend tool for data snapshots, along with `File System Backup`. However, it's possible that your workloads may benefit from a different approach that better aligns with your specific use case.
 
     !!! Important
 
-        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the [References](#References) section.
+        The backup of the workloads residing in the Data Plane falls outside the scope of this documentation. Please refer to the official Openshift-ADP backup documentation for further details. Additional links and information can be found in the References section.
 
     Once we have completed the backup of the Data Plane layer, we can proceed with the backup of the Hosted Control Plane (HCP).
 
@@ -12377,7 +12377,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
     - clusters-example-hosted
     ```
 
-    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
+    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the Watching section for more information.
 
     The backup process is considered complete when the `status.phase` is `Completed`.
 
@@ -12451,7 +12451,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
     - clusters-example-hosted
     ```
 
-    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
+    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the Watching section for more information.
 
     The backup process is considered complete when the `status.phase` is `Completed`.
 
@@ -12554,7 +12554,7 @@ Once you create any of these DPA objects, several pods will be instantiated in t
             operator: 'DoesNotExist'
         ```
 
-    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the [Watching](#watching) section for more information.
+    Once you apply the manifest, you can monitor the backup process in two places: the backup object status and the Velero logs. Please refer to the Watching section for more information.
 
     The backup process is considered complete when the `status.phase` is `Completed`.
 
@@ -12605,7 +12605,7 @@ existingResourcePolicy: update
 - `restorePvs` will initiate the recovery of pods with the included persistent volumes.
 - Setting `existingResourcePolicy` to `update` ensures that any existing objects are overwritten with the backup content. This may cause issues with objects containing immutable fields, which is why we delete them in a previous step. If this policy is not set, the Velero engine will skip the restoration of objects that already exist.
 
-You can monitor the restoration process by checking the restore status field and following the Velero logs mentioned in the [Watching](#watching) section.
+You can monitor the restoration process by checking the restore status field and following the Velero logs mentioned in the Watching section.
 
 The restoration process is considered complete once the `status.phase` is `Completed`.
 
@@ -12647,7 +12647,7 @@ For troubleshooting purposes, it's crucial to identify where the process is stuc
 - Utilize the `velero` command with the `--details` flag to describe the backup/restore objects.
 - Check the backup/restore status directly in the respective object, which can provide valuable hints.
 - Examine the Events in the affected namespaces (in the previous examples, these were `clusters` and `clusters-example-hosted`).
-- Verify the status of all OADP objects using the command provided in the [Watching section](#watching).
+- Verify the status of all OADP objects using the command provided in the Watching section.
 
 ## Tips and Tricks
 
@@ -12807,7 +12807,7 @@ Supports Kubernetes duration format:
 When enabled, moves snapshot data to object storage for long-term retention. Useful for cross-region/cross-cloud disaster recovery.
 
 **`--included-resources`**
-Accepts comma-separated resource types. See [Resource Types](#resource-types) section for complete list.
+Accepts comma-separated resource types. See Resource Types section for complete list.
 
 ### Example Commands
 
@@ -13193,7 +13193,7 @@ kubectl auth can-i create backups.velero.io -n openshift-adp
 ```
 Error: backup generation failed: invalid resource type 'invalidresource'
 ```
-**Solution**: Check the [Resource Types](#resource-types) table for valid resource names
+**Solution**: Check the Resource Types table for valid resource names
 
 #### Backup Stuck in Progress
 If a backup remains in "InProgress" status:
@@ -13976,11 +13976,11 @@ The tests validate:
 
 ### Related Documentation
 
-- [OADP Installation Guide](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-ocs.html)
-- [HyperShift OADP Plugin](https://github.com/openshift/hypershift-oadp-plugin)
-- [Velero Documentation](https://velero.io/docs/)
-- [HyperShift Documentation](https://hypershift-docs.netlify.app/)
-- [OpenShift Backup Best Practices](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/backing-up-applications.html)
+- OADP Installation Guide
+- HyperShift OADP Plugin
+- Velero Documentation
+- HyperShift Documentation
+- OpenShift Backup Best Practices
 
 ---
 
@@ -14004,7 +14004,7 @@ If this is enabled, then the HyperShift operator will attempt to recover the hea
 
 The recovery procedure consists of the following:
 * If a member has been removed from the etcd cluster, re-add the missing member by executing the `member add` command
-* The administrator should [delete the etcd member's pod and pvc](#single-node-recovery), after which the HyperShift operator will automatically provision a replacement etcd member Pod and PersistentVolume.
+* The administrator should delete the etcd member's pod and pvc, after which the HyperShift operator will automatically provision a replacement etcd member Pod and PersistentVolume.
 
 Once this is done, the `reset-member` init container of the removed pod should be able to complete the recovery.
 
@@ -14241,16 +14241,16 @@ This section of the Hypershift documentation contains pages that show how to per
 
 ## Available Guides
 
-### [DR CLI Domain](dr-cli.md)
+### DR CLI Domain
 Use the HyperShift CLI disaster recovery commands with platform-aware backup creation and OADP integration.
 
-### [Backup and Restore with OADP](backup-and-restore-oadp.md)
+### Backup and Restore with OADP
 Manual backup and restore procedures using OADP (OpenShift API for Data Protection) with Velero.
 
-### [Backup and Restore with OADP 1.5](backup-and-restore-oadp-1-5.md)
+### Backup and Restore with OADP 1.5
 Updated procedures and enhanced features for OADP version 1.5.
 
-### [ETCD Recovery](etcd-recovery.md)
+### ETCD Recovery
 ETCD disaster recovery procedures for control plane data backup and restoration.
 
 
@@ -14345,11 +14345,11 @@ After applying this change, the worker nodes will be able to consume the mirror 
 
 !!! Note
 
-    This section is mainly focused on the Management Cluster side. If you want to see how to configure the HostedCluster's ImageContentSource, please check out [this other documentation section](./image-content-sources.md).
+    This section is mainly focused on the Management Cluster side. If you want to see how to configure the HostedCluster's ImageContentSource, please check out this other documentation section.
 
 HostedControlPlanes operate in two main domains: the Control Plane, which is part of the Management Cluster, and the Data Plane, which resides in the worker nodes deployed by the customer.
 
-The ICSP/IDMS for the Data Plane is managed via the `ImageContentSources` API in the HostedCluster manifests and this is the only source of truth for the DataPlane. It is also possible to modify the registry files directly in the workers using the [MachineConfig](../automated-machine-management/configure-machines.md) method, changing configurations not directly supported via the API of those ICSP/IDMS objects.
+The ICSP/IDMS for the Data Plane is managed via the `ImageContentSources` API in the HostedCluster manifests and this is the only source of truth for the DataPlane. It is also possible to modify the registry files directly in the workers using the MachineConfig method, changing configurations not directly supported via the API of those ICSP/IDMS objects.
 
 For the Control Plane, ICSP/IDMS objects are managed in the Management Cluster. These objects are parsed by the Hypershift Operator and shared as `registry-overrides` with the ControlPlaneOperator. These entries will be injected into any of the deployments in the HostedControlPlane namespace as an argument.
 
@@ -14365,7 +14365,7 @@ Deploying HostedControlPlanes in a disconnected environment involves a mirroring
 
 #### Setting Up the Private Registry
 
-For the private registry, robust platforms typically use large-scale solutions like Quay or Artifactory. However, for testing or development environments, you can set up a smaller registry by following these [steps](../../labs/IPv4/registry.md).
+For the private registry, robust platforms typically use large-scale solutions like Quay or Artifactory. However, for testing or development environments, you can set up a smaller registry by following these steps.
 
 #### Preparing the Credentials File
 
@@ -14374,11 +14374,11 @@ Your credentials file, typically located at `${HOME}/.docker/config.json`, must 
 - The public registry from which you pull images (e.g., `quay.io`).
 - Your private registry to which you push the images.
 
-Refer to the official OpenShift documentation for detailed instructions on setting up the registry pull secret [here](https://docs.openshift.com/container-platform/latest/installing/disconnected_install/installing-mirroring-installation-images.html#installation-adding-registry-pull-secret_installing-mirroring-installation-images).
+Refer to the official OpenShift documentation for detailed instructions on setting up the registry pull secret here.
 
 #### Installing the oc-mirror Tool
 
-Download the `oc-mirror` plugin for the `oc` CLI and place it in the correct directory. Follow the instructions in the OpenShift documentation [here](https://docs.openshift.com/container-platform/latest/installing/disconnected_install/installing-mirroring-disconnected.html#installation-oc-mirror-installing-plugin_installing-mirroring-disconnected).
+Download the `oc-mirror` plugin for the `oc` CLI and place it in the correct directory. Follow the instructions in the OpenShift documentation here.
 
 ### Preparing the ImageSetConfiguration file
 
@@ -14422,7 +14422,7 @@ mirror:
     - name: metallb-operator
 ```
 
-For a detailed explanation of each field in the `ImageSetConfiguration`, consult the [official documentation](https://docs.openshift.com/container-platform/4.15/installing/disconnected_install/installing-mirroring-disconnected.html#oc-mirror-creating-image-set-config_installing-mirroring-disconnected).
+For a detailed explanation of each field in the `ImageSetConfiguration`, consult the official documentation.
 
 ### Running the Mirroring Process
 
@@ -14438,7 +14438,7 @@ oc-mirror --config imagesetconfig.yaml docker://${PRIVATE_REGISTRY_ADDRESS}
 After several minutes, the process will complete, generating output files in the current directory. The key files are `ImageContentSourcePolicies` and `CatalogSource`, which must be applied to the management cluster to enable a disconnected deployment of the HostedControlPlanes.
 
 !!! Important
-    If you have a `Registry-root-url/Namespace` or `Registry-root-url` (E.G: ) IDMS/ICSP entry into the Management cluster for the OCP Metadata and Release images, the Hypershift operator cannot assume where the destination will be, so you need to explicitly create a IDMS/ICSP object with both entries. More info [here](./known-issues.md#idmsicsp-with-only-root-registry-are-not-propagated-to-the-registry-override-flag-under-ignition-server)
+    If you have a `Registry-root-url/Namespace` or `Registry-root-url` (E.G: ) IDMS/ICSP entry into the Management cluster for the OCP Metadata and Release images, the Hypershift operator cannot assume where the destination will be, so you need to explicitly create a IDMS/ICSP object with both entries. More info here
 
     You must run the `oc-mirror` command twice. The first run generates a complete `ImageContentSourcePolicy` file, while the second run provides the differences between the two runs. Always maintain a backup of these files to merge them into a comprehensive `ImageContentSourcePolicy` file if needed. This backup ensures you have a complete policy file.
 
@@ -14453,7 +14453,7 @@ You can check if the entries created in the ICSP/IDMS are being propagated prope
 ...
 ```
 
-If that so, means the ICSP/IDMS are being propagated properly, otherwise there is some kind of problem. Please if that's the case, check the [known-issues section](known-issues.md) for more info.
+If that so, means the ICSP/IDMS are being propagated properly, otherwise there is some kind of problem. Please if that's the case, check the known-issues section for more info.
 
 
 ## Technical Implementation Details
@@ -14487,9 +14487,9 @@ Please notice that if this override mechanism is required, all the 4 values for 
 
 ## References
 
-- [How to configure ICSP/IDMS for the Management clusters](https://access.redhat.com/documentation/en-us/openshift_container_platform/4.15/html/images/image-configuration)
-- [Hypershift ImageContentSource details](./image-content-sources.md)
-- [Configuring Machines in HyperShift](../automated-machine-management/configure-machines.md)
+- How to configure ICSP/IDMS for the Management clusters
+- Hypershift ImageContentSource details
+- Configuring Machines in HyperShift
 
 ---
 
@@ -14548,11 +14548,11 @@ Depending on where the pods are running, they will be affected by the `IDMS`/`IC
 
 These are the relevant resources for disconnected deployments:
 
-- [Configuring the Registry TLS Certificates](tls-certificates.md)
-- [Configuring Disconnected HostedControlPlane Deployments](idms-icsp-for-management-clusters.md)
-- [Configuring Disconnected Workloads in the HostedCluster through ImageContentSources](image-content-sources.md)
-- [Disconnected Workarounds](disconnected-workarounds.md)
-- [Known Issues](known-issues.md)
+- Configuring the Registry TLS Certificates
+- Configuring Disconnected HostedControlPlane Deployments
+- Configuring Disconnected Workloads in the HostedCluster through ImageContentSources
+- Disconnected Workarounds
+- Known Issues
 
 ---
 
@@ -14568,7 +14568,7 @@ When you work in a disconnected environment the OLM catalog sources will be stil
 2. Mirror all the Container Images from all the catalog sources and apply an ImageContentSourcePolicy to request those images from the private registry.
 3. Mirror all (or part of relying on the operator pruning option, see the image pruning section in https://docs.openshift.com/container-platform/4.14/installing/disconnected_install/installing-mirroring-disconnected.html#oc-mirror-updating-registry-about_installing-mirroring-disconnected ) the Container Images from all the catalog sources to the private registry and annotate the hostedCluster object with hypershift.openshift.io/olm-catalogs-is-registry-overrides annotation to get the ImageStream used for operator catalogs on your hosted-cluster pointing to your internal registry.
 
-The most practical one is the first choice. To proceed with this option, you will need to follow [these instructions](https://docs.openshift.com/container-platform/4.14/installing/disconnected_install/installing-mirroring-disconnected.html). The process will make sure all the images get mirrored and also the ICSP will be generated properly.
+The most practical one is the first choice. To proceed with this option, you will need to follow these instructions. The process will make sure all the images get mirrored and also the ICSP will be generated properly.
 
 Additionally when you're provisioning the HostedCluster you will need to add a flag to indicate that the OLMCatalogPlacement is set to `Guest` because if that's not set, you will not be able to disable them.
 
@@ -14608,7 +14608,7 @@ data:
 
 ## HCP CLI failing to create an hosted cluster with `failed to extract release metadata: failed to get repo setup: failed to create repository client for <your.internal.registry>
 
-See: [CNV-38194](https://issues.redhat.com/browse/CNV-38194)
+See: CNV-38194
 Currently the HCP client is directly (client side) trying to access the OCP release image, this implies some additional requirements on client side:
 
 1. the HCP CLI client should be able to directly reach the internal mirror registry, and this could require additional configuration (a proxied access to the api server of the management server is not enough)
@@ -14620,7 +14620,7 @@ Explicitly set `--network-type OVNKubernetes` (or other valid SDN provider if ne
 
 ## HCP: imageRegistryOverrides information is extracted only once on HyperShift operator initialization and never refreshed
 
-See: [OCPBUGS-29110](https://issues.redhat.com/browse/OCPBUGS-29110)
+See: OCPBUGS-29110
 According to https://hypershift-docs.netlify.app/how-to/disconnected/automatically-initialize-registry-overrides/ , the HyperShift Operator (HO) will automatically initialize the control plane operator (CPO) with any image registry override information from any ImageContentSourcePolicy (ICSP) or any ImageDigestMirrorSet (IDMS) instances from an OpenShift management cluster.
 But due to a bug, the HyperShift Operator (HO) reads the image registry override information only during its startup and never refreshes them at runtime so ICSP and IDMS added after the initialization of the HyperShift Operator are going to get ignored.
 
@@ -14632,7 +14632,7 @@ $ oc delete pods -n hypershift -l name=operator
 
 ## HCP: hypershift-operator on disconnected clusters ignores ImageContentSourcePolicies when a ImageDigestMirrorSet exist on the management cluster
 
-See: [OCPBUGS-29466](https://issues.redhat.com/browse/OCPBUGS-29466)
+See: OCPBUGS-29466
 
 ICSP (deprecated) and IDMS can coexists on the management cluster but due to a bug if at least one IDMS object exists on the management cluster, the HyperShift Operator will completely ignore all the ICSP.
 
@@ -14648,7 +14648,7 @@ $oc apply -f /tmp/idms || true
 
 ## HCP: hypershift-operator on disconnected clusters ignores RegistryOverrides inspecting the control-plane-operator-image
 
-See: [OCPBUGS-29494](https://issues.redhat.com/browse/OCPBUGS-29494)
+See: OCPBUGS-29494
 
 **Symptoms:**
 Creating an hosted cluster with:
@@ -14685,7 +14685,7 @@ $ hcp create cluster ... --annotations=hypershift.openshift.io/control-plane-ope
 
 ## (KubeVirt specific) oc-mirror does not mirror the RHCOS image for HyperShift KubeVirt provider from the OCP release payload
 
-See: [OCPBUGS-29408](https://issues.redhat.com/browse/OCPBUGS-29408)
+See: OCPBUGS-29408
 
 **Workaround:**
 Explicitly mirror the RHCOS image for HyperShift KubeVirt provider.
@@ -14706,7 +14706,7 @@ oc image mirror ${RHCOS_IMAGE} ${mirror_registry}/${LOCALIMAGES}/${RHCOS_IMAGE_N
 
 ## HCP: recycler pods are not starting on hostedcontrolplane in disconnected environments ( ImagePullBackOff on quay.io/openshift/origin-tools:latest )
 
-See: [OCPBUGS-31398](https://issues.redhat.com/browse/OCPBUGS-31398)
+See: OCPBUGS-31398
 
 **Symptoms:**
 Recycler pods are not starting on hosted control plane with ImagePullBackOff error on `quay.io/openshift/origin-tools:latest`.
@@ -14723,7 +14723,7 @@ pointing it back to `quay.io/openshift/origin-tools:latest` which will never be 
 
 ## HCP: imagesStreams on hosted-clusters pointing to image on private registries are failing due to tls verification, although the registry is correctly trusted
 
-See: [OCPBUGS-31446](https://issues.redhat.com/browse/OCPBUGS-31446)
+See: OCPBUGS-31446
 Probably a side effect of https://issues.redhat.com/browse/RFE-3093 - imagestream to trust CA added during the installation
 
 **Symptoms:**
@@ -14752,7 +14752,7 @@ done
 
 ## IDMS/ICSP with only root registry are not propagated to the registry-override flag under ignition server
 
-See: [OCPBUGS-33951](https://issues.redhat.com/browse/OCPBUGS-33951)
+See: OCPBUGS-33951
 
 **Symptoms:**
 Even having the ICSP/IDMS well set in the Management cluster and working fine in that side, the HostedControlPlane deployment is not capable of extract the metadata release from the OCP payload images. Something like this log entry will show up in the ControlPlaneOperator or HypershiftOperator pod.
@@ -14980,14 +14980,14 @@ These options can be seen as a spectrum of isolation. Shared Everything is the l
 - All hosted control plane pods are scheduled to any node that can run hosted control plane workloads.
 - Nodes can be allocated specifically for control plane workloads by tainting and labeling them with `hypershift.openshift.io/control-plane: true`.
 
-![shared_everything_topology.png](..%2Fimages%2Fshared_everything_topology.png)
+
 
 ### Shared Nothing
 
 - To confine nodes to a specific hosted cluster taint and label them with `hypershift.openshift.io/cluster` value.
 - No other control plane pods will land on those nodes.
 
-![shared_nothing_topology.png](..%2Fimages%2Fshared_nothing_topology.png)
+
 
 ### Dedicated Request Serving
 
@@ -15000,7 +15000,7 @@ These options can be seen as a spectrum of isolation. Shared Everything is the l
 - `hypershift.openshift.io/topology: dedicated-request-serving-components` annotation to honor dedicated serving content workloads affinity opinions.
 -  nodeSelector set as `hypershift.openshift.io/control-plane: true` for it to be a hard requirement for workloads to be scheduled. Without it that label is a soft requirement meaning workloads will try to find any suitable node if there’s none with this label.
 
-![dedicated_request_serving_topology.png](..%2Fimages%2Fdedicated_request_serving_topology.png)
+
 
 ## Priority
 
@@ -15056,10 +15056,10 @@ Eventually support for at least 1, 2, 3 and 4 afromentioned scenarios will most 
 
 ## Devs
 
-We rely on [openshift/api](https://github.com/openshift/api) tooling for generating CRDs with [openshift markers](https://github.com/openshift/kubernetes-sigs-controller-tools/blob/96a305393cb22f0c69c4ee59be27ad09057cc704/pkg/crd/markers/patch_validation.go#L30-L36). See [this PR](https://github.com/openshift/hypershift/pull/5047) as an example of a adding a field behind a feature gate.
+We rely on openshift/api tooling for generating CRDs with openshift markers. See this PR as an example of a adding a field behind a feature gate.
 
-The currently ongoing implementation of feature gates for the controllers business logic relies on "k8s.io/component-base/featuregate". This enables devs to declare [granular gates for their features](https://github.com/openshift/hypershift/blob/9f5ccaef47cdcf9d2df91134571f1783e99e30fe/hypershift-operator/featuregate/feature.go).
-See [this PR](https://github.com/openshift/hypershift/pull/4980) as an example.
+The currently ongoing implementation of feature gates for the controllers business logic relies on "k8s.io/component-base/featuregate". This enables devs to declare granular gates for their features.
+See this PR as an example.
 
 ### Promoting a feature gated API field and feature to sable
 
@@ -15072,11 +15072,11 @@ The minimum criteria for promotion is:
 
 - There is e2e test coverage for the feature that include day 2 changes of the field.
 
-- There is e2e test coverage for on creation UX failure expectation via [this e2e test](https://github.com/openshift/hypershift/blob/84fecafa57504139ae6f0623a789369eda05c56f/test/e2e/create_cluster_test.go#L33-L48)
+- There is e2e test coverage for on creation UX failure expectation via this e2e test
 
-- There is e2e test coverage for day 2 on update UX failure expectations via [this e2e test](https://github.com/openshift/hypershift/blob/d6f79f6cd0a638e07f82b6c57bff6c23a6c8d2c0/test/e2e/util/util.go#L977)
+- There is e2e test coverage for day 2 on update UX failure expectations via this e2e test
 
-In general we aim to adhere and converge with stand alone principles in [openshift/api](https://github.com/openshift/api)
+In general we aim to adhere and converge with stand alone principles in openshift/api
 
 ---
 
@@ -15130,8 +15130,8 @@ networks to the NodePools VMs as well though.
 ## Attaching Additional Networks to KubeVirt VMs
 
 Attaching additional networks to a KubeVirt NodePool is accomplished through
-the usage of multus and [NetworkAttachmentDefinitions](https://docs.openshift.com/container-platform/latest/rest_api/network_apis/networkattachmentdefinition-k8s-cni-cncf-io-v1.html). More information about
-how to configure NetworkAttachementDefinitions can be found [here](https://70729--ocpdocs-pr.netlify.app/openshift-enterprise/latest/networking/multiple_networks/configuring-additional-network). Below is an example
+the usage of multus and NetworkAttachmentDefinitions. More information about
+how to configure NetworkAttachementDefinitions can be found here. Below is an example
 of adding multiple additional networks to a guest cluster at creation time
 using the hcp command line tool with the --additional-network argument.
 
@@ -15250,13 +15250,13 @@ categories, each of which have differing requirements.
 
 ETCD requires usage of high performance persistent storage on the management
 cluster hosting the ETCD pods. Due to the performance requirements, usage of a
-local storage csi driver such as [LVM Storage](https://docs.openshift.com/container-platform/latest/storage/persistent_storage/persistent_storage_local/persistent-storage-using-lvms.html) is preferred.
+local storage csi driver such as LVM Storage is preferred.
 When a guest cluster is created in HighAvailability mode, ETCD is replicated
 in pods across three separate management cluster nodes. This replication
 ensures data resiliency even when a local storage csi driver is in use.
 
 More information about ETCD storage configuration can be found in the
-[ETCD Storage Configuration](#etcd storage configuration) section.
+ETCD Storage Configuration section.
 
 **Node Root Volume Storage**
 
@@ -15268,7 +15268,7 @@ infra cluster nodes are disrupted. Ceph is an example of a csi driver that
 would meet these requirements.
 
 More information about configuring root volume storage can be found in the
-[KubeVirt VM Root Volume Configuration](#kubevirt vm root volume configuration) section.
+KubeVirt VM Root Volume Configuration section.
 
 **KubeVirt CSI Storage**
 
@@ -15293,7 +15293,7 @@ to the infra cluster's storage class.
 | RWO Filesystem        | RWO (Block/Filesystem)             | Not Supported             | suboptimal guest block volume mode performance. |
 
 More information about configuring KubeVirt CSI can be found in the
-[KubeVirt CSI StorageClass Mapping](#kubevirt csi storageclass mapping) section.
+KubeVirt CSI StorageClass Mapping section.
 
 # Configuring Storage
 
@@ -15508,7 +15508,7 @@ hcp create cluster kubevirt \
 
 KubeVirt VM image caching is an advanced feature that can be used to optimize
 both cluster startup time and storage utilization. This feature requires the
-usage of a storage class capable of [smart cloning](https://docs.openshift.com/container-platform/4.13/virt/virtual_machines/virtual_disks/virt-cloning-a-datavolume-using-smart-cloning.html) and the `ReadWriteMany`
+usage of a storage class capable of smart cloning and the `ReadWriteMany`
 access mode.
 
 Image caching works by importing the VM image once to a single PVC associated
@@ -15575,12 +15575,12 @@ Install an OCP cluster running on VMs within a management OCP cluster
 
 * Admin access to an OpenShift cluster (version 4.14+) specified by the `KUBECONFIG` environment variable.
 * The management OCP cluster must have wildcard dns routes enabled. `oc patch ingresscontroller -n openshift-ingress-operator default --type=json -p '[{ "op": "add", "path": "/spec/routeAdmission", "value": {wildcardPolicy: "WildcardsAllowed"}}]'`
-* The management OCP cluster must have Openshift Virtualization (4.14+) installed on it. [Instructions for installing Openshift Virtualization](https://docs.openshift.com/container-platform/4.12/virt/install/installing-virt-web.html)
+* The management OCP cluster must have Openshift Virtualization (4.14+) installed on it. Instructions for installing Openshift Virtualization
 * The Management OCP cluster must be configured with OVNKubernetes as the default pod network CNI.
-* The Management OCP cluster must have LoadBalancer service support. [Instructions for installing MetalLB](https://docs.openshift.com/container-platform/4.12/networking/metallb/metallb-operator-install.html)
-* The management OCP cluster must have default storage class. [Storage Configuration Documentation](https://docs.openshift.com/container-platform/4.12/post_installation_configuration/storage-configuration.html) Example of how to set a default storage class: `oc patch storageclass ocs-storagecluster-ceph-rbd -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'`
+* The Management OCP cluster must have LoadBalancer service support. Instructions for installing MetalLB
+* The management OCP cluster must have default storage class. Storage Configuration Documentation Example of how to set a default storage class: `oc patch storageclass ocs-storagecluster-ceph-rbd -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'`
 * The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
-* A valid [pull secret](https://console.redhat.com/openshift/install/platform-agnostic/user-provisioned) file for the `quay.io/openshift-release-dev` repository.
+* A valid pull secret file for the `quay.io/openshift-release-dev` repository.
 * A network MTU of 9000 or larger on the OCP cluster hosting the KubeVirt VMs is recommended for optimal network performance. Smaller MTU settings will work, but network latency and throughput of the hosted pods will be impacted. Multiqueue should only be enabled on NodePools when the MTU is 9000 or larger.
 
 ## Installing HyperShift Operator and cli tooling
@@ -15639,7 +15639,7 @@ operator-755d587f44-qj6pz   1/1     Running   0          114s
 
 ## Create a HostedCluster
 
-Once all the [prerequisites](#prerequisites) are met, and the HyperShift
+Once all the prerequisites are met, and the HyperShift
 operator is installed, it is now possible to create a guest cluster.
 
 Below is an example of how to create a guest cluster using environment
@@ -16395,9 +16395,9 @@ the use of the NodePool api.
 
 Before a GPU device can be attached to a HCP KubeVirt NodePool, the GPU must
 first be exposed as a resource on the Node that the GPU resides on. For
-example this [Nvidia Operator](https://docs.nvidia.com/datacenter/cloud-native/openshift/latest/openshift-virtualization.html) documentation outlines how to expose Nvidia GPUs
+example this Nvidia Operator documentation outlines how to expose Nvidia GPUs
 as a resource on an OpenShift cluster. Once the GPU is exposed as an
-[extended resource](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#extended-resources)
+extended resource
 on the node, it can then be assigned to a NodePool. 
 
 ## Attaching GPU devices to NodePools Using the CLI
@@ -16582,7 +16582,7 @@ In the next section we will fix that.
 
 !!! note
 
-    If your cluster is on bare-metal you may need MetalLB to be able to provision functional LoadBalancer services. Take a look at the section [Optional MetalLB Configuration Steps](#optional-metallb-configuration-steps).
+    If your cluster is on bare-metal you may need MetalLB to be able to provision functional LoadBalancer services. Take a look at the section Optional MetalLB Configuration Steps.
 
 This option requires configuring a new LoadBalancer service that routes to the KubeVirt VMs as well as assign a wildcard DNS entry to the LoadBalancer's IP address.
 
@@ -16658,7 +16658,7 @@ example         4.14.0    example-admin-kubeconfig         Completed   True     
 ## Optional MetalLB Configuration Steps
 
 LoadBalancer type services are required. If MetalLB is in use, here are some example steps
-outlining how to configure MetalLB after [installing MetalLB using CLI](https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html/networking_operators/metallb-operator#nw-metallb-installing-operator-cli_metallb-operator-install).
+outlining how to configure MetalLB after installing MetalLB using CLI.
 
 1. Create a MetalLB instance:
 
@@ -16768,7 +16768,7 @@ KubeVirt platform.
 * If the VMs are stuck in provisioning, look at the CDI import pods within the VM’s namespace for clues as to why the importer pods have not completed. `oc get pods -n <namespace> | grep "import"`
 * If the VMs are stuck in starting, look to see what the status of the virt-launcher pods are. `oc get pods -n <namespace> -l kubevirt.io=virt-launcher`. If the virt-launcher pods are in a pending state, determine why the pods are not being scheduled. For example, there could be a lack of resources to run the virt-launcher pods.
 * If the VMs are running but they have not registered as worker nodes, use the web console to gain VNC access to one of the impacted VMs. The VNC output should indicate that the ignition config was applied. If the VM is unable to access the HCP ignition server on startup, that will prevent the VM from being provisioned correctly.
-* If the ignition config has been applied but the VM is still not registering as a node, Proceed to the [Fetching VM Bootstrap logs](#fetching vm bootstrap logs) section to gain access to the VM console logs during boot.
+* If the ignition config has been applied but the VM is still not registering as a node, Proceed to the Fetching VM Bootstrap logs section to gain access to the VM console logs during boot.
 
 ## HCP Worker Nodes Stuck in NotReady State
 
@@ -16920,7 +16920,7 @@ This document explains how to create HostedClusters and NodePools using the 'Non
 ## Versions used
 
 * OCP compact cluster (3 masters) version 4.9.17
-* HyperShift Operator built from sources (Commit ID [0371f889](https://github.com/openshift/hypershift/commit/0371f889))
+* HyperShift Operator built from sources (Commit ID 0371f889)
 
 ## Prerequisites: Building the Hypershift Operator
 
@@ -16969,7 +16969,7 @@ sudo install -m 0755 -o root -g root ./tmp/hypershift /usr/local/bin/hypershift
 
 ## Prerequisite (optional): Create a custom HyperShift image
 
-The official container image containing the HyperShift bits is hosted in [quay.io/hypershift/hypershift](https://quay.io/repository/hypershift/hypershift) but if creating a custom HyperShift image is needed, the following steps can be performed:
+The official container image containing the HyperShift bits is hosted in quay.io/hypershift/hypershift but if creating a custom HyperShift image is needed, the following steps can be performed:
 
 ~~~sh
 QUAY_ACCOUNT='testuser'
@@ -17016,9 +17016,9 @@ oc apply -f ./hypershift-install.yaml
 
 There are two main CRDs to describe a hosted cluster:
 
-* [`HostedCluster`](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.HostedCluster) defines the control plane hosted in the management OpenShift
+* `HostedCluster` defines the control plane hosted in the management OpenShift
 
-* [`NodePool`](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.NodePool) defines the nodes that will be created/attached to a hosted cluster
+* `NodePool` defines the nodes that will be created/attached to a hosted cluster
 
 The `hostedcluster.spec.platform` specifies the underlying infrastructure provider for the cluster and is used to configure platform specific behavior, so depending on the environment it is required to configure it properly.
 
@@ -17035,7 +17035,7 @@ api.hosted0.example.com.  IN A  10.19.138.33
 api.hosted0.example.com.  IN A  10.19.138.37
 ~~~
 
-* DNS entry to point `*.apps.${cluster}.${domain}` to a load balancer deployed to redirect incoming traffic to the ingresses pod [the OpenShift documentation](https://docs.openshift.com/container-platform/4.9/installing/installing_platform_agnostic/installing-platform-agnostic.html#installation-load-balancing-user-infra-example_installing-platform-agnostic) provides some instructions about this)
+* DNS entry to point `*.apps.${cluster}.${domain}` to a load balancer deployed to redirect incoming traffic to the ingresses pod the OpenShift documentation provides some instructions about this)
 > **NOTE**: This is not strictly required to deploy a sample cluster but to access the exposed routes there. Also, it can be simply an A record pointing to a worker IP where the ingress pods are running and enabling the `hostedcluster.spec.infrastructureAvailabilityPolicy: SingleReplica` configuration parameter.
 
 * Pull-secret (available at cloud.redhat.com)
@@ -17447,7 +17447,7 @@ spec:
       type: Route
 ```
 
-If you wanna know more about how to expose the ingress service in the Data Plane side, please access [the Recipes section](../../recipes/index.md) to see how to do it with MetalLB.
+If you wanna know more about how to expose the ingress service in the Data Plane side, please access the Recipes section to see how to do it with MetalLB.
 
 
 ---
@@ -17961,7 +17961,7 @@ Logical Volume Manager (LVM) Storage uses LVM2 through the TopoLVM CSI driver to
 With this method, we can create volume groups, persistent volume claims (PVCs), volume snapshots, and volume clones for etcd.
 
 
-1. Follow the official procedure to [Install LVM Storage by using the CLI](https://docs.openshift.com/container-platform/4.17/storage/persistent_storage/persistent_storage_local/persistent-storage-using-lvms.html#install-lvms-operator-cli_logical-volume-manager-storage) on the Management Cluster.
+1. Follow the official procedure to Install LVM Storage by using the CLI on the Management Cluster.
 
 2. You will need worker nodes with additional ephemeral disk(s) on the Management cluster.
    The tested solution is to create an OpenStack Nova flavor that will create an additional ephemeral local disk attached to the instance.
@@ -17975,7 +17975,7 @@ openstack flavor create (...) --ephemeral 100 (...)
     When a server will be created with that flavor, Nova will automatically create and attach a local ephemeral storage device to the VM (and format it in vfat).
 
 
-3. Now we need to [Create a compute machine set](https://docs.openshift.com/container-platform/4.17/machine_management/creating_machinesets/creating-machineset-osp.html) that would use this flavor.
+3. Now we need to Create a compute machine set that would use this flavor.
 
 4. Scale the MachineSet to the desired replica. Note that if HostedClusters are deployed in High Availability, a minimum of 3 workers has to be deployed so the pods can be distributed accordingly.
 
@@ -18442,7 +18442,7 @@ This implementation provides a secure, autonomous solution that allows HostedClu
 
 # Create a HostedCluster on OpenStack
 
-Once all the [prerequisites](prerequisites.md) are met, it is now possible to create a Hosted Cluster on OpenStack.
+Once all the prerequisites are met, it is now possible to create a Hosted Cluster on OpenStack.
 
 Here are the available options specific to the OpenStack platform:
 
@@ -18662,7 +18662,7 @@ title: Hosted Clusters on OpenStack
 ---
 
 This section of the Hypershift documentation contains pages that explain how Hosted Clusters
-and Nodepools can be deployed on the [OpenStack](https://www.openstack.org) platform.
+and Nodepools can be deployed on the OpenStack platform.
 
 !!! warning
     OpenStack support within Hypershift is currently "dev-preview" and therefore is not
@@ -18671,23 +18671,23 @@ and Nodepools can be deployed on the [OpenStack](https://www.openstack.org) plat
     as described in this documentation.
 
 !!! note
-    When you create a HostedCluster with the OpenStack platform, HyperShift will install the [CAPI Provider for OpenStack (CAPO)](https://github.com/kubernetes-sigs/cluster-api-provider-openstack).
+    When you create a HostedCluster with the OpenStack platform, HyperShift will install the CAPI Provider for OpenStack (CAPO).
     in the Hosted Control Plane (HCP) namespace.
-    It will also install [OpenStack Resource Controller (ORC)](https://github.com/k-orc/openstack-resource-controller) in the HCP namespace to manage the OpenStack resources such as the Image.
+    It will also install OpenStack Resource Controller (ORC) in the HCP namespace to manage the OpenStack resources such as the Image.
     Upon scaling up a NodePool, a Machine will be created, and the CAPI provider will create the necessary resources in OpenStack.
-    CAPO created OpenStack resources by leveraging [Gophercloud](https://github.com/gophercloud/gophercloud), the OpenStack SDK for Go.
+    CAPO created OpenStack resources by leveraging Gophercloud, the OpenStack SDK for Go.
 
 Table of content:
 
-- [Prerequisites](prerequisites.md)
-- [Create a Hosted Cluster and a default Nodepool](hostedcluster.md)
-- [Destroy a Hosted Cluster](destroy.md)
+- Prerequisites
+- Create a Hosted Cluster and a default Nodepool
+- Destroy a Hosted Cluster
 
 Advanced scenarios: additional Nodepools can be created with specific configurations:
 
-- [Nodepools distributed over Nova availability zones](az.md)
-- [Additional ports for Nodepools](additional-ports.md)
-- [Node tuning, SR-IOV Network Operator](performance-tuning.md)
+- Nodepools distributed over Nova availability zones
+- Additional ports for Nodepools
+- Node tuning, SR-IOV Network Operator
 
 
 ---
@@ -18833,7 +18833,7 @@ For every node that was deployed by the Nodepool, label it with the following co
 oc label node "${WORKER_NODE}" feature.node.kubernetes.io/network-sriov.capable="true"
 ```
 
-The operator can now be installed in the guest cluster by following the [SR-IOV Network Operator documentation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.17/html-single/networking/index#installing-sr-iov-operator_installing-sriov-operator).
+The operator can now be installed in the guest cluster by following the SR-IOV Network Operator documentation.
 The rest of the operations in order to get the workload running with high performances are the same as on a Standalone OCP cluster.
 
 
@@ -18854,7 +18854,7 @@ The rest of the operations in order to get the workload running with high perfor
   manage the hosted clusters.
 * The HyperShift Operator must be installed in the Management OCP cluster.
 * A load-balancer backend must be installed in the Management OCP cluster (e.g. Octavia) so the kube-api Service can be created for each Hosted Cluster.
-* A valid [pull secret](https://console.redhat.com/openshift/install/platform-agnostic/user-provisioned) file for the `quay.io/openshift-release-dev` repository.
+* A valid pull secret file for the `quay.io/openshift-release-dev` repository.
 * OpenStack Octavia service must be running in the cloud hosting the guest cluster when ingress is configured with an Octavia load balancer.
   In the future, we'll explore other Ingress options like MetalLB.
 * The default external network (on which the kube-apiserver LoadBalancer type service is created) of the Management OCP cluster must be reachable from the guest cluster.
@@ -18917,13 +18917,13 @@ operator-755d587f44-qj6pz   1/1     Running   0          114s
 
 HostedClusters will have pod(s) for etcd and its performance is essential for the cluster health.
 In production environments, it's required to put etcd data on fast storage and in the case of OpenStack it'll be local storage.
-Follow this [procedure](etcd-local-storage.md) to leverage a well-known and tested solution.
+Follow this procedure to leverage a well-known and tested solution.
 
 ## Upload RHCOS image in OpenStack (optional)
 
 The user can specify which RHCOS image to use when deploying the node pools
 on OpenStack by uploading the image to the OpenStack cloud. If the image is not
-uploaded to OpenStack, [OpenStack Resource Controller (ORC)](https://github.com/k-orc/openstack-resource-controller) will
+uploaded to OpenStack, OpenStack Resource Controller (ORC) will
 manage the RHCOS image lifecycle by downloading the image from the OpenShift mirror and deleting it when the HostedCluster is deleted.
 
 Here is an example of how to upload an RHCOS image to OpenStack:
@@ -18935,7 +18935,7 @@ openstack image create --disk-format qcow2 --file rhcos-openstack.x86_64.qcow2 r
 !!! note
 
     The `rhcos-openstack.x86_64.qcow2` file is the RHCOS image that was downloaded from the OpenShift mirror.
-    You can download the latest RHCOS image from the [Red Hat OpenShift Container Platform mirror](https://mirror.openshift.com/pub/openshift-v4/dependencies/rhcos/).
+    You can download the latest RHCOS image from the Red Hat OpenShift Container Platform mirror.
 
 ## Create a floating IP for the Ingress (optional)
 
@@ -18973,7 +18973,7 @@ kubectl patch -n HOSTED_CLUSTERS_NAMESPACE hostedclusters/HOSTED_CLUSTER_NAME -p
 ```
 
 Two formats are accepted:
-1) If a [RFC3339](https://datatracker.ietf.org/doc/html/rfc3339) formatted date is specified: reconciliation will be paused until that date.
+1) If a RFC3339 formatted date is specified: reconciliation will be paused until that date.
 2) If the boolean value of true is passed: reconciliation will be paused until the field is removed from the HostedCluster.
 
 All other values will not pause reconciliation.
@@ -19029,7 +19029,7 @@ This document describes break-glass credential management in HyperShift, includi
 
 The `control-plane-pki-operator` runs in each hosted control plane namespace and manages the lifecycle of **break-glass credentials**. These credentials provide emergency access to the hosted cluster's API server for both customers and Site Reliability Engineers (SREs).
 
-Break-glass credentials are separate from [internal control plane certificates](control-plane-certificates.md), which are managed by the control-plane-operator (CPO).
+Break-glass credentials are separate from internal control plane certificates, which are managed by the control-plane-operator (CPO).
 
 The control-plane-pki-operator handles:
 
@@ -19312,7 +19312,7 @@ This document describes how internal control plane certificates are managed in H
 
 ## Overview
 
-The control-plane-operator (CPO) manages all internal PKI for the hosted control plane. These certificates secure communication between control plane components and are separate from [break-glass credentials](break-glass-credentials.md), which are managed by the control-plane-pki-operator.
+The control-plane-operator (CPO) manages all internal PKI for the hosted control plane. These certificates secure communication between control plane components and are separate from break-glass credentials, which are managed by the control-plane-pki-operator.
 
 ## Certificates Managed
 
@@ -19368,8 +19368,8 @@ HyperShift manages two distinct categories of certificates:
 
 ## Topics
 
-- [Internal Control Plane Certificates](control-plane-certificates.md) - How the CPO manages certificates for control plane components
-- [Break-Glass Credentials](break-glass-credentials.md) - Managing emergency access credentials, including rotation and revocation
+- Internal Control Plane Certificates - How the CPO manages certificates for control plane components
+- Break-Glass Credentials - Managing emergency access credentials, including rotation and revocation
 
 
 ---
@@ -19386,7 +19386,7 @@ Create Hosted cluster in IBM Cloud PowerVS service.
 
 ## Prerequisites
 
-Please see [prerequisites](prerequisites-and-env-guide.md) before setting up the cluster
+Please see prerequisites before setting up the cluster
 
 ## Creating the Cluster
 
@@ -19426,11 +19426,11 @@ where
 * node-pool-replicas is worker node count. 
 * TRANSIT_GATEWAY_LOCATION is the location where you want to create the transit gateway. 
 
-Running this command will create [infra](create-infra-separately.md) and manifests for the hosted cluster and deploys it.
+Running this command will create infra and manifests for the hosted cluster and deploys it.
 
 !!! important
 
-        Need to understand --recreate-secrets flag usage before using it. Enabling this flag will result in recreating the creds mentioned here [PowerVSPlatformSpec](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec)
+        Need to understand --recreate-secrets flag usage before using it. Enabling this flag will result in recreating the creds mentioned here PowerVSPlatformSpec
 
         This is required when rerunning `hypershift create cluster powervs` command, since API Key once created cannot be retrieved again.
 
@@ -19453,12 +19453,12 @@ along with the manifests for hosted cluster and apply it.
 It is possible to create the cloud infrastructure separately so that the `hypershift create cluster powervs` command can just be used to create the manifests and apply it.
 
 In order to do this, you need to:
-1. [Create PowerVS infrastructure](#creating-the-powervs-infra)
-2. [Create cluster](#creating-the-cluster)
+1. Create PowerVS infrastructure
+2. Create cluster
 
 ## Creating the PowerVS infra
 
-Please see [prerequisites](prerequisites-and-env-guide.md) before setting up the infra
+Please see prerequisites before setting up the infra
 
 Use the `hypershift create infra powervs` command:
 
@@ -19538,7 +19538,7 @@ E.g.:
 
 !!! important
 
-        Need to understand --recreate-secrets flag usage before using it. Enabling this flag will result in recreating the creds mentioned here [PowerVSPlatformSpec](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec)
+        Need to understand --recreate-secrets flag usage before using it. Enabling this flag will result in recreating the creds mentioned here PowerVSPlatformSpec
 
         This is required when rerunning `hypershift create cluster powervs` command, since API Key once created cannot be retrieved again.
 
@@ -19928,7 +19928,7 @@ This implementation provides a secure, autonomous solution that allows HostedClu
 
 * Admin access to an OpenShift cluster (version 4.8+) specified by the `KUBECONFIG` environment variable.
 * The OpenShift CLI (`oc`) or Kubernetes CLI (`kubectl`).
-* A valid [pull secret](https://console.redhat.com/openshift/install/ibm-cloud) file for the `quay.io/openshift-release-dev` repository.
+* A valid pull secret file for the `quay.io/openshift-release-dev` repository.
 
 # Install Hypershift
 Install HyperShift into the management cluster.
@@ -19962,13 +19962,13 @@ API Key used should have below services with respective roles for hypershift clu
 
 
 ## Base Domain
-Need to have existing CIS Domain in [IBM Cloud Internet Services](https://cloud.ibm.com/docs/cis) which can be used as a `BASEDOMAIN` while creating the cluster.
+Need to have existing CIS Domain in IBM Cloud Internet Services which can be used as a `BASEDOMAIN` while creating the cluster.
 
 ## Region and Zones
-Refer [this](https://cluster-api-ibmcloud.sigs.k8s.io/reference/regions-zones-mapping.html) to get possible region and zone values. Substitute those with `REGION` `ZONE` `VPC_REGION` and `TRANSIT_GATEWAY_LOCATION` while creating the cluster.
+Refer this to get possible region and zone values. Substitute those with `REGION` `ZONE` `VPC_REGION` and `TRANSIT_GATEWAY_LOCATION` while creating the cluster.
 
 ## Release Image
-Use [this](https://multi.ocp.releases.ci.openshift.org) to get latest multi arch nightly build as release image. Substitute it with `RELEASE_IMAGE` while creating the cluster.
+Use this to get latest multi arch nightly build as release image. Substitute it with `RELEASE_IMAGE` while creating the cluster.
 
 ## Custom Endpoints
 Use following environment variables to set custom endpoint.
@@ -20093,7 +20093,7 @@ spec:
           - --memory-histogram-decay-half-life=1h
 ```
 
-For a complete list of VPA recommender configuration flags, refer to the [VPA recommender documentation](https://github.com/kubernetes/autoscaler/blob/master/vertical-pod-autoscaler/README.md#recommender).
+For a complete list of VPA recommender configuration flags, refer to the VPA recommender documentation.
 
 ### ClusterSizingConfiguration
 
@@ -20290,7 +20290,7 @@ Versions used while writing this doc:
 ## Calico
 ### Deployment
 
-In this scenario we are using the Calico version v3.27.0 which is the last one at the time of this writing. The steps followed rely on the [docs](https://docs.tigera.io/calico/latest/getting-started/kubernetes/openshift/installation#generate-the-install-manifests) by Tigera to deploy Calico on OpenShift.
+In this scenario we are using the Calico version v3.27.0 which is the last one at the time of this writing. The steps followed rely on the docs by Tigera to deploy Calico on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
@@ -20414,7 +20414,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 ## Cilium
 ### Deployment
 
-In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the [docs](https://docs.cilium.io/en/stable/installation/k8s-install-openshift-okd/) by Cilium project to deploy Cilium on OpenShift.
+In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
@@ -20878,8 +20878,8 @@ To view the specific contents of a file, execute the following command:
 If you have provider-scoped questions, please take a look at the troubleshooting section for the provider in the list below.
 We will keep adding more and more troubleshooting sections and updating the existent ones.
 
-- [AWS](./aws/troubleshooting/index.md)
-- [Azure](./azure/troubleshooting/index.md)
+- AWS
+- Azure
 
 ---
 
@@ -20888,18 +20888,18 @@ We will keep adding more and more troubleshooting sections and updating the exis
 # Upgrades
 HyperShift enables the decoupling of upgrades between the Control Plane and Nodes.
 
-This allows there to be two separate procedures a [Cluster Service Provider](../reference/concepts-and-personas.md#personas) can take, giving them flexibility to manage the different components separately.
+This allows there to be two separate procedures a Cluster Service Provider can take, giving them flexibility to manage the different components separately.
 
 Control Plane upgrades are driven by the HostedCluster, while Node upgrades are driven by its respective NodePool. Both the HostedCluster and NodePool expose a `.release` field where the OCP release image can be specified.
 
-For a cluster to keep fully operational during an upgrade process, Control Plane and Nodes upgrades need to be orchestrated while satisfying [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/) at any time. The supported OCP versions are dictated by the running HyperShift Operator [see here](../reference/versioning-support.md) for more details on versioning.
+For a cluster to keep fully operational during an upgrade process, Control Plane and Nodes upgrades need to be orchestrated while satisfying Kubernetes version skew policy at any time. The supported OCP versions are dictated by the running HyperShift Operator see here for more details on versioning.
 
 ## HostedCluster
 `.spec.release` dictates the version of the Control Plane.
 
 The HostedCluster propagates the intended `.spec.release` to the `HostedControlPlane.spec.release` and runs the appropriate Control Plane Operator version.
 
-The HostedControlPlane orchestrates the rollout of the new version of the Control Plane components along with any OCP component in the data plane through the new version of the [cluster version operator (CVO)](https://github.com/openshift/cluster-version-operator). This includes resources like:
+The HostedControlPlane orchestrates the rollout of the new version of the Control Plane components along with any OCP component in the data plane through the new version of the cluster version operator (CVO). This includes resources like:
 
 - the CVO itself
 - cluster network operator (CNO)
@@ -20918,7 +20918,7 @@ HyperShift exposes available upgrades in HostedCluster.Status by bubbling up the
 ## NodePools
 `.spec.release` dictates the version of any particular NodePool.
 
-A NodePool will perform a Replace/InPlace rolling upgrade according to `.spec.management.upgradeType`. See [NodePool Upgrades](./automated-machine-management/nodepool-lifecycle.md#upgrades-and-data-propagation) for details.
+A NodePool will perform a Replace/InPlace rolling upgrade according to `.spec.management.upgradeType`. See NodePool Upgrades for details.
 
 
 ---
@@ -20931,16 +20931,16 @@ title: Home
 
 # HyperShift
 
-HyperShift is middleware for hosting [OpenShift](https://www.openshift.com/) control
+HyperShift is middleware for hosting OpenShift control
 planes at scale that solves for cost and time to provision, as well as portability 
 cross cloud with strong separation of concerns between management and workloads.
-Clusters are fully compliant [OpenShift Container Platform](https://www.redhat.com/en/technologies/cloud-computing/openshift/container-platform) (OCP)
+Clusters are fully compliant OpenShift Container Platform (OCP)
 clusters and are compatible with standard OCP and Kubernetes toolchains.
 
-[Quick start](getting-started.md){ .md-button .md-button--primary }
-[Contribute](contribute/){ .md-button }
+Quick start{ .md-button .md-button--primary }
+Contribute{ .md-button }
 
-![Overview](images/high-level-overview.png)
+
 
 
 ---
@@ -21404,7 +21404,7 @@ status:
 
     The `imageContentSources` section within the `spec` field contains mirror references for user workloads within the HostedCluster.
 
-As you can see, all the objects created before are referenced here. You can also refer to the [documentation](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io%2fv1beta1) where all the fields are described.
+As you can see, all the objects created before are referenced here. You can also refer to the documentation where all the fields are described.
 
 ## Deployment
 
@@ -21465,7 +21465,7 @@ After some time, we will have almost all the pieces in place, and the Control Pl
 
 ## Source: docs/content/labs/Dual/hostedcluster/index.md
 
-A Hosted Cluster, as mentioned in the documentation [here](https://hypershift-docs.netlify.app/reference/concepts-and-personas/), is essentially an OCP API endpoint managed by Hypershift. In this context, we will also include the term HostedControlPlane to enhance readability and comprehension. This terminology is further explained in the same [link](https://hypershift-docs.netlify.app/reference/concepts-and-personas/).
+A Hosted Cluster, as mentioned in the documentation here, is essentially an OCP API endpoint managed by Hypershift. In this context, we will also include the term HostedControlPlane to enhance readability and comprehension. This terminology is further explained in the same link.
 
 The Hosted Cluster comprises two main components:
 - The Control Plane, which runs as pods in the management cluster.
@@ -21558,7 +21558,7 @@ status:
 - Autorepair is set to `false` because the node will not be recreated when it disappears.
 - Replicas are set to `0` because we intend to scale them when needed.
 
-You can find more information about NodePool in the [NodePool documentation](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io%2fv1beta1).
+You can find more information about NodePool in the NodePool documentation.
 
 To deploy this object, simply follow the same procedure as before:
 
@@ -21587,7 +21587,7 @@ However, if you are working with virtual machines, you can follow these steps to
 
 ## Creating Virtual Machines
 
-If this is not your first attempt, you must first delete the previous setup. To do so, please refer to the [Deleting Virtual Machines](#deleting-virtual-machines) section.
+If this is not your first attempt, you must first delete the previous setup. To do so, please refer to the Deleting Virtual Machines section.
 
 Now, you can execute the following commands for VM creation:
 
@@ -21772,7 +21772,7 @@ systemctl enable --now podman
 
 ## Kcli
 
-We will utilize [Kcli](https://kcli.readthedocs.io/en/latest/) to deploy the Openshift Management cluster and various other virtualized components. To do so, you'll need to install and configure the hypervisor using the following commands:
+We will utilize Kcli to deploy the Openshift Management cluster and various other virtualized components. To do so, you'll need to install and configure the hypervisor using the following commands:
 
 ```bash
 sudo yum -y install libvirt libvirt-daemon-driver-qemu qemu-kvm
@@ -21787,7 +21787,7 @@ sudo setfacl -m u:$(id -un):rwx /var/lib/libvirt/images
 kcli create network  -c 192.168.122.0/24 default
 ```
 
-For more info about Kcli please visit [the official documentation](https://kcli.readthedocs.io).
+For more info about Kcli please visit the official documentation.
 
 ---
 
@@ -21849,20 +21849,20 @@ title: Dual Stack
 
 This network configuration is currently designated as disconnected. The primary reason for this designation is because remote registries do not function with IPv6. Consequently, this aspect has been incorporated into the documentation.
 
-All the scripts provided contain partial or complete automation to replicate the environment. For this purpose, you can refer to the repository containing all the scripts for [Dual Stack environments](https://github.com/jparrill/hypershift-disconnected/tree/main/assets/dual).
+All the scripts provided contain partial or complete automation to replicate the environment. For this purpose, you can refer to the repository containing all the scripts for Dual Stack environments.
 
 Please note that this documentation is designed to be followed in a specific sequence:
 
-- [Hypervisor](hypervisor/)
-- [DNS](dns.md)
-- [Registry](registry.md)
-- [Management Cluster](mgmt-cluster/)
-- [Webserver](webserver.md)
-- [Mirroring](mirror/)
-- [Multicluster Engine](mce/)
-- [TLS Certificates](tls-certificates.md)
-- [HostedCluster](hostedcluster/)
-- [Watching Deployment progress](watching/)
+- Hypervisor
+- DNS
+- Registry
+- Management Cluster
+- Webserver
+- Mirroring
+- Multicluster Engine
+- TLS Certificates
+- HostedCluster
+- Watching Deployment progress
 
 ---
 
@@ -21872,7 +21872,7 @@ The Agent Service Config object is an essential component of the Assisted Servic
 
 ## Agent Service Config Objects
 
-You can find the CRD described [here](https://github.com/openshift/assisted-service/blob/master/docs/operator.md#creating-an-agentserviceconfig-resource). In this context, we will focus on the main aspects to ensure its functionality in disconnected environments.
+You can find the CRD described here. In this context, we will focus on the main aspects to ensure its functionality in disconnected environments.
 
 In addition to configuring the Agent Service Config, to ensure that Multicluster Engine functions properly in a disconnected environment, we need to include some additional ConfigMaps.
 
@@ -21934,7 +21934,7 @@ data:
   ALLOW_CONVERGED_FLOW: "false"
 ```
 
-You can find documentation on how to customize the operator [here](https://github.com/openshift/assisted-service/blob/master/docs/operator.md#specifying-environmental-variables-via-configmap).
+You can find documentation on how to customize the operator here.
 
 ### Assisted Service Config
 
@@ -21974,7 +21974,7 @@ spec:
     version: 414.92.202308281054-0
 ```
 
-If your mirror registry doesn't require authentication in your pull secret, see [this document](https://github.com/openshift/assisted-service/blob/master/docs/operator.md#image-registries-without-authentication) on how to add it to the unauthenticated list in the AgentServiceConfig CR.
+If your mirror registry doesn't require authentication in your pull secret, see this document on how to add it to the unauthenticated list in the AgentServiceConfig CR.
 
 In this section, we will emphasize the important aspects:
 
@@ -21984,8 +21984,8 @@ In this section, we will emphasize the important aspects:
 
 Let's fill in this section for the 4.14 dev preview ec4 version (sample):
 
-- [Release URL](https://amd64.ocp.releases.ci.openshift.org/releasestream/4-dev-preview/release/4.14.0-ec.4)
-- [RHCOS Info](https://releases-rhcos-art.apps.ocp-virt.prod.psi.redhat.com/?arch=x86_64&release=414.92.202307250657-0&stream=prod%2Fstreams%2F4.14-9.2#414.92.202307250657-0)
+- Release URL
+- RHCOS Info
 
 Assuming you've already downloaded the RootFS and LiveIso files:
 
@@ -22027,10 +22027,10 @@ The Multicluster Engine (MCE) is a component of the ACM bundle. It plays a cruci
 
 ## Credentials and Authorization
 
-To prepare for ACM/MCE deployment, certain prerequisites must be met. Additionally, you will need to request permissions to access internal builds. For detailed information, please refer to [this documentation](https://github.com/stolostron/deploy#prepare-to-deploy-open-cluster-management-instance-only-do-once).
+To prepare for ACM/MCE deployment, certain prerequisites must be met. Additionally, you will need to request permissions to access internal builds. For detailed information, please refer to this documentation.
 
-[ACM/MCE Deployment](multicluster-engine.md){ .md-button }
-[Agent Service Config](agentserviceconfig.md){ .md-button }
+ACM/MCE Deployment{ .md-button }
+Agent Service Config{ .md-button }
 
 
 ---
@@ -22039,13 +22039,13 @@ To prepare for ACM/MCE deployment, certain prerequisites must be met. Additional
 
 The deployment of each component will depend on your needs, follow the next links accordingly:
 
-- [ACM Deployment](https://github.com/stolostron/deploy#deploy-using-the-startsh-script-the-easy-way)
-- [ACM Downstream builds](https://github.com/stolostron/deploy#deploying-downstream-builds-snapshots-for-product-quality-engineering-only-20)
-- [MCE Deployment](https://github.com/stolostron/deploy/tree/master/multiclusterengine#getting-started)
-- [MCE Upgrade](https://github.com/stolostron/deploy/tree/master/multiclusterengine#upgrading-development-only)
-- [ACM/MCE Cluster deletion](https://github.com/stolostron/deploy#to-delete-the-multiclusterhub-operator-the-easy-way)
-- [MulticlusterEngine deletion](https://github.com/stolostron/deploy#to-delete-a-multiclusterhub-instance-the-easy-way)
-- [Last resource: **nuke.sh**](https://gist.github.com/jparrill/f3e1604d3aa09d30ea44f2fc4b1aa893)
+- ACM Deployment
+- ACM Downstream builds
+- MCE Deployment
+- MCE Upgrade
+- ACM/MCE Cluster deletion
+- MulticlusterEngine deletion
+- Last resource: **nuke.sh**
 
 ---
 
@@ -22145,7 +22145,7 @@ vmrules:
 
 !!! note
 
-    To understand the meaning of each of these parameters, you can refer to the official documentation [here](https://kcli.readthedocs.io/en/latest/#how-to-use).
+    To understand the meaning of each of these parameters, you can refer to the official documentation here.
 
 ### Deployment
 
@@ -22163,8 +22163,8 @@ kcli create cluster openshift --pf mgmt-compact-hub-dual.yaml
 
 This section contains the necessary artifacts to set up an Openshift management cluster based on virtual machines using kcli as the primary tool. Another option is to use dev-scripts, which uses a different approach.
 
-[Networking](network.md){ .md-button }
-[Openshift Compact Dual](compact-dual.md){ .md-button }
+Networking{ .md-button }
+Openshift Compact Dual{ .md-button }
 
 ---
 
@@ -22258,8 +22258,8 @@ Image mirroring is the process of fetching images from external registries, such
 
 To learn how to perform image mirroring, follow the next sections:
 
-[Image Mirroring Process](mirroring.md){ .md-button }
-[ICSP and IDMS](ICSP-IDMS.md){ .md-button }
+Image Mirroring Process{ .md-button }
+ICSP and IDMS{ .md-button }
 
 
 ---
@@ -22344,14 +22344,14 @@ oc adm release mirror \
   --to-release-image=${REGISTRY}/openshift/release-images:4.14.0-0.nightly-2023-08-29-102237
 ```
 
-For more detailed and updated information, you can visit the official [Documentation](https://docs.openshift.com/container-platform/4.13/installing/disconnected_install/installing-mirroring-disconnected.html) or [GitHub repository](https://github.com/openshift/oc-mirror)
+For more detailed and updated information, you can visit the official Documentation or GitHub repository
 
 ## Mirror MCE internal releases
 
 In order to mirror all the MCE latest images uploaded to quay.io or if it's internal and you can access the ACM documentation.
 
-- [Red Hat Official Documentation](https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.8/html/clusters/cluster_mce_overview#install-on-disconnected-networks)
-- Red Hat Internal deployment [Brew Registry deployment](https://github.com/stolostron/deploy/blob/master/docs/deploy-from-brew.md)
+- Red Hat Official Documentation
+- Red Hat Internal deployment Brew Registry deployment
 
 
 ---
@@ -22499,7 +22499,7 @@ This modification will result in two significant consequences:
 
 We consider this as an alternative, given that it entails the masters undergoing a reboot facilitated by the Machine Config Operator.
 
-It's described [here](https://docs.openshift.com/container-platform/latest/security/certificates/updating-ca-bundle.html). This method involves utilizing the `image-registry-operator`, which deploys the CAs to the OCP nodes.
+It's described here. This method involves utilizing the `image-registry-operator`, which deploys the CAs to the OCP nodes.
 
 Hypershift's operators and controllers automatically handle this process, so if you're using a GA (Generally Available) released version, it should work seamlessly, and you won't need to apply these steps. This Hypershift feature is included in the payload of the 2.4 MCE release.
 
@@ -22529,7 +22529,7 @@ cat ${REGISTRY_CERT_PATH} >> ${TMP_FILE}
 oc create configmap user-ca-bundle -n openshift-config --from-file=ca-bundle.crt=${TMP_FILE} --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-You have a functional script located in the `assets/<NetworkStack>/09-tls-certificates/01-config.sh`, [this is the sample for IPv6](https://github.com/jparrill/hypershift-disconnected/blob/main/assets/ipv6/09-tls-certificates/01-config.sh).
+You have a functional script located in the `assets/<NetworkStack>/09-tls-certificates/01-config.sh`, this is the sample for IPv6.
 
 
 ---
@@ -22543,8 +22543,8 @@ This section is purely done to let you know how we should monitor the deployment
 
 So please follow these links accordingly.
 
-[Control Plane perspective](watching-cp.md){ .md-button }
-[Data Plane perspective](watching-dp.md){ .md-button }
+Control Plane perspective{ .md-button }
+Data Plane perspective{ .md-button }
 
 
 ---
@@ -22570,7 +22570,7 @@ This command will give you info about:
 
 This is how it looks:
 
-![img](/images/watch-cp.png)
+
 
 ---
 
@@ -22593,7 +22593,7 @@ This command will give you info about:
 
 This is how looks like:
 
-![img](/images/watch-dp.png)
+
 
 ---
 
@@ -22605,7 +22605,7 @@ This is how looks like:
 
 This section talks about an additional webserver that you need to configure to host the RHCOS images associated with the Openshift release you are trying to deploy as a HostedCluster.
 
-The script refers to [this repository folder](https://github.com/jparrill/hypershift-disconnected/tree/main/assets/ipv4/05-webserver) and it's the same for all three different network stacks.
+The script refers to this repository folder and it's the same for all three different network stacks.
 
 To do this, you can use this script:
 
@@ -23075,7 +23075,7 @@ status:
 
     The `imageContentSources` section within the `spec` field contains mirror references for user workloads within the HostedCluster.
 
-As you can see, all the objects created before are referenced here. You can also refer to the [documentation](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io%2fv1beta1) where all the fields are described.
+As you can see, all the objects created before are referenced here. You can also refer to the documentation where all the fields are described.
 
 ## Deployment
 
@@ -23136,7 +23136,7 @@ After some time, we will have almost all the pieces in place, and the Control Pl
 
 ## Source: docs/content/labs/IPv4/hostedcluster/index.md
 
- Hosted Cluster, as mentioned in the documentation [here](https://hypershift-docs.netlify.app/reference/concepts-and-personas/), is essentially an OCP API endpoint managed by Hypershift. In this context, we will also include the term HostedControlPlane to enhance readability and comprehension. This terminology is further explained in the same [link](https://hypershift-docs.netlify.app/reference/concepts-and-personas/).
+ Hosted Cluster, as mentioned in the documentation here, is essentially an OCP API endpoint managed by Hypershift. In this context, we will also include the term HostedControlPlane to enhance readability and comprehension. This terminology is further explained in the same link.
 
 The Hosted Cluster consists of two main components:
 - The Control Plane, which operates within the management cluster as pods.
@@ -23229,7 +23229,7 @@ status:
 - Autorepair is set to `false` because the node will not be recreated when it disappears.
 - Replicas are set to `0` because we intend to scale them when needed.
 
-You can find more information about NodePool in the [NodePool documentation](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io%2fv1beta1).
+You can find more information about NodePool in the NodePool documentation.
 
 To deploy this object, simply follow the same procedure as before:
 
@@ -23258,7 +23258,7 @@ However, if you are working with virtual machines, you can follow these steps to
 
 ## Creating Virtual Machines
 
-If this is not your first attempt, you must first delete the previous setup. To do so, please refer to the [Deleting Virtual Machines](#deleting-virtual-machines) section.
+If this is not your first attempt, you must first delete the previous setup. To do so, please refer to the Deleting Virtual Machines section.
 
 Now, you can execute the following commands for VM creation:
 
@@ -23443,7 +23443,7 @@ systemctl enable --now podman
 
 ## Kcli
 
-We will utilize [Kcli](https://kcli.readthedocs.io/en/latest/) to deploy the Openshift Management cluster and various other virtualized components. To do so, you'll need to install and configure the hypervisor using the following commands:
+We will utilize Kcli to deploy the Openshift Management cluster and various other virtualized components. To do so, you'll need to install and configure the hypervisor using the following commands:
 
 ```bash
 sudo yum -y install libvirt libvirt-daemon-driver-qemu qemu-kvm
@@ -23458,7 +23458,7 @@ sudo setfacl -m u:$(id -un):rwx /var/lib/libvirt/images
 kcli create network  -c 192.168.122.0/24 default
 ```
 
-For more info about Kcli please visit [the official documentation](https://kcli.readthedocs.io).
+For more info about Kcli please visit the official documentation.
 
 ---
 
@@ -23518,20 +23518,20 @@ title: IPv4
 
 This is one of the simplest network configurations for this type of deployment. We will primarily focus on IPv4 ranges, requiring fewer external components than IPv6 or dual-stack setups.
 
-All the scripts provided contain either partial or complete automation to recreate the environment. To follow along, refer to the repository containing all the scripts for [IPv4 environments](https://github.com/jparrill/hypershift-disconnected/tree/main/assets/ipv4).
+All the scripts provided contain either partial or complete automation to recreate the environment. To follow along, refer to the repository containing all the scripts for IPv4 environments.
 
 This documentation is structured to be followed in a specific order:
 
-- [Hypervisor](hypervisor/)
-- [DNS](dns.md)
-- [Registry](registry.md)
-- [Management Cluster](mgmt-cluster/)
-- [Webserver](webserver.md)
-- [Mirroring](mirror/)
-- [Multicluster Engine](mce/)
-- [TLS Certificates](tls-certificates.md)
-- [HostedCluster](hostedcluster/)
-- [Watching Deployment progress](watching/)
+- Hypervisor
+- DNS
+- Registry
+- Management Cluster
+- Webserver
+- Mirroring
+- Multicluster Engine
+- TLS Certificates
+- HostedCluster
+- Watching Deployment progress
 
 ---
 
@@ -23541,7 +23541,7 @@ The Agent Service Config object is an essential component of the Assisted Servic
 
 ## Agent Service Config Objects
 
-You can find the CRD described [here](https://github.com/openshift/assisted-service/blob/master/docs/operator.md#creating-an-agentserviceconfig-resource). In this context, we will focus on the main aspects to ensure its functionality in disconnected environments.
+You can find the CRD described here. In this context, we will focus on the main aspects to ensure its functionality in disconnected environments.
 
 In addition to configuring the Agent Service Config, to ensure that Multicluster Engine functions properly in a disconnected environment, we need to include some additional ConfigMaps.
 
@@ -23603,7 +23603,7 @@ data:
   ALLOW_CONVERGED_FLOW: "false"
 ```
 
-You can find documentation on how to customize the operator [here](https://github.com/openshift/assisted-service/blob/master/docs/operator.md#specifying-environmental-variables-via-configmap).
+You can find documentation on how to customize the operator here.
 
 ### Assisted Service Config
 
@@ -23643,7 +23643,7 @@ spec:
     version: 414.92.202308281054-0
 ```
 
-If your mirror registry doesn't require authentication in your pull secret, see [this document](https://github.com/openshift/assisted-service/blob/master/docs/operator.md#image-registries-without-authentication) on how to add it to the unauthenticated list in the AgentServiceConfig CR.
+If your mirror registry doesn't require authentication in your pull secret, see this document on how to add it to the unauthenticated list in the AgentServiceConfig CR.
 
 In this section, we will emphasize the important aspects:
 
@@ -23653,8 +23653,8 @@ In this section, we will emphasize the important aspects:
 
 Let's fill in this section for the 4.14 dev preview ec4 version (sample):
 
-- [Release URL](https://amd64.ocp.releases.ci.openshift.org/releasestream/4-dev-preview/release/4.14.0-ec.4)
-- [RHCOS Info](https://releases-rhcos-art.apps.ocp-virt.prod.psi.redhat.com/?arch=x86_64&release=414.92.202307250657-0&stream=prod%2Fstreams%2F4.14-9.2#414.92.202307250657-0)
+- Release URL
+- RHCOS Info
 
 Assuming you've already downloaded the RootFS and LiveIso files:
 
@@ -23696,10 +23696,10 @@ The Multicluster Engine (MCE) is a component of the ACM bundle. It plays a cruci
 
 ## Credentials and Authorization
 
-To prepare for ACM/MCE deployment, certain prerequisites must be met. Additionally, you will need to request permissions to access internal builds. For detailed information, please refer to [this documentation](https://github.com/stolostron/deploy#prepare-to-deploy-open-cluster-management-instance-only-do-once).
+To prepare for ACM/MCE deployment, certain prerequisites must be met. Additionally, you will need to request permissions to access internal builds. For detailed information, please refer to this documentation.
 
-[ACM/MCE Deployment](multicluster-engine.md){ .md-button }
-[Agent Service Config](agentserviceconfig.md){ .md-button }
+ACM/MCE Deployment{ .md-button }
+Agent Service Config{ .md-button }
 
 
 ---
@@ -23708,13 +23708,13 @@ To prepare for ACM/MCE deployment, certain prerequisites must be met. Additional
 
 The deployment of each component will depend on your needs, follow the next links accordingly:
 
-- [ACM Deployment](https://github.com/stolostron/deploy#deploy-using-the-startsh-script-the-easy-way)
-- [ACM Downstream builds](https://github.com/stolostron/deploy#deploying-downstream-builds-snapshots-for-product-quality-engineering-only-20)
-- [MCE Deployment](https://github.com/stolostron/deploy/tree/master/multiclusterengine#getting-started)
-- [MCE Upgrade](https://github.com/stolostron/deploy/tree/master/multiclusterengine#upgrading-development-only)
-- [ACM/MCE Cluster deletion](https://github.com/stolostron/deploy#to-delete-the-multiclusterhub-operator-the-easy-way)
-- [MulticlusterEngine deletion](https://github.com/stolostron/deploy#to-delete-a-multiclusterhub-instance-the-easy-way)
-- [Last resource: **nuke.sh**](https://gist.github.com/jparrill/f3e1604d3aa09d30ea44f2fc4b1aa893)
+- ACM Deployment
+- ACM Downstream builds
+- MCE Deployment
+- MCE Upgrade
+- ACM/MCE Cluster deletion
+- MulticlusterEngine deletion
+- Last resource: **nuke.sh**
 
 ---
 
@@ -23803,7 +23803,7 @@ vmrules:
 
 !!! note
 
-    To understand the meaning of each of these parameters, you can refer to the official documentation [here](https://kcli.readthedocs.io/en/latest/#how-to-use).
+    To understand the meaning of each of these parameters, you can refer to the official documentation here.
 
 ### Deployment
 
@@ -23821,8 +23821,8 @@ kcli create cluster openshift --pf mgmt-compact-hub-ipv4.yaml
 
 This section contains the necessary artifacts to set up an Openshift management cluster based on virtual machines using kcli as the primary tool. Another option is to use dev-scripts, which uses a different approach.
 
-[Networking](network.md){ .md-button }
-[Openshift Compact Dual](compact-ipv4.md){ .md-button }
+Networking{ .md-button }
+Openshift Compact Dual{ .md-button }
 
 ---
 
@@ -23915,8 +23915,8 @@ Image mirroring is the process of fetching images from external registries, such
 
 To learn how to perform image mirroring, follow the next sections:
 
-[Image Mirroring Process](mirroring.md){ .md-button }
-[ICSP and IDMS](ICSP-IDMS.md){ .md-button }
+Image Mirroring Process{ .md-button }
+ICSP and IDMS{ .md-button }
 
 
 ---
@@ -24001,14 +24001,14 @@ oc adm release mirror \
   --to-release-image=${REGISTRY}/openshift/release-images:4.14.0-0.nightly-2023-08-29-102237
 ```
 
-For more detailed and updated information, you can visit the official [Documentation](https://docs.openshift.com/container-platform/4.13/installing/disconnected_install/installing-mirroring-disconnected.html) or [GitHub repository](https://github.com/openshift/oc-mirror)
+For more detailed and updated information, you can visit the official Documentation or GitHub repository
 
 ## Mirror MCE internal releases
 
 In order to mirror all the MCE latest images uploaded to quay.io or if it's internal and you can access the ACM documentation.
 
-- [Red Hat Official Documentation](https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.8/html/clusters/cluster_mce_overview#install-on-disconnected-networks)
-- Red Hat Internal deployment [Brew Registry deployment](https://github.com/stolostron/deploy/blob/master/docs/deploy-from-brew.md)
+- Red Hat Official Documentation
+- Red Hat Internal deployment Brew Registry deployment
 
 
 ---
@@ -24156,7 +24156,7 @@ This modification will result in two significant consequences:
 
 We consider this as an alternative, given that it entails the masters undergoing a reboot facilitated by the Machine Config Operator.
 
-It's described [here](https://docs.openshift.com/container-platform/latest/security/certificates/updating-ca-bundle.html). This method involves utilizing the `image-registry-operator`, which deploys the CAs to the OCP nodes.
+It's described here. This method involves utilizing the `image-registry-operator`, which deploys the CAs to the OCP nodes.
 
 Hypershift's operators and controllers automatically handle this process, so if you're using a GA (Generally Available) released version, it should work seamlessly, and you won't need to apply these steps. This Hypershift feature is included in the payload of the 2.4 MCE release.
 
@@ -24186,7 +24186,7 @@ cat ${REGISTRY_CERT_PATH} >> ${TMP_FILE}
 oc create configmap user-ca-bundle -n openshift-config --from-file=ca-bundle.crt=${TMP_FILE} --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-You have a functional script located in the `assets/<NetworkStack>/09-tls-certificates/01-config.sh`, [this is the sample for IPv6](https://github.com/jparrill/hypershift-disconnected/blob/main/assets/ipv6/09-tls-certificates/01-config.sh).
+You have a functional script located in the `assets/<NetworkStack>/09-tls-certificates/01-config.sh`, this is the sample for IPv6.
 
 
 ---
@@ -24200,8 +24200,8 @@ This section is purely done to let you know how we should monitor the deployment
 
 So please follow these links accordingly.
 
-[Control Plane perspective](watching-cp.md){ .md-button }
-[Data Plane perspective](watching-dp.md){ .md-button }
+Control Plane perspective{ .md-button }
+Data Plane perspective{ .md-button }
 
 
 ---
@@ -24227,7 +24227,7 @@ This command will give you info about:
 
 This is how it looks:
 
-![img](/images/watch-cp.png)
+
 
 ---
 
@@ -24250,7 +24250,7 @@ This command will give you info about:
 
 This is how looks like:
 
-![img](/images/watch-dp.png)
+
 
 ---
 
@@ -24262,7 +24262,7 @@ This is how looks like:
 
 This section talks about an additional webserver that you need to configure to host the RHCOS images associated with the Openshift release you are trying to deploy as a HostedCluster.
 
-The script refers to [this repository folder](https://github.com/jparrill/hypershift-disconnected/tree/main/assets/ipv4/05-webserver) and it's the same for all three different network stacks.
+The script refers to this repository folder and it's the same for all three different network stacks.
 
 To do this, you can use this script:
 
@@ -24729,7 +24729,7 @@ status:
 
     The `imageContentSources` section within the `spec` field contains mirror references for user workloads within the HostedCluster.
 
-As you can see, all the objects created before are referenced here. You can also refer to the [documentation](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io%2fv1beta1) where all the fields are described.
+As you can see, all the objects created before are referenced here. You can also refer to the documentation where all the fields are described.
 
 ## Deployment
 
@@ -24790,7 +24790,7 @@ After some time, we will have almost all the pieces in place, and the Control Pl
 
 ## Source: docs/content/labs/IPv6/hostedcluster/index.md
 
- Hosted Cluster, as mentioned in the documentation [here](https://hypershift-docs.netlify.app/reference/concepts-and-personas/), is essentially an OCP API endpoint managed by Hypershift. In this context, we will also include the term HostedControlPlane to enhance readability and comprehension. This terminology is further explained in the same [link](https://hypershift-docs.netlify.app/reference/concepts-and-personas/).
+ Hosted Cluster, as mentioned in the documentation here, is essentially an OCP API endpoint managed by Hypershift. In this context, we will also include the term HostedControlPlane to enhance readability and comprehension. This terminology is further explained in the same link.
 
 The Hosted Cluster comprises two main components:
 - The Control Plane, which runs as pods in the management cluster.
@@ -24883,7 +24883,7 @@ status:
 - Autorepair is set to `false` because the node will not be recreated when it disappears.
 - Replicas are set to `0` because we intend to scale them when needed.
 
-You can find more information about NodePool in the [NodePool documentation](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io%2fv1beta1).
+You can find more information about NodePool in the NodePool documentation.
 
 To deploy this object, simply follow the same procedure as before:
 
@@ -24912,7 +24912,7 @@ However, if you are working with virtual machines, you can follow these steps to
 
 ## Creating Virtual Machines
 
-If this is not your first attempt, you must first delete the previous setup. To do so, please refer to the [Deleting Virtual Machines](#deleting-virtual-machines) section.
+If this is not your first attempt, you must first delete the previous setup. To do so, please refer to the Deleting Virtual Machines section.
 
 Now, you can execute the following commands for VM creation:
 
@@ -25096,7 +25096,7 @@ systemctl enable --now podman
 
 ## Kcli
 
-We will utilize [Kcli](https://kcli.readthedocs.io/en/latest/) to deploy the Openshift Management cluster and various other virtualized components. To do so, you'll need to install and configure the hypervisor using the following commands:
+We will utilize Kcli to deploy the Openshift Management cluster and various other virtualized components. To do so, you'll need to install and configure the hypervisor using the following commands:
 
 ```bash
 sudo yum -y install libvirt libvirt-daemon-driver-qemu qemu-kvm
@@ -25111,7 +25111,7 @@ sudo setfacl -m u:$(id -un):rwx /var/lib/libvirt/images
 kcli create network  -c 192.168.122.0/24 default
 ```
 
-For more info about Kcli please visit [the official documentation](https://kcli.readthedocs.io).
+For more info about Kcli please visit the official documentation.
 
 ---
 
@@ -25172,20 +25172,20 @@ title: IPv6
 
 This network configuration is (for now) by definition disconnected. The main reason is because the remote registries cannot work with IPv6 so we will include this part in the documentation.
 
-All the scripts provided will hold part or the whole automation to reproduce the environment. To do that this is the repository holding all the scripts for [IPv6 environments](https://github.com/jparrill/hypershift-disconnected/tree/main/assets/ipv6).
+All the scripts provided will hold part or the whole automation to reproduce the environment. To do that this is the repository holding all the scripts for IPv6 environments.
 
 This documentation is prepared to be followed in a concrete order:
 
-- [Hypervisor](hypervisor/)
-- [DNS](dns.md)
-- [Registry](registry.md)
-- [Management Cluster](mgmt-cluster/)
-- [Webserver](webserver.md)
-- [Mirroring](mirror/)
-- [Multicluster Engine](mce/)
-- [TLS Certificates](tls-certificates.md)
-- [HostedCluster](hostedcluster/)
-- [Watching Deployment progress](watching/)
+- Hypervisor
+- DNS
+- Registry
+- Management Cluster
+- Webserver
+- Mirroring
+- Multicluster Engine
+- TLS Certificates
+- HostedCluster
+- Watching Deployment progress
 
 ---
 
@@ -25195,7 +25195,7 @@ The Agent Service Config object is an essential component of the Assisted Servic
 
 ## Agent Service Config Objects
 
-You can find the CRD described [here](https://github.com/openshift/assisted-service/blob/master/docs/operator.md#creating-an-agentserviceconfig-resource). In this context, we will focus on the main aspects to ensure its functionality in disconnected environments.
+You can find the CRD described here. In this context, we will focus on the main aspects to ensure its functionality in disconnected environments.
 
 In addition to configuring the Agent Service Config, to ensure that Multicluster Engine functions properly in a disconnected environment, we need to include some additional ConfigMaps.
 
@@ -25257,7 +25257,7 @@ data:
   ALLOW_CONVERGED_FLOW: "false"
 ```
 
-You can find documentation on how to customize the operator [here](https://github.com/openshift/assisted-service/blob/master/docs/operator.md#specifying-environmental-variables-via-configmap).
+You can find documentation on how to customize the operator here.
 
 ### Assisted Service Config
 
@@ -25297,7 +25297,7 @@ spec:
     version: 414.92.202308281054-0
 ```
 
-If your mirror registry doesn't require authentication in your pull secret, see [this document](https://github.com/openshift/assisted-service/blob/master/docs/operator.md#image-registries-without-authentication) on how to add it to the unauthenticated list in the AgentServiceConfig CR.
+If your mirror registry doesn't require authentication in your pull secret, see this document on how to add it to the unauthenticated list in the AgentServiceConfig CR.
 
 In this section, we will emphasize the important aspects:
 
@@ -25307,8 +25307,8 @@ In this section, we will emphasize the important aspects:
 
 Let's fill in this section for the 4.14 dev preview ec4 version (sample):
 
-- [Release URL](https://amd64.ocp.releases.ci.openshift.org/releasestream/4-dev-preview/release/4.14.0-ec.4)
-- [RHCOS Info](https://releases-rhcos-art.apps.ocp-virt.prod.psi.redhat.com/?arch=x86_64&release=414.92.202307250657-0&stream=prod%2Fstreams%2F4.14-9.2#414.92.202307250657-0)
+- Release URL
+- RHCOS Info
 
 Assuming you've already downloaded the RootFS and LiveIso files:
 
@@ -25350,10 +25350,10 @@ The Multicluster Engine (MCE) is a component of the ACM bundle. It plays a cruci
 
 ## Credentials and Authorization
 
-To prepare for ACM/MCE deployment, certain prerequisites must be met. Additionally, you will need to request permissions to access internal builds. For detailed information, please refer to [this documentation](https://github.com/stolostron/deploy#prepare-to-deploy-open-cluster-management-instance-only-do-once).
+To prepare for ACM/MCE deployment, certain prerequisites must be met. Additionally, you will need to request permissions to access internal builds. For detailed information, please refer to this documentation.
 
-[ACM/MCE Deployment](multicluster-engine.md){ .md-button }
-[Agent Service Config](agentserviceconfig.md){ .md-button }
+ACM/MCE Deployment{ .md-button }
+Agent Service Config{ .md-button }
 
 
 ---
@@ -25362,13 +25362,13 @@ To prepare for ACM/MCE deployment, certain prerequisites must be met. Additional
 
 The deployment of each component will depend on your needs, follow the next links accordingly:
 
-- [ACM Deployment](https://github.com/stolostron/deploy#deploy-using-the-startsh-script-the-easy-way)
-- [ACM Downstream builds](https://github.com/stolostron/deploy#deploying-downstream-builds-snapshots-for-product-quality-engineering-only-20)
-- [MCE Deployment](https://github.com/stolostron/deploy/tree/master/multiclusterengine#getting-started)
-- [MCE Upgrade](https://github.com/stolostron/deploy/tree/master/multiclusterengine#upgrading-development-only)
-- [ACM/MCE Cluster deletion](https://github.com/stolostron/deploy#to-delete-the-multiclusterhub-operator-the-easy-way)
-- [MulticlusterEngine deletion](https://github.com/stolostron/deploy#to-delete-a-multiclusterhub-instance-the-easy-way)
-- [Last resource: **nuke.sh**](https://gist.github.com/jparrill/f3e1604d3aa09d30ea44f2fc4b1aa893)
+- ACM Deployment
+- ACM Downstream builds
+- MCE Deployment
+- MCE Upgrade
+- ACM/MCE Cluster deletion
+- MulticlusterEngine deletion
+- Last resource: **nuke.sh**
 
 ---
 
@@ -25462,7 +25462,7 @@ vmrules:
 
 !!! note
 
-    To understand the meaning of each of these parameters, you can refer to the official documentation [here](https://kcli.readthedocs.io/en/latest/#how-to-use).
+    To understand the meaning of each of these parameters, you can refer to the official documentation here.
 
 ### Deployment
 
@@ -25480,8 +25480,8 @@ kcli create cluster openshift --pf mgmt-compact-hub-ipv6.yaml
 
 This section contains the necessary artifacts to set up an Openshift management cluster based on virtual machines using kcli as the primary tool. Another option is to use dev-scripts, which uses a different approach.
 
-[Networking](network.md){ .md-button }
-[Openshift Compact Dual](compact-ipv6.md){ .md-button }
+Networking{ .md-button }
+Openshift Compact Dual{ .md-button }
 
 ---
 
@@ -25574,8 +25574,8 @@ Image mirroring is the process of fetching images from external registries, such
 
 To learn how to perform image mirroring, follow the next sections:
 
-[Image Mirroring Process](mirroring.md){ .md-button }
-[ICSP and IDMS](ICSP-IDMS.md){ .md-button }
+Image Mirroring Process{ .md-button }
+ICSP and IDMS{ .md-button }
 
 
 ---
@@ -25660,14 +25660,14 @@ oc adm release mirror \
   --to-release-image=${REGISTRY}/openshift/release-images:4.14.0-0.nightly-2023-08-29-102237
 ```
 
-For more detailed and updated information, you can visit the official [Documentation](https://docs.openshift.com/container-platform/4.13/installing/disconnected_install/installing-mirroring-disconnected.html) or [GitHub repository](https://github.com/openshift/oc-mirror)
+For more detailed and updated information, you can visit the official Documentation or GitHub repository
 
 ## Mirror MCE internal releases
 
 In order to mirror all the MCE latest images uploaded to quay.io or if it's internal and you can access the ACM documentation.
 
-- [Red Hat Official Documentation](https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.8/html/clusters/cluster_mce_overview#install-on-disconnected-networks)
-- Red Hat Internal deployment [Brew Registry deployment](https://github.com/stolostron/deploy/blob/master/docs/deploy-from-brew.md)
+- Red Hat Official Documentation
+- Red Hat Internal deployment Brew Registry deployment
 
 
 ---
@@ -25815,7 +25815,7 @@ This modification will result in two significant consequences:
 
 We consider this as an alternative, given that it entails the masters undergoing a reboot facilitated by the Machine Config Operator.
 
-It's described [here](https://docs.openshift.com/container-platform/latest/security/certificates/updating-ca-bundle.html). This method involves utilizing the `image-registry-operator`, which deploys the CAs to the OCP nodes.
+It's described here. This method involves utilizing the `image-registry-operator`, which deploys the CAs to the OCP nodes.
 
 Hypershift's operators and controllers automatically handle this process, so if you're using a GA (Generally Available) released version, it should work seamlessly, and you won't need to apply these steps. This Hypershift feature is included in the payload of the 2.4 MCE release.
 
@@ -25845,7 +25845,7 @@ cat ${REGISTRY_CERT_PATH} >> ${TMP_FILE}
 oc create configmap user-ca-bundle -n openshift-config --from-file=ca-bundle.crt=${TMP_FILE} --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-You have a functional script located in the `assets/<NetworkStack>/09-tls-certificates/01-config.sh`, [this is the sample for IPv6](https://github.com/jparrill/hypershift-disconnected/blob/main/assets/ipv6/09-tls-certificates/01-config.sh).
+You have a functional script located in the `assets/<NetworkStack>/09-tls-certificates/01-config.sh`, this is the sample for IPv6.
 
 
 ---
@@ -25859,8 +25859,8 @@ This section is purely done to let you know how we should monitor the deployment
 
 So please follow these links accordingly.
 
-[Control Plane perspective](watching-cp.md){ .md-button }
-[Data Plane perspective](watching-dp.md){ .md-button }
+Control Plane perspective{ .md-button }
+Data Plane perspective{ .md-button }
 
 
 ---
@@ -25886,7 +25886,7 @@ This command will give you info about:
 
 This is how it looks:
 
-![img](/images/watch-cp.png)
+
 
 ---
 
@@ -25909,7 +25909,7 @@ This command will give you info about:
 
 This is how looks like:
 
-![img](/images/watch-dp.png)
+
 
 ---
 
@@ -25921,7 +25921,7 @@ This is how looks like:
 
 This section talks about an additional webserver that you need to configure to host the RHCOS images associated with the Openshift release you are trying to deploy as a HostedCluster.
 
-The script refers to [this repository folder](https://github.com/jparrill/hypershift-disconnected/tree/main/assets/ipv4/05-webserver) and it's the same for all three different network stacks.
+The script refers to this repository folder and it's the same for all three different network stacks.
 
 To do this, you can use this script:
 
@@ -26072,7 +26072,7 @@ systemctl enable --now podman
 
 ## Kcli
 
-We will utilize [Kcli](https://kcli.readthedocs.io/en/latest/) to deploy the Openshift Management cluster and various other virtualized components. To do so, you'll need to install and configure the hypervisor using the following commands:
+We will utilize Kcli to deploy the Openshift Management cluster and various other virtualized components. To do so, you'll need to install and configure the hypervisor using the following commands:
 
 ```bash
 sudo yum -y install libvirt libvirt-daemon-driver-qemu qemu-kvm
@@ -26087,7 +26087,7 @@ sudo setfacl -m u:$(id -un):rwx /var/lib/libvirt/images
 kcli create network  -c 192.168.122.0/24 default
 ```
 
-For more info about Kcli please visit [the official documentation](https://kcli.readthedocs.io).
+For more info about Kcli please visit the official documentation.
 
 ---
 
@@ -26124,7 +26124,7 @@ The Agent Service Config object is an essential component of the Assisted Servic
 
 ## Agent Service Config Objects
 
-You can find the CRD described [here](https://github.com/openshift/assisted-service/blob/master/docs/operator.md#creating-an-agentserviceconfig-resource). In this context, we will focus on the main aspects to ensure its functionality in disconnected environments.
+You can find the CRD described here. In this context, we will focus on the main aspects to ensure its functionality in disconnected environments.
 
 In addition to configuring the Agent Service Config, to ensure that Multicluster Engine functions properly in a disconnected environment, we need to include some additional ConfigMaps.
 
@@ -26186,7 +26186,7 @@ data:
   ALLOW_CONVERGED_FLOW: "false"
 ```
 
-You can find documentation on how to customize the operator [here](https://github.com/openshift/assisted-service/blob/master/docs/operator.md#specifying-environmental-variables-via-configmap).
+You can find documentation on how to customize the operator here.
 
 ### Assisted Service Config
 
@@ -26226,7 +26226,7 @@ spec:
     version: 414.92.202308281054-0
 ```
 
-If your mirror registry doesn't require authentication in your pull secret, see [this document](https://github.com/openshift/assisted-service/blob/master/docs/operator.md#image-registries-without-authentication) on how to add it to the unauthenticated list in the AgentServiceConfig CR.
+If your mirror registry doesn't require authentication in your pull secret, see this document on how to add it to the unauthenticated list in the AgentServiceConfig CR.
 
 In this section, we will emphasize the important aspects:
 
@@ -26236,8 +26236,8 @@ In this section, we will emphasize the important aspects:
 
 Let's fill in this section for the 4.14 dev preview ec4 version (sample):
 
-- [Release URL](https://amd64.ocp.releases.ci.openshift.org/releasestream/4-dev-preview/release/4.14.0-ec.4)
-- [RHCOS Info](https://releases-rhcos-art.apps.ocp-virt.prod.psi.redhat.com/?arch=x86_64&release=414.92.202307250657-0&stream=prod%2Fstreams%2F4.14-9.2#414.92.202307250657-0)
+- Release URL
+- RHCOS Info
 
 Assuming you've already downloaded the RootFS and LiveIso files:
 
@@ -26279,10 +26279,10 @@ The Multicluster Engine (MCE) is a component of the ACM bundle. It plays a cruci
 
 ## Credentials and Authorization
 
-To prepare for ACM/MCE deployment, certain prerequisites must be met. Additionally, you will need to request permissions to access internal builds. For detailed information, please refer to [this documentation](https://github.com/stolostron/deploy#prepare-to-deploy-open-cluster-management-instance-only-do-once).
+To prepare for ACM/MCE deployment, certain prerequisites must be met. Additionally, you will need to request permissions to access internal builds. For detailed information, please refer to this documentation.
 
-[ACM/MCE Deployment](multicluster-engine.md){ .md-button }
-[Agent Service Config](agentserviceconfig.md){ .md-button }
+ACM/MCE Deployment{ .md-button }
+Agent Service Config{ .md-button }
 
 
 ---
@@ -26291,13 +26291,13 @@ To prepare for ACM/MCE deployment, certain prerequisites must be met. Additional
 
 The deployment of each component will depend on your needs, follow the next links accordingly:
 
-- [ACM Deployment](https://github.com/stolostron/deploy#deploy-using-the-startsh-script-the-easy-way)
-- [ACM Downstream builds](https://github.com/stolostron/deploy#deploying-downstream-builds-snapshots-for-product-quality-engineering-only-20)
-- [MCE Deployment](https://github.com/stolostron/deploy/tree/master/multiclusterengine#getting-started)
-- [MCE Upgrade](https://github.com/stolostron/deploy/tree/master/multiclusterengine#upgrading-development-only)
-- [ACM/MCE Cluster deletion](https://github.com/stolostron/deploy#to-delete-the-multiclusterhub-operator-the-easy-way)
-- [MulticlusterEngine deletion](https://github.com/stolostron/deploy#to-delete-a-multiclusterhub-instance-the-easy-way)
-- [Last resource: **nuke.sh**](https://gist.github.com/jparrill/f3e1604d3aa09d30ea44f2fc4b1aa893)
+- ACM Deployment
+- ACM Downstream builds
+- MCE Deployment
+- MCE Upgrade
+- ACM/MCE Cluster deletion
+- MulticlusterEngine deletion
+- Last resource: **nuke.sh**
 
 ---
 
@@ -26343,8 +26343,8 @@ Image mirroring is the process of fetching images from external registries, such
 
 To learn how to perform image mirroring, follow the next sections:
 
-[Image Mirroring Process](mirroring.md){ .md-button }
-[ICSP and IDMS](ICSP-IDMS.md){ .md-button }
+Image Mirroring Process{ .md-button }
+ICSP and IDMS{ .md-button }
 
 
 ---
@@ -26429,14 +26429,14 @@ oc adm release mirror \
   --to-release-image=${REGISTRY}/openshift/release-images:4.14.0-0.nightly-2023-08-29-102237
 ```
 
-For more detailed and updated information, you can visit the official [Documentation](https://docs.openshift.com/container-platform/4.13/installing/disconnected_install/installing-mirroring-disconnected.html) or [GitHub repository](https://github.com/openshift/oc-mirror)
+For more detailed and updated information, you can visit the official Documentation or GitHub repository
 
 ## Mirror MCE internal releases
 
 In order to mirror all the MCE latest images uploaded to quay.io or if it's internal and you can access the ACM documentation.
 
-- [Red Hat Official Documentation](https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.8/html/clusters/cluster_mce_overview#install-on-disconnected-networks)
-- Red Hat Internal deployment [Brew Registry deployment](https://github.com/stolostron/deploy/blob/master/docs/deploy-from-brew.md)
+- Red Hat Official Documentation
+- Red Hat Internal deployment Brew Registry deployment
 
 
 ---
@@ -26584,7 +26584,7 @@ This modification will result in two significant consequences:
 
 We consider this as an alternative, given that it entails the masters undergoing a reboot facilitated by the Machine Config Operator.
 
-It's described [here](https://docs.openshift.com/container-platform/latest/security/certificates/updating-ca-bundle.html). This method involves utilizing the `image-registry-operator`, which deploys the CAs to the OCP nodes.
+It's described here. This method involves utilizing the `image-registry-operator`, which deploys the CAs to the OCP nodes.
 
 Hypershift's operators and controllers automatically handle this process, so if you're using a GA (Generally Available) released version, it should work seamlessly, and you won't need to apply these steps. This Hypershift feature is included in the payload of the 2.4 MCE release.
 
@@ -26614,7 +26614,7 @@ cat ${REGISTRY_CERT_PATH} >> ${TMP_FILE}
 oc create configmap user-ca-bundle -n openshift-config --from-file=ca-bundle.crt=${TMP_FILE} --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-You have a functional script located in the `assets/<NetworkStack>/09-tls-certificates/01-config.sh`, [this is the sample for IPv6](https://github.com/jparrill/hypershift-disconnected/blob/main/assets/ipv6/09-tls-certificates/01-config.sh).
+You have a functional script located in the `assets/<NetworkStack>/09-tls-certificates/01-config.sh`, this is the sample for IPv6.
 
 
 ---
@@ -26628,8 +26628,8 @@ This section is purely done to let you know how we should monitor the deployment
 
 So please follow these links accordingly.
 
-[Control Plane perspective](watching-cp.md){ .md-button }
-[Data Plane perspective](watching-dp.md){ .md-button }
+Control Plane perspective{ .md-button }
+Data Plane perspective{ .md-button }
 
 
 ---
@@ -26655,7 +26655,7 @@ This command will give you info about:
 
 This is how it looks:
 
-![img](/images/watch-cp.png)
+
 
 ---
 
@@ -26678,7 +26678,7 @@ This command will give you info about:
 
 This is how looks like:
 
-![img](/images/watch-dp.png)
+
 
 ---
 
@@ -26690,7 +26690,7 @@ This is how looks like:
 
 This section talks about an additional webserver that you need to configure to host the RHCOS images associated with the Openshift release you are trying to deploy as a HostedCluster.
 
-The script refers to [this repository folder](https://github.com/jparrill/hypershift-disconnected/tree/main/assets/ipv4/05-webserver) and it's the same for all three different network stacks.
+The script refers to this repository folder and it's the same for all three different network stacks.
 
 To do this, you can use this script:
 
@@ -26741,9 +26741,9 @@ Each of these modes possesses its unique characteristics and intricacies, which 
 
 For more information on specific topics, please refer to the following links:
 
-- [IPv4](IPv4/){ .md-button }
-- [IPv6](IPv6/){ .md-button }
-- [Dual Stack](Dual/){ .md-button }
+- IPv4{ .md-button }
+- IPv6{ .md-button }
+- Dual Stack{ .md-button }
 
 While our primary focus in this documentation is Virtual Machines, it is important to note that the principles discussed herein are equally applicable to bare metal nodes. We will duly emphasize the distinct considerations associated with each type of deployment.
 
@@ -26877,7 +26877,7 @@ This way, the API server is configured as a LoadBalancer, and the rest of the se
 
 # Replacing the Worker Node's CRI-O Runtime
 
-Starting with OpenShift version 4.18, the Machine Config Operator (MCO) will switch the default runtime from `runc` to `crun`, simplifying much of the internals, crun is a simplified implementation of runc written in C. You can find more information about this change [here](https://github.com/containers/crun?tab=readme-ov-file#documentation).
+Starting with OpenShift version 4.18, the Machine Config Operator (MCO) will switch the default runtime from `runc` to `crun`, simplifying much of the internals, crun is a simplified implementation of runc written in C. You can find more information about this change here.
 
 ## Switching from `runc` to `crun`
 
@@ -27180,8 +27180,8 @@ TBD:
 
 Dashboards with these metrics are currently stored in a temporary Grafana instance:
 
-- [Deletion SLIs](https://hypershift-monitoring.homelab.sjennings.me:3000/d/xI8D5654z/deletion-slis?orgId=1)
-- [Creation/Running SLIs](https://hypershift-monitoring.homelab.sjennings.me:3000/d/BGbA-pD7k/hypershift-ci?orgId=1)
+- Deletion SLIs
+- Creation/Running SLIs
 
 ---
 
@@ -40849,7 +40849,7 @@ The Secrets CSI driver is used in HyperShift's managed Azure architecture in ord
 and mount them as files in a pod. This allows for the secure storage of sensitive information such as credentials and 
 certificates.
 
-More information on Secrets CSI driver can be found in the [official documentation](https://secrets-store-csi-driver.sigs.k8s.io/).
+More information on Secrets CSI driver can be found in the official documentation.
 
 ## Overview
 A single managed identity is used to pull any secrets or certificates from Azure Key Vault. The managed identity is 
@@ -40968,13 +40968,13 @@ The following components use a configuration file in order to know where to find
 - Azure disk CSI driver
 - Azure file CSI driver
 
-For an example, see the [official documentation](https://cloud-provider-azure.sigs.k8s.io/install/configs/).
+For an example, see the official documentation.
 
 ### Consumed through a CR
 Finally, the nodepool management provider (CAPZ) uses a CR, AzureClusterIdentity, to identify where the secret is 
 mounted in the pod.
 
-For an example, see the [official documentation](https://capz.sigs.k8s.io/topics/identities).
+For an example, see the official documentation.
 
 
 ---
@@ -41020,7 +41020,7 @@ Note: the kube-apiserver will no longer be exposed through a dedicated LB servic
 
 ## Reference Diagram
 
-![](/images/shared-ingress-diagram.png)
+
 
 
 ---
@@ -41033,7 +41033,7 @@ This section elucidates the collaboration between Multicluster Engine and Agent 
 
 **High-Level Overview**
 
-![Hypershift on Bare Metal](/images/diagram-hypershift-on-baremetal.png)
+
 
 The diagram above provides an overview of the environment and how the workflow functions, along with labeled components for reference:
 
@@ -41190,7 +41190,7 @@ A single version of the the HyperShift Operator knows how to manage multiple hos
 
 The HyperShift Operator is responsible for:
 
-- Processing `HostedCluster` and `NodePool` resources and managing Control Plane Operator and [Cluster API (CAPI)](https://github.com/kubernetes-sigs/cluster-api) deployments which do the actual work of installing a control plane.
+- Processing `HostedCluster` and `NodePool` resources and managing Control Plane Operator and Cluster API (CAPI) deployments which do the actual work of installing a control plane.
 - Managing the lifecycle of the hosted cluster by handling rollouts of new Control Plane Operator and CAPI deployments based on version changes to `HostedCluster` and `NodePool` resources.
 - Aggregating and surfacing information about clusters.
 
@@ -41393,7 +41393,7 @@ These are desired project goals which drive the design invariants stated below. 
 
 - Provide an API to express intent to create OpenShift Container Platform (OCP) clusters with a hosted control plane topology on existing infrastructure.
 - Decouple control and data plane.
-  - Enable segregation of ownership and responsibility for different [personas](https://hypershift-docs.netlify.app/reference/concepts-and-personas/).
+  - Enable segregation of ownership and responsibility for different personas.
   - Security.
   - Cost efficiency.
 
@@ -41422,10 +41422,10 @@ This section of the HyperShift documentation contains references.
 
 The agent platform does not create any infrastructure but does have two kinds of prerequisites:
 
-1. Agents: An Agent represents a host booted with a discovery image and ready to be provisioned as an OpenShift node. For more information, see [here](https://github.com/openshift/assisted-service/blob/master/docs/hive-integration/kube-api-getting-started.md).
+1. Agents: An Agent represents a host booted with a discovery image and ready to be provisioned as an OpenShift node. For more information, see here.
 1. DNS: The API and ingress endpoints must be routable.
 
-You can find more details about the prerequisites in the [how-to](../../how-to/agent/create-agent-cluster.md).
+You can find more details about the prerequisites in the how-to.
 
 
 ---
@@ -41443,7 +41443,7 @@ In this section we want to dissect who creates what and what not. It contains 4 
 !!! note
     The arbitrary AWS account depends on who is providing the Hypershift service.
 
-    - **Self Managed:** It will be controlled by the [Cluster Service Provider](../concepts-and-personas.md#personas).
+    - **Self Managed:** It will be controlled by the Cluster Service Provider.
     - **SaaS:** In this case the AWS Account will belong to Red Hat.
 
 #### Infra pre-required and unmanaged for hypershift operator in an arbitrary AWS account
@@ -41536,9 +41536,9 @@ In this section we want to clarify how the AWS IAM works in Hypershift context.
 
 Hypershift expects to have the ARN roles already created in AWS, so the entity responsible to create them lies in the consumer (CLI/OCM). Hypershift tries to enable granularity to honor principle of least privilege components, which means that every component will use their own role to operate or create AWS objects and the roles are limited to what is required for the normal functioning of the product.
 
-As an example, our CLI can handle the creation of these roles, you can follow [this article](../../how-to/aws/create-infra-iam-separately.md) to make this happen.
+As an example, our CLI can handle the creation of these roles, you can follow this article to make this happen.
 
-The HostedCluster receives the ARN roles as input, then the CLI/OCM creates an AWS permission config for each component. That lets a component to auth via [STS](https://github.com/openshift/managed-cluster-config/tree/master/resources/sts) and preconfigured oidc idp.
+The HostedCluster receives the ARN roles as input, then the CLI/OCM creates an AWS permission config for each component. That lets a component to auth via STS and preconfigured oidc idp.
 
 The roles created are consumed by some components from Hypershift, running on Control Plane and operating at Data Plane side:
 
@@ -41935,9 +41935,11 @@ And these are samples for each one of the roles Hypershift uses:
                     "elasticloadbalancing:DescribeListeners",
                     "elasticloadbalancing:DescribeLoadBalancerPolicies",
                     "elasticloadbalancing:DescribeTargetGroups",
+                    "elasticloadbalancing:DescribeTargetGroupAttributes",
                     "elasticloadbalancing:DescribeTargetHealth",
                     "elasticloadbalancing:ModifyListener",
                     "elasticloadbalancing:ModifyTargetGroup",
+                    "elasticloadbalancing:ModifyTargetGroupAttributes",
                     "elasticloadbalancing:RegisterTargets",
                     "elasticloadbalancing:SetLoadBalancerPoliciesOfListener",
                     "iam:CreateServiceLinkedRole",
@@ -42203,7 +42205,7 @@ Data plane identities are Azure managed identities with federated credentials fo
 
 !!! note "Azure Built-in Roles"
 
-    These roles are Azure built-in roles created specifically for Azure Red Hat OpenShift. Each role has a unique role definition ID (GUID) that HyperShift uses when creating role assignments. For detailed permissions granted by each role, see the [Azure built-in roles documentation](https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles).
+    These roles are Azure built-in roles created specifically for Azure Red Hat OpenShift. Each role has a unique role definition ID (GUID) that HyperShift uses when creating role assignments. For detailed permissions granted by each role, see the Azure built-in roles documentation.
 
 The data plane identities are provided in a JSON file with the following format:
 
@@ -42217,7 +42219,7 @@ The data plane identities are provided in a JSON file with the following format:
 
 #### OIDC Issuer
 
-An OIDC issuer is required for data plane workload identity federation (see [Data Plane Authentication](#data-plane-authentication-federated-identity) for how this works). Setting up an OIDC issuer requires:
+An OIDC issuer is required for data plane workload identity federation (see Data Plane Authentication for how this works). Setting up an OIDC issuer requires:
 
 - Azure Blob Storage account configured as OIDC issuer
 - RSA key pair for service account token signing
@@ -42229,7 +42231,7 @@ The following Azure infrastructure must exist before creating a HostedCluster re
 
 !!! tip "Creating Infrastructure with the CLI"
 
-    When using the `hypershift` CLI for cluster creation, this infrastructure gets automatically created whether via the `hypershift create infra azure` or the `hypershift create cluster azure` command. See [Create an Azure Hosted Cluster on AKS](../../how-to/azure/create-azure-cluster-on-aks.md) for details.
+    When using the `hypershift` CLI for cluster creation, this infrastructure gets automatically created whether via the `hypershift create infra azure` or the `hypershift create cluster azure` command. See Create an Azure Hosted Cluster on AKS for details.
 
 #### Resource Groups
 
@@ -42408,9 +42410,9 @@ You can use an existing VNet and NSG from the same resource group, which places 
 
 ## Related Documentation
 
-- [Create an Azure Hosted Cluster on AKS](../../how-to/azure/create-azure-cluster-on-aks.md) - Step-by-step setup guide
-- [Azure Hosted Cluster with Options](../../how-to/azure/create-azure-cluster-with-options.md) - Advanced configuration options
-- [Self-Managed Azure Infrastructure](azure-self-managed.md) - Alternative deployment model
+- Create an Azure Hosted Cluster on AKS - Step-by-step setup guide
+- Azure Hosted Cluster with Options - Advanced configuration options
+- Self-Managed Azure Infrastructure - Alternative deployment model
 
 
 ---
@@ -42433,7 +42435,7 @@ Self-managed Azure HyperShift deployments consist of:
 2. **Control Plane**: Kubernetes control plane components running as pods on the management cluster
 3. **Data Plane**: Worker nodes running as Azure Virtual Machines in your Azure subscription
 
-The architecture uses [Azure Workload Identity](https://azure.github.io/azure-workload-identity/docs/) for secure, credential-free authentication between OpenShift components and Azure services.
+The architecture uses Azure Workload Identity for secure, credential-free authentication between OpenShift components and Azure services.
 
 ## Infrastructure Stages
 
@@ -42457,7 +42459,7 @@ The following infrastructure must exist before creating a self-managed Azure Hos
 | Azure Subscription | Active subscription with sufficient quota |
 | Azure CLI | `az` CLI installed and configured |
 | `jq` | Command-line JSON processor |
-| CCO Tool | [Cloud Credential Operator CLI](https://github.com/openshift/cloud-credential-operator/blob/master/docs/ccoctl.md#azure) for OIDC setup |
+| CCO Tool | Cloud Credential Operator CLI for OIDC setup |
 
 #### Required Azure Permissions
 
@@ -42678,10 +42680,10 @@ You can use an existing VNet and NSG from the same resource group, which places 
 
 ## Related Documentation
 
-- [Azure Workload Identity Setup](../../how-to/azure/azure-workload-identity-setup.md) - Set up managed identities and OIDC federation
-- [Setup Azure Management Cluster for HyperShift](../../how-to/azure/setup-management-cluster.md) - Install HyperShift operator
-- [Create a Self-Managed Azure HostedCluster](../../how-to/azure/create-self-managed-azure-cluster.md) - Deploy your first hosted cluster
-- [Self-Managed Azure Overview](../../how-to/azure/self-managed-azure-index.md) - Comprehensive overview
+- Azure Workload Identity Setup - Set up managed identities and OIDC federation
+- Setup Azure Management Cluster for HyperShift - Install HyperShift operator
+- Create a Self-Managed Azure HostedCluster - Deploy your first hosted cluster
+- Self-Managed Azure Overview - Comprehensive overview
 
 
 ---
@@ -42713,9 +42715,9 @@ kubernetes services running in the data plane.
 
 Upstream References:
 
-- [Setup Konnectivity](https://kubernetes.io/docs/tasks/extend-kubernetes/setup-konnectivity/)
-- [Proposal](https://github.com/kubernetes/enhancements/tree/37ab8448371a38a1d7f0fd2a12ad327215e7d138/keps/sig-api-machinery/1281-network-proxy#proposal)
-- [Reference Implementation](https://github.com/kubernetes-sigs/apiserver-network-proxy)
+- Setup Konnectivity
+- Proposal
+- Reference Implementation
 
 ## Reference Network Diagram
 
@@ -44817,7 +44819,7 @@ The Hypershift team has chosen a different approach from standalone OCP due to c
 
 ##### Context
 
-In Hosted Control Planes, there are two different upgrade strategies: **Replace** and **InPlace**. The documentation can be found [here](../../how-to/automated-machine-management/nodepool-lifecycle.md), and these strategies operate differently at the code level.
+In Hosted Control Planes, there are two different upgrade strategies: **Replace** and **InPlace**. The documentation can be found here, and these strategies operate differently at the code level.
 
 The **Replace** strategy creates new instances with the new version while removing old nodes in a rolling fashion. Internally, the NodePool controller will receive the new payload to roll out new nodes, which will eventually replace the current nodes once they join the NodePool. These new nodes will use `crun` as the default runtime, as the payload comes directly from the new version.
 
@@ -45133,7 +45135,7 @@ Managed services, such as Red Hat OpenShift on IBM Cloud, control versioning
 of all components. Refer to the managed service documentation for the latest,
 authoritative support matrix.
 
-#### [Red Hat OpenShift on IBM Cloud](https://cloud.ibm.com/docs/openshift?topic=openshift-openshift_versions)
+#### Red Hat OpenShift on IBM Cloud
 
 Red Hat OpenShift on IBM Cloud may support OCP versions beyond standard
 OCP timelines. As of September 28, 2025:
@@ -45148,20 +45150,20 @@ In general, the upstream HyperShift project does not place strict requirements o
 management cluster. This may vary depending on the particular platform; for example, Kubevirt requires management 
 clusters with OCP 4.14 and higher.
 
-The HO determines what versions of OCP can be installed through the HostedCluster (HC); see the [HO section](#ho) for 
+The HO determines what versions of OCP can be installed through the HostedCluster (HC); see the HO section for 
 more details. However, different versions of the HO are thoroughly tested only on a limited set of OpenShift versions, 
 and this should inform your deployment decisions.
 
 #### Production Use Cases
 For production use & support, it is required to use a downstream product which bundles a supported build of the 
-HyperShift Operator. This downstream product is called [Multi-Cluster Engine](https://docs.openshift.com/container-platform/4.16/architecture/mce-overview-ocp.html) (MCE) and it is available through 
+HyperShift Operator. This downstream product is called Multi-Cluster Engine (MCE) and it is available through 
 OpenShift's OperatorHub. 
 
 MCE versions _do_ require specific OCP versions for the Management Cluster to remain in a supported state. 
 Each version documents its own support matrix. For example, 
 
-- [MCE 2.5](https://access.redhat.com/articles/7056007)
-- [MCE 2.4](https://access.redhat.com/articles/7027079)
+- MCE 2.5
+- MCE 2.4
 
 As a heuristic, a new release of MCE will run on:
 
@@ -45177,12 +45179,12 @@ version of the installed HO. However, if you are running a tested configuration 
 least (a) the same OCP version as the Management Cluster and (b) Two previous minor versions relative to the Management 
 Cluster. For example, if the Management Cluster is running 4.16 and a supported version of MCE, then the HO will at 
 least be able to install 4.16, 4.15, and 4.14 Hosted Clusters. See the Multi-Cluster Engine section, under the expanded 
-section titled "OpenShift Advanced Cluster Management" on [this page](https://access.redhat.com/support/policy/updates/openshift_operators) for more details. 
+section titled "OpenShift Advanced Cluster Management" on this page for more details. 
 
 ### API
-There are two user facing resources exposed by HyperShift: [HostedClusters and NodePools](https://hypershift-docs.netlify.app/reference/api/).
+There are two user facing resources exposed by HyperShift: HostedClusters and NodePools.
 
-The HyperShift API version policy generally aligns with the [Kubernetes API versioning](https://kubernetes.io/docs/reference/using-api/#api-versioning).
+The HyperShift API version policy generally aligns with the Kubernetes API versioning.
 
 ### HO
 The upstream HyperShift project does not release new versions aligned with the OpenShift release cadence. New versions 
@@ -45193,7 +45195,7 @@ supported version of MCE.
 The HO is tagged at particular commits as part of merging new HO versions for Red Hat managed services; there is no 
 particular tagging scheme for this effort.
 
-A list of the tags can be found [here](https://github.com/openshift/hypershift/tags).
+A list of the tags can be found here.
 
 Once installed, the HO creates a ConfigMap called `supported-versions` into the Hypershift namespace, which describes 
 the HostedClusters supported versions that could be deployed. 
@@ -45223,9 +45225,9 @@ metadata:
 ### CPO
 The CPO is released as part of each OCP payload release image. You can find those release images here:
 
-- [amd64](https://amd64.ocp.releases.ci.openshift.org/)
-- [arm64](https://arm64.ocp.releases.ci.openshift.org/)
-- [multi-arch](https://multi.ocp.releases.ci.openshift.org/)
+- amd64
+- arm64
+- multi-arch
 
 ### HyperShift CLI
 The HyperShift CLI is a helper utility used only for development and testing purposes. No compatibility policies are 

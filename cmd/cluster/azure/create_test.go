@@ -224,10 +224,7 @@ func TestCreateCluster(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
 			coreOpts := core.DefaultOptions()
 			core.BindDeveloperOptions(coreOpts, flags)
-			azureOpts, err := DefaultOptions()
-			if err != nil {
-				t.Fatal("failed to create azure options: ", err)
-			}
+			azureOpts := DefaultOptions()
 			azurenodepool.BindOptions(azureOpts.NodePoolOpts, flags)
 			BindDeveloperOptions(azureOpts, flags)
 			if err := flags.Parse(testCase.args); err != nil {

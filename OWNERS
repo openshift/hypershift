@@ -115,4 +115,9 @@ filters:
   "^token-minter/.*":
     labels:
     - area/control-plane-operator
+  "^karpenter-operator/.*":
+    labels:
+    - area/karpenter-operator
+    reviewers:
+    - karpenter-reviewers
 component: hypershift

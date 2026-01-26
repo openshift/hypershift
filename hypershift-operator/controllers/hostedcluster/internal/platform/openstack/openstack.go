@@ -282,7 +282,7 @@ func (a OpenStack) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _
 
 	// Add the ORC manager container if the payload version is 4.19 or later
 	// ORC was decoupled from CAPO in 4.19 but was part of CAPO in 4.18.
-	if a.payloadVersion != nil && a.payloadVersion.Major == 4 && a.payloadVersion.Minor > 18 {
+	if a.payloadVersion != nil && (a.payloadVersion.Major >= 5 || (a.payloadVersion.Major == 4 && a.payloadVersion.Minor > 18)) {
 		deploymentSpec.Template.Spec.Containers = append(deploymentSpec.Template.Spec.Containers, corev1.Container{
 			Name:            "orc-manager",
 			Image:           orcImage,
