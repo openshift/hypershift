@@ -26,11 +26,12 @@ func deleteChildOperator(d *dataTreeNavigator, context Context, expressionNode *
 		candidatePath := candidate.GetPath()
 		childPath := candidatePath[len(candidatePath)-1]
 
-		if parentNode.Kind == MappingNode {
+		switch parentNode.Kind {
+		case MappingNode:
 			deleteFromMap(candidate.Parent, childPath)
-		} else if parentNode.Kind == SequenceNode {
+		case SequenceNode:
 			deleteFromArray(candidate.Parent, childPath)
-		} else {
+		default:
 			return Context{}, fmt.Errorf("cannot delete nodes from parent of tag %v", parentNode.Tag)
 		}
 	}
@@ -81,6 +82,7 @@ func deleteFromArray(node *CandidateNode, childPath interface{}) {
 		shouldDelete := fmt.Sprintf("%v", index) == fmt.Sprintf("%v", childPath)
 
 		if !shouldDelete {
+			value.Key.Value = fmt.Sprintf("%v", len(newContents))
 			newContents = append(newContents, value)
 		}
 	}
