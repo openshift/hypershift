@@ -497,6 +497,9 @@ func (c *elbv2Client) DescribeLoadBalancerAttributesWithContext(ctx aws.Context,
 func (c *elbv2Client) DescribeLoadBalancersWithContext(ctx aws.Context, input *elbv2.DescribeLoadBalancersInput, opts ...request.Option) (*elbv2.DescribeLoadBalancersOutput, error) {
 	return c.cloudController.elbv2Client.DescribeLoadBalancersWithContext(ctx, input, opts...)
 }
+func (c *elbv2Client) DescribeTargetGroupAttributesWithContext(ctx aws.Context, input *elbv2.DescribeTargetGroupAttributesInput, opts ...request.Option) (*elbv2.DescribeTargetGroupAttributesOutput, error) {
+	return c.cloudController.elbv2Client.DescribeTargetGroupAttributesWithContext(ctx, input, opts...)
+}
 func (c *elbv2Client) DescribeTargetGroupsWithContext(ctx aws.Context, input *elbv2.DescribeTargetGroupsInput, opts ...request.Option) (*elbv2.DescribeTargetGroupsOutput, error) {
 	return c.cloudController.elbv2Client.DescribeTargetGroupsWithContext(ctx, input, opts...)
 }
@@ -511,6 +514,9 @@ func (c *elbv2Client) ModifyLoadBalancerAttributesWithContext(ctx aws.Context, i
 }
 func (c *elbv2Client) ModifyTargetGroupWithContext(ctx aws.Context, input *elbv2.ModifyTargetGroupInput, opts ...request.Option) (*elbv2.ModifyTargetGroupOutput, error) {
 	return c.cloudController.elbv2Client.ModifyTargetGroupWithContext(ctx, input, opts...)
+}
+func (c *elbv2Client) ModifyTargetGroupAttributesWithContext(ctx aws.Context, input *elbv2.ModifyTargetGroupAttributesInput, opts ...request.Option) (*elbv2.ModifyTargetGroupAttributesOutput, error) {
+	return c.cloudController.elbv2Client.ModifyTargetGroupAttributesWithContext(ctx, input, opts...)
 }
 func (c *elbv2Client) RegisterTargetsWithContext(ctx aws.Context, input *elbv2.RegisterTargetsInput, opts ...request.Option) (*elbv2.RegisterTargetsOutput, error) {
 	return c.cloudController.elbv2Client.RegisterTargetsWithContext(ctx, input, opts...)

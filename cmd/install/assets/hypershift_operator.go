@@ -660,23 +660,22 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 
 	privatePlatformType := hyperv1.PlatformType(o.PrivatePlatform)
 	if privatePlatformType != hyperv1.NonePlatform {
-		// Add generic provider credentials secret volume
-		volumes = append(volumes, corev1.Volume{
-			Name: "credentials",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: o.AWSPrivateSecret.Name,
-				},
-			},
-		})
-		volumeMounts = append(volumeMounts, corev1.VolumeMount{
-			Name:      "credentials",
-			MountPath: "/etc/provider",
-		})
-
 		// Add platform specific settings
 		switch privatePlatformType {
 		case hyperv1.AWSPlatform:
+			// Add AWS credentials secret volume
+			volumes = append(volumes, corev1.Volume{
+				Name: "credentials",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: o.AWSPrivateSecret.Name,
+					},
+				},
+			})
+			volumeMounts = append(volumeMounts, corev1.VolumeMount{
+				Name:      "credentials",
+				MountPath: "/etc/provider",
+			})
 			envVars = append(envVars,
 				corev1.EnvVar{
 					Name:  "AWS_SHARED_CREDENTIALS_FILE",
@@ -690,6 +689,10 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 					Name:  "AWS_SDK_LOAD_CONFIG",
 					Value: "1",
 				})
+		}
+
+		// Add AWS-specific volumes if AWS platform
+		if privatePlatformType == hyperv1.AWSPlatform {
 			volumeMounts = append(volumeMounts, corev1.VolumeMount{
 				Name:      "token",
 				MountPath: "/var/run/secrets/openshift/serviceaccount",

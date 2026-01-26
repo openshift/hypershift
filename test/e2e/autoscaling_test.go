@@ -422,7 +422,7 @@ func TestNodePoolAutoscalingScaleFromZero(t *testing.T) {
 
 	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 		t.Run("TestScaleFromZero", testScaleFromZero(ctx, mgtClient, hostedCluster))
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "autoscaling-scale-from-zero", globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "scale-from-zero", globalOpts.ServiceAccountSigningKey)
 }
 
 func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) func(t *testing.T) {

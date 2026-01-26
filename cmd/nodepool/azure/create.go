@@ -28,7 +28,6 @@ type AzurePlatformCreateOptions struct {
 	EnableEphemeralOSDisk         bool
 	DiskStorageAccountType        string
 	SubnetID                      string
-	ImageID                       string
 	ImageGeneration               string
 	Arch                          string
 	EncryptionAtHost              string
@@ -70,7 +69,6 @@ func bindCoreOptions(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) 
 	flags.BoolVar(&opts.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.EnableEphemeralOSDisk, "If enabled, the Azure VMs in the NodePool will be setup with ephemeral OS disks")
 	flags.StringVar(&opts.DiskStorageAccountType, "disk-storage-account-type", opts.DiskStorageAccountType, "The disk storage account type for the OS disks for the VMs.")
 	flags.StringVar(&opts.SubnetID, "nodepool-subnet-id", opts.SubnetID, "The subnet id where the VMs will be placed.")
-	flags.StringVar(&opts.ImageID, "image-id", opts.ImageID, "The Image ID to boot the VMs with.")
 	flags.StringVar(&opts.ImageGeneration, "image-generation", opts.ImageGeneration, "The Hyper-V generation of the Azure VM image. Supported values: Gen1, Gen2. If unspecified, defaults to Gen2.")
 	flags.StringVar(&opts.MarketplacePublisher, "marketplace-publisher", opts.MarketplacePublisher, "The Azure Marketplace image publisher.")
 	flags.StringVar(&opts.MarketplaceOffer, "marketplace-offer", opts.MarketplaceOffer, "The Azure Marketplace image offer.")
@@ -81,6 +79,32 @@ func bindCoreOptions(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) 
 
 func BindDeveloperOptions(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) {
 	bindCoreOptions(opts, flags)
+}
+
+// BindProductFlags binds customer-facing flags for Azure nodepool creation in the product CLI
+func BindProductFlags(opts *RawAzurePlatformCreateOptions, flags *pflag.FlagSet) {
+	// VM configuration
+	flags.StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, util.InstanceTypeDescription)
+	flags.Int32Var(&opts.DiskSize, "root-disk-size", opts.DiskSize, util.RootDiskSizeDescription)
+	flags.StringVar(&opts.AvailabilityZone, "availability-zone", opts.AvailabilityZone, util.AvailabilityZoneDescription)
+	flags.StringVar(&opts.SubnetID, "nodepool-subnet-id", opts.SubnetID, util.SubnetIDDescription)
+
+	// Disk configuration
+	flags.StringVar(&opts.DiskStorageAccountType, "disk-storage-account-type", opts.DiskStorageAccountType, util.DiskStorageAccountTypeDescription)
+	flags.StringVar(&opts.DiskEncryptionSetID, "disk-encryption-set-id", opts.DiskEncryptionSetID, util.DiskEncryptionSetIDDescription)
+	flags.BoolVar(&opts.EnableEphemeralOSDisk, "enable-ephemeral-disk", opts.EnableEphemeralOSDisk, util.EnableEphemeralOSDiskDescription)
+	flags.StringVar(&opts.EncryptionAtHost, "encryption-at-host", opts.EncryptionAtHost, util.EncryptionAtHostDescription)
+
+	// Image configuration
+	flags.StringVar(&opts.ImageGeneration, "image-generation", opts.ImageGeneration, util.ImageGenerationDescription)
+	flags.StringVar(&opts.MarketplacePublisher, "marketplace-publisher", opts.MarketplacePublisher, util.MarketplacePublisherDescription)
+	flags.StringVar(&opts.MarketplaceOffer, "marketplace-offer", opts.MarketplaceOffer, util.MarketplaceOfferDescription)
+	flags.StringVar(&opts.MarketplaceSKU, "marketplace-sku", opts.MarketplaceSKU, util.MarketplaceSKUDescription)
+	flags.StringVar(&opts.MarketplaceVersion, "marketplace-version", opts.MarketplaceVersion, util.MarketplaceVersionDescription)
+
+	// Diagnostics
+	flags.Var(&opts.DiagnosticsStorageAccountType, "diagnostics-storage-account-type", util.DiagnosticsStorageAccountTypeDescription)
+	flags.StringVar(&opts.DiagnosticsStorageAccountURI, "diagnostics-storage-account-uri", opts.DiagnosticsStorageAccountURI, util.DiagnosticsStorageAccountURIDescription)
 }
 
 // validatedAzurePlatformCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
@@ -122,7 +146,7 @@ func (o *RawAzurePlatformCreateOptions) Validate() (*ValidatedAzurePlatformCreat
 	}
 
 	if o.EncryptionAtHost != "" && o.EncryptionAtHost != "Enabled" && o.EncryptionAtHost != "Disabled" {
-		return nil, fmt.Errorf("flag --enable-encryption-at-host has an invalid value; accepted values are 'Enabled' and 'Disabled'")
+		return nil, fmt.Errorf("flag --encryption-at-host has an invalid value; accepted values are 'Enabled' and 'Disabled'")
 	}
 
 	if !slices.Contains([]string{"", "1", "2", "3"}, o.AvailabilityZone) {
@@ -179,38 +203,30 @@ func (o *CompletedAzurePlatformCreateOptions) UpdateNodePool(_ context.Context, 
 }
 
 func (o *CompletedAzurePlatformCreateOptions) NodePoolPlatform(nodePool *hyperv1.NodePool) *hyperv1.AzureNodePoolPlatform {
-	var vmImage hyperv1.AzureVMImage
-	if o.ImageID != "" {
-		vmImage = hyperv1.AzureVMImage{
-			Type:    hyperv1.ImageID,
-			ImageID: ptr.To(o.ImageID),
-		}
-	} else {
-		// Build marketplace image struct
-		marketplaceImage := &hyperv1.AzureMarketplaceImage{
-			Publisher: o.MarketplacePublisher,
-			Offer:     o.MarketplaceOffer,
-			SKU:       o.MarketplaceSKU,
-			Version:   o.MarketplaceVersion,
-		}
+	// Build marketplace image struct
+	marketplaceImage := &hyperv1.AzureMarketplaceImage{
+		Publisher: o.MarketplacePublisher,
+		Offer:     o.MarketplaceOffer,
+		SKU:       o.MarketplaceSKU,
+		Version:   o.MarketplaceVersion,
+	}
 
-		// Set ImageGeneration if specified by the user
-		if o.ImageGeneration != "" {
-			switch o.ImageGeneration {
-			case "Gen1":
-				marketplaceImage.ImageGeneration = ptr.To(hyperv1.Gen1)
-			case "Gen2":
-				marketplaceImage.ImageGeneration = ptr.To(hyperv1.Gen2)
-			default:
-				// This should never happen due to validation, but defensive programming
-				marketplaceImage.ImageGeneration = ptr.To(hyperv1.Gen2)
-			}
+	// Set ImageGeneration if specified by the user
+	if o.ImageGeneration != "" {
+		switch o.ImageGeneration {
+		case "Gen1":
+			marketplaceImage.ImageGeneration = ptr.To(hyperv1.Gen1)
+		case "Gen2":
+			marketplaceImage.ImageGeneration = ptr.To(hyperv1.Gen2)
+		default:
+			// This should never happen due to validation, but defensive programming
+			marketplaceImage.ImageGeneration = ptr.To(hyperv1.Gen2)
 		}
+	}
 
-		vmImage = hyperv1.AzureVMImage{
-			Type:             hyperv1.AzureMarketplace,
-			AzureMarketplace: marketplaceImage,
-		}
+	vmImage := hyperv1.AzureVMImage{
+		Type:             hyperv1.AzureMarketplace,
+		AzureMarketplace: marketplaceImage,
 	}
 
 	instanceType := o.completetedAzurePlatformCreateOptions.AzurePlatformCreateOptions.InstanceType

@@ -113,11 +113,65 @@ Skills are automatically invoked by Claude based on context. You don't need to d
 - Create tests → Code Formatting ("When...it should..." convention) applies
 - Debug hosted-cluster issues → Debug Cluster applies automatically
 
+## Available Commands
+
+Commands are manually invoked using `/command-name` syntax.
+
+### Fix HyperShift Repo Robot PR
+
+**Location:** `.claude/commands/fix-hypershift-repo-robot-pr.md`
+
+**Description:** Fixes robot/bot-authored PRs that have failing CI due to missing generated files.
+
+**Usage:**
+```
+/fix-hypershift-repo-robot-pr <PR-number-or-URL>
+```
+
+**What it does:**
+1. Validates the PR is from a bot (`is_bot: true`)
+2. Checks out the bot's PR and creates a `fix/<branch>` branch
+3. Runs `make verify` to regenerate files
+4. Commits any changes with conventional commit format
+5. Runs `make verify` and `make test` for validation
+6. If successful: Creates new PR and closes original with reference
+7. If unsuccessful: Preserves original PR and reports failure
+
+**Supported bots:**
+- Dependabot (`app/dependabot`)
+- Konflux (`app/red-hat-konflux`)
+- Renovate (`app/renovate`)
+- Any bot with `is_bot: true`
+
+**Safety features:**
+- Only processes PRs with `is_bot: true`
+- Never closes original PR if validation fails
+- Atomic: Original PR only closed after new PR is created
+
+### Update Konflux Tasks
+
+**Location:** `.claude/commands/update-konflux-tasks.md`
+
+**Description:** Automatically update outdated Konflux Tekton tasks based on enterprise contract verification logs.
+
+**Usage:**
+```
+/update-konflux-tasks <path-to-log-file>
+```
+
 ## Adding New Skills
 
 To add a new skill:
 1. Create a directory: `.claude/skills/your-skill-name/`
 2. Add a `SKILL.md` file with YAML frontmatter
 3. Commit to the repository for team-wide availability
+
+## Adding New Commands
+
+To add a new command:
+1. Create a file: `.claude/commands/your-command-name.md`
+2. Add YAML frontmatter with `description` field
+3. Document usage, process flow, and error handling
+4. Commit to the repository for team-wide availability
 
 See [Claude Code Skills Documentation](https://docs.claude.com/en/docs/claude-code/skills) for details.
