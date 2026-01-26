@@ -182,7 +182,7 @@ func checkPodKasConnection(ctx context.Context, restConfig *rest.Config, clientS
 	}
 
 	kasPort := util.KASPodPort(hcp)
-	kasURL := fmt.Sprintf("https://%s:%d/version", kasIP, kasPort)
+	kasURL := "https://" + net.JoinHostPort(kasIP, fmt.Sprintf("%d", kasPort)) + "/version"
 
 	httpStatusCode, stderr, err := util.ExecCommandInPod(ctx, restConfig, clientSet, namespace, name, container, []string{
 		"sh", "-c",
