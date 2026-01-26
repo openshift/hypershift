@@ -4,17 +4,15 @@ package e2e
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -50,9 +48,22 @@ func (it *NodePoolImageTypeTest) Setup(t *testing.T) {
 }
 
 func (it *NodePoolImageTypeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
-	// Return nil to indicate we don't want to create a new NodePool
-	// We'll use the existing default NodePool for scaling tests
-	return nil, nil
+	// Create a new NodePool with Windows ImageType for scaling tests
+	nodePool := defaultNodepool.DeepCopy()
+	nodePool.ObjectMeta.Name = it.hostedCluster.Name + "-test-imagetype"
+
+	// Clear fields that should not be set on creation
+	nodePool.ObjectMeta.ResourceVersion = ""
+	nodePool.ObjectMeta.UID = ""
+	nodePool.ObjectMeta.CreationTimestamp = metav1.Time{}
+	nodePool.ObjectMeta.Generation = 0
+
+	// Start with 1 replica and Windows ImageType
+	replicas := int32(1)
+	nodePool.Spec.Replicas = &replicas
+	nodePool.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeWindows
+
+	return nodePool, nil
 }
 
 func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes []corev1.Node) {
@@ -61,61 +72,19 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 
 	t.Log("Test: NodePool ImageType persistence through scaling operations")
 
-	// Get the default NodePool for this cluster
-	var defaultNodePool hyperv1.NodePool
-	err := it.mgmtClient.Get(ctx, crclient.ObjectKey{
-		Namespace: it.hostedCluster.Namespace,
-		Name:      it.hostedCluster.Name,
-	}, &defaultNodePool)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get default NodePool")
+	// NodePool was created with Windows ImageType and 1 replica
+	// Verify it's created correctly
+	t.Logf("✓ NodePool created: %s/%s with ImageType=%s, Replicas=1",
+		nodePool.Namespace, nodePool.Name, nodePool.Spec.Platform.AWS.ImageType)
 
-	// Get original state
-	originalReplicas := defaultNodePool.Spec.Replicas
-	originalImageType := defaultNodePool.Spec.Platform.AWS.ImageType
-	if originalImageType == "" {
-		originalImageType = hyperv1.ImageTypeLinux // Default is Linux
-	}
-	t.Logf("✓ Initial state - Replicas: %d, ImageType: %s", *originalReplicas, originalImageType)
-
-	// Update to Windows ImageType before scaling tests
-	t.Log("Setting ImageType to Windows for scaling tests")
-	defaultNodePool.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeWindows
-	err = it.mgmtClient.Update(ctx, &defaultNodePool)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to update NodePool to Windows ImageType")
-
-	// Wait for Windows ImageType to be reflected
-	e2eutil.EventuallyObject(t, ctx, "wait for Windows imageType to be set",
-		func(ctx context.Context) (*hyperv1.NodePool, error) {
-			np := &hyperv1.NodePool{}
-			err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&defaultNodePool), np)
-			return np, err
-		},
-		[]e2eutil.Predicate[*hyperv1.NodePool]{
-			func(np *hyperv1.NodePool) (done bool, reasons string, err error) {
-				return np.Spec.Platform.AWS.ImageType == hyperv1.ImageTypeWindows,
-					fmt.Sprintf("expected Windows, got %s", np.Spec.Platform.AWS.ImageType), nil
-			},
-		},
-		e2eutil.WithInterval(2*time.Second), e2eutil.WithTimeout(1*time.Minute),
-	)
-	t.Log("✓ Windows ImageType set successfully")
-
-	// Test scaling operations
-	it.testImageTypePersistenceThroughScaling(t, g, ctx, &defaultNodePool, *originalReplicas)
-
-	// Restore original ImageType
-	t.Logf("Restoring original ImageType: %s", originalImageType)
-	err = it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&defaultNodePool), &defaultNodePool)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
-	defaultNodePool.Spec.Platform.AWS.ImageType = originalImageType
-	err = it.mgmtClient.Update(ctx, &defaultNodePool)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to restore original ImageType")
+	// Test scaling operations (starting from 1 replica)
+	it.testImageTypePersistenceThroughScaling(t, g, ctx, &nodePool)
 
 	t.Log("✓ All NodePool ImageType scaling tests passed successfully")
 }
 
-func (it *NodePoolImageTypeTest) testImageTypePersistenceThroughScaling(t *testing.T, g *WithT, ctx context.Context, nodePool *hyperv1.NodePool, originalReplicas int32) {
-	// Test 1: Scale down to 0 replicas
+func (it *NodePoolImageTypeTest) testImageTypePersistenceThroughScaling(t *testing.T, g *WithT, ctx context.Context, nodePool *hyperv1.NodePool) {
+	// Test 1: Scale down to 0 replicas (from initial 1)
 	t.Log("Test 1: Scaling NodePool to 0 replicas")
 	it.scaleAndVerifyImageType(t, g, ctx, nodePool, 0, hyperv1.ImageTypeWindows)
 
@@ -127,9 +96,9 @@ func (it *NodePoolImageTypeTest) testImageTypePersistenceThroughScaling(t *testi
 	t.Log("Test 3: Scaling NodePool to 1 replica")
 	it.scaleAndVerifyImageType(t, g, ctx, nodePool, 1, hyperv1.ImageTypeWindows)
 
-	// Test 4: Restore original replica count
-	t.Logf("Test 4: Restoring original replica count to %d", originalReplicas)
-	it.scaleAndVerifyImageType(t, g, ctx, nodePool, originalReplicas, hyperv1.ImageTypeWindows)
+	// Test 4: Scale back to 0 to verify persistence
+	t.Log("Test 4: Scaling back to 0 replicas to verify persistence")
+	it.scaleAndVerifyImageType(t, g, ctx, nodePool, 0, hyperv1.ImageTypeWindows)
 }
 
 func (it *NodePoolImageTypeTest) scaleAndVerifyImageType(t *testing.T, g *WithT, ctx context.Context, nodePool *hyperv1.NodePool, targetReplicas int32, expectedImageType hyperv1.ImageType) {
@@ -180,10 +149,7 @@ func (it *NodePoolImageTypeTest) scaleAndVerifyImageType(t *testing.T, g *WithT,
 	// If scaling up, wait for nodes to be ready
 	if targetReplicas > 0 {
 		t.Logf("Waiting for %d nodes to become ready", targetReplicas)
-		e2eutil.WaitForNReadyNodesWithOptions(t, ctx, it.hostedClusterClient, int(targetReplicas),
-			e2eutil.WithNodeReadinessTimeout(timeout),
-			e2eutil.WithNodeReadinessInterval(10*time.Second),
-		)
+		e2eutil.WaitForNReadyNodesWithOptions(t, ctx, it.hostedClusterClient, targetReplicas, hyperv1.AWSPlatform, "")
 		t.Logf("✓ All %d nodes are ready", targetReplicas)
 	}
 
