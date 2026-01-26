@@ -22,7 +22,7 @@ import (
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 	capiibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )

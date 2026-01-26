@@ -15,7 +15,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capo "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 
 	"github.com/blang/semver"
 	"github.com/google/go-cmp/cmp"
