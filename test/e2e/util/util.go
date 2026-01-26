@@ -34,6 +34,7 @@ import (
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/test/e2e/controlplanemetrics"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -590,32 +591,7 @@ func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crc
 }
 
 func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-	WaitForImageRolloutWithMetrics(t, ctx, client, hostedCluster, "", "", "creation")
-}
-
-func WaitForImageRolloutWithMetrics(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, testName string, platform string, metricContext string) {
-	// Measure control plane rollout time by checking when components became ready
-	// This provides an independent metric for HCP readiness SLOs
-	t.Logf("Checking control plane rollout time for HostedCluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
-	cpRolloutDuration := measureControlPlaneRolloutTime(t, ctx, client, hostedCluster)
-
-	// Default to "creation" if metricContext is not provided
-	if metricContext == "" {
-		metricContext = "creation"
-	}
-
-	// Log with context-appropriate message
-	if metricContext == "upgrade" {
-		t.Logf("Control plane components became ready in %v after upgrade start", cpRolloutDuration)
-	} else {
-		t.Logf("Control plane components became ready in %v after HostedCluster creation", cpRolloutDuration)
-	}
-
-	// Output structured metric if test name and platform are provided
-	if testName != "" && platform != "" {
-		t.Logf("METRIC: control_plane_rollout_duration_seconds{test=%q,platform=%q,context=%q} %f",
-			testName, platform, metricContext, cpRolloutDuration.Seconds())
-	}
+	recordControlPlaneRolloutMetric(t, ctx, client, hostedCluster, "creation")
 
 	var lastVersionCompletionTime *metav1.Time
 	if hostedCluster.Status.Version != nil &&
@@ -718,6 +694,29 @@ func measureControlPlaneRolloutTime(t *testing.T, ctx context.Context, client cr
 	}
 
 	return duration
+}
+
+// recordControlPlaneRolloutMetric measures and records the control plane rollout time as a Prometheus metric.
+// It calculates the duration from cluster creation (or upgrade start) to when all control plane components
+// became ready, and records this as the e2e_control_plane_rollout_duration_seconds metric.
+func recordControlPlaneRolloutMetric(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, metricContext string) {
+	t.Logf("Measuring control plane rollout time for HostedCluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
+	cpRolloutDuration := measureControlPlaneRolloutTime(t, ctx, client, hostedCluster)
+
+	// Log with context-appropriate message
+	if metricContext == "upgrade" {
+		t.Logf("Control plane components became ready in %v after upgrade start", cpRolloutDuration)
+	} else {
+		t.Logf("Control plane components became ready in %v after HostedCluster creation", cpRolloutDuration)
+	}
+
+	// Record the metric
+	controlplanemetrics.RecordControlPlaneRolloutDuration(
+		hostedCluster.Namespace,
+		hostedCluster.Name,
+		metricContext,
+		cpRolloutDuration.Seconds(),
+	)
 }
 
 // WaitForControlPlaneComponentRollout waits for all control plane components to complete their rollout.
