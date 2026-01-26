@@ -216,10 +216,10 @@ const (
 	// components like the konnectivity-agent workload.
 	DataPlaneConnectionAvailable ConditionType = "DataPlaneConnectionAvailable"
 
-	// ControlPlaneConnectionAvailable indicates whether the data plane workloads has a successful
-	// network connect to the the control plane components.
-	// **True** means the data plane workload can sucefully reach the control plane.
-	// **False** means there are issues preventing data plane connect to control plane
+	// ControlPlaneConnectionAvailable indicates whether data plane workloads have a successful
+	// network connection to the control plane components.
+	// **True** means data plane workloads can successfully reach the control plane.
+	// **False** means there are issues preventing data plane workloads from connecting to the control plane.
 	ControlPlaneConnectionAvailable ConditionType = "ControlPlaneConnectionAvailable"
 )
 
