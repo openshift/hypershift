@@ -30,6 +30,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/pki"
 	autoscalerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/autoscaler"
+	awsnodeterminationhandlerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/awsnodeterminationhandler"
 	awsccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/aws"
 	azureccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/azure"
 	kubevirtccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/kubevirt"
@@ -255,6 +256,7 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		ntov2.NewComponent(),
 		dnsoperatorv2.NewComponent(),
 		machineapproverv2.NewComponent(),
+		awsnodeterminationhandlerv2.NewComponent(),
 		ingressoperatorv2.NewComponent(),
 		snapshotcontrollerv2.NewComponent(),
 		registryoperatorv2.NewComponent(),

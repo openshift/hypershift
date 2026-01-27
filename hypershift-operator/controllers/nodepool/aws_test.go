@@ -197,6 +197,20 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 				tmpl.Spec.Template.Spec.AMI.ID = ptr.To("ami-custom-windows")
 			}),
 		},
+		{
+			name: "When spot is enabled, it should add managed tag",
+			nodePool: hyperv1.NodePoolSpec{
+				Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+					AMI: amiName,
+				}},
+			},
+			nodePoolAnnotations: map[string]string{
+				AnnotationEnableSpot: "true",
+			},
+			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
+				tmpl.Spec.Template.Spec.AdditionalTags["aws-node-termination-handler/managed"] = ""
+			}),
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
