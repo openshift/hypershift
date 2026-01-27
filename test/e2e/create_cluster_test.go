@@ -309,6 +309,19 @@ func TestOnCreateAPIUX(t *testing.T) {
 							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
 								Project: "My-Project",
 								Region:  "us-central1",
+								NetworkConfig: hyperv1.GCPNetworkConfig{
+									Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+								},
+								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+									ProjectNumber: "123456789012",
+									PoolID:        "my-wif-pool",
+									ProviderID:    "my-wif-provider",
+									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+									},
+								},
 							}
 						},
 						expectedErrorSubstring: "project in body should match",
@@ -320,6 +333,19 @@ func TestOnCreateAPIUX(t *testing.T) {
 							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
 								Project: "my-project",
 								Region:  "us-central",
+								NetworkConfig: hyperv1.GCPNetworkConfig{
+									Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+								},
+								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+									ProjectNumber: "123456789012",
+									PoolID:        "my-wif-pool",
+									ProviderID:    "my-wif-provider",
+									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+									},
+								},
 							}
 						},
 						expectedErrorSubstring: "region in body should match",
@@ -331,6 +357,19 @@ func TestOnCreateAPIUX(t *testing.T) {
 							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
 								Project: "my-project-123",
 								Region:  "europe-west2",
+								NetworkConfig: hyperv1.GCPNetworkConfig{
+									Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+								},
+								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+									ProjectNumber: "123456789012",
+									PoolID:        "my-wif-pool",
+									ProviderID:    "my-wif-provider",
+									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+									},
+								},
 							}
 						},
 						expectedErrorSubstring: "",
@@ -360,6 +399,15 @@ func TestOnCreateAPIUX(t *testing.T) {
 										Name: "valid-subnet",
 									},
 								},
+								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+									ProjectNumber: "123456789012",
+									PoolID:        "my-wif-pool",
+									ProviderID:    "my-wif-provider",
+									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+									},
+								},
 							}
 						},
 						expectedErrorSubstring: "name in body should match",
@@ -379,6 +427,15 @@ func TestOnCreateAPIUX(t *testing.T) {
 										Name: "Invalid--Subnet",
 									},
 								},
+								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+									ProjectNumber: "123456789012",
+									PoolID:        "my-wif-pool",
+									ProviderID:    "my-wif-provider",
+									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+									},
+								},
 							}
 						},
 						expectedErrorSubstring: "name in body should match",
@@ -392,15 +449,24 @@ func TestOnCreateAPIUX(t *testing.T) {
 								Region:  "us-central1",
 								NetworkConfig: hyperv1.GCPNetworkConfig{
 									Network: hyperv1.GCPResourceReference{
-										Name: "this-network-name-is-way-too-long-and-exceeds-the-maximum-limit",
+										Name: "this-network-name-is-way-way-too-long-and-exceeds-the-maximum-limit",
 									},
 									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
 										Name: "valid-subnet",
 									},
 								},
+								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+									ProjectNumber: "123456789012",
+									PoolID:        "my-wif-pool",
+									ProviderID:    "my-wif-provider",
+									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+									},
+								},
 							}
 						},
-						expectedErrorSubstring: "name in body should be at most 63 chars long",
+						expectedErrorSubstring: "may not be more than 63 bytes",
 					},
 					{
 						name: "when GCP network name is empty it should fail",
@@ -415,6 +481,15 @@ func TestOnCreateAPIUX(t *testing.T) {
 									},
 									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
 										Name: "valid-subnet",
+									},
+								},
+								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+									ProjectNumber: "123456789012",
+									PoolID:        "my-wif-pool",
+									ProviderID:    "my-wif-provider",
+									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -437,6 +512,15 @@ func TestOnCreateAPIUX(t *testing.T) {
 									},
 								},
 								EndpointAccess: "InvalidAccess",
+								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+									ProjectNumber: "123456789012",
+									PoolID:        "my-wif-pool",
+									ProviderID:    "my-wif-provider",
+									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+									},
+								},
 							}
 						},
 						expectedErrorSubstring: "Unsupported value: \"InvalidAccess\": supported values: \"PublicAndPrivate\", \"Private\"",
@@ -457,6 +541,15 @@ func TestOnCreateAPIUX(t *testing.T) {
 									},
 								},
 								EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
+								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+									ProjectNumber: "123456789012",
+									PoolID:        "my-wif-pool",
+									ProviderID:    "my-wif-provider",
+									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+									},
+								},
 							}
 						},
 						expectedErrorSubstring: "",
@@ -477,6 +570,15 @@ func TestOnCreateAPIUX(t *testing.T) {
 									},
 								},
 								EndpointAccess: hyperv1.GCPEndpointAccessPublicAndPrivate,
+								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+									ProjectNumber: "123456789012",
+									PoolID:        "my-wif-pool",
+									ProviderID:    "my-wif-provider",
+									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+									},
+								},
 							}
 						},
 						expectedErrorSubstring: "",
@@ -497,6 +599,15 @@ func TestOnCreateAPIUX(t *testing.T) {
 									},
 								},
 								EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
+								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+									ProjectNumber: "123456789012",
+									PoolID:        "my-wif-pool",
+									ProviderID:    "my-wif-provider",
+									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+									},
+								},
 							}
 						},
 						expectedErrorSubstring: "",
@@ -517,6 +628,15 @@ func TestOnCreateAPIUX(t *testing.T) {
 									},
 								},
 								EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
+								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+									ProjectNumber: "123456789012",
+									PoolID:        "my-wif-pool",
+									ProviderID:    "my-wif-provider",
+									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+									},
+								},
 							}
 						},
 						expectedErrorSubstring: "",
