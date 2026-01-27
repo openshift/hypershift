@@ -23,7 +23,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp,token,tmp-dir
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp,token,cloud-token,tmp-dir
         component.hypershift.openshift.io/config-hash: 2e848593
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
@@ -136,6 +136,8 @@ spec:
           name: token
         - mountPath: /etc/aws
           name: credentials
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
       - args:
         - |
           # Extract CA certificate from kubeconfig and write to expected location
@@ -172,6 +174,37 @@ spec:
           name: svc-kubeconfig
         - mountPath: /tmp
           name: tmp-dir
+      - args:
+        - --token-audience=openshift
+        - --service-account-namespace=kube-system
+        - --service-account-name=capa-controller-manager
+        - --token-file=/var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig=/etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        name: cloud-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
+        - mountPath: /etc/kubernetes
+          name: svc-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
       enableServiceLinks: false
       nodeSelector:
         kubernetes.io/os: linux
@@ -199,6 +232,9 @@ spec:
         secret:
           defaultMode: 416
           secretName: aws-node-termination-handler-creds
+      - emptyDir:
+          medium: Memory
+        name: cloud-token
       - emptyDir: {}
         name: tmp-dir
 status: {}
