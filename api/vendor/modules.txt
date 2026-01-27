@@ -1,6 +1,6 @@
 # github.com/aws/aws-sdk-go-v2 v1.41.1
 ## explicit; go 1.23
-# github.com/aws/aws-sdk-go-v2/service/ec2 v1.279.2
+# github.com/aws/aws-sdk-go-v2/service/ec2 v1.281.0
 ## explicit; go 1.23
 # github.com/aws/aws-sdk-go-v2/service/eks v1.64.0
 ## explicit; go 1.22
