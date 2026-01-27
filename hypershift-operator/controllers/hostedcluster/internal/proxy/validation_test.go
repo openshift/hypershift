@@ -251,6 +251,155 @@ func TestValidateProxyCAValidity(t *testing.T) {
 	}
 }
 
+// TestExpiryTimeProxyCA tests the ExpiryTimeProxyCA function.
+func TestExpiryTimeProxyCA(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+
+	tests := []struct {
+		name           string
+		hcluster       *hyperv1.HostedCluster
+		configMap      *corev1.ConfigMap
+		expectError    bool
+		expectNil      bool
+		expectedExpiry *time.Time
+	}{
+		{
+			name: "When no proxy configured it should return nil",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{},
+			},
+			expectNil: true,
+		},
+		{
+			name: "When proxy configured without CA it should return nil",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{
+							HTTPProxy: "http://proxy.example.com:8080",
+						},
+					},
+				},
+			},
+			expectNil: true,
+		},
+		{
+			name: "When single certificate it should return its expiry time",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{
+							TrustedCA: configv1.ConfigMapNameReference{
+								Name: "test-ca-bundle",
+							},
+						},
+					},
+				},
+			},
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-ca-bundle",
+					Namespace: "test-namespace",
+				},
+				Data: map[string]string{
+					ProxyCAConfigMapKey: generateCertPEM(t, now.Add(24*time.Hour)),
+				},
+			},
+			expectedExpiry: func() *time.Time { t := now.Add(24 * time.Hour); return &t }(),
+		},
+		{
+			name: "When multiple certificates it should return earliest expiry time",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{
+							TrustedCA: configv1.ConfigMapNameReference{
+								Name: "test-ca-bundle-multi",
+							},
+						},
+					},
+				},
+			},
+			configMap: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-ca-bundle-multi",
+					Namespace: "test-namespace",
+				},
+				Data: map[string]string{
+					// First cert expires in 48 hours, second in 24 hours (earlier)
+					ProxyCAConfigMapKey: generateCertPEM(t, now.Add(48*time.Hour)) + generateCertPEM(t, now.Add(24*time.Hour)),
+				},
+			},
+			expectedExpiry: func() *time.Time { t := now.Add(24 * time.Hour); return &t }(),
+		},
+		{
+			name: "When ConfigMap not found it should return error",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{
+							TrustedCA: configv1.ConfigMapNameReference{
+								Name: "missing-ca-bundle",
+							},
+						},
+					},
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			clientBuilder := fake.NewClientBuilder()
+			if tc.configMap != nil {
+				clientBuilder = clientBuilder.WithObjects(tc.configMap)
+			}
+			client := clientBuilder.Build()
+
+			expiry, err := ExpiryTimeProxyCA(context.Background(), client, tc.hcluster)
+
+			if tc.expectError && err == nil {
+				t.Errorf("Expected error but got none")
+			}
+			if !tc.expectError && err != nil {
+				t.Errorf("Expected no error but got: %v", err)
+			}
+			if tc.expectNil && expiry != nil {
+				t.Errorf("Expected nil expiry but got: %v", expiry)
+			}
+			if !tc.expectNil && !tc.expectError && expiry == nil {
+				t.Errorf("Expected non-nil expiry but got nil")
+			}
+			if tc.expectedExpiry != nil && expiry != nil {
+				if !expiry.Equal(*tc.expectedExpiry) {
+					t.Errorf("Expected expiry time %v but got %v", *tc.expectedExpiry, *expiry)
+				}
+			}
+		})
+	}
+}
+
 func generateCertPEM(t *testing.T, notAfter time.Time) string {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
