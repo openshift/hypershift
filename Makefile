@@ -168,7 +168,7 @@ product-cli-release:
 # Run this when updating any of the types in the api package to regenerate the
 # deepcopy code and CRD manifest files.
 .PHONY: api
-api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-ibmcloud cluster-api-provider-kubevirt cluster-api-provider-agent cluster-api-provider-azure cluster-api-provider-openstack karpenter-api api-docs
+api: hypershift-api cluster-api cluster-api-provider-aws cluster-api-provider-gcp cluster-api-provider-ibmcloud cluster-api-provider-kubevirt cluster-api-provider-agent cluster-api-provider-azure cluster-api-provider-openstack karpenter-api api-docs
 
 .PHONY: hypershift-api
 hypershift-api: $(CONTROLLER_GEN) $(CODE_GEN)
@@ -215,6 +215,11 @@ cluster-api-provider-aws: $(CONTROLLER_GEN)
 # remove EKS CRDs
 	rm -rf cmd/install/assets/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmanaged*.yaml
 	rm -rf cmd/install/assets/cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsfargateprofiles.yaml
+
+.PHONY: cluster-api-provider-gcp
+cluster-api-provider-gcp: $(CONTROLLER_GEN)
+	rm -rf cmd/install/assets/cluster-api-provider-gcp/*.yaml
+	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./vendor/sigs.k8s.io/cluster-api-provider-gcp/api/..." output:crd:artifacts:config=cmd/install/assets/cluster-api-provider-gcp
 
 .PHONY: cluster-api-provider-ibmcloud
 cluster-api-provider-ibmcloud: $(CONTROLLER_GEN)
