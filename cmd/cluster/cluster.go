@@ -13,19 +13,26 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/openstack"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
 
 	"github.com/spf13/cobra"
 )
 
 func NewCreateCommands() *cobra.Command {
 	opts := core.DefaultOptions()
+	var kubeconfigPath string
+
 	cmd := &cobra.Command{
 		Use:          "cluster",
 		Short:        "Creates basic functional HostedCluster resources",
 		SilenceUsage: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			return util.SetKubeconfig(kubeconfigPath)
+		},
 	}
 
 	core.BindDeveloperOptions(opts, cmd.PersistentFlags())
+	cmd.PersistentFlags().StringVar(&kubeconfigPath, "kubeconfig", "", "Path to the kubeconfig file to use for CLI requests")
 
 	cmd.MarkFlagsMutuallyExclusive("service-cidr", "default-dual")
 	cmd.MarkFlagsMutuallyExclusive("cluster-cidr", "default-dual")
@@ -43,6 +50,7 @@ func NewCreateCommands() *cobra.Command {
 }
 
 func NewDestroyCommands() *cobra.Command {
+	var kubeconfigPath string
 
 	opts := &core.DestroyOptions{
 		Namespace:             "clusters",
@@ -56,7 +64,12 @@ func NewDestroyCommands() *cobra.Command {
 		Use:          "cluster",
 		Short:        "Destroys a HostedCluster and its associated infrastructure.",
 		SilenceUsage: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			return util.SetKubeconfig(kubeconfigPath)
+		},
 	}
+
+	cmd.PersistentFlags().StringVar(&kubeconfigPath, "kubeconfig", "", "Path to the kubeconfig file to use for CLI requests")
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A cluster namespace")
 	cmd.PersistentFlags().StringVar(&opts.Name, "name", opts.Name, "A cluster name (required)")
 	cmd.PersistentFlags().DurationVar(&opts.ClusterGracePeriod, "cluster-grace-period", opts.ClusterGracePeriod, "How long to wait for the cluster to be deleted before forcibly destroying its infra")
