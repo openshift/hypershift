@@ -64,3 +64,14 @@ func GlobalPullSecret() *corev1.Secret {
 		Type: corev1.SecretTypeDockerConfigJson,
 	}
 }
+
+const PreserveRegistriesConfigMapName = "globalps-preserve-registries"
+
+func PreserveRegistriesConfigMap() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      PreserveRegistriesConfigMapName,
+			Namespace: GlobalPullSecretNamespace,
+		},
+	}
+}

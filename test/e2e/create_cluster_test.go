@@ -2684,6 +2684,7 @@ func TestCreateCluster(t *testing.T) {
 			e2eutil.EnsureKubeAPIServerAllowedCIDRs(t, ctx, mgtClient, guestConfig, hostedCluster)
 		}
 		e2eutil.EnsureGlobalPullSecret(t, ctx, mgtClient, hostedCluster)
+		e2eutil.EnsurePreserveRegistries(t, ctx, mgtClient, hostedCluster)
 
 		// Verify CPO override image if TEST_CPO_OVERRIDE=1 is set
 		if os.Getenv("TEST_CPO_OVERRIDE") == "1" {
