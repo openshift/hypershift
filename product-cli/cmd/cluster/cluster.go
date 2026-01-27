@@ -6,6 +6,7 @@ import (
 	"github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/log"
+	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/product-cli/cmd/cluster/agent"
 	"github.com/openshift/hypershift/product-cli/cmd/cluster/aws"
 	"github.com/openshift/hypershift/product-cli/cmd/cluster/kubevirt"
@@ -17,14 +18,19 @@ import (
 func NewCreateCommands() *cobra.Command {
 	opts := core.DefaultOptions()
 	opts.ControlPlaneAvailabilityPolicy = string(v1beta1.HighlyAvailable)
+	var kubeconfigPath string
 
 	cmd := &cobra.Command{
 		Use:          "cluster",
 		Short:        "Creates basic functional HostedCluster resources",
 		SilenceUsage: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			return util.SetKubeconfig(kubeconfigPath)
+		},
 	}
 
 	core.BindOptions(opts, cmd.PersistentFlags())
+	cmd.PersistentFlags().StringVar(&kubeconfigPath, "kubeconfig", "", "Path to the kubeconfig file to use for CLI requests")
 
 	cmd.MarkFlagsMutuallyExclusive("service-cidr", "default-dual")
 	cmd.MarkFlagsMutuallyExclusive("cluster-cidr", "default-dual")
@@ -37,6 +43,7 @@ func NewCreateCommands() *cobra.Command {
 }
 
 func NewDestroyCommands() *cobra.Command {
+	var kubeconfigPath string
 
 	opts := &core.DestroyOptions{
 		ClusterGracePeriod:    10 * time.Minute,
@@ -50,8 +57,12 @@ func NewDestroyCommands() *cobra.Command {
 		Use:          "cluster",
 		Short:        "Destroys a HostedCluster and its associated infrastructure.",
 		SilenceUsage: true,
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			return util.SetKubeconfig(kubeconfigPath)
+		},
 	}
 
+	cmd.PersistentFlags().StringVar(&kubeconfigPath, "kubeconfig", "", "Path to the kubeconfig file to use for CLI requests")
 	cmd.PersistentFlags().DurationVar(&opts.ClusterGracePeriod, "cluster-grace-period", opts.ClusterGracePeriod, "Period of time to wait for the HostedCluster to be deleted before forcibly destroying its infrastructure.")
 	cmd.PersistentFlags().BoolVar(&opts.DestroyCloudResources, "destroy-cloud-resources", opts.DestroyCloudResources, "If true, cloud resources, such as load balancers and persistent storage disks, created by the HostedCluster during its lifetime are removed.")
 	cmd.PersistentFlags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "The HostedCluster's infrastructure ID. This is inferred from the HostedCluster by default.")
