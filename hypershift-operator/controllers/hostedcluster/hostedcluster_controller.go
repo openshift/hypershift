@@ -42,7 +42,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
-	validations "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/validations"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/validations"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
@@ -58,6 +58,7 @@ import (
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/infraid"
+	"github.com/openshift/hypershift/support/logcontext"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/oidc"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -346,6 +347,8 @@ func (r *HostedClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to get cluster %q: %w", req.NamespacedName, err)
 	}
+	log = logcontext.AddAnnotationContext(log, hcluster.Annotations)
+	ctx = ctrl.LoggerInto(ctx, log)
 
 	var res reconcile.Result
 	if r.overwriteReconcile != nil {
@@ -1308,6 +1311,11 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			controlPlaneNamespace.Labels["pod-security.kubernetes.io/warn"] = "privileged"
 		}
 		controlPlaneNamespace.Labels["security.openshift.io/scc.podSecurityLabelSync"] = "false"
+
+		if controlPlaneNamespace.Annotations == nil {
+			controlPlaneNamespace.Annotations = make(map[string]string)
+		}
+		logcontext.AddServiceProviderAnnotations(controlPlaneNamespace.Annotations, hcluster.Annotations)
 
 		// Enable monitoring for hosted control plane namespaces
 		if r.EnableOCPClusterMonitoring {
