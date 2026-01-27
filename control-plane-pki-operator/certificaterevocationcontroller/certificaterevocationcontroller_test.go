@@ -21,6 +21,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	corev1applyconfigurations "k8s.io/client-go/applyconfigurations/core/v1"
 	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
 	"k8s.io/client-go/util/cert"
@@ -1046,6 +1047,9 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 						}
 					}
 					return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("configmaps").GroupResource(), name)
+				},
+				listPods: func(namespace string, selector labels.Selector) ([]*corev1.Pod, error) {
+					return nil, nil
 				},
 				skipKASConnections: true,
 			}
