@@ -31,6 +31,25 @@ var recordingRules embed.FS
 
 const capiLabel = "cluster.x-k8s.io/v1beta1"
 
+// storageVersionOverrides specifies which CRDs should have their storage version
+// changed from the default. This is needed after CAPI 1.11 upgrade where v1beta2
+// is the default storage version, but HyperShift needs v1beta1 as storage.
+// TODO(clebs): remove once storeage version is v1beta2.
+var storageVersionOverrides = map[string]string{
+	"cluster-api/cluster.x-k8s.io_clusterclasses.yaml":                    "v1beta1",
+	"cluster-api/cluster.x-k8s.io_clusters.yaml":                          "v1beta1",
+	"cluster-api/cluster.x-k8s.io_machinedeployments.yaml":                "v1beta1",
+	"cluster-api/cluster.x-k8s.io_machinedrainrules.yaml":                 "v1beta1",
+	"cluster-api/cluster.x-k8s.io_machinehealthchecks.yaml":               "v1beta1",
+	"cluster-api/cluster.x-k8s.io_machinepools.yaml":                      "v1beta1",
+	"cluster-api/cluster.x-k8s.io_machines.yaml":                          "v1beta1",
+	"cluster-api/cluster.x-k8s.io_machinesets.yaml":                       "v1beta1",
+	"cluster-api/ipam.cluster.x-k8s.io_ipaddressclaims.yaml":              "v1beta1",
+	"cluster-api/ipam.cluster.x-k8s.io_ipaddresses.yaml":                  "v1beta1",
+	"cluster-api/addons.cluster.x-k8s.io_clusterresourcesetbindings.yaml": "v1beta1",
+	"cluster-api/addons.cluster.x-k8s.io_clusterresourcesets.yaml":        "v1beta1",
+}
+
 // capiResources specifies which CRDs should get labeled with capiLabel
 // to satisfy CAPI contracts. There might be a way to achieve this during CRD
 // generation, but for now we're just post-processing at runtime here.
@@ -126,6 +145,14 @@ func getCustomResourceDefinition(files embed.FS, file string) *apiextensionsv1.C
 		}
 		crd.Labels[capiLabel] = label
 	}
+
+	// Override storage version if specified
+	if desiredStorage, ok := storageVersionOverrides[file]; ok {
+		for i := range crd.Spec.Versions {
+			crd.Spec.Versions[i].Storage = crd.Spec.Versions[i].Name == desiredStorage
+		}
+	}
+
 	return &crd
 }
 
