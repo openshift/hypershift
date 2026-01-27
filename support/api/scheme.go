@@ -46,6 +46,7 @@ import (
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
+	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 	capiibm "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capikubevirt "sigs.k8s.io/cluster-api-provider-kubevirt/api/v1alpha1"
 	capiopenstackv1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
@@ -103,6 +104,7 @@ func init() {
 	for _, sd := range schemes {
 		scheme := sd.scheme
 		_ = capiaws.AddToScheme(scheme)
+		_ = capigcp.AddToScheme(scheme)
 		_ = capiibm.AddToScheme(scheme)
 		_ = clientgoscheme.AddToScheme(scheme)
 		_ = auditv1.AddToScheme(scheme)
