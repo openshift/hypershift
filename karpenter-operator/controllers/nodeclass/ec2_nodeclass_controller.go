@@ -4,24 +4,31 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"sort"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	supportassets "github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/config"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
 	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
+	"github.com/blang/semver"
+	"github.com/openshift/hypershift/support/supportedversion"
 	admissionv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -42,6 +49,15 @@ import (
 
 const (
 	finalizer = "hypershift.openshift.io/ec2-nodeclass-finalizer"
+
+	// nodePoolAnnotationCurrentConfigVersion mirrors the annotation from nodepool_controller.go
+	// It's used to track the current config version for outdated token cleanup
+	// from hypershift-operator/controllers/nodepool/nodepool_controller.go
+	nodePoolAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
+
+	// openshiftEC2NodeClassAnnotationCurrentConfigVersion tracks the config version on the OpenshiftEC2NodeClass
+	// since the NodePool is in-memory only and doesn't persist between reconciles
+	openshiftEC2NodeClassAnnotationCurrentConfigVersion = "hypershift.openshift.io/currentConfigVersion"
 )
 
 var (
@@ -56,6 +72,10 @@ type EC2NodeClassReconciler struct {
 	managementClient client.Client
 	guestClient      client.Client
 	upsert.CreateOrUpdateProvider
+	ReleaseProvider           releaseinfo.Provider
+	ImageMetadataProvider     util.ImageMetadataProvider
+	ControlPlaneOperatorImage string
+	IgnitionEndpoint          string
 }
 
 func (r *EC2NodeClassReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, managementCluster cluster.Cluster) error {
@@ -126,6 +146,25 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, fmt.Errorf("failed to get openshiftEC2NodeClass %q: %w", req.NamespacedName, err)
 	}
 
+	// The below code is used to create a config generator and in-memory NodePool for each EC2NodeClass.
+	// This allows karpenter-operator to reconcile separate tokens, so that each NodeClass is able to track it's own openshift release image version.
+	np := hcpNodePool(hcp, openshiftEC2NodeClass)
+
+	// Get the correct release image based on the OpenshiftEC2NodeClass's openshiftVersion
+	pullSpec, err := getReleaseImagePullSpec(ctx, hcp, openshiftEC2NodeClass)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get release image pullSpec: %w", err)
+	}
+	np.Spec.Release.Image = pullSpec
+
+	cg, err := r.buildConfigGenerator(ctx, hcp, np)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if err := r.reconcileToken(ctx, cg, np, openshiftEC2NodeClass); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	ec2NodeClass := &awskarpenterv1.EC2NodeClass{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      openshiftEC2NodeClass.Name,
@@ -161,7 +200,7 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	userDataSecret, err := r.getUserDataSecret(ctx, hcp)
+	userDataSecret, err := r.getUserDataSecret(ctx, np)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -281,6 +320,20 @@ func reconcileEC2NodeClass(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2
 	}
 	ec2NodeClass.Spec.SecurityGroupSelectorTerms = securityGroupSelectorTerms
 
+	// Set default BlockDeviceMappings if not specified
+	if ec2NodeClass.Spec.BlockDeviceMappings == nil {
+		ec2NodeClass.Spec.BlockDeviceMappings = []*awskarpenterv1.BlockDeviceMapping{
+			{
+				DeviceName: ptr.To("/dev/xvda"),
+				EBS: &awskarpenterv1.BlockDevice{
+					VolumeSize: ptr.To(resource.MustParse("75Gi")),
+					VolumeType: ptr.To("gp3"),
+					Encrypted:  ptr.To(true),
+				},
+			},
+		}
+	}
+
 	return nil
 }
 
@@ -374,8 +427,8 @@ func (r *EC2NodeClassReconciler) reconcileVAP(ctx context.Context) error {
 	return err
 }
 
-func (r *EC2NodeClassReconciler) getUserDataSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*corev1.Secret, error) {
-	labelSelector := labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: fmt.Sprintf("%s-karpenter", hcp.GetName())})
+func (r *EC2NodeClassReconciler) getUserDataSecret(ctx context.Context, np *hyperv1.NodePool) (*corev1.Secret, error) {
+	labelSelector := labels.SelectorFromSet(labels.Set{karpenterutil.ManagedByKarpenterLabel: "true"})
 	listOptions := &client.ListOptions{
 		LabelSelector: labelSelector,
 		Namespace:     r.Namespace,
@@ -386,13 +439,22 @@ func (r *EC2NodeClassReconciler) getUserDataSecret(ctx context.Context, hcp *hyp
 		return nil, fmt.Errorf("failed to list secrets: %w", err)
 	}
 
-	sort.Slice(secretList.Items, func(i, j int) bool {
-		return secretList.Items[i].CreationTimestamp.After(secretList.Items[j].CreationTimestamp.Time)
-	})
-	if len(secretList.Items) < 1 {
-		return nil, fmt.Errorf("expected 1 secret, got 0")
+	// get the secret with the annotation namespaced name that matches the nodepool name
+	for _, item := range secretList.Items {
+		annotations := item.GetAnnotations()
+		if annotations == nil || annotations[hyperkarpenterv1.TokenSecretNodePoolAnnotation] == "" {
+			continue
+		}
+		if annotations[nodepool.TokenSecretAnnotation] == "true" {
+			// we want the userData secret, not the token secret
+			continue
+		}
+		nodePoolAnnotation := util.ParseNamespacedName(annotations[hyperkarpenterv1.TokenSecretNodePoolAnnotation])
+		if nodePoolAnnotation.Name == np.GetName() {
+			return &item, nil
+		}
 	}
-	return &secretList.Items[0], err
+	return nil, fmt.Errorf("failed to find user data secret for nodepool %s", np.GetName())
 }
 
 func (r *EC2NodeClassReconciler) getHCP(ctx context.Context) (*hyperv1.HostedControlPlane, error) {
@@ -407,17 +469,247 @@ func (r *EC2NodeClassReconciler) getHCP(ctx context.Context) (*hyperv1.HostedCon
 	return &hcpList.Items[0], nil
 }
 
-// userDataSecretPredicate only returns true on creates/updates on the userData secret tied to the karpenter hyperv1.NodePool
+// hcpNodePool returns an in-memory hyperv1.NodePool for token generation.
+func hcpNodePool(hcp *hyperv1.HostedControlPlane, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass) *hyperv1.NodePool {
+	return &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			// the nodepool needs to end with "karpenter", so the resulting secrets don't get cleaned up by the secret janitor
+			Name:        fmt.Sprintf("%s-%s", openshiftEC2NodeClass.Name, hyperkarpenterv1.KarpenterNodePool),
+			Namespace:   hcp.Namespace,
+			Annotations: map[string]string{},
+			Labels: map[string]string{
+				karpenterutil.ManagedByKarpenterLabel: "true",
+			},
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: hcp.Name,
+			Replicas:    ptr.To[int32](0),
+			Release: hyperv1.Release{
+				Image: hcp.Spec.ReleaseImage,
+			},
+			Config: []corev1.LocalObjectReference{
+				{
+					Name: karpenterutil.KarpenterTaintConfigMapName,
+				},
+			},
+			Arch: hyperv1.ArchitectureAMD64, // used to find default AMI
+		},
+	}
+}
+
+// hostedClusterFromHCP creates a barebones in-memory HostedCluster from a HostedControlPlane.
+// This allows reusing HostedCluster-based code paths to build a ConfigGenerator without needing the actual HostedCluster object.
+// NOTE: The Namespace field is set to hcp.Namespace (the HCP namespace) rather than the original HC namespace.
+// This ensures secret lookups work correctly since the operator is only allowed to read secrets in the HCP namespace.
+func hostedClusterFromHCP(hcp *hyperv1.HostedControlPlane) *hyperv1.HostedCluster {
+	hc := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        hcp.Name,
+			Namespace:   hcp.Namespace, // Use HCP namespace for secret lookups
+			Annotations: hcp.Annotations,
+			Labels:      hcp.Labels,
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Release: hyperv1.Release{
+				Image: hcp.Spec.ReleaseImage,
+			},
+			ClusterID:             hcp.Spec.ClusterID,
+			InfraID:               hcp.Spec.InfraID,
+			Platform:              hcp.Spec.Platform,
+			Networking:            hcp.Spec.Networking,
+			PullSecret:            hcp.Spec.PullSecret,
+			Services:              hcp.Spec.Services,
+			Configuration:         hcp.Spec.Configuration,
+			AdditionalTrustBundle: hcp.Spec.AdditionalTrustBundle,
+			ImageContentSources:   hcp.Spec.ImageContentSources,
+			Capabilities:          hcp.Spec.Capabilities,
+			AutoNode:              hcp.Spec.AutoNode,
+		},
+	}
+
+	if hcp.Spec.ControlPlaneReleaseImage != nil {
+		hc.Spec.ControlPlaneRelease = &hyperv1.Release{
+			Image: *hcp.Spec.ControlPlaneReleaseImage,
+		}
+	}
+
+	// Convert HCP's KubeconfigSecretRef to LocalObjectReference (only Name is needed)
+	if hcp.Status.KubeConfig != nil {
+		hc.Status.KubeConfig = &corev1.LocalObjectReference{
+			Name: hcp.Status.KubeConfig.Name,
+		}
+	}
+
+	return hc
+}
+
+// adapted from hypershift-operator/controllers/nodepool/conditions.go#supportedVersionSkewCondition
+func getHCPControlPlaneVersion(hcp *hyperv1.HostedControlPlane) (semver.Version, error) {
+	// Get the control plane version string
+	var controlPlaneVersion string
+	if len(hcp.Status.VersionStatus.History) == 0 {
+		// If the cluster is in the process of installation, there is no history
+		// Use the desired version as the control plane version
+		controlPlaneVersion = hcp.Status.VersionStatus.Desired.Version
+	} else {
+		// If the cluster is installed or upgrading
+		// Start with the most recent version from history as the default
+		controlPlaneVersion = hcp.Status.VersionStatus.History[0].Version
+		// Find the most recent Completed version
+		for _, history := range hcp.Status.VersionStatus.History {
+			if history.State == "Completed" {
+				controlPlaneVersion = history.Version
+				break
+			}
+		}
+	}
+	return semver.Parse(controlPlaneVersion)
+}
+
+// getReleaseImagePullSpec returns the release image pullSpec for the given OpenshiftEC2NodeClass.
+// If OpenshiftVersion is not specified, it falls back to the control plane version.
+// It also validates version skew between the nodeclass version and the control plane.
+func getReleaseImagePullSpec(ctx context.Context, hcp *hyperv1.HostedControlPlane, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass) (string, error) {
+	var nodeVersion semver.Version
+	var err error
+	if openshiftEC2NodeClass.Spec.OpenshiftVersion != nil {
+		nodeVersion, err = semver.Parse(*openshiftEC2NodeClass.Spec.OpenshiftVersion)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse OpenshiftVersion: %w", err)
+		}
+	} else {
+		// Fall back to control plane version
+		return hcp.Status.VersionStatus.Desired.Image, nil
+	}
+
+	controlPlaneVersion, err := getHCPControlPlaneVersion(hcp)
+	if err != nil {
+		return "", fmt.Errorf("failed to get control plane version: %w", err)
+	}
+
+	if err := supportedversion.ValidateVersionSkew(&controlPlaneVersion, &nodeVersion); err != nil {
+		return "", fmt.Errorf("version skew validation failed: %w", err)
+	}
+
+	// TODO(maxcao13): currently we don't validate versions other than skew
+	// supportedversion.IsValidReleaseVersion(&wantedVersion, &currentVersionParsed, hostedClusterVersion, &minSupportedVersion, hostedCluster.Spec.Networking.NetworkType, hostedCluster.Spec.Platform.Type)
+
+	// TODO(maxcao13): this is quite gross since we do internet lookups through this function
+	pullSpec, err := supportedversion.LookupReleaseImageFromVersion(ctx, nodeVersion)
+	if err != nil {
+		return "", fmt.Errorf("failed to lookup release image for version %s: %w", nodeVersion.String(), err)
+	}
+
+	return pullSpec, nil
+}
+
+// buildConfigGenerator creates a ConfigGenerator for the NodePool by looking up the release image,
+// generating HAProxy configuration, and combining all node configuration sources.
+func (r *EC2NodeClassReconciler) buildConfigGenerator(ctx context.Context, hcp *hyperv1.HostedControlPlane, np *hyperv1.NodePool) (*nodepool.ConfigGenerator, error) {
+	// Convert HCP to a barebones HostedCluster for use with existing HostedCluster-based code paths.
+	hostedCluster := hostedClusterFromHCP(hcp)
+	hostedCluster.Status.IgnitionEndpoint = r.IgnitionEndpoint
+
+	pullSecret := common.PullSecret(hcp.Namespace)
+	if err := r.managementClient.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return nil, fmt.Errorf("failed to get pull secret: %w", err)
+	}
+
+	pullSecretBytes, ok := pullSecret.Data[corev1.DockerConfigJsonKey]
+	if !ok {
+		return nil, fmt.Errorf("expected %s key in pull secret", corev1.DockerConfigJsonKey)
+	}
+
+	releaseImage, err := r.ReleaseProvider.Lookup(ctx, np.Spec.Release.Image, pullSecretBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to lookup release image: %w", err)
+	}
+
+	haProxyImage, ok := releaseImage.ComponentImages()[haproxy.HAProxyRouterImageName]
+	if !ok {
+		return nil, fmt.Errorf("release image doesn't have %s image", haproxy.HAProxyRouterImageName)
+	}
+
+	haproxyClient := haproxy.HAProxy{
+		Client:                  r.managementClient,
+		HAProxyImage:            haProxyImage,
+		HypershiftOperatorImage: r.ControlPlaneOperatorImage,
+		ReleaseProvider:         r.ReleaseProvider,
+		ImageMetadataProvider:   r.ImageMetadataProvider,
+	}
+	// hcp.Namespace IS the control plane namespace
+	haproxyRawConfig, err := haproxyClient.GenerateHAProxyRawConfig(ctx, hostedCluster, hcp.Namespace)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate HAProxy config: %w", err)
+	}
+
+	cg, err := nodepool.NewConfigGenerator(ctx, r.managementClient, hostedCluster, np, releaseImage, haproxyRawConfig, hcp.Namespace)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create config generator: %w", err)
+	}
+
+	return cg, nil
+}
+
+// reconcileToken creates and reconciles token secrets for node bootstrapping.
+// It tracks the config version on OpenshiftEC2NodeClass to enable cleanup of outdated secrets.
+func (r *EC2NodeClassReconciler) reconcileToken(ctx context.Context, cg *nodepool.ConfigGenerator, np *hyperv1.NodePool, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	token, err := nodepool.NewToken(ctx, cg, &nodepool.CPOCapabilities{
+		DecompressAndDecodeConfig: true,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create token: %w", err)
+	}
+
+	// Get the current config version from OpenshiftEC2NodeClass to track outdated tokens
+	currentConfigVersion := openshiftEC2NodeClass.GetAnnotations()[openshiftEC2NodeClassAnnotationCurrentConfigVersion]
+	if currentConfigVersion == "" {
+		// First reconcile - use the new hash
+		np.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = cg.Hash()
+	} else {
+		np.GetAnnotations()[nodePoolAnnotationCurrentConfigVersion] = currentConfigVersion
+	}
+
+	if err := token.Reconcile(ctx); err != nil {
+		return fmt.Errorf("failed to reconcile token: %w", err)
+	}
+
+	// Update the OpenshiftEC2NodeClass annotation if the config hash changed
+	if currentConfigVersion != cg.Hash() {
+		if err := r.updateConfigVersionAnnotation(ctx, openshiftEC2NodeClass, cg.Hash()); err != nil {
+			return err
+		}
+		log.Info("Updated config version annotation", "oldVersion", currentConfigVersion, "newVersion", cg.Hash())
+	}
+
+	return nil
+}
+
+// updateConfigVersionAnnotation patches the config version annotation on OpenshiftEC2NodeClass
+func (r *EC2NodeClassReconciler) updateConfigVersionAnnotation(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, newVersion string) error {
+	original := openshiftEC2NodeClass.DeepCopy()
+	if openshiftEC2NodeClass.Annotations == nil {
+		openshiftEC2NodeClass.Annotations = make(map[string]string)
+	}
+	openshiftEC2NodeClass.Annotations[openshiftEC2NodeClassAnnotationCurrentConfigVersion] = newVersion
+	if err := r.guestClient.Patch(ctx, openshiftEC2NodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+		return fmt.Errorf("failed to update config version annotation on OpenshiftEC2NodeClass: %w", err)
+	}
+	return nil
+}
+
+// userDataSecretPredicate only returns true on creates/updates to the userData secrets managed for Karpenter
 func (r *EC2NodeClassReconciler) userDataSecretPredicate() predicate.Predicate {
 	filterKarpenterSecret := func(obj client.Object) bool {
 		if obj.GetNamespace() != r.Namespace {
 			return false
 		}
 		if secret, ok := obj.(*corev1.Secret); ok {
-			if annotationValue, exists := secret.Annotations[hyperkarpenterv1.TokenSecretNodePoolAnnotation]; exists {
-				if util.ParseNamespacedName(annotationValue).Name == hyperkarpenterv1.KarpenterNodePool {
-					return true
-				}
+			labels := secret.GetLabels()
+			if labels != nil && labels[karpenterutil.ManagedByKarpenterLabel] == "true" {
+				return true
 			}
 		}
 		return false

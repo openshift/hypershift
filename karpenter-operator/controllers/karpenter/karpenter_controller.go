@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
@@ -300,6 +301,16 @@ func (r *Reconciler) reconcileOpenshiftEC2NodeClassDefault(ctx context.Context, 
 				{
 					Tags: map[string]string{
 						"karpenter.sh/discovery": hcp.Spec.InfraID,
+					},
+				},
+			},
+			BlockDeviceMappings: []*hyperkarpenterv1.BlockDeviceMapping{
+				{
+					DeviceName: ptr.To("/dev/xvda"),
+					EBS: &hyperkarpenterv1.BlockDevice{
+						VolumeSize: ptr.To(resource.MustParse("75Gi")),
+						VolumeType: ptr.To("gp3"),
+						Encrypted:  ptr.To(true),
 					},
 				},
 			},

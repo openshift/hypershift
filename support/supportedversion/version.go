@@ -235,6 +235,52 @@ func LookupLatestSupportedRelease(ctx context.Context, hc *hyperv1.HostedCluster
 	return version.PullSpec, nil
 }
 
+// LookupReleaseImageFromVersion looks up a specific OpenShift version and returns its multi-arch release image pullSpec.
+// It queries the release stream API to validate the version exists and retrieve the canonical pullSpec.
+// Returns an error if the version doesn't exist or the API is unavailable.
+func LookupReleaseImageFromVersion(ctx context.Context, version semver.Version) (string, error) {
+	prefix := "https://multi.ocp.releases.ci.openshift.org/api/v1/releasestream/4-stable-multi/latest"
+	// Filter to get exactly this version: >=X.Y.Z < X.Y.(Z+1)
+	filter := fmt.Sprintf("in=>=%d.%d.%d+<%d.%d.%d",
+		version.Major, version.Minor, version.Patch,
+		version.Major, version.Minor, version.Patch+1)
+
+	releaseURL := fmt.Sprintf("%s?%s", prefix, filter)
+
+	var releaseVersion ocpVersion
+
+	req, err := http.NewRequestWithContext(ctx, "GET", releaseURL, nil)
+	if err != nil {
+		return "", err
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("version %q not found: unexpected status code: %d", version, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	err = json.Unmarshal(body, &releaseVersion)
+	if err != nil {
+		return "", err
+	}
+
+	if releaseVersion.PullSpec == "" {
+		return "", fmt.Errorf("version %q has no pullSpec", version)
+	}
+
+	return releaseVersion.PullSpec, nil
+}
+
 // GetRevision returns the overall codebase version. It's for detecting
 // what code a binary was built from.
 func GetRevision() string {

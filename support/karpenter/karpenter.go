@@ -4,6 +4,13 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 )
 
+const (
+	// ManagedByKarpenterLabel is a label set on the userData secrets as being managed for Karpenter
+	ManagedByKarpenterLabel = "hypershift.openshift.io/managed-by-karpenter"
+)
+
+const KarpenterTaintConfigMapName = "set-karpenter-taint"
+
 // Note that we may eventually support other platforms, but for now we only support AWS.
 
 // IsKarpenterEnabled checks if Karpenter is enabled for the given AutoNode configuration

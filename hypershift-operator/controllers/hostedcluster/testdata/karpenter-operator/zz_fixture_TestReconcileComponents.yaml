@@ -57,6 +57,8 @@ spec:
         - --target-kubeconfig=/mnt/kubeconfig/target-kubeconfig
         - --namespace=$(MY_NAMESPACE)
         - --control-plane-operator-image=cpo-image
+        - --ignition-endpoint=
+        - --registry-overrides==
         command:
         - /usr/bin/karpenter-operator
         env:
@@ -68,6 +70,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.name
+        - name: OPENSHIFT_IMG_OVERRIDES
+          value: =
         - name: AWS_SHARED_CREDENTIALS_FILE
           value: /etc/provider/credentials
         - name: AWS_REGION

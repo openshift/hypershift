@@ -343,6 +343,8 @@ func (r *NodePoolReconciler) validArchPlatformCondition(ctx context.Context, nod
 
 func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+
 	releaseImage, err := r.getReleaseImage(ctx, hcluster, nodePool.Status.Version, nodePool.Spec.Release.Image)
 	if err != nil {
 		return &ctrl.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
@@ -360,7 +362,7 @@ func (r *NodePoolReconciler) validMachineConfigCondition(ctx context.Context, no
 		return &ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
 
-	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
+	_, err = NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace)
 	if err != nil {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
 			Type:               hyperv1.NodePoolValidMachineConfigConditionType,
