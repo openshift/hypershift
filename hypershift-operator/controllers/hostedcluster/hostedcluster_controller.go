@@ -2497,7 +2497,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 		}
 	}
 
-	capi := capiproviderv2.NewComponent(capiProviderDeploymentSpec, p.CAPIProviderPolicyRules())
+	capi := capiproviderv2.NewComponent(capiProviderDeploymentSpec, p.CAPIProviderPolicyRules(), hcluster.Spec.Platform.Type)
 	if err := capi.Reconcile(cpContext); err != nil {
 		return fmt.Errorf("failed to reconcile capi provider component: %w", err)
 	}

@@ -24,7 +24,7 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: apiserver-token,tmp-dir
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token,apiserver-token,tmp-dir
         component.hypershift.openshift.io/config-hash: 87ecf31a
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
@@ -133,8 +133,41 @@ spec:
           name: ca-bundle
         - mountPath: /etc/secrets
           name: serving-cert
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
         - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
           name: apiserver-token
+        - mountPath: /tmp
+          name: tmp-dir
+      - args:
+        - --token-audience=openshift
+        - --service-account-namespace=openshift-image-registry
+        - --service-account-name=cluster-image-registry-operator
+        - --token-file=/var/run/secrets/openshift/serviceaccount/token
+        - --kubeconfig=/etc/kubernetes/kubeconfig
+        command:
+        - /usr/bin/control-plane-operator
+        - token-minter
+        image: token-minter
+        imagePullPolicy: IfNotPresent
+        name: cloud-token-minter
+        resources:
+          requests:
+            cpu: 10m
+            memory: 30Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /var/run/secrets/openshift/serviceaccount
+          name: cloud-token
+        - mountPath: /etc/kubernetes
+          name: kubeconfig
         - mountPath: /tmp
           name: tmp-dir
       - args:
@@ -191,6 +224,9 @@ spec:
         secret:
           defaultMode: 416
           secretName: root-ca
+      - emptyDir:
+          medium: Memory
+        name: cloud-token
       - emptyDir:
           medium: Memory
         name: apiserver-token

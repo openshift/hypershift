@@ -4677,7 +4677,7 @@ func TestReconcileComponents(t *testing.T) {
 			CertRotationScale: 2 * time.Minute,
 			FeatureSet:        configv1.CustomNoUpgrade,
 		}),
-		capiproviderv2.NewComponent(capiDeploymentSpec, nil),
+		capiproviderv2.NewComponent(capiDeploymentSpec, nil, hyperv1.AWSPlatform),
 		capimanagerv2.NewComponent(""),
 		karpenteroperatorv2.NewComponent(&karpenteroperatorv2.KarpenterOperatorOptions{
 			HyperShiftOperatorImage:   "test-image",
