@@ -99,6 +99,11 @@ func (it *NodePoolImageTypeTest) testImageTypePersistenceThroughScaling(t *testi
 	// Test 4: Scale back to 0 to verify persistence
 	t.Log("Test 4: Scaling back to 0 replicas to verify persistence")
 	it.scaleAndVerifyImageType(t, g, ctx, nodePool, 0, hyperv1.ImageTypeWindows)
+
+	// Test 5: Scale back to 1 replica for final validation
+	// This ensures the test framework's final status check passes (it expects healthy nodes)
+	t.Log("Test 5: Scaling back to 1 replica for final validation")
+	it.scaleAndVerifyImageType(t, g, ctx, nodePool, 1, hyperv1.ImageTypeWindows)
 }
 
 func (it *NodePoolImageTypeTest) scaleAndVerifyImageType(t *testing.T, g *WithT, ctx context.Context, nodePool *hyperv1.NodePool, targetReplicas int32, expectedImageType hyperv1.ImageType) {
