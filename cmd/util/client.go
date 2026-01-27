@@ -8,6 +8,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 
 	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,12 +21,50 @@ const (
 	DeleteWithClusterLabelName = "hypershift.openshift.io/safe-to-delete-with-cluster"
 )
 
-// GetConfig creates a REST config from current context
-func GetConfig() (*rest.Config, error) {
-	cfg, err := cr.GetConfig()
-	if err != nil {
-		return nil, err
+var (
+	// kubeconfigPath stores the path to a custom kubeconfig file if specified via --kubeconfig flag
+	kubeconfigPath string
+)
+
+// SetKubeconfig sets the path to a custom kubeconfig file.
+// This should be called before GetConfig() or GetClient() to use a non-default kubeconfig.
+func SetKubeconfig(path string) error {
+	if path == "" {
+		kubeconfigPath = ""
+		return nil
 	}
+
+	// Validate that the file exists
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("kubeconfig file not found: %s", path)
+		}
+		return fmt.Errorf("unable to access kubeconfig file: %w", err)
+	}
+
+	kubeconfigPath = path
+	return nil
+}
+
+// GetConfig creates a REST config from current context or from the kubeconfig path set via SetKubeconfig
+func GetConfig() (*rest.Config, error) {
+	var cfg *rest.Config
+	var err error
+
+	if kubeconfigPath != "" {
+		// Use custom kubeconfig path if set
+		cfg, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		if err != nil {
+			return nil, fmt.Errorf("unable to build config from kubeconfig %s: %w", kubeconfigPath, err)
+		}
+	} else {
+		// Use default kubeconfig resolution
+		cfg, err = cr.GetConfig()
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	cfg.QPS = 100
 	cfg.Burst = 100
 	return cfg, nil
