@@ -208,14 +208,25 @@ func (r *reconciler) reconcile(
 	}
 
 	var sizeClass *schedulingv1alpha1.SizeConfiguration
+
+	// 1. Try override annotation first
 	if overrideSize := hostedCluster.Annotations[hypershiftv1beta1.ClusterSizeOverrideAnnotation]; overrideSize != "" {
-		// given the override size, get the size configuration
 		for i, class := range config.Spec.Sizes {
 			if class.Name == overrideSize {
 				sizeClass = &config.Spec.Sizes[i]
+				break
 			}
 		}
-	} else if autoScaling := hostedCluster.Annotations[hypershiftv1beta1.ResourceBasedControlPlaneAutoscalingAnnotation]; autoScaling == "true" {
+		if sizeClass == nil {
+			logger.Info("Override size not found in ClusterSizingConfiguration, falling back to standard sizing logic",
+				"requestedOverride", overrideSize,
+				"availableSizes", sizesNames(config.Spec.Sizes))
+			// Fall through to autoscaling or node count logic below
+		}
+	}
+
+	// 2. Try VPA-based sizing (if override didn't match or wasn't set, and autoscaling is enabled)
+	if sizeClass == nil && hostedCluster.Annotations[hypershiftv1beta1.ResourceBasedControlPlaneAutoscalingAnnotation] == "true" {
 		if len(config.Spec.Sizes) == 0 {
 			logger.Error(fmt.Errorf("could not find a size class for hosted cluster"), "no size can be set on hosted cluster")
 			return nil, nil
@@ -242,7 +253,10 @@ func (r *reconciler) reconcile(
 				logger.Info("Recommended size not found in configuration, falling back to first size class", "requestedSize", recommendedSize, "fallbackSize", sizeClass.Name)
 			}
 		}
-	} else {
+	}
+
+	// 3. Fallback to node count sizing (if no override, autoscaling not enabled, or all lookups failed)
+	if sizeClass == nil {
 		nodeCount, err := r.determineNodeCount(ctx, hostedCluster, sizeClassLabelPresent)
 		if err != nil {
 			if _, ignore := err.(ignoreError); ignore {
@@ -555,4 +569,13 @@ func conditions(existing []metav1.Condition, updated ...*metav1applyconfiguratio
 		return *conditions[i].Type < *conditions[j].Type
 	})
 	return conditions
+}
+
+// sizesNames returns a slice of size class names for logging purposes.
+func sizesNames(sizes []schedulingv1alpha1.SizeConfiguration) []string {
+	names := make([]string, len(sizes))
+	for i, size := range sizes {
+		names[i] = size.Name
+	}
+	return names
 }
