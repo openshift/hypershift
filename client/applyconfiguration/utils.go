@@ -255,6 +255,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.IBMCloudPlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("ImageContentSource"):
 		return &hypershiftv1beta1.ImageContentSourceApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("ImageMirrorConfigRef"):
+		return &hypershiftv1beta1.ImageMirrorConfigRefApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("IngressOperatorSpec"):
 		return &hypershiftv1beta1.IngressOperatorSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("InPlaceUpgrade"):

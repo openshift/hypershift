@@ -37,6 +37,7 @@ var (
 	}
 )
 
+// ReconcileFIPSIgnitionConfig reconciles a ConfigMap containing a MachineConfig that enables or disables FIPS mode on worker nodes.
 func ReconcileFIPSIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, fipsEnabled bool) error {
 	machineConfig := manifests.MachineConfigFIPS()
 	SetMachineConfigLabels(machineConfig)
@@ -44,6 +45,7 @@ func ReconcileFIPSIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef,
 	return reconcileMachineConfigIgnitionConfigMap(cm, machineConfig, ownerRef)
 }
 
+// ReconcileWorkerSSHIgnitionConfig reconciles a ConfigMap containing a MachineConfig that configures the SSH authorized key for worker nodes.
 func ReconcileWorkerSSHIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, sshKey string) error {
 	machineConfig := manifests.MachineConfigWorkerSSH()
 	SetMachineConfigLabels(machineConfig)
@@ -55,8 +57,39 @@ func ReconcileWorkerSSHIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.Owne
 	return reconcileMachineConfigIgnitionConfigMap(cm, machineConfig, ownerRef)
 }
 
+// ReconcileImageSourceMirrorsIgnitionConfigFromIDMS reconciles a ConfigMap containing an ignition config derived from an ImageDigestMirrorSet.
 func ReconcileImageSourceMirrorsIgnitionConfigFromIDMS(cm *corev1.ConfigMap, ownerRef config.OwnerRef, imageDigestMirrorSet *configv1.ImageDigestMirrorSet) error {
 	return reconcileImageContentTypeIgnitionConfigMap(cm, imageDigestMirrorSet, ownerRef)
+}
+
+// ReconcileImageSourceMirrorsIgnitionConfigFromIDMSAndITMS reconciles a ConfigMap containing an ignition config
+// derived from both an ImageDigestMirrorSet and an ImageTagMirrorSet, serialized as a combined YAML document.
+func ReconcileImageSourceMirrorsIgnitionConfigFromIDMSAndITMS(cm *corev1.ConfigMap, ownerRef config.OwnerRef, imageDigestMirrorSet *configv1.ImageDigestMirrorSet, imageTagMirrorSet *configv1.ImageTagMirrorSet) error {
+	scheme := runtime.NewScheme()
+	err := operatorv1alpha1.Install(scheme)
+	if err != nil {
+		return err
+	}
+	err = configv1.Install(scheme)
+	if err != nil {
+		return err
+	}
+	yamlSerializer := jsonserializer.NewSerializerWithOptions(
+		jsonserializer.DefaultMetaFactory, scheme, scheme,
+		jsonserializer.SerializerOptions{Yaml: true, Pretty: true, Strict: true})
+
+	// Serialize both IDMS and ITMS into a single ConfigMap data field
+	var contentBuffer bytes.Buffer
+	contentBuffer.WriteString("---\n")
+	if err := yamlSerializer.Encode(imageDigestMirrorSet, &contentBuffer); err != nil {
+		return fmt.Errorf("failed to serialize image digest mirror set: %w", err)
+	}
+	contentBuffer.WriteString("---\n")
+	if err := yamlSerializer.Encode(imageTagMirrorSet, &contentBuffer); err != nil {
+		return fmt.Errorf("failed to serialize image tag mirror set: %w", err)
+	}
+
+	return ReconcileIgnitionConfigMap(cm, contentBuffer.String(), ownerRef)
 }
 
 func workerSSHConfig(sshKey string) ([]byte, error) {

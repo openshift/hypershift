@@ -3036,6 +3036,30 @@ spec:
                   type: object
                 maxItems: 255
                 type: array
+              imageMirrorConfig:
+                description: |-
+                  imageMirrorConfig is a local reference to a ConfigMap containing both ImageDigestMirrorSet (IDMS)
+                  and ImageTagMirrorSet (ITMS) configurations. The ConfigMap should contain keys "idms.yaml" and/or "itms.yaml"
+                  with the respective mirror configurations.
+                  This provides a unified and GitOps-friendly way to manage image mirror configurations for both digest-based
+                  and tag-based mirrors.
+                  When both `ImageContentSources` and `ImageMirrorConfig` are set, the `ImageContentSources` are processed
+                  first, and then the IDMS/ITMS entries from the ConfigMap in `ImageMirrorConfig` are appended. This merging
+                  is performed by the controllers during reconciliation and triggers rollouts when either the ref name or the
+                  ConfigMap content changes.
+                  Changing this value will trigger a rollout for all existing NodePools in the cluster.
+                properties:
+                  name:
+                    description: name is the name of the ConfigMap.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: name must be a valid DNS subdomain
+                      rule: self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')
+                required:
+                - name
+                type: object
               infraID:
                 description: infraID is the unique id that identifies the cluster
                   internally.

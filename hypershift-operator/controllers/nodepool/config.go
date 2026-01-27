@@ -188,7 +188,7 @@ func (cg *ConfigGenerator) getCoreConfigs(ctx context.Context) ([]corev1.ConfigM
 	// TODO (alberto): consider moving the expectedCoreConfigResources check
 	// into the token Secret controller so we don't block Machine infra creation on this.
 	expectedCoreConfigResources := 3
-	if len(cg.hostedCluster.Spec.ImageContentSources) > 0 {
+	if len(cg.hostedCluster.Spec.ImageContentSources) > 0 || cg.hostedCluster.Spec.ImageMirrorConfig.Name != "" {
 		// additional core config resource created when image content source specified.
 		expectedCoreConfigResources += 1
 	}
@@ -347,6 +347,11 @@ func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
 		return "", fmt.Errorf("failed to encode image global config: %w", err)
 	}
 	globalConfigBytes.Write(imageBytes)
+
+	// Include imageMirrorConfig name in the hash to trigger rollouts when it changes
+	if hcluster.Spec.ImageMirrorConfig.Name != "" {
+		globalConfigBytes.WriteString(hcluster.Spec.ImageMirrorConfig.Name)
+	}
 
 	rawConfig := globalConfigBytes.String()
 

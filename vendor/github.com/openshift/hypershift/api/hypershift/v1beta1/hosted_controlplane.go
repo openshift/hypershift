@@ -192,6 +192,19 @@ type HostedControlPlaneSpec struct {
 	// +kubebuilder:validation:MaxItems=255
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 
+	// imageMirrorConfig is a local reference to a ConfigMap containing both ImageDigestMirrorSet (IDMS)
+	// and ImageTagMirrorSet (ITMS) configurations. The ConfigMap should contain keys "idms.yaml" and/or "itms.yaml"
+	// with the respective mirror configurations.
+	// This provides a unified and GitOps-friendly way to manage image mirror configurations for both digest-based
+	// and tag-based mirrors.
+	// When both `ImageContentSources` and `ImageMirrorConfig` are set, the `ImageContentSources` are processed
+	// first, and then the IDMS/ITMS entries from the ConfigMap in `ImageMirrorConfig` are appended. This merging
+	// is performed by the controllers during reconciliation and triggers rollouts when either the ref name or the
+	// ConfigMap content changes.
+	// Changing this value will trigger a rollout for all existing NodePools in the cluster.
+	// +optional
+	ImageMirrorConfig ImageMirrorConfigRef `json:"imageMirrorConfig,omitzero"`
+
 	// additionalTrustBundle references a ConfigMap containing a PEM-encoded X.509 certificate bundle
 	// +optional
 	AdditionalTrustBundle *corev1.LocalObjectReference `json:"additionalTrustBundle,omitempty"`
@@ -282,6 +295,16 @@ const (
 	// toleration of full disruption of the component.
 	SingleReplica AvailabilityPolicy = "SingleReplica"
 )
+
+// ImageMirrorConfigRef is a reference to a ConfigMap in the same namespace.
+type ImageMirrorConfigRef struct {
+	// name is the name of the ConfigMap.
+	// +required
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$')`,message="name must be a valid DNS subdomain"
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name,omitempty"`
+}
 
 type KubeconfigSecretRef struct {
 	// name is the name of the secret containing the kubeconfig.

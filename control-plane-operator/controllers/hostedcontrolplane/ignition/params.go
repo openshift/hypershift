@@ -12,12 +12,13 @@ type IgnitionConfigParams struct {
 	HasImageMirrorPolicies bool
 }
 
+// NewIgnitionConfigParams creates an IgnitionConfigParams from a HostedControlPlane and an SSH public key string.
 func NewIgnitionConfigParams(hcp *hyperv1.HostedControlPlane, sshKey string) *IgnitionConfigParams {
 	params := &IgnitionConfigParams{
 		OwnerRef:               config.OwnerRefFrom(hcp),
 		FIPSEnabled:            hcp.Spec.FIPS,
 		SSHKey:                 sshKey,
-		HasImageMirrorPolicies: len(hcp.Spec.ImageContentSources) > 0,
+		HasImageMirrorPolicies: len(hcp.Spec.ImageContentSources) > 0 || hcp.Spec.ImageMirrorConfig.Name != "",
 	}
 
 	return params
