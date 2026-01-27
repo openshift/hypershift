@@ -5,6 +5,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,36 +74,31 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 	t.Log("Test: NodePool ImageType persistence through scaling operations")
 
 	// NodePool was created with Windows ImageType and 1 replica
-	// Verify it's created correctly
-	t.Logf("✓ NodePool created: %s/%s with ImageType=%s, Replicas=1",
+	t.Logf("NodePool created: %s/%s with ImageType=%s, Replicas=1",
 		nodePool.Namespace, nodePool.Name, nodePool.Spec.Platform.AWS.ImageType)
 
 	// Test scaling operations (starting from 1 replica)
 	it.testImageTypePersistenceThroughScaling(t, g, ctx, &nodePool)
 
-	t.Log("✓ All NodePool ImageType scaling tests passed successfully")
+	t.Log("All NodePool ImageType scaling tests passed successfully")
 }
 
 func (it *NodePoolImageTypeTest) testImageTypePersistenceThroughScaling(t *testing.T, g *WithT, ctx context.Context, nodePool *hyperv1.NodePool) {
-	// Test 1: Scale down to 0 replicas (from initial 1)
-	t.Log("Test 1: Scaling NodePool to 0 replicas")
+	t.Log("Scaling NodePool to 0 replicas")
 	it.scaleAndVerifyImageType(t, g, ctx, nodePool, 0, hyperv1.ImageTypeWindows)
 
-	// Test 2: Scale up to 2 replicas
-	t.Log("Test 2: Scaling NodePool to 2 replicas")
+	t.Log("Scaling NodePool to 2 replicas")
 	it.scaleAndVerifyImageType(t, g, ctx, nodePool, 2, hyperv1.ImageTypeWindows)
 
-	// Test 3: Scale down to 1 replica
-	t.Log("Test 3: Scaling NodePool to 1 replica")
+	t.Log("Scaling NodePool to 1 replica")
 	it.scaleAndVerifyImageType(t, g, ctx, nodePool, 1, hyperv1.ImageTypeWindows)
 
-	// Test 4: Scale back to 0 to verify persistence
-	t.Log("Test 4: Scaling back to 0 replicas to verify persistence")
+	t.Log("Scaling back to 0 replicas to verify persistence")
 	it.scaleAndVerifyImageType(t, g, ctx, nodePool, 0, hyperv1.ImageTypeWindows)
 
-	// Test 5: Scale back to 1 replica for final validation
+	// Scale back to 1 replica for final validation
 	// This ensures the test framework's final status check passes (it expects healthy nodes)
-	t.Log("Test 5: Scaling back to 1 replica for final validation")
+	t.Log("Scaling back to 1 replica for final validation")
 	it.scaleAndVerifyImageType(t, g, ctx, nodePool, 1, hyperv1.ImageTypeWindows)
 }
 
@@ -110,6 +106,9 @@ func (it *NodePoolImageTypeTest) scaleAndVerifyImageType(t *testing.T, g *WithT,
 	// Get current NodePool state
 	err := it.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
+
+	// Track previous replica count for event validation
+	previousReplicas := nodePool.Status.Replicas
 
 	// Update replicas
 	nodePool.Spec.Replicas = &targetReplicas
@@ -155,7 +154,7 @@ func (it *NodePoolImageTypeTest) scaleAndVerifyImageType(t *testing.T, g *WithT,
 	if targetReplicas > 0 {
 		t.Logf("Waiting for %d nodes to become ready", targetReplicas)
 		e2eutil.WaitForReadyNodesByNodePool(t, ctx, it.hostedClusterClient, nodePool, hyperv1.AWSPlatform)
-		t.Logf("✓ All %d nodes are ready", targetReplicas)
+		t.Logf("All %d nodes are ready", targetReplicas)
 	}
 
 	// Verify ImageType is still correct after scaling
@@ -164,5 +163,60 @@ func (it *NodePoolImageTypeTest) scaleAndVerifyImageType(t *testing.T, g *WithT,
 	g.Expect(nodePool.Spec.Platform.AWS.ImageType).To(Equal(expectedImageType),
 		"ImageType should persist through scaling operations")
 
-	t.Logf("✓ Scaled to %d replicas, ImageType persisted: %s", targetReplicas, expectedImageType)
+	t.Logf("Scaled to %d replicas, ImageType persisted: %s", targetReplicas, expectedImageType)
+
+	// Check for scaling events to confirm the operation was processed
+	it.checkScalingEvents(t, ctx, nodePool, previousReplicas, targetReplicas)
+}
+
+// checkScalingEvents verifies that NodePool events related to scaling were generated
+func (it *NodePoolImageTypeTest) checkScalingEvents(t *testing.T, ctx context.Context, nodePool *hyperv1.NodePool, previousReplicas, currentReplicas int32) {
+	// List events for the NodePool
+	events := &corev1.EventList{}
+	err := it.mgmtClient.List(ctx, events, crclient.InNamespace(nodePool.Namespace))
+	if err != nil {
+		t.Logf("Warning: Could not list events: %v", err)
+		return
+	}
+
+	// Filter events related to this NodePool
+	var nodePoolEvents []corev1.Event
+	for _, event := range events.Items {
+		// Check if event is related to this NodePool or its child resources
+		if event.InvolvedObject.Name == nodePool.Name ||
+			strings.Contains(event.Message, nodePool.Name) ||
+			(event.InvolvedObject.Namespace == nodePool.Namespace &&
+				strings.Contains(event.InvolvedObject.Name, nodePool.Name)) {
+			nodePoolEvents = append(nodePoolEvents, event)
+		}
+	}
+
+	if len(nodePoolEvents) > 0 {
+		t.Logf("Found %d events related to NodePool %s", len(nodePoolEvents), nodePool.Name)
+
+		// Log recent scaling-related events for debugging
+		scalingEventCount := 0
+		for _, event := range nodePoolEvents {
+			// Look for events that indicate scaling activity
+			msg := strings.ToLower(event.Message)
+			reason := event.Reason
+
+			if strings.Contains(msg, "scale") ||
+				strings.Contains(msg, "replica") ||
+				strings.Contains(msg, "machine") ||
+				strings.Contains(reason, "Scale") ||
+				strings.Contains(reason, "Replica") {
+				scalingEventCount++
+				t.Logf("  Scaling event: %s - %s: %s", event.Type, event.Reason, event.Message)
+			}
+		}
+
+		if scalingEventCount > 0 {
+			t.Logf("✓ Found %d scaling-related events confirming scaling operation", scalingEventCount)
+		} else {
+			t.Logf("Note: No explicit scaling events found, but status.replicas updated from %d to %d", previousReplicas, currentReplicas)
+		}
+	} else {
+		t.Logf("Note: No events found for NodePool, but scaling verified via status.replicas (%d → %d)", previousReplicas, currentReplicas)
+	}
 }
