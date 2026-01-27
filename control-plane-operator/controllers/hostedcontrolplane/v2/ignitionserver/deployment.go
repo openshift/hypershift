@@ -76,22 +76,6 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 			Value: util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(ign.releaseProvider.GetOpenShiftImageRegistryOverrides()),
 		})
 
-		// Get the specific effective image for the control plane release image
-		controlPlaneReleaseImage := util.HCPControlPlaneReleaseImage(hcp)
-		parsedImageRef, err := reference.Parse(controlPlaneReleaseImage)
-		if err == nil {
-			effectiveImageRef := util.SeekOverride(cpContext.Context, ign.releaseProvider.GetOpenShiftImageRegistryOverrides(), parsedImageRef, pullSecretBytes)
-			effectiveImage := effectiveImageRef.String()
-
-			// Only set MIRRORED_RELEASE_IMAGE if we're using a mirror
-			if effectiveImage != controlPlaneReleaseImage {
-				util.UpsertEnvVar(c, corev1.EnvVar{
-					Name:  "MIRRORED_RELEASE_IMAGE",
-					Value: effectiveImage,
-				})
-			}
-		}
-
 		proxy.SetEnvVars(&c.Env)
 	})
 
