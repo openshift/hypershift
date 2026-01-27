@@ -50,6 +50,7 @@ type HostedClusterSpecApplyConfiguration struct {
 	OperatorConfiguration            *OperatorConfigurationApplyConfiguration             `json:"operatorConfiguration,omitempty"`
 	AuditWebhook                     *corev1.LocalObjectReference                         `json:"auditWebhook,omitempty"`
 	ImageContentSources              []ImageContentSourceApplyConfiguration               `json:"imageContentSources,omitempty"`
+	ImageMirrorConfigRef             *corev1.LocalObjectReference                         `json:"imageMirrorConfigRef,omitempty"`
 	AdditionalTrustBundle            *corev1.LocalObjectReference                         `json:"additionalTrustBundle,omitempty"`
 	SecretEncryption                 *SecretEncryptionSpecApplyConfiguration              `json:"secretEncryption,omitempty"`
 	FIPS                             *bool                                                `json:"fips,omitempty"`
@@ -266,6 +267,14 @@ func (b *HostedClusterSpecApplyConfiguration) WithImageContentSources(values ...
 		}
 		b.ImageContentSources = append(b.ImageContentSources, *values[i])
 	}
+	return b
+}
+
+// WithImageMirrorConfigRef sets the ImageMirrorConfigRef field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ImageMirrorConfigRef field is set to the value of the last call.
+func (b *HostedClusterSpecApplyConfiguration) WithImageMirrorConfigRef(value corev1.LocalObjectReference) *HostedClusterSpecApplyConfiguration {
+	b.ImageMirrorConfigRef = &value
 	return b
 }
 
