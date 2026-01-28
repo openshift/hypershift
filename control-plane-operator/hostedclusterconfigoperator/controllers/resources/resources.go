@@ -166,6 +166,15 @@ func getPodLogs(ctx context.Context, clientSet *clientset.Clientset, namespace, 
 	return clientSet.CoreV1().Pods(namespace).GetLogs(name, opts).DoRaw(ctx)
 }
 
+// getKASHealthCheckEndpoint returns the appropriate KAS health check endpoint based on the platform type.
+// IBM Cloud uses a different liveness endpoint that excludes etcd and log checks.
+func getKASHealthCheckEndpoint(platformType hyperv1.PlatformType) string {
+	if platformType == hyperv1.IBMCloudPlatform {
+		return "/livez?exclude=etcd&exclude=log"
+	}
+	return "/version"
+}
+
 func checkPodKasConnection(ctx context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
@@ -174,7 +183,8 @@ func checkPodKasConnection(ctx context.Context, restConfig *rest.Config, clientS
 	// This is the IP configured on the loopback interface of each node (172.20.0.1 for IPv4 or fd00::1 for IPv6)
 	kasIP := util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
 	kasPort := util.KASPodPort(hcp)
-	kasURL := "https://" + net.JoinHostPort(kasIP, fmt.Sprintf("%d", kasPort)) + "/version"
+	endpoint := getKASHealthCheckEndpoint(hcp.Spec.Platform.Type)
+	kasURL := "https://" + net.JoinHostPort(kasIP, fmt.Sprintf("%d", kasPort)) + endpoint
 
 	httpStatusCode, stderr, err := util.ExecCommandInPod(ctx, restConfig, clientSet, namespace, name, container, []string{
 		"sh", "-c",
@@ -605,7 +615,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent: %w", err))
 	}
 
-	log.Info("reconciling control data plane connection status conditions")
+	log.Info("reconciling control plane and data plane connection status conditions")
 	if err := r.reconcileConnectionConditions(ctx, hcp, log); err != nil {
 		errs = append(errs, fmt.Errorf("failed to update ControlPlaneToDataPlaneConnectivity condition: %w", err))
 	}
@@ -1463,12 +1473,13 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 func (r *reconciler) reconcileConnectionConditions(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
 	dataPlaneConnectionCondition := &metav1.Condition{
 		Type:   string(hyperv1.DataPlaneConnectionAvailable),
-		Status: metav1.ConditionFalse, // False by default
+		Status: metav1.ConditionUnknown,
+		Reason: hyperv1.StatusUnknownReason,
 	}
 	controlPlaneConnectionCondition := &metav1.Condition{
 		Type:    string(hyperv1.ControlPlaneConnectionAvailable),
-		Reason:  hyperv1.ReconcileErrorReason,
-		Status:  metav1.ConditionUnknown, // Unknown by default
+		Reason:  hyperv1.StatusUnknownReason,
+		Status:  metav1.ConditionUnknown,
 		Message: "Unable to inspect data plane to control plane connection",
 	}
 	totalNodes, err := util.CountAvailableNodes(ctx, r.client)
@@ -1525,14 +1536,21 @@ func (r *reconciler) reconcileConnectionConditions(ctx context.Context, hcp *hyp
 				controlPlaneConnectionCondition.Status = metav1.ConditionTrue
 				controlPlaneConnectionCondition.Reason = hyperv1.AsExpectedReason
 				controlPlaneConnectionCondition.Message = hyperv1.AllIsWellMessage
-				continue
+			} else {
+				controlPlaneConnectionCondition.Status = metav1.ConditionFalse
+				controlPlaneConnectionCondition.Reason = hyperv1.ControlPlaneConnectionKASAccessFailedReason
+				controlPlaneConnectionCondition.Message = "Failed to access KAS from data plane"
 			}
-			controlPlaneConnectionCondition.Status = metav1.ConditionFalse
-			controlPlaneConnectionCondition.Reason = hyperv1.ControlPlaneConnectionKASAccessFailedReason
-			controlPlaneConnectionCondition.Message = "Failed to access KAS from data plane"
+		}
+
+		// Once both conditions are satisfied (possibly from different pods), we can stop
+		// This implements an optimistic approach: connection is available if ANY node can connect
+		if dataPlaneConnectionCondition.Status == metav1.ConditionTrue && controlPlaneConnectionCondition.Status == metav1.ConditionTrue {
+			break
 		}
 	}
 	if !runningPodsFound {
+		dataPlaneConnectionCondition.Status = metav1.ConditionFalse
 		dataPlaneConnectionCondition.Reason = hyperv1.DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason
 		dataPlaneConnectionCondition.Message = "Couldn't find any konnectivity-agent running in data plane"
 		return r.PatchHCPStatusConditions(ctx, r.cpClient, hcp, dataPlaneConnectionCondition, controlPlaneConnectionCondition)
