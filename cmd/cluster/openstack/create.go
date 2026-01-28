@@ -75,7 +75,7 @@ type ValidatedCreateOptions struct {
 type completedCreateOptions struct {
 	*ValidatedCreateOptions
 
-	CompletedNodePoolOpts *openstacknodepool.OpenStackPlatformCreateOptions
+	CompletedNodePoolOpts *openstacknodepool.CompletedOpenStackPlatformCreateOptions
 
 	externalDNSDomain string
 	name, namespace   string
@@ -104,7 +104,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 	}
 
 	// Type assert to get the completed options back
-	if completed, ok := platformOpts.(*openstacknodepool.OpenStackPlatformCreateOptions); ok {
+	if completed, ok := platformOpts.(*openstacknodepool.CompletedOpenStackPlatformCreateOptions); ok {
 		output.CompletedNodePoolOpts = completed
 	} else {
 		return nil, fmt.Errorf("unexpected type returned from Complete")

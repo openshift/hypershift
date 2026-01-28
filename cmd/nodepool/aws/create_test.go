@@ -1,7 +1,6 @@
 package aws
 
 import (
-	"context"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -49,7 +48,7 @@ func TestCreateNodePool_When_flags_are_parsed_it_should_generate_correct_nodepoo
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 
 			// Setup flag parsing
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
@@ -121,25 +120,22 @@ func TestCreateNodePool_When_flags_are_parsed_it_should_generate_correct_nodepoo
 
 // TestValidate_When_root_volume_size_is_too_small_it_should_return_error tests validation logic.
 func TestValidate_When_root_volume_size_is_too_small_it_should_return_error(t *testing.T) {
-	ctx := context.Background()
 	opts := DefaultOptions()
 	opts.RootVolumeSize = 7 // Less than minimum of 8
 
-	_, err := opts.Validate(ctx, nil)
+	_, err := opts.Validate(t.Context(), nil)
 	if err == nil {
 		t.Fatal("expected validation to fail for root volume size < 8")
 	}
 
-	expectedError := "root volume size must be at least 8 GB"
-	if err.Error() != "root volume size must be at least 8 GB, got 7" {
-		t.Fatalf("expected error containing %q, got %q", expectedError, err.Error())
+	expectedError := "root volume size must be at least 8 GB, got 7"
+	if err.Error() != expectedError {
+		t.Fatalf("expected error %q, got %q", expectedError, err.Error())
 	}
 }
 
 // TestValidate_When_root_volume_size_is_valid_it_should_succeed tests validation success.
 func TestValidate_When_root_volume_size_is_valid_it_should_succeed(t *testing.T) {
-	ctx := context.Background()
-
 	testCases := []struct {
 		name string
 		size int64
@@ -154,7 +150,7 @@ func TestValidate_When_root_volume_size_is_valid_it_should_succeed(t *testing.T)
 			opts := DefaultOptions()
 			opts.RootVolumeSize = tc.size
 
-			_, err := opts.Validate(ctx, nil)
+			_, err := opts.Validate(t.Context(), nil)
 			if err != nil {
 				t.Fatalf("expected validation to succeed, got error: %v", err)
 			}
@@ -164,7 +160,7 @@ func TestValidate_When_root_volume_size_is_valid_it_should_succeed(t *testing.T)
 
 // TestUpdateNodePool_When_instance_profile_is_empty_it_should_default_to_infraID tests defaulting logic.
 func TestUpdateNodePool_When_instance_profile_is_empty_it_should_default_to_infraID(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	opts := &CompletedAWSPlatformCreateOptions{
 		completedAWSPlatformCreateOptions: &completedAWSPlatformCreateOptions{
 			AWSPlatformCreateOptions: &AWSPlatformCreateOptions{
@@ -203,7 +199,7 @@ func TestUpdateNodePool_When_instance_profile_is_empty_it_should_default_to_infr
 
 // TestUpdateNodePool_When_subnet_is_empty_it_should_use_hostedcluster_subnet tests subnet defaulting.
 func TestUpdateNodePool_When_subnet_is_empty_it_should_use_hostedcluster_subnet(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	opts := &CompletedAWSPlatformCreateOptions{
 		completedAWSPlatformCreateOptions: &completedAWSPlatformCreateOptions{
 			AWSPlatformCreateOptions: &AWSPlatformCreateOptions{
@@ -258,7 +254,7 @@ func TestUpdateNodePool_When_instance_type_is_empty_it_should_default_based_on_a
 
 	for _, tc := range testCases {
 		t.Run(tc.arch, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			opts := &CompletedAWSPlatformCreateOptions{
 				completedAWSPlatformCreateOptions: &completedAWSPlatformCreateOptions{
 					AWSPlatformCreateOptions: &AWSPlatformCreateOptions{

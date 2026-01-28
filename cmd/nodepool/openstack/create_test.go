@@ -1,7 +1,6 @@
 package openstack
 
 import (
-	"context"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -35,7 +34,7 @@ func TestCreateNodePool_When_flags_are_parsed_it_should_generate_correct_nodepoo
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 
 			// Setup flag parsing
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)

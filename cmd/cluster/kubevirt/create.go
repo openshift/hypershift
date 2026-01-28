@@ -134,7 +134,7 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 type completedCreateOptions struct {
 	*ValidatedCreateOptions
 
-	CompletedNodePoolOpts *kubevirtnodepool.KubevirtPlatformCreateOptions
+	CompletedNodePoolOpts *kubevirtnodepool.CompletedKubevirtPlatformCreateOptions
 
 	externalDNSDomain string
 
@@ -167,7 +167,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 	}
 
 	// Type assert to get the completed options back
-	if completed, ok := platformOpts.(*kubevirtnodepool.KubevirtPlatformCreateOptions); ok {
+	if completed, ok := platformOpts.(*kubevirtnodepool.CompletedKubevirtPlatformCreateOptions); ok {
 		output.CompletedNodePoolOpts = completed
 	} else {
 		return nil, fmt.Errorf("unexpected type returned from Complete")

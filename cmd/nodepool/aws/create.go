@@ -7,9 +7,10 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type AWSPlatformCreateOptions struct {
@@ -129,7 +130,10 @@ func (o *CompletedAWSPlatformCreateOptions) UpdateNodePool(ctx context.Context, 
 
 	subnetID := o.SubnetID
 	if len(subnetID) == 0 {
-		if hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID != nil {
+		if hcluster.Spec.Platform.AWS != nil &&
+			hcluster.Spec.Platform.AWS.CloudProviderConfig != nil &&
+			hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet != nil &&
+			hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID != nil {
 			subnetID = *hcluster.Spec.Platform.AWS.CloudProviderConfig.Subnet.ID
 		} else {
 			return fmt.Errorf("subnet ID was not specified and cannot be determined from HostedCluster")
