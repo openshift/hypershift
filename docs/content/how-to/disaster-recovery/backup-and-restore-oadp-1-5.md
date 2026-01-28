@@ -918,6 +918,17 @@ Ensure your HostedCluster is configured with either:
 - `Private` service publishing strategy, OR
 - `Public` service publishing strategy with a **hostname** specified for the kube-api-server
 
+### AWS Self-Managed Platform Requirements
+
+!!! important "AWS Self-Managed Platforms"
+
+    When using AWS platform with self-managed infrastructure, to ensure workloads from existing nodes propagate correctly to new NodePool nodes during disaster recovery, the APIServer service configuration must use either **LoadBalancer** or **Route** service publishing strategy with a **fixed hostname** specified.
+
+    This ensures that:
+    - Node workloads can be properly migrated to new nodes in the restored NodePools
+    - Service continuity is maintained during the disaster recovery process
+    - DNS resolution remains consistent for applications
+
 ### Example Configuration
 
 **Option 1: PublicAndPrivate or Private**
@@ -939,4 +950,32 @@ spec:
         kubeAPIServer:
           type: Public
           hostname: "api.your-cluster.example.com"
+```
+
+**Option 3: AWS Self-Managed with LoadBalancer**
+```yaml
+spec:
+  platform:
+    aws:
+      # AWS self-managed configuration
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+      loadBalancer:
+        hostname: api.example.com
+```
+
+**Option 4: AWS Self-Managed with Route**
+```yaml
+spec:
+  platform:
+    aws:
+      # AWS self-managed configuration
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api.example.com
 ```
