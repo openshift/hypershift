@@ -65,7 +65,7 @@ type RequiredFieldsOmitZero struct {
 	// Valid values are "SuggestFix", "Warn" and "Forbid".
 	// When set to "SuggestFix", the linter will suggest adding the `omitzero` tag when an required field does not have it.
 	// When set to "Warn", the linter will emit a warning if the field does not have the `omitzero` tag.
-	// When set to "Forbid", 'omitzero' tags wont be considered.
+	// When set to "Forbid", 'omitzero' tags will not be considered.
 	// Note, when set to "Forbid", and a field have the `omitzero` tag, the linter will suggest to remove the `omitzero` tag.
 	// Note, `omitzero` tag is supported in go version starting from go 1.24.
 	// Note, Configure omitzero policy to 'Forbid', if using with go version less than go 1.24.

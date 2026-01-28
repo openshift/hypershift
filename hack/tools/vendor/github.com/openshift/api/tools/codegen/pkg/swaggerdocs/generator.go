@@ -2,7 +2,7 @@ package swaggerdocs
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"github.com/openshift/api/tools/codegen/pkg/generation"
@@ -126,7 +126,7 @@ func (g *generator) generateGroupVersion(groupName string, version generation.AP
 		return fmt.Errorf("error generating swagger docs: %w", err)
 	}
 
-	if err := ioutil.WriteFile(outFilePath, generatedDocs, 0644); err != nil {
+	if err := os.WriteFile(outFilePath, generatedDocs, 0644); err != nil {
 		return fmt.Errorf("error writing swagger docs output: %w", err)
 	}
 

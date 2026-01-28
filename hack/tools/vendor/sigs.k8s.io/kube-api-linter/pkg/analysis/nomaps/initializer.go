@@ -39,7 +39,7 @@ func Initializer() initializer.AnalyzerInitializer {
 	)
 }
 
-// Init returns the intialized Analyzer.
+// Init returns the initialized Analyzer.
 func initAnalyzer(nmc *NoMapsConfig) (*analysis.Analyzer, error) {
 	return newAnalyzer(nmc), nil
 }
