@@ -27,6 +27,9 @@ func NewCreateCommands() *cobra.Command {
 
 	core.BindOptions(opts, cmd.PersistentFlags())
 
+	_ = cmd.MarkPersistentFlagRequired("name")
+	_ = cmd.MarkPersistentFlagRequired("pull-secret")
+
 	cmd.MarkFlagsMutuallyExclusive("service-cidr", "default-dual")
 	cmd.MarkFlagsMutuallyExclusive("cluster-cidr", "default-dual")
 	cmd.AddCommand(agent.NewCreateCommand(opts))

@@ -1,0 +1,37 @@
+---
+title: AWS CLI Flags
+---
+
+# AWS CLI Flags
+
+This page documents CLI flags for AWS platform commands, comparing the supported `hcp` CLI with the internal `hypershift` developer CLI.
+
+---
+
+## Create Cluster
+
+Flags for `hcp create cluster aws` and `hypershift create cluster aws`.
+{{ range $cat := .Categories }}
+### {{ .Name }}
+{{ if .Description }}
+{{ .Description }}
+{{ end }}
+| Flag | Type | Default | hcp | hypershift | Description |
+|------|------|---------|:---:|:----------:|-------------|
+{{- range .Flags }}
+{{- if eq $cat.Name "Required" }}
+| `--{{ .Name }}` | {{ .Type }} | {{ if .Default }}`{{ .Default }}`{{ end }} | {{ if .RequiredInHcp }}✓{{ else if .InHcp }}Optional{{ else }}Unavailable{{ end }} | {{ if .RequiredInHypershift }}✓{{ else if .InHypershift }}Optional{{ else }}Unavailable{{ end }} | {{ .Description }} |
+{{- else }}
+| `--{{ .Name }}` | {{ .Type }} | {{ if .Default }}`{{ .Default }}`{{ end }} | {{ if .InHcp }}✓{{ end }} | {{ if .InHypershift }}✓{{ end }} | {{ .Description }} |
+{{- end }}
+{{- end }}
+
+---
+{{ end }}
+### Summary
+
+| | hcp | hypershift |
+|---|:---:|:----------:|
+| **Shared Flags** | {{ .SharedCount }} | {{ .SharedCount }} |
+| **Developer-Only Flags** | - | {{ .DevOnlyCount }} |
+| **Total Flags** | {{ .HcpTotal }} | {{ .HypershiftTotal }} |
