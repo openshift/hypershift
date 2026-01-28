@@ -1866,6 +1866,11 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		t.Skip("Skip GlobalPullSecret test for NodePool and Autoscaling tests to avoid issues with the daemon set")
 	}
 
+	// Zero-worker tests cannot schedule pods required by GlobalPullSecret validation
+	if strings.Contains(t.Name(), "ZeroWorkers") {
+		t.Skip("Skip GlobalPullSecret test for zero-worker clusters as pods cannot be scheduled")
+	}
+
 	// due to this bug: https://issues.redhat.com/browse/OCPBUGS-63743 we should skip the TestCreateClusterCustomConfig
 	// This tests adds a custom network configuration to operatorConfiguration that causes the ovnkube-node and multus DS to crashLoop
 	// after the triggers the kubelet restart
