@@ -39,7 +39,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 
 	controllerruntime "sigs.k8s.io/controller-runtime"
@@ -2433,8 +2432,8 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 		pods                                    []corev1.Pod
 		nodes                                   []corev1.Node
 		simulateListPodError                    bool
+		daemonSets                              []appsv1.DaemonSet
 		mockedGetPodLogs                        func(context context.Context, clientet *clientset.Clientset, namespace, name, container string) ([]byte, error)
-		mockedCheckPodKasConnection             func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error)
 	}{
 		{
 			name:    "no worker nodes Condition Unknown",
@@ -2450,9 +2449,6 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				namespace, name,
 				container string) ([]byte, error) {
 				return nil, nil
-			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
-				return false, fmt.Errorf("it fails")
 			},
 		},
 		{
@@ -2472,9 +2468,6 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return nil, nil
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
-				return false, nil
-			},
 		},
 		{
 			name:    "no konnectivity-agent PODs condition False",
@@ -2491,9 +2484,6 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				namespace, name,
 				container string) ([]byte, error) {
 				return nil, nil
-			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
-				return false, fmt.Errorf("it fails")
 			},
 		},
 		{
@@ -2512,9 +2502,6 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				container string) ([]byte, error) {
 				return nil, nil
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
-				return false, fmt.Errorf("it fails")
-			},
 		},
 		{
 			name:    "one konnectivity-agent PODs running condition OK",
@@ -2523,17 +2510,15 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
 			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
-				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Unable to inspect data plane to control plane connection"),
-			nodes: []corev1.Node{newRunningNode("node1")},
-			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
+				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Cannot determine connectivity: DaemonSet not found"),
+			nodes:      []corev1.Node{newRunningNode("node1")},
+			pods:       []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
+			daemonSets: []appsv1.DaemonSet{}, // No DaemonSet
 			mockedGetPodLogs: func(context context.Context,
 				clientet *clientset.Clientset,
 				namespace, name,
 				container string) ([]byte, error) {
 				return []byte("this is the log my friend"), nil
-			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
-				return false, fmt.Errorf("it fails")
 			},
 		},
 		{
@@ -2543,21 +2528,19 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
 			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
-				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Unable to inspect data plane to control plane connection"),
+				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Cannot determine connectivity: DaemonSet not found"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods: []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax1", corev1.PodPending),
 				newKonnectivityAgentPod("konnectivity-agent-rdax2", corev1.PodPending),
 				newKonnectivityAgentPod("konnectivity-agent-rdax3", corev1.PodRunning),
 				newKonnectivityAgentPod("konnectivity-agent-rdax4", corev1.PodPending),
 				newKonnectivityAgentPod("konnectivity-agent-rdax5", corev1.PodPending)},
+			daemonSets: []appsv1.DaemonSet{}, // No DaemonSet
 			mockedGetPodLogs: func(context context.Context,
 				clientet *clientset.Clientset,
 				namespace, name,
 				container string) ([]byte, error) {
 				return []byte("this is the log my friend"), nil
-			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
-				return false, fmt.Errorf("it fails")
 			},
 		},
 		{
@@ -2568,17 +2551,15 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				metav1.ConditionFalse, hyperv1.DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason,
 				"failed to read konnectivity-agent logs from data plane"),
 			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
-				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Unable to inspect data plane to control plane connection"),
-			nodes: []corev1.Node{newRunningNode("node1")},
-			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
+				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Cannot determine connectivity: DaemonSet not found"),
+			nodes:      []corev1.Node{newRunningNode("node1")},
+			pods:       []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
+			daemonSets: []appsv1.DaemonSet{}, // No DaemonSet
 			mockedGetPodLogs: func(context context.Context,
 				clientet *clientset.Clientset,
 				namespace, name,
 				container string) ([]byte, error) {
 				return nil, fmt.Errorf("this time we fail")
-			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
-				return false, fmt.Errorf("it fails")
 			},
 		},
 		{
@@ -2589,41 +2570,37 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				metav1.ConditionFalse, hyperv1.DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason,
 				"failed to read konnectivity-agent logs from data plane"),
 			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
-				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Unable to inspect data plane to control plane connection"),
-			nodes: []corev1.Node{newRunningNode("node1")},
-			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
+				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Cannot determine connectivity: DaemonSet not found"),
+			nodes:      []corev1.Node{newRunningNode("node1")},
+			pods:       []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
+			daemonSets: []appsv1.DaemonSet{}, // No DaemonSet
 			mockedGetPodLogs: func(context context.Context,
 				clientet *clientset.Clientset,
 				namespace, name,
 				container string) ([]byte, error) {
 				return nil, nil
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
-				return false, fmt.Errorf("it fails")
-			},
 		},
 		{
-			name:    "When...CheckPodKasConnection returns an error...it should set ControlPlaneConnectionAvailable to Unknown",
+			name:    "When...DaemonSet not found...it should set ControlPlaneConnectionAvailable to Unknown",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
 			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
-				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Unable to inspect data plane to control plane connection"),
-			nodes: []corev1.Node{newRunningNode("node1")},
-			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
+				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Cannot determine connectivity: DaemonSet not found"),
+			nodes:      []corev1.Node{newRunningNode("node1")},
+			pods:       []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
+			daemonSets: []appsv1.DaemonSet{}, // No DaemonSet
 			mockedGetPodLogs: func(context context.Context,
 				clientet *clientset.Clientset,
 				namespace, name,
 				container string) ([]byte, error) {
 				return []byte("this is the log my friend"), nil
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
-				return false, fmt.Errorf("failed to check kas connection")
-			},
 		},
 		{
-			name:    "When...CheckPodKasConnection returns true...it should set ControlPlaneConnectionAvailable to True",
+			name:    "When...DaemonSet has all pods ready...it should set ControlPlaneConnectionAvailable to True",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
@@ -2632,34 +2609,48 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
+			daemonSets: []appsv1.DaemonSet{{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kas-connection-checker",
+					Namespace: "kube-system",
+				},
+				Status: appsv1.DaemonSetStatus{
+					DesiredNumberScheduled: 3,
+					NumberReady:            3,
+				},
+			}},
 			mockedGetPodLogs: func(context context.Context,
 				clientet *clientset.Clientset,
 				namespace, name,
 				container string) ([]byte, error) {
 				return []byte("this is the log my friend"), nil
 			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
-				return true, nil
-			},
 		},
 		{
-			name:    "When...CheckPodKasConnection returns false with nil error...it should set ControlPlaneConnectionAvailable to False",
+			name:    "When...DaemonSet has some pods not ready...it should set ControlPlaneConnectionAvailable to False",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
 			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
-				metav1.ConditionFalse, hyperv1.ControlPlaneConnectionKASAccessFailedReason, "Failed to access KAS from data plane"),
+				metav1.ConditionFalse, hyperv1.ControlPlaneConnectionKASAccessFailedReason, "Some nodes cannot connect to KAS: 1/3 pods ready"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
+			daemonSets: []appsv1.DaemonSet{{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kas-connection-checker",
+					Namespace: "kube-system",
+				},
+				Status: appsv1.DaemonSetStatus{
+					DesiredNumberScheduled: 3,
+					NumberReady:            1,
+				},
+			}},
 			mockedGetPodLogs: func(context context.Context,
 				clientet *clientset.Clientset,
 				namespace, name,
 				container string) ([]byte, error) {
 				return []byte("this is the log my friend"), nil
-			},
-			mockedCheckPodKasConnection: func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
-				return false, nil
 			},
 		},
 	}
@@ -2674,7 +2665,10 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			podList := &corev1.PodList{
 				Items: tt.pods,
 			}
-			r.client = fake.NewClientBuilder().WithLists(nodeList).Build()
+			daemonSetList := &appsv1.DaemonSetList{
+				Items: tt.daemonSets,
+			}
+			r.client = fake.NewClientBuilder().WithLists(nodeList, daemonSetList).Build()
 			if tt.simulateListPodError {
 				r.uncachedClient = &errorInjectingClient{
 					Client:          fake.NewClientBuilder().WithLists(podList).Build(),
@@ -2685,7 +2679,6 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			}
 			r.cpClient = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 			r.GetPodLogs = tt.mockedGetPodLogs
-			r.CheckPodKasConnection = tt.mockedCheckPodKasConnection
 			// Mock PatchHCPStatusConditions to validate expected conditions.
 			r.PatchHCPStatusConditions = func(ctx context.Context, cpClient client.Client, hcp *hyperv1.HostedControlPlane, conditions ...*metav1.Condition) error {
 				// First apply the conditions to hcp (this is what the real function does)
