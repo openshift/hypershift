@@ -52,7 +52,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"azure-disk-csi-secretprovider.yaml",
 			component.WithAdaptFunction(adaptAzureCSIDiskSecretProvider),
-			component.WithPredicate(isAroHCP),
+			component.WithPlatformPredicate(isAroHCP),
 		).
 		WithManifestAdapter(
 			"azure-file-csi-config.yaml",
@@ -62,7 +62,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"azure-file-csi-secretprovider.yaml",
 			component.WithAdaptFunction(adaptAzureCSIFileSecretProvider),
-			component.WithPredicate(isAroHCP),
+			component.WithPlatformPredicate(isAroHCP),
 		).
 		WithDependencies(oapiv2.ComponentName).
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{

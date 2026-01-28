@@ -113,7 +113,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"azure-kms-secretprovider.yaml",
 			component.WithAdaptFunction(kms.AdaptAzureSecretProvider),
-			component.WithPredicate(enableAzureKMSSecretProvider),
+			component.WithPlatformPredicate(enableAzureKMSSecretProvider),
 		).
 		Build()
 }
