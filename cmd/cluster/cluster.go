@@ -32,7 +32,7 @@ func NewCreateCommands() *cobra.Command {
 	}
 
 	core.BindDeveloperOptions(opts, cmd.PersistentFlags())
-	cmd.PersistentFlags().StringVar(&kubeconfigPath, "kubeconfig", "", "Path to the kubeconfig file to use for CLI requests")
+	cmd.PersistentFlags().StringVar(&kubeconfigPath, "kubeconfig", "", "Path to the kubeconfig file for the management cluster. If not set, uses the KUBECONFIG environment variable or the default kubeconfig")
 
 	cmd.MarkFlagsMutuallyExclusive("service-cidr", "default-dual")
 	cmd.MarkFlagsMutuallyExclusive("cluster-cidr", "default-dual")
@@ -69,7 +69,7 @@ func NewDestroyCommands() *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().StringVar(&kubeconfigPath, "kubeconfig", "", "Path to the kubeconfig file to use for CLI requests")
+	cmd.PersistentFlags().StringVar(&kubeconfigPath, "kubeconfig", "", "Path to the kubeconfig file for the management cluster. If not set, uses the KUBECONFIG environment variable or the default kubeconfig")
 	cmd.PersistentFlags().StringVar(&opts.Namespace, "namespace", opts.Namespace, "A cluster namespace")
 	cmd.PersistentFlags().StringVar(&opts.Name, "name", opts.Name, "A cluster name (required)")
 	cmd.PersistentFlags().DurationVar(&opts.ClusterGracePeriod, "cluster-grace-period", opts.ClusterGracePeriod, "How long to wait for the cluster to be deleted before forcibly destroying its infra")
