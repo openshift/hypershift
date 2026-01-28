@@ -112,7 +112,7 @@ The Review Agent (`periodic-review-agent`) automatically addresses PR review com
 - **Job name**: `periodic-review-agent`
 - **Schedule**: Every 3 hours (8:00-23:00 UTC) daily (`0 8-23/3 * * *`)
 - **Max PRs per run**: 10 (configurable via `REVIEW_AGENT_MAX_PRS`)
-- **Max agentic turns**: 50 per PR
+- **Max agentic turns**: 100 per PR
 - **On-demand job**: `review-agent-single-pr` (trigger with `/test review-agent-single-pr`)
 
 ### How It Works
@@ -124,15 +124,51 @@ The Review Agent (`periodic-review-agent`) automatically addresses PR review com
 
 ### Comment Analysis Logic
 
-The agent intelligently determines which review threads need attention:
+The agent uses a Python-based comment analyzer to intelligently determine which review threads need attention. This prevents duplicate responses and ensures only actionable feedback is processed.
+
+#### What Gets Processed
 
 | Condition | Action |
 |-----------|--------|
 | No bot reply in thread | Process (first response needed) |
 | Human replied after bot's last comment | Process (follow-up needed) |
 | Bot already replied, no human follow-up | Skip (already addressed) |
-| Thread is resolved | Skip (marked complete) |
-| Thread is outdated | Skip (code changed) |
+| Thread is resolved | Skip (marked complete by reviewer) |
+| Thread is outdated (code changed) | Skip (likely addressed by code change) |
+
+#### What Counts as an Unresolved Review Thread
+
+A review thread is considered **unresolved** when:
+
+- **Inline code comments**: A reviewer left a comment on a specific line of code in the "Files changed" tab, and no one has clicked "Resolve conversation"
+- **Review comments with suggestions**: Comments that include suggested code changes that haven't been resolved
+- **Threaded discussions**: Any reply chain started from a code review that remains open
+
+A review thread is **NOT** created by:
+
+- General PR comments (comments in the main "Conversation" tab that aren't attached to code)
+- PR reviews that only contain an approval/request changes without inline comments
+- Commit comments
+
+#### Author Authorization
+
+The review agent only responds to feedback from authorized authors:
+
+| Author Type | Example |
+|-------------|---------|
+| OpenShift org members | Members of the `openshift` GitHub organization |
+| OWNERS file entries | Users listed in `OWNERS` or `OWNERS_ALIASES` |
+| Approved bots | `coderabbitai[bot]` |
+
+Comments from unauthorized users are ignored to prevent abuse.
+
+#### Response Rules
+
+When addressing feedback, the bot follows these rules:
+
+1. **One response per feedback**: Never responds to the same feedback via both inline reply AND general PR comment
+2. **Code changes only when requested**: Only modifies code when explicitly asked (imperative language like "change", "fix", "update")
+3. **Explanations for questions**: Replies with explanation only for clarifying questions, without code changes
 
 ### Data Flow
 
@@ -221,7 +257,7 @@ This runs the review agent for that specific PR only.
 - **Rate limited**: 1 issue per weekly run (jira-agent), 10 PRs per run (review-agent)
 - **Cannot access private resources** - no access to internal systems beyond Jira/GitHub
 - **Cannot execute destructive operations** - no ability to delete resources or force-push
-- **Maximum agentic turns**: 100 per issue (jira-agent), 50 per PR (review-agent)
+- **Maximum agentic turns**: 100 per issue (jira-agent), 100 per PR (review-agent)
 
 ---
 
