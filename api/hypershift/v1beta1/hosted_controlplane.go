@@ -161,6 +161,8 @@ type HostedControlPlaneSpec struct {
 	// in the management cluster.
 	// +required
 	// +kubebuilder:validation:MaxItems=6
+	// +listType=map
+	// +listMapKey=service
 	Services []ServicePublishingStrategyMapping `json:"services"`
 
 	// auditWebhook contains metadata for configuring an audit webhook
@@ -190,6 +192,8 @@ type HostedControlPlaneSpec struct {
 	// imageContentSources lists sources/repositories for the release-image content.
 	// +optional
 	// +kubebuilder:validation:MaxItems=255
+	// +listType=map
+	// +listMapKey=source
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 
 	// additionalTrustBundle references a ConfigMap containing a PEM-encoded X.509 certificate bundle
@@ -239,6 +243,7 @@ type HostedControlPlaneSpec struct {
 	//
 	// +optional
 	// +kubebuilder:validation:MaxItems=25
+	// +listType=atomic
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 
 	// labels when specified, define what custom labels are added to the hcp pods.
@@ -315,8 +320,7 @@ type HostedControlPlaneStatus struct {
 	// ready denotes that the HostedControlPlane API Server is ready to
 	// receive requests
 	// This satisfies CAPI contract https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L226-L230
-	// +required
-	// +kubebuilder:default=false
+	// +optional
 	Ready bool `json:"ready"`
 
 	// initialized denotes whether or not the control plane has
@@ -324,8 +328,7 @@ type HostedControlPlaneStatus struct {
 	// Once this condition is marked true, its value is never changed. See the Ready condition for an indication of
 	// the current readiness of the cluster's control plane.
 	// This satisfies CAPI contract https://github.com/kubernetes-sigs/cluster-api/blob/cd3a694deac89d5ebeb888307deaa61487207aa0/controllers/cluster_controller_phases.go#L238-L252
-	// +required
-	// +kubebuilder:default=false
+	// +optional
 	Initialized bool `json:"initialized"`
 
 	// externalManagedControlPlane indicates to cluster-api that the control plane

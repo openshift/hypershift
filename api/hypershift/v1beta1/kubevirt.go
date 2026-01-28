@@ -53,7 +53,7 @@ type KubevirtPersistentVolume struct {
 	StorageClass *string `json:"storageClass,omitempty"`
 	// accessModes is an array that contains the desired Access Modes the root volume should have.
 	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#access-modes
-	//
+	// +listType=set
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	AccessModes []PersistentVolumeAccessMode `json:"accessModes,omitempty"`
@@ -81,7 +81,7 @@ type KubevirtCachingStrategy struct {
 	// type is the type of the caching strategy
 	// +kubebuilder:default=None
 	// +kubebuilder:validation:Enum=None;PVC
-	// +required
+	// +optional
 	Type KubevirtCachingStrategyType `json:"type"`
 }
 
@@ -148,7 +148,7 @@ const (
 type KubevirtNodePoolPlatform struct {
 	// rootVolume represents values associated with the VM volume that will host rhcos
 	// +kubebuilder:default={persistent: {size: "32Gi"}, type: "Persistent"}
-	// +required
+	// +optional
 	RootVolume *KubevirtRootVolume `json:"rootVolume"`
 
 	// compute contains values representing the virtual hardware requested for the VM
@@ -170,6 +170,8 @@ type KubevirtNodePoolPlatform struct {
 	//
 	// +optional
 	// +kubebuilder:validation:MaxItems=20
+	// +listType=map
+	// +listMapKey=name
 	AdditionalNetworks []KubevirtNetwork `json:"additionalNetworks,omitempty"`
 
 	// attachDefaultNetwork specify if the default pod network should be attached to the nodes
@@ -190,6 +192,8 @@ type KubevirtNodePoolPlatform struct {
 	// from the management cluster, to the nodepool nodes
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
+	// +listType=map
+	// +listMapKey=deviceName
 	KubevirtHostDevices []KubevirtHostDevice `json:"hostDevices,omitempty"`
 }
 
@@ -354,6 +358,7 @@ type KubevirtManualStorageDriverConfig struct {
 	// +immutable
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="storageClassMapping is immutable"
 	// +kubebuilder:validation:MaxItems=50
+	// +listType=atomic
 	StorageClassMapping []KubevirtStorageClassMapping `json:"storageClassMapping,omitempty"`
 
 	// volumeSnapshotClassMapping maps VolumeSnapshotClasses on the infra cluster hosting
@@ -363,6 +368,7 @@ type KubevirtManualStorageDriverConfig struct {
 	// +immutable
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="volumeSnapshotClassMapping is immutable"
 	// +kubebuilder:validation:MaxItems=50
+	// +listType=atomic
 	VolumeSnapshotClassMapping []KubevirtVolumeSnapshotClassMapping `json:"volumeSnapshotClassMapping,omitempty"`
 }
 

@@ -241,7 +241,6 @@ const (
 type Diagnostics struct {
 	// storageAccountType determines if the storage account for storing the diagnostics data
 	// should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).
-	// +kubebuilder:validation:Enum=Managed;UserManaged;Disabled
 	// +kubebuilder:default:=Disabled
 	// +unionDiscriminator
 	// +optional
@@ -389,7 +388,6 @@ type AzurePlatformSpec struct {
 	//Example: if your resource group ID is /subscriptions/<subscriptionID>/resourceGroups/<resourceGroupName>, your
 	//          ResourceGroupName is <resourceGroupName>.
 	//
-	// +kubebuilder:default:=default
 	// +required
 	// +kubebuilder:validation:Pattern=`^[a-zA-Z0-9_()\-\.]{1,89}[a-zA-Z0-9_()\-]$`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ResourceGroupName is immutable"
@@ -577,10 +575,6 @@ type ManagedIdentity struct {
 	// The default value is utf-8.
 	//
 	// See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
-	//
-	// +kubebuilder:validation:Enum:=utf-8;hex;base64
-	// +kubebuilder:default:="utf-8"
-	// +required
 	ObjectEncoding ObjectEncodingFormat `json:"objectEncoding"`
 
 	// credentialsSecretName is the name of an Azure Key Vault secret. This field assumes the secret contains the JSON
