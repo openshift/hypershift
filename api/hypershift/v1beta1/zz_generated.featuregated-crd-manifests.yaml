@@ -143,6 +143,7 @@ hostedclusters.hypershift.openshift.io:
   - ImageStreamImportMode
   - KMSEncryptionProvider
   - NetworkDiagnosticsConfig
+  - OCIPlatform
   - OpenStack
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
@@ -202,6 +203,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - ImageStreamImportMode
   - KMSEncryptionProvider
   - NetworkDiagnosticsConfig
+  - OCIPlatform
   - OpenStack
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""

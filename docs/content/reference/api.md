@@ -10835,6 +10835,106 @@ assigned when the service is created.</p>
 </tr>
 </tbody>
 </table>
+###OCIIdentityReference { #hypershift.openshift.io/v1beta1.OCIIdentityReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.OCIPlatformSpec">OCIPlatformSpec</a>)
+</p>
+<p>
+<p>OCIIdentityReference is a reference to a secret containing OCI credentials.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the name of a secret in the same namespace as the HostedCluster.
+The secret must contain the following keys:
+- &ldquo;config&rdquo;: OCI configuration file content
+- &ldquo;key&rdquo;: OCI API signing key (PEM format)</p>
+</td>
+</tr>
+</tbody>
+</table>
+###OCIPlatformSpec { #hypershift.openshift.io/v1beta1.OCIPlatformSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PlatformSpec">PlatformSpec</a>)
+</p>
+<p>
+<p>OCIPlatformSpec specifies configuration for clusters running on Oracle Cloud Infrastructure.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>identityRef</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OCIIdentityReference">
+OCIIdentityReference
+</a>
+</em>
+</td>
+<td>
+<p>identityRef is a reference to a secret holding OCI credentials
+to be used when reconciling the hosted cluster.
+The secret must contain two keys:
+- &ldquo;config&rdquo;: OCI configuration file content (typically ~/.oci/config format)
+- &ldquo;key&rdquo;: OCI API signing key (PEM-encoded private key)</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>region</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>region is the OCI region in which the cluster resides.
+A valid region must satisfy the following rules:
+format: Must be in the form <code>&lt;countryCode&gt;-&lt;location&gt;-&lt;number&gt;</code>
+characters: Only lowercase letters (a-z), digits (0-9), and hyphens (-) are allowed
+valid examples: &ldquo;us-ashburn-1&rdquo;, &ldquo;us-phoenix-1&rdquo;, &ldquo;eu-frankfurt-1&rdquo;, &ldquo;ap-tokyo-1&rdquo;
+For a full list of valid regions, see: <a href="https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm">https://docs.oracle.com/en-us/iaas/Content/General/Concepts/regions.htm</a>.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>compartmentId</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>compartmentID is the OCI compartment OCID where the cluster resides.
+A valid compartment OCID must satisfy the following rules:
+format: Must be in the form <code>ocid1.compartment.oc1..&lt;unique_ID&gt;</code>
+characters: Only lowercase letters (a-z), digits (0-9), and periods (.) are allowed
+start: Must begin with <code>ocid1.compartment.oc1..</code>
+valid examples: &ldquo;ocid1.compartment.oc1..aaaaaaaazgovbe2qxduadk3bmj5dobvoe5wnengzavax5pwsfr3bqbdrrcqa&rdquo;.
+For more information about compartment OCIDs, see: <a href="https://docs.oracle.com/en-us/iaas/Content/General/Concepts/identifiers.htm">https://docs.oracle.com/en-us/iaas/Content/General/Concepts/identifiers.htm</a>.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###OLMCatalogPlacement { #hypershift.openshift.io/v1beta1.OLMCatalogPlacement }
 <p>
 (<em>Appears on:</em>
@@ -11629,6 +11729,20 @@ GCPPlatformSpec
 <p>gcp specifies configuration for clusters running on Google Cloud Platform.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>oci</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.OCIPlatformSpec">
+OCIPlatformSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>oci specifies configuration for clusters running on Oracle Cloud Infrastructure.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###PlatformStatus { #hypershift.openshift.io/v1beta1.PlatformStatus }
@@ -11701,6 +11815,9 @@ AWSPlatformStatus
 </td>
 </tr><tr><td><p>&#34;None&#34;</p></td>
 <td><p>NonePlatform represents user supplied (e.g. bare metal) infrastructure.</p>
+</td>
+</tr><tr><td><p>&#34;OCI&#34;</p></td>
+<td><p>OCIPlatform represents Oracle Cloud Infrastructure.</p>
 </td>
 </tr><tr><td><p>&#34;OpenStack&#34;</p></td>
 <td><p>OpenStackPlatform represents OpenStack infrastructure.</p>

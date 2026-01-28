@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/ibmcloud"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/none"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/oci"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/openstack"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/powervs"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -41,6 +42,7 @@ var _ Platform = none.None{}
 var _ Platform = agent.Agent{}
 var _ Platform = kubevirt.Kubevirt{}
 var _ Platform = gcp.GCP{}
+var _ Platform = oci.OCI{}
 
 type Platform interface {
 	// ReconcileCAPIInfraCR is called during HostedCluster reconciliation prior to reconciling the CAPI Cluster CR.
@@ -170,6 +172,9 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 		platform = openstack.New(capiImageProvider, orcImage, payloadVersion)
 	case hyperv1.GCPPlatform:
 		platform = gcp.New()
+	case hyperv1.OCIPlatform:
+		// OCI platform - no CAPI provider image needed yet (CAPOCI integration is future work)
+		platform = oci.New("")
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}
