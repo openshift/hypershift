@@ -2443,7 +2443,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionUnknown, hyperv1.DataPlaneConnectionNoWorkerNodesAvailableReason, "No worker nodes available"),
 			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
-				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
+				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{}, // no Nodes
 			mockedGetPodLogs: func(context context.Context,
 				clientet *clientset.Clientset,
@@ -2463,7 +2463,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Couldn't list konnectivity-agent PODs in kube-system namespace: simulated list error"),
 			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
-				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
+				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{},
 			mockedGetPodLogs: func(context context.Context,
@@ -2483,7 +2483,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionFalse, hyperv1.DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason, "Couldn't find any konnectivity-agent running in data plane"),
 			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
-				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
+				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{}, // no Pods
 			mockedGetPodLogs: func(context context.Context,
@@ -2503,7 +2503,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionFalse, hyperv1.DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason, "Couldn't find any konnectivity-agent running in data plane"),
 			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
-				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
+				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodPending)},
 			mockedGetPodLogs: func(context context.Context,
@@ -2523,7 +2523,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
 			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
-				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
+				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
 			mockedGetPodLogs: func(context context.Context,
@@ -2543,7 +2543,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
 			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
-				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
+				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods: []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax1", corev1.PodPending),
 				newKonnectivityAgentPod("konnectivity-agent-rdax2", corev1.PodPending),
@@ -2568,7 +2568,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				metav1.ConditionFalse, hyperv1.DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason,
 				"failed to read konnectivity-agent logs from data plane"),
 			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
-				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
+				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
 			mockedGetPodLogs: func(context context.Context,
@@ -2589,7 +2589,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				metav1.ConditionFalse, hyperv1.DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason,
 				"failed to read konnectivity-agent logs from data plane"),
 			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
-				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
+				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
 			mockedGetPodLogs: func(context context.Context,
@@ -2609,7 +2609,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			expectedDataPlaneConnectionCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
 				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
 			expectedControlPlaneConnectionCondition: newCondition(string(hyperv1.ControlPlaneConnectionAvailable),
-				metav1.ConditionUnknown, hyperv1.ReconcileErrorReason, "Unable to inspect data plane to control plane connection"),
+				metav1.ConditionUnknown, hyperv1.StatusUnknownReason, "Unable to inspect data plane to control plane connection"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
 			mockedGetPodLogs: func(context context.Context,
@@ -2740,6 +2740,59 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			}
 			if tt.wantErr {
 				t.Fatal("reconcileControlPlaneDataPlaneConnectivityConditions() succeeded unexpectedly")
+			}
+		})
+	}
+}
+
+func Test_getKASHealthCheckEndpoint(t *testing.T) {
+	tests := []struct {
+		name         string
+		platformType hyperv1.PlatformType
+		expected     string
+	}{
+		{
+			name:         "When...platform is IBMCloud...it should return livez endpoint",
+			platformType: hyperv1.IBMCloudPlatform,
+			expected:     "/livez?exclude=etcd&exclude=log",
+		},
+		{
+			name:         "When...platform is AWS...it should return version endpoint",
+			platformType: hyperv1.AWSPlatform,
+			expected:     "/version",
+		},
+		{
+			name:         "When...platform is Azure...it should return version endpoint",
+			platformType: hyperv1.AzurePlatform,
+			expected:     "/version",
+		},
+		{
+			name:         "When...platform is PowerVS...it should return version endpoint",
+			platformType: hyperv1.PowerVSPlatform,
+			expected:     "/version",
+		},
+		{
+			name:         "When...platform is KubeVirt...it should return version endpoint",
+			platformType: hyperv1.KubevirtPlatform,
+			expected:     "/version",
+		},
+		{
+			name:         "When...platform is Agent...it should return version endpoint",
+			platformType: hyperv1.AgentPlatform,
+			expected:     "/version",
+		},
+		{
+			name:         "When...platform is OpenStack...it should return version endpoint",
+			platformType: hyperv1.OpenStackPlatform,
+			expected:     "/version",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getKASHealthCheckEndpoint(tt.platformType)
+			if result != tt.expected {
+				t.Errorf("getKASHealthCheckEndpoint(%v) = %v, want %v", tt.platformType, result, tt.expected)
 			}
 		})
 	}

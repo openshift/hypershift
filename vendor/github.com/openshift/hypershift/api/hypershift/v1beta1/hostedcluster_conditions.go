@@ -214,12 +214,14 @@ const (
 	// A failure here suggests potential issues such as: network policy restrictions,
 	// firewall rules, missing data plane nodes, or problems with infrastructure
 	// components like the konnectivity-agent workload.
+	// **Unknown** means the status cannot be determined (e.g., no worker nodes available or unable to inspect).
 	DataPlaneConnectionAvailable ConditionType = "DataPlaneConnectionAvailable"
 
 	// ControlPlaneConnectionAvailable indicates whether data plane workloads have a successful
 	// network connection to the control plane components.
 	// **True** means data plane workloads can successfully reach the control plane.
 	// **False** means there are issues preventing data plane workloads from connecting to the control plane.
+	// **Unknown** means the status cannot be determined (e.g., no worker nodes available or unable to inspect).
 	ControlPlaneConnectionAvailable ConditionType = "ControlPlaneConnectionAvailable"
 )
 
