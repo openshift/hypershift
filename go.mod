@@ -308,7 +308,7 @@ replace github.com/openshift/hypershift/api => ./api
 replace github.com/k-orc/openstack-resource-controller => sigs.k8s.io/cluster-api-provider-openstack/orc v0.0.0-20250113192833-e4f56a2b4f32
 
 // Fix K8s API v0.34+ fuzzer compatibility issue in cluster-api
-replace sigs.k8s.io/cluster-api => github.com/csrwng/cluster-api v1.10.3-0.20251126211330-81cd715cb87e
+replace sigs.k8s.io/cluster-api => github.com/csrwng/cluster-api v1.10.4
 
 // CVE-2025-30204
 replace github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
