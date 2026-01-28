@@ -7,9 +7,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 
-	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type AWSPlatformCreateOptions struct {
@@ -83,6 +83,17 @@ func (o *ValidatedAWSPlatformCreateOptions) Complete(_ context.Context, _ *core.
 	}, nil
 }
 
+func BindDeveloperOptions(opts *RawAWSPlatformCreateOptions, flags *pflag.FlagSet) {
+	flags.StringVar(&opts.InstanceType, "instance-type", opts.InstanceType, "The AWS instance type of the NodePool")
+	flags.StringVar(&opts.SubnetID, "subnet-id", opts.SubnetID, "The AWS subnet ID in which to create the NodePool")
+	flags.StringVar(&opts.SecurityGroupID, "securitygroup-id", opts.SecurityGroupID, "The AWS security group in which to create the NodePool")
+	flags.StringVar(&opts.InstanceProfile, "instance-profile", opts.InstanceProfile, "The AWS instance profile for the NodePool")
+	flags.StringVar(&opts.RootVolumeType, "root-volume-type", opts.RootVolumeType, "The type of the root volume (e.g. gp3, io2) for machines in the NodePool")
+	flags.Int64Var(&opts.RootVolumeIOPS, "root-volume-iops", opts.RootVolumeIOPS, "The iops of the root volume for machines in the NodePool")
+	flags.Int64Var(&opts.RootVolumeSize, "root-volume-size", opts.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
+	flags.StringVar(&opts.RootVolumeEncryptionKey, "root-volume-kms-key", opts.RootVolumeEncryptionKey, "The KMS key ID or ARN to use for root volume encryption for machines in the NodePool")
+}
+
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	platformOpts := DefaultOptions()
 	cmd := &cobra.Command{
@@ -91,14 +102,7 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	cmd.Flags().StringVar(&platformOpts.InstanceType, "instance-type", platformOpts.InstanceType, "The AWS instance type of the NodePool")
-	cmd.Flags().StringVar(&platformOpts.SubnetID, "subnet-id", platformOpts.SubnetID, "The AWS subnet ID in which to create the NodePool")
-	cmd.Flags().StringVar(&platformOpts.SecurityGroupID, "securitygroup-id", platformOpts.SecurityGroupID, "The AWS security group in which to create the NodePool")
-	cmd.Flags().StringVar(&platformOpts.InstanceProfile, "instance-profile", platformOpts.InstanceProfile, "The AWS instance profile for the NodePool")
-	cmd.Flags().StringVar(&platformOpts.RootVolumeType, "root-volume-type", platformOpts.RootVolumeType, "The type of the root volume (e.g. gp3, io2) for machines in the NodePool")
-	cmd.Flags().Int64Var(&platformOpts.RootVolumeIOPS, "root-volume-iops", platformOpts.RootVolumeIOPS, "The iops of the root volume for machines in the NodePool")
-	cmd.Flags().Int64Var(&platformOpts.RootVolumeSize, "root-volume-size", platformOpts.RootVolumeSize, "The size of the root volume (min: 8) for machines in the NodePool")
-	cmd.Flags().StringVar(&platformOpts.RootVolumeEncryptionKey, "root-volume-kms-key", platformOpts.RootVolumeEncryptionKey, "The KMS key ID or ARN to use for root volume encryption for machines in the NodePool")
+	BindDeveloperOptions(platformOpts, cmd.Flags())
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()

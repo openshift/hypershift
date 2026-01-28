@@ -63,14 +63,7 @@ func TestCreateNodePool_When_flags_are_parsed_it_should_generate_correct_nodepoo
 			awsOpts := DefaultOptions()
 
 			// Bind flags
-			flags.StringVar(&awsOpts.InstanceType, "instance-type", awsOpts.InstanceType, "")
-			flags.StringVar(&awsOpts.SubnetID, "subnet-id", awsOpts.SubnetID, "")
-			flags.StringVar(&awsOpts.SecurityGroupID, "securitygroup-id", awsOpts.SecurityGroupID, "")
-			flags.StringVar(&awsOpts.InstanceProfile, "instance-profile", awsOpts.InstanceProfile, "")
-			flags.StringVar(&awsOpts.RootVolumeType, "root-volume-type", awsOpts.RootVolumeType, "")
-			flags.Int64Var(&awsOpts.RootVolumeIOPS, "root-volume-iops", awsOpts.RootVolumeIOPS, "")
-			flags.Int64Var(&awsOpts.RootVolumeSize, "root-volume-size", awsOpts.RootVolumeSize, "")
-			flags.StringVar(&awsOpts.RootVolumeEncryptionKey, "root-volume-kms-key", awsOpts.RootVolumeEncryptionKey, "")
+			BindDeveloperOptions(awsOpts, flags)
 
 			// Parse flags
 			if err := flags.Parse(testCase.args); err != nil {
