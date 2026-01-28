@@ -323,8 +323,8 @@ func TestValidatedKubevirtPlatformCreateOptions_Complete(t *testing.T) {
 			}
 			var got []hyperv1.KubevirtNetwork
 			// Type assert to get the completed options back
-			if output, ok := platformOpts.(*KubevirtPlatformCreateOptions); ok && output != nil && output.completetedKubevirtPlatformCreateOptions != nil {
-				got = output.completetedKubevirtPlatformCreateOptions.AdditionalNetworks
+			if output, ok := platformOpts.(*CompletedKubevirtPlatformCreateOptions); ok && output != nil && output.completedKubevirtPlatformCreateOptions != nil {
+				got = output.completedKubevirtPlatformCreateOptions.AdditionalNetworks
 			}
 			if diff := cmp.Diff(test.output, got); diff != "" {
 				t.Errorf("got incorrect output: %v", diff)

@@ -38,7 +38,7 @@ type completedOpenStackPlatformCreateOptions struct {
 	AdditionalPorts []hyperv1.PortSpec
 }
 
-type OpenStackPlatformCreateOptions struct {
+type CompletedOpenStackPlatformCreateOptions struct {
 	// Embed a private pointer that cannot be instantiated outside of this package.
 	*completedOpenStackPlatformCreateOptions
 }
@@ -59,7 +59,7 @@ type ValidatedOpenStackPlatformCreateOptions struct {
 // Complete completes the OpenStack nodepool platform options.
 // This method uses the unified signature pattern defined in core.NodePoolPlatformCompleter.
 func (o *ValidatedOpenStackPlatformCreateOptions) Complete(_ context.Context, _ *core.CreateNodePoolOptions) (core.PlatformOptions, error) {
-	return &OpenStackPlatformCreateOptions{
+	return &CompletedOpenStackPlatformCreateOptions{
 		completedOpenStackPlatformCreateOptions: &completedOpenStackPlatformCreateOptions{
 			OpenStackPlatformOptions: o.OpenStackPlatformOptions,
 			AdditionalPorts:          o.AdditionalPorts,
@@ -126,17 +126,17 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	return cmd
 }
 
-func (o *OpenStackPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
+func (o *CompletedOpenStackPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
 	nodePool.Spec.Platform.Type = o.Type()
 	nodePool.Spec.Platform.OpenStack = o.NodePoolPlatform()
 	return nil
 }
 
-func (o *OpenStackPlatformCreateOptions) Type() hyperv1.PlatformType {
+func (o *CompletedOpenStackPlatformCreateOptions) Type() hyperv1.PlatformType {
 	return hyperv1.OpenStackPlatform
 }
 
-func (o *OpenStackPlatformCreateOptions) NodePoolPlatform() *hyperv1.OpenStackNodePoolPlatform {
+func (o *CompletedOpenStackPlatformCreateOptions) NodePoolPlatform() *hyperv1.OpenStackNodePoolPlatform {
 	nodePool := &hyperv1.OpenStackNodePoolPlatform{
 		Flavor:           o.Flavor,
 		ImageName:        o.ImageName,

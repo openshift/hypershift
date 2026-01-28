@@ -135,8 +135,8 @@ type HostDevicesOpts struct {
 	Count int    `param:"count"`
 }
 
-// completedCreateOptions is a private wrapper that enforces a call of Complete() before nodepool creation can be invoked.
-type completetedKubevirtPlatformCreateOptions struct {
+// completedKubevirtPlatformCreateOptions is a private wrapper that enforces a call of Complete() before nodepool creation can be invoked.
+type completedKubevirtPlatformCreateOptions struct {
 	*KubevirtPlatformOptions
 
 	MultiQueue          *hyperv1.MultiQueueSetting
@@ -145,9 +145,9 @@ type completetedKubevirtPlatformCreateOptions struct {
 	KubevirtHostDevices []hyperv1.KubevirtHostDevice
 }
 
-type KubevirtPlatformCreateOptions struct {
+type CompletedKubevirtPlatformCreateOptions struct {
 	// Embed a private pointer that cannot be instantiated outside of this package.
-	*completetedKubevirtPlatformCreateOptions
+	*completedKubevirtPlatformCreateOptions
 }
 
 // Complete completes the KubeVirt nodepool platform options.
@@ -213,8 +213,8 @@ func (o *ValidatedKubevirtPlatformCreateOptions) Complete(_ context.Context, _ *
 		hostDevices = append(hostDevices, kubevirtHostDevice)
 	}
 
-	return &KubevirtPlatformCreateOptions{
-		completetedKubevirtPlatformCreateOptions: &completetedKubevirtPlatformCreateOptions{
+	return &CompletedKubevirtPlatformCreateOptions{
+		completedKubevirtPlatformCreateOptions: &completedKubevirtPlatformCreateOptions{
 			KubevirtPlatformOptions: o.KubevirtPlatformOptions,
 			MultiQueue:              multiQueue,
 			QoSClass:                qosClass,
@@ -249,16 +249,16 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	return cmd
 }
 
-func (o *KubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
+func (o *CompletedKubevirtPlatformCreateOptions) UpdateNodePool(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster, _ crclient.Client) error {
 	nodePool.Spec.Platform.Kubevirt = o.NodePoolPlatform()
 	return nil
 }
 
-func (o *KubevirtPlatformCreateOptions) Type() hyperv1.PlatformType {
+func (o *CompletedKubevirtPlatformCreateOptions) Type() hyperv1.PlatformType {
 	return hyperv1.KubevirtPlatform
 }
 
-func (o *KubevirtPlatformCreateOptions) NodePoolPlatform() *hyperv1.KubevirtNodePoolPlatform {
+func (o *CompletedKubevirtPlatformCreateOptions) NodePoolPlatform() *hyperv1.KubevirtNodePoolPlatform {
 	var storageClassName *string
 	var accessModesStr []string
 	var accessModes []hyperv1.PersistentVolumeAccessMode
