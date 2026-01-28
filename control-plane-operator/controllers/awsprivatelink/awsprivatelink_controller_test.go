@@ -14,6 +14,8 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -203,6 +205,101 @@ func TestDiffPermissions(t *testing.T) {
 			g := NewGomegaWithT(t)
 			result := diffPermissions(test.actual, test.required)
 			g.Expect(result).To(Equal(test.expected))
+		})
+	}
+}
+
+func TestHCPFinalizerConstant(t *testing.T) {
+	// When the HCP finalizer is added to an HCP, it should be the expected value
+	// This test ensures the constant doesn't accidentally change
+	g := NewGomegaWithT(t)
+	g.Expect(hcpFinalizer).To(Equal("hypershift.openshift.io/aws-endpoint-service-finalizer"))
+}
+
+func TestAWSEndpointServiceFinalizerConstant(t *testing.T) {
+	// When the AWSEndpointService finalizer is used, it should be the expected value
+	// This test ensures the constant doesn't accidentally change
+	g := NewGomegaWithT(t)
+	g.Expect(finalizer).To(Equal("hypershift.openshift.io/control-plane-operator-finalizer"))
+}
+
+func TestHCPFinalizerManagement(t *testing.T) {
+	testCases := []struct {
+		name                    string
+		hcpFinalizers           []string
+		expectContainsFinalizer bool
+	}{
+		{
+			name:                    "When HCP has no finalizers it should not contain hcpFinalizer",
+			hcpFinalizers:           []string{},
+			expectContainsFinalizer: false,
+		},
+		{
+			name:                    "When HCP has hcpFinalizer it should contain hcpFinalizer",
+			hcpFinalizers:           []string{hcpFinalizer},
+			expectContainsFinalizer: true,
+		},
+		{
+			name:                    "When HCP has other finalizers it should not contain hcpFinalizer",
+			hcpFinalizers:           []string{"other-finalizer"},
+			expectContainsFinalizer: false,
+		},
+		{
+			name:                    "When HCP has multiple finalizers including hcpFinalizer it should contain hcpFinalizer",
+			hcpFinalizers:           []string{"other-finalizer", hcpFinalizer, "another-finalizer"},
+			expectContainsFinalizer: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  "test-ns",
+					Finalizers: tc.hcpFinalizers,
+				},
+			}
+			g.Expect(controllerutil.ContainsFinalizer(hcp, hcpFinalizer)).To(Equal(tc.expectContainsFinalizer))
+		})
+	}
+}
+
+func TestAWSEndpointServiceFinalizerManagement(t *testing.T) {
+	testCases := []struct {
+		name                    string
+		aesFinalizers           []string
+		expectContainsFinalizer bool
+	}{
+		{
+			name:                    "When AWSEndpointService has no finalizers it should not contain finalizer",
+			aesFinalizers:           []string{},
+			expectContainsFinalizer: false,
+		},
+		{
+			name:                    "When AWSEndpointService has finalizer it should contain finalizer",
+			aesFinalizers:           []string{finalizer},
+			expectContainsFinalizer: true,
+		},
+		{
+			name:                    "When AWSEndpointService has other finalizers it should not contain finalizer",
+			aesFinalizers:           []string{"other-finalizer"},
+			expectContainsFinalizer: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			aes := &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-aes",
+					Namespace:  "test-ns",
+					Finalizers: tc.aesFinalizers,
+				},
+			}
+			g.Expect(controllerutil.ContainsFinalizer(aes, finalizer)).To(Equal(tc.expectContainsFinalizer))
 		})
 	}
 }
