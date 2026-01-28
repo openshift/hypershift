@@ -80,6 +80,7 @@ nav:
   - 'CI':
     - how-to/ci/checking-ci.md
     - how-to/ci/ci-infrastructure.md
+    - 'AI-Assisted CI Jobs': how-to/ci/ai-assisted-ci-jobs.md
   - 'HyperShift Operator Install':
     - how-to/install/index.md
   - 'PKI and Certificates':
