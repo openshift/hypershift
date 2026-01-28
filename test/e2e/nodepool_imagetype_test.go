@@ -49,15 +49,13 @@ func (it *NodePoolImageTypeTest) Setup(t *testing.T) {
 }
 
 func (it *NodePoolImageTypeTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
-	// Create a new NodePool with Windows ImageType for scaling tests
-	nodePool := defaultNodepool.DeepCopy()
-	nodePool.ObjectMeta.Name = it.hostedCluster.Name + "-test-imagetype"
-
-	// Clear fields that should not be set on creation
-	nodePool.ObjectMeta.ResourceVersion = ""
-	nodePool.ObjectMeta.UID = ""
-	nodePool.ObjectMeta.CreationTimestamp = metav1.Time{}
-	nodePool.ObjectMeta.Generation = 0
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      it.hostedCluster.Name + "-test-imagetype",
+			Namespace: it.hostedCluster.Namespace,
+		},
+	}
+	defaultNodepool.Spec.DeepCopyInto(&nodePool.Spec)
 
 	// Start with 1 replica and Windows ImageType
 	replicas := int32(1)
