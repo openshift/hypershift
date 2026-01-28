@@ -24,6 +24,7 @@ import (
 	azureresources "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
 	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/connectionchecker"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
@@ -149,8 +150,7 @@ type reconciler struct {
 	cleanupTracker            *util.CleanupTracker
 
 	// exposed for unit tests
-	GetPodLogs            func(context context.Context, clientset *clientset.Clientset, namespace, name, container string) ([]byte, error)
-	CheckPodKasConnection func(context context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error)
+	GetPodLogs func(context context.Context, clientset *clientset.Clientset, namespace, name, container string) ([]byte, error)
 	// The fake client doesn't properly handle metadata.Generation and metadata.ResourceVersion
 	// during Patch operations, which can cause false positives or failures when patching multiple
 	// conditions. See: https://github.com/kubernetes-sigs/controller-runtime/issues/1857
@@ -173,27 +173,6 @@ func getKASHealthCheckEndpoint(platformType hyperv1.PlatformType) string {
 		return "/livez?exclude=etcd&exclude=log"
 	}
 	return "/version"
-}
-
-func checkPodKasConnection(ctx context.Context, restConfig *rest.Config, clientSet clientset.Interface, namespace, name, container string, hcp *hyperv1.HostedControlPlane) (bool, error) {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-
-	// Use the advertise address where kube-apiserver-proxy actually listens
-	// This is the IP configured on the loopback interface of each node (172.20.0.1 for IPv4 or fd00::1 for IPv6)
-	kasIP := util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
-	kasPort := util.KASPodPort(hcp)
-	endpoint := getKASHealthCheckEndpoint(hcp.Spec.Platform.Type)
-	kasURL := "https://" + net.JoinHostPort(kasIP, fmt.Sprintf("%d", kasPort)) + endpoint
-
-	httpStatusCode, stderr, err := util.ExecCommandInPod(ctx, restConfig, clientSet, namespace, name, container, []string{
-		"sh", "-c",
-		fmt.Sprintf("curl -k -o /dev/null -s -w \"%%{http_code}\" --connect-timeout 5 --max-time 10 %s", kasURL),
-	})
-	if err != nil {
-		return false, fmt.Errorf("failed to execute curl command in %s/%s pod container %s, stderr: %s: %v", namespace, name, container, stderr, err)
-	}
-	return httpStatusCode == "200", nil
 }
 
 func patchHCPStatusConditions(ctx context.Context, cpClient client.Client, hcp *hyperv1.HostedControlPlane, conditions ...*metav1.Condition) error {
@@ -274,7 +253,6 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		ImageMetaDataProvider:     opts.ImageMetaDataProvider,
 		cleanupTracker:            util.NewCleanupTracker(),
 		GetPodLogs:                getPodLogs,
-		CheckPodKasConnection:     checkPodKasConnection,
 		PatchHCPStatusConditions:  patchHCPStatusConditions,
 	}})
 	if err != nil {
@@ -613,6 +591,11 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	log.Info("reconciling konnectivity agent")
 	if err := r.reconcileKonnectivityAgent(ctx, hcp, releaseImage); err != nil {
 		errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent: %w", err))
+	}
+
+	log.Info("reconciling KAS connection checker DaemonSet")
+	if err := r.reconcileKASConnectionCheckerDaemonSet(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile KAS connection checker DaemonSet: %w", err))
 	}
 
 	log.Info("reconciling control plane and data plane connection status conditions")
@@ -1470,6 +1453,27 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	return nil
 }
 
+func (r *reconciler) reconcileKASConnectionCheckerDaemonSet(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	log := ctrl.LoggerFrom(ctx)
+	log.Info("Reconciling KAS connection checker DaemonSet")
+
+	kasIP := util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
+	kasPort := util.KASPodPort(hcp)
+	endpoint := getKASHealthCheckEndpoint(hcp.Spec.Platform.Type)
+
+	daemonSet := manifests.KASConnectionCheckerDaemonSet()
+
+	return connectionchecker.ReconcileDaemonSet(
+		ctx,
+		daemonSet,
+		kasIP,
+		kasPort,
+		endpoint,
+		r.CreateOrUpdate,
+		r.client,
+	)
+}
+
 func (r *reconciler) reconcileConnectionConditions(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
 	dataPlaneConnectionCondition := &metav1.Condition{
 		Type:   string(hyperv1.DataPlaneConnectionAvailable),
@@ -1526,26 +1530,8 @@ func (r *reconciler) reconcileConnectionConditions(ctx context.Context, hcp *hyp
 				dataPlaneConnectionCondition.Message = hyperv1.AllIsWellMessage
 			}
 		}
-		if controlPlaneConnectionCondition.Status != metav1.ConditionTrue { // skip in case kasCoonection already detected
-			kasConnectionFound, err := r.CheckPodKasConnection(ctx, r.restConfig, r.clientSet, pod.Namespace, pod.Name, "konnectivity-agent", hcp)
-			if err != nil {
-				log.Error(err, "failed to check connectivity from Pod to kas")
-				continue
-			}
-			if kasConnectionFound {
-				controlPlaneConnectionCondition.Status = metav1.ConditionTrue
-				controlPlaneConnectionCondition.Reason = hyperv1.AsExpectedReason
-				controlPlaneConnectionCondition.Message = hyperv1.AllIsWellMessage
-			} else {
-				controlPlaneConnectionCondition.Status = metav1.ConditionFalse
-				controlPlaneConnectionCondition.Reason = hyperv1.ControlPlaneConnectionKASAccessFailedReason
-				controlPlaneConnectionCondition.Message = "Failed to access KAS from data plane"
-			}
-		}
-
-		// Once both conditions are satisfied (possibly from different pods), we can stop
-		// This implements an optimistic approach: connection is available if ANY node can connect
-		if dataPlaneConnectionCondition.Status == metav1.ConditionTrue && controlPlaneConnectionCondition.Status == metav1.ConditionTrue {
+		// Once DataPlane condition is satisfied, we can stop checking pods
+		if dataPlaneConnectionCondition.Status == metav1.ConditionTrue {
 			break
 		}
 	}
@@ -1555,6 +1541,37 @@ func (r *reconciler) reconcileConnectionConditions(ctx context.Context, hcp *hyp
 		dataPlaneConnectionCondition.Message = "Couldn't find any konnectivity-agent running in data plane"
 		return r.PatchHCPStatusConditions(ctx, r.cpClient, hcp, dataPlaneConnectionCondition, controlPlaneConnectionCondition)
 	}
+
+	// Check ControlPlaneConnection via DaemonSet status
+	daemonSet := manifests.KASConnectionCheckerDaemonSet()
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(daemonSet), daemonSet); err != nil {
+		if apierrors.IsNotFound(err) {
+			controlPlaneConnectionCondition.Status = metav1.ConditionUnknown
+			controlPlaneConnectionCondition.Reason = hyperv1.StatusUnknownReason
+			controlPlaneConnectionCondition.Message = "Cannot determine connectivity: DaemonSet not found"
+		} else {
+			controlPlaneConnectionCondition.Status = metav1.ConditionUnknown
+			controlPlaneConnectionCondition.Reason = hyperv1.ReconcileErrorReason
+			controlPlaneConnectionCondition.Message = "Cannot determine connectivity: " + err.Error()
+		}
+	} else if daemonSet.Status.DesiredNumberScheduled == 0 {
+		// No nodes scheduled, cannot determine connectivity
+		controlPlaneConnectionCondition.Status = metav1.ConditionUnknown
+		controlPlaneConnectionCondition.Reason = hyperv1.StatusUnknownReason
+		controlPlaneConnectionCondition.Message = "No nodes to check connectivity"
+	} else if daemonSet.Status.NumberReady == daemonSet.Status.DesiredNumberScheduled {
+		// Pessimistic: all pods must be ready, connection available on all nodes
+		controlPlaneConnectionCondition.Status = metav1.ConditionTrue
+		controlPlaneConnectionCondition.Reason = hyperv1.AsExpectedReason
+		controlPlaneConnectionCondition.Message = hyperv1.AllIsWellMessage
+	} else {
+		// Not all pods ready, connection failed on some nodes
+		controlPlaneConnectionCondition.Status = metav1.ConditionFalse
+		controlPlaneConnectionCondition.Reason = hyperv1.ControlPlaneConnectionKASAccessFailedReason
+		controlPlaneConnectionCondition.Message = fmt.Sprintf("Some nodes cannot connect to KAS: %d/%d pods ready",
+			daemonSet.Status.NumberReady, daemonSet.Status.DesiredNumberScheduled)
+	}
+
 	return r.PatchHCPStatusConditions(ctx, r.cpClient, hcp, dataPlaneConnectionCondition, controlPlaneConnectionCondition)
 }
 
