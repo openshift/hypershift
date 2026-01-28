@@ -59,6 +59,34 @@ func ReconcileImageSourceMirrorsIgnitionConfigFromIDMS(cm *corev1.ConfigMap, own
 	return reconcileImageContentTypeIgnitionConfigMap(cm, imageDigestMirrorSet, ownerRef)
 }
 
+func ReconcileImageSourceMirrorsIgnitionConfigFromIDMSAndITMS(cm *corev1.ConfigMap, ownerRef config.OwnerRef, imageDigestMirrorSet *configv1.ImageDigestMirrorSet, imageTagMirrorSet *configv1.ImageTagMirrorSet) error {
+	scheme := runtime.NewScheme()
+	err := operatorv1alpha1.Install(scheme)
+	if err != nil {
+		return err
+	}
+	err = configv1.Install(scheme)
+	if err != nil {
+		return err
+	}
+	yamlSerializer := jsonserializer.NewSerializerWithOptions(
+		jsonserializer.DefaultMetaFactory, scheme, scheme,
+		jsonserializer.SerializerOptions{Yaml: true, Pretty: true, Strict: true})
+
+	// Serialize both IDMS and ITMS into a single ConfigMap data field
+	var contentBuffer bytes.Buffer
+	contentBuffer.WriteString("---\n")
+	if err := yamlSerializer.Encode(imageDigestMirrorSet, &contentBuffer); err != nil {
+		return fmt.Errorf("failed to serialize image digest mirror set: %w", err)
+	}
+	contentBuffer.WriteString("---\n")
+	if err := yamlSerializer.Encode(imageTagMirrorSet, &contentBuffer); err != nil {
+		return fmt.Errorf("failed to serialize image tag mirror set: %w", err)
+	}
+
+	return ReconcileIgnitionConfigMap(cm, contentBuffer.String(), ownerRef)
+}
+
 func workerSSHConfig(sshKey string) ([]byte, error) {
 	config := &igntypes.Config{}
 	config.Ignition.Version = ignitionVersion
