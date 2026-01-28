@@ -1,6 +1,7 @@
 package syncglobalpullsecret
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -480,6 +481,294 @@ func TestValidateDockerConfigJSON(t *testing.T) {
 				g.Expect(err).To(HaveOccurred(), "Expected error for test case: %s", tt.description)
 			} else {
 				g.Expect(err).To(BeNil(), "Expected no error for test case: %s, but got: %v", tt.description, err)
+			}
+		})
+	}
+}
+
+func TestReadPreserveRegistriesList(t *testing.T) {
+	tests := []struct {
+		name           string
+		fileContent    string
+		fileExists     bool
+		expectedResult []string
+		expectError    bool
+		description    string
+	}{
+		{
+			name:           "file does not exist",
+			fileExists:     false,
+			expectedResult: nil,
+			expectError:    false,
+			description:    "should return nil when file doesn't exist",
+		},
+		{
+			name:           "empty file",
+			fileContent:    "",
+			fileExists:     true,
+			expectedResult: nil,
+			expectError:    false,
+			description:    "empty file should return empty list",
+		},
+		{
+			name:           "single registry",
+			fileContent:    "my-registry.example.com",
+			fileExists:     true,
+			expectedResult: []string{"my-registry.example.com"},
+			expectError:    false,
+			description:    "single registry on one line",
+		},
+		{
+			name:           "multiple registries",
+			fileContent:    "registry1.example.com\nregistry2.io\nregistry3.net/v2",
+			fileExists:     true,
+			expectedResult: []string{"registry1.example.com", "registry2.io", "registry3.net/v2"},
+			expectError:    false,
+			description:    "multiple registries on separate lines",
+		},
+		{
+			name:           "with empty lines and whitespace",
+			fileContent:    "  registry1.example.com  \n\n  \nregistry2.io\n",
+			fileExists:     true,
+			expectedResult: []string{"registry1.example.com", "registry2.io"},
+			expectError:    false,
+			description:    "should trim whitespace and skip empty lines",
+		},
+		{
+			name:           "with comments",
+			fileContent:    "# This is a comment\nregistry1.example.com\n# Another comment\nregistry2.io",
+			fileExists:     true,
+			expectedResult: []string{"registry1.example.com", "registry2.io"},
+			expectError:    false,
+			description:    "should skip lines starting with #",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Save original readFileFunc and restore after test
+			originalReadFileFunc := readFileFunc
+			defer func() { readFileFunc = originalReadFileFunc }()
+
+			// Mock the readFileFunc
+			readFileFunc = func(path string) ([]byte, error) {
+				if !tt.fileExists {
+					return nil, os.ErrNotExist
+				}
+				return []byte(tt.fileContent), nil
+			}
+
+			result, err := readPreserveRegistriesList()
+
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred(), tt.description)
+			} else {
+				g.Expect(err).NotTo(HaveOccurred(), tt.description)
+				g.Expect(result).To(Equal(tt.expectedResult), tt.description)
+			}
+		})
+	}
+}
+
+func TestExtractPreservedAuths(t *testing.T) {
+	tests := []struct {
+		name          string
+		existingJSON  map[string]any
+		registries    []string
+		expectedAuths map[string]any
+		expectError   bool
+		description   string
+	}{
+		{
+			name:          "empty existing content",
+			existingJSON:  nil,
+			registries:    []string{"registry1.com"},
+			expectedAuths: nil,
+			expectError:   false,
+			description:   "should return nil when existing content is empty",
+		},
+		{
+			name:          "empty registries list",
+			existingJSON:  map[string]any{"auths": map[string]any{"registry1.com": map[string]any{"auth": "dGVzdA=="}}},
+			registries:    []string{},
+			expectedAuths: nil,
+			expectError:   false,
+			description:   "should return nil when registries list is empty",
+		},
+		{
+			name:          "registry found in existing config",
+			existingJSON:  map[string]any{"auths": map[string]any{"registry1.com": map[string]any{"auth": "dGVzdA=="}}},
+			registries:    []string{"registry1.com"},
+			expectedAuths: map[string]any{"registry1.com": map[string]any{"auth": "dGVzdA=="}},
+			expectError:   false,
+			description:   "should extract auth for matching registry",
+		},
+		{
+			name: "multiple registries, some found",
+			existingJSON: map[string]any{"auths": map[string]any{
+				"registry1.com": map[string]any{"auth": "auth1"},
+				"registry2.com": map[string]any{"auth": "auth2"},
+			}},
+			registries:    []string{"registry1.com", "registry3.com"},
+			expectedAuths: map[string]any{"registry1.com": map[string]any{"auth": "auth1"}},
+			expectError:   false,
+			description:   "should only extract auths for registries in the list",
+		},
+		{
+			name:          "registry not found in existing config",
+			existingJSON:  map[string]any{"auths": map[string]any{"other-registry.com": map[string]any{"auth": "dGVzdA=="}}},
+			registries:    []string{"registry1.com"},
+			expectedAuths: map[string]any{},
+			expectError:   false,
+			description:   "should return empty map when no registries match",
+		},
+		{
+			name:          "existing config without auths key",
+			existingJSON:  map[string]any{"other": "data"},
+			registries:    []string{"registry1.com"},
+			expectedAuths: nil,
+			expectError:   false,
+			description:   "should return nil when auths key is missing",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var existingContent []byte
+			if tt.existingJSON != nil {
+				var err error
+				existingContent, err = json.Marshal(tt.existingJSON)
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+
+			result, err := extractPreservedAuths(existingContent, tt.registries)
+
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred(), tt.description)
+			} else {
+				g.Expect(err).NotTo(HaveOccurred(), tt.description)
+				g.Expect(result).To(Equal(tt.expectedAuths), tt.description)
+			}
+		})
+	}
+}
+
+func TestMergeWithPreservedAuths(t *testing.T) {
+	tests := []struct {
+		name               string
+		pullSecret         map[string]any
+		preservedAuths     map[string]any
+		originalPullSecret map[string]any
+		expectedAuths      map[string]any
+		expectError        bool
+		description        string
+	}{
+		{
+			name:           "no preserved auths",
+			pullSecret:     map[string]any{"auths": map[string]any{"registry1.com": map[string]any{"auth": "ps1"}}},
+			preservedAuths: nil,
+			expectedAuths:  map[string]any{"registry1.com": map[string]any{"auth": "ps1"}},
+			expectError:    false,
+			description:    "should return original pull secret when no preserved auths",
+		},
+		{
+			name:           "empty preserved auths",
+			pullSecret:     map[string]any{"auths": map[string]any{"registry1.com": map[string]any{"auth": "ps1"}}},
+			preservedAuths: map[string]any{},
+			expectedAuths:  map[string]any{"registry1.com": map[string]any{"auth": "ps1"}},
+			expectError:    false,
+			description:    "should return original pull secret when preserved auths is empty",
+		},
+		{
+			name:       "preserved auth added (not in pull secret)",
+			pullSecret: map[string]any{"auths": map[string]any{"registry1.com": map[string]any{"auth": "ps1"}}},
+			preservedAuths: map[string]any{
+				"preserved-registry.com": map[string]any{"auth": "preserved"},
+			},
+			expectedAuths: map[string]any{
+				"registry1.com":          map[string]any{"auth": "ps1"},
+				"preserved-registry.com": map[string]any{"auth": "preserved"},
+			},
+			expectError: false,
+			description: "should add preserved auth when not in pull secret",
+		},
+		{
+			name:       "preserved auth overrides additional pull secret",
+			pullSecret: map[string]any{"auths": map[string]any{"shared-registry.com": map[string]any{"auth": "additional"}}},
+			preservedAuths: map[string]any{
+				"shared-registry.com": map[string]any{"auth": "preserved"},
+			},
+			originalPullSecret: map[string]any{"auths": map[string]any{}},
+			expectedAuths: map[string]any{
+				"shared-registry.com": map[string]any{"auth": "preserved"},
+			},
+			expectError: false,
+			description: "preserved auth should override additional pull secret",
+		},
+		{
+			name:       "original HCP wins over preserved",
+			pullSecret: map[string]any{"auths": map[string]any{"hcp-registry.com": map[string]any{"auth": "hcp"}}},
+			preservedAuths: map[string]any{
+				"hcp-registry.com": map[string]any{"auth": "preserved"},
+			},
+			originalPullSecret: map[string]any{"auths": map[string]any{"hcp-registry.com": map[string]any{"auth": "hcp"}}},
+			expectedAuths: map[string]any{
+				"hcp-registry.com": map[string]any{"auth": "hcp"},
+			},
+			expectError: false,
+			description: "original HCP pull secret should win over preserved auth",
+		},
+		{
+			name: "complex merge scenario",
+			pullSecret: map[string]any{"auths": map[string]any{
+				"hcp-registry.com":        map[string]any{"auth": "hcp"},
+				"additional-registry.com": map[string]any{"auth": "additional"},
+			}},
+			preservedAuths: map[string]any{
+				"hcp-registry.com":        map[string]any{"auth": "preserved-hcp"},
+				"additional-registry.com": map[string]any{"auth": "preserved-additional"},
+				"legacy-registry.com":     map[string]any{"auth": "legacy"},
+			},
+			originalPullSecret: map[string]any{"auths": map[string]any{"hcp-registry.com": map[string]any{"auth": "hcp"}}},
+			expectedAuths: map[string]any{
+				"hcp-registry.com":        map[string]any{"auth": "hcp"},                  // HCP wins
+				"additional-registry.com": map[string]any{"auth": "preserved-additional"}, // preserved wins over additional
+				"legacy-registry.com":     map[string]any{"auth": "legacy"},               // preserved added
+			},
+			expectError: false,
+			description: "complex merge: HCP > preserved > additional",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			pullSecretBytes, err := json.Marshal(tt.pullSecret)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			var originalBytes []byte
+			if tt.originalPullSecret != nil {
+				originalBytes, err = json.Marshal(tt.originalPullSecret)
+				g.Expect(err).NotTo(HaveOccurred())
+			}
+
+			result, err := mergeWithPreservedAuths(pullSecretBytes, tt.preservedAuths, originalBytes)
+
+			if tt.expectError {
+				g.Expect(err).To(HaveOccurred(), tt.description)
+			} else {
+				g.Expect(err).NotTo(HaveOccurred(), tt.description)
+
+				var resultJSON map[string]any
+				err = json.Unmarshal(result, &resultJSON)
+				g.Expect(err).NotTo(HaveOccurred())
+
+				g.Expect(resultJSON["auths"]).To(Equal(tt.expectedAuths), tt.description)
 			}
 		})
 	}

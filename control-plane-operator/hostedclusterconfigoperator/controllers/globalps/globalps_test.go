@@ -8,6 +8,8 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -593,6 +595,192 @@ func TestLabelNodesForGlobalPullSecret(t *testing.T) {
 
 			// Verify no unexpected nodes are labeled
 			g.Expect(len(labeledNodes)).To(Equal(len(tt.expectedLabeled)), "Number of labeled nodes doesn't match expected")
+		})
+	}
+}
+
+func TestPreserveRegistriesConfigMapExists(t *testing.T) {
+	tests := []struct {
+		name            string
+		configMapData   map[string]string
+		configMapExists bool
+		expectedExists  bool
+		description     string
+	}{
+		{
+			name:            "ConfigMap exists with registries",
+			configMapData:   map[string]string{"registries": "registry1.com\nregistry2.com"},
+			configMapExists: true,
+			expectedExists:  true,
+			description:     "should return true when ConfigMap exists",
+		},
+		{
+			name:            "ConfigMap exists but empty",
+			configMapData:   map[string]string{},
+			configMapExists: true,
+			expectedExists:  true,
+			description:     "should return true when ConfigMap exists even if empty",
+		},
+		{
+			name:            "ConfigMap does not exist",
+			configMapExists: false,
+			expectedExists:  false,
+			description:     "should return false when ConfigMap doesn't exist",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var objects []client.Object
+			if tt.configMapExists {
+				cm := &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      manifests.PreserveRegistriesConfigMapName,
+						Namespace: manifests.GlobalPullSecretNamespace,
+					},
+					Data: tt.configMapData,
+				}
+				objects = append(objects, cm)
+			}
+
+			fakeClient := fake.NewClientBuilder().WithObjects(objects...).Build()
+			exists, err := preserveRegistriesConfigMapExists(context.Background(), fakeClient)
+
+			g.Expect(err).NotTo(HaveOccurred(), tt.description)
+			g.Expect(exists).To(Equal(tt.expectedExists), tt.description)
+		})
+	}
+}
+
+func TestBuildGlobalPSVolumes(t *testing.T) {
+	tests := []struct {
+		name                        string
+		globalPullSecretName        string
+		originalPullSecretName      string
+		preserveRegistriesConfigMap string
+		expectedVolumeCount         int
+		expectedVolumeNames         []string
+		description                 string
+	}{
+		{
+			name:                        "all volumes present",
+			globalPullSecretName:        "global-pull-secret",
+			originalPullSecretName:      "original-pull-secret",
+			preserveRegistriesConfigMap: "globalps-preserve-registries",
+			expectedVolumeCount:         5,
+			expectedVolumeNames:         []string{"kubelet-config", "dbus", "original-pull-secret", "global-pull-secret", "preserve-registries"},
+			description:                 "should include all volumes when all names provided",
+		},
+		{
+			name:                        "no global pull secret",
+			globalPullSecretName:        "",
+			originalPullSecretName:      "original-pull-secret",
+			preserveRegistriesConfigMap: "globalps-preserve-registries",
+			expectedVolumeCount:         4,
+			expectedVolumeNames:         []string{"kubelet-config", "dbus", "original-pull-secret", "preserve-registries"},
+			description:                 "should exclude global pull secret volume when name is empty",
+		},
+		{
+			name:                        "no preserve registries",
+			globalPullSecretName:        "global-pull-secret",
+			originalPullSecretName:      "original-pull-secret",
+			preserveRegistriesConfigMap: "",
+			expectedVolumeCount:         4,
+			expectedVolumeNames:         []string{"kubelet-config", "dbus", "original-pull-secret", "global-pull-secret"},
+			description:                 "should exclude preserve-registries volume when name is empty",
+		},
+		{
+			name:                        "minimal volumes",
+			globalPullSecretName:        "",
+			originalPullSecretName:      "original-pull-secret",
+			preserveRegistriesConfigMap: "",
+			expectedVolumeCount:         3,
+			expectedVolumeNames:         []string{"kubelet-config", "dbus", "original-pull-secret"},
+			description:                 "should include only required volumes when optional names are empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			volumes := buildGlobalPSVolumes(tt.globalPullSecretName, tt.originalPullSecretName, tt.preserveRegistriesConfigMap)
+
+			g.Expect(len(volumes)).To(Equal(tt.expectedVolumeCount), tt.description)
+
+			volumeNames := make([]string, len(volumes))
+			for i, v := range volumes {
+				volumeNames[i] = v.Name
+			}
+
+			for _, expectedName := range tt.expectedVolumeNames {
+				g.Expect(volumeNames).To(ContainElement(expectedName), "Expected volume %s to be present", expectedName)
+			}
+		})
+	}
+}
+
+func TestBuildGlobalPSVolumeMounts(t *testing.T) {
+	tests := []struct {
+		name                        string
+		globalPullSecretName        string
+		preserveRegistriesConfigMap string
+		expectedMountCount          int
+		expectedMountPaths          []string
+		description                 string
+	}{
+		{
+			name:                        "all mounts present",
+			globalPullSecretName:        "global-pull-secret",
+			preserveRegistriesConfigMap: "globalps-preserve-registries",
+			expectedMountCount:          5,
+			expectedMountPaths:          []string{"/var/lib/kubelet", "/var/run/dbus", "/etc/original-pull-secret", "/etc/global-pull-secret", "/etc/preserve-registries"},
+			description:                 "should include all mounts when all names provided",
+		},
+		{
+			name:                        "no global pull secret",
+			globalPullSecretName:        "",
+			preserveRegistriesConfigMap: "globalps-preserve-registries",
+			expectedMountCount:          4,
+			expectedMountPaths:          []string{"/var/lib/kubelet", "/var/run/dbus", "/etc/original-pull-secret", "/etc/preserve-registries"},
+			description:                 "should exclude global pull secret mount when name is empty",
+		},
+		{
+			name:                        "no preserve registries",
+			globalPullSecretName:        "global-pull-secret",
+			preserveRegistriesConfigMap: "",
+			expectedMountCount:          4,
+			expectedMountPaths:          []string{"/var/lib/kubelet", "/var/run/dbus", "/etc/original-pull-secret", "/etc/global-pull-secret"},
+			description:                 "should exclude preserve-registries mount when name is empty",
+		},
+		{
+			name:                        "minimal mounts",
+			globalPullSecretName:        "",
+			preserveRegistriesConfigMap: "",
+			expectedMountCount:          3,
+			expectedMountPaths:          []string{"/var/lib/kubelet", "/var/run/dbus", "/etc/original-pull-secret"},
+			description:                 "should include only required mounts when optional names are empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			mounts := buildGlobalPSVolumeMounts(tt.globalPullSecretName, tt.preserveRegistriesConfigMap)
+
+			g.Expect(len(mounts)).To(Equal(tt.expectedMountCount), tt.description)
+
+			mountPaths := make([]string, len(mounts))
+			for i, m := range mounts {
+				mountPaths[i] = m.MountPath
+			}
+
+			for _, expectedPath := range tt.expectedMountPaths {
+				g.Expect(mountPaths).To(ContainElement(expectedPath), "Expected mount path %s to be present", expectedPath)
+			}
 		})
 	}
 }
