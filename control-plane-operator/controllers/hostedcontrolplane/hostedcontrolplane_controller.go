@@ -1173,7 +1173,18 @@ func useHCPRouter(hostedControlPlane *hyperv1.HostedControlPlane) bool {
 	if hostedControlPlane.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return false
 	}
-	return util.IsPrivateHCP(hostedControlPlane) || util.IsPublicWithDNS(hostedControlPlane)
+	return labelHCPRoutes(hostedControlPlane)
+}
+
+func labelHCPRoutes(hcp *hyperv1.HostedControlPlane) bool {
+	// Only label routes for the private HCP router when:
+	// 1. Cluster has no public access (Private-only), OR
+	// 2. Cluster is Public with dedicated DNS for KAS (KAS uses Route with explicit hostname)
+	//
+	// For PublicAndPrivate clusters using LoadBalancer for KAS, external routes without
+	// explicit hostnames should use the management cluster router instead of requiring
+	// a separate public HCP router infrastructure.
+	return !util.IsPublicHCP(hcp) || util.IsPublicKASWithDNS(hcp)
 }
 
 func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool {

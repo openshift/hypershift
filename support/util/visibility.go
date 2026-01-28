@@ -68,3 +68,7 @@ func IsPublicWithDNSByHC(hc *hyperv1.HostedCluster) bool {
 		UseDedicatedDNSByHC(hc, hyperv1.Konnectivity) ||
 		UseDedicatedDNSByHC(hc, hyperv1.Ignition))
 }
+
+func IsPublicKASWithDNS(hostedControlPlane *hyperv1.HostedControlPlane) bool {
+	return IsPublicHCP(hostedControlPlane) && UseDedicatedDNSForKAS(hostedControlPlane)
+}

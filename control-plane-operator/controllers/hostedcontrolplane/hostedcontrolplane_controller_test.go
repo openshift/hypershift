@@ -2282,7 +2282,7 @@ func TestUseHCPRouter(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: true,
+			expectedResult: false,
 		},
 		{
 			name: "Provider is AWS, Private",
@@ -2339,7 +2339,7 @@ func TestUseHCPRouter(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: true,
+			expectedResult: false,
 		},
 	}
 	for _, tc := range testsCases {
