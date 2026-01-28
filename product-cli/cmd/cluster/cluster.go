@@ -30,7 +30,7 @@ func NewCreateCommands() *cobra.Command {
 	}
 
 	core.BindOptions(opts, cmd.PersistentFlags())
-	cmd.PersistentFlags().StringVar(&kubeconfigPath, "kubeconfig", "", "Path to the kubeconfig file to use for CLI requests")
+	cmd.PersistentFlags().StringVar(&kubeconfigPath, "kubeconfig", "", "Path to the kubeconfig file for the management cluster. If not set, uses the KUBECONFIG environment variable or the default kubeconfig")
 
 	cmd.MarkFlagsMutuallyExclusive("service-cidr", "default-dual")
 	cmd.MarkFlagsMutuallyExclusive("cluster-cidr", "default-dual")
@@ -62,7 +62,7 @@ func NewDestroyCommands() *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().StringVar(&kubeconfigPath, "kubeconfig", "", "Path to the kubeconfig file to use for CLI requests")
+	cmd.PersistentFlags().StringVar(&kubeconfigPath, "kubeconfig", "", "Path to the kubeconfig file for the management cluster. If not set, uses the KUBECONFIG environment variable or the default kubeconfig")
 	cmd.PersistentFlags().DurationVar(&opts.ClusterGracePeriod, "cluster-grace-period", opts.ClusterGracePeriod, "Period of time to wait for the HostedCluster to be deleted before forcibly destroying its infrastructure.")
 	cmd.PersistentFlags().BoolVar(&opts.DestroyCloudResources, "destroy-cloud-resources", opts.DestroyCloudResources, "If true, cloud resources, such as load balancers and persistent storage disks, created by the HostedCluster during its lifetime are removed.")
 	cmd.PersistentFlags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "The HostedCluster's infrastructure ID. This is inferred from the HostedCluster by default.")

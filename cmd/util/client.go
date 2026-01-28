@@ -28,16 +28,18 @@ var (
 
 // SetKubeconfig sets the path to a custom kubeconfig file.
 // This should be called before GetConfig() or GetClient() to use a non-default kubeconfig.
+// When path is empty (no --kubeconfig flag), the default kubeconfig resolution
+// via controller-runtime's GetConfig() is used, which already handles the
+// KUBECONFIG environment variable including colon-separated paths.
 func SetKubeconfig(path string) error {
 	if path == "" {
-		kubeconfigPath = ""
 		return nil
 	}
 
 	// Validate that the file exists
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("kubeconfig file not found: %s", path)
+			return fmt.Errorf("kubeconfig file not found at %s: %w", path, err)
 		}
 		return fmt.Errorf("unable to access kubeconfig file: %w", err)
 	}
