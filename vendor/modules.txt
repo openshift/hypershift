@@ -2608,6 +2608,7 @@ k8s.io/utils/path
 k8s.io/utils/pointer
 k8s.io/utils/ptr
 k8s.io/utils/set
+k8s.io/utils/strings/slices
 k8s.io/utils/trace
 # kubevirt.io/api v1.7.0
 ## explicit; go 1.24.0
@@ -2662,6 +2663,9 @@ sigs.k8s.io/cluster-api-provider-azure/util/azure
 sigs.k8s.io/cluster-api-provider-azure/util/ssh
 sigs.k8s.io/cluster-api-provider-azure/util/versions
 sigs.k8s.io/cluster-api-provider-azure/util/webhook
+# sigs.k8s.io/cluster-api-provider-gcp v1.10.0
+## explicit; go 1.23.7
+sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1
 # sigs.k8s.io/cluster-api-provider-ibmcloud v0.11.0
 ## explicit; go 1.23.2
 sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta1

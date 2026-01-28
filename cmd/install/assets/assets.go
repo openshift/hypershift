@@ -18,6 +18,7 @@ import (
 //go:embed hypershift-operator/*
 //go:embed cluster-api/*
 //go:embed cluster-api-provider-aws/*
+//go:embed cluster-api-provider-gcp/*
 //go:embed cluster-api-provider-ibmcloud/*
 //go:embed cluster-api-provider-kubevirt/*
 //go:embed cluster-api-provider-agent/*
@@ -37,6 +38,10 @@ var capiResources = map[string]string{
 	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsclusters.yaml":                                   "v1beta2",
 	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachines.yaml":                                   "v1beta2",
 	"cluster-api-provider-aws/infrastructure.cluster.x-k8s.io_awsmachinetemplates.yaml":                           "v1beta2",
+	"cluster-api-provider-gcp/infrastructure.cluster.x-k8s.io_gcpclusters.yaml":                                   "v1beta1",
+	"cluster-api-provider-gcp/infrastructure.cluster.x-k8s.io_gcpmachines.yaml":                                   "v1beta1",
+	"cluster-api-provider-gcp/infrastructure.cluster.x-k8s.io_gcpmachinetemplates.yaml":                           "v1beta1",
+	"cluster-api-provider-gcp/infrastructure.cluster.x-k8s.io_gcpclustertemplates.yaml":                           "v1beta1",
 	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsclusters.yaml":                       "v1beta2",
 	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsimages.yaml":                         "v1beta2",
 	"cluster-api-provider-ibmcloud/infrastructure.cluster.x-k8s.io_ibmpowervsmachines.yaml":                       "v1beta2",
