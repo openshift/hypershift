@@ -99,7 +99,10 @@ func (g *generator) GenGroup(groupCtx generation.APIGroupContext) ([]generation.
 
 	// Remove specific comparators from the default enabled list.
 	// These are all enabled by KAL now.
-	toRemove := []string{"NoBools", "NoFloats", "NoUints", "NoMaps", "ConditionsMustHaveProperSSATags"}
+	// NoDataTypeChange is disabled because controller-tools now simplifies
+	// allOf enum structures to simple enums, changing the type field from
+	// "" (unset in allOf entries) to "string".
+	toRemove := []string{"NoBools", "NoFloats", "NoUints", "NoMaps", "ConditionsMustHaveProperSSATags", "NoDataTypeChange"}
 	defaultSet := sets.NewString(comparatorOptions.DefaultEnabledComparators...)
 	comparatorOptions.DefaultEnabledComparators = defaultSet.Delete(toRemove...).List()
 

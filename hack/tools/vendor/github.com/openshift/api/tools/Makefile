@@ -37,7 +37,7 @@ publish-kubebuilder-tools:
 	@# Pull secret should be the standard pull secret used for spinning up OpenShift clusters, if you do not have one, follow https://docs.google.com/document/d/1ez2jrjiIQJChobfSu2ISJ5uM_-3HGouamL_xIa2_1W4/edit#heading=h.me93l6citmsq
 	@# This also expects you to be already authenticated with the OpenShift GCE devel project on Google Cloud, if you are not,
 	@# follow the 'Create the Service Account and grant permissions' and 'Generate an access key' @# steps at https://docs.google.com/document/d/1qm37EKkjgoPtjW4909UClzvsjQO5VSpPUvFO_hW_PEg
-	go run ./publish-kubebuilder-tools/main.go -version v1.33.2 -output-dir /tmp/kubebuilder-tools -payload=registry.ci.openshift.org/ocp/release:4.20.0-0.ci-2025-07-17-072431 -pull-secret $(PULL_SECRET) -index-file ../envtest-releases.yaml
+	go run ./publish-kubebuilder-tools/main.go -version v1.34.1 -output-dir /tmp/kubebuilder-tools -payload=registry.ci.openshift.org/ocp/release:4.21.0-0.ci-2025-10-28-031919 -pull-secret $(PULL_SECRET) -index-file ../envtest-releases.yaml
 
 #############################################
 #
@@ -115,7 +115,7 @@ $(OUTPUT_DIR)/kube-api-linter.so: $(OUTPUT_DIR)/vendor-version
 	ln -fs $(OUTPUT_DIR)/kube-api-linter.so $(TOOLS_DIR)/_output/bin/kube-api-linter.so
 
 $(OUTPUT_DIR)/openapi-gen: $(OUTPUT_DIR)/vendor-version
-	go build -mod=vendor -o $(OUTPUT_DIR)/openapi-gen ./vendor/k8s.io/code-generator/cmd/openapi-gen
+	go build -mod=vendor -o $(OUTPUT_DIR)/openapi-gen ./vendor/k8s.io/kube-openapi/cmd/openapi-gen
 
 $(OUTPUT_DIR)/protoc-gen-gogo: $(OUTPUT_DIR)/vendor-version
 	go build -mod=vendor -o $(OUTPUT_DIR)/protoc-gen-gogo ./vendor/k8s.io/code-generator/cmd/go-to-protobuf/protoc-gen-gogo

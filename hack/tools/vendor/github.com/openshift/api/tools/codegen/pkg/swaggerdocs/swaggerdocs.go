@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"go/format"
-	"io/ioutil"
+	"os"
 	"reflect"
 
 	kruntime "k8s.io/apimachinery/pkg/runtime"
@@ -65,7 +65,7 @@ func verifySwaggerDocs(packageName, filePath string, docsForTypes []kruntime.Kub
 	}
 
 	// Verify that the existing data matches the generated data.
-	data, err := ioutil.ReadFile(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return fmt.Errorf("error reading existing swagger docs file: %w", err)
 	}

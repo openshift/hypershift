@@ -27,7 +27,7 @@ var openapiCmd = &cobra.Command{
 			return fmt.Errorf("could not build generation context: %w", err)
 		}
 
-		gen := newOpenAPIGenerator()
+		gen := newOpenAPIGenerator(genCtx)
 
 		return executeMultiGroupGenerators(genCtx, gen)
 	},
@@ -42,11 +42,13 @@ func init() {
 }
 
 // newOpenAPIGenerator builds a new openapi generator.
-func newOpenAPIGenerator() generation.MultiGroupGenerator {
+func newOpenAPIGenerator(genCtx generation.Context) generation.MultiGroupGenerator {
 	return openapi.NewGenerator(openapi.Options{
 		HeaderFilePath:    openapiHeaderFilePath,
 		OutputFileName:    openapiOutputFileName,
 		OutputPackagePath: openapiOutputPackagePath,
 		Verify:            verify,
+		GlobalParser:      genCtx.GlobalParser,
+		Universe:          genCtx.Universe,
 	})
 }
