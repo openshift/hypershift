@@ -218,6 +218,20 @@ func IsAroHCP() bool {
 	return os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP
 }
 
+// IsAroSwiftEnabled returns true if platform is Azure, the managed service is ARO-HCP and HCP has the SwiftPodNetworkInstanceAnnotation set.
+func IsAroSwiftEnabled(hcp *hyperv1.HostedControlPlane) bool {
+	return hcp.Spec.Platform.Type == hyperv1.AzurePlatform &&
+		IsAroHCP() &&
+		hcp.Annotations[hyperv1.SwiftPodNetworkInstanceAnnotation] != ""
+}
+
+// IsAroSwiftEnabledByHC returns true if platform is Azure, the managed service is ARO-HCP and HC has the SwiftPodNetworkInstanceAnnotation set.
+func IsAroSwiftEnabledByHC(hc *hyperv1.HostedCluster) bool {
+	return hc.Spec.Platform.Type == hyperv1.AzurePlatform &&
+		IsAroHCP() &&
+		hc.Annotations[hyperv1.SwiftPodNetworkInstanceAnnotation] != ""
+}
+
 // IsSelfManagedAzure returns true when the platform is Azure and the managed service is not ARO-HCP
 func IsSelfManagedAzure(platform hyperv1.PlatformType) bool {
 	return platform == hyperv1.AzurePlatform && !IsAroHCP()

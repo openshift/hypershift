@@ -10,6 +10,7 @@ import (
 	assets "github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	supportconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
@@ -376,12 +377,21 @@ func ReconcileRouteStatus(route *routev1.Route, canonicalHostname string) {
 	route.Status.Ingress = []routev1.RouteIngress{ingress}
 }
 
-func UseSharedIngress() bool {
-	managedService, _ := os.LookupEnv("MANAGED_SERVICE")
-	return managedService == hyperv1.AroHCP
+func UseSharedIngress(hcp *hyperv1.HostedControlPlane) bool {
+	if azureutil.IsAroSwiftEnabled(hcp) {
+		return false
+	}
+	return azureutil.IsAroHCP()
 }
 
-func Hostname(hcp *hyperv1.HostedControlPlane) string {
+func UseSharedIngressByHC(hc *hyperv1.HostedCluster) bool {
+	if azureutil.IsAroSwiftEnabledByHC(hc) {
+		return false
+	}
+	return azureutil.IsAroHCP()
+}
+
+func KasRouteHostname(hcp *hyperv1.HostedControlPlane) string {
 	kasPublishStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
 	if kasPublishStrategy.Route == nil {
 		return ""

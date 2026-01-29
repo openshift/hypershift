@@ -998,14 +998,14 @@ func (r *NodePoolReconciler) getAdditionalTrustBundle(ctx context.Context, hoste
 // 2. Environment variable override (when shared ingress enabled)
 // 3. Hardcoded default (when shared ingress enabled)
 // 4. Release payload (default)
-func resolveHAProxyImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+func resolveHAProxyImage(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
 	// Check NodePool annotation first (highest priority)
 	if annotationImage := strings.TrimSpace(nodePool.Annotations[hyperv1.NodePoolHAProxyImageAnnotation]); annotationImage != "" {
 		return annotationImage, nil
 	}
 
 	// Check if shared ingress is enabled
-	if sharedingress.UseSharedIngress() {
+	if sharedingress.UseSharedIngressByHC(hcluster) {
 		return images.GetSharedIngressHAProxyImage(), nil
 	}
 
@@ -1018,7 +1018,7 @@ func resolveHAProxyImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.R
 }
 
 func (r *NodePoolReconciler) generateHAProxyRawConfig(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, releaseImage *releaseinfo.ReleaseImage) (string, error) {
-	haProxyImage, err := resolveHAProxyImage(nodePool, releaseImage)
+	haProxyImage, err := resolveHAProxyImage(nodePool, hcluster, releaseImage)
 	if err != nil {
 		return "", err
 	}
