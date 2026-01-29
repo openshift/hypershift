@@ -32,6 +32,55 @@ func TestNewIdentityManager(t *testing.T) {
 	}
 }
 
+func TestGetWorkloadIdentityDefinitions(t *testing.T) {
+	tests := map[string]struct {
+		clusterName       string
+		expectedCount     int
+		expectedComponent []string
+	}{
+		"When called it should return 7 identity definitions with correct components": {
+			clusterName:   "test-cluster",
+			expectedCount: 7,
+			expectedComponent: []string{
+				"disk",
+				"file",
+				"imageRegistry",
+				"ingress",
+				"cloudProvider",
+				"nodePoolManagement",
+				"network",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			definitions := GetWorkloadIdentityDefinitions(test.clusterName)
+
+			// Verify count
+			g.Expect(definitions).To(HaveLen(test.expectedCount), "Should return 7 identity definitions")
+
+			// Verify all expected components are present
+			componentNames := make([]string, len(definitions))
+			for i, def := range definitions {
+				componentNames[i] = def.ComponentName
+			}
+
+			for _, expectedComponent := range test.expectedComponent {
+				g.Expect(componentNames).To(ContainElement(expectedComponent), "Should contain "+expectedComponent+" component")
+			}
+
+			// Verify each definition has at least one federated credential
+			for _, def := range definitions {
+				g.Expect(def.FederatedCredentials).ToNot(BeEmpty(), "Definition for %s should have at least one federated credential", def.ComponentName)
+				g.Expect(def.IdentityNameSuffix).ToNot(BeEmpty(), "Definition for %s should have an identity name suffix", def.ComponentName)
+			}
+		})
+	}
+}
+
 func TestFederatedCredentialConfig(t *testing.T) {
 	tests := map[string]struct {
 		credentialName string
