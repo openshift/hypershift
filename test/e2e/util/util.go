@@ -1282,39 +1282,24 @@ func checkPodsHaveLabel(ctx context.Context, c crclient.Client, allowedComponent
 }
 
 func RunCommandInPod(ctx context.Context, c crclient.Client, component, namespace string, command []string, containerName string, timeout time.Duration) (string, error) {
-	podList := &corev1.PodList{}
-	if err := c.List(ctx, podList,
-		crclient.InNamespace(namespace),
-		crclient.MatchingLabels{"app": component}); err != nil {
-		return "", fmt.Errorf("failed to list Pods: %w", err)
-	}
-	if len(podList.Items) < 1 {
-		return "", fmt.Errorf("pods for component %q not found", component)
-	}
 
 	restConfig, err := GetConfig()
 	if err != nil {
 		return "", fmt.Errorf("failed to get restConfig; %w", err)
 	}
-
-	stdOut := new(bytes.Buffer)
-	podExecuter := PodExecOptions{
-		StreamOptions: StreamOptions{
-			IOStreams: genericclioptions.IOStreams{
-				Out:    stdOut,
-				ErrOut: os.Stderr,
-			},
-		},
-		Command:       command,
-		Namespace:     namespace,
-		PodName:       podList.Items[0].Name,
-		Config:        restConfig,
-		ContainerName: containerName,
-		Timeout:       timeout,
+	clientSet, err := kubeclient.NewForConfig(restConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to create clientset: %w", err)
 	}
+	// Use the shared utility function from support/util
+	execCtx := ctx
+	var cancel context.CancelFunc
+	if timeout > 0 {
+		execCtx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	return hyperutil.RunCommandInPod(execCtx, c, restConfig, clientSet, component, namespace, command, containerName)
 
-	err = podExecuter.Run(ctx)
-	return stdOut.String(), err
 }
 
 func EnsureHCPContainersHaveResourceRequests(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
@@ -2924,6 +2909,7 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
 		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
 		expectedConditions[hyperv1.DataPlaneConnectionAvailable] = metav1.ConditionUnknown
+		expectedConditions[hyperv1.ControlPlaneConnectionAvailable] = metav1.ConditionUnknown
 	}
 	if IsLessThan(Version415) {
 		// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
@@ -2932,6 +2918,10 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 
 	if IsLessThan(Version421) {
 		delete(expectedConditions, hyperv1.DataPlaneConnectionAvailable)
+	}
+
+	if IsLessThan(Version422) {
+		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
 	}
 
 	var predicates []Predicate[*hyperv1.HostedCluster]
