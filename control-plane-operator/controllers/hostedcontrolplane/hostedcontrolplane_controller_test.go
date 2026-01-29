@@ -23,6 +23,7 @@ import (
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	routerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -1408,6 +1409,8 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 		exposeAPIServerThroughRouter bool
 		existingObjects              []client.Object
 		expectedServices             []corev1.Service
+		setupEnv                     func(t *testing.T)
+		hcpModifier                  func(*hyperv1.HostedControlPlane)
 	}{
 		{
 			name:                         "Public HCP gets public LB only",
@@ -1449,9 +1452,29 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 			exposeAPIServerThroughRouter: false,
 			expectedServices:             nil,
 		},
+		{
+			name:                         "When ARO Swift is enabled it should not create any services",
+			endpointAccess:               hyperv1.Public,
+			exposeAPIServerThroughRouter: true,
+			expectedServices:             nil,
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
+			hcpModifier: func(hcp *hyperv1.HostedControlPlane) {
+				hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+				hcp.Spec.Platform.AWS = nil
+				hcp.Annotations = map[string]string{
+					hyperv1.SwiftPodNetworkInstanceAnnotation: "test-swift-instance",
+				}
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.setupEnv != nil {
+				tc.setupEnv(t)
+			}
+
 			hcp := &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hcp",
@@ -1478,6 +1501,9 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 						},
 					},
 				}
+			}
+			if tc.hcpModifier != nil {
+				tc.hcpModifier(hcp)
 			}
 
 			ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
@@ -1783,9 +1809,13 @@ func TestControlPlaneComponents(t *testing.T) {
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
 
 	tests := []struct {
-		name         string
-		featureSet   configv1.FeatureSet
-		platformType *hyperv1.PlatformType
+		name           string
+		featureSet     configv1.FeatureSet
+		platformType   *hyperv1.PlatformType
+		hcpAnnotations map[string]string
+		mutateHCP      func(hcp *hyperv1.HostedControlPlane)
+		setup          func(t *testing.T)
+		subDirSuffix   string
 	}{
 		{
 			name:         "Default feature set, default platform type",
@@ -1806,6 +1836,43 @@ func TestControlPlaneComponents(t *testing.T) {
 			name:         "TechPreviewNoUpgrade feature set, GCP platform type",
 			featureSet:   configv1.TechPreviewNoUpgrade,
 			platformType: ptr.To(hyperv1.GCPPlatform),
+		},
+		{
+			name:         "Default feature set, Azure platform with ARO Swift",
+			featureSet:   configv1.Default,
+			platformType: ptr.To(hyperv1.AzurePlatform),
+			hcpAnnotations: map[string]string{
+				hyperv1.SwiftPodNetworkInstanceAnnotation: "swift-network-instance",
+			},
+			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				// Configure Azure ManagedIdentities for ARO-HCP
+				hcp.Spec.Platform.Azure.AzureAuthenticationConfig = hyperv1.AzureAuthenticationConfiguration{
+					AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
+					ManagedIdentities: &hyperv1.AzureResourceManagedIdentities{
+						ControlPlane: hyperv1.ControlPlaneManagedIdentities{
+							ManagedIdentitiesKeyVault: hyperv1.ManagedAzureKeyVault{
+								Name:     "test-keyvault",
+								TenantID: "00000000-0000-0000-0000-000000000000",
+							},
+							CloudProvider:        hyperv1.ManagedIdentity{ClientID: "00000000-0000-0000-0000-000000000002", CredentialsSecretName: "cloud-provider-creds"},
+							NodePoolManagement:   hyperv1.ManagedIdentity{ClientID: "00000000-0000-0000-0000-000000000003", CredentialsSecretName: "nodepool-mgmt-creds"},
+							ControlPlaneOperator: hyperv1.ManagedIdentity{ClientID: "00000000-0000-0000-0000-000000000004", CredentialsSecretName: "cpo-creds"},
+							ImageRegistry:        hyperv1.ManagedIdentity{ClientID: "00000000-0000-0000-0000-000000000005", CredentialsSecretName: "image-registry-creds"},
+							Ingress:              hyperv1.ManagedIdentity{ClientID: "00000000-0000-0000-0000-000000000006", CredentialsSecretName: "ingress-creds"},
+							Network:              hyperv1.ManagedIdentity{ClientID: "00000000-0000-0000-0000-000000000007", CredentialsSecretName: "network-creds"},
+							Disk:                 hyperv1.ManagedIdentity{ClientID: "00000000-0000-0000-0000-000000000008", CredentialsSecretName: "disk-creds"},
+							File:                 hyperv1.ManagedIdentity{ClientID: "00000000-0000-0000-0000-000000000009", CredentialsSecretName: "file-creds"},
+						},
+						DataPlane: hyperv1.DataPlaneManagedIdentities{
+							ImageRegistryMSIClientID: "00000000-0000-0000-0000-00000000000a",
+							DiskMSIClientID:          "00000000-0000-0000-0000-00000000000b",
+							FileMSIClientID:          "00000000-0000-0000-0000-00000000000c",
+						},
+					},
+				}
+			},
+			setup:        azureutil.SetAsAroHCPTest,
+			subDirSuffix: "AROSwift",
 		},
 	}
 
@@ -1891,6 +1958,21 @@ func TestControlPlaneComponents(t *testing.T) {
 			}
 		}
 
+		// Merge any additional HCP annotations from the test case
+		for k, v := range tt.hcpAnnotations {
+			hcp.Annotations[k] = v
+		}
+
+		// Apply any HCP mutations from the test case
+		if tt.mutateHCP != nil {
+			tt.mutateHCP(hcp)
+		}
+
+		// Run any setup function for the test case
+		if tt.setup != nil {
+			tt.setup(t)
+		}
+
 		reconciler.registerComponents(hcp)
 
 		cpContext := controlplanecomponent.ControlPlaneContext{
@@ -1973,6 +2055,9 @@ func TestControlPlaneComponents(t *testing.T) {
 				}
 				if tt.platformType != nil {
 					subDir = fmt.Sprintf("%s/%s", component.Name(), *tt.platformType)
+				}
+				if tt.subDirSuffix != "" {
+					subDir = fmt.Sprintf("%s/%s", component.Name(), tt.subDirSuffix)
 				}
 				testutil.CompareWithFixture(t, yaml, testutil.WithSubDir(subDir), testutil.WithSuffix(suffix))
 			}

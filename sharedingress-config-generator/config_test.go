@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	api "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	testutil "github.com/openshift/hypershift/support/testutil"
 	"github.com/openshift/hypershift/support/util"
 
@@ -84,6 +85,7 @@ func TestGenerateConfig(t *testing.T) {
 	testNamespace2 := "test-hc2"
 	testCases := []struct {
 		name                   string
+		setupEnv               func(t *testing.T)
 		hostedClusterResources []struct {
 			hostedCluster *hyperv1.HostedCluster
 			routes        []client.Object
@@ -154,6 +156,67 @@ func TestGenerateConfig(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "When ARO Swift is enabled it should skip the HostedCluster",
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
+			hostedClusterResources: []struct {
+				hostedCluster *hyperv1.HostedCluster
+				routes        []client.Object
+				svcs          []client.Object
+			}{
+				{
+					// This HostedCluster has Swift enabled and should be skipped.
+					hostedCluster: &hyperv1.HostedCluster{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "hc1",
+							Namespace: "test",
+							Annotations: map[string]string{
+								hyperv1.SwiftPodNetworkInstanceAnnotation: "test-swift-instance",
+							},
+						},
+						Spec: hyperv1.HostedClusterSpec{
+							ClusterID: "hc1-UUID",
+							Platform: hyperv1.PlatformSpec{
+								Type: hyperv1.AzurePlatform,
+							},
+						},
+					},
+					routes: []client.Object{
+						route(ignitionserver.Route("").Name, testNamespace1, withHost("ignition-server.example.com"), withSvc("ignition-server-proxy")),
+						route(manifests.KubeAPIServerExternalPublicRoute("").Name, testNamespace1, withHost("kube-apiserver-public.example.com"), withSvc("kube-apiserver")),
+					},
+					svcs: []client.Object{
+						svc("ignition-server-proxy", testNamespace1, withClusterIP("1.1.1.1")),
+						svc("kube-apiserver", testNamespace1, withClusterIP("4.4.4.4"), withPort(int32(6443))),
+					},
+				},
+				{
+					// This HostedCluster does not have Swift enabled and should be included.
+					hostedCluster: &hyperv1.HostedCluster{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "hc2",
+							Namespace: "test",
+						},
+						Spec: hyperv1.HostedClusterSpec{
+							ClusterID: "hc2-UUID",
+							Platform: hyperv1.PlatformSpec{
+								Type: hyperv1.AzurePlatform,
+							},
+						},
+					},
+					routes: []client.Object{
+						route(ignitionserver.Route("").Name, testNamespace2, withHost("ignition-server.example.com"), withSvc("ignition-server-proxy")),
+						route(manifests.KubeAPIServerExternalPublicRoute("").Name, testNamespace2, withHost("kube-apiserver-public.example.com"), withSvc("kube-apiserver")),
+					},
+					svcs: []client.Object{
+						svc("ignition-server-proxy", testNamespace2, withClusterIP("1.1.1.1")),
+						svc("kube-apiserver", testNamespace2, withClusterIP("4.4.4.4"), withPort(int32(6443))),
+					},
+				},
+			},
+		},
 	}
 
 	indexFunc := func(obj client.Object) []string {
@@ -166,6 +229,10 @@ func TestGenerateConfig(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.setupEnv != nil {
+				tc.setupEnv(t)
+			}
+
 			g := NewGomegaWithT(t)
 			builder := fake.NewClientBuilder().WithScheme(api.Scheme)
 			objects := []client.Object{}
