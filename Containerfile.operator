@@ -10,7 +10,7 @@ RUN make hypershift \
   && make product-cli \
   && make karpenter-operator
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.6-1760515502
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7-1762180032
 COPY --from=builder /hypershift/bin/hypershift \
   /hypershift/bin/hypershift-no-cgo \
   /hypershift/bin/hcp \
