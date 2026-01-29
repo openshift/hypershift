@@ -172,6 +172,9 @@ func (r *NodePoolReconciler) autoscalerEnabledCondition(_ context.Context, nodeP
 				// AWS supports scale-from-zero either natively (when CPO supports it)
 				// or via MachineDeployment controller workaround annotations
 				supported = true
+			case hyperv1.AzurePlatform:
+				// Azure supports scale-from-zero via MachineDeployment/MachineSet controller workaround annotations
+				supported = true
 			default:
 				// Other platforms don't support autoscaling from zero yet
 				supported = false
