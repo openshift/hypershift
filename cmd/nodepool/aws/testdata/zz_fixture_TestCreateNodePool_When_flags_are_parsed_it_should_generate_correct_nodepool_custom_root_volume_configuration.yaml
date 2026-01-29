@@ -1,0 +1,8 @@
+instanceProfile: test-infra-worker
+instanceType: m6g.large
+rootVolume:
+  iops: 10000
+  size: 200
+  type: io2
+subnet:
+  id: subnet-arm64

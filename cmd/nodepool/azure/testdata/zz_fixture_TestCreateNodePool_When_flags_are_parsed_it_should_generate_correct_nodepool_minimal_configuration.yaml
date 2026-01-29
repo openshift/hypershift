@@ -1,0 +1,12 @@
+image:
+  azureMarketplace:
+    offer: aro4
+    publisher: redhat
+    sku: aro_414
+    version: 414.1.20240101
+  type: AzureMarketplace
+osDisk:
+  diskStorageAccountType: Premium_LRS
+  sizeGiB: 120
+subnetID: /subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/test/subnets/test
+vmSize: Standard_D4s_v5

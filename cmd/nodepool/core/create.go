@@ -43,6 +43,26 @@ type PlatformOptions interface {
 	Type() hyperv1.PlatformType
 }
 
+// NodePoolPlatformValidator knows how to validate platform-specific nodepool options.
+// All nodepool platform implementations SHOULD use this exact signature for their Validate() method
+// to enable interface-based programming and easier maintenance across providers.
+// Note: This interface is optional for simple platforms that don't need validation/completion phases.
+type NodePoolPlatformValidator interface {
+	// Validate allows the platform-specific logic to validate nodepool inputs.
+	// Returns a NodePoolPlatformCompleter on success, or an error if validation fails.
+	Validate(context.Context, *CreateNodePoolOptions) (NodePoolPlatformCompleter, error)
+}
+
+// NodePoolPlatformCompleter knows how to complete platform-specific nodepool configuration.
+// All nodepool platform implementations SHOULD use this exact signature for their Complete() method
+// to enable interface-based programming and easier maintenance across providers.
+// Note: This interface is optional for simple platforms that don't need validation/completion phases.
+type NodePoolPlatformCompleter interface {
+	// Complete allows the platform-specific logic to default values and finalize configuration.
+	// Returns a PlatformOptions implementation on success, or an error if completion fails.
+	Complete(context.Context, *CreateNodePoolOptions) (PlatformOptions, error)
+}
+
 func (o *CreateNodePoolOptions) CreateRunFunc(platformOpts PlatformOptions) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		if err := o.CreateNodePool(cmd.Context(), platformOpts); err != nil {
