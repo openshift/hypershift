@@ -19,7 +19,7 @@ package v1beta2
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	capiv1beta1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1" //nolint:staticcheck
 )
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
@@ -54,7 +54,7 @@ type IBMPowerVSClusterSpec struct {
 
 	// ControlPlaneEndpoint represents the endpoint used to communicate with the control plane.
 	// +optional
-	ControlPlaneEndpoint capiv1beta1.APIEndpoint `json:"controlPlaneEndpoint"`
+	ControlPlaneEndpoint clusterv1beta1.APIEndpoint `json:"controlPlaneEndpoint"`
 
 	// serviceInstance is the reference to the Power VS server workspace on which the server instance(VM) will be created.
 	// Power VS server workspace is a container for all Power VS instances at a specific geographic region.
@@ -231,7 +231,7 @@ type IBMPowerVSClusterStatus struct {
 	LoadBalancers map[string]VPCLoadBalancerStatus `json:"loadBalancers,omitempty"`
 
 	// Conditions defines current service state of the IBMPowerVSCluster.
-	Conditions capiv1beta1.Conditions `json:"conditions,omitempty"`
+	Conditions clusterv1beta1.Conditions `json:"conditions,omitempty"`
 
 	// v1beta2 groups all the fields that will be added or modified in IBMPowerVSCluster's status with the V1Beta2 version.
 	// +optional
@@ -335,12 +335,12 @@ type CosInstance struct {
 }
 
 // GetConditions returns the observations of the operational state of the IBMPowerVSCluster resource.
-func (r *IBMPowerVSCluster) GetConditions() capiv1beta1.Conditions {
+func (r *IBMPowerVSCluster) GetConditions() clusterv1beta1.Conditions {
 	return r.Status.Conditions
 }
 
-// SetConditions sets the underlying service state of the IBMPowerVSCluster to the predescribed clusterv1.Conditions.
-func (r *IBMPowerVSCluster) SetConditions(conditions capiv1beta1.Conditions) {
+// SetConditions sets the underlying service state of the IBMPowerVSCluster to the predescribed clusterv1beta1.Conditions.
+func (r *IBMPowerVSCluster) SetConditions(conditions clusterv1beta1.Conditions) {
 	r.Status.Conditions = conditions
 }
 
