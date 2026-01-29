@@ -44,14 +44,10 @@ func TestOVNControlPlaneUpgradeWithZeroWorkers(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	// Use hardcoded release images or fall back to globalOpts if provided
+	// Always use hardcoded release images for CORENET-6064 testing
+	// Do NOT use globalOpts to ensure consistent test behavior
 	previousReleaseImage := corenet6064PreviousReleaseImage
 	latestReleaseImage := corenet6064LatestReleaseImage
-	if globalOpts.PreviousReleaseImage != "" && globalOpts.LatestReleaseImage != "" &&
-		globalOpts.PreviousReleaseImage != globalOpts.LatestReleaseImage {
-		previousReleaseImage = globalOpts.PreviousReleaseImage
-		latestReleaseImage = globalOpts.LatestReleaseImage
-	}
 
 	t.Logf("CORENET-6064 Test: Upgrading from %s to %s", previousReleaseImage, latestReleaseImage)
 
@@ -125,14 +121,10 @@ func TestOVNControlPlaneUpgradeScaleToZeroWorkers(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	// Use hardcoded release images or fall back to globalOpts if provided
+	// Always use hardcoded release images for CORENET-6064 testing
+	// Do NOT use globalOpts to ensure consistent test behavior
 	previousReleaseImage := corenet6064PreviousReleaseImage
 	latestReleaseImage := corenet6064LatestReleaseImage
-	if globalOpts.PreviousReleaseImage != "" && globalOpts.LatestReleaseImage != "" &&
-		globalOpts.PreviousReleaseImage != globalOpts.LatestReleaseImage {
-		previousReleaseImage = globalOpts.PreviousReleaseImage
-		latestReleaseImage = globalOpts.LatestReleaseImage
-	}
 
 	t.Logf("CORENET-6064 Scale-to-Zero Test: Upgrading from %s to %s", previousReleaseImage, latestReleaseImage)
 
