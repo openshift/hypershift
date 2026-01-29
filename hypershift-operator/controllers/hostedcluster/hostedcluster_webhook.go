@@ -12,11 +12,14 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/go-logr/logr"
@@ -150,6 +153,22 @@ func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *hyperutil.
 	if err != nil {
 		return fmt.Errorf("unable to register hostedcontrolplane webhook: %w", err)
 	}
+
+	// CAPI conversion between API versions requires resolving GroupKind to an API version string
+	// to convert between corev1.ObjectReference and ContractVersionedObjectReference.
+	// Without this, Cluster spec/status conversion fails and MachineDeployment controller
+	// sees an empty Cluster status, never creates MachineSets or Machines.
+	capiv1beta1.SetAPIVersionGetter(func(gk schema.GroupKind) (string, error) {
+		versions := mgr.GetScheme().VersionsForGroupKind(gk)
+		if len(versions) == 0 {
+			return "", fmt.Errorf("no versions registered for GroupKind %s", gk)
+		}
+		return gk.WithVersion(versions[0].Version).GroupVersion().String(), nil
+	})
+
+	// Register conversion webhook handler for CRD version conversions (HyperShift and CAPI types)
+	mgr.GetWebhookServer().Register("/convert", conversion.NewWebhookHandler(mgr.GetScheme()))
+
 	return nil
 }
 
