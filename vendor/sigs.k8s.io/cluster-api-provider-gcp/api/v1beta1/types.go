@@ -19,7 +19,7 @@ package v1beta1
 import (
 	"fmt"
 
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 )
 
 // GCPMachineTemplateResource describes the data needed to create am GCPMachine from a template.
@@ -27,7 +27,7 @@ type GCPMachineTemplateResource struct {
 	// Standard object's metadata.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
 	// +optional
-	ObjectMeta clusterv1.ObjectMeta `json:"metadata,omitempty"`
+	ObjectMeta clusterv1beta1.ObjectMeta `json:"metadata,omitempty"`
 
 	// Spec is the specification of the desired behavior of the machine.
 	Spec GCPMachineSpec `json:"spec"`
@@ -107,6 +107,36 @@ type Network struct {
 	APIInternalForwardingRule *string `json:"apiInternalForwardingRule,omitempty"`
 }
 
+// FirewallSpec contains configuration for the firewall.
+type FirewallSpec struct {
+	// DefaultRulesManagement determines the management policy for the default firewall rules
+	// created by the controller. DefaultRulesManagement has no effect on user specified firewall
+	// rules. DefaultRulesManagement has no effect when a HostProject is specified.
+	// "Managed": The controller will create and manage firewall rules.
+	// "Unmanaged": The controller will not create or modify any firewall rules. If
+	// the RulesManagement is changed from Managed to Unmanaged after the firewall rules
+	// have been created, then the firewall rules will not be deleted.
+	//
+	// Defaults to "Managed".
+	// +optional
+	// +kubebuilder:default:="Managed"
+	DefaultRulesManagement RulesManagementPolicy `json:"defaultRulesManagement,omitempty"`
+}
+
+// RulesManagementPolicy is a string enum type for managing firewall rules.
+// +kubebuilder:validation:Enum=Managed;Unmanaged
+type RulesManagementPolicy string
+
+const (
+	// RulesManagementManaged indicates that the controller should create and manage
+	// firewall rules. This is the default behavior.
+	RulesManagementManaged RulesManagementPolicy = "Managed"
+
+	// RulesManagementUnmanaged indicates that the controller should not create or manage
+	// any firewall rules. If rules already exist, they will be left as-is.
+	RulesManagementUnmanaged RulesManagementPolicy = "Unmanaged"
+)
+
 // NetworkSpec encapsulates all things related to a GCP network.
 type NetworkSpec struct {
 	// Name is the name of the network to be used.
@@ -137,6 +167,10 @@ type NetworkSpec struct {
 	// +optional
 	HostProject *string `json:"hostProject,omitempty"`
 
+	// Firewall configuration.
+	// +optional
+	Firewall FirewallSpec `json:"firewall,omitempty,omitzero"`
+
 	// Mtu: Maximum Transmission Unit in bytes. The minimum value for this field is
 	// 1300 and the maximum value is 8896. The suggested value is 1500, which is
 	// the default MTU used on the Internet, or 8896 if you want to use Jumbo
@@ -147,6 +181,16 @@ type NetworkSpec struct {
 	// +kubebuilder:default:=1460
 	// +optional
 	Mtu int64 `json:"mtu,omitempty"`
+
+	// MinPortsPerVM: Minimum number of ports allocated to a VM from this NAT
+	// config. If not set, a default number of ports is allocated to a VM. This is
+	// rounded up to the nearest power of 2. For example, if the value of this
+	// field is 50, at least 64 ports are allocated to a VM.
+	// +kubebuilder:validation:Minimum:=2
+	// +kubebuilder:validation:Maximum:=65536
+	// +kubebuilder:default:=64
+	// +optional
+	MinPortsPerVM int64 `json:"minPortsPerVm,omitempty"`
 }
 
 // LoadBalancerType defines the Load Balancer that should be created.
@@ -395,4 +439,10 @@ type LoadBalancer struct {
 	// +kubebuilder:default=Regional
 	// +optional
 	InternalAccess InternalAccess `json:"internalAccess,omitempty"`
+
+	// IPAddress is the static IP address to use for the Load Balancer.
+	// If not set, a new static IP address will be allocated.
+	// If set, it must be a valid free IP address from the LoadBalancer Subnet.
+	// +optional
+	IPAddress *string `json:"ipAddress,omitempty"`
 }
