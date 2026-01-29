@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -42,6 +43,10 @@ import (
 
 const (
 	finalizer = "hypershift.openshift.io/ec2-nodeclass-finalizer"
+
+	// DefaultRootVolumeSize is 120Gi because HCP NodePools provisioned with HCP CLI are set with 120Gi root volume by default.
+	// https://github.com/openshift/hypershift/blob/8be1d9c6f8f79106444e48f2b7d0069b942ba0d7/cmd/nodepool/aws/create.go#L30
+	DefaultRootVolumeSize = "120Gi"
 )
 
 var (
@@ -240,6 +245,20 @@ func reconcileEC2NodeClass(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2
 	// Set instance profile from HostedCluster annotation (platform-controlled)
 	if instanceProfile, ok := hcp.Annotations[hyperv1.AWSKarpenterDefaultInstanceProfile]; ok && instanceProfile != "" {
 		ec2NodeClass.Spec.InstanceProfile = ptr.To(instanceProfile)
+	}
+
+	// Set default BlockDeviceMappings if not specified in OpenshiftEC2NodeClass.
+	if ec2NodeClass.Spec.BlockDeviceMappings == nil {
+		ec2NodeClass.Spec.BlockDeviceMappings = []*awskarpenterv1.BlockDeviceMapping{
+			{
+				DeviceName: ptr.To("/dev/xvda"),
+				EBS: &awskarpenterv1.BlockDevice{
+					VolumeSize: ptr.To(resource.MustParse(DefaultRootVolumeSize)),
+					VolumeType: ptr.To("gp3"),
+					Encrypted:  ptr.To(true),
+				},
+			},
+		}
 	}
 
 	var subnetSelectorTerms []awskarpenterv1.SubnetSelectorTerm
