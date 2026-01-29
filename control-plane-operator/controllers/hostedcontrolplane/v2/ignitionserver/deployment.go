@@ -82,11 +82,43 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 			effectiveImageRef := util.SeekOverride(cpContext.Context, ign.releaseProvider.GetOpenShiftImageRegistryOverrides(), parsedImageRef, pullSecretBytes)
 			effectiveImage := effectiveImageRef.String()
 
-			// Only set MIRRORED_RELEASE_IMAGE if we're using a mirror
+			// Get the current value of MIRRORED_RELEASE_IMAGE from the existing deployment to prevent flapping
+			currentMirroredImage := ""
+			existingDeployment := &appsv1.Deployment{}
+			deploymentKey := client.ObjectKey{
+				Name:      ComponentName,
+				Namespace: hcp.Namespace,
+			}
+			if err := cpContext.Client.Get(cpContext.Context, deploymentKey, existingDeployment); err == nil {
+				// Look for the ignition-server container in the existing deployment
+				for _, container := range existingDeployment.Spec.Template.Spec.Containers {
+					if container.Name == ComponentName {
+						for _, env := range container.Env {
+							if env.Name == "MIRRORED_RELEASE_IMAGE" {
+								currentMirroredImage = env.Value
+								break
+							}
+						}
+						break
+					}
+				}
+			}
+
+			// Set MIRRORED_RELEASE_IMAGE with the appropriate image
+			var targetImage string
 			if effectiveImage != controlPlaneReleaseImage {
+				// Using a mirror - set to the effective mirrored image
+				targetImage = effectiveImage
+			} else {
+				// Not using a mirror - set to the original release image
+				targetImage = controlPlaneReleaseImage
+			}
+
+			// Only update the env var if the target image has changed from what's currently set
+			if targetImage != currentMirroredImage {
 				util.UpsertEnvVar(c, corev1.EnvVar{
 					Name:  "MIRRORED_RELEASE_IMAGE",
-					Value: effectiveImage,
+					Value: targetImage,
 				})
 			}
 		}

@@ -100,6 +100,8 @@ spec:
               fieldPath: metadata.namespace
         - name: OPENSHIFT_IMG_OVERRIDES
           value: registry=override
+        - name: MIRRORED_RELEASE_IMAGE
+          value: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
         image: controlplane-operator
         imagePullPolicy: IfNotPresent
         livenessProbe:
