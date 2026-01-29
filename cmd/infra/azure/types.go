@@ -6,29 +6,26 @@ import (
 )
 
 type CreateInfraOptions struct {
-	Name                         string
-	BaseDomain                   string
-	Location                     string
-	InfraID                      string
-	CredentialsFile              string
-	Credentials                  *util.AzureCreds
-	OutputFile                   string
-	ResourceGroupName            string
-	VnetID                       string
-	NetworkSecurityGroupID       string
-	ResourceGroupTags            map[string]string
-	SubnetID                     string
-	ManagedIdentitiesFile        string
-	DataPlaneIdentitiesFile      string
-	WorkloadIdentitiesFile       string
-	AssignServicePrincipalRoles  bool
-	DNSZoneRG                    string
-	AssignCustomHCPRoles         bool
-	DisableClusterCapabilities   []string
-	OIDCIssuerURL                string
-	GenerateManagedIdentities    bool
-	WorkloadIdentitiesOutputFile string
-	Cloud                        string
+	Name                        string
+	BaseDomain                  string
+	Location                    string
+	InfraID                     string
+	CredentialsFile             string
+	Credentials                 *util.AzureCreds
+	OutputFile                  string
+	ResourceGroupName           string
+	VnetID                      string
+	NetworkSecurityGroupID      string
+	ResourceGroupTags           map[string]string
+	SubnetID                    string
+	ManagedIdentitiesFile       string
+	DataPlaneIdentitiesFile     string
+	WorkloadIdentitiesFile      string
+	AssignServicePrincipalRoles bool
+	DNSZoneRG                   string
+	AssignCustomHCPRoles        bool
+	DisableClusterCapabilities  []string
+	Cloud                       string
 }
 
 type CreateInfraOutput struct {
@@ -45,4 +42,28 @@ type CreateInfraOutput struct {
 	ControlPlaneMIs     *hyperv1.AzureResourceManagedIdentities `json:"controlPlaneMIs"`
 	DataPlaneIdentities hyperv1.DataPlaneManagedIdentities      `json:"dataPlaneIdentities"`
 	WorkloadIdentities  *hyperv1.AzureWorkloadIdentities        `json:"workloadIdentities"`
+}
+
+// CreateIAMOptions holds options for creating Azure IAM resources (managed identities and federated credentials)
+type CreateIAMOptions struct {
+	Name              string
+	Location          string
+	InfraID           string
+	CredentialsFile   string
+	Credentials       *util.AzureCreds
+	ResourceGroupName string
+	OIDCIssuerURL     string
+	OutputFile        string
+	Cloud             string
+}
+
+// DestroyIAMOptions holds options for destroying Azure IAM resources
+type DestroyIAMOptions struct {
+	Name                   string
+	InfraID                string
+	WorkloadIdentitiesFile string
+	CredentialsFile        string
+	Credentials            *util.AzureCreds
+	ResourceGroupName      string
+	Cloud                  string
 }

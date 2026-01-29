@@ -73,6 +73,9 @@ const (
 	InfraIDDescription                      = "Unique identifier used to name and tag Azure resources. This ID will be incorporated into resource names and Azure tags."
 	BaseDomainInfraDescription              = "Base DNS domain for the cluster (e.g. example.com). A public DNS zone for this domain must exist in your Azure subscription."
 	InfraOutputFileDescription              = "Path to file where the infrastructure output will be saved in YAML format. Contains resource IDs and other information needed for cluster creation."
-	GenerateManagedIdentitiesDescription    = "Generate workload identities and save them to a JSON file instead of creating full infrastructure. Requires --oidc-issuer-url and --workload-identities-output-file."
-	WorkloadIdentitiesOutputFileDescription = "Path where generated workload identities JSON will be saved when using --generate-managed-identities."
+	WorkloadIdentitiesOutputFileDescription = "Path where generated workload identities JSON will be saved. This output file can be passed to 'hypershift create infra azure' using --workload-identities-file."
+
+	// Common flags
+	NameDescription  = "A name for the HostedCluster. This name is used to identify resources and must be unique within the namespace."
+	CloudDescription = "Azure cloud environment. Valid values: AzurePublicCloud, AzureUSGovernmentCloud, AzureChinaCloud."
 )

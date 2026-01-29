@@ -2,6 +2,7 @@ package destroy
 
 import (
 	"github.com/openshift/hypershift/product-cli/cmd/cluster"
+	"github.com/openshift/hypershift/product-cli/cmd/iam"
 	"github.com/openshift/hypershift/product-cli/cmd/infra"
 	"github.com/openshift/hypershift/product-cli/cmd/nodepool"
 
@@ -16,6 +17,7 @@ func NewCommand() *cobra.Command {
 	}
 
 	destroyCmd.AddCommand(cluster.NewDestroyCommands())
+	destroyCmd.AddCommand(iam.NewDestroyCommands())
 	destroyCmd.AddCommand(infra.NewDestroyCommands())
 	destroyCmd.AddCommand(nodepool.NewDestroyCommand())
 

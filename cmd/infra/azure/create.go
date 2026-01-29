@@ -52,9 +52,6 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.ManagedIdentitiesFile, "managed-identities-file", opts.ManagedIdentitiesFile, "Path to file containing ARO HCP managed identities JSON")
 	cmd.Flags().StringVar(&opts.DataPlaneIdentitiesFile, "data-plane-identities-file", opts.DataPlaneIdentitiesFile, "Path to file containing ARO HCP data plane identities JSON")
 	cmd.Flags().StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, "Path to file containing self-managed Azure workload identities JSON")
-	cmd.Flags().StringVar(&opts.OIDCIssuerURL, "oidc-issuer-url", opts.OIDCIssuerURL, "OIDC issuer URL for creating workload identity federated credentials. Required when --workload-identities-file is not provided and you want to create workload identities.")
-	cmd.Flags().BoolVar(&opts.GenerateManagedIdentities, "generate-managed-identities", opts.GenerateManagedIdentities, util.GenerateManagedIdentitiesDescription)
-	cmd.Flags().StringVar(&opts.WorkloadIdentitiesOutputFile, "workload-identities-output-file", opts.WorkloadIdentitiesOutputFile, util.WorkloadIdentitiesOutputFileDescription)
 
 	// RBAC and identity role assignment flags
 	cmd.Flags().BoolVar(&opts.AssignServicePrincipalRoles, "assign-identity-roles", opts.AssignServicePrincipalRoles, util.AssignIdentityRolesDescription)
@@ -114,9 +111,6 @@ func BindProductFlags(opts *CreateInfraOptions, flags *pflag.FlagSet) {
 
 	// Self-managed Azure identity flags
 	flags.StringVar(&opts.WorkloadIdentitiesFile, "workload-identities-file", opts.WorkloadIdentitiesFile, util.WorkloadIdentitiesFileDescription)
-	flags.StringVar(&opts.OIDCIssuerURL, "oidc-issuer-url", opts.OIDCIssuerURL, util.OIDCIssuerURLDescription)
-	flags.BoolVar(&opts.GenerateManagedIdentities, "generate-managed-identities", opts.GenerateManagedIdentities, util.GenerateManagedIdentitiesDescription)
-	flags.StringVar(&opts.WorkloadIdentitiesOutputFile, "workload-identities-output-file", opts.WorkloadIdentitiesOutputFile, util.WorkloadIdentitiesOutputFileDescription)
 
 	// RBAC and role assignment
 	flags.BoolVar(&opts.AssignServicePrincipalRoles, "assign-identity-roles", opts.AssignServicePrincipalRoles, util.AssignIdentityRolesDescription)
@@ -135,11 +129,6 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		return nil, err
 	}
 
-	// Handle generate mode - create workload identities and save to file
-	if o.GenerateManagedIdentities {
-		return o.runGenerateMode(ctx, l)
-	}
-
 	result := CreateInfraOutput{
 		Location:   o.Location,
 		InfraID:    o.InfraID,
@@ -156,7 +145,6 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 	rgMgr := NewResourceGroupManager(subscriptionID, azureCreds, o.Cloud)
 	netMgr := NewNetworkManager(subscriptionID, azureCreds, o.Cloud)
 	rbacMgr := NewRBACManager(subscriptionID, azureCreds)
-	identityMgr := NewIdentityManager(subscriptionID, azureCreds)
 
 	// Create main resource group
 	resourceGroupName, msg, err := rgMgr.CreateOrGetResourceGroup(ctx, o, "")
@@ -279,20 +267,6 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 				return nil, err
 			}
 		}
-	} else if o.OIDCIssuerURL != "" {
-		// Create workload identities and federated credentials
-		workloadIdentities, err := identityMgr.CreateWorkloadIdentities(ctx, l, o, resourceGroupName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create workload identities: %w", err)
-		}
-		result.WorkloadIdentities = workloadIdentities
-		l.Info("Successfully created workload identities and federated credentials")
-
-		if o.AssignServicePrincipalRoles {
-			if err := rbacMgr.AssignWorkloadIdentities(ctx, o, result.WorkloadIdentities, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName); err != nil {
-				return nil, err
-			}
-		}
 	}
 
 	// Create DNS infrastructure
@@ -339,9 +313,9 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 
 // Validate validates the CreateInfraOptions before running the command
 func (o *CreateInfraOptions) Validate() error {
-	// In non-generate mode, base-domain is required for DNS operations
-	if !o.GenerateManagedIdentities && o.BaseDomain == "" {
-		return fmt.Errorf("--base-domain is required when not using --generate-managed-identities")
+	// base-domain is required for DNS operations
+	if o.BaseDomain == "" {
+		return fmt.Errorf("--base-domain is required")
 	}
 	return nil
 }
@@ -349,26 +323,6 @@ func (o *CreateInfraOptions) Validate() error {
 // validateDeploymentModelFlags validates that deployment model flags are not conflicting
 // This ensures separation between ARO HCP and self-managed Azure deployment models
 func (o *CreateInfraOptions) validateDeploymentModelFlags() error {
-	// Handle generate mode validation
-	if o.GenerateManagedIdentities {
-		// In generate mode, require OIDC issuer URL, output file, and resource group name
-		if o.OIDCIssuerURL == "" {
-			return fmt.Errorf("--oidc-issuer-url is required when --generate-managed-identities is used")
-		}
-		if o.WorkloadIdentitiesOutputFile == "" {
-			return fmt.Errorf("--workload-identities-output-file is required when --generate-managed-identities is used")
-		}
-		if o.ResourceGroupName == "" {
-			return fmt.Errorf("--resource-group-name is required when --generate-managed-identities is used")
-		}
-		// In generate mode, other identity files should not be provided
-		if o.ManagedIdentitiesFile != "" || o.DataPlaneIdentitiesFile != "" || o.WorkloadIdentitiesFile != "" {
-			return fmt.Errorf("--generate-managed-identities cannot be used with --managed-identities-file, --data-plane-identities-file, or --workload-identities-file")
-		}
-		return nil
-	}
-
-	// Normal mode validation (not generate mode)
 	// Check for conflicts between ARO HCP and self-managed Azure flags
 	if o.ManagedIdentitiesFile != "" && o.WorkloadIdentitiesFile != "" {
 		return fmt.Errorf("flags --managed-identities-file and --workload-identities-file are mutually exclusive")
@@ -377,64 +331,16 @@ func (o *CreateInfraOptions) validateDeploymentModelFlags() error {
 		return fmt.Errorf("flags --data-plane-identities-file and --workload-identities-file are mutually exclusive")
 	}
 
-	// Check for conflicts within self-managed Azure flags
-	if o.WorkloadIdentitiesFile != "" && o.OIDCIssuerURL != "" {
-		return fmt.Errorf("flags --workload-identities-file and --oidc-issuer-url are mutually exclusive")
-	}
-
 	// Ensure at least one identity configuration is provided
 	hasAnyIdentityConfig := o.ManagedIdentitiesFile != "" ||
 		o.DataPlaneIdentitiesFile != "" ||
-		o.WorkloadIdentitiesFile != "" ||
-		o.OIDCIssuerURL != ""
+		o.WorkloadIdentitiesFile != ""
 
 	if !hasAnyIdentityConfig {
 		return fmt.Errorf("at least one identity configuration must be provided:\n" +
 			"  - For ARO HCP: use --managed-identities-file and --data-plane-identities-file\n" +
-			"  - For self-managed Azure: use --oidc-issuer-url OR --workload-identities-file")
+			"  - For self-managed Azure: use --workload-identities-file (created with 'hypershift create iam azure')")
 	}
 
 	return nil
-}
-
-// runGenerateMode generates workload identities and saves them to a JSON file
-func (o *CreateInfraOptions) runGenerateMode(ctx context.Context, l logr.Logger) (*CreateInfraOutput, error) {
-	// Setup Azure credentials
-	subscriptionID, azureCreds, err := util.SetupAzureCredentials(l, o.Credentials, o.CredentialsFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to setup Azure credentials: %w", err)
-	}
-
-	// Initialize manager
-	identityMgr := NewIdentityManager(subscriptionID, azureCreds)
-
-	// Create workload identities and federated credentials
-	workloadIdentities, err := identityMgr.CreateWorkloadIdentities(ctx, l, o, o.ResourceGroupName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create workload identities: %w", err)
-	}
-
-	// Marshal workload identities to JSON
-	jsonData, err := json.MarshalIndent(workloadIdentities, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal workload identities to JSON: %w", err)
-	}
-
-	// Write JSON to output file
-	if err := os.WriteFile(o.WorkloadIdentitiesOutputFile, jsonData, 0644); err != nil {
-		return nil, fmt.Errorf("failed to write workload identities to file %s: %w", o.WorkloadIdentitiesOutputFile, err)
-	}
-
-	l.Info("Workload identities successfully generated and saved",
-		"file", o.WorkloadIdentitiesOutputFile,
-		"resourceGroup", o.ResourceGroupName,
-		"components", []string{"imageRegistry", "ingress", "file", "disk", "nodePoolManagement", "cloudProvider", "network"})
-
-	// Return a minimal result since this is generate mode
-	return &CreateInfraOutput{
-		Location:           o.Location,
-		InfraID:            o.InfraID,
-		ResourceGroupName:  o.ResourceGroupName,
-		WorkloadIdentities: workloadIdentities,
-	}, nil
 }
