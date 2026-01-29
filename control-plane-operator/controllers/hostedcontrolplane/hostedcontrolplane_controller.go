@@ -87,8 +87,10 @@ import (
 
 	routev1 "github.com/openshift/api/route/v1"
 
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	awssdk "github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	v1credentials "github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
@@ -177,6 +179,7 @@ type HostedControlPlaneReconciler struct {
 	SREConfigHash                           string
 	ec2Client                               ec2iface.EC2API
 	awsSession                              *session.Session
+	awsSessionv2                            *awsv2.Config
 	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error)
 	EnableCVOManagementClusterMetricsAccess bool
 	ImageMetadataProvider                   util.ImageMetadataProvider
@@ -205,7 +208,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 	r.reconcileInfrastructureStatus = r.defaultReconcileInfrastructureStatus
 
-	r.ec2Client, r.awsSession = GetEC2Client()
+	r.ec2Client, r.awsSession, r.awsSessionv2 = GetEC2Client(context.Background())
 
 	r.registerComponents(hcp)
 
@@ -269,16 +272,19 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 	)
 }
 
-func GetEC2Client() (ec2iface.EC2API, *session.Session) {
+func GetEC2Client(ctx context.Context) (ec2iface.EC2API, *session.Session, *awsv2.Config) {
 	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
 	// when reconciling an AWS hosted control plane
 	if os.Getenv("AWS_SHARED_CREDENTIALS_FILE") != "" {
+		// v1 session
 		awsSession := awsutil.NewSession("control-plane-operator", "", "", "", "")
 		awsConfig := awssdk.NewConfig()
 		ec2Client := ec2.New(awsSession, awsConfig)
-		return ec2Client, awsSession
+		// v2
+		awsSessionV2 := awsutil.NewSessionV2(ctx, "control-plane-operator", "", "", "", "")
+		return ec2Client, awsSession, awsSessionV2
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
 func isScrapeConfig(obj client.Object) bool {
@@ -3292,7 +3298,7 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 	roleArn := hcp.Spec.SecretEncryption.KMS.AWS.Auth.AWSKMSRoleARN
 	kmsKeyArn := hcp.Spec.SecretEncryption.KMS.AWS.ActiveKey.ARN
 
-	creds, err := supportawsutil.AssumeRoleWithWebIdentity(r.awsSession, "control-plane-operator", roleArn, token)
+	v2creds, err := supportawsutil.AssumeRoleWithWebIdentity(ctx, r.awsSessionv2, "control-plane-operator", roleArn, token)
 	if err != nil {
 		condition := metav1.Condition{
 			Type:               string(hyperv1.ValidAWSKMSConfig),
@@ -3304,6 +3310,13 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
 		return
 	}
+
+	// Convert v2 credentials to v1 credentials for KMS client
+	creds := v1credentials.NewStaticCredentials(
+		v2creds.AccessKeyID,
+		v2creds.SecretAccessKey,
+		v2creds.SessionToken,
+	)
 
 	condition := metav1.Condition{
 		Type:               string(hyperv1.ValidAWSKMSConfig),
