@@ -12,11 +12,14 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
+	capiv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/go-logr/logr"
@@ -150,6 +153,30 @@ func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *hyperutil.
 	if err != nil {
 		return fmt.Errorf("unable to register hostedcontrolplane webhook: %w", err)
 	}
+
+	// Initialize CAPI v1beta1 conversion support.
+	// CAPI v1beta1 types need an apiVersionGetter to convert object references
+	// from v1beta2 (Hub) ContractVersionedObjectReference back to v1beta1 corev1.ObjectReference.
+	// The getter resolves GroupKind to the preferred API version string using the scheme.
+	// Since we use v1beta1 as the storage version for CAPI CRDs, we prefer v1beta1 when available.
+	capiv1beta1.SetAPIVersionGetter(func(gk schema.GroupKind) (string, error) {
+		versions := mgr.GetScheme().VersionsForGroupKind(gk)
+		if len(versions) == 0 {
+			return "", fmt.Errorf("no versions registered for GroupKind %s", gk)
+		}
+		// Prefer v1beta1 if available since we use it as storage version for CAPI CRDs
+		for _, v := range versions {
+			if v.Version == "v1beta1" {
+				return gk.WithVersion(v.Version).GroupVersion().String(), nil
+			}
+		}
+		// Fall back to the first registered version
+		return gk.WithVersion(versions[0].Version).GroupVersion().String(), nil
+	})
+
+	// Register conversion webhook handler for CRD version conversions (HyperShift and CAPI types)
+	mgr.GetWebhookServer().Register("/convert", conversion.NewWebhookHandler(mgr.GetScheme()))
+
 	return nil
 }
 
