@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -303,13 +302,22 @@ func buildKASAuditWebhookConfigFileVolume(auditWebhookRef *corev1.LocalObjectRef
 // addImagePrePullInitContainers adds init containers to pre-pull images for all regular containers
 // in the kube-apiserver pod. These init containers ensure images are cached on the node before
 // the regular containers start, reducing startup time.
+// Images that are already used by existing init containers are excluded since those init containers
+// will already cause the images to be pulled before the regular containers run.
 func addImagePrePullInitContainers(podSpec *corev1.PodSpec) {
-	imagesToPrePull := []string{}
+	// Build set of images already used by init containers (these don't need pre-pulling)
+	initImages := make(map[string]bool)
+	for _, c := range podSpec.InitContainers {
+		initImages[c.Image] = true
+	}
 
-	// Collect images from regular containers
-	for _, container := range podSpec.Containers {
-		if container.Image != "" && !slices.Contains(imagesToPrePull, container.Image) {
-			imagesToPrePull = append(imagesToPrePull, container.Image)
+	// Collect unique images from regular containers, excluding init container images
+	seen := make(map[string]bool)
+	var imagesToPrePull []string
+	for _, c := range podSpec.Containers {
+		if c.Image != "" && !seen[c.Image] && !initImages[c.Image] {
+			seen[c.Image] = true
+			imagesToPrePull = append(imagesToPrePull, c.Image)
 		}
 	}
 

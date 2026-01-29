@@ -359,15 +359,6 @@ spec:
       - command:
         - /bin/sh
         - -c
-        - 'echo ''Image pre-pulled: cli''; exit 0'
-        image: cli
-        imagePullPolicy: IfNotPresent
-        name: pre-pull-image-cli
-        resources: {}
-        terminationMessagePolicy: FallbackToLogsOnError
-      - command:
-        - /bin/sh
-        - -c
         - 'echo ''Image pre-pulled: aws-pod-identity-webhook''; exit 0'
         image: aws-pod-identity-webhook
         imagePullPolicy: IfNotPresent

@@ -14,6 +14,8 @@ func TestAddImagePrePullInitContainers(t *testing.T) {
 		name                   string
 		containers             []corev1.Container
 		existingInitContainers []corev1.Container
+		// expectedPrePullCount = unique container images - images already in init containers
+		expectedPrePullCount int
 	}{
 		{
 			name: "When containers have unique images it should create one pre-pull init container per image",
@@ -24,6 +26,7 @@ func TestAddImagePrePullInitContainers(t *testing.T) {
 			existingInitContainers: []corev1.Container{
 				{Name: "init-bootstrap-render", Image: "registry.io/cli:v1"},
 			},
+			expectedPrePullCount: 2,
 		},
 		{
 			name: "When containers share the same image it should create only one pre-pull init container",
@@ -34,6 +37,7 @@ func TestAddImagePrePullInitContainers(t *testing.T) {
 			existingInitContainers: []corev1.Container{
 				{Name: "existing-init", Image: "registry.io/init:v1"},
 			},
+			expectedPrePullCount: 1,
 		},
 		{
 			name: "When there are no existing init containers it should only have pre-pull init containers",
@@ -41,12 +45,25 @@ func TestAddImagePrePullInitContainers(t *testing.T) {
 				{Name: "kube-apiserver", Image: "registry.io/kube-apiserver:v1"},
 			},
 			existingInitContainers: []corev1.Container{},
+			expectedPrePullCount:   1,
 		},
 		{
 			// edge case that should never happen, still testing for robustness
 			name:                   "When there are no existing containers it should have no pre-pull init containers",
 			containers:             []corev1.Container{},
 			existingInitContainers: []corev1.Container{},
+			expectedPrePullCount:   0,
+		},
+		{
+			name: "When a regular container uses the same image as an init container it should not pre-pull that image",
+			containers: []corev1.Container{
+				{Name: "kube-apiserver", Image: "registry.io/kube-apiserver:v1"},
+				{Name: "sidecar", Image: "registry.io/cli:v1"}, // same image as init container
+			},
+			existingInitContainers: []corev1.Container{
+				{Name: "init-bootstrap-render", Image: "registry.io/cli:v1"},
+			},
+			expectedPrePullCount: 1,
 		},
 	}
 
@@ -85,14 +102,25 @@ func TestAddImagePrePullInitContainers(t *testing.T) {
 				}
 			}
 
-			// Validate we have one pre-pull init container per unique regular container image
-			g.Expect(len(prePullInitContainers)).To(Equal(len(regularContainerImages)),
-				"expected one pre-pull init container per unique regular container image")
+			// Validate the expected number of pre-pull init containers
+			g.Expect(len(prePullInitContainers)).To(Equal(tc.expectedPrePullCount),
+				"unexpected number of pre-pull init containers")
 
 			// Validate that pre-pull init containers use images from regular containers
 			for _, prePullContainer := range prePullInitContainers {
 				g.Expect(regularContainerImages[prePullContainer.Image]).To(BeTrue(),
 					"pre-pull init container %s uses image %s which is not in regular containers",
+					prePullContainer.Name, prePullContainer.Image)
+			}
+
+			// Validate that pre-pull init containers do NOT use images from existing init containers
+			existingInitImages := make(map[string]bool)
+			for _, c := range tc.existingInitContainers {
+				existingInitImages[c.Image] = true
+			}
+			for _, prePullContainer := range prePullInitContainers {
+				g.Expect(existingInitImages[prePullContainer.Image]).To(BeFalse(),
+					"pre-pull init container %s uses image %s which is already in an existing init container",
 					prePullContainer.Name, prePullContainer.Image)
 			}
 
