@@ -822,7 +822,7 @@ github.com/googleapis/gax-go/v2/callctx
 github.com/googleapis/gax-go/v2/internal
 github.com/googleapis/gax-go/v2/internallog
 github.com/googleapis/gax-go/v2/internallog/internal
-# github.com/gophercloud/gophercloud/v2 v2.4.0
+# github.com/gophercloud/gophercloud/v2 v2.10.0
 ## explicit; go 1.22
 github.com/gophercloud/gophercloud/v2
 # github.com/gorilla/mux v1.8.1
