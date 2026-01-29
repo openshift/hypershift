@@ -948,6 +948,24 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Copy GCPEndpointAvailable and GCPServiceAttachmentAvailable conditions from the GCPPrivateServiceConnect resources.
+	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		var gcpPSCList hyperv1.GCPPrivateServiceConnectList
+		if err := r.List(ctx, &gcpPSCList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
+			condition := metav1.Condition{
+				Type:    string(hyperv1.GCPEndpointAvailable),
+				Status:  metav1.ConditionUnknown,
+				Reason:  hyperv1.NotFoundReason,
+				Message: fmt.Sprintf("error listing GCPPrivateServiceConnect in namespace %s: %v", hcpNamespace, err),
+			}
+			meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+		} else {
+			meta.SetStatusCondition(&hcluster.Status.Conditions, computeGCPPSCCondition(gcpPSCList, hyperv1.GCPEndpointAvailable))
+			meta.SetStatusCondition(&hcluster.Status.Conditions, computeGCPPSCCondition(gcpPSCList, hyperv1.GCPServiceAttachmentAvailable))
+		}
+	}
+
 	// Set ValidConfiguration condition
 	{
 		condition := metav1.Condition{
@@ -5006,4 +5024,45 @@ func (r *HostedClusterReconciler) reconcileCAPIFinalizers(ctx context.Context, h
 	}
 
 	return nil
+}
+
+func computeGCPPSCCondition(gcpPSCList hyperv1.GCPPrivateServiceConnectList, conditionType hyperv1.ConditionType) metav1.Condition {
+	var messages []string
+	var conditions []metav1.Condition
+
+	for _, psc := range gcpPSCList.Items {
+		condition := meta.FindStatusCondition(psc.Status.Conditions, string(conditionType))
+		if condition != nil {
+			conditions = append(conditions, *condition)
+
+			if condition.Status == metav1.ConditionFalse {
+				messages = append(messages, condition.Message)
+			}
+		}
+	}
+
+	if len(conditions) == 0 {
+		return metav1.Condition{
+			Type:    string(conditionType),
+			Status:  metav1.ConditionUnknown,
+			Reason:  hyperv1.StatusUnknownReason,
+			Message: "GCPPrivateServiceConnect conditions not found",
+		}
+	}
+
+	if len(messages) > 0 {
+		return metav1.Condition{
+			Type:    string(conditionType),
+			Status:  metav1.ConditionFalse,
+			Reason:  hyperv1.GCPErrorReason,
+			Message: strings.Join(messages, "; "),
+		}
+	}
+
+	return metav1.Condition{
+		Type:    string(conditionType),
+		Status:  metav1.ConditionTrue,
+		Reason:  hyperv1.GCPSuccessReason,
+		Message: hyperv1.AllIsWellMessage,
+	}
 }
