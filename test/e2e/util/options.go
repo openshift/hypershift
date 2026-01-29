@@ -91,6 +91,8 @@ type Options struct {
 	ExternalOIDCConsoleSecret   string
 	ExternalOIDCCABundleFile    string
 	ExternalOIDCTestUsers       string
+	// ExternalCNIProvider specifies the third-party CNI provider (e.g., "cilium", "calico")
+	ExternalCNIProvider string
 }
 
 type HyperShiftOperatorInstallOptions struct {
@@ -201,12 +203,13 @@ func (o *Options) DefaultClusterOptions(t *testing.T) PlatformAgnosticOptions {
 			},
 			EtcdStorageClass: o.ConfigurableClusterOptions.EtcdStorageClass,
 		},
-		NonePlatform:      o.DefaultNoneOptions(),
-		AWSPlatform:       o.DefaultAWSOptions(),
-		KubevirtPlatform:  o.DefaultKubeVirtOptions(),
-		AzurePlatform:     o.DefaultAzureOptions(),
-		PowerVSPlatform:   o.DefaultPowerVSOptions(),
-		OpenStackPlatform: o.DefaultOpenStackOptions(),
+		NonePlatform:        o.DefaultNoneOptions(),
+		AWSPlatform:         o.DefaultAWSOptions(),
+		KubevirtPlatform:    o.DefaultKubeVirtOptions(),
+		AzurePlatform:       o.DefaultAzureOptions(),
+		PowerVSPlatform:     o.DefaultPowerVSOptions(),
+		OpenStackPlatform:   o.DefaultOpenStackOptions(),
+		ExternalCNIProvider: o.ExternalCNIProvider,
 	}
 
 	switch o.Platform {
