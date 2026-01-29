@@ -272,7 +272,7 @@ github.com/Masterminds/semver/v3
 # github.com/NYTimes/gziphandler v1.1.1
 ## explicit; go 1.11
 github.com/NYTimes/gziphandler
-# github.com/PaesslerAG/gval v1.2.3
+# github.com/PaesslerAG/gval v1.2.4
 ## explicit; go 1.15
 github.com/PaesslerAG/gval
 # github.com/PaesslerAG/jsonpath v0.1.1
