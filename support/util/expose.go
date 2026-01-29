@@ -31,18 +31,6 @@ func UseDedicatedDNSForKAS(hcp *hyperv1.HostedControlPlane) bool {
 	return UseDedicatedDNS(hcp, hyperv1.APIServer)
 }
 
-func UseDedicatedDNSForOAuth(hcp *hyperv1.HostedControlPlane) bool {
-	return UseDedicatedDNS(hcp, hyperv1.OAuthServer)
-}
-
-func UseDedicatedDNSForKonnectivity(hcp *hyperv1.HostedControlPlane) bool {
-	return UseDedicatedDNS(hcp, hyperv1.Konnectivity)
-}
-
-func UseDedicatedDNSForIgnition(hcp *hyperv1.HostedControlPlane) bool {
-	return UseDedicatedDNS(hcp, hyperv1.Ignition)
-}
-
 func UseDedicatedDNS(hcp *hyperv1.HostedControlPlane, svcType hyperv1.ServiceType) bool {
 	svc := ServicePublishingStrategyByTypeForHCP(hcp, svcType)
 	return IsRoute(hcp, svcType) &&
