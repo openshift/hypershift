@@ -90,3 +90,4 @@ spec:
           defaultMode: 420
           name: konnectivity-ca-bundle
         name: konnectivity-ca
+      serviceAccountName: konnectivity-agent
