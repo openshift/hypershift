@@ -141,6 +141,17 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 			return ctrl.Result{}, nil
 		}
 
+		// Try to initialize client builder for deletion if not already done.
+		// This handles the case where the controller restarts during deletion -
+		// the in-memory client builder state is lost, so we need to reinitialize from HCP.
+		if !r.gcpClientBuilder.initialized {
+			if hcp, err := r.getHostedControlPlane(ctx, gcpPSC); err == nil {
+				r.gcpClientBuilder.initializeWithHCP(hcp)
+			} else {
+				log.V(1).Info("Could not initialize client builder during deletion, HCP may be deleted", "error", err)
+			}
+		}
+
 		// Attempt cleanup using client builder (following AWS pattern)
 		customerGCPClient, err := r.gcpClientBuilder.getClient(ctx)
 		if err != nil {
