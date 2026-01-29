@@ -75,7 +75,6 @@ type PowerVSPlatformDestroyOptions struct {
 	VPCRegion              string
 	VPC                    string
 	CloudInstanceID        string
-	CloudConnection        string
 	Debug                  bool
 	PER                    bool
 	TransitGatewayLocation string
