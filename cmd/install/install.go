@@ -589,7 +589,6 @@ func WaitUntilAvailable(ctx context.Context, opts Options) (*appsv1.Deployment, 
 		}
 		fmt.Printf("Endpoints available\n")
 		return true, nil
-
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to wait for operator service endpoints: %w", err)
@@ -842,28 +841,42 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 				}
 				return true
 			}, func(crd *apiextensionsv1.CustomResourceDefinition) {
-				if crd.Spec.Group == "hypershift.openshift.io" {
-					if !opts.EnableConversionWebhook {
-						return
-					}
-					if crd.Annotations != nil {
-						crd.Annotations = map[string]string{}
-					}
-					crd.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
-					crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
-						Strategy: apiextensionsv1.WebhookConverter,
-						Webhook: &apiextensionsv1.WebhookConversion{
-							ClientConfig: &apiextensionsv1.WebhookClientConfig{
-								Service: &apiextensionsv1.ServiceReference{
-									Namespace: operatorNamespace.Name,
-									Name:      operatorService.Name,
-									Port:      ptr.To[int32](443),
-									Path:      ptr.To("/convert"),
-								},
+				// Check if this CRD needs a conversion webhook
+				var needsConversion bool
+				var conversionReviewVersions []string
+
+				// Hypershift conversion can be toggled with a flag
+				if crd.Spec.Group == "hypershift.openshift.io" && opts.EnableConversionWebhook {
+					needsConversion = true
+					conversionReviewVersions = []string{"v1beta1", "v1alpha1"}
+
+					// CAPI conversion is always required during v1beta1 -> v1beta2 transition period
+				} else if override, ok := assets.CAPICRDOverrides[crd.Name]; ok && override.NeedsConversion {
+					needsConversion = true
+					conversionReviewVersions = []string{"v1beta1", "v1beta2"}
+				}
+
+				if !needsConversion {
+					return
+				}
+
+				if crd.Annotations == nil {
+					crd.Annotations = map[string]string{}
+				}
+				crd.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
+				crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
+					Strategy: apiextensionsv1.WebhookConverter,
+					Webhook: &apiextensionsv1.WebhookConversion{
+						ClientConfig: &apiextensionsv1.WebhookClientConfig{
+							Service: &apiextensionsv1.ServiceReference{
+								Namespace: operatorNamespace.Name,
+								Name:      operatorService.Name,
+								Port:      ptr.To[int32](443),
+								Path:      ptr.To("/convert"),
 							},
-							ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
 						},
-					}
+						ConversionReviewVersions: conversionReviewVersions,
+					},
 				}
 			},
 		)...,
