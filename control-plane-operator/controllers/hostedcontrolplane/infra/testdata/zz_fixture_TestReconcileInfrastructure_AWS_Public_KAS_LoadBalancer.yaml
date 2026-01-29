@@ -3,8 +3,6 @@ routes:
   - metadata:
       annotations:
         haproxy.router.openshift.io/balance: roundrobin
-      labels:
-        hypershift.openshift.io/hosted-control-plane: test-namespace
       name: konnectivity-server
       namespace: test-namespace
       ownerReferences:
@@ -25,8 +23,6 @@ routes:
         weight: null
     status: {}
   - metadata:
-      labels:
-        hypershift.openshift.io/hosted-control-plane: test-namespace
       name: oauth
       namespace: test-namespace
       ownerReferences:
@@ -192,24 +188,6 @@ services:
         app: packageserver
         hypershift.openshift.io/control-plane-component: packageserver
       type: ClusterIP
-    status:
-      loadBalancer: {}
-  - metadata:
-      annotations:
-        service.beta.kubernetes.io/aws-load-balancer-type: nlb
-      labels:
-        app: private-router
-      name: router
-      namespace: test-namespace
-    spec:
-      ports:
-      - name: https
-        port: 443
-        protocol: TCP
-        targetPort: https
-      selector:
-        app: private-router
-      type: LoadBalancer
     status:
       loadBalancer: {}
   metadata: {}

@@ -26,8 +26,6 @@ routes:
         weight: null
     status: {}
   - metadata:
-      labels:
-        hypershift.openshift.io/hosted-control-plane: test-namespace
       name: oauth
       namespace: test-namespace
       ownerReferences:
@@ -253,25 +251,6 @@ services:
       labels:
         app: private-router
       name: private-router
-      namespace: test-namespace
-    spec:
-      ports:
-      - name: https
-        port: 443
-        protocol: TCP
-        targetPort: https
-      selector:
-        app: private-router
-      type: LoadBalancer
-    status:
-      loadBalancer: {}
-  - metadata:
-      annotations:
-        service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
-        service.beta.kubernetes.io/aws-load-balancer-type: nlb
-      labels:
-        app: private-router
-      name: router
       namespace: test-namespace
     spec:
       ports:

@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -21,7 +22,6 @@ import (
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
-	routerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
@@ -38,6 +38,7 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/api/image/docker10"
+	routev1 "github.com/openshift/api/route/v1"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
@@ -65,7 +66,6 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/zapr"
-	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zaptest"
 )
@@ -1491,166 +1491,6 @@ func componentsFakeDependencies(componentName string, namespace string) []client
 	return fakeComponents
 }
 
-func TestUseHCPRouter(t *testing.T) {
-	testsCases := []struct {
-		name           string
-		hcp            *hyperv1.HostedControlPlane
-		expectedResult bool
-	}{
-		{
-			name: "Provider is IBM Cloud",
-			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.IBMCloudPlatform,
-					},
-				},
-			},
-			expectedResult: false,
-		},
-		{
-			name: "Provider is NonePlatform, services are exposed with Routes",
-			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.NonePlatform,
-					},
-					Services: []hyperv1.ServicePublishingStrategyMapping{
-						{
-							Service: hyperv1.APIServer,
-							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-								Type: hyperv1.Route,
-								Route: &hyperv1.RoutePublishingStrategy{
-									Hostname: "cluster1.api.tenant1.com",
-								},
-							},
-						},
-						{
-							Service: hyperv1.Konnectivity,
-							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-								Type: hyperv1.Route,
-								Route: &hyperv1.RoutePublishingStrategy{
-									Hostname: "cluster1.tunnel.tenant1.com",
-								},
-							},
-						},
-						{
-							Service: hyperv1.Ignition,
-							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-								Type: hyperv1.Route,
-								Route: &hyperv1.RoutePublishingStrategy{
-									Hostname: "cluster1.ignition.tenant1.com",
-								},
-							},
-						},
-						{
-							Service: hyperv1.OAuthServer,
-							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
-								Type: hyperv1.Route,
-								Route: &hyperv1.RoutePublishingStrategy{
-									Hostname: "cluster1.oauth.tenant1.com",
-								},
-							},
-						},
-					},
-				},
-			},
-			expectedResult: true,
-		},
-		{
-			name: "Provider is AWS, Public and Private",
-			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AWSPlatform,
-						AWS: &hyperv1.AWSPlatformSpec{
-							EndpointAccess: hyperv1.PublicAndPrivate,
-						},
-					},
-				},
-			},
-			expectedResult: true,
-		},
-		{
-			name: "Provider is AWS, Private",
-			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AWSPlatform,
-						AWS: &hyperv1.AWSPlatformSpec{
-							EndpointAccess: hyperv1.Private,
-						},
-					},
-				},
-			},
-			expectedResult: true,
-		},
-		{
-			name: "Provider is GCP, Private",
-			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.GCPPlatform,
-						GCP: &hyperv1.GCPPlatformSpec{
-							EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
-						},
-					},
-				},
-			},
-			expectedResult: true,
-		},
-		{
-			name: "Provider is GCP, PublicAndPrivate",
-			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.GCPPlatform,
-						GCP: &hyperv1.GCPPlatformSpec{
-							EndpointAccess: hyperv1.GCPEndpointAccessPublicAndPrivate,
-						},
-					},
-				},
-			},
-			expectedResult: true,
-		},
-	}
-	for _, tc := range testsCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.expectedResult, routerv2.UseHCPRouter(tc.hcp))
-		})
-	}
-}
-
 func TestControlPlaneComponentsAvailable(t *testing.T) {
 	testNamespace := "test-namespace"
 
@@ -1880,6 +1720,391 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
 				g.Expect(msg).To(Equal(tc.expectedMsg))
+			}
+		})
+	}
+}
+
+func TestRemoveHCPIngressFromRoutes(t *testing.T) {
+	const namespace = "test-ns"
+
+	tests := []struct {
+		name           string
+		hcp            *hyperv1.HostedControlPlane
+		existingRoutes []*routev1.Route
+		expectedRoutes []routev1.Route
+		expectError    bool
+		errorContains  string
+	}{
+		{
+			name: "Route with HCPRouteLabel is skipped",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+			},
+			existingRoutes: []*routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "hcp-managed-route",
+						Namespace: namespace,
+						Labels: map[string]string{
+							util.HCPRouteLabel: namespace,
+						},
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "example.com"},
+							{RouterName: "other-router", Host: "other.com"},
+						},
+					},
+				},
+			},
+			expectedRoutes: []routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "hcp-managed-route",
+						Namespace: namespace,
+						Labels: map[string]string{
+							util.HCPRouteLabel: namespace,
+						},
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "example.com"},
+							{RouterName: "other-router", Host: "other.com"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Route without HCPRouteLabel has router ingress removed",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+			},
+			existingRoutes: []*routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "example.com"},
+							{RouterName: "other-router", Host: "other.com"},
+						},
+					},
+				},
+			},
+			expectedRoutes: []routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "other-router", Host: "other.com"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Route without router ingress is unchanged",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+			},
+			existingRoutes: []*routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "other-router", Host: "other.com"},
+							{RouterName: "another-router", Host: "another.com"},
+						},
+					},
+				},
+			},
+			expectedRoutes: []routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "other-router", Host: "other.com"},
+							{RouterName: "another-router", Host: "another.com"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Route with only router ingress has all ingress removed",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+			},
+			existingRoutes: []*routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "router-only-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "example.com"},
+						},
+					},
+				},
+			},
+			expectedRoutes: []routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "router-only-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{},
+					},
+				},
+			},
+		},
+		{
+			name: "Multiple routes handled correctly",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+			},
+			existingRoutes: []*routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "hcp-managed",
+						Namespace: namespace,
+						Labels: map[string]string{
+							util.HCPRouteLabel: namespace,
+						},
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "hcp.example.com"},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route-1",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "route1.example.com"},
+							{RouterName: "other-router", Host: "route1.other.com"},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route-2",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "other-router", Host: "route2.other.com"},
+						},
+					},
+				},
+			},
+			expectedRoutes: []routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "hcp-managed",
+						Namespace: namespace,
+						Labels: map[string]string{
+							util.HCPRouteLabel: namespace,
+						},
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "hcp.example.com"},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route-1",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "other-router", Host: "route1.other.com"},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route-2",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "other-router", Host: "route2.other.com"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Route with empty ingress list is unchanged",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+			},
+			existingRoutes: []*routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "empty-ingress-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{},
+					},
+				},
+			},
+			expectedRoutes: []routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "empty-ingress-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{},
+					},
+				},
+			},
+		},
+		{
+			name: "Route with multiple router ingress entries removes all",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+			},
+			existingRoutes: []*routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "multi-router-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "example1.com"},
+							{RouterName: "router", Host: "example2.com"},
+							{RouterName: "other-router", Host: "other.com"},
+							{RouterName: "router", Host: "example3.com"},
+						},
+					},
+				},
+			},
+			expectedRoutes: []routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "multi-router-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "other-router", Host: "other.com"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+
+			// Convert existing routes to client.Object slice
+			existingObjects := make([]client.Object, 0, len(tc.existingRoutes))
+			for _, route := range tc.existingRoutes {
+				existingObjects = append(existingObjects, route)
+			}
+			existingObjects = append(existingObjects, tc.hcp)
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(existingObjects...).
+				WithStatusSubresource(&routev1.Route{}).
+				Build()
+
+			r := &HostedControlPlaneReconciler{
+				Client: fakeClient,
+				Log:    ctrl.LoggerFrom(ctx),
+			}
+
+			err := r.removeHCPIngressFromRoutes(ctx, tc.hcp)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				if tc.errorContains != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.errorContains))
+				}
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+
+				// Verify routes match expected state
+				var actualRoutes routev1.RouteList
+				err = fakeClient.List(ctx, &actualRoutes, client.InNamespace(namespace))
+				g.Expect(err).NotTo(HaveOccurred())
+
+				// Sort routes by name for comparison
+				sort.Slice(actualRoutes.Items, func(i, j int) bool {
+					return actualRoutes.Items[i].Name < actualRoutes.Items[j].Name
+				})
+				sort.Slice(tc.expectedRoutes, func(i, j int) bool {
+					return tc.expectedRoutes[i].Name < tc.expectedRoutes[j].Name
+				})
+
+				g.Expect(len(actualRoutes.Items)).To(Equal(len(tc.expectedRoutes)))
+
+				for i := range actualRoutes.Items {
+					actual := actualRoutes.Items[i]
+					expected := tc.expectedRoutes[i]
+
+					g.Expect(actual.Name).To(Equal(expected.Name))
+					g.Expect(actual.Labels).To(Equal(expected.Labels))
+					g.Expect(actual.Status.Ingress).To(HaveLen(len(expected.Status.Ingress)))
+
+					// Compare ingress entries
+					for j := range actual.Status.Ingress {
+						g.Expect(actual.Status.Ingress[j].RouterName).To(Equal(expected.Status.Ingress[j].RouterName))
+						g.Expect(actual.Status.Ingress[j].Host).To(Equal(expected.Status.Ingress[j].Host))
+					}
+				}
 			}
 		})
 	}
