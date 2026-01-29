@@ -518,6 +518,38 @@ func adaptConditions(in []metav1.Condition) []Condition {
 	return conditions
 }
 
+// EventuallyNotFound polls until the object is not found (deleted).
+func EventuallyNotFound[T client.Object](t *testing.T, ctx context.Context, c client.Client, obj T, options ...EventuallyOption) {
+	t.Helper()
+	opts := defaultOptions()
+	for _, option := range options {
+		option(opts)
+	}
+
+	objective := fmt.Sprintf("%T %s/%s to be deleted", obj, obj.GetNamespace(), obj.GetName())
+	if os.Getenv("EVENTUALLY_VERBOSE") != "false" {
+		t.Logf("Waiting for %s", objective)
+	}
+	start := time.Now()
+	err := wait.PollUntilContextTimeout(ctx, opts.interval, opts.timeout, opts.immediate, func(ctx context.Context) (bool, error) {
+		err := c.Get(ctx, client.ObjectKeyFromObject(obj), obj)
+		if err != nil {
+			if client.IgnoreNotFound(err) == nil {
+				return true, nil // Object is not found, which is what we want
+			}
+			return false, err // Some other error occurred
+		}
+		return false, nil // Object still exists
+	})
+	duration := time.Since(start).Round(25 * time.Millisecond)
+
+	if err != nil {
+		t.Errorf("Failed to wait for %s in %s: %v", objective, duration, err)
+		t.FailNow()
+	}
+	t.Logf("Successfully waited for %s in %s", objective, duration)
+}
+
 func (needle Condition) Matches(condition Condition) bool {
 	return (needle.Type == "" || needle.Type == condition.Type) &&
 		(needle.Status == "" || needle.Status == condition.Status) &&
