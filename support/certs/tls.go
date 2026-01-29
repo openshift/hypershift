@@ -15,7 +15,9 @@ import (
 	"math/big"
 	"net"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -290,6 +292,44 @@ func parsePemKeypair(key, certificate []byte) (*rsa.PrivateKey, *x509.Certificat
 	return privKey, cert, nil
 }
 
+// compareIPAddresses compares two slices of IP addresses semantically.
+// This handles IPv6 address normalization (e.g., "::1" vs "0:0:0:0:0:0:0:1")
+// by using net.IP.Equal() for comparison instead of byte comparison.
+func compareIPAddresses(actual, expected []net.IP) error {
+	if len(actual) != len(expected) {
+		return fmt.Errorf("actual ip addresses count (%d) differs from expected (%d)", len(actual), len(expected))
+	}
+
+	// Create sorted copies to handle order differences
+	actualSorted := make([]net.IP, len(actual))
+	expectedSorted := make([]net.IP, len(expected))
+	copy(actualSorted, actual)
+	copy(expectedSorted, expected)
+
+	// Sort both slices using byte comparison for consistent ordering
+	sortIPSlice := func(ips []net.IP) {
+		sort.Slice(ips, func(i, j int) bool {
+			return bytes.Compare(ips[i], ips[j]) < 0
+		})
+	}
+	sortIPSlice(actualSorted)
+	sortIPSlice(expectedSorted)
+
+	// Compare each IP semantically
+	var mismatches []string
+	for i := range actualSorted {
+		if !actualSorted[i].Equal(expectedSorted[i]) {
+			mismatches = append(mismatches, fmt.Sprintf("position %d: actual=%s, expected=%s", i, actualSorted[i], expectedSorted[i]))
+		}
+	}
+
+	if len(mismatches) > 0 {
+		return fmt.Errorf("actual ip addresses differ from expected: %s", strings.Join(mismatches, "; "))
+	}
+
+	return nil
+}
+
 func ValidateKeyPair(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemainingValidity time.Duration) error {
 	_, cert, err := parsePemKeypair(pemKey, pemCertificate)
 	if err != nil {
@@ -316,9 +356,9 @@ func ValidateKeyPair(pemKey, pemCertificate []byte, cfg *CertCfg, minimumRemaini
 		errs = append(errs, fmt.Errorf("actual extended key usages differ from expected: %s", extUsageDiff))
 	}
 
-	ipAddressDiff := cmp.Diff(cert.IPAddresses, cfg.IPAddresses, cmpopts.SortSlices(func(a, b []byte) bool { return bytes.Compare(a, b) == -1 }))
-	if ipAddressDiff != "" {
-		errs = append(errs, fmt.Errorf("actual ip addresses differ from expected: %s", ipAddressDiff))
+	// Compare IP addresses semantically to handle IPv6 normalization
+	if err := compareIPAddresses(cert.IPAddresses, cfg.IPAddresses); err != nil {
+		errs = append(errs, err)
 	}
 
 	if cert.KeyUsage != cfg.KeyUsages {
