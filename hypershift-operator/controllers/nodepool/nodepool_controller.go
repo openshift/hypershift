@@ -276,31 +276,37 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 
 	// Loop over all conditions.
 	// Order matter as conditions might choose to short circuit returning ctrl.Result or error.
-	signalConditions := map[string]func(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error){
-		hyperv1.NodePoolAutoscalingEnabledConditionType:      r.autoscalerEnabledCondition,
-		hyperv1.NodePoolUpdateManagementEnabledConditionType: r.updateManagementEnabledCondition,
-		hyperv1.NodePoolValidReleaseImageConditionType:       r.releaseImageCondition,
-		string(hyperv1.IgnitionEndpointAvailable):            r.ignitionEndpointAvailableCondition,
-		hyperv1.NodePoolValidArchPlatform:                    r.validArchPlatformCondition,
-		hyperv1.NodePoolReconciliationActiveConditionType:    r.reconciliationActiveCondition,
+	signalConditions := []func(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error){
+		r.autoscalerEnabledCondition,
+		r.updateManagementEnabledCondition,
+		r.releaseImageCondition,
+		r.ignitionEndpointAvailableCondition,
+		r.validArchPlatformCondition,
+		r.reconciliationActiveCondition,
 		// Conditition that depends on a valid release image.
-		hyperv1.NodePoolSupportedVersionSkewConditionType: r.supportedVersionSkewCondition,
-		hyperv1.NodePoolValidMachineConfigConditionType:   r.validMachineConfigCondition,
-		hyperv1.NodePoolUpdatingConfigConditionType:       r.updatingConfigCondition,
-		hyperv1.NodePoolUpdatingVersionConditionType:      r.updatingVersionCondition,
+		r.supportedVersionSkewCondition,
+		r.validMachineConfigCondition,
+		r.updatingConfigCondition,
+		r.updatingVersionCondition,
 		// Conditition that depends on a valid config/token.
-		hyperv1.NodePoolValidGeneratedPayloadConditionType: r.validGeneratedPayloadCondition,
-		hyperv1.NodePoolReachedIgnitionEndpoint:            r.reachedIgnitionEndpointCondition,
-		hyperv1.NodePoolAllMachinesReadyConditionType:      r.machineAndNodeConditions,
-		hyperv1.NodePoolValidPlatformConfigConditionType:   r.validPlatformConfigCondition,
+		r.validGeneratedPayloadCondition,
+		r.reachedIgnitionEndpointCondition,
+		r.machineAndNodeConditions,
+		r.validPlatformConfigCondition,
 		// TODO(alberto): consider moving here:
 		// NodePoolUpdatingPlatformMachineTemplateConditionType,
 		// NodePoolAutorepairEnabledConditionType.
 	}
 	for _, f := range signalConditions {
 		result, err := f(ctx, nodePool, hcluster)
-		if result != nil || err != nil {
+		if err != nil {
+			if result == nil {
+				return ctrl.Result{}, err
+			}
 			return *result, err
+		}
+		if result != nil {
+			return *result, nil
 		}
 	}
 
