@@ -837,8 +837,8 @@ github.com/gregjones/httpcache
 # github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 ## explicit; go 1.14
 github.com/grpc-ecosystem/go-grpc-middleware/logging/settable
-# github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.0.1
-## explicit; go 1.19
+# github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.0
+## explicit; go 1.21
 github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus
 # github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.0
 ## explicit; go 1.23
