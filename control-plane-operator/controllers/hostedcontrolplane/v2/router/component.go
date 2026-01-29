@@ -57,6 +57,7 @@ func NewComponent() component.ControlPlaneComponent {
 // 2 - When 1 is true, we recommend (and automate via CLI) ServicePublishingStrategy to be "Route" for all endpoints but the KAS
 // which needs a dedicated Service type LB external to be exposed if no external DNS is supported.
 // Otherwise, the Routes use the management cluster Domain and resolve through the default ingress controller.
+// 3 - When swift is enabled.
 func UseHCPRouter(hcp *hyperv1.HostedControlPlane) bool {
 	platform := hcp.Spec.Platform.Type
 	if sharedingress.UseSharedIngress(hcp) || platform == hyperv1.IBMCloudPlatform {

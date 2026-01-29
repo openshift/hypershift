@@ -6,7 +6,6 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
-	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 
 	routev1 "github.com/openshift/api/route/v1"
@@ -21,7 +20,7 @@ func GetHealthcheckEndpointForRoute(externalRoute *routev1.Route, hcp *hyperv1.H
 	endpoint = externalRoute.Status.Ingress[0].RouterCanonicalHostname
 	port = 443
 
-	if sharedingress.UseSharedIngress(hcp) || azureutil.IsAroSwiftEnabled(hcp) {
+	if sharedingress.UseSharedIngress(hcp) {
 		endpoint = externalRoute.Spec.Host
 		port = sharedingress.ExternalDNSLBPort
 	}

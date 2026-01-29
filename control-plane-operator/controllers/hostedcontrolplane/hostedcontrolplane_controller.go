@@ -847,7 +847,7 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 	}
 
 	switch {
-	case !util.IsPublicHCP(hcp):
+	case !util.IsPublicHCP(hcp) || azureutil.IsAroSwiftEnabled(hcp):
 		// When the cluster is private, checking the load balancers will depend on whether the load balancer is
 		// using the right subnets. To avoid uncertainty, we'll limit the check to the service endpoint.
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
