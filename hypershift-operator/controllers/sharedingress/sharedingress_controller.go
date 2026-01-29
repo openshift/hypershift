@@ -377,8 +377,7 @@ func ReconcileRouteStatus(route *routev1.Route, canonicalHostname string) {
 }
 
 func UseSharedIngress() bool {
-	managedService, _ := os.LookupEnv("MANAGED_SERVICE")
-	return managedService == hyperv1.AroHCP
+	return util.UseSharedIngress()
 }
 
 func Hostname(hcp *hyperv1.HostedControlPlane) string {

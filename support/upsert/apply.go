@@ -65,6 +65,9 @@ func (p *applyProvider) ApplyManifest(ctx context.Context, c crclient.Client, ob
 		if !apierrors.IsNotFound(err) {
 			return controllerutil.OperationResultNone, err
 		}
+		// Clean up removal markers before creating the object, as Kubernetes validates
+		// labels during creation and the removal marker value is not a valid label value.
+		cleanupRemovalMarkers(obj)
 		if err := c.Create(ctx, obj); err != nil {
 			return controllerutil.OperationResultNone, err
 		}
@@ -100,6 +103,10 @@ func (p *applyProvider) ApplyManifest(ctx context.Context, c crclient.Client, ob
 func (p *applyProvider) update(ctx context.Context, c crclient.Client, obj crclient.Object, existing crclient.Object) (controllerutil.OperationResult, error) {
 	key := crclient.ObjectKeyFromObject(obj)
 
+	// Save original labels before preserveOriginalMetadata modifies them
+	originalLabels := existing.GetLabels()
+	originalLabelCount := len(originalLabels)
+
 	switch existingTyped := existing.(type) {
 	case *corev1.ServiceAccount:
 		preserveServiceAccountPullSecrets(existingTyped, obj.(*corev1.ServiceAccount))
@@ -121,7 +128,20 @@ func (p *applyProvider) update(ctx context.Context, c crclient.Client, obj crcli
 	}
 
 	// DeepDerivative ignores unset fields in 'modified' (empty/nil arrays, empty strings, etc.)
-	if equality.Semantic.DeepDerivative(modified, current) {
+	isEqual := equality.Semantic.DeepDerivative(modified, current)
+
+	// Special handling for label removal: DeepDerivative ignores empty maps, but we need
+	// to update when labels have been explicitly removed. Check if label count decreased
+	// (either partial or complete removal).
+	mutatedLabels := obj.GetLabels()
+	labelsRemoved := len(mutatedLabels) < originalLabelCount
+	if labelsRemoved {
+		// Force an update even though DeepDerivative says they're equal
+		isEqual = false
+	}
+
+	// If objects are equal (no changes needed), record no-op update and return early
+	if isEqual {
 		if p.loopDetector != nil {
 			p.loopDetector.recordNoOpUpdate(obj, key)
 		}
@@ -149,12 +169,41 @@ func (p *applyProvider) update(ctx context.Context, c crclient.Client, obj crcli
 	return controllerutil.OperationResultUpdated, nil
 }
 
+// cleanupRemovalMarkers removes labels marked with RemoveLabelMarker from the object.
+// This is needed before creating objects, as Kubernetes validates label values and
+// the removal marker is not a valid label value.
+func cleanupRemovalMarkers(obj crclient.Object) {
+	labels := obj.GetLabels()
+	if labels == nil {
+		return
+	}
+	filteredLabels := make(map[string]string)
+	for k, v := range labels {
+		if v != util.RemoveLabelMarker {
+			filteredLabels[k] = v
+		}
+	}
+	if len(filteredLabels) == 0 {
+		obj.SetLabels(nil)
+	} else {
+		obj.SetLabels(filteredLabels)
+	}
+}
+
 func preserveOriginalMetadata(original, mutated crclient.Object) {
 	labels := original.GetLabels()
 	if labels == nil {
 		labels = make(map[string]string)
 	}
-	maps.Copy(labels, mutated.GetLabels())
+
+	// Process mutated labels: add/update new labels, remove labels marked with RemoveLabelMarker
+	for k, v := range mutated.GetLabels() {
+		if v == util.RemoveLabelMarker {
+			delete(labels, k)
+		} else {
+			labels[k] = v
+		}
+	}
 	mutated.SetLabels(labels)
 
 	annotations := original.GetAnnotations()
