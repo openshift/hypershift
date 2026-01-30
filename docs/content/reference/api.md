@@ -4975,7 +4975,8 @@ network connection to the data plane components.
 <strong>False</strong> means there are network connection issues preventing the control plane from reaching the data plane.
 A failure here suggests potential issues such as: network policy restrictions,
 firewall rules, missing data plane nodes, or problems with infrastructure
-components like the konnectivity-agent workload.</p>
+components like the konnectivity-agent workload.
+<strong>Unknown</strong> means the status cannot be determined (e.g., no worker nodes available or unable to inspect).</p>
 </td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
