@@ -309,6 +309,10 @@ func (r *GCPPrivateServiceConnectReconciler) ensureIPAddress(ctx context.Context
 		log.Info("IP reservation in progress", "operation", op.Name, "status", op.Status)
 		return ctrl.Result{RequeueAfter: time.Second * 15}, nil
 	}
+	// DONE doesn't guarantee success - check for operation errors
+	if op.Error != nil {
+		return ctrl.Result{}, fmt.Errorf("IP reservation failed: %v", op.Error.Errors)
+	}
 
 	// Get the allocated IP address
 	fetchCtx, fetchCancel := context.WithTimeout(ctx, gcpAPITimeout)
@@ -385,6 +389,10 @@ func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Co
 	if op.Status != "DONE" {
 		log.Info("PSC endpoint creation in progress", "operation", op.Name, "status", op.Status)
 		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
+	}
+	// DONE doesn't guarantee success - check for operation errors
+	if op.Error != nil {
+		return r.handleGCPError(ctx, gcpPSC, "PSCEndpointCreationFailed", fmt.Errorf("operation failed: %v", op.Error.Errors))
 	}
 
 	// Fetch the newly created endpoint to update status
