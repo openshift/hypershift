@@ -21,6 +21,7 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 
 	azureOpts := hypershiftazure.DefaultOptions()
 	hypershiftazure.BindProductFlags(azureOpts, cmd.Flags())
+	hypershiftazure.BindProductCoreFlags(opts, cmd.Flags())
 
 	_ = cmd.MarkFlagRequired("azure-creds")
 	_ = cmd.MarkPersistentFlagRequired("pull-secret")

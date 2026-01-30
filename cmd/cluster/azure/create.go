@@ -135,6 +135,12 @@ func BindProductFlags(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	azurenodepool.BindProductFlags(opts.NodePoolOpts, flags)
 }
 
+// BindProductCoreFlags binds core options that are needed for the Azure product CLI
+// This allows the product CLI to use --infra-json to consume output from 'hcp create infra azure'
+func BindProductCoreFlags(opts *core.RawCreateOptions, flags *pflag.FlagSet) {
+	flags.StringVar(&opts.InfrastructureJSON, "infra-json", opts.InfrastructureJSON, "Path to file containing infrastructure information for the cluster (output from 'hcp create infra azure'). If not specified, infrastructure will be created.")
+}
+
 // Validate validates the Azure create cluster command options
 func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (core.PlatformCompleter, error) {
 	var err error
