@@ -12,6 +12,7 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
 	"github.com/openshift/hypershift/support/api"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -964,9 +965,19 @@ func TestProxyCAValidity(t *testing.T) {
 						Name:      tc.caConfigMap,
 						Namespace: "any",
 					},
-					Data: map[string]string{ProxyCAConfigMapKey: tc.caCertificate},
+					Data: map[string]string{proxy.ProxyCAConfigMapKey: tc.caCertificate},
 				}
 				objects = append(objects, configMap)
+
+				// Set ValidProxyConfiguration condition based on expected metric value
+				conditionStatus := metav1.ConditionFalse
+				if tc.expected != nil && tc.expected.Metric[0].Gauge.Value != nil && *tc.expected.Metric[0].Gauge.Value == 1.0 {
+					conditionStatus = metav1.ConditionTrue
+				}
+				meta.SetStatusCondition(&hcBase.Status.Conditions, metav1.Condition{
+					Type:   string(hyperv1.ValidProxyConfiguration),
+					Status: conditionStatus,
+				})
 			}
 			clientBuilder = clientBuilder.WithObjects(objects...)
 			checkMetric(t,
@@ -1054,7 +1065,7 @@ func TestProxyCAExpiry(t *testing.T) {
 						Name:      tc.caConfigMap,
 						Namespace: "any",
 					},
-					Data: map[string]string{ProxyCAConfigMapKey: tc.caCertificate},
+					Data: map[string]string{proxy.ProxyCAConfigMapKey: tc.caCertificate},
 				}
 				objects = append(objects, configMap)
 			}

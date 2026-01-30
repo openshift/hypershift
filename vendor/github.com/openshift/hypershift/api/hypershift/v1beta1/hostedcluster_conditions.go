@@ -101,6 +101,10 @@ const (
 	// A failure here may require external user intervention to resolve. E.g. oidc was deleted out of band.
 	ValidOIDCConfiguration ConditionType = "ValidOIDCConfiguration"
 
+	// ValidProxyConfiguration indicates if the proxy CA bundle is valid.
+	// A failure here may require external user intervention to resolve. E.g. certificates in the CA bundle have expired.
+	ValidProxyConfiguration ConditionType = "ValidProxyConfiguration"
+
 	// ValidIDPConfiguration indicates if the Identity Provider configuration is valid.
 	// A failure here may require external user intervention to resolve
 	// e.g. the user-provided IDP configuration provided is invalid or the IDP is not reachable.
@@ -245,6 +249,7 @@ const (
 	UnsupportedHostedClusterReason        = "UnsupportedHostedCluster"
 	InsufficientClusterCapabilitiesReason = "InsufficientClusterCapabilities"
 	OIDCConfigurationInvalidReason        = "OIDCConfigurationInvalid"
+	ProxyCABundleInvalidReason            = "ProxyCABundleInvalid"
 	PlatformCredentialsNotFoundReason     = "PlatformCredentialsNotFound"
 	InvalidImageReason                    = "InvalidImage"
 	InvalidIdentityProvider               = "InvalidIdentityProvider"

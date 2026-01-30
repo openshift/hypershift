@@ -41,6 +41,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform"
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	validations "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/validations"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -998,6 +999,32 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		} else {
 			condition.Status = metav1.ConditionTrue
 			condition.Message = "HostedCluster is supported by operator configuration"
+			condition.Reason = hyperv1.AsExpectedReason
+		}
+		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+	}
+
+	// Set ValidProxyConfiguration condition
+	{
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidProxyConfiguration),
+			ObservedGeneration: hcluster.Generation,
+		}
+		if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Proxy != nil && hcluster.Spec.Configuration.Proxy.TrustedCA.Name != "" {
+			if err := r.validateProxyConfiguration(ctx, hcluster); err != nil {
+				condition.Status = metav1.ConditionFalse
+				condition.Message = fmt.Sprintf("Proxy CA bundle is invalid for HostedCluster %s/%s: %v", hcluster.Namespace, hcluster.Name, err)
+				condition.Reason = hyperv1.ProxyCABundleInvalidReason
+				log.Info("Proxy CA bundle validation failed", "namespace", hcluster.Namespace, "name", hcluster.Name, "error", err)
+			} else {
+				condition.Status = metav1.ConditionTrue
+				condition.Message = "Proxy CA bundle is valid"
+				condition.Reason = hyperv1.AsExpectedReason
+			}
+		} else {
+			// No proxy configured or no CA bundle
+			condition.Status = metav1.ConditionTrue
+			condition.Message = "No proxy CA bundle configured"
 			condition.Reason = hyperv1.AsExpectedReason
 		}
 		meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
@@ -3889,6 +3916,10 @@ func (r *HostedClusterReconciler) validateAgentConfig(ctx context.Context, hc *h
 	}
 
 	return nil
+}
+
+func (r *HostedClusterReconciler) validateProxyConfiguration(ctx context.Context, hc *hyperv1.HostedCluster) error {
+	return proxy.ValidateProxyCAValidity(ctx, r.Client, hc)
 }
 
 func (r *HostedClusterReconciler) validateHostedClusterSupport(hc *hyperv1.HostedCluster) error {
