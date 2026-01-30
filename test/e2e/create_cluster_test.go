@@ -3157,6 +3157,7 @@ func TestCCMCreateCluster(t *testing.T) {
 			// Test case 1: Validate managed security groups in TechPreviewNoUpgrade feature set
 			t.Run("When feature set is TechPreviewNoUpgrade it should have NLBSecurityGroupMode managed", func(t *testing.T) {
 				e2eutil.AtLeast(t, e2eutil.Version418)
+				// TODO fixme check only when feature is enab
 				if featureSet != configv1.TechPreviewNoUpgrade {
 					t.Skip("Skipping test: feature set is not TechPreviewNoUpgrade")
 				}
@@ -3251,6 +3252,9 @@ func TestCCMCreateCluster(t *testing.T) {
 							Namespace: testNS.Name,
 							Labels: map[string]string{
 								"app": "test-ccm-nlb-sg",
+							},
+							Annotations: map[string]string{
+								"service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
 							},
 						},
 						Spec: corev1.PodSpec{
@@ -3363,6 +3367,8 @@ func TestCCMCreateCluster(t *testing.T) {
 						Names: []*string{&lbName},
 					}
 
+					// FIXME: sleep 60s
+					time.Sleep(60 * time.Second)
 					// Wait for the load balancer to exist and become active before validating attributes like SecurityGroups.
 					// This avoids flakes where the Service is created but the LB is still provisioning.
 					t.Logf("Waiting for load balancer %q to become available (up to ~3 minutes)", lbName)
