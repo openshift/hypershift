@@ -419,7 +419,7 @@ github.com/aws/aws-sdk-go-v2/internal/endpoints/v2
 # github.com/aws/aws-sdk-go-v2/internal/ini v1.8.4
 ## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/internal/ini
-# github.com/aws/aws-sdk-go-v2/service/ec2 v1.279.2
+# github.com/aws/aws-sdk-go-v2/service/ec2 v1.285.0
 ## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/service/ec2
 github.com/aws/aws-sdk-go-v2/service/ec2/internal/endpoints
@@ -591,8 +591,8 @@ github.com/docker/libtrust
 # github.com/dustin/go-humanize v1.0.1
 ## explicit; go 1.16
 github.com/dustin/go-humanize
-# github.com/elazarl/goproxy v1.7.2
-## explicit; go 1.20
+# github.com/elazarl/goproxy v1.8.0
+## explicit; go 1.23.0
 github.com/elazarl/goproxy
 github.com/elazarl/goproxy/internal/http1parser
 github.com/elazarl/goproxy/internal/signer
@@ -1167,8 +1167,8 @@ github.com/openshift/multi-operator-manager/pkg/library/libraryoutputresources
 github.com/opentracing/opentracing-go
 github.com/opentracing/opentracing-go/ext
 github.com/opentracing/opentracing-go/log
-# github.com/operator-framework/api v0.37.0
-## explicit; go 1.24.6
+# github.com/operator-framework/api v0.38.0
+## explicit; go 1.25.3
 github.com/operator-framework/api/pkg/lib/release
 github.com/operator-framework/api/pkg/lib/version
 github.com/operator-framework/api/pkg/operators
@@ -1192,7 +1192,7 @@ github.com/pmezard/go-difflib/difflib
 # github.com/ppc64le-cloud/powervs-utils v0.0.0-20250403153021-219b161805db
 ## explicit; go 1.21
 github.com/ppc64le-cloud/powervs-utils
-# github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.88.0
+# github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.88.1
 ## explicit; go 1.24.0
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1
@@ -1243,8 +1243,8 @@ github.com/samber/lo/mutable
 # github.com/shopspring/decimal v1.4.0
 ## explicit; go 1.10
 github.com/shopspring/decimal
-# github.com/sirupsen/logrus v1.9.3
-## explicit; go 1.13
+# github.com/sirupsen/logrus v1.9.4
+## explicit; go 1.17
 github.com/sirupsen/logrus
 # github.com/soheilhy/cmux v0.1.5
 ## explicit; go 1.11
