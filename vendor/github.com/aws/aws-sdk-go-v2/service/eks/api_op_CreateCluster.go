@@ -32,7 +32,9 @@ import (
 // You can use the endpointPublicAccess and endpointPrivateAccess parameters to
 // enable or disable public and private access to your cluster's Kubernetes API
 // server endpoint. By default, public access is enabled, and private access is
-// disabled. For more information, see [Amazon EKS Cluster Endpoint Access Control]in the Amazon EKS User Guide .
+// disabled. The endpoint domain name and IP address family depends on the value of
+// the ipFamily for the cluster. For more information, see [Amazon EKS Cluster Endpoint Access Control] in the Amazon EKS User
+// Guide .
 //
 // You can use the logging parameter to enable or disable exporting the Kubernetes
 // control plane logs for your cluster to CloudWatch Logs. By default, cluster
@@ -105,7 +107,7 @@ type CreateClusterInput struct {
 	// If you set this value to False when creating a cluster, the default networking
 	// add-ons will not be installed.
 	//
-	// The default networking addons include vpc-cni, coredns, and kube-proxy.
+	// The default networking add-ons include vpc-cni , coredns , and kube-proxy .
 	//
 	// Use this option when you plan to install third-party alternative add-ons or
 	// self-manage the default networking add-ons.
@@ -119,6 +121,11 @@ type CreateClusterInput struct {
 	// EKS Auto Mode cluster. If the compute capability is enabled, EKS Auto Mode will
 	// create and delete EC2 Managed Instances in your Amazon Web Services account
 	ComputeConfig *types.ComputeConfigRequest
+
+	// Indicates whether to enable deletion protection for the cluster. When enabled,
+	// the cluster cannot be deleted unless deletion protection is first disabled. This
+	// helps prevent accidental cluster deletion. Default value is false .
+	DeletionProtection *bool
 
 	// The encryption configuration for the cluster.
 	EncryptionConfig []types.EncryptionConfig
@@ -291,6 +298,36 @@ func (c *Client) addOperationCreateClusterMiddlewares(stack *middleware.Stack, o
 		return err
 	}
 	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptBeforeRetryLoop(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptAttempt(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptExecution(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptBeforeSerialization(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptAfterSerialization(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptBeforeSigning(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptAfterSigning(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptTransmit(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptBeforeDeserialization(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptAfterDeserialization(stack, options); err != nil {
 		return err
 	}
 	if err = addSpanInitializeStart(stack); err != nil {
