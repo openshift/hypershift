@@ -87,7 +87,7 @@ func (b mustNotExceedCostBudget) Validate(crd *apiextensionsv1.CustomResourceDef
 					typeInfo.Schema,
 					typeInfo.DeclType,
 					celconfig.PerCallLimit,
-					environment.MustBaseEnvSet(environment.DefaultCompatibilityVersion(), true),
+					environment.MustBaseEnvSet(environment.DefaultCompatibilityVersion()),
 					cel.NewExpressionsEnvLoader(),
 				)
 				if err != nil {
