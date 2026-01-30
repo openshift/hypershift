@@ -2991,6 +2991,15 @@ func reconcileCAPIManagerClusterRoleBinding(binding *rbacv1.ClusterRoleBinding, 
 			Name:      sa.Name,
 			Namespace: sa.Namespace,
 		},
+
+		// capi-provider shares this role because it only grants read-only access to CRDs (get, list, watch).
+		// See reconcileCAPIManagerClusterRole above for the role definition.
+		// If the CAPI manager role scope diverges beyond CRDs, capi-provider will need its own ClusterRole and ClusterRoleBinding.
+		{
+			Kind:      "ServiceAccount",
+			Name:      "capi-provider",
+			Namespace: sa.Namespace,
+		},
 	}
 	return nil
 }
