@@ -22,8 +22,9 @@ import (
 
 const (
 	// Test service account emails used across GCP tests
-	testNodePoolGSA     = "test-capg-sa@test-project.iam.gserviceaccount.com"
-	testControlPlaneGSA = "test-control-plane-sa@test-project.iam.gserviceaccount.com"
+	testNodePoolGSA        = "test-capg-sa@test-project.iam.gserviceaccount.com"
+	testControlPlaneGSA    = "test-control-plane-sa@test-project.iam.gserviceaccount.com"
+	testCloudControllerGSA = "test-cloud-controller@test-project.iam.gserviceaccount.com"
 )
 
 // testCreateOrUpdate is a test helper that implements createOrUpdate functionality
@@ -107,8 +108,9 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 							PoolID:        "test-pool",
 							ProviderID:    "test-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     testNodePoolGSA,
-								ControlPlane: testControlPlaneGSA,
+								NodePool:        testNodePoolGSA,
+								ControlPlane:    testControlPlaneGSA,
+								CloudController: testCloudControllerGSA,
 							},
 						},
 					},
@@ -151,8 +153,9 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 							PoolID:        "test-pool",
 							ProviderID:    "test-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     testNodePoolGSA,
-								ControlPlane: testControlPlaneGSA,
+								NodePool:        testNodePoolGSA,
+								ControlPlane:    testControlPlaneGSA,
+								CloudController: testCloudControllerGSA,
 							},
 						},
 					},
@@ -221,8 +224,9 @@ func TestReconcileCredentials(t *testing.T) {
 						PoolID:        "test-pool",
 						ProviderID:    "test-provider",
 						ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-							NodePool:     testNodePoolGSA,
-							ControlPlane: testControlPlaneGSA,
+							NodePool:        testNodePoolGSA,
+							ControlPlane:    testControlPlaneGSA,
+							CloudController: testCloudControllerGSA,
 						},
 					},
 				},
@@ -310,8 +314,9 @@ func TestReconcileSecretEncryption(t *testing.T) {
 							PoolID:        "test-pool",
 							ProviderID:    "test-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     testNodePoolGSA,
-								ControlPlane: testControlPlaneGSA,
+								NodePool:        testNodePoolGSA,
+								ControlPlane:    testControlPlaneGSA,
+								CloudController: testCloudControllerGSA,
 							},
 						},
 					},
@@ -360,8 +365,9 @@ func TestDeleteCredentials(t *testing.T) {
 							PoolID:        "test-pool",
 							ProviderID:    "test-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     testNodePoolGSA,
-								ControlPlane: testControlPlaneGSA,
+								NodePool:        testNodePoolGSA,
+								ControlPlane:    testControlPlaneGSA,
+								CloudController: testCloudControllerGSA,
 							},
 						},
 					},
@@ -382,13 +388,14 @@ func TestBuildGCPWorkloadIdentityCredentials(t *testing.T) {
 		PoolID:        "test-pool",
 		ProviderID:    "test-provider",
 		ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-			NodePool:     testNodePoolGSA,
-			ControlPlane: testControlPlaneGSA,
+			NodePool:        testNodePoolGSA,
+			ControlPlane:    testControlPlaneGSA,
+			CloudController: testCloudControllerGSA,
 		},
 	}
 
 	// Using NodePool GSA as an example - the function is generic and works the same
-	// for any service account email (NodePool, ControlPlane, Storage, etc.)
+	// for any service account email (NodePool, ControlPlane, CloudController, etc.)
 	credentials, err := buildGCPWorkloadIdentityCredentials(wif, wif.ServiceAccountsEmails.NodePool)
 	g.Expect(err).To(BeNil())
 	g.Expect(credentials).To(ContainSubstring(`"type":"external_account"`))
@@ -413,8 +420,9 @@ func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
 				PoolID:        "test-pool",
 				ProviderID:    "test-provider",
 				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-					NodePool:     testNodePoolGSA,
-					ControlPlane: testControlPlaneGSA,
+					NodePool:        testNodePoolGSA,
+					ControlPlane:    testControlPlaneGSA,
+					CloudController: testCloudControllerGSA,
 				},
 			},
 			expectError: false,
@@ -425,8 +433,9 @@ func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
 				PoolID:     "test-pool",
 				ProviderID: "test-provider",
 				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-					NodePool:     testNodePoolGSA,
-					ControlPlane: testControlPlaneGSA,
+					NodePool:        testNodePoolGSA,
+					ControlPlane:    testControlPlaneGSA,
+					CloudController: testCloudControllerGSA,
 				},
 			},
 			expectError: true,
@@ -437,8 +446,9 @@ func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
 				ProjectNumber: "123456789012",
 				ProviderID:    "test-provider",
 				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-					NodePool:     testNodePoolGSA,
-					ControlPlane: testControlPlaneGSA,
+					NodePool:        testNodePoolGSA,
+					ControlPlane:    testControlPlaneGSA,
+					CloudController: testCloudControllerGSA,
 				},
 			},
 			expectError: true,
@@ -449,8 +459,9 @@ func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
 				ProjectNumber: "123456789012",
 				PoolID:        "test-pool",
 				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-					NodePool:     testNodePoolGSA,
-					ControlPlane: testControlPlaneGSA,
+					NodePool:        testNodePoolGSA,
+					ControlPlane:    testControlPlaneGSA,
+					CloudController: testCloudControllerGSA,
 				},
 			},
 			expectError: true,
@@ -462,8 +473,9 @@ func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
 				PoolID:        "test-pool",
 				ProviderID:    "test-provider",
 				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-					NodePool:     "",
-					ControlPlane: testControlPlaneGSA,
+					NodePool:        "",
+					ControlPlane:    testControlPlaneGSA,
+					CloudController: testCloudControllerGSA,
 				},
 			},
 			expectError: true,
@@ -507,8 +519,9 @@ func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
 								PoolID:        "test-pool",
 								ProviderID:    "test-provider",
 								ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-									NodePool:     testNodePoolGSA,
-									ControlPlane: testControlPlaneGSA,
+									NodePool:        testNodePoolGSA,
+									ControlPlane:    testControlPlaneGSA,
+									CloudController: testCloudControllerGSA,
 								},
 							},
 						},
@@ -529,8 +542,9 @@ func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
 								PoolID:        "test-pool",
 								ProviderID:    "test-provider",
 								ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-									NodePool:     "",
-									ControlPlane: testControlPlaneGSA,
+									NodePool:        "",
+									ControlPlane:    testControlPlaneGSA,
+									CloudController: testCloudControllerGSA,
 								},
 							},
 						},
@@ -552,8 +566,9 @@ func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
 								PoolID:        "test-pool",
 								ProviderID:    "test-provider",
 								ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-									NodePool:     testNodePoolGSA,
-									ControlPlane: "",
+									NodePool:        testNodePoolGSA,
+									ControlPlane:    "",
+									CloudController: testCloudControllerGSA,
 								},
 							},
 						},

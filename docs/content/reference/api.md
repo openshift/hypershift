@@ -6407,6 +6407,27 @@ Typically obtained from the output of <code>hypershift infra create gcp</code> w
 the required service accounts with appropriate IAM roles and WIF bindings.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>cloudController</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>cloudController is the Google Service Account email for the Cloud Controller Manager
+that manages LoadBalancer services and node lifecycle in the hosted cluster.
+This GSA requires the following IAM roles:
+- roles/compute.loadBalancerAdmin (Load Balancer Admin - for provisioning GCP load balancers)
+- roles/compute.securityAdmin (Security Admin - for managing firewall rules)
+- roles/compute.viewer (Compute Viewer - for reading instance metadata for node management)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###GCPWorkloadIdentityConfig { #hypershift.openshift.io/v1beta1.GCPWorkloadIdentityConfig }

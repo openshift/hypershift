@@ -344,8 +344,9 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 							PoolID:        "my-wif-pool",
 							ProviderID:    "my-wif-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+								NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+								CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 							},
 						},
 					}
@@ -382,8 +383,9 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 							PoolID:        "my-wif-pool",
 							ProviderID:    "my-wif-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+								NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+								CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 							},
 						},
 					}
@@ -406,8 +408,9 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 							PoolID:        "my-wif-pool",
 							ProviderID:    "my-wif-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+								NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+								CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 							},
 						},
 					}
@@ -431,8 +434,9 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 							PoolID:        "gcp-reserved",
 							ProviderID:    "my-wif-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+								NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+								CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 							},
 						},
 					}
@@ -456,8 +460,9 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 							PoolID:        "abc",
 							ProviderID:    "my-wif-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+								NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+								CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 							},
 						},
 					}
@@ -481,8 +486,9 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 							PoolID:        "my-wif-pool",
 							ProviderID:    "gcp-reserved",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+								NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+								CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 							},
 						},
 					}
@@ -506,8 +512,9 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 							PoolID:        "my-wif-pool",
 							ProviderID:    "my-wif-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     "invalid-email",
-								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+								NodePool:        "invalid-email",
+								ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+								CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 							},
 						},
 					}
@@ -531,14 +538,41 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 							PoolID:        "my-wif-pool",
 							ProviderID:    "my-wif-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-								ControlPlane: "not-an-email@format",
+								NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane:    "not-an-email@format",
+								CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 							},
 						},
 					}
 				})
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("controlPlane in body"))
+			})
+
+			It("should reject when CloudController service account has invalid email format", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.GCPPlatform
+					hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
+						Project: "my-project-123",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+							PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+						},
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "my-wif-pool",
+							ProviderID:    "my-wif-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+								CloudController: "invalid-cloud-controller-email",
+							},
+						},
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("cloudController in body"))
 			})
 
 			It("should accept when GCP resource labels have valid values", func() {
@@ -556,8 +590,9 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 							PoolID:        "my-wif-pool",
 							ProviderID:    "my-wif-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+								NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+								CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 							},
 						},
 						ResourceLabels: []hyperv1.GCPResourceLabel{
@@ -584,8 +619,9 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 							PoolID:        "my-wif-pool",
 							ProviderID:    "my-wif-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+								NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+								CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 							},
 						},
 						ResourceLabels: []hyperv1.GCPResourceLabel{
@@ -611,8 +647,9 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 							PoolID:        "my-wif-pool",
 							ProviderID:    "my-wif-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+								NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+								CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 							},
 						},
 						ResourceLabels: []hyperv1.GCPResourceLabel{
@@ -638,8 +675,9 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 							PoolID:        "my-wif-pool",
 							ProviderID:    "my-wif-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+								NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+								CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 							},
 						},
 						ResourceLabels: []hyperv1.GCPResourceLabel{
@@ -673,8 +711,9 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 							PoolID:        "my-wif-pool",
 							ProviderID:    "my-wif-provider",
 							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+								NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+								CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 							},
 						},
 						ResourceLabels: labels,

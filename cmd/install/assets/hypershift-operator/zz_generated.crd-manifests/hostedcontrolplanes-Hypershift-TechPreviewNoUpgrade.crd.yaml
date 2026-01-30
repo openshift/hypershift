@@ -5786,6 +5786,27 @@ spec:
                               required to enable integrations for different controllers and operators.
                               This follows the AWS pattern of having different roles for different purposes.
                             properties:
+                              cloudController:
+                                description: |-
+                                  cloudController is the Google Service Account email for the Cloud Controller Manager
+                                  that manages LoadBalancer services and node lifecycle in the hosted cluster.
+                                  This GSA requires the following IAM roles:
+                                  - roles/compute.loadBalancerAdmin (Load Balancer Admin - for provisioning GCP load balancers)
+                                  - roles/compute.securityAdmin (Security Admin - for managing firewall rules)
+                                  - roles/compute.viewer (Compute Viewer - for reading instance metadata for node management)
+                                  See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+                                  Format: service-account-name@project-id.iam.gserviceaccount.com
+
+                                  This is a user-provided value referencing a pre-created Google Service Account.
+                                  Typically obtained from the output of `hypershift infra create gcp` which creates
+                                  the required service accounts with appropriate IAM roles and WIF bindings.
+                                maxLength: 100
+                                minLength: 38
+                                pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$
+                                type: string
+                                x-kubernetes-validations:
+                                - message: CloudController is immutable
+                                  rule: self == oldSelf
                               controlPlane:
                                 description: |-
                                   controlPlane is the Google Service Account email for the Control Plane Operator
@@ -5827,6 +5848,7 @@ spec:
                                 - message: NodePool is immutable
                                   rule: self == oldSelf
                             required:
+                            - cloudController
                             - controlPlane
                             - nodePool
                             type: object
@@ -5854,6 +5876,11 @@ spec:
                     - message: nodePool service account must belong to the same project
                       rule: self.workloadIdentity.serviceAccountsEmails.nodePool.contains('@')
                         && self.workloadIdentity.serviceAccountsEmails.nodePool.endsWith('@'
+                        + self.project + '.iam.gserviceaccount.com')
+                    - message: cloudController service account must belong to the
+                        same project
+                      rule: self.workloadIdentity.serviceAccountsEmails.cloudController.contains('@')
+                        && self.workloadIdentity.serviceAccountsEmails.cloudController.endsWith('@'
                         + self.project + '.iam.gserviceaccount.com')
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components
