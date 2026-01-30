@@ -581,7 +581,10 @@ func isNotFoundError(err error) bool {
 	return false
 }
 
-// InitCustomerGCPClient initializes the GCP client for customer project operations using WIF
+// InitCustomerGCPClient initializes the GCP client for customer project operations.
+// This controller requires Workload Identity Federation (WIF) credentials, which are
+// set up by the token minter in the control-plane-operator. Service account keys are
+// not supported - the finalizer gate checks for WIF token availability before proceeding.
 func InitCustomerGCPClient(ctx context.Context) (*compute.Service, error) {
 	credentialsFile := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
 	if credentialsFile == "" {
@@ -593,9 +596,8 @@ func InitCustomerGCPClient(ctx context.Context) (*compute.Service, error) {
 		return nil, fmt.Errorf("credentials file not accessible at %s: %w", credentialsFile, err)
 	}
 
-	// Create Google Cloud client using the credentials file from environment
+	// Create Google Cloud client using the WIF credentials file from environment
 	// google.DefaultClient() automatically reads GOOGLE_APPLICATION_CREDENTIALS
-	// This supports both service account keys and WIF credential files
 	client, err := google.DefaultClient(ctx, compute.CloudPlatformScope)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Google Cloud client using %s: %w", credentialsFile, err)
