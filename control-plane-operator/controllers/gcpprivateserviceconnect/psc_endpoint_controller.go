@@ -435,53 +435,85 @@ func (r *GCPPrivateServiceConnectReconciler) updateStatusFromEndpoint(ctx contex
 	return ctrl.Result{RequeueAfter: driftDetectionRequeueInterval}, nil
 }
 
-// reconcileDelete handles cleanup when the CR is being deleted
+// reconcileDelete handles cleanup when the CR is being deleted.
+// For each resource: delete, check operation status/error, then verify resource is gone.
 func (r *GCPPrivateServiceConnectReconciler) reconcileDelete(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, customerGCPClient *compute.Service, log logr.Logger) (bool, error) {
-	// Get customer project and region from client builder
 	customerProject := r.gcpClientBuilder.customerProject
 	region := r.gcpClientBuilder.region
 
-	// Delete PSC endpoint (following management-side GCP pattern)
+	// Step 1: Delete PSC endpoint (ForwardingRule)
 	endpointName := r.constructEndpointName(gcpPSC)
-	log.Info("Deleting PSC endpoint", "name", endpointName)
 
 	deleteCtx, deleteCancel := context.WithTimeout(ctx, gcpAPITimeout)
 	defer deleteCancel()
-	op, err := customerGCPClient.ForwardingRules.Delete(customerProject, region, endpointName).Context(deleteCtx).Do()
+	endpointOp, err := customerGCPClient.ForwardingRules.Delete(customerProject, region, endpointName).Context(deleteCtx).Do()
 	if err != nil {
-		if isNotFoundError(err) {
-			// PSC endpoint already deleted, consider it completed
-			log.Info("PSC endpoint not found, deletion already completed", "name", endpointName)
-		} else {
+		if !isNotFoundError(err) {
 			return false, fmt.Errorf("failed to delete PSC endpoint: %w", err)
 		}
+		// Already deleted, continue to IP deletion
+		log.Info("PSC endpoint already deleted", "name", endpointName)
 	} else {
-		// Check operation status - wait for actual completion
-		// GCP operations can be PENDING, RUNNING, or DONE
-		if op != nil && op.Status != "DONE" {
-			log.Info("PSC endpoint deletion in progress", "operation", op.Name, "status", op.Status)
-			return false, nil // Not completed yet
+		// Check operation status - DONE doesn't guarantee success, must check Error
+		if endpointOp.Status != "DONE" {
+			log.Info("PSC endpoint deletion in progress", "name", endpointName, "operation", endpointOp.Name, "status", endpointOp.Status)
+			return false, nil
+		}
+		if endpointOp.Error != nil {
+			return false, fmt.Errorf("PSC endpoint deletion failed: %v", endpointOp.Error.Errors)
 		}
 
-		log.Info("PSC endpoint deletion completed", "name", endpointName)
-	}
-
-	// Delete reserved IP address
-	if gcpPSC.Status.EndpointIP != "" {
-		ipName := r.constructIPAddressName(gcpPSC)
-		log.Info("Deleting reserved IP address", "name", ipName, "ip", gcpPSC.Status.EndpointIP)
-
-		ipDeleteCtx, ipDeleteCancel := context.WithTimeout(ctx, gcpAPITimeout)
-		defer ipDeleteCancel()
-		_, err := customerGCPClient.Addresses.Delete(customerProject, region, ipName).Context(ipDeleteCtx).Do()
-		if err != nil && !isNotFoundError(err) {
-			log.Error(err, "failed to delete reserved IP, continuing with cleanup")
-		} else {
-			log.Info("Reserved IP address deleted", "name", ipName)
+		// Verify endpoint is actually gone
+		getCtx, getCancel := context.WithTimeout(ctx, gcpAPITimeout)
+		defer getCancel()
+		_, err = customerGCPClient.ForwardingRules.Get(customerProject, region, endpointName).Context(getCtx).Do()
+		if err == nil {
+			log.Info("PSC endpoint still exists after DONE, waiting", "name", endpointName)
+			return false, nil
 		}
+		if !isNotFoundError(err) {
+			return false, fmt.Errorf("failed to verify PSC endpoint deletion: %w", err)
+		}
+		log.Info("PSC endpoint deleted", "name", endpointName)
 	}
 
-	return true, nil // Deletion completed
+	// Step 2: Delete reserved IP address
+	ipName := r.constructIPAddressName(gcpPSC)
+
+	ipDeleteCtx, ipDeleteCancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer ipDeleteCancel()
+	ipOp, err := customerGCPClient.Addresses.Delete(customerProject, region, ipName).Context(ipDeleteCtx).Do()
+	if err != nil {
+		if !isNotFoundError(err) {
+			return false, fmt.Errorf("failed to delete reserved IP: %w", err)
+		}
+		// Already deleted
+		log.Info("Reserved IP address already deleted", "name", ipName)
+	} else {
+		// Check operation status - DONE doesn't guarantee success, must check Error
+		if ipOp.Status != "DONE" {
+			log.Info("IP address deletion in progress", "name", ipName, "operation", ipOp.Name, "status", ipOp.Status)
+			return false, nil
+		}
+		if ipOp.Error != nil {
+			return false, fmt.Errorf("IP address deletion failed: %v", ipOp.Error.Errors)
+		}
+
+		// Verify IP is actually gone
+		ipGetCtx, ipGetCancel := context.WithTimeout(ctx, gcpAPITimeout)
+		defer ipGetCancel()
+		_, err = customerGCPClient.Addresses.Get(customerProject, region, ipName).Context(ipGetCtx).Do()
+		if err == nil {
+			log.Info("Reserved IP address still exists after DONE, waiting", "name", ipName)
+			return false, nil
+		}
+		if !isNotFoundError(err) {
+			return false, fmt.Errorf("failed to verify IP address deletion: %w", err)
+		}
+		log.Info("Reserved IP address deleted", "name", ipName)
+	}
+
+	return true, nil // Both resources confirmed deleted
 }
 
 // Helper functions for resource naming and URL construction
