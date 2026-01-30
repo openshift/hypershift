@@ -304,8 +304,9 @@ func (r *GCPPrivateServiceConnectReconciler) ensureIPAddress(ctx context.Context
 		return r.handleGCPError(ctx, gcpPSC, "IPReservationFailed", err)
 	}
 
-	if op.Status == "RUNNING" {
-		log.Info("IP reservation in progress", "operation", op.Name)
+	// GCP operations can be PENDING, RUNNING, or DONE
+	if op.Status != "DONE" {
+		log.Info("IP reservation in progress", "operation", op.Name, "status", op.Status)
 		return ctrl.Result{RequeueAfter: time.Second * 15}, nil
 	}
 
@@ -380,8 +381,9 @@ func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Co
 		return r.handleGCPError(ctx, gcpPSC, "PSCEndpointCreationFailed", err)
 	}
 
-	if op.Status == "RUNNING" {
-		log.Info("PSC endpoint creation in progress", "operation", op.Name)
+	// GCP operations can be PENDING, RUNNING, or DONE
+	if op.Status != "DONE" {
+		log.Info("PSC endpoint creation in progress", "operation", op.Name, "status", op.Status)
 		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
@@ -454,9 +456,10 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileDelete(ctx context.Context
 			return false, fmt.Errorf("failed to delete PSC endpoint: %w", err)
 		}
 	} else {
-		// Check operation status (following management-side pattern)
-		if op != nil && op.Status == "RUNNING" {
-			log.Info("PSC endpoint deletion in progress", "operation", op.Name)
+		// Check operation status - wait for actual completion
+		// GCP operations can be PENDING, RUNNING, or DONE
+		if op != nil && op.Status != "DONE" {
+			log.Info("PSC endpoint deletion in progress", "operation", op.Name, "status", op.Status)
 			return false, nil // Not completed yet
 		}
 
