@@ -60,10 +60,9 @@ func isWIFTokenAccessible() bool {
 
 // gcpClientBuilder manages GCP client creation with HCP configuration
 type gcpClientBuilder struct {
-	initialized             bool
-	customerProject         string
-	region                  string
-	controlPlaneOperatorGSA string
+	initialized     bool
+	customerProject string
+	region          string
 }
 
 func (b *gcpClientBuilder) initializeWithHCP(hcp *hyperv1.HostedControlPlane) {
@@ -77,12 +76,9 @@ func (b *gcpClientBuilder) setFromHCP(hcp *hyperv1.HostedControlPlane) {
 	if hcp.Spec.Platform.GCP != nil {
 		b.customerProject = hcp.Spec.Platform.GCP.Project
 		b.region = hcp.Spec.Platform.GCP.Region
-		// TODO: Extract controlPlaneOperatorGSA when RolesRef is available
-		b.controlPlaneOperatorGSA = ""
 	} else {
 		b.customerProject = ""
 		b.region = ""
-		b.controlPlaneOperatorGSA = ""
 	}
 }
 
@@ -91,7 +87,7 @@ func (b *gcpClientBuilder) getClient(ctx context.Context) (*compute.Service, err
 		return nil, errors.New("client not initialized")
 	}
 
-	return InitCustomerGCPClient(ctx, b.customerProject, b.controlPlaneOperatorGSA)
+	return InitCustomerGCPClient(ctx)
 }
 
 // GCPPrivateServiceConnectReconciler manages PSC endpoints in customer projects
@@ -563,7 +559,7 @@ func isNotFoundError(err error) bool {
 }
 
 // InitCustomerGCPClient initializes the GCP client for customer project operations using WIF
-func InitCustomerGCPClient(ctx context.Context, customerProject string, controlPlaneOperatorGSA string) (*compute.Service, error) {
+func InitCustomerGCPClient(ctx context.Context) (*compute.Service, error) {
 	credentialsFile := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
 	if credentialsFile == "" {
 		return nil, fmt.Errorf("GOOGLE_APPLICATION_CREDENTIALS not set")
