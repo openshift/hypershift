@@ -1,6 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
+  creationTimestamp: null
   labels:
     app: openshift-route-controller-manager
   name: openshift-route-controller-manager

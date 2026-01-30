@@ -34,6 +34,7 @@ data:
         - name: vol
 kind: ConfigMap
 metadata:
+  creationTimestamp: null
   name: recycler-config
   namespace: hcp-namespace
   ownerReferences:

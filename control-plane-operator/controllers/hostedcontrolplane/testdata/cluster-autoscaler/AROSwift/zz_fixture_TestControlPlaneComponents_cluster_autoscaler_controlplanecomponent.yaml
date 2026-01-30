@@ -1,6 +1,7 @@
 apiVersion: hypershift.openshift.io/v1beta1
 kind: ControlPlaneComponent
 metadata:
+  creationTimestamp: null
   name: cluster-autoscaler
   namespace: hcp-namespace
   resourceVersion: "1"
@@ -19,9 +20,6 @@ status:
     status: "False"
     type: RolloutComplete
   resources:
-  - group: monitoring.coreos.com
-    kind: PodMonitor
-    name: cluster-autoscaler
   - group: rbac.authorization.k8s.io
     kind: Role
     name: cluster-autoscaler

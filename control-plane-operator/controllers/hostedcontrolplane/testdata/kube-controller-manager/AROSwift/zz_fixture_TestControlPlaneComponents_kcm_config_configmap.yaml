@@ -16,6 +16,7 @@ data:
       certFile: ""
 kind: ConfigMap
 metadata:
+  creationTimestamp: null
   name: kcm-config
   namespace: hcp-namespace
   ownerReferences:

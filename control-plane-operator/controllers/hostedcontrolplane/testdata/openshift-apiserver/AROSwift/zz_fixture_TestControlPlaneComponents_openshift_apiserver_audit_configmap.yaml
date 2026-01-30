@@ -4,6 +4,7 @@ data:
     apiVersion: audit.k8s.io/v1
     kind: Policy
     metadata:
+      creationTimestamp: null
       name: policy
     omitManagedFields: true
     omitStages:
@@ -49,6 +50,7 @@ data:
   profile: Default
 kind: ConfigMap
 metadata:
+  creationTimestamp: null
   name: openshift-apiserver-audit
   namespace: hcp-namespace
   ownerReferences:

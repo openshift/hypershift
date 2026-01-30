@@ -1,6 +1,7 @@
 apiVersion: hypershift.openshift.io/v1beta1
 kind: ControlPlaneComponent
 metadata:
+  creationTimestamp: null
   name: cluster-node-tuning-operator
   namespace: hcp-namespace
   resourceVersion: "1"
@@ -26,11 +27,5 @@ status:
     kind: RoleBinding
     name: cluster-node-tuning-operator
   - group: ""
-    kind: Service
-    name: node-tuning-operator
-  - group: ""
     kind: ServiceAccount
     name: cluster-node-tuning-operator
-  - group: monitoring.coreos.com
-    kind: ServiceMonitor
-    name: node-tuning-operator

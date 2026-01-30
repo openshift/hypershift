@@ -16,7 +16,9 @@ spec:
     matchNames:
     - hcp-namespace
   podMetricsEndpoints:
-  - interval: 30s
+  - bearerTokenSecret:
+      key: ""
+    interval: 30s
     metricRelabelings:
     - action: replace
       replacement: ""

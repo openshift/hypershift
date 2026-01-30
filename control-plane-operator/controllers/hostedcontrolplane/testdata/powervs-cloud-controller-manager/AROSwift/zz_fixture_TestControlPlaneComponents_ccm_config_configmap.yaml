@@ -6,6 +6,7 @@ data:
     \npowerVSCloudInstanceID = \npowerVSRegion = \npowerVSZone = \n"
 kind: ConfigMap
 metadata:
+  creationTimestamp: null
   name: ccm-config
   namespace: hcp-namespace
   ownerReferences:

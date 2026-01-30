@@ -5,12 +5,10 @@ data:
       "cloud": "",
       "tenantId": "",
       "useManagedIdentityExtension": true,
-      "useFederatedWorkloadIdentityExtension": false,
       "subscriptionId": "",
       "aadClientId": "",
       "aadClientSecret": "",
       "aadClientCertPath": "",
-      "aadFederatedTokenFile": "",
       "aadMSIDataPlaneIdentityPath": "",
       "resourceGroup": "",
       "location": "",
@@ -30,6 +28,7 @@ data:
     }
 kind: ConfigMap
 metadata:
+  creationTimestamp: null
   name: azure-cloud-config
   namespace: hcp-namespace
   ownerReferences:

@@ -3,6 +3,7 @@ routes:
   - metadata:
       annotations:
         haproxy.router.openshift.io/balance: roundrobin
+      creationTimestamp: null
       labels:
         hypershift.openshift.io/hosted-control-plane: test-namespace
         hypershift.openshift.io/internal-route: "true"
@@ -26,8 +27,7 @@ routes:
         weight: null
     status: {}
   - metadata:
-      labels:
-        hypershift.openshift.io/hosted-control-plane: test-namespace
+      creationTimestamp: null
       name: oauth
       namespace: test-namespace
       ownerReferences:
@@ -48,6 +48,7 @@ routes:
         weight: null
     status: {}
   - metadata:
+      creationTimestamp: null
       labels:
         hypershift.openshift.io/hosted-control-plane: test-namespace
         hypershift.openshift.io/internal-route: "true"
@@ -74,6 +75,7 @@ routes:
 services:
   items:
   - metadata:
+      creationTimestamp: null
       name: konnectivity-server
       namespace: test-namespace
       ownerReferences:
@@ -98,6 +100,7 @@ services:
       annotations:
         service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
         service.beta.kubernetes.io/aws-load-balancer-type: nlb
+      creationTimestamp: null
       labels:
         app: kube-apiserver
         hypershift.openshift.io/control-plane-component: kube-apiserver
@@ -127,6 +130,7 @@ services:
         service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
         service.beta.kubernetes.io/aws-load-balancer-internal: "true"
         service.beta.kubernetes.io/aws-load-balancer-type: nlb
+      creationTimestamp: null
       name: kube-apiserver-private
       namespace: test-namespace
       ownerReferences:
@@ -149,6 +153,7 @@ services:
     status:
       loadBalancer: {}
   - metadata:
+      creationTimestamp: null
       name: oauth-openshift
       namespace: test-namespace
       ownerReferences:
@@ -171,6 +176,7 @@ services:
     status:
       loadBalancer: {}
   - metadata:
+      creationTimestamp: null
       labels:
         app: openshift-apiserver
         hypershift.openshift.io/control-plane-component: openshift-apiserver
@@ -196,6 +202,7 @@ services:
     status:
       loadBalancer: {}
   - metadata:
+      creationTimestamp: null
       labels:
         app: openshift-apiserver
         hypershift.openshift.io/control-plane-component: openshift-apiserver
@@ -221,6 +228,7 @@ services:
     status:
       loadBalancer: {}
   - metadata:
+      creationTimestamp: null
       labels:
         app: openshift-apiserver
         hypershift.openshift.io/control-plane-component: openshift-apiserver
@@ -250,28 +258,10 @@ services:
         service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
         service.beta.kubernetes.io/aws-load-balancer-internal: "true"
         service.beta.kubernetes.io/aws-load-balancer-type: nlb
+      creationTimestamp: null
       labels:
         app: private-router
       name: private-router
-      namespace: test-namespace
-    spec:
-      ports:
-      - name: https
-        port: 443
-        protocol: TCP
-        targetPort: https
-      selector:
-        app: private-router
-      type: LoadBalancer
-    status:
-      loadBalancer: {}
-  - metadata:
-      annotations:
-        service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
-        service.beta.kubernetes.io/aws-load-balancer-type: nlb
-      labels:
-        app: private-router
-      name: router
       namespace: test-namespace
     spec:
       ports:

@@ -1,6 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
+  creationTimestamp: null
   name: ignition-server-proxy
   namespace: hcp-namespace
   ownerReferences:

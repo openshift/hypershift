@@ -5,6 +5,7 @@ data:
       disabled: false
 kind: ConfigMap
 metadata:
+  creationTimestamp: null
   name: machine-approver-config
   namespace: hcp-namespace
   ownerReferences:

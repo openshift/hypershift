@@ -1,6 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-autoscaler
@@ -30,6 +31,7 @@ spec:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
         component.hypershift.openshift.io/config-hash: ""
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
       labels:
         app: cluster-autoscaler
         hypershift.openshift.io/control-plane-component: cluster-autoscaler
@@ -81,7 +83,6 @@ spec:
         - --balancing-ignore-label=topology.disk.csi.azure.com/zone
         - --balancing-ignore-label=ibm-cloud.kubernetes.io/worker-id
         - --balancing-ignore-label=vpc-block-csi-driver-labels
-        - --balancing-ignore-label=hypershift.openshift.io/nodepool-globalps-enabled
         - --balancing-ignore-label=agentpool
         - --balancing-ignore-label=kubernetes.azure.com/agentpool
         command:

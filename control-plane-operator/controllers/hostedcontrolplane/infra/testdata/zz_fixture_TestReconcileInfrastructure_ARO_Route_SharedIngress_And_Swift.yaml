@@ -4,6 +4,9 @@ routes:
       annotations:
         haproxy.router.openshift.io/balance: roundrobin
       creationTimestamp: null
+      labels:
+        hypershift.openshift.io/hosted-control-plane: test-namespace
+        hypershift.openshift.io/internal-route: "true"
       name: konnectivity-server
       namespace: test-namespace
       ownerReferences:
@@ -14,7 +17,7 @@ routes:
         name: test-cluster
         uid: ""
     spec:
-      host: konnectivity.test.example.com
+      host: konnectivity-server.apps.test-cluster.hypershift.local
       tls:
         insecureEdgeTerminationPolicy: None
         termination: passthrough
@@ -25,6 +28,55 @@ routes:
     status: {}
   - metadata:
       creationTimestamp: null
+      labels:
+        hypershift.openshift.io/hosted-control-plane: test-namespace
+      name: kube-apiserver
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      host: api.test.example.com
+      tls:
+        insecureEdgeTerminationPolicy: None
+        termination: passthrough
+      to:
+        kind: Service
+        name: kube-apiserver
+        weight: null
+    status: {}
+  - metadata:
+      creationTimestamp: null
+      labels:
+        hypershift.openshift.io/hosted-control-plane: test-namespace
+        hypershift.openshift.io/internal-route: "true"
+      name: kube-apiserver-internal
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      host: api.test-cluster.hypershift.local
+      tls:
+        insecureEdgeTerminationPolicy: None
+        termination: passthrough
+      to:
+        kind: Service
+        name: kube-apiserver
+        weight: null
+    status: {}
+  - metadata:
+      creationTimestamp: null
+      labels:
+        hypershift.openshift.io/hosted-control-plane: test-namespace
       name: oauth
       namespace: test-namespace
       ownerReferences:
@@ -36,6 +88,30 @@ routes:
         uid: ""
     spec:
       host: oauth.test.example.com
+      tls:
+        insecureEdgeTerminationPolicy: None
+        termination: passthrough
+      to:
+        kind: Service
+        name: oauth-openshift
+        weight: null
+    status: {}
+  - metadata:
+      creationTimestamp: null
+      labels:
+        hypershift.openshift.io/hosted-control-plane: test-namespace
+        hypershift.openshift.io/internal-route: "true"
+      name: oauth-internal
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      host: oauth.apps.test-cluster.hypershift.local
       tls:
         insecureEdgeTerminationPolicy: None
         termination: passthrough
@@ -70,8 +146,6 @@ services:
     status:
       loadBalancer: {}
   - metadata:
-      annotations:
-        service.beta.kubernetes.io/aws-load-balancer-type: nlb
       creationTimestamp: null
       labels:
         app: kube-apiserver
@@ -94,7 +168,7 @@ services:
       selector:
         app: kube-apiserver
         hypershift.openshift.io/control-plane-component: kube-apiserver
-      type: LoadBalancer
+      type: ClusterIP
     status:
       loadBalancer: {}
   - metadata:

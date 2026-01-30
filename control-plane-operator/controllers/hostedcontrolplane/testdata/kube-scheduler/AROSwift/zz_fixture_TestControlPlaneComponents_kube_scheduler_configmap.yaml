@@ -23,6 +23,7 @@ data:
     }
 kind: ConfigMap
 metadata:
+  creationTimestamp: null
   name: kube-scheduler
   namespace: hcp-namespace
   ownerReferences:

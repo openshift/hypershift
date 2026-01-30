@@ -1,6 +1,7 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
+  creationTimestamp: null
   name: recording-rules
   namespace: hcp-namespace
   ownerReferences:

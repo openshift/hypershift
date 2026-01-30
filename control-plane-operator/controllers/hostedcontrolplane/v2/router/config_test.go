@@ -16,6 +16,7 @@ import (
 
 func TestGenerateRouterConfig(t *testing.T) {
 	const testNS = "test-ns"
+
 	namedRoute := func(r *routev1.Route, mods ...func(*routev1.Route)) *routev1.Route {
 		r.Labels = map[string]string{
 			util.HCPRouteLabel: "test-ns-clustername",
@@ -50,29 +51,39 @@ func TestGenerateRouterConfig(t *testing.T) {
 		}
 	}
 
-	ignition := route(ignitionserver.Route("").Name, withHost("ignition-server.example.com"), withSvc("ignition-server-proxy"))
-	konnectivity := namedRoute(manifests.KonnectivityServerRoute(testNS), withHost("konnectivity.example.com"), withSvc("konnectivity-server"))
-	oauthInternal := namedRoute(manifests.OauthServerInternalRoute(testNS), withHost("oauth-internal.example.com"), withSvc("openshift-oauth"))
-	oauthExternalPrivate := namedRoute(manifests.OauthServerExternalPrivateRoute(testNS), withHost("oauth-private.example.com"), withSvc("openshift-oauth"))
-	oauthExternalPublic := namedRoute(manifests.OauthServerExternalPublicRoute(testNS), withHost("oauth-public.example.com"), withSvc("openshift-oauth"))
-	metricsForwarder := route(manifests.MetricsForwarderRoute("").Name, withHost("metrics-forwarder.example.com"), withSvc("metrics-forwarder"), withPort(4000))
-	kasPublic := namedRoute(manifests.KubeAPIServerExternalPublicRoute(testNS), withHost("kube-apiserver-public.example.com"), withSvc("kube-apiserver"))
-	kasPrivate := namedRoute(manifests.KubeAPIServerExternalPrivateRoute(testNS), withSvc("kube-apiserver-private.example.com"), withSvc("kube-apiserver"))
+	buildRouteList := func() *routev1.RouteList {
+		ignition := route(ignitionserver.Route("").Name, withHost("ignition-server.example.com"), withSvc("ignition-server-proxy"))
+		konnectivity := namedRoute(manifests.KonnectivityServerRoute(testNS), withHost("konnectivity.example.com"), withSvc("konnectivity-server"))
+		oauthInternal := namedRoute(manifests.OauthServerInternalRoute(testNS), withHost("oauth-internal.example.com"), withSvc("openshift-oauth"))
+		oauthExternalPrivate := namedRoute(manifests.OauthServerExternalPrivateRoute(testNS), withHost("oauth-private.example.com"), withSvc("openshift-oauth"))
+		oauthExternalPublic := namedRoute(manifests.OauthServerExternalPublicRoute(testNS), withHost("oauth-public.example.com"), withSvc("openshift-oauth"))
+		metricsForwarder := route(manifests.MetricsForwarderRoute("").Name, withHost("metrics-forwarder.example.com"), withSvc("metrics-forwarder"), withPort(4000))
+		kasPublic := namedRoute(manifests.KubeAPIServerExternalPublicRoute(testNS), withHost("kube-apiserver-public.example.com"), withSvc("kube-apiserver"))
+		kasPrivate := namedRoute(manifests.KubeAPIServerExternalPrivateRoute(testNS), withSvc("kube-apiserver-private.example.com"), withSvc("kube-apiserver"))
 
-	routeList := &routev1.RouteList{
-		Items: []routev1.Route{*ignition, *konnectivity, *oauthInternal, *oauthExternalPrivate, *oauthExternalPublic, *metricsForwarder, *kasPublic, *kasPrivate},
+		return &routev1.RouteList{
+			Items: []routev1.Route{*ignition, *konnectivity, *oauthInternal, *oauthExternalPrivate, *oauthExternalPublic, *metricsForwarder, *kasPublic, *kasPrivate},
+		}
 	}
 
-	svcsNameToIP := make(map[string]string)
-	i := 0
-	for _, r := range routeList.Items {
-		svcsNameToIP[r.Spec.To.Name] = fmt.Sprintf("0.0.0.%v", i)
-		i++
+	buildSvcsNameToIP := func(routeList *routev1.RouteList) map[string]string {
+		svcsNameToIP := make(map[string]string)
+		i := 0
+		for _, r := range routeList.Items {
+			svcsNameToIP[r.Spec.To.Name] = fmt.Sprintf("0.0.0.%v", i)
+			i++
+		}
+		return svcsNameToIP
 	}
 
-	cfg, err := generateRouterConfig(routeList, svcsNameToIP)
-	if err != nil {
-		t.Fatalf("Unexpected error: %v", err)
-	}
-	testutil.CompareWithFixture(t, cfg)
+	t.Run("When using default config it should use port 8443", func(t *testing.T) {
+		routeList := buildRouteList()
+		svcsNameToIP := buildSvcsNameToIP(routeList)
+
+		cfg, err := generateRouterConfig(routeList, svcsNameToIP)
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		testutil.CompareWithFixture(t, cfg)
+	})
 }

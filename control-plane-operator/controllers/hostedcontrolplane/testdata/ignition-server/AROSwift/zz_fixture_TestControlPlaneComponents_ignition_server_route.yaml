@@ -1,6 +1,7 @@
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
+  creationTimestamp: null
   labels:
     hypershift.openshift.io/hosted-control-plane: hcp-namespace
     hypershift.openshift.io/internal-route: "true"

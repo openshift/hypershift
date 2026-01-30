@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oapi"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
+	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
 	"github.com/openshift/hypershift/support/upsert"
@@ -485,7 +486,7 @@ func (r *Reconciler) reconcileAPIServerServiceStatus(ctx context.Context, hcp *h
 	}
 
 	if sharedingress.UseSharedIngress() || (hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && serviceStrategy.Type == hyperv1.Route) {
-		return sharedingress.Hostname(hcp), sharedingress.ExternalDNSLBPort, "", nil
+		return sharedingress.KasRouteHostname(hcp), sharedingress.ExternalDNSLBPort, "", nil
 	}
 
 	var svc *corev1.Service
@@ -635,7 +636,8 @@ func (r *Reconciler) reconcileClusterIPServiceStatus(ctx context.Context, svc *c
 }
 
 func (r *Reconciler) reconcileInternalRouterServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, needed bool, message string, err error) {
-	if !util.IsPrivateHCP(hcp) || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+	// ARO is always private but there's no router service. Connection goes through swift.
+	if !util.IsPrivateHCP(hcp) || hyperazureutil.IsAroHCP() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return
 	}
 	return r.reconcileRouterServiceStatus(ctx, manifests.PrivateRouterService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))

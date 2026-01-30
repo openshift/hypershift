@@ -14,6 +14,7 @@ data:
   profile: Default
 kind: ConfigMap
 metadata:
+  creationTimestamp: null
   name: oauth-openshift-audit
   namespace: hcp-namespace
   ownerReferences:

@@ -1,6 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  creationTimestamp: null
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-image-registry-operator
@@ -27,6 +28,7 @@ spec:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: apiserver-token,tmp-dir
         component.hypershift.openshift.io/config-hash: 87ecf31a
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
       labels:
         app: cluster-image-registry-operator
         hypershift.openshift.io/control-plane-component: cluster-image-registry-operator
@@ -138,7 +140,7 @@ spec:
         - mountPath: /tmp
           name: tmp-dir
       - args:
-        - --token-audience=https://test-oidc-bucket.s3.us-east-1.amazonaws.com/test-cluster
+        - --token-audience=
         - --service-account-namespace=openshift-image-registry
         - --service-account-name=cluster-image-registry-operator
         - --token-file=/var/run/secrets/openshift/serviceaccount/token
