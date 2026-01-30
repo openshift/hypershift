@@ -160,25 +160,38 @@ func TestIsServiceAttachmentReady(t *testing.T) {
 			name: "When ServiceAttachmentURI is empty it should return false",
 			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
 				Status: hyperv1.GCPPrivateServiceConnectStatus{
-					ServiceAttachmentURI: "",
+					ServiceAttachmentURI:  "",
+					ServiceAttachmentName: "test-sa",
 				},
 			},
 			expected: false,
 		},
 		{
-			name: "When ServiceAttachmentURI exists but condition is missing it should return false",
+			name: "When ServiceAttachmentName is empty it should return false",
 			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
 				Status: hyperv1.GCPPrivateServiceConnectStatus{
-					ServiceAttachmentURI: "projects/mgmt-project/regions/us-central1/serviceAttachments/test-sa",
+					ServiceAttachmentURI:  "projects/mgmt-project/regions/us-central1/serviceAttachments/test-sa",
+					ServiceAttachmentName: "",
 				},
 			},
 			expected: false,
 		},
 		{
-			name: "When ServiceAttachmentURI exists but condition is False it should return false",
+			name: "When both URI and Name exist but condition is missing it should return false",
 			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
 				Status: hyperv1.GCPPrivateServiceConnectStatus{
-					ServiceAttachmentURI: "projects/mgmt-project/regions/us-central1/serviceAttachments/test-sa",
+					ServiceAttachmentURI:  "projects/mgmt-project/regions/us-central1/serviceAttachments/test-sa",
+					ServiceAttachmentName: "test-sa",
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When both URI and Name exist but condition is False it should return false",
+			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
+				Status: hyperv1.GCPPrivateServiceConnectStatus{
+					ServiceAttachmentURI:  "projects/mgmt-project/regions/us-central1/serviceAttachments/test-sa",
+					ServiceAttachmentName: "test-sa",
 					Conditions: []metav1.Condition{
 						{
 							Type:   string(hyperv1.GCPServiceAttachmentAvailable),
@@ -190,10 +203,11 @@ func TestIsServiceAttachmentReady(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "When ServiceAttachmentURI exists and condition is True it should return true",
+			name: "When both URI and Name exist and condition is True it should return true",
 			gcpPSC: &hyperv1.GCPPrivateServiceConnect{
 				Status: hyperv1.GCPPrivateServiceConnectStatus{
-					ServiceAttachmentURI: "projects/mgmt-project/regions/us-central1/serviceAttachments/test-sa",
+					ServiceAttachmentURI:  "projects/mgmt-project/regions/us-central1/serviceAttachments/test-sa",
+					ServiceAttachmentName: "test-sa",
 					Conditions: []metav1.Condition{
 						{
 							Type:   string(hyperv1.GCPServiceAttachmentAvailable),

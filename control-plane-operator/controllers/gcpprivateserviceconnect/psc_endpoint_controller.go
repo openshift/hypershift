@@ -231,8 +231,9 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 
 // isServiceAttachmentReady checks if the management-side Service Attachment is ready
 func (r *GCPPrivateServiceConnectReconciler) isServiceAttachmentReady(gcpPSC *hyperv1.GCPPrivateServiceConnect) bool {
-	// Check if management-side has populated ServiceAttachmentURI
-	if gcpPSC.Status.ServiceAttachmentURI == "" {
+	// Check if management-side has populated both ServiceAttachmentURI and ServiceAttachmentName.
+	// Both are required: URI for the PSC endpoint target, Name for constructing GCP resource names.
+	if gcpPSC.Status.ServiceAttachmentURI == "" || gcpPSC.Status.ServiceAttachmentName == "" {
 		return false
 	}
 
