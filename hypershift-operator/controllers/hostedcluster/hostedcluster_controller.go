@@ -2959,6 +2959,11 @@ func reconcileCAPIManagerClusterRoleBinding(binding *rbacv1.ClusterRoleBinding, 
 			Name:      sa.Name,
 			Namespace: sa.Namespace,
 		},
+		{
+			Kind:      "ServiceAccount",
+			Name:      "capi-provider",
+			Namespace: sa.Namespace,
+		},
 	}
 	return nil
 }
