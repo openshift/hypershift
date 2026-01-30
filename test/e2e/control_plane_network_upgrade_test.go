@@ -480,27 +480,49 @@ func reportTestResult(t *testing.T, g Gomega, result upgradeResult, initialState
 // verifyNoBlockingConditions checks that there are no blocking conditions
 // preventing the network operator from updating.
 func verifyNoBlockingConditions(t *testing.T, g Gomega, ctx context.Context, mgtClient crclient.Client, hcpNamespace string) {
-	// Check CNO pods are not waiting/blocked
-	cnoDeployment := &appsv1.Deployment{}
-	err := mgtClient.Get(ctx, types.NamespacedName{
-		Namespace: hcpNamespace,
-		Name:      "cluster-network-operator",
-	}, cnoDeployment)
-	g.Expect(err).NotTo(HaveOccurred(), "Failed to get CNO deployment")
+	// Wait for CNO deployment to be ready with polling
+	t.Log("Waiting for CNO deployment to be ready...")
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		cnoDeployment := &appsv1.Deployment{}
+		if err := mgtClient.Get(ctx, types.NamespacedName{
+			Namespace: hcpNamespace,
+			Name:      "cluster-network-operator",
+		}, cnoDeployment); err != nil {
+			t.Logf("Failed to get CNO deployment: %v", err)
+			return false, nil
+		}
 
-	g.Expect(cnoDeployment.Status.ReadyReplicas).To(Equal(cnoDeployment.Status.Replicas),
-		"CNO deployment should have all replicas ready")
+		ready := cnoDeployment.Status.ReadyReplicas == cnoDeployment.Status.Replicas &&
+			cnoDeployment.Status.Replicas > 0
+		if !ready {
+			t.Logf("CNO deployment not ready: %d/%d replicas ready",
+				cnoDeployment.Status.ReadyReplicas, cnoDeployment.Status.Replicas)
+		}
+		return ready, nil
+	})
+	g.Expect(err).NotTo(HaveOccurred(), "CNO deployment should have all replicas ready")
 
-	// Check OVN control-plane deployment is healthy
-	ovnDeployment := &appsv1.Deployment{}
-	err = mgtClient.Get(ctx, types.NamespacedName{
-		Namespace: hcpNamespace,
-		Name:      "ovnkube-control-plane",
-	}, ovnDeployment)
-	g.Expect(err).NotTo(HaveOccurred(), "Failed to get OVN control-plane deployment")
+	// Wait for OVN control-plane deployment to be ready with polling
+	t.Log("Waiting for OVN control-plane deployment to be ready...")
+	err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+		ovnDeployment := &appsv1.Deployment{}
+		if err := mgtClient.Get(ctx, types.NamespacedName{
+			Namespace: hcpNamespace,
+			Name:      "ovnkube-control-plane",
+		}, ovnDeployment); err != nil {
+			t.Logf("Failed to get OVN control-plane deployment: %v", err)
+			return false, nil
+		}
 
-	g.Expect(ovnDeployment.Status.ReadyReplicas).To(Equal(ovnDeployment.Status.Replicas),
-		"OVN control-plane deployment should have all replicas ready")
+		ready := ovnDeployment.Status.ReadyReplicas == ovnDeployment.Status.Replicas &&
+			ovnDeployment.Status.Replicas > 0
+		if !ready {
+			t.Logf("OVN control-plane deployment not ready: %d/%d replicas ready",
+				ovnDeployment.Status.ReadyReplicas, ovnDeployment.Status.Replicas)
+		}
+		return ready, nil
+	})
+	g.Expect(err).NotTo(HaveOccurred(), "OVN control-plane deployment should have all replicas ready")
 
 	// Check for any crash-looping pods in the HCP namespace
 	pods := &corev1.PodList{}
