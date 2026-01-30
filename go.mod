@@ -1,6 +1,6 @@
 module github.com/openshift/hypershift
 
-go 1.25.3
+go 1.24.4
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0
@@ -59,7 +59,7 @@ require (
 	github.com/openshift/hypershift/api v0.0.0-20240604072534-cd2d5291e2b7
 	github.com/openshift/library-go v0.0.0-20251204132909-8814e976a023
 	github.com/openshift/multi-operator-manager v0.0.0-20260112172834-b64ebc8c627b
-	github.com/operator-framework/api v0.38.0
+	github.com/operator-framework/api v0.22.0
 	github.com/pkg/errors v0.9.1
 	github.com/ppc64le-cloud/powervs-utils v0.0.0-20250403153021-219b161805db
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.88.0
@@ -89,7 +89,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.34.3
 	k8s.io/apiextensions-apiserver v0.34.3
-	k8s.io/apimachinery v0.35.0
+	k8s.io/apimachinery v0.34.3
 	k8s.io/apiserver v0.34.3
 	k8s.io/autoscaler/vertical-pod-autoscaler v1.3.0
 	k8s.io/cli-runtime v0.34.2

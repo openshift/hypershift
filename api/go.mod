@@ -1,12 +1,12 @@
 module github.com/openshift/hypershift/api
 
-go 1.25.3
+go 1.24.0
 
 require (
 	github.com/aws/karpenter-provider-aws v1.0.8
 	github.com/openshift/api v0.0.0-20260120150926-4c643a652d54
 	k8s.io/api v0.34.3
-	k8s.io/apimachinery v0.35.0
+	k8s.io/apimachinery v0.34.3
 )
 
 require (
@@ -48,6 +48,7 @@ require (
 	github.com/prometheus/common v0.67.5 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
+	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/samber/lo v1.51.0 // indirect
 	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
