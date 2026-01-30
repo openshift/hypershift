@@ -523,7 +523,10 @@ func (r *GCPPrivateServiceConnectReconciler) getHostedControlPlane(ctx context.C
 
 // handleGCPError handles GCP API errors with appropriate retry logic
 func (r *GCPPrivateServiceConnectReconciler) handleGCPError(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, reason string, err error) (ctrl.Result, error) {
-	log, _ := logr.FromContext(ctx)
+	log, logErr := logr.FromContext(ctx)
+	if logErr != nil {
+		return ctrl.Result{}, fmt.Errorf("logger not found: %w", logErr)
+	}
 
 	var requeueAfter time.Duration
 	var message string
