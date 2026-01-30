@@ -26,6 +26,53 @@ routes:
         weight: null
     status: {}
   - metadata:
+      labels:
+        hypershift.openshift.io/hosted-control-plane: test-namespace
+      name: kube-apiserver
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      host: api.test.example.com
+      tls:
+        insecureEdgeTerminationPolicy: None
+        termination: passthrough
+      to:
+        kind: Service
+        name: kube-apiserver
+        weight: null
+    status: {}
+  - metadata:
+      labels:
+        hypershift.openshift.io/hosted-control-plane: test-namespace
+        hypershift.openshift.io/internal-route: "true"
+      name: kube-apiserver-internal
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      host: api.test-cluster.hypershift.local
+      tls:
+        insecureEdgeTerminationPolicy: None
+        termination: passthrough
+      to:
+        kind: Service
+        name: kube-apiserver
+        weight: null
+    status: {}
+  - metadata:
+      labels:
+        hypershift.openshift.io/hosted-control-plane: test-namespace
       name: oauth
       namespace: test-namespace
       ownerReferences:
@@ -93,9 +140,6 @@ services:
     status:
       loadBalancer: {}
   - metadata:
-      annotations:
-        service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
-        service.beta.kubernetes.io/aws-load-balancer-type: nlb
       labels:
         app: kube-apiserver
         hypershift.openshift.io/control-plane-component: kube-apiserver
@@ -117,33 +161,7 @@ services:
       selector:
         app: kube-apiserver
         hypershift.openshift.io/control-plane-component: kube-apiserver
-      type: LoadBalancer
-    status:
-      loadBalancer: {}
-  - metadata:
-      annotations:
-        service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
-        service.beta.kubernetes.io/aws-load-balancer-internal: "true"
-        service.beta.kubernetes.io/aws-load-balancer-type: nlb
-      name: kube-apiserver-private
-      namespace: test-namespace
-      ownerReferences:
-      - apiVersion: hypershift.openshift.io/v1beta1
-        blockOwnerDeletion: true
-        controller: true
-        kind: HostedControlPlane
-        name: test-cluster
-        uid: ""
-    spec:
-      ipFamilyPolicy: PreferDualStack
-      ports:
-      - port: 6443
-        protocol: TCP
-        targetPort: client
-      selector:
-        app: kube-apiserver
-        hypershift.openshift.io/control-plane-component: kube-apiserver
-      type: LoadBalancer
+      type: ClusterIP
     status:
       loadBalancer: {}
   - metadata:
@@ -241,26 +259,6 @@ services:
         app: packageserver
         hypershift.openshift.io/control-plane-component: packageserver
       type: ClusterIP
-    status:
-      loadBalancer: {}
-  - metadata:
-      annotations:
-        service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
-        service.beta.kubernetes.io/aws-load-balancer-internal: "true"
-        service.beta.kubernetes.io/aws-load-balancer-type: nlb
-      labels:
-        app: private-router
-      name: private-router
-      namespace: test-namespace
-    spec:
-      ports:
-      - name: https
-        port: 443
-        protocol: TCP
-        targetPort: https
-      selector:
-        app: private-router
-      type: LoadBalancer
     status:
       loadBalancer: {}
   metadata: {}

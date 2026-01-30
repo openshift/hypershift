@@ -138,7 +138,7 @@ spec:
         - mountPath: /tmp
           name: tmp-dir
       - args:
-        - --token-audience=https://test-oidc-bucket.s3.us-east-1.amazonaws.com/test-cluster
+        - --token-audience=
         - --service-account-namespace=openshift-image-registry
         - --service-account-name=cluster-image-registry-operator
         - --token-file=/var/run/secrets/openshift/serviceaccount/token

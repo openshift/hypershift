@@ -102,7 +102,7 @@ spec:
         - --requestheader-group-headers=X-Remote-Group
         - --requestheader-extra-headers-prefix=X-Remote-Extra-
         - --client-ca-file=/etc/kubernetes/certs/client-ca/ca.crt
-        - --api-audiences=https://test-oidc-bucket.s3.us-east-1.amazonaws.com/test-cluster
+        - --api-audiences=
         - --etcd-servers=https://etcd-client:2379
         - --tls-min-version=VersionTLS12
         command:

@@ -10,6 +10,7 @@ import (
 	assets "github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	supportconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
@@ -377,10 +378,10 @@ func ReconcileRouteStatus(route *routev1.Route, canonicalHostname string) {
 }
 
 func UseSharedIngress() bool {
-	return util.UseSharedIngress()
+	return azureutil.IsAroHCP()
 }
 
-func Hostname(hcp *hyperv1.HostedControlPlane) string {
+func KasRouteHostname(hcp *hyperv1.HostedControlPlane) string {
 	kasPublishStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
 	if kasPublishStrategy.Route == nil {
 		return ""

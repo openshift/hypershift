@@ -100,7 +100,6 @@ spec:
         - name: HOSTED_CLUSTER_NAME
           value: hcp
         - name: TOKEN_AUDIENCE
-          value: https://test-oidc-bucket.s3.us-east-1.amazonaws.com/test-cluster
         - name: RELEASE_VERSION
           value: 4.18.0
         - name: OPENSHIFT_RELEASE_IMAGE
@@ -186,7 +185,7 @@ spec:
         - --kubeconfig
         - /etc/kubernetes/kubeconfig
         - --token-audience
-        - https://test-oidc-bucket.s3.us-east-1.amazonaws.com/test-cluster
+        - ""
         command:
         - /usr/bin/control-plane-operator
         - token-minter
@@ -286,7 +285,7 @@ spec:
         - /etc/kubernetes/kubeconfig
         - --oneshot
         - --token-audience
-        - https://test-oidc-bucket.s3.us-east-1.amazonaws.com/test-cluster
+        - ""
         command:
         - /usr/bin/control-plane-operator
         - token-minter

@@ -28,7 +28,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
-        component.hypershift.openshift.io/config-hash: 923d207c
+        component.hypershift.openshift.io/config-hash: 417672c4
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: private-router
@@ -101,7 +101,7 @@ spec:
           timeoutSeconds: 1
         name: router
         ports:
-        - containerPort: 443
+        - containerPort: 8443
           name: https
           protocol: TCP
         resources:

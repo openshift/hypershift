@@ -81,6 +81,7 @@ spec:
         - --kubeconfig=/etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
         - --authentication-kubeconfig=/etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
         - --authorization-kubeconfig=/etc/kubernetes/secrets/svc-kubeconfig/kubeconfig
+        - --allocate-node-cidrs=false
         - --cert-dir=/var/run/kubernetes
         - --cluster-signing-cert-file=/etc/kubernetes/certs/cluster-signer/ca.crt
         - --cluster-signing-key-file=/etc/kubernetes/certs/cluster-signer/ca.key
@@ -111,7 +112,6 @@ spec:
         - --cluster-cidr=10.132.0.0/14
         - --service-cluster-ip-range=
         - --cloud-provider=external
-        - --allocate-node-cidrs=false
         - --node-monitor-grace-period=50s
         - --tls-min-version=VersionTLS12
         - --tls-cipher-suites=TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256

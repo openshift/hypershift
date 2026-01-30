@@ -28,7 +28,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs,tmp-dir
-        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e1d8949e2360eec75794dc8cc8b110e88a2a4098ce7e69167
+        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e1d8949e2360eec758b110e8899376ce0a2a4098ce7e69167
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: kube-apiserver
@@ -301,33 +301,6 @@ spec:
         - mountPath: /tmp
           name: tmp-dir
       initContainers:
-      - command:
-        - /bin/sh
-        - -c
-        - 'echo ''Image pre-pulled: hyperkube''; exit 0'
-        image: hyperkube
-        imagePullPolicy: IfNotPresent
-        name: pre-pull-image-hyperkube
-        resources: {}
-        terminationMessagePolicy: FallbackToLogsOnError
-      - command:
-        - /bin/sh
-        - -c
-        - 'echo ''Image pre-pulled: controlplane-operator''; exit 0'
-        image: controlplane-operator
-        imagePullPolicy: IfNotPresent
-        name: pre-pull-image-controlplane-operator
-        resources: {}
-        terminationMessagePolicy: FallbackToLogsOnError
-      - command:
-        - /bin/sh
-        - -c
-        - 'echo ''Image pre-pulled: apiserver-network-proxy''; exit 0'
-        image: apiserver-network-proxy
-        imagePullPolicy: IfNotPresent
-        name: pre-pull-image-apiserver-network-proxy
-        resources: {}
-        terminationMessagePolicy: FallbackToLogsOnError
       - args:
         - -c
         - |

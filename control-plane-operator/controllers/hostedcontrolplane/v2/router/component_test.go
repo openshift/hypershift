@@ -4,42 +4,65 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/azureutil"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestUseHCPRouter(t *testing.T) {
-	testsCases := []struct {
-		name           string
-		hcp            *hyperv1.HostedControlPlane
-		expectedResult bool
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		setupEnv func(t *testing.T)
+		want     bool
 	}{
 		{
-			name: "Provider is IBM Cloud",
+			name: "When platform is IBMCloud it should return false",
 			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.IBMCloudPlatform,
 					},
 				},
 			},
-			expectedResult: false,
+			want: false,
 		},
 		{
-			name: "Provider is NonePlatform, services are exposed with Routes",
+			name: "When ARO Swift is enabled it should return true because the HCP router handles routing",
 			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
+					Annotations: map[string]string{
+						hyperv1.SwiftPodNetworkInstanceAnnotation: "test-instance",
+					},
 				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
+			want: true,
+		},
+		{
+			name: "When ARO with no Swift annotation (CI) it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
+			want: false,
+		},
+		{
+			name: "When NonePlatform has services exposed with Routes it should return true",
+			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.NonePlatform,
@@ -84,16 +107,25 @@ func TestUseHCPRouter(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: true,
+			want: true,
 		},
 		{
-			name: "Provider is AWS, Public and Private, KAS Loadbalancer",
+			name: "When AWS has private endpoint access it should return true",
 			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							EndpointAccess: hyperv1.Private,
+						},
+					},
 				},
+			},
+			want: true,
+		},
+		{
+			name: "When AWS has public and private endpoint access with KAS LoadBalancer it should return true",
+			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
@@ -111,16 +143,11 @@ func TestUseHCPRouter(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: true, // Router infrastructure needed for internal routes
+			want: true, // Router infrastructure needed for internal routes
 		},
 		{
-			name: "Provider is AWS, Public and Private, KAS Route",
+			name: "When AWS has public and private endpoint access with KAS Route it should return true",
 			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
@@ -141,35 +168,50 @@ func TestUseHCPRouter(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: true,
+			want: true,
 		},
 		{
-			name: "Provider is AWS, Private",
+			name: "When AWS has public endpoint access without DNS it should return false",
 			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{
-							EndpointAccess: hyperv1.Private,
+							EndpointAccess: hyperv1.Public,
 						},
 					},
 				},
 			},
-			expectedResult: true,
+			want: false,
 		},
 		{
-			name: "Provider is GCP, Private",
+			name: "When AWS has public endpoint access with DNS for APIServer it should return true",
 			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							EndpointAccess: hyperv1.Public,
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{
+									Hostname: "api.example.com",
+								},
+							},
+						},
+					},
 				},
+			},
+			want: true,
+		},
+		{
+			name: "When GCP has private endpoint access it should return true",
+			hcp: &hyperv1.HostedControlPlane{
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.GCPPlatform,
@@ -179,16 +221,11 @@ func TestUseHCPRouter(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: true,
+			want: true,
 		},
 		{
-			name: "Provider is GCP, PublicAndPrivate, KAS Route",
+			name: "When GCP has public and private endpoint access with KAS Route it should return true",
 			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.GCPPlatform,
@@ -209,16 +246,11 @@ func TestUseHCPRouter(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: true,
+			want: true,
 		},
 		{
-			name: "Provider is Agent, KAS LoadBalancer",
+			name: "When Agent platform has KAS LoadBalancer it should return false",
 			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AgentPlatform,
@@ -236,16 +268,11 @@ func TestUseHCPRouter(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: false, // Router infrastructure not needed when KAS uses LoadBalancer
+			want: false, // Router infrastructure not needed when KAS uses LoadBalancer
 		},
 		{
-			name: "Provider is Agent, KAS Route",
+			name: "When Agent platform has KAS Route it should return true",
 			hcp: &hyperv1.HostedControlPlane{
-				TypeMeta: metav1.TypeMeta{},
-				ObjectMeta: metav1.ObjectMeta{
-					Namespace: "tenant1",
-					Name:      "cluster1",
-				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AgentPlatform,
@@ -266,12 +293,28 @@ func TestUseHCPRouter(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: true,
+			want: true,
+		},
+		{
+			name: "When platform is None it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.NonePlatform,
+					},
+				},
+			},
+			want: false,
 		},
 	}
-	for _, tc := range testsCases {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.expectedResult, UseHCPRouter(tc.hcp))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.setupEnv != nil {
+				tt.setupEnv(t)
+			}
+			if got := UseHCPRouter(tt.hcp); got != tt.want {
+				t.Errorf("UseHCPRouter() = %v, want %v", got, tt.want)
+			}
 		})
 	}
 }

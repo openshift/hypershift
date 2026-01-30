@@ -100,6 +100,7 @@ func generateRouterConfig(routeList *routev1.RouteList, svcsNameToIP map[string]
 			manifests.KubeAPIServerExternalPublicRoute("").Name,
 			manifests.KubeAPIServerExternalPrivateRoute("").Name:
 			p.HasKubeAPI = true
+			p.KASSVCPort = config.KASSVCPort
 			p.KASDestinationServiceIP = svcsNameToIP["kube-apiserver"]
 			continue
 		case ignitionserver.Route("").Name:
@@ -116,9 +117,7 @@ func generateRouterConfig(routeList *routev1.RouteList, svcsNameToIP map[string]
 			p.Backends = append(p.Backends, backendDesc{Name: "metrics_forwarder", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: route.Spec.Port.TargetPort.IntVal})
 		}
 	}
-	if p.HasKubeAPI {
-		p.KASSVCPort = config.KASSVCPort
-	}
+
 	out := &bytes.Buffer{}
 	if err := routerConfigTemplate.Execute(out, p); err != nil {
 		return "", fmt.Errorf("failed to generate router config: %w", err)
