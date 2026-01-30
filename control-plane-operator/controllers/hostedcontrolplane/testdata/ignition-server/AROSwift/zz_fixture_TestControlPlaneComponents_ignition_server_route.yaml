@@ -1,0 +1,27 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  labels:
+    hypershift.openshift.io/hosted-control-plane: hcp-namespace
+    hypershift.openshift.io/internal-route: "true"
+  name: ignition-server
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  host: ignition-server.apps.hcp.hypershift.local
+  tls:
+    insecureEdgeTerminationPolicy: None
+    termination: passthrough
+  to:
+    kind: Service
+    name: ignition-server-proxy
+    weight: null
+  wildcardPolicy: None
+status: {}
