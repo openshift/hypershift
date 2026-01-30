@@ -41,6 +41,10 @@ const (
 
 	// wifTokenPath is the path where the token minter writes the projected service account token for GCP WIF.
 	wifTokenPath = "/var/run/secrets/openshift/serviceaccount/token"
+
+	// driftDetectionRequeueInterval is the interval for periodic reconciliation to detect
+	// out-of-band changes to GCP resources. Matches the AWS private link controller pattern.
+	driftDetectionRequeueInterval = 5 * time.Minute
 )
 
 // isWIFTokenAccessible checks if the WIF service account token file exists and is accessible.
@@ -381,7 +385,18 @@ func (r *GCPPrivateServiceConnectReconciler) reconcilePSCEndpoint(ctx context.Co
 		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
 	}
 
-	return ctrl.Result{}, nil
+	// Fetch the newly created endpoint to update status
+	log.Info("PSC endpoint created, fetching to update status", "name", endpointName)
+	fetchCtx, fetchCancel := context.WithTimeout(ctx, gcpAPITimeout)
+	defer fetchCancel()
+	createdEndpoint, err := customerGCPClient.ForwardingRules.Get(customerProject, region, endpointName).Context(fetchCtx).Do()
+	if err != nil {
+		// Endpoint was created but we couldn't fetch it - requeue to retry
+		log.Error(err, "failed to fetch newly created endpoint, will retry")
+		return ctrl.Result{RequeueAfter: time.Second * 30}, nil
+	}
+
+	return r.updateStatusFromEndpoint(ctx, gcpPSC, createdEndpoint)
 }
 
 // updateStatusFromEndpoint updates the CR status based on the PSC endpoint state
@@ -410,7 +425,12 @@ func (r *GCPPrivateServiceConnectReconciler) updateStatusFromEndpoint(ctx contex
 		})
 	}
 
-	return ctrl.Result{}, r.Status().Patch(ctx, gcpPSC, patch)
+	if err := r.Status().Patch(ctx, gcpPSC, patch); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Always requeue to catch and report out-of-band changes in GCP (drift detection)
+	return ctrl.Result{RequeueAfter: driftDetectionRequeueInterval}, nil
 }
 
 // reconcileDelete handles cleanup when the CR is being deleted
