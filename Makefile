@@ -130,6 +130,10 @@ karpenter-operator:
 karpenter-api:
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/karpenter/..." output:crd:artifacts:config=karpenter-operator/controllers/karpenter/assets
 
+	# sync upstream crds and adjust cel
+	./hack/crds-sync.sh
+	./karpenter-operator/controllers/karpenter/assets/adjust-cel.sh
+
 .PHONY: control-plane-operator
 control-plane-operator:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/control-plane-operator ./control-plane-operator
@@ -382,7 +386,7 @@ run-operator-locally-aws-dev:
 
 .PHONY: verify-codespell
 verify-codespell: codespell ## Verify codespell.
-	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum"
+	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml"
 
 .PHONY: run-gitlint
 run-gitlint: $(GITLINT)
