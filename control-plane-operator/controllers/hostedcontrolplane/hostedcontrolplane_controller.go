@@ -65,7 +65,6 @@ import (
 	storagev2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/storage"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	ignitionmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
-	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -1099,7 +1098,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		return fmt.Errorf("failed to reconcile metrics config: %w", err)
 	}
 
-	if useHCPRouter(hcp) {
+	if routerv2.UseHCPRouter(hcp) {
 		if err := infra.NewReconciler(r.Client, r.DefaultIngressDomain).
 			AdmitHCPManagedRoutes(ctx, hcp, infraStatus.InternalHCPRouterHost, infraStatus.ExternalHCPRouterHost); err != nil {
 			return fmt.Errorf("failed to admit HCP managed routes: %w", err)
@@ -1164,22 +1163,6 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 	}
 
 	return utilerrors.NewAggregate(errs)
-}
-
-// useHCPRouter returns true if a dedicated common router is created for a HCP to handle ingress for the managed endpoints.
-// This is true when the API input specifies intent for the following:
-// 1 - AWS endpointAccess is private somehow (i.e. publicAndPrivate or private) or is public and configured with external DNS.
-// 2 - When 1 is true, we recommend (and automate via CLI) ServicePublishingStrategy to be "Route" for all endpoints but the KAS
-// which needs a dedicated Service type LB external to be exposed if no external DNS is supported.
-// Otherwise, the Routes use the management cluster Domain and resolve through the default ingress controller.
-func useHCPRouter(hostedControlPlane *hyperv1.HostedControlPlane) bool {
-	if sharedingress.UseSharedIngress() {
-		return false
-	}
-	if hostedControlPlane.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-		return false
-	}
-	return util.IsPrivateHCP(hostedControlPlane) || util.IsPublicWithDNS(hostedControlPlane)
 }
 
 func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool {

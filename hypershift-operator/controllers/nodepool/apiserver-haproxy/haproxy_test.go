@@ -7,6 +7,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/testutil"
 
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
@@ -91,10 +93,11 @@ func TestAPIServerHAProxyConfig(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.useSharedIngress {
-				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+				azureutil.SetAsAroHCPTest(t)
 			}
+
 			config, err := apiServerProxyConfig(image, tc.proxy, "fakeClusterID", externalAddress, internalAddress, 443, 8443,
-				tc.proxy, tc.noProxy, serviceNetwork, clusterNetwork, tc.platform)
+				tc.proxy, tc.noProxy, serviceNetwork, clusterNetwork, tc.platform, tc.useSharedIngress)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -146,6 +149,7 @@ kind: Config`
 
 	testCases := []struct {
 		name                         string
+		setupEnv                     func(t *testing.T)
 		hc                           *hyperv1.HostedCluster
 		other                        []crclient.Object
 		expectedHAProxyConfigContent []string
@@ -270,10 +274,91 @@ kind: Config`
 
 			expectedHAProxyConfigContent: []string{"/livez?exclude=etcd&amp;exclude=log"},
 		},
+		{
+			name: "When ARO Swift is enabled it should use .hypershift.local hostname and port 443",
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
+			hc: hc(func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.Type = hyperv1.AzurePlatform
+				hc.Spec.Platform.AWS = nil
+				hc.ObjectMeta.Annotations = map[string]string{
+					hyperv1.SwiftPodNetworkInstanceAnnotation: "test-swift-instance",
+				}
+				hc.Status.KubeConfig = &corev1.LocalObjectReference{Name: "kk"}
+				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
+				hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+					{
+						Service: hyperv1.APIServer,
+						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type: hyperv1.Route,
+							Route: &hyperv1.RoutePublishingStrategy{
+								Hostname: "api.swift-cluster.example.com",
+							},
+						},
+					},
+				}
+			}),
+			other: []crclient.Object{&corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "kk", Namespace: hc().Namespace},
+				Data: map[string][]byte{
+					"kubeconfig": []byte(kubeconfig(443)),
+				},
+			}},
+			expectedHAProxyConfigContent: []string{"api.hc.hypershift.local:443"},
+		},
+		{
+			name: "When ARO  and no Swift is used (CI) it should use the shared ingress LB service IP, port 6443 and proxy protocol",
+			setupEnv: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
+			hc: hc(func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.Type = hyperv1.AzurePlatform
+				hc.Spec.Platform.AWS = nil
+				hc.Status.KubeConfig = &corev1.LocalObjectReference{Name: "kk"}
+				hc.Spec.Networking.ServiceNetwork = []hyperv1.ServiceNetworkEntry{{CIDR: *ipnet.MustParseCIDR("192.168.1.0/24")}}
+				hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+					{
+						Service: hyperv1.APIServer,
+						ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type: hyperv1.Route,
+							Route: &hyperv1.RoutePublishingStrategy{
+								Hostname: "api.shared-ingress.example.com",
+							},
+						},
+					},
+				}
+			}),
+			other: []crclient.Object{
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "kk", Namespace: hc().Namespace},
+					Data: map[string][]byte{
+						"kubeconfig": []byte(kubeconfig(443)),
+					},
+				},
+				&corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      sharedingress.RouterPublicService().Name,
+						Namespace: sharedingress.RouterNamespace,
+					},
+					Status: corev1.ServiceStatus{
+						LoadBalancer: corev1.LoadBalancerStatus{
+							Ingress: []corev1.LoadBalancerIngress{
+								{IP: "10.0.0.100"},
+							},
+						},
+					},
+				},
+			},
+			expectedHAProxyConfigContent: []string{"10.0.0.100:6443"},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.setupEnv != nil {
+				tc.setupEnv(t)
+			}
 
 			r := HAProxy{
 				Client:       fake.NewClientBuilder().WithObjects(tc.other...).Build(),
