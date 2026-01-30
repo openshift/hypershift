@@ -93,6 +93,7 @@ var initialObjects = []client.Object{
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameInfra)),
 
 	fakeOperatorHub(),
+	manifests.KASConnectionCheckerDaemonSet(),
 }
 
 func shouldNotError(key client.ObjectKey) bool {
@@ -2550,6 +2551,145 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				}
 				if !found {
 					t.Fatal("couldn't find expected condition")
+				}
+			}
+		})
+	}
+}
+
+func Test_reconciler_reconcileControlPlaneConnectionAvailable(t *testing.T) {
+	newKASConnectionCheckerDaemonSet := func(desiredScheduled, numberReady int32) *appsv1.DaemonSet {
+		return &appsv1.DaemonSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      manifests.KASConnectionCheckerName,
+				Namespace: manifests.KASConnectionCheckerNamespace,
+			},
+			Status: appsv1.DaemonSetStatus{
+				DesiredNumberScheduled: desiredScheduled,
+				NumberReady:            numberReady,
+			},
+		}
+	}
+
+	tests := []struct {
+		name              string
+		hcp               *hyperv1.HostedControlPlane
+		wantErr           bool
+		expectedCondition *metav1.Condition
+		daemonSet         *appsv1.DaemonSet
+	}{
+		{
+			name:    "When DaemonSet does not exist it should set condition to Unknown",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: newCondition(
+				string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionUnknown,
+				hyperv1.StatusUnknownReason,
+				"KAS connection checker DaemonSet not found",
+			),
+			daemonSet: nil, // No DaemonSet
+		},
+		{
+			name:    "When DesiredNumberScheduled is 0 it should set condition to Unknown",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: newCondition(
+				string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionUnknown,
+				hyperv1.StatusUnknownReason,
+				"No worker nodes available to check control plane connection",
+			),
+			daemonSet: newKASConnectionCheckerDaemonSet(0, 0),
+		},
+		{
+			name:    "When all pods are ready it should set condition to True",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: newCondition(
+				string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionTrue,
+				hyperv1.AsExpectedReason,
+				hyperv1.AllIsWellMessage,
+			),
+			daemonSet: newKASConnectionCheckerDaemonSet(3, 3),
+		},
+		{
+			name:    "When some pods are not ready it should set condition to False",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: newCondition(
+				string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionFalse,
+				hyperv1.ControlPlaneConnectionKASAccessFailedReason,
+				"Data plane to control plane connection is not available: 1/3 pods ready",
+			),
+			daemonSet: newKASConnectionCheckerDaemonSet(3, 1),
+		},
+		{
+			name:    "When no pods are ready it should set condition to False",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: newCondition(
+				string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionFalse,
+				hyperv1.ControlPlaneConnectionKASAccessFailedReason,
+				"Data plane to control plane connection is not available: 0/5 pods ready",
+			),
+			daemonSet: newKASConnectionCheckerDaemonSet(5, 0),
+		},
+		{
+			name:    "When only one pod is ready out of one it should set condition to True",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: newCondition(
+				string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionTrue,
+				hyperv1.AsExpectedReason,
+				hyperv1.AllIsWellMessage,
+			),
+			daemonSet: newKASConnectionCheckerDaemonSet(1, 1),
+		},
+	}
+
+	log := zapr.NewLogger(zaptest.NewLogger(t))
+	ctx := logr.NewContext(context.Background(), log)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var r reconciler
+
+			// Build client with DaemonSet if provided
+			var objects []client.Object
+			if tt.daemonSet != nil {
+				objects = append(objects, tt.daemonSet)
+			}
+
+			r.client = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
+			r.cpClient = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+
+			gotErr := r.reconcileControlPlaneConnectionAvailable(ctx, tt.hcp)
+			if gotErr != nil {
+				if !tt.wantErr {
+					t.Errorf("reconcileControlPlaneConnectionAvailable() failed: %v", gotErr)
+				}
+				return
+			}
+			if tt.wantErr {
+				t.Fatal("reconcileControlPlaneConnectionAvailable() succeeded unexpectedly")
+			}
+			if tt.expectedCondition != nil {
+				found := false
+				for _, c := range tt.hcp.Status.Conditions {
+					if tt.expectedCondition.Type == c.Type &&
+						tt.expectedCondition.Message == c.Message &&
+						tt.expectedCondition.Status == c.Status &&
+						tt.expectedCondition.Reason == c.Reason {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatalf("couldn't find expected condition. Expected: %+v, Got: %+v", tt.expectedCondition, tt.hcp.Status.Conditions)
 				}
 			}
 		})
