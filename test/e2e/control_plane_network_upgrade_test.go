@@ -23,7 +23,7 @@ const (
 	// Hardcoded release images for CORENET-6064 upgrade testing
 	// TODO: Remove hardcoding once CI job is configured with proper release images
 	corenet6064PreviousReleaseImage = "quay.io/openshift-release-dev/ocp-release:4.22.0-ec.1-x86_64"
-	corenet6064LatestReleaseImage   = "registry.build11.ci.openshift.org/ci-ln-0zgqwg2/release:latest"
+	corenet6064LatestReleaseImage   = "registry.build11.ci.openshift.org/ci-ln-ks2hvtb/release:latest"
 )
 
 // TestOVNControlPlaneUpgradeWithZeroWorkers validates CORENET-6064:
