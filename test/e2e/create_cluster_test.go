@@ -3253,9 +3253,6 @@ func TestCCMCreateCluster(t *testing.T) {
 							Labels: map[string]string{
 								"app": "test-ccm-nlb-sg",
 							},
-							Annotations: map[string]string{
-								"service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
-							},
 						},
 						Spec: corev1.PodSpec{
 							Containers: []corev1.Container{
@@ -3298,6 +3295,9 @@ func TestCCMCreateCluster(t *testing.T) {
 						ObjectMeta: metav1.ObjectMeta{
 							Name:      "test-ccm-nlb-sg-svc",
 							Namespace: testNS.Name,
+							Annotations: map[string]string{
+								"service.beta.kubernetes.io/aws-load-balancer-type": "nlb",
+							},
 						},
 						Spec: corev1.ServiceSpec{
 							Type: corev1.ServiceTypeLoadBalancer,
@@ -3368,10 +3368,13 @@ func TestCCMCreateCluster(t *testing.T) {
 					}
 
 					// FIXME: sleep 60s
-					time.Sleep(60 * time.Second)
+
 					// Wait for the load balancer to exist and become active before validating attributes like SecurityGroups.
 					// This avoids flakes where the Service is created but the LB is still provisioning.
+					t.Logf("Date/Time 1: %s", time.Now().Format(time.RFC3339))
+					time.Sleep(120 * time.Second)
 					t.Logf("Waiting for load balancer %q to become available (up to ~3 minutes)", lbName)
+					t.Logf("Date/Time 2: %s", time.Now().Format(time.RFC3339))
 					waiterDelay := func(attempt int) time.Duration {
 						// Backoff: 5s, 10s, 20s, then cap at 30s.
 						switch {
@@ -3393,7 +3396,9 @@ func TestCCMCreateCluster(t *testing.T) {
 						request.WithWaiterMaxAttempts(9),
 						request.WithWaiterDelay(waiterDelay),
 					)
+					t.Logf("Date/Time 3: %s", time.Now().Format(time.RFC3339))
 					g.Expect(err).NotTo(HaveOccurred(), "load balancer did not become available in time")
+					t.Logf("Date/Time 3: %s", time.Now().Format(time.RFC3339))
 
 					// Describe the load balancer
 					t.Logf("Describing load balancer to check for security groups")
