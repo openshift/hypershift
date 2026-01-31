@@ -229,16 +229,65 @@ func verifyZeroWorkers(t *testing.T, g Gomega, ctx context.Context, mgtClient cr
 }
 
 // recordNetworkComponentState retrieves the current OVN control-plane and CNO state.
+// It waits for the deployments to exist and be ready before recording their state.
 func recordNetworkComponentState(t *testing.T, g Gomega, ctx context.Context, mgtClient crclient.Client, hcpNamespace string) networkComponentState {
 	state := networkComponentState{}
 
-	// Get OVN control-plane deployment
+	// Wait for CNO deployment to exist and be ready
+	t.Log("Waiting for cluster-network-operator deployment to be ready...")
+	cnoDeployment := &appsv1.Deployment{}
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 10*time.Minute, true, func(ctx context.Context) (bool, error) {
+		if err := mgtClient.Get(ctx, types.NamespacedName{
+			Namespace: hcpNamespace,
+			Name:      "cluster-network-operator",
+		}, cnoDeployment); err != nil {
+			t.Logf("Waiting for CNO deployment: %v", err)
+			return false, nil
+		}
+		// Check if CNO has at least one ready replica
+		if cnoDeployment.Status.ReadyReplicas > 0 {
+			return true, nil
+		}
+		t.Logf("CNO deployment exists but not ready: %d/%d replicas ready",
+			cnoDeployment.Status.ReadyReplicas, cnoDeployment.Status.Replicas)
+		return false, nil
+	})
+	g.Expect(err).NotTo(HaveOccurred(), "Timed out waiting for cluster-network-operator deployment to be ready")
+
+	for _, container := range cnoDeployment.Spec.Template.Spec.Containers {
+		if container.Name == "cluster-network-operator" {
+			state.cnoImage = container.Image
+			break
+		}
+	}
+	if state.cnoImage == "" && len(cnoDeployment.Spec.Template.Spec.Containers) > 0 {
+		state.cnoImage = cnoDeployment.Spec.Template.Spec.Containers[0].Image
+	}
+	state.cnoGeneration = cnoDeployment.Generation
+	state.cnoReadyPods = cnoDeployment.Status.ReadyReplicas
+	g.Expect(state.cnoImage).NotTo(BeEmpty(), "Could not find CNO container image")
+
+	// Wait for OVN control-plane deployment to exist and be ready
+	// CNO creates this deployment, so we wait for CNO to be ready first
+	t.Log("Waiting for ovnkube-control-plane deployment to be ready...")
 	ovnDeployment := &appsv1.Deployment{}
-	err := mgtClient.Get(ctx, types.NamespacedName{
-		Namespace: hcpNamespace,
-		Name:      "ovnkube-control-plane",
-	}, ovnDeployment)
-	g.Expect(err).NotTo(HaveOccurred(), "Failed to get ovnkube-control-plane deployment")
+	err = wait.PollUntilContextTimeout(ctx, 10*time.Second, 15*time.Minute, true, func(ctx context.Context) (bool, error) {
+		if err := mgtClient.Get(ctx, types.NamespacedName{
+			Namespace: hcpNamespace,
+			Name:      "ovnkube-control-plane",
+		}, ovnDeployment); err != nil {
+			t.Logf("Waiting for OVN control-plane deployment: %v", err)
+			return false, nil
+		}
+		// Check if OVN deployment has at least one ready replica
+		if ovnDeployment.Status.ReadyReplicas > 0 {
+			return true, nil
+		}
+		t.Logf("OVN control-plane deployment exists but not ready: %d/%d replicas ready",
+			ovnDeployment.Status.ReadyReplicas, ovnDeployment.Status.Replicas)
+		return false, nil
+	})
+	g.Expect(err).NotTo(HaveOccurred(), "Timed out waiting for ovnkube-control-plane deployment to be ready")
 
 	// Find the ovnkube container image
 	for _, container := range ovnDeployment.Spec.Template.Spec.Containers {
@@ -252,30 +301,7 @@ func recordNetworkComponentState(t *testing.T, g Gomega, ctx context.Context, mg
 	}
 	state.ovnGeneration = ovnDeployment.Generation
 	state.ovnReadyPods = ovnDeployment.Status.ReadyReplicas
-
 	g.Expect(state.ovnImage).NotTo(BeEmpty(), "Could not find OVN control-plane container image")
-
-	// Get CNO deployment
-	cnoDeployment := &appsv1.Deployment{}
-	err = mgtClient.Get(ctx, types.NamespacedName{
-		Namespace: hcpNamespace,
-		Name:      "cluster-network-operator",
-	}, cnoDeployment)
-	g.Expect(err).NotTo(HaveOccurred(), "Failed to get cluster-network-operator deployment")
-
-	for _, container := range cnoDeployment.Spec.Template.Spec.Containers {
-		if container.Name == "cluster-network-operator" {
-			state.cnoImage = container.Image
-			break
-		}
-	}
-	if state.cnoImage == "" && len(cnoDeployment.Spec.Template.Spec.Containers) > 0 {
-		state.cnoImage = cnoDeployment.Spec.Template.Spec.Containers[0].Image
-	}
-	state.cnoGeneration = cnoDeployment.Generation
-	state.cnoReadyPods = cnoDeployment.Status.ReadyReplicas
-
-	g.Expect(state.cnoImage).NotTo(BeEmpty(), "Could not find CNO container image")
 
 	return state
 }
