@@ -2887,7 +2887,8 @@ func Test_reconciler_reconcileKASConnectionCheckerDaemonSet(t *testing.T) {
 			r.CreateOrUpdateProvider = &simpleCreateOrUpdater{}
 
 			ctx := context.Background()
-			err := r.reconcileKASConnectionCheckerDaemonSet(ctx, tt.hcp)
+			pauseImage := "registry.k8s.io/pause:3.9"
+			err := r.reconcileKASConnectionCheckerDaemonSet(ctx, tt.hcp, pauseImage)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("reconcileKASConnectionCheckerDaemonSet() error = %v, wantErr %v", err, tt.wantErr)

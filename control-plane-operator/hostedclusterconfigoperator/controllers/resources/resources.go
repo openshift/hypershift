@@ -563,8 +563,13 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling KAS connection checker daemonset")
-	if err := r.reconcileKASConnectionCheckerDaemonSet(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile KAS connection checker daemonset: %w", err))
+	pauseImage, ok := releaseImage.ComponentImages()["pod"]
+	if !ok {
+		errs = append(errs, fmt.Errorf("failed to find pod image in release"))
+	} else {
+		if err := r.reconcileKASConnectionCheckerDaemonSet(ctx, hcp, pauseImage); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile KAS connection checker daemonset: %w", err))
+		}
 	}
 
 	log.Info("reconciling control-Plane to data-Plane status conditions")
@@ -1512,7 +1517,7 @@ func (r *reconciler) patchHCPStatusCondition(ctx context.Context, hcp *hyperv1.H
 	return nil
 }
 
-func (r *reconciler) reconcileKASConnectionCheckerDaemonSet(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+func (r *reconciler) reconcileKASConnectionCheckerDaemonSet(ctx context.Context, hcp *hyperv1.HostedControlPlane, pauseImage string) error {
 	kasAdvertiseAddress := util.GetAdvertiseAddress(hcp, "172.20.0.1", "fd00::1")
 	kasPort := util.KASPodPort(hcp)
 	endpoint := getKASHealthCheckEndpoint(hcp.Spec.Platform.Type)
@@ -1530,11 +1535,11 @@ func (r *reconciler) reconcileKASConnectionCheckerDaemonSet(ctx context.Context,
 			"app": manifests.KASConnectionCheckerName,
 		}
 
-		// Use a lightweight pause container
+		// Use a lightweight pause container from the release payload
 		daemonSet.Spec.Template.Spec.Containers = []corev1.Container{
 			{
 				Name:  "connection-checker",
-				Image: "registry.k8s.io/pause:3.9",
+				Image: pauseImage,
 				ReadinessProbe: &corev1.Probe{
 					ProbeHandler: corev1.ProbeHandler{
 						HTTPGet: &corev1.HTTPGetAction{
