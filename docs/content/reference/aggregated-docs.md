@@ -32385,10 +32385,13 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 </td>
 </tr><tr><td><p>&#34;ControlPlaneConnectionAvailable&#34;</p></td>
 <td><p>ControlPlaneConnectionAvailable indicates whether data plane workloads have a successful
-network connection to the control plane components.
-<strong>True</strong> means data plane workloads can successfully reach the control plane.
-<strong>False</strong> means there are issues preventing data plane workloads from connecting to the control plane.
-<strong>Unknown</strong> means the status cannot be determined (e.g., no worker nodes available or unable to inspect).</p>
+network connection to the control plane components. This condition is computed per-node using
+a DaemonSet that performs reachability checks from each worker node.
+<strong>True</strong> means all data plane nodes can successfully reach the control plane (per-node reachability check passes for every node).
+<strong>False</strong> means there are connectivity failures preventing some or all data plane nodes from reaching the control plane,
+or required infrastructure components (such as kube-apiserver-proxy pods or the connection checker DaemonSet) are missing or unavailable.
+<strong>Unknown</strong> means the status cannot be determined due to true inability to inspect (e.g., no worker nodes exist or inspection cannot be performed),
+not due to missing required components.</p>
 </td>
 </tr><tr><td><p>&#34;DataPlaneConnectionAvailable&#34;</p></td>
 <td><p>DataPlaneConnectionAvailable indicates whether the control plane has a successful
