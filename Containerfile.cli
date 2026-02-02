@@ -24,6 +24,7 @@ RUN find /opt/app-root/src/ -type f ! -name "*.tar.gz" -delete
 CMD ["nginx", "-g", "daemon off;"]
 
 LABEL name="multicluster-engine/hypershift-cli-rhel9" \
+      cpe="cpe:/a:redhat:multicluster_engine:2.12::el9" \
       description="HyperShift HCP CLI is to manage the lifecycle of Hosted Clusters in command lines" \
       summary="HyperShift HCP CLI" \
       url="https://catalog.redhat.com/software/containers/multicluster-engine/hypershift-cli-rhel9/" \
