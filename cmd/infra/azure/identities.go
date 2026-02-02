@@ -7,8 +7,10 @@ import (
 	"net/http"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/azureutil"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/msi/armmsi"
 
 	"k8s.io/utils/ptr"
@@ -20,13 +22,15 @@ import (
 type IdentityManager struct {
 	subscriptionID string
 	creds          azcore.TokenCredential
+	cloud          string
 }
 
 // NewIdentityManager creates a new IdentityManager
-func NewIdentityManager(subscriptionID string, creds azcore.TokenCredential) *IdentityManager {
+func NewIdentityManager(subscriptionID string, creds azcore.TokenCredential, cloud string) *IdentityManager {
 	return &IdentityManager{
 		subscriptionID: subscriptionID,
 		creds:          creds,
+		cloud:          cloud,
 	}
 }
 
@@ -37,7 +41,13 @@ func (i *IdentityManager) deleteFederatedIdentityCredential(ctx context.Context,
 		"identityName", identityName,
 		"resourceGroup", resourceGroupName)
 
-	client, err := armmsi.NewFederatedIdentityCredentialsClient(i.subscriptionID, i.creds, nil)
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(i.cloud)
+	if err != nil {
+		return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	clientOptions := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}}
+
+	client, err := armmsi.NewFederatedIdentityCredentialsClient(i.subscriptionID, i.creds, clientOptions)
 	if err != nil {
 		return fmt.Errorf("failed to create federated identity credentials client: %w", err)
 	}
@@ -67,7 +77,13 @@ func (i *IdentityManager) deleteManagedIdentity(ctx context.Context, l logr.Logg
 		"resourceGroup", resourceGroupName,
 		"subscription", i.subscriptionID)
 
-	client, err := armmsi.NewUserAssignedIdentitiesClient(i.subscriptionID, i.creds, nil)
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(i.cloud)
+	if err != nil {
+		return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	clientOptions := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}}
+
+	client, err := armmsi.NewUserAssignedIdentitiesClient(i.subscriptionID, i.creds, clientOptions)
 	if err != nil {
 		return fmt.Errorf("failed to create managed identity client: %w", err)
 	}
@@ -114,7 +130,13 @@ func (i *IdentityManager) createManagedIdentity(ctx context.Context, l logr.Logg
 		"location", location,
 		"subscription", i.subscriptionID)
 
-	client, err := armmsi.NewUserAssignedIdentitiesClient(i.subscriptionID, i.creds, nil)
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(i.cloud)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	clientOptions := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}}
+
+	client, err := armmsi.NewUserAssignedIdentitiesClient(i.subscriptionID, i.creds, clientOptions)
 	if err != nil {
 		return "", "", "", fmt.Errorf("failed to create managed identity client: %w", err)
 	}
@@ -274,7 +296,13 @@ func (i *IdentityManager) createFederatedIdentityCredential(ctx context.Context,
 		"subject", config.Subject,
 		"audience", config.Audience)
 
-	client, err := armmsi.NewFederatedIdentityCredentialsClient(i.subscriptionID, i.creds, nil)
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(i.cloud)
+	if err != nil {
+		return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	clientOptions := &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}}
+
+	client, err := armmsi.NewFederatedIdentityCredentialsClient(i.subscriptionID, i.creds, clientOptions)
 	if err != nil {
 		return fmt.Errorf("failed to create federated identity credentials client: %w", err)
 	}

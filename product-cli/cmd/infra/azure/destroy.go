@@ -24,6 +24,9 @@ func NewDestroyCommand() *cobra.Command {
 
 	l := log.Log
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if err := opts.Validate(); err != nil {
+			return err
+		}
 		if err := opts.Run(cmd.Context(), l); err != nil {
 			l.Error(err, "Failed to destroy infrastructure")
 			return err

@@ -23,6 +23,10 @@ This document describes how to set up Azure Workload Identities and OIDC issuer 
 
 ## Create Azure Workload Identities
 
+!!! note "OIDC Issuer Required"
+
+    Before running this command, you need an OIDC issuer URL. If you haven't set this up yet, see [Configure OIDC Issuer](#configure-oidc-issuer) below first.
+
 You can create the required managed identities and federated credentials using the HyperShift CLI:
 
 ```bash

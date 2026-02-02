@@ -94,6 +94,20 @@ func BindDestroyProductFlags(opts *DestroyInfraOptions, flags *pflag.FlagSet) {
 	flags.BoolVar(&opts.PreserveResourceGroup, "preserve-resource-group", opts.PreserveResourceGroup, util.PreserveResourceGroupDescription)
 }
 
+// Validate validates the DestroyInfraOptions before running the destroy operation.
+func (o *DestroyInfraOptions) Validate() error {
+	if o.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if o.InfraID == "" {
+		return fmt.Errorf("infra-id is required")
+	}
+	if o.CredentialsFile == "" && o.Credentials == nil {
+		return fmt.Errorf("azure-creds is required")
+	}
+	return nil
+}
+
 func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error {
 	var additionalResourceGroups = []string{
 		o.Name + "-vnet-" + o.InfraID,

@@ -111,7 +111,7 @@ func (o *DestroyIAMOptions) Run(ctx context.Context, l logr.Logger) error {
 		"resourceGroup", o.ResourceGroupName)
 
 	// Create the identity manager
-	identityManager := NewIdentityManager(subscriptionID, azureCreds)
+	identityManager := NewIdentityManager(subscriptionID, azureCreds, o.Cloud)
 
 	// Destroy workload identities and federated credentials
 	if err := identityManager.DestroyWorkloadIdentities(ctx, l, o.Name, o.InfraID, o.ResourceGroupName); err != nil {
