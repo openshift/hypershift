@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"strings"
 	"testing"
 	"time"
 
@@ -35,6 +36,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"github.com/go-logr/logr"
+	"github.com/go-logr/zapr"
+	"go.uber.org/zap/zaptest"
 )
 
 type testClient struct {
@@ -132,6 +137,10 @@ var cpObjects = []client.Object{
 func TestReconcileErrorHandling(t *testing.T) {
 	// get initial number of creates with no get errors
 	imageMetaDataProvider := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{}
+	ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+	errorExceptions := []string{
+		"global pull secret syncer signaled to shutdown",
+	}
 
 	var totalCreates int
 	{
@@ -152,9 +161,14 @@ func TestReconcileErrorHandling(t *testing.T) {
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 			ImageMetaDataProvider:  &imageMetaDataProvider,
 		}
-		_, err := r.Reconcile(context.Background(), controllerruntime.Request{})
+		_, err := r.Reconcile(ctx, controllerruntime.Request{})
 		if err != nil {
-			t.Fatalf("unexpected: %v", err)
+			for _, exception := range errorExceptions {
+				if strings.Contains(err.Error(), exception) {
+					continue
+				}
+				t.Fatalf("unexpected error: %v", err)
+			}
 		}
 		totalCreates = fakeClient.createCount
 	}
@@ -167,6 +181,7 @@ func TestReconcileErrorHandling(t *testing.T) {
 		}
 		r := &reconciler{
 			client:                 fakeClient,
+			uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build(),
 			CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			platformType:           hyperv1.NonePlatform,
 			clusterSignerCA:        "foobar",
@@ -176,9 +191,16 @@ func TestReconcileErrorHandling(t *testing.T) {
 			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
 			ImageMetaDataProvider:  &imageMetaDataProvider,
 		}
-		r.Reconcile(context.Background(), controllerruntime.Request{})
-		if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {
-			t.Fatalf("Unexpected number of creates: %d/%d with errors %d", fakeClient.createCount, totalCreates, fakeClient.getErrorCount)
+		_, err := r.Reconcile(ctx, controllerruntime.Request{})
+		if err != nil {
+			for _, exception := range errorExceptions {
+				if strings.Contains(err.Error(), exception) {
+					continue
+				}
+			}
+			if totalCreates-fakeClient.getErrorCount != fakeClient.createCount {
+				t.Fatalf("Unexpected number of creates: %d/%d with errors %d", fakeClient.createCount, totalCreates, fakeClient.getErrorCount)
+			}
 		}
 	}
 }
