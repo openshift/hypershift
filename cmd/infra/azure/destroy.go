@@ -2,9 +2,8 @@ package azure
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/openshift/hypershift/cmd/log"
@@ -158,7 +157,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 func (o *DestroyInfraOptions) deleteResourceGroup(ctx context.Context, logger logr.Logger, client *armresources.ResourceGroupsClient, resourceGroup string) error {
 	poller, err := client.BeginDelete(ctx, resourceGroup, nil)
 	if err != nil {
-		if IsNotFoundError(err) {
+		if azureutil.IsNotFoundError(err) {
 			logger.Info("Resource group not found, skipping deletion", "resource-group", resourceGroup)
 			return nil
 		}
@@ -232,7 +231,7 @@ func (o *DestroyInfraOptions) deleteClusterResourcesInGroup(ctx context.Context,
 		logger.Info("Deleting cluster resource", "resource-id", resource.id, "resource-type", resource.resourceType)
 		poller, err := resourcesClient.BeginDeleteByID(ctx, resource.id, resource.apiVersion, nil)
 		if err != nil {
-			if strings.Contains(err.Error(), "ResourceNotFound") {
+			if azureutil.IsNotFoundError(err) {
 				logger.Info("Resource not found, skipping", "resource-id", resource.id)
 				continue
 			}
@@ -310,13 +309,9 @@ func sortResourcesByDeletionOrder(resources []resourceToDelete) {
 	}
 
 	// Sort by priority (lower number = delete first)
-	for i := 0; i < len(resources); i++ {
-		for j := i + 1; j < len(resources); j++ {
-			if priority(resources[i].resourceType) > priority(resources[j].resourceType) {
-				resources[i], resources[j] = resources[j], resources[i]
-			}
-		}
-	}
+	sort.Slice(resources, func(i, j int) bool {
+		return priority(resources[i].resourceType) < priority(resources[j].resourceType)
+	})
 }
 
 // getAPIVersionForResourceType returns the appropriate API version for a given Azure resource type.
@@ -354,15 +349,4 @@ func (o *DestroyInfraOptions) GetResourceGroupName() string {
 		return o.ResourceGroupName
 	}
 	return o.Name + "-" + o.InfraID
-}
-
-// IsNotFoundError checks if the given error is an Azure API "not found" error (HTTP 404).
-// This follows Azure SDK best practices using errors.As() to access the ResponseError type.
-// See: https://pkg.go.dev/github.com/Azure/azure-sdk-for-go/sdk/azcore#ResponseError
-func IsNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
-	var respErr *azcore.ResponseError
-	return errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound
 }
