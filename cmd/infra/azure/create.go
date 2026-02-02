@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/config"
 
 	"sigs.k8s.io/yaml"
 
@@ -33,8 +34,8 @@ func NewCreateCommand() *cobra.Command {
 	}
 
 	opts := CreateInfraOptions{
-		Location: "eastus",
-		Cloud:    "AzurePublicCloud",
+		Location: config.DefaultAzureLocation,
+		Cloud:    config.DefaultAzureCloud,
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID(required)")
@@ -82,8 +83,8 @@ func NewCreateCommand() *cobra.Command {
 // DefaultOptions returns CreateInfraOptions with default values for self-managed Azure
 func DefaultOptions() *CreateInfraOptions {
 	return &CreateInfraOptions{
-		Location: "eastus",
-		Cloud:    "AzurePublicCloud",
+		Location: config.DefaultAzureLocation,
+		Cloud:    config.DefaultAzureCloud,
 	}
 }
 

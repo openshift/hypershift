@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
+	"github.com/openshift/hypershift/support/config"
 )
 
 func TestCreateIAMOptionsValidate(t *testing.T) {
@@ -120,6 +122,6 @@ func TestDefaultCreateIAMOptions(t *testing.T) {
 
 	opts := DefaultCreateIAMOptions()
 
-	g.Expect(opts.Location).To(Equal("eastus"), "Should have default location")
-	g.Expect(opts.Cloud).To(Equal("AzurePublicCloud"), "Should have default cloud")
+	g.Expect(opts.Location).To(Equal(config.DefaultAzureLocation), "Should have default location")
+	g.Expect(opts.Cloud).To(Equal(config.DefaultAzureCloud), "Should have default cloud")
 }

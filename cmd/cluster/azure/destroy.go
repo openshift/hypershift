@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/config"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -29,7 +30,7 @@ func NewDestroyCommand(opts *core.DestroyOptions) *cobra.Command {
 		SilenceUsage: true,
 	}
 
-	opts.AzurePlatform.Location = "eastus"
+	opts.AzurePlatform.Location = config.DefaultAzureLocation
 	cmd.Flags().StringVar(&opts.AzurePlatform.CredentialsFile, "azure-creds", opts.AzurePlatform.CredentialsFile, "Path to an Azure credentials file (required)")
 	cmd.Flags().StringVar(&opts.AzurePlatform.Location, "location", opts.AzurePlatform.Location, "Location for the cluster")
 	cmd.Flags().StringVar(&opts.AzurePlatform.ResourceGroupName, "resource-group-name", opts.AzurePlatform.ResourceGroupName, "The name of the resource group containing the HostedCluster infrastructure resources that need to be destroyed.")
@@ -64,8 +65,8 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 		return err
 	}
 
-	// Get cloud configuration from HostedCluster if available, default to AzurePublicCloud
-	cloudName := "AzurePublicCloud"
+	// Get cloud configuration from HostedCluster if available, default to DefaultAzureCloud
+	cloudName := config.DefaultAzureCloud
 	if hostedCluster != nil {
 		o.InfraID = hostedCluster.Spec.InfraID
 		o.AzurePlatform.Location = hostedCluster.Spec.Platform.Azure.Location

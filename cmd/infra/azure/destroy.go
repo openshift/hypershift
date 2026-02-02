@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/config"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -38,8 +39,8 @@ func NewDestroyCommand() *cobra.Command {
 	}
 
 	opts := DestroyInfraOptions{
-		Location: "eastus",
-		Cloud:    "AzurePublicCloud",
+		Location: config.DefaultAzureLocation,
+		Cloud:    config.DefaultAzureCloud,
 	}
 
 	cmd.Flags().StringVar(&opts.InfraID, "infra-id", opts.InfraID, "Cluster ID(required)")
@@ -71,8 +72,8 @@ func NewDestroyCommand() *cobra.Command {
 // DefaultDestroyOptions returns DestroyInfraOptions with default values for self-managed Azure
 func DefaultDestroyOptions() *DestroyInfraOptions {
 	return &DestroyInfraOptions{
-		Location: "eastus",
-		Cloud:    "AzurePublicCloud",
+		Location: config.DefaultAzureLocation,
+		Cloud:    config.DefaultAzureCloud,
 	}
 }
 
