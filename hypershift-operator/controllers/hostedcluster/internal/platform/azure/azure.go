@@ -3,10 +3,8 @@ package azure
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
-	"net/http"
 	"os"
 	"strings"
 
@@ -490,6 +488,16 @@ func reconcileKMSConfigSecret(secret *corev1.Secret, hc *hyperv1.HostedCluster) 
 }
 
 // resourceGroupChecker abstracts Azure resource group existence checks for testability.
+//
+// This interface enables dependency injection for testing the DeleteOrphanedMachines
+// method without requiring actual Azure API calls. The production implementation
+// is azureResourceGroupChecker.
+//
+// Implementations MUST follow fail-safe semantics: when in doubt about whether
+// a resource group exists (e.g., due to API errors, permission issues, or network
+// problems), return (true, nil) to avoid incorrectly removing finalizers from
+// machines that might still have running Azure VMs. Only return false when the
+// Azure API definitively returns HTTP 404 (Not Found).
 type resourceGroupChecker interface {
 	Exists(ctx context.Context, subscriptionID, resourceGroupName string) (bool, error)
 }
@@ -498,12 +506,6 @@ type resourceGroupChecker interface {
 type azureResourceGroupChecker struct {
 	credential    azcore.TokenCredential
 	clientOptions *arm.ClientOptions
-}
-
-// isNotFoundError reports whether err is an Azure API 404 response.
-func isNotFoundError(err error) bool {
-	var respErr *azcore.ResponseError
-	return errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound
 }
 
 // Exists reports whether the Azure resource group exists.
@@ -524,7 +526,7 @@ func (c *azureResourceGroupChecker) Exists(ctx context.Context, subscriptionID, 
 	if err == nil {
 		return true, nil
 	}
-	if isNotFoundError(err) {
+	if azureutil.IsNotFoundError(err) {
 		// Definitive 404 - resource group is gone
 		return false, nil
 	}
