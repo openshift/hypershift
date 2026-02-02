@@ -333,6 +333,8 @@ func (i *IdentityManager) CreateWorkloadIdentitiesFromIAMOptions(ctx context.Con
 			workloadIdentities.NodePoolManagement.ClientID = hyperv1.AzureClientID(clientID)
 		case "network":
 			workloadIdentities.Network.ClientID = hyperv1.AzureClientID(clientID)
+		default:
+			return nil, fmt.Errorf("unknown workload identity component: %s", def.ComponentName)
 		}
 
 		// Create federated credentials for this identity
