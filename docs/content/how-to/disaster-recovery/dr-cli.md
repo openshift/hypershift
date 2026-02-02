@@ -1231,5 +1231,5 @@ The tests validate:
 - [OADP Installation Guide](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/installing/installing-oadp-ocs.html)
 - [HyperShift OADP Plugin](https://github.com/openshift/hypershift-oadp-plugin)
 - [Velero Documentation](https://velero.io/docs/)
-- [HyperShift Documentation](https://hypershift-docs.netlify.app/)
+- [HyperShift Documentation](https://hypershift.pages.dev/)
 - [OpenShift Backup Best Practices](https://docs.openshift.com/container-platform/latest/backup_and_restore/application_backup_and_restore/backing_up_and_restoring/backing-up-applications.html)

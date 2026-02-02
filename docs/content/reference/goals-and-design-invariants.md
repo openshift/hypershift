@@ -4,7 +4,7 @@ These are desired project goals which drive the design invariants stated below. 
 
 - Provide an API to express intent to create OpenShift Container Platform (OCP) clusters with a hosted control plane topology on existing infrastructure.
 - Decouple control and data plane.
-  - Enable segregation of ownership and responsibility for different [personas](https://hypershift-docs.netlify.app/reference/concepts-and-personas/).
+  - Enable segregation of ownership and responsibility for different [personas](https://hypershift.pages.dev/reference/concepts-and-personas/).
   - Security.
   - Cost efficiency.
 

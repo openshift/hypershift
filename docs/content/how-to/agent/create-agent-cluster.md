@@ -26,7 +26,7 @@ Before installing the HyperShift operator we need to get the HyperShift CLI. We 
 ### Method 1 - Build the HyperShift CLI
 
 Follow instructions for building the HyperShift CLI in [Getting
-Started](https://hypershift-docs.netlify.app/getting-started/#prerequisites)
+Started](https://hypershift.pages.dev/getting-started/#prerequisites)
 
 ### Method 2 - Extract HyperShift CLI from the Operator Image
 

@@ -196,7 +196,7 @@ status:
 
     The `imageContentSources` section within the `spec` field contains mirror references for user workloads within the HostedCluster.
 
-As you can see, all the objects created before are referenced here. You can also refer to the [documentation](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io%2fv1beta1) where all the fields are described.
+As you can see, all the objects created before are referenced here. You can also refer to the [documentation](https://hypershift.pages.dev/reference/api/#hypershift.openshift.io%2fv1beta1) where all the fields are described.
 
 ## Deployment
 

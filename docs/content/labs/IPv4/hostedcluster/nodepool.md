@@ -41,7 +41,7 @@ status:
 - Autorepair is set to `false` because the node will not be recreated when it disappears.
 - Replicas are set to `0` because we intend to scale them when needed.
 
-You can find more information about NodePool in the [NodePool documentation](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io%2fv1beta1).
+You can find more information about NodePool in the [NodePool documentation](https://hypershift.pages.dev/reference/api/#hypershift.openshift.io%2fv1beta1).
 
 To deploy this object, simply follow the same procedure as before:
 

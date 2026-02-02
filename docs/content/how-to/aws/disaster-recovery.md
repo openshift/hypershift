@@ -214,7 +214,7 @@ oc scale deployment -n ${HC_CLUSTER_NS}-${HC_CLUSTER_NAME} --replicas=0 kube-api
 
 3. Backup ETCD and Upload to S3 Bucket
 
-The whole process of this step is documented [here](https://hypershift-docs.netlify.app/how-to/aws/etc-backup-restore/), even with that we will go through the process in a more programmatically way.
+The whole process of this step is documented [here](https://hypershift.pages.dev/how-to/aws/etc-backup-restore/), even with that we will go through the process in a more programmatically way.
 
 To do this programmatically it's a bit more complicated, but we will try to put all the necessary steps in a bash script
 
