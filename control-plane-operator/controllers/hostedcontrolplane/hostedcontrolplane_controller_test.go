@@ -1820,8 +1820,12 @@ func TestControlPlaneComponents(t *testing.T) {
 				Labels: map[string]string{
 					"cluster.x-k8s.io/cluster-name": "cluster_name",
 				},
+				Annotations: map[string]string{
+					"hypershift.openshift.io/aws-termination-handler-queue-url": "https://sqs.us-east-1.amazonaws.com/123456789012/test-queue",
+				},
 			},
 			Spec: hyperv1.HostedControlPlaneSpec{
+				IssuerURL: "https://test-oidc-bucket.s3.us-east-1.amazonaws.com/test-cluster",
 				Configuration: &hyperv1.ClusterConfiguration{
 					FeatureGate: &configv1.FeatureGateSpec{},
 				},
@@ -1845,7 +1849,11 @@ func TestControlPlaneComponents(t *testing.T) {
 				},
 				Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.AWSPlatform,
-					AWS:  &hyperv1.AWSPlatformSpec{},
+					AWS: &hyperv1.AWSPlatformSpec{
+						RolesRef: hyperv1.AWSRolesRef{
+							NodePoolManagementARN: "arn:aws:iam::123456789012:role/test-node-pool-management-role",
+						},
+					},
 					Azure: &hyperv1.AzurePlatformSpec{
 						SubnetID:        "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName/subnets/mySubnetName",
 						SecurityGroupID: "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/networkSecurityGroups/myNSGName",

@@ -1586,6 +1586,101 @@ func TestCAPIReconcile(t *testing.T) {
 		// 	expectedError: true,
 		// 	templates:     []client.Object{},
 		// },
+		{
+			name: "When spot is enabled, it should create spot MHC and add interruptible label",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						AnnotationEnableSpot: "true",
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+						Replace: &hyperv1.ReplaceUpgrade{
+							Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+							RollingUpdate: &hyperv1.RollingUpdate{
+								MaxUnavailable: &maxUnavailable,
+								MaxSurge:       &maxSurge,
+							},
+						},
+						AutoRepair: false,
+					},
+					Replicas: ptr.To[int32](3),
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							AMI: "an-ami",
+						},
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: "test-namespace"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							Region:                      "",
+							CloudProviderConfig:         &hyperv1.AWSCloudProviderConfig{},
+							ServiceEndpoints:            []hyperv1.AWSServiceEndpoint{},
+							RolesRef:                    hyperv1.AWSRolesRef{},
+							ResourceTags:                []hyperv1.AWSResourceTag{},
+							EndpointAccess:              "",
+							AdditionalAllowedPrincipals: []string{},
+							MultiArch:                   false,
+						},
+					},
+				},
+			},
+			machineSet: &capiv1.MachineSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-machineset",
+					Namespace: "test-namespace-test-cluster",
+					Annotations: map[string]string{
+						nodePoolAnnotation: "test-namespace/test-nodepool",
+					},
+				},
+				Spec: capiv1.MachineSetSpec{
+					Template: capiv1.MachineTemplateSpec{
+						Spec: capiv1.MachineSpec{
+							InfrastructureRef: corev1.ObjectReference{
+								Kind:       "AWSMachineTemplate",
+								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
+								Namespace:  "test-namespace-test-cluster",
+								Name:       awsMachineTemplateName,
+							},
+						},
+					},
+				},
+			},
+			templates: []client.Object{
+				// Do not match MachineSet infraRef. It will be cleaned up.
+				&capiaws.AWSMachineTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "does-not-match-infra-ref-name",
+						Namespace: "test-namespace-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+				// Match NodePool and infraRef, reconciliation should keep it.
+				&capiaws.AWSMachineTemplate{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      awsMachineTemplateName,
+						Namespace: "test-namespace-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
+						},
+					},
+				},
+			},
+			expectedError: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1702,6 +1797,26 @@ func TestCAPIReconcile(t *testing.T) {
 					mhc := &capiv1.MachineHealthCheck{}
 					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: "test-cp-namespace", Name: tt.nodePool.GetName()}, mhc)
 					g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				}
+
+				// Check spot MHC and interruptible label
+				if isSpotEnabled(tt.nodePool) {
+					// Spot MHC should exist
+					spotMHC := &capiv1.MachineHealthCheck{}
+					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName() + "-spot"}, spotMHC)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(spotMHC.Spec.Selector.MatchLabels).To(HaveKeyWithValue(interruptibleInstanceLabel, ""))
+
+					// MachineDeployment template should have interruptible label
+					g.Expect(md.Spec.Template.Labels).To(HaveKeyWithValue(interruptibleInstanceLabel, ""))
+				} else {
+					// Spot MHC should not exist
+					spotMHC := &capiv1.MachineHealthCheck{}
+					err = capi.Client.Get(t.Context(), client.ObjectKey{Namespace: controlpaneNamespace, Name: tt.nodePool.GetName() + "-spot"}, spotMHC)
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+
+					// MachineDeployment template should not have interruptible label
+					g.Expect(md.Spec.Template.Labels).ToNot(HaveKey(interruptibleInstanceLabel))
 				}
 
 				if tt.sameUserData {

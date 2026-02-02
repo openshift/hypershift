@@ -93,6 +93,10 @@ func TestNodePool(t *testing.T) {
 						test: NewNodePoolDay2TagsTest(ctx, mgtClient, hostedCluster, clusterOpts),
 					},
 					{
+						name: "TestSpotTerminationHandler",
+						test: NewSpotTerminationHandlerTest(ctx, mgtClient, hostedCluster, hostedClusterClient, clusterOpts),
+					},
+					{
 						name: "KubeVirtQoSClassGuaranteedTest",
 						test: NewKubeVirtQoSClassGuaranteedTest(ctx, mgtClient, hostedCluster),
 					},
@@ -208,6 +212,11 @@ func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []Host
 			// We set replicas to 0 in order to allow the inner tests to
 			// create their own NodePools with the proper replicas
 			clusterOpts.NodePoolReplicas = 0
+			// TestSpotTerminationHandler requires new sqs permissions for the NodePool role,
+			// so we want to test the real roles.
+			if i == 0 {
+				clusterOpts.AWSPlatform.SharedRole = false
+			}
 
 			// On OpenStack, we need to create at least one replica of the default nodepool
 			// so we can create the Route53 record for the ingress router. If we don't do that,

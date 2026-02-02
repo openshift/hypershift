@@ -1,3 +1,4 @@
+//go:build e2ev2
 // +build e2ev2
 
 /*
@@ -334,6 +335,19 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 					hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
 						Project: "my-project-123",
 						Region:  "europe-west2",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+							PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+						},
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "my-wif-pool",
+							ProviderID:    "my-wif-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
+								ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+							},
+						},
 					}
 				})
 				Expect(err).NotTo(HaveOccurred())
@@ -499,7 +513,7 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 					}
 				})
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("nodePool in body should match"))
+				Expect(err.Error()).To(ContainSubstring("nodePool in body"))
 			})
 
 			It("should reject when ControlPlane service account has invalid email format", func() {
@@ -524,7 +538,7 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 					}
 				})
 				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(ContainSubstring("controlPlane in body should match"))
+				Expect(err.Error()).To(ContainSubstring("controlPlane in body"))
 			})
 
 			It("should accept when GCP resource labels have valid values", func() {

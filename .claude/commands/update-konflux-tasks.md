@@ -2,9 +2,9 @@
 description: Automatically update outdated Konflux Tekton tasks based on enterprise contract verification logs.
 ---
 
-Automatically update outdated Konflux Tekton tasks based on enterprise contract verification logs.
+Automatically update outdated Konflux Tekton tasks based on enterprise contract verification logs or by detecting updates directly.
 
-[Extended thinking: This command parses enterprise contract logs to identify outdated Tekton tasks, uses skopeo to map digests to version tags, checks migration notes for breaking changes, and updates all pipeline YAML files in the .tekton/ directory with the latest versions.]
+[Extended thinking: This command can either parse enterprise contract logs or use the update_trusted_task_bundles.py script to identify outdated Tekton tasks, uses skopeo to map digests to version tags, checks migration notes for breaking changes, and updates all pipeline YAML files in the .tekton/ directory with the latest versions.]
 
 **Konflux Tekton Tasks Update**
 
@@ -13,19 +13,28 @@ Automatically update outdated Konflux Tekton tasks based on enterprise contract 
 1. **Update tasks from enterprise contract log**:
    `/update-konflux-tasks ../../hypershift-operator-enterprise-contract-lxgvw-verify.log`
 
+2. **Detect and update tasks automatically (no log file)**:
+   `/update-konflux-tasks`
+
 ## Implementation Details:
 
-- Parses Konflux enterprise contract verification logs for outdated task warnings
+- When a log file is provided: Parses Konflux enterprise contract verification logs for outdated task warnings
+- When no log file is provided: Uses `hack/tools/scripts/update_trusted_task_bundles.py --dry-run --json` to detect updates
 - Uses `skopeo inspect` to map SHA256 digests to proper version tags
 - Checks migration documentation for version bumps
 - Requires `skopeo` and `jq` to be installed
 
 ## Process Flow:
 
-1. **Parse Enterprise Contract Log**:
-   - Read the provided log file: {{args.0}}
-   - Extract all outdated Tekton task warnings that mention "newer version exists"
-   - Parse out task names, current digests, and latest digests
+1. **Detect Outdated Tasks**:
+   - If a log file is provided ({{args.0}}):
+     - Read the provided log file
+     - Extract all outdated Tekton task warnings that mention "newer version exists"
+     - Parse out task names, current digests, and latest digests
+   - If no log file is provided:
+     - Run `hack/tools/scripts/update_trusted_task_bundles.py .tekton/*.yaml --dry-run --json`
+     - Parse the JSON output to identify tasks needing updates
+     - The JSON output contains updates and available_upgrades per file with task_name, current_version, current_digest, latest_version, latest_digest, and is_version_bump fields
 
 2. **Map Latest Digests to Version Tags**:
    - For each outdated task, use the helper script `hack/tools/scripts/find_task_version_by_digest.sh <task-name> <digest>` to determine the proper version tag for the latest digest
@@ -90,10 +99,12 @@ Automatically update outdated Konflux Tekton tasks based on enterprise contract 
 ```
 
 ## Error Handling:
-- If log file doesn't exist, provide clear error message
+- If log file is provided but doesn't exist, provide clear error message
+- If no log file is provided and update_trusted_task_bundles.py fails, provide error details
 - If skopeo is not installed, provide installation instructions
 - If jq is not installed, provide installation instructions
 - If yq is not installed, provide installation instructions
+- If PyYAML is not installed (required for update_trusted_task_bundles.py), provide installation instructions: `pip install pyyaml`
 - If no outdated tasks found, report success with no changes needed
 - If migration notes URL returns 404, note that no migration documentation exists
 - If migration notes include changes that to parameters, output or manual steps, prompt the user about them 
@@ -108,9 +119,10 @@ Automatically update outdated Konflux Tekton tasks based on enterprise contract 
 - `skopeo` must be installed (for container image inspection)
 - `jq` must be installed (for JSON parsing)
 - `yq` must be installed (for YAML parsing and checking multi-platform builds)
+- `pyyaml` Python package must be installed when running without a log file (for update_trusted_task_bundles.py)
 - Internet connectivity (to check migration notes and inspect container images)
 
 ## Arguments:
-- {{args.0}}: Path to the enterprise contract verification log file that contains outdated task warnings (required)
+- {{args.0}}: Path to the enterprise contract verification log file that contains outdated task warnings (optional). When not provided, the skill uses `hack/tools/scripts/update_trusted_task_bundles.py --dry-run --json` to automatically detect outdated tasks.
 
 The command will provide progress updates and automatically update all relevant Tekton pipeline files with the latest task versions.

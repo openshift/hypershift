@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/sqs"
 
 	"github.com/go-logr/logr"
 )
@@ -70,6 +71,12 @@ func GetIAMClient(awsCreds, awsRegion string) iamiface.IAMAPI {
 	awsSession := awsutil.NewSession("e2e-iam", awsCreds, "", "", awsRegion)
 	awsConfig := awsutil.NewConfig()
 	return iam.New(awsSession, awsConfig)
+}
+
+func GetSQSClient(awsCreds, awsRegion string) *sqs.SQS {
+	awsSession := awsutil.NewSession("e2e-sqs", awsCreds, "", "", awsRegion)
+	awsConfig := awsutil.NewConfig()
+	return sqs.New(awsSession, awsConfig)
 }
 
 func PutRolePolicy(awsCreds, awsRegion, roleARN string, policy string) (func() error, error) {

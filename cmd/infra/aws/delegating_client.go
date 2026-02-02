@@ -18,6 +18,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/s3/s3iface"
+	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
 )
 
 // NewDelegatingClient creates a new set of AWS service clients that delegate individual calls to the right credentials.
@@ -87,6 +89,7 @@ func NewDelegatingClient(
 	})
 	nodePool := &nodePoolClientDelegate{
 		ec2Client: ec2.New(nodePoolSession, awsConfig),
+		sqsClient: sqs.New(nodePoolSession, awsConfig),
 	}
 	openshiftImageRegistrySession, err := session.NewSessionWithOptions(session.Options{SharedConfigFiles: []string{openshiftImageRegistryCredentialsFile}})
 	if err != nil {
@@ -124,6 +127,10 @@ func NewDelegatingClient(
 			S3API:                  nil,
 			openshiftImageRegistry: openshiftImageRegistry,
 		},
+		SQSAPI: &sqsClient{
+			SQSAPI:   nil,
+			nodePool: nodePool,
+		},
 	}, nil
 }
 
@@ -148,6 +155,7 @@ type controlPlaneOperatorClientDelegate struct {
 
 type nodePoolClientDelegate struct {
 	ec2Client ec2iface.EC2API
+	sqsClient sqsiface.SQSAPI
 }
 
 type openshiftImageRegistryClientDelegate struct {
@@ -161,6 +169,7 @@ type DelegatingClient struct {
 	elbv2iface.ELBV2API
 	route53iface.Route53API
 	s3iface.S3API
+	sqsiface.SQSAPI
 }
 
 // ec2Client delegates to individual component clients for API calls we know those components will have privileges to make.
@@ -598,4 +607,19 @@ func (c *s3Client) PutObjectWithContext(ctx aws.Context, input *s3.PutObjectInpu
 }
 func (c *s3Client) PutPublicAccessBlockWithContext(ctx aws.Context, input *s3.PutPublicAccessBlockInput, opts ...request.Option) (*s3.PutPublicAccessBlockOutput, error) {
 	return c.openshiftImageRegistry.s3Client.PutPublicAccessBlockWithContext(ctx, input, opts...)
+}
+
+// sqsClient delegates to individual component clients for API calls we know those components will have privileges to make.
+type sqsClient struct {
+	// embedding this fulfills the interface and falls back to a panic for APIs we don't have privileges for
+	sqsiface.SQSAPI
+
+	nodePool *nodePoolClientDelegate
+}
+
+func (c *sqsClient) DeleteMessageWithContext(ctx aws.Context, input *sqs.DeleteMessageInput, opts ...request.Option) (*sqs.DeleteMessageOutput, error) {
+	return c.nodePool.sqsClient.DeleteMessageWithContext(ctx, input, opts...)
+}
+func (c *sqsClient) ReceiveMessageWithContext(ctx aws.Context, input *sqs.ReceiveMessageInput, opts ...request.Option) (*sqs.ReceiveMessageOutput, error) {
+	return c.nodePool.sqsClient.ReceiveMessageWithContext(ctx, input, opts...)
 }

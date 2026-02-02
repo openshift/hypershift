@@ -24,9 +24,11 @@ import (
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	dto "github.com/prometheus/client_model/go"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
@@ -389,7 +391,29 @@ func TestKarpenter(t *testing.T) {
 			g.Expect(guestClient.Create(ctx, workLoads)).To(Succeed())
 			t.Logf("Created workloads")
 
+			// Create a blocking PDB to validate karpenter-operator will terminates stuck nodes forcefully to unblock cluster deletion.
+			pdb := &policyv1.PodDisruptionBudget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "blocking-pdb",
+					Namespace: "default",
+				},
+				Spec: policyv1.PodDisruptionBudgetSpec{
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app": "web-app",
+						},
+					},
+					MinAvailable: &intstr.IntOrString{
+						Type:   intstr.String,
+						StrVal: "100%",
+					},
+				},
+			}
+			g.Expect(guestClient.Create(ctx, pdb)).To(Succeed())
+			t.Logf("Created cluster-deletion-blocking PodDisruptionBudget")
+
 			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), nodeLabels)
+
 		})
 
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "karpenter", globalOpts.ServiceAccountSigningKey)

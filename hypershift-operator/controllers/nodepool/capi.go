@@ -37,6 +37,10 @@ import (
 	"github.com/go-logr/logr"
 )
 
+const (
+	interruptibleInstanceLabel = "hypershift.openshift.io/interruptible-instance"
+)
+
 // CAPI Knows how to reconcile all the CAPI resources for a unique token.
 // TODO(alberto): consider stronger decoupling from Token by making it an interface
 // and let nodepool, hostedcluster, and client be fields of CAPI / interface methods.
@@ -180,6 +184,31 @@ func (c *CAPI) Reconcile(ctx context.Context) error {
 			ObservedGeneration: nodePool.Generation,
 		})
 	}
+
+	// Reconcile spot-specific MachineHealthCheck when spot instances are enabled
+	spotMHC := c.spotMachineHealthCheck()
+	if isSpotEnabled(nodePool) {
+		if result, err := ctrl.CreateOrUpdate(ctx, c.Client, spotMHC, func() error {
+			return c.reconcileSpotMachineHealthCheck(ctx, spotMHC)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile spot MachineHealthCheck %q: %w",
+				client.ObjectKeyFromObject(spotMHC).String(), err)
+		} else {
+			log.Info("Reconciled spot MachineHealthCheck", "result", result)
+		}
+	} else {
+		// Delete spot MHC if spot is not enabled
+		err := c.Get(ctx, client.ObjectKeyFromObject(spotMHC), spotMHC)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return err
+		}
+		if err == nil {
+			if err := c.Delete(ctx, spotMHC); err != nil && !apierrors.IsNotFound(err) {
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -432,6 +461,12 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 			NodeDrainTimeout:        nodePool.Spec.NodeDrainTimeout,
 			NodeVolumeDetachTimeout: nodePool.Spec.NodeVolumeDetachTimeout,
 		},
+	}
+
+	// Add interruptible-instance label for spot instances
+	// This label must be on the MachineDeployment template so the spot MHC can select machines
+	if isSpotEnabled(nodePool) {
+		machineDeployment.Spec.Template.Labels[interruptibleInstanceLabel] = ""
 	}
 
 	// The CAPI provider for OpenStack uses the FailureDomain field to set the availability zone.
@@ -874,6 +909,11 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 		},
 	}
 
+	// Add interruptible-instance label for spot instances
+	if isSpotEnabled(nodePool) {
+		machineSet.Spec.Template.Labels[interruptibleInstanceLabel] = ""
+	}
+
 	// Propagate labels.
 	for k, v := range nodePool.Spec.NodeLabels {
 		// Propagated managed labels down to Machines with a known hardcoded prefix
@@ -1080,6 +1120,58 @@ func (c *CAPI) machineHealthCheck() *capiv1.MachineHealthCheck {
 			Namespace: c.controlplaneNamespace,
 		},
 	}
+}
+
+// spotMachineHealthCheck returns a MachineHealthCheck for spot instances.
+// This MHC uses the interruptible-instance label selector to target only spot instances.
+func (c *CAPI) spotMachineHealthCheck() *capiv1.MachineHealthCheck {
+	return &capiv1.MachineHealthCheck{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      c.nodePool.GetName() + "-spot",
+			Namespace: c.controlplaneNamespace,
+		},
+	}
+}
+
+// reconcileSpotMachineHealthCheck reconciles a MachineHealthCheck specifically for spot instances.
+// This MHC selects machines with the interruptibleInstanceLabel.
+func (c *CAPI) reconcileSpotMachineHealthCheck(ctx context.Context, mhc *capiv1.MachineHealthCheck) error {
+	// Spot instances need shorter timeouts for faster response to interruption
+	maxUnhealthy := intstr.FromString("100%")
+	timeOut := 8 * time.Minute
+	nodeStartupTimeout := 20 * time.Minute
+
+	mhc.Spec = capiv1.MachineHealthCheckSpec{
+		ClusterName: c.capiClusterName,
+		Selector: metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				interruptibleInstanceLabel: "",
+			},
+		},
+		UnhealthyConditions: []capiv1.UnhealthyCondition{
+			{
+				Type:   corev1.NodeReady,
+				Status: corev1.ConditionFalse,
+				Timeout: metav1.Duration{
+					Duration: timeOut,
+				},
+			},
+			{
+				Type:   corev1.NodeReady,
+				Status: corev1.ConditionUnknown,
+				Timeout: metav1.Duration{
+					Duration: timeOut,
+				},
+			},
+		},
+		MaxUnhealthy: &maxUnhealthy,
+		NodeStartupTimeout: &metav1.Duration{
+			Duration: nodeStartupTimeout,
+		},
+	}
+
+	return nil
 }
 
 // TODO (alberto) drop this deterministic naming logic and get the name for child MachineDeployment from the status/annotation/label?

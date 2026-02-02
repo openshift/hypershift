@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"reflect"
@@ -58,6 +59,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -4181,4 +4183,58 @@ func ExtractVersionFromReleaseImage(releaseImage string) string {
 
 	// No known architecture suffix found, return the tag as-is
 	return tag
+}
+
+// WaitForDeploymentAvailable waits for a deployment to be ready.
+func WaitForDeploymentAvailable(ctx context.Context, t *testing.T, client crclient.Client, name, namespace string, timeout, interval time.Duration) {
+	g := NewWithT(t)
+	t.Logf("Waiting for deployment %s/%s to be ready", namespace, name)
+	g.Eventually(func() bool {
+		deployment := &appsv1.Deployment{}
+		err := client.Get(ctx, crclient.ObjectKey{Name: name, Namespace: namespace}, deployment)
+		if err != nil {
+			t.Logf("Failed to get deployment %s/%s: %v", namespace, name, err)
+			return false
+		}
+		return deployment.Status.ReadyReplicas > 0
+	}, timeout, interval).Should(BeTrue(), fmt.Sprintf("deployment %s/%s should be ready", namespace, name))
+}
+
+// ApplyYAMLBytes applies YAML content to the cluster using Server-Side Apply.
+func ApplyYAMLBytes(ctx context.Context, c crclient.Client, yamlContent []byte, defaultNamespace ...string) error {
+	defaultNS := ""
+	if len(defaultNamespace) > 0 {
+		defaultNS = defaultNamespace[0]
+	}
+
+	decoder := k8syaml.NewYAMLOrJSONDecoder(bytes.NewReader(yamlContent), 4096)
+	for {
+		obj := &unstructured.Unstructured{}
+		if err := decoder.Decode(obj); err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return fmt.Errorf("failed to decode YAML: %w", err)
+		}
+
+		if len(obj.Object) == 0 {
+			continue
+		}
+
+		// Set namespace if needed
+		if defaultNS != "" && obj.GetNamespace() == "" {
+			mapping, err := c.RESTMapper().RESTMapping(obj.GroupVersionKind().GroupKind(), obj.GroupVersionKind().Version)
+			if err != nil {
+				return fmt.Errorf("failed to get mapping: %w", err)
+			}
+			if mapping.Scope.Name() == meta.RESTScopeNameNamespace {
+				obj.SetNamespace(defaultNS)
+			}
+		}
+
+		// Apply the resource
+		if err := c.Patch(ctx, obj, crclient.Apply, crclient.ForceOwnership, crclient.FieldOwner("hypershift-e2e")); err != nil {
+			return fmt.Errorf("failed to apply %s %s/%s: %w", obj.GetKind(), obj.GetNamespace(), obj.GetName(), err)
+		}
+	}
 }
