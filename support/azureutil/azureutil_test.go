@@ -538,6 +538,45 @@ func isCapabilityDisabled(capabilities *hyperv1.Capabilities, capability hyperv1
 	return false
 }
 
+func TestNewARMClientOptions(t *testing.T) {
+	tests := []struct {
+		name               string
+		cloudConfig        cloud.Configuration
+		wantApplicationID  string
+		wantCloudActiveDir string
+	}{
+		{
+			name:               "When public cloud is provided it should return options with correct cloud and telemetry",
+			cloudConfig:        cloud.AzurePublic,
+			wantApplicationID:  CPOUserAgent,
+			wantCloudActiveDir: cloud.AzurePublic.ActiveDirectoryAuthorityHost,
+		},
+		{
+			name:               "When government cloud is provided it should return options with correct cloud and telemetry",
+			cloudConfig:        cloud.AzureGovernment,
+			wantApplicationID:  CPOUserAgent,
+			wantCloudActiveDir: cloud.AzureGovernment.ActiveDirectoryAuthorityHost,
+		},
+		{
+			name:               "When China cloud is provided it should return options with correct cloud and telemetry",
+			cloudConfig:        cloud.AzureChina,
+			wantApplicationID:  CPOUserAgent,
+			wantCloudActiveDir: cloud.AzureChina.ActiveDirectoryAuthorityHost,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			got := NewARMClientOptions(tt.cloudConfig)
+
+			g.Expect(got).NotTo(BeNil())
+			g.Expect(got.Cloud.ActiveDirectoryAuthorityHost).To(Equal(tt.wantCloudActiveDir))
+			g.Expect(got.Telemetry.ApplicationID).To(Equal(tt.wantApplicationID))
+		})
+	}
+}
+
 func TestGetAzureCloudConfiguration(t *testing.T) {
 	tests := []struct {
 		name      string
