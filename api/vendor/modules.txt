@@ -145,11 +145,12 @@ github.com/prometheus/procfs/internal/util
 github.com/robfig/cron/v3
 # github.com/rogpeppe/go-internal v1.14.1
 ## explicit; go 1.23
-# github.com/samber/lo v1.51.0
+# github.com/samber/lo v1.52.0
 ## explicit; go 1.18
 github.com/samber/lo
 github.com/samber/lo/internal/constraints
-github.com/samber/lo/internal/rand
+github.com/samber/lo/internal/xrand
+github.com/samber/lo/internal/xtime
 github.com/samber/lo/mutable
 # github.com/spf13/cobra v1.10.2
 ## explicit; go 1.15
