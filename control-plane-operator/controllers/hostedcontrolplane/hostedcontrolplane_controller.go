@@ -94,6 +94,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/kms"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys"
 	"github.com/Azure/msi-dataplane/pkg/dataplane"
 
@@ -3392,8 +3393,22 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 		return
 	}
 
+	keysCloudConfig, err := hyperazureutil.GetAzureCloudConfiguration(hcp.Spec.Platform.Azure.Cloud)
+	if err != nil {
+		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.InvalidAzureCredentialsReason,
+			fmt.Sprintf("failed to get Azure cloud configuration for keys client: %v", err))
+		return
+	}
+
 	vaultURL := fmt.Sprintf("https://%s.%s", azureKmsSpec.ActiveKey.KeyVaultName, azureKeyVaultDNSSuffix)
-	keysClient, err := azkeys.NewClient(vaultURL, cred, nil)
+	keysClient, err := azkeys.NewClient(vaultURL, cred, &azkeys.ClientOptions{
+		ClientOptions: azcore.ClientOptions{
+			Cloud: keysCloudConfig,
+			Telemetry: policy.TelemetryOptions{
+				ApplicationID: hyperazureutil.CPOUserAgent,
+			},
+		},
+	})
 	if err != nil {
 		conditions.SetFalseCondition(hcp, hyperv1.ValidAzureKMSConfig, hyperv1.AzureErrorReason,
 			fmt.Sprintf("failed to create azure keys client: %v", err))
@@ -3473,10 +3488,10 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 		creds     azcore.TokenCredential
 		found, ok bool
 		err       error
+		key       = hcp.Namespace + cpoAzureCredentials
+		log       = ctrl.LoggerFrom(ctx)
+		cloudName = hcp.Spec.Platform.Azure.Cloud
 	)
-
-	key := hcp.Namespace + cpoAzureCredentials
-	log := ctrl.LoggerFrom(ctx)
 
 	// We need to only store the Azure credentials once and reuse them after that.
 	storedCreds, found := r.cpoAzureCredentialsLoaded.Load(key)
@@ -3502,17 +3517,17 @@ func (r *HostedControlPlaneReconciler) verifyResourceGroupLocationsMatch(ctx con
 	}
 
 	// Retrieve full vnet information from the VNET ID
-	vnet, err := hyperazureutil.GetVnetInfoFromVnetID(ctx, hcp.Spec.Platform.Azure.VnetID, hcp.Spec.Platform.Azure.SubscriptionID, creds)
+	vnet, err := hyperazureutil.GetVnetInfoFromVnetID(ctx, hcp.Spec.Platform.Azure.VnetID, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
 	if err != nil {
 		return fmt.Errorf("failed to get vnet info to verify its location: %v", err)
 	}
 	// Retrieve full network security group information from the network security group ID
-	nsg, err := hyperazureutil.GetNetworkSecurityGroupInfo(ctx, hcp.Spec.Platform.Azure.SecurityGroupID, hcp.Spec.Platform.Azure.SubscriptionID, creds)
+	nsg, err := hyperazureutil.GetNetworkSecurityGroupInfo(ctx, hcp.Spec.Platform.Azure.SecurityGroupID, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
 	if err != nil {
 		return fmt.Errorf("failed to get network security group info to verify its location: %v", err)
 	}
 	// Retrieve full resource group information from the resource group name
-	rg, err := hyperazureutil.GetResourceGroupInfo(ctx, hcp.Spec.Platform.Azure.ResourceGroupName, hcp.Spec.Platform.Azure.SubscriptionID, creds)
+	rg, err := hyperazureutil.GetResourceGroupInfo(ctx, hcp.Spec.Platform.Azure.ResourceGroupName, hcp.Spec.Platform.Azure.SubscriptionID, creds, cloudName)
 	if err != nil {
 		return fmt.Errorf("failed to get resource group info to verify its location: %v", err)
 	}
