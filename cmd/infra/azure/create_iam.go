@@ -8,6 +8,7 @@ import (
 
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/config"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -60,8 +61,8 @@ func NewCreateIAMCommand() *cobra.Command {
 // DefaultCreateIAMOptions returns CreateIAMOptions with default values
 func DefaultCreateIAMOptions() *CreateIAMOptions {
 	return &CreateIAMOptions{
-		Location: "eastus",
-		Cloud:    "AzurePublicCloud",
+		Location: config.DefaultAzureLocation,
+		Cloud:    config.DefaultAzureCloud,
 	}
 }
 

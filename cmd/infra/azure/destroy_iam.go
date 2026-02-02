@@ -8,6 +8,7 @@ import (
 
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/config"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -57,7 +58,7 @@ func NewDestroyIAMCommand() *cobra.Command {
 // DefaultDestroyIAMOptions returns DestroyIAMOptions with default values
 func DefaultDestroyIAMOptions() *DestroyIAMOptions {
 	return &DestroyIAMOptions{
-		Cloud: "AzurePublicCloud",
+		Cloud: config.DefaultAzureCloud,
 	}
 }
 

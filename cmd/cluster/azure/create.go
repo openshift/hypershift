@@ -13,6 +13,7 @@ import (
 	azurenodepool "github.com/openshift/hypershift/cmd/nodepool/azure"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/config"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
@@ -33,7 +34,7 @@ var _ core.Platform = (*CreateOptions)(nil)
 
 func DefaultOptions() *RawCreateOptions {
 	return &RawCreateOptions{
-		Location:     "eastus",
+		Location:     config.DefaultAzureLocation,
 		NodePoolOpts: azurenodepool.DefaultOptions(),
 	}
 }

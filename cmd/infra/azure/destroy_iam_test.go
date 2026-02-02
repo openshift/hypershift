@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	. "github.com/onsi/gomega"
+
+	"github.com/openshift/hypershift/support/config"
 )
 
 func TestDestroyIAMOptionsValidate(t *testing.T) {
@@ -102,5 +104,5 @@ func TestDefaultDestroyIAMOptions(t *testing.T) {
 
 	opts := DefaultDestroyIAMOptions()
 
-	g.Expect(opts.Cloud).To(Equal("AzurePublicCloud"), "Should have default cloud")
+	g.Expect(opts.Cloud).To(Equal(config.DefaultAzureCloud), "Should have default cloud")
 }
