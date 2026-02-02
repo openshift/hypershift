@@ -116,7 +116,7 @@ func (o *CreateIAMOptions) Run(ctx context.Context, l logr.Logger) error {
 		"location", o.Location)
 
 	// Create the identity manager
-	identityManager := NewIdentityManager(subscriptionID, azureCreds)
+	identityManager := NewIdentityManager(subscriptionID, azureCreds, o.Cloud)
 
 	// Create workload identities and federated credentials
 	workloadIdentities, err := identityManager.CreateWorkloadIdentitiesFromIAMOptions(ctx, l, o, o.ResourceGroupName)

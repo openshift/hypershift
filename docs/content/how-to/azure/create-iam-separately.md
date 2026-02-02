@@ -11,12 +11,10 @@ your cluster infrastructure lifecycle.
 ## Overview
 
 For self-managed Azure HyperShift clusters, workload identities authenticate cluster components to Azure
-services using OIDC federation. You can either:
+services using OIDC federation. You must create identities separately using `create iam azure` and then
+consume them during infrastructure or cluster creation via the `--workload-identities-file` flag.
 
-1. Create identities automatically during infrastructure creation (using `--oidc-issuer-url` with `create infra azure`)
-2. **Create identities separately** using `create iam azure` and consume them during infrastructure or cluster creation
-
-This guide covers option 2, which provides more control over the IAM lifecycle.
+This approach provides control over the IAM lifecycle and follows the same pattern as AWS and GCP platforms.
 
 ## Prerequisites
 

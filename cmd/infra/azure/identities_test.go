@@ -9,12 +9,15 @@ import (
 func TestNewIdentityManager(t *testing.T) {
 	tests := map[string]struct {
 		subscriptionID string
+		cloud          string
 	}{
 		"When valid subscription ID is provided it should create identity manager": {
 			subscriptionID: "12345678-1234-1234-1234-123456789012",
+			cloud:          "AzurePublicCloud",
 		},
 		"When different subscription ID is provided it should create identity manager with that ID": {
 			subscriptionID: "abcdefgh-abcd-abcd-abcd-abcdefghijkl",
+			cloud:          "AzureUSGovernmentCloud",
 		},
 	}
 
@@ -23,11 +26,12 @@ func TestNewIdentityManager(t *testing.T) {
 			g := NewGomegaWithT(t)
 
 			// Create with nil credentials since we're just testing the constructor
-			manager := NewIdentityManager(test.subscriptionID, nil)
+			manager := NewIdentityManager(test.subscriptionID, nil, test.cloud)
 
 			g.Expect(manager).ToNot(BeNil())
 			g.Expect(manager.subscriptionID).To(Equal(test.subscriptionID))
 			g.Expect(manager.creds).To(BeNil())
+			g.Expect(manager.cloud).To(Equal(test.cloud))
 		})
 	}
 }

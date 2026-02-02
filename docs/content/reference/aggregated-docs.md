@@ -7443,6 +7443,10 @@ This document describes how to set up Azure Workload Identities and OIDC issuer 
 
 ## Create Azure Workload Identities
 
+!!! note "OIDC Issuer Required"
+
+    Before running this command, you need an OIDC issuer URL. If you haven't set this up yet, see Configure OIDC Issuer below first.
+
 You can create the required managed identities and federated credentials using the HyperShift CLI:
 
 ```bash
@@ -8110,12 +8114,10 @@ your cluster infrastructure lifecycle.
 ## Overview
 
 For self-managed Azure HyperShift clusters, workload identities authenticate cluster components to Azure
-services using OIDC federation. You can either:
+services using OIDC federation. You must create identities separately using `create iam azure` and then
+consume them during infrastructure or cluster creation via the `--workload-identities-file` flag.
 
-1. Create identities automatically during infrastructure creation (using `--oidc-issuer-url` with `create infra azure`)
-2. **Create identities separately** using `create iam azure` and consume them during infrastructure or cluster creation
-
-This guide covers option 2, which provides more control over the IAM lifecycle.
+This approach provides control over the IAM lifecycle and follows the same pattern as AWS and GCP platforms.
 
 ## Prerequisites
 
@@ -8383,7 +8385,7 @@ Before creating Azure infrastructure, ensure you have:
     }
     ```
 - An existing public DNS zone in your Azure subscription for your base domain
-- An OIDC issuer URL (for self-managed Azure with workload identity)
+- Workload identities created via `hypershift create iam azure` (for self-managed Azure with workload identity)
 
 ## Creating the Azure Infrastructure
 
@@ -8396,7 +8398,7 @@ hypershift create infra azure \
     --azure-creds AZURE_CREDENTIALS_FILE \
     --base-domain BASE_DOMAIN \
     --location LOCATION \
-    --oidc-issuer-url OIDC_ISSUER_URL \
+    --workload-identities-file WORKLOAD_IDENTITIES_FILE \
     --output-file OUTPUT_INFRA_FILE
 ```
 
@@ -8411,7 +8413,8 @@ where:
 * `BASE_DOMAIN` is the base domain for your hosted cluster's ingress. It must correspond to
     an existing public DNS zone in your Azure subscription.
 * `LOCATION` is the Azure region where you want to create the infrastructure (e.g., `eastus`, `westus2`).
-* `OIDC_ISSUER_URL` is the URL of the OIDC identity provider used for workload identity federation.
+* `WORKLOAD_IDENTITIES_FILE` is the path to the JSON file containing workload identity configuration,
+    created via `hypershift create iam azure`.
 * `OUTPUT_INFRA_FILE` is the file where details of the infrastructure will be stored in YAML format.
 
 Running this command creates the following resources:
@@ -8425,9 +8428,13 @@ Running this command creates the following resources:
 * 1 Private DNS Zone Virtual Network Link
 * 1 Public IP Address for load balancer
 * 1 Load Balancer with outbound rule for egress
-* 7 Managed Identities with federated credentials (when using OIDC issuer URL)
 
 All resources are tagged with the infrastructure ID for identification and cleanup.
+
+!!! note "Workload Identities"
+
+    Managed identities and federated credentials must be created separately using
+    `hypershift create iam azure`. See Create Azure IAM Resources Separately.
 
 ## Using Existing Network Resources
 
@@ -8440,7 +8447,7 @@ hypershift create infra azure \
     --azure-creds AZURE_CREDENTIALS_FILE \
     --base-domain BASE_DOMAIN \
     --location LOCATION \
-    --oidc-issuer-url OIDC_ISSUER_URL \
+    --workload-identities-file WORKLOAD_IDENTITIES_FILE \
     --vnet-id /subscriptions/SUB_ID/resourceGroups/RG/providers/Microsoft.Network/virtualNetworks/VNET_NAME \
     --subnet-id /subscriptions/SUB_ID/resourceGroups/RG/providers/Microsoft.Network/virtualNetworks/VNET_NAME/subnets/SUBNET_NAME \
     --network-security-group-id /subscriptions/SUB_ID/resourceGroups/RG/providers/Microsoft.Network/networkSecurityGroups/NSG_NAME \
@@ -8458,7 +8465,7 @@ hypershift create infra azure \
     --azure-creds AZURE_CREDENTIALS_FILE \
     --base-domain BASE_DOMAIN \
     --location LOCATION \
-    --oidc-issuer-url OIDC_ISSUER_URL \
+    --workload-identities-file WORKLOAD_IDENTITIES_FILE \
     --assign-identity-roles \
     --dns-zone-rg-name DNS_ZONE_RG \
     --output-file OUTPUT_INFRA_FILE
@@ -8543,15 +8550,15 @@ This is useful when you have other resources in the same resource group that sho
 | `--name` | Name of the HostedCluster |
 | `--infra-id` | Unique infrastructure identifier |
 | `--azure-creds` | Path to Azure credentials JSON file |
+| `--base-domain` | Base domain for cluster ingress |
 
-### Identity Configuration (choose one)
+### Identity Configuration
 
 | Option | Flags Required |
 |--------|----------------|
-| Self-managed with auto-generated identities | `--oidc-issuer-url` |
-| Self-managed with pre-existing identities | `--workload-identities-file` |
+| Self-managed with workload identities | `--workload-identities-file` |
 
-To create workload identities separately, use `hypershift create iam azure` instead.
+Workload identities must be created separately using `hypershift create iam azure`.
 See Create Azure IAM Resources Separately.
 
 ### Optional Flags
@@ -8560,7 +8567,6 @@ See Create Azure IAM Resources Separately.
 |------|-------------|
 | `--location` | Azure region (default: `eastus`) |
 | `--cloud` | Azure cloud environment (default: `AzurePublicCloud`) |
-| `--base-domain` | Base domain for cluster ingress |
 | `--resource-group-name` | Custom resource group name |
 | `--resource-group-tags` | Tags to apply to resource group |
 | `--vnet-id` | Use existing VNet |
