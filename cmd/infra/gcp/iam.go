@@ -566,6 +566,8 @@ func (c *IAMManager) formatIssuerUri() string {
 }
 
 // formatServiceAccountID returns the service account ID for a given component name.
+// Format: {infraID}-{componentName}
+// The infraID is provided by the user via the CLI and must comply with GCP naming requirements.
 func (c *IAMManager) formatServiceAccountID(componentName string) string {
 	return fmt.Sprintf("%s-%s", c.infraID, componentName)
 }

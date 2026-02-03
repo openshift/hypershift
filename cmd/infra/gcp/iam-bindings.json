@@ -6,7 +6,8 @@
       "description": "Service account for HyperShift node pool management",
       "roles": [
         "roles/compute.instanceAdmin.v1",
-        "roles/compute.networkAdmin"
+        "roles/compute.networkAdmin",
+        "roles/iam.serviceAccountUser"
       ],
       "k8sServiceAccount": {
         "namespace": "kube-system",
@@ -19,7 +20,8 @@
       "description": "Service account for HyperShift control plane operator",
       "roles": [
         "roles/dns.admin",
-        "roles/compute.networkAdmin"
+        "roles/compute.networkAdmin",
+        "roles/compute.viewer"
       ],
       "k8sServiceAccount": {
         "namespace": "kube-system",

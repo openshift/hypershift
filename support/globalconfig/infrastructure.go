@@ -106,5 +106,11 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 			APIServerInternalIPs: []string{},
 			IngressIPs:           []string{},
 		}
+	case hyperv1.GCPPlatform:
+		if infra.Status.PlatformStatus.GCP == nil {
+			infra.Status.PlatformStatus.GCP = &configv1.GCPPlatformStatus{}
+		}
+		infra.Status.PlatformStatus.GCP.ProjectID = hcp.Spec.Platform.GCP.Project
+		infra.Status.PlatformStatus.GCP.Region = hcp.Spec.Platform.GCP.Region
 	}
 }
