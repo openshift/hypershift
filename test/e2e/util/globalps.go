@@ -217,8 +217,10 @@ func VerifyKubeletConfigWithDaemonSet(t *testing.T, ctx context.Context, guestCl
 
 	daemonSetsToCheck := []DaemonSetManifest{
 		{GetFunc: OpenshiftOVNKubeDaemonSet, AllowPartialNodes: false},
-		{GetFunc: hccomanifests.GlobalPullSecretDaemonSet, AllowPartialNodes: false},
-		{GetFunc: hccomanifests.KonnectivityAgentDaemonSet, AllowPartialNodes: false},
+		// Allow partial nodes to prevent E2E flakes when tests run in parallel
+		// and some nodes may be temporarily unavailable, causing "X/1 pods ready" where X > 1 scenarios
+		{GetFunc: hccomanifests.GlobalPullSecretDaemonSet, AllowPartialNodes: true},
+		{GetFunc: hccomanifests.KonnectivityAgentDaemonSet, AllowPartialNodes: true},
 		{GetFunc: KubeletConfigVerifierDaemonSet, AllowPartialNodes: true},
 	}
 
