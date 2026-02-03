@@ -77,7 +77,7 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 	}
 
 	// Delete resources in reverse order of creation (dependencies first)
-	// Order: NAT -> Router -> Subnet -> Network
+	// Order: NAT -> Router -> Subnet -> Firewall -> Network
 
 	// Delete Cloud NAT (by updating router to remove NAT config)
 	if err := networkManager.DeleteNAT(ctx); err != nil {
@@ -92,6 +92,11 @@ func (o *DestroyInfraOptions) Run(ctx context.Context, logger logr.Logger) error
 	// Delete subnet
 	if err := networkManager.DeleteSubnet(ctx); err != nil {
 		return fmt.Errorf("failed to delete subnet: %w", err)
+	}
+
+	// Delete firewall rule
+	if err := networkManager.DeleteFirewallRule(ctx); err != nil {
+		return fmt.Errorf("failed to delete firewall rule: %w", err)
 	}
 
 	// Delete VPC network
