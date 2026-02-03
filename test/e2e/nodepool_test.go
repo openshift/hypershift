@@ -359,8 +359,15 @@ func executeNodePoolTest(t *testing.T, ctx context.Context, mgmtClient crclient.
 		return
 	}
 
+	opts := []e2eutil.NodePoolPollOption{}
+	if nodePool.Spec.Platform.Type == hyperv1.AWSPlatform &&
+		nodePool.Spec.Platform.AWS.ImageType == hyperv1.ImageTypeWindows {
+		// Windows nodes can take longer to become ready
+		opts = append(opts, e2eutil.WithWaitTimeout(45*time.Minute))
+	}
+
 	// For supported versions, run full validation including node readiness
-	nodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, hcClient, nodePool, hostedCluster.Spec.Platform.Type)
+	nodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, hcClient, nodePool, hostedCluster.Spec.Platform.Type, opts...)
 	// We want to make sure all conditions are met and in a deterministic known state before running the tests to avoid false positives.
 	// https://issues.redhat.com/browse/OCPBUGS-52983.
 	validateNodePoolConditions(t, ctx, mgmtClient, nodePool, expectedSupportedVersionSkew)
