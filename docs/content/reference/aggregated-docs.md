@@ -33657,6 +33657,99 @@ which contain any of the given tags will be excluded from the result.</p>
 </tr>
 </tbody>
 </table>
+###GCPBootDisk { #hypershift.openshift.io/v1beta1.GCPBootDisk }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>)
+</p>
+<p>
+<p>GCPBootDisk specifies configuration for the boot disk of GCP node instances.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>diskSizeGB</code></br>
+<em>
+int64
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>diskSizeGB specifies the size of the boot disk in gigabytes.
+Must be at least 20 GB for RHCOS images.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>diskType</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>diskType specifies the disk type for the boot disk.
+Valid values include:
+- &ldquo;pd-standard&rdquo; - Standard persistent disk (magnetic)
+- &ldquo;pd-ssd&rdquo; - SSD persistent disk
+- &ldquo;pd-balanced&rdquo; - Balanced persistent disk (recommended)
+If not specified, defaults to &ldquo;pd-balanced&rdquo;.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>encryptionKey</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPDiskEncryptionKey">
+GCPDiskEncryptionKey
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>encryptionKey specifies customer-managed encryption key (CMEK) configuration.
+If not specified, Google-managed encryption keys are used.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPDiskEncryptionKey { #hypershift.openshift.io/v1beta1.GCPDiskEncryptionKey }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPBootDisk">GCPBootDisk</a>)
+</p>
+<p>
+<p>GCPDiskEncryptionKey specifies configuration for customer-managed encryption keys.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>kmsKeyName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>kmsKeyName is the resource name of the Cloud KMS key used for disk encryption.
+Format: projects/{project}/locations/{location}/keyRings/{keyRing}/cryptoKeys/{key}</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###GCPEndpointAccessType { #hypershift.openshift.io/v1beta1.GCPEndpointAccessType }
 <p>
 (<em>Appears on:</em>
@@ -33723,6 +33816,241 @@ GCPResourceReference
 </td>
 <td>
 <p>privateServiceConnectSubnet is the subnet for Private Service Connect endpoints</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPNodePoolPlatform { #hypershift.openshift.io/v1beta1.GCPNodePoolPlatform }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolPlatform">NodePoolPlatform</a>)
+</p>
+<p>
+<p>GCPNodePoolPlatform specifies the configuration of a NodePool when operating on GCP.
+This follows the AWS and Azure patterns for platform-specific NodePool configuration.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>machineType</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>machineType is the GCP machine type for node instances (e.g. n2-standard-4).
+Must follow GCP machine type naming conventions as documented at:
+<a href="https://cloud.google.com/compute/docs/machine-resource#machine_type_comparison">https://cloud.google.com/compute/docs/machine-resource#machine_type_comparison</a></p>
+<p>Valid machine type formats:
+- predefined: n1-standard-1, n2-highmem-4, c2-standard-8, etc.
+- custom: custom-{cpus}-{memory} (e.g. custom-4-8192)
+- custom with extended memory: custom-{cpus}-{memory}-ext (e.g. custom-2-13312-ext)</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>zone</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>zone is the GCP zone where node instances will be created.
+Must be a valid zone within the cluster&rsquo;s region.
+Format: {region}-{zone} (e.g. us-central1-a, europe-west2-b)
+See <a href="https://cloud.google.com/compute/docs/regions-zones">https://cloud.google.com/compute/docs/regions-zones</a> for available zones.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>subnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>subnet is the name of the subnet where node instances will be created.
+Must be a subnet within the VPC network specified in the HostedCluster&rsquo;s
+networkConfig and located in the same region as the zone.
+The subnet must have enough IP addresses available for the expected number of nodes.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>image</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>image specifies the boot image for node instances.
+If unspecified, the default RHCOS image will be used based on the NodePool release payload.
+Can be:
+- A family name: projects/rhel-cloud/global/images/family/rhel-8
+- A specific image: projects/rhel-cloud/global/images/rhel-8-v20231010
+- A full resource URL: <a href="https://www.googleapis.com/compute/v1/projects/rhel-cloud/global/images/rhel-8-v20231010">https://www.googleapis.com/compute/v1/projects/rhel-cloud/global/images/rhel-8-v20231010</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>bootDisk</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPBootDisk">
+GCPBootDisk
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>bootDisk specifies the configuration for the boot disk of node instances.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>serviceAccount</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodeServiceAccount">
+GCPNodeServiceAccount
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>serviceAccount configures the Google Service Account attached to node instances.
+If not specified, uses the default compute service account for the project.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourceLabels</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceLabel">
+[]GCPResourceLabel
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>resourceLabels is an optional list of additional labels to apply to GCP node
+instances and their associated resources (disks, etc.).
+Labels will be merged with cluster-level resource labels, with NodePool labels
+taking precedence in case of conflicts.</p>
+<p>Keys and values must conform to GCP labeling requirements:
+- Keys: 1–63 chars, must start with a lowercase letter; allowed [a-z0-9<em>-]
+- Values: empty or 1–63 chars; allowed [a-z0-9</em>-]
+- Maximum 60 user labels per resource (GCP limit is 64 total, with ~4 reserved)</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>networkTags</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>networkTags is an optional list of network tags to apply to node instances.
+These tags are used by GCP firewall rules to control network access.
+Tags must conform to GCP naming conventions:
+- 1-63 characters
+- Lowercase letters, numbers, and hyphens only
+- Must start with lowercase letter
+- Cannot end with hyphen</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>provisioningModel</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPProvisioningModel">
+GCPProvisioningModel
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>provisioningModel specifies the provisioning model for node instances.
+Spot and Preemptible instances cost less but can be terminated by GCP with 30 seconds notice.
+Spot instances are recommended over Preemptible as they have no maximum runtime limit.
+Standard instances are regular VMs that run until explicitly stopped.
+If not specified, defaults to &ldquo;Standard&rdquo;.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>onHostMaintenance</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>onHostMaintenance specifies the behavior when host maintenance occurs.
+For Spot and Preemptible instances, this must be &ldquo;TERMINATE&rdquo;.
+For Standard instances, can be &ldquo;MIGRATE&rdquo; (live migrate) or &ldquo;TERMINATE&rdquo;.
+If not specified, defaults to &ldquo;MIGRATE&rdquo; for Standard instances and &ldquo;TERMINATE&rdquo; for Spot/Preemptible.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###GCPNodeServiceAccount { #hypershift.openshift.io/v1beta1.GCPNodeServiceAccount }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>)
+</p>
+<p>
+<p>GCPNodeServiceAccount specifies the Google Service Account configuration for node instances.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>email</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>email specifies the email address of the Google Service Account to use for node instances.
+If not specified, uses the default compute service account for the project.
+The service account must have the necessary permissions for the node to function:
+- Logging writer
+- Monitoring metric writer
+- Storage object viewer (for pulling container images)</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>scopes</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>scopes specifies the access scopes for the service account.
+If not specified, defaults to standard compute scopes.
+Common scopes include:
+- &ldquo;<a href="https://www.googleapis.com/auth/devstorage.read_only&quot;">https://www.googleapis.com/auth/devstorage.read_only&rdquo;</a> - Storage read-only
+- &ldquo;<a href="https://www.googleapis.com/auth/logging.write&quot;">https://www.googleapis.com/auth/logging.write&rdquo;</a> - Logging write
+- &ldquo;<a href="https://www.googleapis.com/auth/monitoring.write&quot;">https://www.googleapis.com/auth/monitoring.write&rdquo;</a> - Monitoring write
+- &ldquo;<a href="https://www.googleapis.com/auth/cloud-platform&quot;">https://www.googleapis.com/auth/cloud-platform&rdquo;</a> - Full access (use with caution)</p>
 </td>
 </tr>
 </tbody>
@@ -34011,9 +34339,46 @@ string
 </tr>
 </tbody>
 </table>
+###GCPProvisioningModel { #hypershift.openshift.io/v1beta1.GCPProvisioningModel }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>)
+</p>
+<p>
+<p>GCPProvisioningModel defines the provisioning model for GCP node instances.
+Follows GCP&rsquo;s provisioning model terminology for compute instances.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Preemptible&#34;</p></td>
+<td><p>GCPProvisioningModelPreemptible specifies preemptible instances (legacy).
+Preemptible instances are lower-cost instances that can be terminated by GCP
+with 30 seconds notice when capacity is needed elsewhere.
+Note: Preemptible instances have a maximum runtime of 24 hours.
+Consider using Spot instances instead, which have no maximum runtime limit.</p>
+</td>
+</tr><tr><td><p>&#34;Spot&#34;</p></td>
+<td><p>GCPProvisioningModelSpot specifies Spot instances.
+Spot instances are lower-cost instances that can be terminated by GCP
+with 30 seconds notice when capacity is needed elsewhere.
+Unlike preemptible instances, Spot instances have no maximum runtime limit.
+This is the recommended option for cost-effective, interruptible workloads.</p>
+</td>
+</tr><tr><td><p>&#34;Standard&#34;</p></td>
+<td><p>GCPProvisioningModelStandard specifies standard (non-preemptible) instances.
+Standard instances run until explicitly stopped and are not subject to automatic termination.</p>
+</td>
+</tr></tbody>
+</table>
 ###GCPResourceLabel { #hypershift.openshift.io/v1beta1.GCPResourceLabel }
 <p>
 (<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>, 
 <a href="#hypershift.openshift.io/v1beta1.GCPPlatformSpec">GCPPlatformSpec</a>)
 </p>
 <p>
@@ -34129,6 +34494,7 @@ that manage NodePool infrastructure (VMs, networks, disks, etc.).
 This GSA requires the following IAM roles:
 - roles/compute.instanceAdmin.v1 (Compute Instance Admin v1)
 - roles/compute.networkAdmin (Compute Network Admin)
+- roles/iam.serviceAccountUser (Service Account User - to attach service accounts to VMs)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
@@ -34147,8 +34513,9 @@ string
 <p>controlPlane is the Google Service Account email for the Control Plane Operator
 that manages control plane infrastructure and resources.
 This GSA requires the following IAM roles:
-- roles/storage.admin (Storage Admin)
-- roles/iam.serviceAccountUser (Service Account User)
+- roles/dns.admin (DNS Admin - for managing DNS records)
+- roles/compute.networkAdmin (Compute Network Admin - for network management)
+- roles/compute.viewer (Compute Viewer - for CCM to read instance metadata)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
@@ -38184,6 +38551,20 @@ OpenStackNodePoolPlatform
 <td>
 <em>(Optional)</em>
 <p>openstack specifies the configuration used when using OpenStack platform.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>gcp</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">
+GCPNodePoolPlatform
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>gcp specifies the configuration used when operating on GCP.</p>
 </td>
 </tr>
 </tbody>

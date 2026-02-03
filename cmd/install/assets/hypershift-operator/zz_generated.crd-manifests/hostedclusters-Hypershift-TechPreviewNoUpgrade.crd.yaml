@@ -5899,8 +5899,9 @@ spec:
                                   controlPlane is the Google Service Account email for the Control Plane Operator
                                   that manages control plane infrastructure and resources.
                                   This GSA requires the following IAM roles:
-                                  - roles/storage.admin (Storage Admin)
-                                  - roles/iam.serviceAccountUser (Service Account User)
+                                  - roles/dns.admin (DNS Admin - for managing DNS records)
+                                  - roles/compute.networkAdmin (Compute Network Admin - for network management)
+                                  - roles/compute.viewer (Compute Viewer - for CCM to read instance metadata)
                                   See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
                                   Format: service-account-name@project-id.iam.gserviceaccount.com
 
@@ -5921,6 +5922,7 @@ spec:
                                   This GSA requires the following IAM roles:
                                   - roles/compute.instanceAdmin.v1 (Compute Instance Admin v1)
                                   - roles/compute.networkAdmin (Compute Network Admin)
+                                  - roles/iam.serviceAccountUser (Service Account User - to attach service accounts to VMs)
                                   See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
                                   Format: service-account-name@project-id.iam.gserviceaccount.com
 
