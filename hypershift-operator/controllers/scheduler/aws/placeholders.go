@@ -45,7 +45,8 @@ func (r *PlaceholderScheduler) SetupWithManager(ctx context.Context, mgr ctrl.Ma
 		return err
 	}
 
-	if _, err := kubernetesClient.CoreV1().Namespaces().Apply(ctx, corev1applyconfigurations.Namespace(placeholderNamespace), metav1.ApplyOptions{FieldManager: placeholderControllerName}); err != nil {
+	if _, err := kubernetesClient.CoreV1().Namespaces().Apply(ctx, corev1applyconfigurations.Namespace(placeholderNamespace).
+		WithLabels(map[string]string{"hypershift.openshift.io/component": "placeholders"}), metav1.ApplyOptions{FieldManager: placeholderControllerName}); err != nil {
 		return fmt.Errorf("couldn't set up namespace: %w", err)
 	}
 

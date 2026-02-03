@@ -19,7 +19,6 @@ package internal
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -40,7 +39,6 @@ type TestContext struct {
 	ClusterName           string
 	ClusterNamespace      string
 	ControlPlaneNamespace string
-	StrictMode            bool
 	hostedCluster         *hyperv1.HostedCluster
 	hostedClusterOnce     sync.Once
 }
@@ -133,16 +131,5 @@ func SetupTestContextFromEnv(ctx context.Context) (*TestContext, error) {
 		testCtx.ControlPlaneNamespace = manifests.HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName)
 	}
 
-	// Read strict mode from environment variable
-	strictModeStr := GetEnvVarValue("E2E_STRICT_MODE")
-	testCtx.StrictMode = parseBool(strictModeStr)
-
 	return testCtx, nil
-}
-
-// parseBool parses a string value as a boolean.
-// Returns true for "true", "1", "yes", "on" (case-insensitive), false otherwise.
-func parseBool(s string) bool {
-	s = strings.ToLower(strings.TrimSpace(s))
-	return s == "true" || s == "1" || s == "yes" || s == "on"
 }

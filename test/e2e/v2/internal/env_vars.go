@@ -146,10 +146,4 @@ func init() {
 		"When set to any non-empty value, displays environment variable help and exits without running tests.",
 		false,
 	)
-	RegisterEnvVarWithDefault(
-		"E2E_STRICT_MODE",
-		"When set to true, enables strict mode validation that requires all pods to belong to predefined workloads.",
-		false,
-		"false",
-	)
 }

@@ -138,6 +138,10 @@ func (r *SharedIngressReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 func (r *SharedIngressReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
 	namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: RouterNamespace}}
 	if _, err := r.createOrUpdate(ctx, r.Client, namespace, func() error {
+		if namespace.Labels == nil {
+			namespace.Labels = make(map[string]string)
+		}
+		namespace.Labels["hypershift.openshift.io/component"] = "shared-ingress"
 		return nil
 	}); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)

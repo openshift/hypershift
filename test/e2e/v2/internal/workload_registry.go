@@ -21,6 +21,9 @@ type WorkloadSpec struct {
 func GetControlPlaneWorkloads() []WorkloadSpec {
 	awsPlatform := hyperv1.AWSPlatform
 	azurePlatform := hyperv1.AzurePlatform
+	kubevirtPlatform := hyperv1.KubevirtPlatform
+	openstackPlatform := hyperv1.OpenStackPlatform
+	powervsPlatform := hyperv1.PowerVSPlatform
 
 	return []WorkloadSpec{
 		{
@@ -346,6 +349,69 @@ func GetControlPlaneWorkloads() []WorkloadSpec {
 			Platform: &awsPlatform,
 			PodSelector: map[string]string{
 				"app": "private-router",
+			},
+		},
+		{
+			Type:     "Deployment",
+			Name:     "karpenter",
+			Platform: &awsPlatform,
+			PodSelector: map[string]string{
+				"app": "karpenter",
+			},
+		},
+		{
+			Type:     "Deployment",
+			Name:     "karpenter-operator",
+			Platform: &awsPlatform,
+			PodSelector: map[string]string{
+				"app": "karpenter-operator",
+			},
+		},
+		{
+			Type:     "Deployment",
+			Name:     "aws-node-termination-handler",
+			Platform: &awsPlatform,
+			PodSelector: map[string]string{
+				"app": "aws-node-termination-handler",
+			},
+		},
+		{
+			Type:     "Deployment",
+			Name:     "kubevirt-cloud-controller-manager",
+			Platform: &kubevirtPlatform,
+			PodSelector: map[string]string{
+				"app": "cloud-controller-manager",
+			},
+		},
+		{
+			Type:     "Deployment",
+			Name:     "kubevirt-csi-controller",
+			Platform: &kubevirtPlatform,
+			PodSelector: map[string]string{
+				"app": "kubevirt-csi-driver",
+			},
+		},
+		{
+			Type:     "Deployment",
+			Name:     "openstack-cloud-controller-manager",
+			Platform: &openstackPlatform,
+			PodSelector: map[string]string{
+				"k8s-app": "openstack-cloud-controller-manager",
+			},
+		},
+		{
+			Type:     "Deployment",
+			Name:     "powervs-cloud-controller-manager",
+			Platform: &powervsPlatform,
+			PodSelector: map[string]string{
+				"k8s-app": "cloud-controller-manager",
+			},
+		},
+		{
+			Type: "CronJob",
+			Name: "etcd-backup",
+			PodSelector: map[string]string{
+				"app": "etcd-backup",
 			},
 		},
 		{

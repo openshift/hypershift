@@ -91,6 +91,12 @@ func (o HyperShiftNamespace) Build() *corev1.Namespace {
 		}
 	}
 
+	// Add component label for workload discovery
+	if namespace.Labels == nil {
+		namespace.Labels = make(map[string]string)
+	}
+	namespace.Labels["hypershift.openshift.io/component"] = "operator"
+
 	// Enable observability operator monitoring
 	metrics.EnableOBOMonitoring(namespace)
 

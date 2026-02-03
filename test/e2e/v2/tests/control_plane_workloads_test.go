@@ -703,17 +703,11 @@ func PodAffinitiesAndTolerationsTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
-// StrictModeValidationTest registers tests for strict mode validation
-func StrictModeValidationTest(getTestCtx internal.TestContextGetter) {
-	Context("Strict mode validation", func() {
-		BeforeEach(func() {
-			testCtx := getTestCtx()
-			if !testCtx.StrictMode {
-				Skip("Strict mode is not enabled. Set E2E_STRICT_MODE=true to enable this test.")
-			}
-		})
-
-		It("all pods should belong to predefined workloads", func() {
+// WorkloadRegistryValidationTest registers tests for workload registry validation
+func WorkloadRegistryValidationTest(getTestCtx internal.TestContextGetter) {
+	Context("Workload registry validation", func() {
+		// Label("Informing"): failures skip (non-blocking) until registry is complete
+		It("all pods should belong to predefined workloads", Label("Informing"), func() {
 			testCtx := getTestCtx()
 			_ = testCtx.GetHostedCluster() // unused but kept for consistency
 			// List all pods in control plane namespace
@@ -838,6 +832,7 @@ func SecurityContextUIDTest(getTestCtx internal.TestContextGetter) {
 
 // RegisterControlPlaneWorkloadsTests registers all control plane workloads tests
 func RegisterControlPlaneWorkloadsTests(getTestCtx internal.TestContextGetter) {
+	WorkloadRegistryValidationTest(getTestCtx)
 	DeploymentGenerationTest(getTestCtx)
 	SafeToEvictAnnotationsTest(getTestCtx)
 	ReadOnlyRootFilesystemTest(getTestCtx)
@@ -848,7 +843,6 @@ func RegisterControlPlaneWorkloadsTests(getTestCtx internal.TestContextGetter) {
 	PodPriorityTest(getTestCtx)
 	ServiceAccountTokenMountingTest(getTestCtx)
 	PodAffinitiesAndTolerationsTest(getTestCtx)
-	StrictModeValidationTest(getTestCtx)
 	SecurityContextUIDTest(getTestCtx)
 }
 
