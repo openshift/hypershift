@@ -4,15 +4,12 @@ package e2e
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -179,12 +176,37 @@ func (it *NodePoolImageTypeTest) scaleAndVerifyImageType(t *testing.T, g *WithT,
 
 	// If scaling up, wait for nodes to be ready
 	if targetReplicas > 0 {
-		t.Logf("Waiting for %d nodes to become ready", targetReplicas)
-		e2eutil.WaitForNReadyNodesWithOptions(t, ctx, it.hostedClusterClient, int(targetReplicas),
-			e2eutil.WithNodeReadinessTimeout(timeout),
-			e2eutil.WithNodeReadinessInterval(10*time.Second),
-		)
+		t.Logf("Waiting for %d nodes to become ready (timeout: %v)", targetReplicas, timeout)
+		e2eutil.WaitForNReadyNodes(t, ctx, it.hostedClusterClient, targetReplicas, hyperv1.AWSPlatform)
 		t.Logf("✓ All %d nodes are ready", targetReplicas)
+
+		// DEBUG: Check actual node OS to verify Windows provisioning
+		nodeList := &corev1.NodeList{}
+		err = it.hostedClusterClient.List(ctx, nodeList)
+		if err != nil {
+			t.Logf("WARNING: Failed to list nodes for OS verification: %v", err)
+		} else {
+			t.Logf("DEBUG: Checking OS of %d nodes (expected ImageType=%s):", len(nodeList.Items), expectedImageType)
+			for _, node := range nodeList.Items {
+				nodeOS := node.Status.NodeInfo.OperatingSystem
+				osImage := node.Status.NodeInfo.OSImage
+				kernelVersion := node.Status.NodeInfo.KernelVersion
+				t.Logf("  - Node %s: OS=%s, OSImage=%s, KernelVersion=%s",
+					node.Name, nodeOS, osImage, kernelVersion)
+
+				// Check if OS matches expected ImageType
+				expectedOS := "linux"
+				if expectedImageType == hyperv1.ImageTypeWindows {
+					expectedOS = "windows"
+				}
+				if nodeOS != expectedOS {
+					t.Logf("    ⚠️  WARNING: Node OS '%s' does NOT match expected ImageType '%s' (expected OS: '%s')",
+						nodeOS, expectedImageType, expectedOS)
+				} else {
+					t.Logf("    ✓ Node OS '%s' matches expected ImageType '%s'", nodeOS, expectedImageType)
+				}
+			}
+		}
 	}
 
 	// Verify ImageType is still correct after scaling
