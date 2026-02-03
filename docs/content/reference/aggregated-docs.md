@@ -9861,6 +9861,7 @@ To have an issue processed by the Jira Agent:
 2. Set status to **New** or **To Do**
 3. Ensure resolution is **Unresolved**
 4. Add the label **`issue-for-agent`**
+5. Security set to none
 
 The issue will be picked up on the next weekly run (Mondays at 8:30 AM UTC).
 
