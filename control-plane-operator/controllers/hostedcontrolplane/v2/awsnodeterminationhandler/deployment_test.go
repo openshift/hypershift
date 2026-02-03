@@ -10,12 +10,14 @@ import (
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 func TestAdaptDeployment(t *testing.T) {
 	testCases := []struct {
 		name             string
 		hcpAnnotations   map[string]string
+		queueURL         string
 		awsRegion        string
 		issuerURL        string
 		expectedReplicas int32
@@ -31,10 +33,8 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedQueueURL: "",
 		},
 		{
-			name: "When queue URL annotation is set it should configure the queue URL",
-			hcpAnnotations: map[string]string{
-				AnnotationTerminationHandlerQueueURL: "https://sqs.us-west-2.amazonaws.com/123456789/my-queue",
-			},
+			name:             "When queue URL is set in the API it should configure the queue URL",
+			queueURL:         "https://sqs.us-west-2.amazonaws.com/123456789/my-queue",
 			awsRegion:        "us-west-2",
 			expectedReplicas: 1,
 			expectedRegion:   "us-west-2",
@@ -50,17 +50,20 @@ func TestAdaptDeployment(t *testing.T) {
 			expectedRegion:   "us-east-1",
 		},
 		{
-			name: "When both queue URL and disable annotations are set it should set replicas to 0",
+			name: "When queue URL is set and disable annotation is set it should set replicas to 0",
 			hcpAnnotations: map[string]string{
-				AnnotationTerminationHandlerQueueURL:               "https://sqs.us-east-1.amazonaws.com/123456789/my-queue",
 				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
 			},
+			queueURL:         "https://sqs.us-east-1.amazonaws.com/123456789/my-queue",
 			awsRegion:        "us-east-1",
 			expectedReplicas: 0,
 			expectedRegion:   "us-east-1",
 			expectedQueueURL: "https://sqs.us-east-1.amazonaws.com/123456789/my-queue",
 		},
 	}
+
+	// Note: Tests for queue URL from API are covered in TestGetTerminationHandlerQueueURL
+	// and the adaptDeployment function uses the same helper
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -82,6 +85,9 @@ func TestAdaptDeployment(t *testing.T) {
 						},
 					},
 				},
+			}
+			if tc.queueURL != "" {
+				hcp.Spec.Platform.AWS.TerminationHandlerQueueURL = ptr.To(tc.queueURL)
 			}
 
 			cpContext := controlplanecomponent.WorkloadContext{
@@ -114,6 +120,65 @@ func TestAdaptDeployment(t *testing.T) {
 
 			g.Expect(regionValue).To(Equal(tc.expectedRegion))
 			g.Expect(queueURLValue).To(Equal(tc.expectedQueueURL))
+		})
+	}
+}
+
+func TestGetTerminationHandlerQueueURL(t *testing.T) {
+	testCases := []struct {
+		name        string
+		hcp         *hyperv1.HostedControlPlane
+		expectedURL string
+	}{
+		{
+			name:        "When HCP is nil, it should return empty string",
+			hcp:         nil,
+			expectedURL: "",
+		},
+		{
+			name: "When API has queue URL, it should return API value",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS: &hyperv1.AWSPlatformSpec{
+							TerminationHandlerQueueURL: ptr.To("https://sqs.us-east-1.amazonaws.com/123456789/api-queue"),
+						},
+					},
+				},
+			},
+			expectedURL: "https://sqs.us-east-1.amazonaws.com/123456789/api-queue",
+		},
+		{
+			name: "When API has no URL, it should return empty string",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+						AWS:  &hyperv1.AWSPlatformSpec{},
+					},
+				},
+			},
+			expectedURL: "",
+		},
+		{
+			name: "When AWS platform spec is nil, it should return empty string",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			expectedURL: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			result := getTerminationHandlerQueueURL(tc.hcp)
+			g.Expect(result).To(Equal(tc.expectedURL))
 		})
 	}
 }

@@ -198,7 +198,7 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 			}),
 		},
 		{
-			name: "When spot is enabled, it should add managed tag",
+			name: "When spot is enabled via annotation, it should add managed tag",
 			nodePool: hyperv1.NodePoolSpec{
 				Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
 					AMI: amiName,
@@ -208,6 +208,42 @@ func TestAWSMachineTemplateSpec(t *testing.T) {
 				AnnotationEnableSpot: "true",
 			},
 			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
+				tmpl.Spec.Template.Spec.AdditionalTags["aws-node-termination-handler/managed"] = ""
+			}),
+		},
+		{
+			name: "When spot is enabled via API, it should set SpotMarketOptions and add managed tag",
+			nodePool: hyperv1.NodePoolSpec{
+				Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+					AMI: amiName,
+					Placement: &hyperv1.PlacementOptions{
+						MarketType: hyperv1.MarketTypeSpot,
+						Spot:       &hyperv1.SpotOptions{},
+					},
+				}},
+			},
+			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
+				tmpl.Spec.Template.Spec.SpotMarketOptions = &capiaws.SpotMarketOptions{}
+				tmpl.Spec.Template.Spec.AdditionalTags["aws-node-termination-handler/managed"] = ""
+			}),
+		},
+		{
+			name: "When spot is enabled via API with MaxPrice, it should set SpotMarketOptions with MaxPrice",
+			nodePool: hyperv1.NodePoolSpec{
+				Platform: hyperv1.NodePoolPlatform{AWS: &hyperv1.AWSNodePoolPlatform{
+					AMI: amiName,
+					Placement: &hyperv1.PlacementOptions{
+						MarketType: hyperv1.MarketTypeSpot,
+						Spot: &hyperv1.SpotOptions{
+							MaxPrice: ptr.To("0.50"),
+						},
+					},
+				}},
+			},
+			expected: defaultAWSMachineTemplate(func(tmpl *capiaws.AWSMachineTemplate) {
+				tmpl.Spec.Template.Spec.SpotMarketOptions = &capiaws.SpotMarketOptions{
+					MaxPrice: ptr.To("0.50"),
+				}
 				tmpl.Spec.Template.Spec.AdditionalTags["aws-node-termination-handler/managed"] = ""
 			}),
 		},
@@ -842,6 +878,163 @@ func TestGetWindowsAMI(t *testing.T) {
 				if ami != tc.expectedAMI {
 					t.Fatalf("expected AMI %q, but got %q", tc.expectedAMI, ami)
 				}
+			}
+		})
+	}
+}
+
+func TestIsSpotEnabled(t *testing.T) {
+	testCases := []struct {
+		name     string
+		nodePool *hyperv1.NodePool
+		expected bool
+	}{
+		{
+			name:     "When nodePool is nil, it should return false",
+			nodePool: nil,
+			expected: false,
+		},
+		{
+			name: "When no spot config and no annotation, it should return false",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When annotation is present, it should return true",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationEnableSpot: "true",
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When API marketType is Spot, it should return true",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							Placement: &hyperv1.PlacementOptions{
+								MarketType: hyperv1.MarketTypeSpot,
+								Spot:       &hyperv1.SpotOptions{},
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When API marketType is Spot with MaxPrice, it should return true",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							Placement: &hyperv1.PlacementOptions{
+								MarketType: hyperv1.MarketTypeSpot,
+								Spot: &hyperv1.SpotOptions{
+									MaxPrice: ptr.To("0.50"),
+								},
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When both annotation and API marketType Spot are present, it should return true",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AnnotationEnableSpot: "true",
+					},
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							Placement: &hyperv1.PlacementOptions{
+								MarketType: hyperv1.MarketTypeSpot,
+								Spot:       &hyperv1.SpotOptions{},
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When AWS platform is nil, it should return false",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When Placement is nil, it should return false",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							Placement: nil,
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When marketType is OnDemand, it should return false",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							Placement: &hyperv1.PlacementOptions{
+								MarketType: hyperv1.MarketTypeOnDemand,
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When marketType is CapacityBlocks, it should return false",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						AWS: &hyperv1.AWSNodePoolPlatform{
+							Placement: &hyperv1.PlacementOptions{
+								MarketType: hyperv1.MarketTypeCapacityBlock,
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := isSpotEnabled(tc.nodePool)
+			if result != tc.expected {
+				t.Errorf("expected %v, got %v", tc.expected, result)
 			}
 		})
 	}
