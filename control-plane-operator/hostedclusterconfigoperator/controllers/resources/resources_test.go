@@ -2374,7 +2374,7 @@ func newCondition(conditionType string, status metav1.ConditionStatus, reason, m
 	}
 }
 
-func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *testing.T) {
+func Test_reconciler_reconcileDataPlaneConnectionAvailable(t *testing.T) {
 	newKonnectivityAgentPod := func(name string, phase corev1.PodPhase) corev1.Pod {
 		return corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -2541,15 +2541,15 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			r.cpClient = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 			r.GetPodLogs = tt.mockedGetPodLogs
 
-			gotErr := r.reconcileControlPlaneDataPlaneConnectivityConditions(ctx, tt.hcp, log)
+			gotErr := r.reconcileDataPlaneConnectionAvailable(ctx, tt.hcp, log)
 			if gotErr != nil {
 				if !tt.wantErr {
-					t.Errorf("reconcileControlPlaneDataPlaneConnectivityConditions() failed: %v", gotErr)
+					t.Errorf("reconcileDataPlaneConnectionAvailable() failed: %v", gotErr)
 				}
 				return
 			}
 			if tt.wantErr {
-				t.Fatal("reconcileControlPlaneDataPlaneConnectivityConditions() succeeded unexpectedly")
+				t.Fatal("reconcileDataPlaneConnectionAvailable() succeeded unexpectedly")
 			}
 			if tt.expectedCondition != nil {
 				found := false

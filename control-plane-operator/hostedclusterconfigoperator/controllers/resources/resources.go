@@ -563,6 +563,8 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling KAS connection checker daemonset")
+	// The "pod" component is a standard component in OpenShift release payloads
+	// that provides this lightweight pause container from the release itself.
 	pauseImage, ok := releaseImage.ComponentImages()["pod"]
 	if !ok {
 		errs = append(errs, fmt.Errorf("failed to find pod image in release"))
@@ -573,7 +575,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling data plane connection available condition")
-	if err := r.reconcileControlPlaneDataPlaneConnectivityConditions(ctx, hcp, log); err != nil {
+	if err := r.reconcileDataPlaneConnectionAvailable(ctx, hcp, log); err != nil {
 		errs = append(errs, fmt.Errorf("failed to update ControlPlaneToDataPlaneConnectivity condition: %w", err))
 	}
 
@@ -1432,7 +1434,7 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	return nil
 }
 
-func (r *reconciler) reconcileControlPlaneDataPlaneConnectivityConditions(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
+func (r *reconciler) reconcileDataPlaneConnectionAvailable(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
 	condition := &metav1.Condition{
 		Type:   string(hyperv1.DataPlaneConnectionAvailable),
 		Status: metav1.ConditionFalse, // False by default
@@ -1518,7 +1520,7 @@ func (r *reconciler) patchHCPStatusCondition(ctx context.Context, hcp *hyperv1.H
 }
 
 func (r *reconciler) reconcileKASConnectionCheckerDaemonSet(ctx context.Context, hcp *hyperv1.HostedControlPlane, pauseImage string) error {
-	kasAdvertiseAddress := util.GetAdvertiseAddress(hcp, "172.20.0.1", "fd00::1")
+	kasAdvertiseAddress := util.GetAdvertiseAddress(hcp, config.DefaultAdvertiseIPv4Address, config.DefaultAdvertiseIPv6Address)
 	kasPort := util.KASPodPort(hcp)
 	endpoint := getKASHealthCheckEndpoint(hcp.Spec.Platform.Type)
 
