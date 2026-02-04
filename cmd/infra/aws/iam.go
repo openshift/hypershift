@@ -935,8 +935,18 @@ func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient ia
 					"elasticloadbalancing:ModifyTargetGroupAttributes"
 				],
 				"Resource": "*"
+			},
+			{
+				"Effect": "Allow",
+				"Action": [
+					"ec2:CreateSecurityGroup",
+					"ec2:AuthorizeSecurityGroupIngress",
+					"ec2:RevokeSecurityGroupIngress",
+					"ec2:DeleteSecurityGroup",
+					"elasticloadbalancing:ApplySecurityGroupsToLoadBalancer"
+				],
+				"Resource": "*"
 			}`
-
 		ccmRoleName := output.Roles.KubeCloudControllerARN[strings.LastIndex(output.Roles.KubeCloudControllerARN, "/")+1:]
 
 		// Create the inline policy optimizing the policy documents.
