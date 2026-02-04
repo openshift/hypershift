@@ -1,9 +1,14 @@
 ---
-description: Triage CI failures on a PR, fix blocking issues, retest flaky tests
+description: "Triage CI failures on a PR, fix blocking issues, retest flaky tests"
+arguments: "[PR_NUMBER] [watch until green] - PR number (optional, defaults to current branch's PR) and optional watch mode trigger"
 user_invocable: true
 ---
 
-Use the `ci-triage` agent to analyze CI failures on a Pull Request.
+Invoke the `ci-triage` agent using the Task tool with `subagent_type="ci-triage"`.
+
+Pass the following context to the agent:
+- PR number: Parse from $ARGUMENTS if provided, otherwise detect from current branch
+- Execution mode: If $ARGUMENTS contains "watch", "until green", "until all pass", or "keep trying", use watch mode
 
 ## What It Does
 
