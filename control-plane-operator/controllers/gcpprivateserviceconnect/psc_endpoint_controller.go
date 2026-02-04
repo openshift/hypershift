@@ -26,6 +26,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/go-logr/logr"
@@ -115,6 +117,7 @@ func (r *GCPPrivateServiceConnectReconciler) SetupWithManager(mgr ctrl.Manager) 
 			RateLimiter:             workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](3*time.Second, 30*time.Second),
 			MaxConcurrentReconciles: 10,
 		}).
+		Watches(&hyperv1.HostedControlPlane{}, handler.Funcs{UpdateFunc: r.enqueueOnAccessChange(mgr)}).
 		Build(r)
 	if err != nil {
 		return fmt.Errorf("failed setting up with a controller manager: %w", err)
@@ -122,6 +125,33 @@ func (r *GCPPrivateServiceConnectReconciler) SetupWithManager(mgr ctrl.Manager) 
 	r.Client = mgr.GetClient()
 
 	return nil
+}
+
+func (r *GCPPrivateServiceConnectReconciler) enqueueOnAccessChange(mgr ctrl.Manager) func(context.Context, event.UpdateEvent, workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+	return func(ctx context.Context, e event.UpdateEvent, q workqueue.TypedRateLimitingInterface[reconcile.Request]) {
+		logger := mgr.GetLogger()
+		newHCP, isOk := e.ObjectNew.(*hyperv1.HostedControlPlane)
+		if !isOk {
+			logger.Info("WARNING: enqueueOnAccessChange: new resource is not of type HostedControlPlane")
+			return
+		}
+		oldHCP, isOk := e.ObjectOld.(*hyperv1.HostedControlPlane)
+		if !isOk {
+			logger.Info("WARNING: enqueueOnAccessChange: old resource is not of type HostedControlPlane")
+			return
+		}
+		// Only enqueue gcpprivateserviceconnects when there is a change in the endpointaccess value, otherwise ignore changes
+		if newHCP.Spec.Platform.GCP != nil && oldHCP.Spec.Platform.GCP != nil && newHCP.Spec.Platform.GCP.EndpointAccess != oldHCP.Spec.Platform.GCP.EndpointAccess {
+			gcpPrivateServiceConnectList := &hyperv1.GCPPrivateServiceConnectList{}
+			if err := r.List(context.Background(), gcpPrivateServiceConnectList, client.InNamespace(newHCP.Namespace)); err != nil {
+				logger.Error(err, "enqueueOnAccessChange: cannot list gcpprivateserviceconnects")
+				return
+			}
+			for i := range gcpPrivateServiceConnectList.Items {
+				q.Add(reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&gcpPrivateServiceConnectList.Items[i])})
+			}
+		}
+	}
 }
 
 // Reconcile implements the main reconciliation logic for PSC endpoints
