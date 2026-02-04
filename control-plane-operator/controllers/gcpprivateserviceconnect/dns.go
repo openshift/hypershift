@@ -354,7 +354,7 @@ type DNSSetupResult struct {
 	PrivateIngressCreatedRecords []string
 }
 
-// createZonesIfNeeded creates DNS zones when createDnsZones is enabled.
+// createZonesIfNeeded creates the required DNS zones for GCP HCP clusters.
 func createZonesIfNeeded(ctx context.Context, svc *dns.Service, projectID, hypershiftZone, publicZone, privateZone, hypershiftDNSName, ingressDNS, vpcNetworkURL string) (*dns.ManagedZone, *dns.ManagedZone, *dns.ManagedZone, error) {
 	hypershiftLocalZone, err := createZone(ctx, svc, projectID, hypershiftZone, hypershiftDNSName, "private", vpcNetworkURL)
 	if err != nil {
@@ -375,27 +375,29 @@ func createZonesIfNeeded(ctx context.Context, svc *dns.Service, projectID, hyper
 }
 
 // retrieveExistingZones retrieves pre-existing DNS zones.
+// This is intended for future self-managed scenarios where zones are externally managed.
+// Currently not used as DNS zones are always created by the operator.
 func retrieveExistingZones(ctx context.Context, svc *dns.Service, projectID, hypershiftZone, publicZone, privateZone string) (*dns.ManagedZone, *dns.ManagedZone, *dns.ManagedZone, error) {
 	hypershiftLocalZone, err := getZone(ctx, svc, projectID, hypershiftZone)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get hypershift.local zone %s (must exist when createDnsZones=false): %w", hypershiftZone, err)
+		return nil, nil, nil, fmt.Errorf("failed to get hypershift.local zone %s: %w", hypershiftZone, err)
 	}
 
 	publicIngressZone, err := getZone(ctx, svc, projectID, publicZone)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get public ingress zone %s (must exist when createDnsZones=false): %w", publicZone, err)
+		return nil, nil, nil, fmt.Errorf("failed to get public ingress zone %s: %w", publicZone, err)
 	}
 
 	privateIngressZone, err := getZone(ctx, svc, projectID, privateZone)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get private ingress zone %s (must exist when createDnsZones=false): %w", privateZone, err)
+		return nil, nil, nil, fmt.Errorf("failed to get private ingress zone %s: %w", privateZone, err)
 	}
 
 	return hypershiftLocalZone, publicIngressZone, privateIngressZone, nil
 }
 
-// ensureZones creates DNS zones if createDnsZones is enabled.
-// If createDnsZones is false, retrieves existing zones to get NS records.
+// ensureZones creates or retrieves DNS zones based on the createZones flag.
+// Currently always called with createZones=true as self-managed scenarios are not yet supported.
 func ensureZones(ctx context.Context, svc *dns.Service, createZones bool, projectID, hypershiftZone, publicZone, privateZone, hypershiftDNSName, ingressDNS, vpcNetworkURL string) (*dns.ManagedZone, *dns.ManagedZone, *dns.ManagedZone, []string, error) {
 	var hypershiftLocalZone, publicIngressZone, privateIngressZone *dns.ManagedZone
 	var err error
@@ -466,23 +468,18 @@ func validateReconcileInput(hcp *hyperv1.HostedControlPlane, pscEndpointIP strin
 // This is the main entry point from the PSC controller reconciliation loop.
 //
 // This function is fully idempotent and can be called repeatedly. It will:
-//   - Create missing DNS zones (if spec.platform.gcp.createDnsZones=true)
+//   - Create missing DNS zones
 //   - Ensure required DNS records exist with correct values
 //   - Skip operations if resources already exist in desired state
 //   - Return zone information for status updates
 //
-// Behavior depends on spec.platform.gcp.createDnsZones:
-//   - true: Manages zones AND records (creates zones if missing, ensures records exist)
-//   - false/nil: Assumes zones are externally managed, only ensures records exist
+// Note: DNS zones are always created by the operator. Self-managed scenarios
+// where zones are externally managed are not yet supported.
 //
 // DNS Resources Managed:
-//
-// When createDnsZones=true:
 //  1. Private hypershift.local zone
 //  2. Public ingress zone
 //  3. Private ingress zone
-//
-// Always (regardless of createDnsZones):
 //  4. ACME challenge CNAME in public zone (delegates to regional zone)
 //  5. A record for api.{cluster}.hypershift.local -> PSC endpoint IP
 //
@@ -572,9 +569,8 @@ func ReconcileDNS(ctx context.Context, hcp *hyperv1.HostedControlPlane, pscEndpo
 // This function is idempotent and can be called multiple times safely.
 // It will skip zones that don't exist (already deleted or never created).
 //
-// Only deletes zones if spec.platform.gcp.createDnsZones was true.
-// If createDnsZones was false (zones pre-existed), this function does nothing,
-// assuming external zone management.
+// Note: Since DNS zones are always created by the operator in the current
+// implementation, this function always attempts to delete them.
 //
 // Parameters:
 //   - ctx: Context for the operation
