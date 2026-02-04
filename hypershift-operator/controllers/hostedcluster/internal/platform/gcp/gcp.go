@@ -533,7 +533,6 @@ func (p GCP) validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedClust
 	return nil
 }
 
-
 // setCondition updates or creates a condition on the HostedCluster.
 // This follows the standard HyperShift pattern for condition management.
 func setCondition(hcluster *hyperv1.HostedCluster, conditionType hyperv1.ConditionType, status metav1.ConditionStatus, reason, message string) {

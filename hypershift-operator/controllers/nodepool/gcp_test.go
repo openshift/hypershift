@@ -69,7 +69,7 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 				g.Expect(spec.InstanceType).To(Equal("n1-standard-2"))
 				g.Expect(*spec.Subnet).To(Equal("test-psc-subnet"))
 				g.Expect(spec.RootDeviceSize).To(Equal(int64(64))) // Default size
-				g.Expect(*spec.RootDeviceType).To(Equal(capigcp.PdStandardDiskType))
+				g.Expect(*spec.RootDeviceType).To(Equal(capigcp.DiskType("pd-balanced")))
 				g.Expect(spec.Preemptible).To(BeFalse())
 				g.Expect(*spec.OnHostMaintenance).To(Equal(capigcp.HostMaintenancePolicyMigrate))
 			},
@@ -471,77 +471,6 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 
 			if tc.validator != nil {
 				tc.validator(t, spec)
-			}
-		})
-	}
-}
-
-func TestGcpMachineTemplate(t *testing.T) {
-	testCases := []struct {
-		name        string
-		nodePool    *hyperv1.NodePool
-		hc          *hyperv1.HostedCluster
-		expectedErr bool
-		validator   func(*testing.T, *capigcp.GCPMachineTemplate)
-	}{
-		{
-			name: "When template name generator fails, it should return error",
-			nodePool: &hyperv1.NodePool{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-nodepool",
-					Namespace: "test-namespace",
-				},
-				Spec: hyperv1.NodePoolSpec{
-					Arch: hyperv1.ArchitectureAMD64,
-					Platform: hyperv1.NodePoolPlatform{
-						Type: hyperv1.GCPPlatform,
-						GCP: &hyperv1.GCPNodePoolPlatform{
-							MachineType: "n1-standard-2",
-							Zone:        "us-central1-a",
-						},
-					},
-				},
-			},
-			hc: &hyperv1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-cluster",
-					Namespace: "test-namespace",
-				},
-				Spec: hyperv1.HostedClusterSpec{
-					InfraID: "test-infra-id",
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.GCPPlatform,
-						GCP: &hyperv1.GCPPlatformSpec{
-							Project: "test-project",
-							Region:  "us-central1",
-							NetworkConfig: hyperv1.GCPNetworkConfig{
-								PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
-									Name: "test-psc-subnet",
-								},
-							},
-						},
-					},
-				},
-			},
-			expectedErr: true, // This test will trigger error in template name generation
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			// For this simplified test, just verify the error cases
-			// The core logic is thoroughly tested in TestGcpMachineTemplateSpec
-
-			if tc.expectedErr {
-				// Test would normally fail due to missing dependencies
-				// This demonstrates the error path validation
-				g.Expect(tc.nodePool.Spec.Platform.GCP).ToNot(BeNil(), "Error test case should have valid NodePool setup")
-			} else {
-				// Test case shows successful path structure
-				g.Expect(tc.nodePool.Spec.Platform.GCP).ToNot(BeNil())
-				g.Expect(tc.hc.Spec.Platform.GCP).ToNot(BeNil())
 			}
 		})
 	}

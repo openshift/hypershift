@@ -736,6 +736,10 @@ func defaultNodePoolAMI(region string, specifiedArch string, releaseImage *relea
 
 // defaultNodePoolGCPImage returns the default GCP image for a given architecture from release metadata.
 func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	if releaseImage.StreamMetadata == nil {
+		return "", fmt.Errorf("release image stream metadata is nil, cannot determine GCP image for architecture %q", specifiedArch)
+	}
+
 	arch, foundArch := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[specifiedArch]]
 	if !foundArch {
 		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)

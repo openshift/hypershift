@@ -24,8 +24,8 @@ type GCPResourceLabel struct {
 	// key is the key part of the label. A label key can have a maximum of 63 characters and cannot be empty.
 	// For Compute Engine resources (VMs, disks, networks created by CAPG), keys must:
 	// - Start with a lowercase letter
-	// - Contain only lowercase letters, digits, or hyphens
-	// - End with a lowercase letter or digit (not a hyphen)
+	// - Contain only lowercase letters, digits, underscores, or hyphens
+	// - End with a lowercase letter or digit (not a hyphen or underscore)
 	// - Be 1-63 characters long
 	// GCP reserves the 'goog' prefix for system labels.
 	// See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
@@ -33,19 +33,19 @@ type GCPResourceLabel struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$`
+	// +kubebuilder:validation:Pattern=`^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$`
 	// +kubebuilder:validation:XValidation:rule="!self.startsWith('goog')",message="Label keys starting with the reserved 'goog' prefix are not allowed"
 	Key string `json:"key"`
 
 	// value is the value part of the label. A label value can have a maximum of 63 characters.
 	// Empty values are allowed by GCP. If non-empty, it must start with a lowercase letter,
-	// contain only lowercase letters, digits, or hyphens, and end with a lowercase letter or digit.
+	// contain only lowercase letters, digits, underscores, or hyphens, and end with a lowercase letter or digit.
 	// See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
 	//
 	// +optional
 	// +kubebuilder:validation:MinLength=0
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^$|^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$`
+	// +kubebuilder:validation:Pattern=`^$|^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$`
 	Value *string `json:"value,omitempty"`
 }
 
@@ -294,6 +294,7 @@ type GCPServiceAccountsEmails struct {
 
 // GCPNodePoolPlatform specifies the configuration of a NodePool when operating on GCP.
 // This follows the AWS and Azure patterns for platform-specific NodePool configuration.
+// +kubebuilder:validation:XValidation:rule="!has(self.onHostMaintenance) || !has(self.provisioningModel) || self.provisioningModel == 'Standard' || self.onHostMaintenance == 'TERMINATE'",message="onHostMaintenance must be TERMINATE when provisioningModel is Spot or Preemptible"
 type GCPNodePoolPlatform struct {
 	// machineType is the GCP machine type for node instances (e.g. n2-standard-4).
 	// Must follow GCP machine type naming conventions as documented at:
@@ -446,7 +447,7 @@ type GCPDiskEncryptionKey struct {
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
 	// +kubebuilder:validation:Pattern=`^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/locations\/[a-z0-9-]+\/keyRings\/[a-zA-Z0-9_-]+\/cryptoKeys\/[a-zA-Z0-9_-]+$`
-	KMSKeyName string `json:"kmsKeyName,omitempty"`
+	KMSKeyName string `json:"kmsKeyName"`
 }
 
 // GCPNodeServiceAccount specifies the Google Service Account configuration for node instances.

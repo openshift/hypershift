@@ -4908,14 +4908,14 @@ spec:
                                 key is the key part of the label. A label key can have a maximum of 63 characters and cannot be empty.
                                 For Compute Engine resources (VMs, disks, networks created by CAPG), keys must:
                                 - Start with a lowercase letter
-                                - Contain only lowercase letters, digits, or hyphens
-                                - End with a lowercase letter or digit (not a hyphen)
+                                - Contain only lowercase letters, digits, underscores, or hyphens
+                                - End with a lowercase letter or digit (not a hyphen or underscore)
                                 - Be 1-63 characters long
                                 GCP reserves the 'goog' prefix for system labels.
                                 See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
                               maxLength: 63
                               minLength: 1
-                              pattern: ^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$
+                              pattern: ^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$
                               type: string
                               x-kubernetes-validations:
                               - message: Label keys starting with the reserved 'goog'
@@ -4925,11 +4925,11 @@ spec:
                               description: |-
                                 value is the value part of the label. A label value can have a maximum of 63 characters.
                                 Empty values are allowed by GCP. If non-empty, it must start with a lowercase letter,
-                                contain only lowercase letters, digits, or hyphens, and end with a lowercase letter or digit.
+                                contain only lowercase letters, digits, underscores, or hyphens, and end with a lowercase letter or digit.
                                 See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
                               maxLength: 63
                               minLength: 0
-                              pattern: ^$|^[a-z]([-a-z0-9]{0,61}[a-z0-9])?$
+                              pattern: ^$|^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$
                               type: string
                           required:
                           - key

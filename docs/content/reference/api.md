@@ -6656,8 +6656,8 @@ string
 <p>key is the key part of the label. A label key can have a maximum of 63 characters and cannot be empty.
 For Compute Engine resources (VMs, disks, networks created by CAPG), keys must:
 - Start with a lowercase letter
-- Contain only lowercase letters, digits, or hyphens
-- End with a lowercase letter or digit (not a hyphen)
+- Contain only lowercase letters, digits, underscores, or hyphens
+- End with a lowercase letter or digit (not a hyphen or underscore)
 - Be 1-63 characters long
 GCP reserves the &lsquo;goog&rsquo; prefix for system labels.
 See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a> for Compute Engine label requirements.</p>
@@ -6674,7 +6674,7 @@ string
 <em>(Optional)</em>
 <p>value is the value part of the label. A label value can have a maximum of 63 characters.
 Empty values are allowed by GCP. If non-empty, it must start with a lowercase letter,
-contain only lowercase letters, digits, or hyphens, and end with a lowercase letter or digit.
+contain only lowercase letters, digits, underscores, or hyphens, and end with a lowercase letter or digit.
 See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a> for Compute Engine label requirements.</p>
 </td>
 </tr>

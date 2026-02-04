@@ -208,8 +208,8 @@ type GCPBootDiskConfig struct {
 
 // configureGCPBootDisk creates the boot disk configuration.
 func configureGCPBootDisk(bootDiskConfig *hyperv1.GCPBootDisk) GCPBootDiskConfig {
-	diskSizeGB := int64(64)                // Default size
-	diskType := capigcp.PdStandardDiskType // Default type
+	diskSizeGB := int64(64)                     // Default size
+	diskType := capigcp.DiskType("pd-balanced") // Default type (matches API +kubebuilder:default="pd-balanced")
 
 	if bootDiskConfig != nil {
 		if bootDiskConfig.DiskSizeGB != nil && *bootDiskConfig.DiskSizeGB > 0 {
@@ -303,4 +303,3 @@ func configureGCPMaintenanceBehavior(userMaintenance *string, provisioningModel 
 	// Default for standard instances is MIGRATE (live migration)
 	return capigcp.HostMaintenancePolicyMigrate
 }
-
