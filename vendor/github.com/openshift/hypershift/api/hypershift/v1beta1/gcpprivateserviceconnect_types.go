@@ -42,7 +42,7 @@ type DNSZoneStatus struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
-	Name string `json:"name,omitempty"`
+	Name string `json:"name"`
 
 	// records lists the DNS records created in this zone
 	// +optional
