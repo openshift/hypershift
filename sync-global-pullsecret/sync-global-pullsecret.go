@@ -3,6 +3,7 @@ package syncglobalpullsecret
 // sync-global-pullsecret syncs the pull secret from the user provided pull secret in DataPlane and appends it to the HostedCluster PullSecret to be deployed in the nodes of the HostedCluster.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -25,16 +26,30 @@ type syncGlobalPullSecretOptions struct {
 	kubeletConfigJsonPath string
 }
 
-//go:generate ../hack/tools/bin/mockgen -destination=sync-global-pullsecret_mock.go -package=syncglobalpullsecret . dbusConn
+//go:generate ../hack/tools/bin/mockgen -destination=sync-global-pullsecret_mock.go -package=syncglobalpullsecret . dbusConn,KubeletRestarter
 type dbusConn interface {
 	RestartUnit(name string, mode string, ch chan<- string) (int, error)
 	Close()
+}
+
+// KubeletRestarter is an interface for restarting the kubelet service.
+// This allows tests to inject a mock implementation.
+type KubeletRestarter interface {
+	Restart() error
+}
+
+// realKubeletRestarter implements KubeletRestarter using systemd dbus.
+type realKubeletRestarter struct{}
+
+func (r *realKubeletRestarter) Restart() error {
+	return signalKubeletToRestartProcess()
 }
 
 // GlobalPullSecretSyncer handles the synchronization of pull secrets
 type GlobalPullSecretSyncer struct {
 	kubeletConfigJsonPath string
 	log                   logr.Logger
+	kubeletRestarter      KubeletRestarter
 }
 
 const (
@@ -110,6 +125,7 @@ func (o *syncGlobalPullSecretOptions) run(ctx context.Context) error {
 	syncer := &GlobalPullSecretSyncer{
 		kubeletConfigJsonPath: o.kubeletConfigJsonPath,
 		log:                   logger,
+		kubeletRestarter:      &realKubeletRestarter{},
 	}
 
 	// Start the sync loop
@@ -195,16 +211,15 @@ func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 		return fmt.Errorf("failed to read existing file: %w", err)
 	}
 
-	// Preserve trailing newline if it exists in the original file
 	contentToWrite := pullSecretBytes
-	if len(existingContent) > 0 && existingContent[len(existingContent)-1] == '\n' {
-		if len(pullSecretBytes) == 0 || pullSecretBytes[len(pullSecretBytes)-1] != '\n' {
-			contentToWrite = append(pullSecretBytes, '\n')
-		}
-	}
 
-	// If file content is different, write the desired content
-	if string(existingContent) != string(contentToWrite) {
+	// Compare content ignoring trailing newlines to avoid unnecessary restarts
+	// when only the newline format differs
+	existingTrimmed := bytes.TrimRight(existingContent, "\n")
+	newTrimmed := bytes.TrimRight(contentToWrite, "\n")
+
+	// If actual content differs (ignoring trailing newlines), update the file
+	if !bytes.Equal(existingTrimmed, newTrimmed) {
 		s.log.Info("file content is different, updating it")
 		// Save original content for potential rollback
 		originalContent := existingContent
@@ -219,7 +234,7 @@ func (s *GlobalPullSecretSyncer) checkAndFixFile(pullSecretBytes []byte) error {
 		maxRetries := 3
 		var lastErr error
 		for attempt := 1; attempt <= maxRetries; attempt++ {
-			if err := signalKubeletToRestartProcess(); err != nil {
+			if err := s.kubeletRestarter.Restart(); err != nil {
 				lastErr = err
 				if attempt < maxRetries {
 					s.log.Info(fmt.Sprintf("Attempt %d failed, retrying...: %v", attempt, err))
