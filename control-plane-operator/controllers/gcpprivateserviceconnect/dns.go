@@ -22,6 +22,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/dns/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
@@ -36,13 +37,26 @@ const (
 // newDNSClient initializes a Cloud DNS client using GOOGLE_APPLICATION_CREDENTIALS.
 // The environment variable should point to a service account JSON file
 // (typically /etc/gcp/service-account.json mounted from gcp-customer-credentials secret).
+// This uses the same authentication pattern as InitCustomerGCPClient in psc_endpoint_controller.go.
 func newDNSClient(ctx context.Context) (*dns.Service, error) {
 	credFile := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
 	if credFile == "" {
 		return nil, fmt.Errorf("GOOGLE_APPLICATION_CREDENTIALS environment variable not set")
 	}
 
-	return dns.NewService(ctx, option.WithCredentialsFile(credFile))
+	// Verify credentials file exists and is readable
+	if _, err := os.Stat(credFile); err != nil {
+		return nil, fmt.Errorf("credentials file not accessible at %s: %w", credFile, err)
+	}
+
+	// Create Google Cloud client using the WIF credentials file from environment
+	// google.DefaultClient() automatically reads GOOGLE_APPLICATION_CREDENTIALS
+	httpClient, err := google.DefaultClient(ctx, dns.CloudPlatformScope)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Google Cloud client using %s: %w", credFile, err)
+	}
+
+	return dns.NewService(ctx, option.WithHTTPClient(httpClient))
 }
 
 // ensureDNSDot ensures a DNS name ends with a dot (required by Cloud DNS).
