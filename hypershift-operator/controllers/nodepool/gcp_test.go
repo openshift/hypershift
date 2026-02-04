@@ -169,6 +169,58 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 				g := NewWithT(t)
 				g.Expect(spec.Preemptible).To(BeTrue())
 				g.Expect(*spec.OnHostMaintenance).To(Equal(capigcp.HostMaintenancePolicyTerminate))
+				// Preemptible uses the boolean field, not ProvisioningModel
+				g.Expect(spec.ProvisioningModel).To(BeNil())
+			},
+		},
+		{
+			name: "When NodePool has Spot configuration, it should set CAPG ProvisioningModel to Spot",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Arch: hyperv1.ArchitectureAMD64,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPNodePoolPlatform{
+							MachineType:       "n1-standard-2",
+							Zone:              "us-central1-a",
+							ProvisioningModel: ptr.To(hyperv1.GCPProvisioningModelSpot),
+						},
+					},
+				},
+			},
+			hc: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "test-infra-id",
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPPlatformSpec{
+							Project: "test-project",
+							Region:  "us-central1",
+							NetworkConfig: hyperv1.GCPNetworkConfig{
+								PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
+									Name: "test-psc-subnet",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErr: false,
+			validator: func(t *testing.T, spec *capigcp.GCPMachineSpec) {
+				g := NewWithT(t)
+				g.Expect(spec.Preemptible).To(BeFalse())
+				g.Expect(*spec.OnHostMaintenance).To(Equal(capigcp.HostMaintenancePolicyTerminate))
+				// Spot uses the ProvisioningModel field
+				g.Expect(spec.ProvisioningModel).ToNot(BeNil())
+				g.Expect(*spec.ProvisioningModel).To(Equal(capigcp.ProvisioningModelSpot))
 			},
 		},
 		{
@@ -606,6 +658,12 @@ func TestConfigureGCPMaintenanceBehavior(t *testing.T) {
 			name:              "When instance is preemptible with no user setting, it should return terminate policy",
 			userMaintenance:   ptr.To(""),
 			provisioningModel: ptr.To(hyperv1.GCPProvisioningModelPreemptible),
+			expectedBehavior:  capigcp.HostMaintenancePolicyTerminate,
+		},
+		{
+			name:              "When instance is Spot with no user setting, it should return terminate policy",
+			userMaintenance:   ptr.To(""),
+			provisioningModel: ptr.To(hyperv1.GCPProvisioningModelSpot),
 			expectedBehavior:  capigcp.HostMaintenancePolicyTerminate,
 		},
 		{

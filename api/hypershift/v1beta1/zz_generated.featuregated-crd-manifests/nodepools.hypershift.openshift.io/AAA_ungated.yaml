@@ -1458,7 +1458,7 @@ spec:
             - message: Setting Arch to arm64 is only supported for AWS, Azure, Agent,
                 GCP and None
               rule: self.arch != 'arm64' || has(self.platform.aws) || has(self.platform.azure)
-                || has(self.platform.agent) || has(self.platform.gcp) || self.platform.type
+                || has(self.platform.agent) || self.platform.type == 'GCP' || self.platform.type
                 == 'None'
             - message: Both replicas or autoScaling should not be set
               rule: '!has(self.replicas) || !has(self.autoScaling)'

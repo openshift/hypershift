@@ -86,8 +86,8 @@ func gcpMachineTemplateSpec(
 		return nil, fmt.Errorf("failed to resolve GCP image: %w", err)
 	}
 
-	// Configure network placement with PSC subnet
-	subnet, err := resolveGCPSubnet(hcGCPPlatform)
+	// Configure network placement - NodePool subnet takes precedence
+	subnet, err := resolveGCPSubnet(gcpPlatform, hcGCPPlatform)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve GCP subnet: %w", err)
 	}
@@ -108,9 +108,25 @@ func gcpMachineTemplateSpec(
 	// Configure maintenance behavior
 	onHostMaintenance := configureGCPMaintenanceBehavior(gcpPlatform.OnHostMaintenance, gcpPlatform.ProvisioningModel)
 
-	// Determine preemptible setting for CAPG (which still uses boolean)
+	// Determine preemptible setting and provisioning model for CAPG
 	preemptible := gcpPlatform.ProvisioningModel != nil &&
 		*gcpPlatform.ProvisioningModel == hyperv1.GCPProvisioningModelPreemptible
+
+	// Map hypershift provisioning model to CAPG provisioning model
+	// CAPG uses ProvisioningModel for Spot VMs (separate from Preemptible boolean)
+	var provisioningModel *capigcp.ProvisioningModel
+	if gcpPlatform.ProvisioningModel != nil {
+		switch *gcpPlatform.ProvisioningModel {
+		case hyperv1.GCPProvisioningModelSpot:
+			spot := capigcp.ProvisioningModelSpot
+			provisioningModel = &spot
+		case hyperv1.GCPProvisioningModelStandard:
+			standard := capigcp.ProvisioningModelStandard
+			provisioningModel = &standard
+			// For Preemptible, we use the Preemptible boolean field (legacy)
+			// and don't set ProvisioningModel
+		}
+	}
 
 	spec := &capigcp.GCPMachineSpec{
 		InstanceType:          gcpPlatform.MachineType,
@@ -122,6 +138,7 @@ func gcpMachineTemplateSpec(
 		AdditionalLabels:      labels,
 		AdditionalNetworkTags: networkTags,
 		Preemptible:           preemptible,
+		ProvisioningModel:     provisioningModel,
 		OnHostMaintenance:     &onHostMaintenance,
 		RootDiskEncryptionKey: bootDisk.EncryptionKey,
 		// Additional metadata for ignition and identification
@@ -153,12 +170,18 @@ func resolveGCPImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.Relea
 	return image, nil
 }
 
-// resolveGCPSubnet configures the subnet for node placement using PSC subnet.
-func resolveGCPSubnet(hcGCPPlatform *hyperv1.GCPPlatformSpec) (string, error) {
-	// If PrivateServiceConnectSubnet is configured, use it
-	if hcGCPPlatform.NetworkConfig.PrivateServiceConnectSubnet.Name != "" {
+// resolveGCPSubnet configures the subnet for node placement.
+// Priority: NodePool subnet > HostedCluster PSC subnet > "default"
+func resolveGCPSubnet(gcpPlatform *hyperv1.GCPNodePoolPlatform, hcGCPPlatform *hyperv1.GCPPlatformSpec) (string, error) {
+	// NodePool-specified subnet takes precedence
+	if gcpPlatform != nil && gcpPlatform.Subnet != "" {
 		// CAPG will automatically prepend "projects/{project}/regions/{region}/subnetworks/"
 		// so we only provide the subnet name
+		return gcpPlatform.Subnet, nil
+	}
+
+	// Fall back to HostedCluster PrivateServiceConnectSubnet if configured
+	if hcGCPPlatform.NetworkConfig.PrivateServiceConnectSubnet.Name != "" {
 		return hcGCPPlatform.NetworkConfig.PrivateServiceConnectSubnet.Name, nil
 	}
 
@@ -295,8 +318,8 @@ func configureGCPMaintenanceBehavior(userMaintenance *string, provisioningModel 
 		return capigcp.HostMaintenancePolicyMigrate
 	}
 
-	// For preemptible instances, must use TERMINATE
-	if provisioningModel != nil && *provisioningModel == hyperv1.GCPProvisioningModelPreemptible {
+	// For preemptible or spot instances, must use TERMINATE
+	if provisioningModel != nil && (*provisioningModel == hyperv1.GCPProvisioningModelPreemptible || *provisioningModel == hyperv1.GCPProvisioningModelSpot) {
 		return capigcp.HostMaintenancePolicyTerminate
 	}
 
