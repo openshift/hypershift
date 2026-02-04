@@ -7,6 +7,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/api/googleapi"
 )
 
@@ -235,7 +236,8 @@ func TestGenerateZoneNames(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := generateZoneNames(tt.clusterName, tt.baseDomain)
+			result, err := generateZoneNames(tt.clusterName, tt.baseDomain)
+			require.NoError(t, err, "generateZoneNames should not return error for valid inputs")
 
 			assert.Equal(t, tt.expectedHypershiftLocalZone, result.hypershiftLocalZoneName)
 			assert.Equal(t, tt.expectedPublicIngressZone, result.publicIngressZoneName)
@@ -414,7 +416,8 @@ func TestZoneNameLengthConstraints(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := generateZoneNames(tt.clusterName, tt.baseDomain)
+			result, err := generateZoneNames(tt.clusterName, tt.baseDomain)
+			require.NoError(t, err, "generateZoneNames should not return error for valid inputs")
 
 			// All zone names must be <= 63 characters
 			assert.LessOrEqual(t, len(result.hypershiftLocalZoneName), 63,
@@ -432,6 +435,117 @@ func TestZoneNameLengthConstraints(t *testing.T) {
 			assert.NotEmpty(t, result.publicIngressZoneName)
 			assert.NotEmpty(t, result.privateIngressZoneName)
 			assert.NotEmpty(t, result.ingressDNSName)
+		})
+	}
+}
+
+func TestValidateZoneName(t *testing.T) {
+	tests := []struct {
+		name        string
+		zoneName    string
+		expectError bool
+	}{
+		{
+			name:        "When zone name starts with lowercase letter it should be valid",
+			zoneName:    "my-zone",
+			expectError: false,
+		},
+		{
+			name:        "When zone name contains only lowercase letters it should be valid",
+			zoneName:    "myzone",
+			expectError: false,
+		},
+		{
+			name:        "When zone name contains lowercase letters and numbers it should be valid",
+			zoneName:    "my-zone-123",
+			expectError: false,
+		},
+		{
+			name:        "When zone name contains hyphens it should be valid",
+			zoneName:    "my-cluster-hypershift-local",
+			expectError: false,
+		},
+		{
+			name:        "When zone name starts with 'in-' (managed service pattern) it should be valid",
+			zoneName:    "in-cluster-abc123-public",
+			expectError: false,
+		},
+		{
+			name:        "When zone name starts with digit it should be invalid",
+			zoneName:    "123-zone",
+			expectError: true,
+		},
+		{
+			name:        "When zone name starts with hyphen it should be invalid",
+			zoneName:    "-my-zone",
+			expectError: true,
+		},
+		{
+			name:        "When zone name contains uppercase letters it should be invalid",
+			zoneName:    "My-Zone",
+			expectError: true,
+		},
+		{
+			name:        "When zone name contains underscore it should be invalid",
+			zoneName:    "my_zone",
+			expectError: true,
+		},
+		{
+			name:        "When zone name contains dot it should be invalid",
+			zoneName:    "my.zone",
+			expectError: true,
+		},
+		{
+			name:        "When zone name is empty it should be invalid",
+			zoneName:    "",
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateZoneName(tt.zoneName)
+			if tt.expectError {
+				assert.Error(t, err, "validateZoneName should return error for invalid zone name: %s", tt.zoneName)
+			} else {
+				assert.NoError(t, err, "validateZoneName should not return error for valid zone name: %s", tt.zoneName)
+			}
+		})
+	}
+}
+
+func TestGenerateZoneNamesValidationErrors(t *testing.T) {
+	tests := []struct {
+		name          string
+		clusterName   string
+		baseDomain    string
+		errorContains string
+	}{
+		{
+			name:          "When cluster name starts with digit it should return error",
+			clusterName:   "123-cluster",
+			baseDomain:    "example.com",
+			errorContains: "invalid hypershift.local zone name",
+		},
+		{
+			name:          "When cluster name starts with hyphen it should return error",
+			clusterName:   "-cluster",
+			baseDomain:    "example.com",
+			errorContains: "invalid hypershift.local zone name",
+		},
+		{
+			name:          "When base domain starts with digit it should return error for ingress zones",
+			clusterName:   "my-cluster",
+			baseDomain:    "123.example.com",
+			errorContains: "invalid public ingress zone name",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := generateZoneNames(tt.clusterName, tt.baseDomain)
+			require.Error(t, err, "generateZoneNames should return error")
+			assert.Contains(t, err.Error(), tt.errorContains)
 		})
 	}
 }

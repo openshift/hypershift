@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -306,10 +307,19 @@ func createARecord(ctx context.Context, svc *dns.Service, projectID, zoneName, r
 	})
 }
 
-// truncateName truncates a name to fit GCP DNS zone naming constraints:
-// - Maximum 63 characters
-// - Must contain only lowercase letters, numbers, and hyphens
-// - Must start with a letter
+// gcpZoneNameRegexp validates GCP Cloud DNS managed zone names.
+// Must start with a lowercase letter and contain only lowercase letters, numbers, and hyphens.
+var gcpZoneNameRegexp = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+
+// validateZoneName validates that a name meets GCP Cloud DNS managed zone naming constraints.
+func validateZoneName(name string) error {
+	if !gcpZoneNameRegexp.MatchString(name) {
+		return fmt.Errorf("zone name %q is invalid: must start with a lowercase letter and contain only lowercase letters, numbers, and hyphens", name)
+	}
+	return nil
+}
+
+// truncateName truncates a name to the specified maximum length.
 func truncateName(name string, maxLen int) string {
 	if len(name) <= maxLen {
 		return name
@@ -318,7 +328,8 @@ func truncateName(name string, maxLen int) string {
 }
 
 // generateZoneNames generates Cloud DNS zone names and DNS names from cluster name and base domain.
-func generateZoneNames(clusterName, baseDomain string) zoneNames {
+// Returns an error if the generated zone names would violate GCP naming constraints.
+func generateZoneNames(clusterName, baseDomain string) (zoneNames, error) {
 	// Convert base domain to zone name format (dots -> hyphens)
 	baseZoneName := strings.ReplaceAll(baseDomain, ".", "-")
 
@@ -327,12 +338,25 @@ func generateZoneNames(clusterName, baseDomain string) zoneNames {
 	maxBaseNameLen := 63 - 8
 	baseZoneName = truncateName(baseZoneName, maxBaseNameLen)
 
-	return zoneNames{
+	names := zoneNames{
 		hypershiftLocalZoneName: truncateName(fmt.Sprintf("%s-hypershift-local", clusterName), 63),
 		publicIngressZoneName:   truncateName(fmt.Sprintf("%s-public", baseZoneName), 63),
 		privateIngressZoneName:  truncateName(fmt.Sprintf("%s-private", baseZoneName), 63),
 		ingressDNSName:          ensureDNSDot(baseDomain),
 	}
+
+	// Validate all generated zone names
+	if err := validateZoneName(names.hypershiftLocalZoneName); err != nil {
+		return zoneNames{}, fmt.Errorf("invalid hypershift.local zone name derived from cluster %q: %w", clusterName, err)
+	}
+	if err := validateZoneName(names.publicIngressZoneName); err != nil {
+		return zoneNames{}, fmt.Errorf("invalid public ingress zone name derived from baseDomain %q: %w", baseDomain, err)
+	}
+	if err := validateZoneName(names.privateIngressZoneName); err != nil {
+		return zoneNames{}, fmt.Errorf("invalid private ingress zone name derived from baseDomain %q: %w", baseDomain, err)
+	}
+
+	return names, nil
 }
 
 // DNSSetupResult contains the results of setting up cluster DNS zones.
@@ -519,7 +543,10 @@ func ReconcileDNS(ctx context.Context, hcp *hyperv1.HostedControlPlane, pscEndpo
 	vpcNetwork := gcpSpec.NetworkConfig.Network.Name
 
 	// Generate zone names
-	names := generateZoneNames(clusterName, baseDomain)
+	names, err := generateZoneNames(clusterName, baseDomain)
+	if err != nil {
+		return nil, err
+	}
 
 	// Construct VPC network URL
 	vpcNetworkURL := fmt.Sprintf(
@@ -608,7 +635,10 @@ func DeleteDNS(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 	projectID := gcpSpec.Project
 
 	// Generate zone names
-	names := generateZoneNames(clusterName, baseDomain)
+	names, err := generateZoneNames(clusterName, baseDomain)
+	if err != nil {
+		return err
+	}
 
 	// Create DNS client (reused for all operations)
 	svc, err := newDNSClient(ctx)
