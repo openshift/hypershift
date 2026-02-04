@@ -136,8 +136,8 @@ github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.10.13 h1:eWo
 github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.10.13/go.mod h1:x5t8Ve0J7JK9VHKSPSRAdBrWAgr/5hH3UeCFMLoyUGQ=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.17 h1:RuNSMoozM8oXlgLG/n6WLaFGoea7/CddrCfIiSA+xdY=
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.17/go.mod h1:F2xxQ9TZz5gDWsclCtPQscGpP0VUOc8RqgFM3vDENmU=
-github.com/aws/aws-sdk-go-v2/service/pricing v1.32.16 h1:V6lgrFRz1B7+OE6NUMrccUBVSiSF0B4uwkldeWAGvnU=
-github.com/aws/aws-sdk-go-v2/service/pricing v1.32.16/go.mod h1:27xFxqZ5sSWdgfXEM8ixtw0qApX2bjsHNiJMbHwNDhc=
+github.com/aws/aws-sdk-go-v2/service/pricing v1.40.11 h1:FBTRfFPRVua0y0izPAmUHOh2fAYtuz1ZkN/LUILN5Aw=
+github.com/aws/aws-sdk-go-v2/service/pricing v1.40.11/go.mod h1:XFV2Em3Hn/2xirmmjy0JNg0AB3dpdNLGzwsnJkJycKs=
 github.com/aws/aws-sdk-go-v2/service/signin v1.0.5 h1:VrhDvQib/i0lxvr3zqlUwLwJP4fpmpyD9wYG1vfSu+Y=
 github.com/aws/aws-sdk-go-v2/service/signin v1.0.5/go.mod h1:k029+U8SY30/3/ras4G/Fnv/b88N4mAfliNn08Dem4M=
 github.com/aws/aws-sdk-go-v2/service/sqs v1.38.8 h1:80dpSqWMwx2dAm30Ib7J6ucz1ZHfiv5OCRwN/EnCOXQ=

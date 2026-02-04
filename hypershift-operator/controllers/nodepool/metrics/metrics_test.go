@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"testing"
@@ -8,13 +9,11 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/pricing"
-	"github.com/aws/aws-sdk-go/service/pricing/pricingiface"
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2typesv2 "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	pricingv2 "github.com/aws/aws-sdk-go-v2/service/pricing"
+	"github.com/aws/smithy-go"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,46 +33,73 @@ var (
 	ignoreUnexportedDto = cmpopts.IgnoreUnexported(dto.MetricFamily{}, dto.Metric{}, dto.LabelPair{}, dto.Gauge{})
 )
 
+// awsError creates a smithy.APIError compatible error
+type awsError struct {
+	code    string
+	message string
+	fault   smithy.ErrorFault
+}
+
+func (e *awsError) Error() string {
+	return fmt.Sprintf("%s: %s", e.code, e.message)
+}
+
+func (e *awsError) ErrorCode() string {
+	return e.code
+}
+
+func (e *awsError) ErrorMessage() string {
+	return e.message
+}
+
+func (e *awsError) ErrorFault() smithy.ErrorFault {
+	return e.fault
+}
+
+func newAWSError(code, message string) error {
+	return &awsError{
+		code:    code,
+		message: message,
+		fault:   smithy.FaultUnknown,
+	}
+}
+
 type nodePoolParams struct {
 	availableNodesCount int32
 	ec2InstanceType     string
 }
 
 type Ec2ClientMock struct {
-	ec2iface.EC2API
-
-	MockedDescribeInstanceTypesFunc func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error)
-	ResponseInstanceTypes           []*ec2.InstanceTypeInfo
+	MockedDescribeInstanceTypesFunc func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error)
+	ResponseInstanceTypes           []ec2typesv2.InstanceTypeInfo
 	ResponseError                   error
 }
 
-func initDescribeInstanceTypesOutput(instanceTypeInfo []*ec2.InstanceTypeInfo) *ec2.DescribeInstanceTypesOutput {
-	return &ec2.DescribeInstanceTypesOutput{
+func initDescribeInstanceTypesOutput(instanceTypeInfo []ec2typesv2.InstanceTypeInfo) *ec2v2.DescribeInstanceTypesOutput {
+	return &ec2v2.DescribeInstanceTypesOutput{
 		InstanceTypes: instanceTypeInfo,
 	}
 }
 
-func initInstanceTypeInfo(instanceType string, vCpusCount int64) *ec2.InstanceTypeInfo {
-	return &ec2.InstanceTypeInfo{
-		InstanceType: ptr.To[string](instanceType),
-		VCpuInfo: &ec2.VCpuInfo{
-			DefaultVCpus: ptr.To[int64](vCpusCount),
+func initInstanceTypeInfo(instanceType string, vCpusCount int32) ec2typesv2.InstanceTypeInfo {
+	return ec2typesv2.InstanceTypeInfo{
+		InstanceType: ec2typesv2.InstanceType(instanceType),
+		VCpuInfo: &ec2typesv2.VCpuInfo{
+			DefaultVCpus: ptr.To[int32](vCpusCount),
 		},
 	}
 }
 
-func (c *Ec2ClientMock) DescribeInstanceTypes(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-	return c.MockedDescribeInstanceTypesFunc(input)
+func (c *Ec2ClientMock) DescribeInstanceTypes(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+	return c.MockedDescribeInstanceTypesFunc(ctx, input, optFns...)
 }
 
 type PricingClientMock struct {
-	pricingiface.PricingAPI
-
-	MockedGetProductsWithContextFunc func(input *pricing.GetProductsInput) (*pricing.GetProductsOutput, error)
+	MockedGetProductsFunc func(ctx context.Context, input *pricingv2.GetProductsInput, optFns ...func(*pricingv2.Options)) (*pricingv2.GetProductsOutput, error)
 }
 
-func (m *PricingClientMock) GetProductsWithContext(context aws.Context, input *pricing.GetProductsInput, options ...request.Option) (*pricing.GetProductsOutput, error) {
-	return m.MockedGetProductsWithContextFunc(input)
+func (m *PricingClientMock) GetProducts(ctx context.Context, input *pricingv2.GetProductsInput, optFns ...func(*pricingv2.Options)) (*pricingv2.GetProductsOutput, error) {
+	return m.MockedGetProductsFunc(ctx, input, optFns...)
 }
 
 func TestReportVCpusCountByHCluster(t *testing.T) {
@@ -82,8 +108,8 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 		npsParams []nodePoolParams
 		configMap *corev1.ConfigMap
 
-		MockedEC2DescribeInstanceTypesFunc      func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error)
-		MockedPricingGetProductsWithContextFunc func(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error)
+		MockedEC2DescribeInstanceTypesFunc func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error)
+		MockedGetProductsFunc              func(ctx context.Context, input *pricingv2.GetProductsInput, optFns ...func(*pricingv2.Options)) (*pricingv2.GetProductsOutput, error)
 
 		// expected results
 		expectedVCpusCount            float64
@@ -99,8 +125,8 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 0, ec2InstanceType: "m5.xlarge"},
 			},
-			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-				return initDescribeInstanceTypesOutput([]*ec2.InstanceTypeInfo{}), nil
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{}), nil
 			},
 			expectedVCpusCount: 0,
 		},
@@ -109,8 +135,8 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "m5.xlarge"},
 			},
-			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-				return initDescribeInstanceTypesOutput([]*ec2.InstanceTypeInfo{
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
 					initInstanceTypeInfo("m5.xlarge", 4)}), nil
 			},
 			expectedVCpusCount: 8,
@@ -121,8 +147,8 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},
 				{availableNodesCount: 2, ec2InstanceType: "m5.2xlarge"},
 			},
-			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-				return initDescribeInstanceTypesOutput([]*ec2.InstanceTypeInfo{
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
 					initInstanceTypeInfo("m5.2xlarge", 8)}), nil
 			},
 			expectedVCpusCount: 32,
@@ -133,11 +159,11 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "hello_world"},
 			},
-			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-				return &ec2.DescribeInstanceTypesOutput{}, nil
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return &ec2v2.DescribeInstanceTypesOutput{}, nil
 			},
-			MockedPricingGetProductsWithContextFunc: func(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error) {
-				return &pricing.GetProductsOutput{}, fmt.Errorf("an error dude")
+			MockedGetProductsFunc: func(ctx context.Context, input *pricingv2.GetProductsInput, optFns ...func(*pricingv2.Options)) (*pricingv2.GetProductsOutput, error) {
+				return &pricingv2.GetProductsOutput{}, fmt.Errorf("an error dude")
 			},
 			expectedVCpusCount:            -1,
 			expectedVCpusCountErrorReason: unknownInstanceTypeErrorReason,
@@ -147,11 +173,11 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "dream-instance.xlarge"},
 			},
-			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-				return initDescribeInstanceTypesOutput([]*ec2.InstanceTypeInfo{
-					initInstanceTypeInfo("dream-instance.xlarge", 4)}), awserr.New("InvalidInstanceType", "don't know the instance", nil)
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
+					initInstanceTypeInfo("dream-instance.xlarge", 4)}), newAWSError("InvalidInstanceType", "don't know the instance")
 			},
-			MockedPricingGetProductsWithContextFunc: func(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error) {
+			MockedGetProductsFunc: func(ctx context.Context, input *pricingv2.GetProductsInput, optFns ...func(*pricingv2.Options)) (*pricingv2.GetProductsOutput, error) {
 				return nil, fmt.Errorf("No man I don't know it")
 			},
 
@@ -164,16 +190,14 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "dream-instance.xlarge"},
 			},
-			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-				return initDescribeInstanceTypesOutput([]*ec2.InstanceTypeInfo{
-					initInstanceTypeInfo("dream-instance.xlarge", 4)}), awserr.New("InvalidInstanceType", "don't know the instance", nil)
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
+					initInstanceTypeInfo("dream-instance.xlarge", 4)}), newAWSError("InvalidInstanceType", "don't know the instance")
 			},
-			MockedPricingGetProductsWithContextFunc: func(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error) {
-				return &pricing.GetProductsOutput{
-					PriceList: []aws.JSONValue{
-						{
-							"bad": "data",
-						},
+			MockedGetProductsFunc: func(ctx context.Context, input *pricingv2.GetProductsInput, optFns ...func(*pricingv2.Options)) (*pricingv2.GetProductsOutput, error) {
+				return &pricingv2.GetProductsOutput{
+					PriceList: []string{
+						`{"bad": "data"}`,
 					},
 				}, nil
 			},
@@ -185,18 +209,14 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "dream-instance.xlarge"},
 			},
-			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-				return initDescribeInstanceTypesOutput([]*ec2.InstanceTypeInfo{
-					initInstanceTypeInfo("dream-instance.xlarge", 4)}), awserr.New("InvalidInstanceType", "don't know the instance", nil)
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
+					initInstanceTypeInfo("dream-instance.xlarge", 4)}), newAWSError("InvalidInstanceType", "don't know the instance")
 			},
-			MockedPricingGetProductsWithContextFunc: func(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error) {
-				return &pricing.GetProductsOutput{
-					PriceList: []aws.JSONValue{
-						{
-							"product": aws.JSONValue{
-								"attributes": "foo",
-							},
-						},
+			MockedGetProductsFunc: func(ctx context.Context, input *pricingv2.GetProductsInput, optFns ...func(*pricingv2.Options)) (*pricingv2.GetProductsOutput, error) {
+				return &pricingv2.GetProductsOutput{
+					PriceList: []string{
+						`{"product": {"attributes": "foo"}}`,
 					},
 				}, nil
 			},
@@ -208,12 +228,12 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "dream-instance.xlarge"},
 			},
-			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-				return initDescribeInstanceTypesOutput([]*ec2.InstanceTypeInfo{
-					initInstanceTypeInfo("dream-instance.xlarge", 4)}), awserr.New("InvalidInstanceType", "don't know the instance", nil)
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
+					initInstanceTypeInfo("dream-instance.xlarge", 4)}), newAWSError("InvalidInstanceType", "don't know the instance")
 			},
-			MockedPricingGetProductsWithContextFunc: func(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error) {
-				return &pricing.GetProductsOutput{
+			MockedGetProductsFunc: func(ctx context.Context, input *pricingv2.GetProductsInput, optFns ...func(*pricingv2.Options)) (*pricingv2.GetProductsOutput, error) {
+				return &pricingv2.GetProductsOutput{
 					PriceList: nil,
 				}, nil
 			},
@@ -225,22 +245,15 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "i3.metal"},
 			},
-			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-				return nil, awserr.New("InvalidInstanceType", "don't know the instance", nil)
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return nil, newAWSError("InvalidInstanceType", "don't know the instance")
 			},
-			MockedPricingGetProductsWithContextFunc: func(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error) {
-				return &pricing.GetProductsOutput{
-					FormatVersion: ptr.To("aws_v1"),
-					NextToken:     ptr.To("AAMA-TOKEN"),
-					PriceList: []aws.JSONValue{
-						{
-							"product": aws.JSONValue{
-								"attributes": aws.JSONValue{
-									"instanceType": "i3.metal",
-									"vcpu":         "should be a number",
-								},
-							},
-						},
+			MockedGetProductsFunc: func(ctx context.Context, input *pricingv2.GetProductsInput, optFns ...func(*pricingv2.Options)) (*pricingv2.GetProductsOutput, error) {
+				return &pricingv2.GetProductsOutput{
+					FormatVersion: awsv2.String("aws_v1"),
+					NextToken:     awsv2.String("AAMA-TOKEN"),
+					PriceList: []string{
+						`{"product": {"attributes": {"instanceType": "i3.metal", "vcpu": "should be a number"}}}`,
 					}}, nil
 			},
 			expectedVCpusCount:            -1,
@@ -251,22 +264,15 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "i3.metal"},
 			},
-			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-				return nil, awserr.New("InvalidInstanceType", "don't know the instance", nil)
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return nil, newAWSError("InvalidInstanceType", "don't know the instance")
 			},
-			MockedPricingGetProductsWithContextFunc: func(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error) {
-				return &pricing.GetProductsOutput{
-					FormatVersion: ptr.To("aws_v1"),
-					NextToken:     ptr.To("AAMA-TOKEN"),
-					PriceList: []aws.JSONValue{
-						{
-							"product": aws.JSONValue{
-								"attributes": aws.JSONValue{
-									"instanceType": "i3.metal",
-									"vcpu":         "72",
-								},
-							},
-						},
+			MockedGetProductsFunc: func(ctx context.Context, input *pricingv2.GetProductsInput, optFns ...func(*pricingv2.Options)) (*pricingv2.GetProductsOutput, error) {
+				return &pricingv2.GetProductsOutput{
+					FormatVersion: awsv2.String("aws_v1"),
+					NextToken:     awsv2.String("AAMA-TOKEN"),
+					PriceList: []string{
+						`{"product": {"attributes": {"instanceType": "i3.metal", "vcpu": "72"}}}`,
 					}}, nil
 			},
 			expectedVCpusCount:            144,
@@ -277,11 +283,11 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			npsParams: []nodePoolParams{
 				{availableNodesCount: 2, ec2InstanceType: "dream-instance.xlarge"},
 			},
-			MockedEC2DescribeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-				return initDescribeInstanceTypesOutput([]*ec2.InstanceTypeInfo{
-					initInstanceTypeInfo("dream-instance.xlarge", 4)}), awserr.New("InvalidInstanceType", "don't know the instance", nil)
+			MockedEC2DescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
+					initInstanceTypeInfo("dream-instance.xlarge", 4)}), newAWSError("InvalidInstanceType", "don't know the instance")
 			},
-			MockedPricingGetProductsWithContextFunc: func(*pricing.GetProductsInput) (*pricing.GetProductsOutput, error) {
+			MockedGetProductsFunc: func(ctx context.Context, input *pricingv2.GetProductsInput, optFns ...func(*pricingv2.Options)) (*pricingv2.GetProductsOutput, error) {
 				return nil, fmt.Errorf("Nice try, mate!")
 			},
 			configMap: &corev1.ConfigMap{
@@ -323,7 +329,7 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			ec2MockedClient.MockedDescribeInstanceTypesFunc = tc.MockedEC2DescribeInstanceTypesFunc
 
 			pricingMockedClient := &PricingClientMock{}
-			pricingMockedClient.MockedGetProductsWithContextFunc = tc.MockedPricingGetProductsWithContextFunc
+			pricingMockedClient.MockedGetProductsFunc = tc.MockedGetProductsFunc
 
 			for k, npParam := range tc.npsParams {
 				nodePool := &hyperv1.NodePool{

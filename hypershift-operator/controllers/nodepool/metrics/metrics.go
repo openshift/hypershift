@@ -12,12 +12,12 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/conditions"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/pricing"
-	"github.com/aws/aws-sdk-go/service/pricing/pricingiface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/aws-sdk-go-v2/service/pricing"
+	pricingtypes "github.com/aws/aws-sdk-go-v2/service/pricing/types"
+	"github.com/aws/smithy-go"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -138,8 +138,8 @@ var (
 
 type nodePoolsMetricsCollector struct {
 	client.Client
-	ec2Client     ec2iface.EC2API
-	pricingClient pricingiface.PricingAPI
+	ec2Client     EC2API
+	pricingClient PricingAPI
 	clock         clock.Clock
 
 	ec2InstanceTypeToVCpusCount map[string]int32
@@ -149,7 +149,17 @@ type nodePoolsMetricsCollector struct {
 	lastCollectTime time.Time
 }
 
-func createNodePoolsMetricsCollector(client client.Client, ec2Client ec2iface.EC2API, pricingClient pricingiface.PricingAPI, clock clock.Clock) prometheus.Collector {
+// EC2API defines the interface for EC2 operations needed by metrics collector
+type EC2API interface {
+	DescribeInstanceTypes(ctx context.Context, params *ec2.DescribeInstanceTypesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstanceTypesOutput, error)
+}
+
+// PricingAPI defines the interface for Pricing operations needed by metrics collector
+type PricingAPI interface {
+	GetProducts(ctx context.Context, params *pricing.GetProductsInput, optFns ...func(*pricing.Options)) (*pricing.GetProductsOutput, error)
+}
+
+func createNodePoolsMetricsCollector(client client.Client, ec2Client EC2API, pricingClient PricingAPI, clock clock.Clock) prometheus.Collector {
 	return &nodePoolsMetricsCollector{
 		Client:                      client,
 		ec2Client:                   ec2Client,
@@ -165,7 +175,7 @@ func createNodePoolsMetricsCollector(client client.Client, ec2Client ec2iface.EC
 	}
 }
 
-func CreateAndRegisterNodePoolsMetricsCollector(client client.Client, ec2Client ec2iface.EC2API, pricingClient pricingiface.PricingAPI) prometheus.Collector {
+func CreateAndRegisterNodePoolsMetricsCollector(client client.Client, ec2Client EC2API, pricingClient PricingAPI) prometheus.Collector {
 	collector := createNodePoolsMetricsCollector(client, ec2Client, pricingClient, clock.RealClock{})
 
 	metrics.Registry.MustRegister(collector)
@@ -229,20 +239,20 @@ var (
 	errRosaCPUsInstanceTypesConfigNotFound = errors.New(rosaCPUsInstanceTypesConfigNotFoundErrorReason)
 )
 
-func extractCPUFromInstanceTypeNameViaPricingAPI(instanceTypeName string, pricingClient pricingiface.PricingAPI) (int64, error) {
-	context, cancel := context.WithTimeout(context.Background(), time.Duration(time.Second*5))
+func extractCPUFromInstanceTypeNameViaPricingAPI(instanceTypeName string, pricingClient PricingAPI) (int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(time.Second*5))
 	defer cancel()
 	pricingInput := &pricing.GetProductsInput{
 		ServiceCode: aws.String("AmazonEC2"),
-		Filters: []*pricing.Filter{
+		Filters: []pricingtypes.Filter{
 			{
-				Type:  aws.String("TERM_MATCH"),
+				Type:  pricingtypes.FilterTypeTermMatch,
 				Field: aws.String("instanceType"),
 				Value: aws.String(instanceTypeName),
 			},
 		},
 	}
-	pricingResult, err := pricingClient.GetProductsWithContext(context, pricingInput)
+	pricingResult, err := pricingClient.GetProducts(ctx, pricingInput)
 	if err != nil {
 		ctrllog.Log.Error(errors.New(failedToCallAWSErrorReason),
 			fmt.Sprintf(" failed to call AWS to resolve the number of vCpus while querying the following EC2 instance type %s: %v", instanceTypeName, err))
@@ -251,26 +261,21 @@ func extractCPUFromInstanceTypeNameViaPricingAPI(instanceTypeName string, pricin
 	if pricingResult == nil || len(pricingResult.PriceList) == 0 {
 		return -1, errors.New(unexpectedAWSOutputErrorReason)
 	}
-	pricingJSON, err := json.Marshal(pricingResult)
-	if err != nil {
-		ctrllog.Log.Error(errors.New(unableToMarshalPricingDataErrorReason),
-			fmt.Sprintf("unable to marshal pricing data for instance %s: %v", instanceTypeName, err))
-		return -1, errors.New(unableToMarshalPricingDataErrorReason)
-	}
 
-	var pricingData PricingDataInstance
-	if err := json.Unmarshal(pricingJSON, &pricingData); err != nil {
-		ctrllog.Log.Error(errors.New(unableToUnMarshalPricingDataErrorReason),
-			fmt.Sprintf("unable to unmarshal pricing data for instance %s: %v", instanceTypeName, err))
-		return -1, errors.New(unableToUnMarshalPricingDataErrorReason)
-	}
-	for _, pd := range pricingData.PriceList {
-		if pd.Product.Attributes.VCPU != "" {
-			value, err := strconv.ParseInt(pd.Product.Attributes.VCPU, 10, 64)
+	// In AWS SDK v2, PriceList is []string where each string is a JSON object
+	for _, priceItemJSON := range pricingResult.PriceList {
+		var priceItem PriceItemInstance
+		if err := json.Unmarshal([]byte(priceItemJSON), &priceItem); err != nil {
+			ctrllog.Log.Error(errors.New(unableToUnMarshalPricingDataErrorReason),
+				fmt.Sprintf("unable to unmarshal pricing item for instance %s: %v", instanceTypeName, err))
+			continue // Try next item
+		}
+		if priceItem.Product.Attributes.VCPU != "" {
+			value, err := strconv.ParseInt(priceItem.Product.Attributes.VCPU, 10, 64)
 			if err != nil {
 				ctrllog.Log.Error(errors.New(unableToUnMarshalPricingDataErrorReason),
 					fmt.Sprintf("couldn't parse VCPU data for instance %s: %v", instanceTypeName, err))
-				return -1, errors.New(unableToUnMarshalPricingDataErrorReason)
+				continue // Try next item
 			}
 			return value, nil
 		}
@@ -278,16 +283,20 @@ func extractCPUFromInstanceTypeNameViaPricingAPI(instanceTypeName string, pricin
 	return -1, errors.New(unknownInstanceTypeErrorReason) // unknown instance type
 }
 
-func extractCPUFromInstanceTypeNameViaEC2API(instanceTypeName string, ec2Client ec2iface.EC2API) (int64, error) {
+func extractCPUFromInstanceTypeNameViaEC2API(instanceTypeName string, ec2Client EC2API) (int64, error) {
 	if ec2Client == nil {
 		return -1, errors.New(noAWSEC2ClientErrorReason)
 	}
 
-	ec2InstanceTypes, err := ec2Client.DescribeInstanceTypes(&ec2.DescribeInstanceTypesInput{
-		InstanceTypes: []*string{aws.String(instanceTypeName)},
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(time.Second*5))
+	defer cancel()
+
+	ec2InstanceTypes, err := ec2Client.DescribeInstanceTypes(ctx, &ec2.DescribeInstanceTypesInput{
+		InstanceTypes: []ec2types.InstanceType{ec2types.InstanceType(instanceTypeName)},
 	})
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok && aerr.Code() == "InvalidInstanceType" {
+		var apiErr smithy.APIError
+		if errors.As(err, &apiErr) && apiErr.ErrorCode() == "InvalidInstanceType" {
 			return -1, errors.New(unknownInstanceTypeErrorReason)
 		}
 		return -1, errors.New(failedToCallAWSErrorReason)
@@ -300,7 +309,7 @@ func extractCPUFromInstanceTypeNameViaEC2API(instanceTypeName string, ec2Client 
 		return -1, errors.New(unexpectedAWSOutputErrorReason)
 	}
 
-	return *ec2InstanceTypes.InstanceTypes[0].VCpuInfo.DefaultVCpus, nil
+	return int64(*ec2InstanceTypes.InstanceTypes[0].VCpuInfo.DefaultVCpus), nil
 }
 
 func extractCPUFromInstanceTypeNameViaConfigMap(instanceTypeName string, client client.Client) (int64, error) {
@@ -342,7 +351,7 @@ func logErr(err error, instanceTypeName string) {
 	}
 }
 
-func extractCPUFromInstanceTypeName(instanceTypeName string, ec2Client ec2iface.EC2API, pricingClient pricingiface.PricingAPI, client client.Client) (int64, error) {
+func extractCPUFromInstanceTypeName(instanceTypeName string, ec2Client EC2API, pricingClient PricingAPI, client client.Client) (int64, error) {
 
 	value, err := extractCPUFromInstanceTypeNameViaEC2API(instanceTypeName, ec2Client)
 	if err == nil {
