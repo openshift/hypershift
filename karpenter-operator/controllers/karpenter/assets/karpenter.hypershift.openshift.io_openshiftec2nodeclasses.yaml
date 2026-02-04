@@ -53,7 +53,9 @@ spec:
                   are assigned to instances that are launched with the nodeclass.
                 type: boolean
               blockDeviceMappings:
-                description: BlockDeviceMappings to be applied to provisioned nodes.
+                description: |-
+                  BlockDeviceMappings to be applied to provisioned nodes.
+                  For OpenShift nodes, a default root volume size of 120Gi and type gp3 is set if no blockDeviceMapping overrides are specified.
                 items:
                   properties:
                     deviceName:
