@@ -2,7 +2,7 @@ module github.com/openshift/hypershift/contrib/gomaxprocs-webhook
 
 go 1.24
 
-toolchain go1.24.0
+toolchain go1.25.7
 
 require (
 	github.com/go-logr/logr v1.4.2
