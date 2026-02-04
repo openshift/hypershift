@@ -3,9 +3,11 @@
 // This package is designed for use in Kubernetes reconciliation loops and follows
 // idempotent patterns. All operations can be called repeatedly with the same result.
 //
-// Main entry points:
+// Main entry point:
 //   - ReconcileDNS: Reconciles DNS zones and records (called from PSC controller)
-//   - DeleteDNS: Deletes DNS zones (called from PSC controller finalizer)
+//
+// DNS cleanup is handled by the cleanupDNS method in psc_endpoint_controller.go,
+// which uses zone names stored in the GCPPrivateServiceConnect status.
 //
 // Authentication:
 // All functions use GOOGLE_APPLICATION_CREDENTIALS environment variable to
@@ -602,68 +604,4 @@ func ReconcileDNS(ctx context.Context, hcp *hyperv1.HostedControlPlane, pscEndpo
 		PublicIngressCreatedRecords:   publicIngressCreatedRecords,
 		PrivateIngressCreatedRecords:  []string{}, // Currently no records created in private zone
 	}, nil
-}
-
-// DeleteDNS deletes DNS zones and records created for a cluster.
-// This should be called from the PSC controller finalizer when deleting a cluster.
-//
-// This function is idempotent and can be called multiple times safely.
-// It will skip zones that don't exist (already deleted or never created).
-//
-// Note: Since DNS zones are always created by the operator in the current
-// implementation, this function always attempts to delete them.
-//
-// Parameters:
-//   - ctx: Context for the operation
-//   - hcp: HostedControlPlane CR containing cluster configuration
-//
-// Returns:
-//   - error: Any error encountered during deletion (ignores not found errors)
-func DeleteDNS(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	if hcp.Spec.Platform.GCP == nil {
-		return nil // Nothing to clean up
-	}
-
-	gcpSpec := hcp.Spec.Platform.GCP
-
-	if hcp.Spec.DNS.BaseDomain == "" || gcpSpec.Project == "" {
-		return nil // Can't determine what to delete
-	}
-
-	clusterName := hcp.Name
-	baseDomain := hcp.Spec.DNS.BaseDomain
-	projectID := gcpSpec.Project
-
-	// Generate zone names
-	names, err := generateZoneNames(clusterName, baseDomain)
-	if err != nil {
-		return err
-	}
-
-	// Create DNS client (reused for all operations)
-	svc, err := newDNSClient(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Delete all zones (errors are ignored if zones don't exist)
-	var errs []error
-
-	if err := deleteZone(ctx, svc, projectID, names.hypershiftLocalZoneName); err != nil {
-		errs = append(errs, fmt.Errorf("failed to delete hypershift.local zone: %w", err))
-	}
-
-	if err := deleteZone(ctx, svc, projectID, names.publicIngressZoneName); err != nil {
-		errs = append(errs, fmt.Errorf("failed to delete public ingress zone: %w", err))
-	}
-
-	if err := deleteZone(ctx, svc, projectID, names.privateIngressZoneName); err != nil {
-		errs = append(errs, fmt.Errorf("failed to delete private ingress zone: %w", err))
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("DNS cleanup errors: %v", errs)
-	}
-
-	return nil
 }
