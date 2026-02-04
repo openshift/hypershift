@@ -108,7 +108,7 @@ func TestValidateDeploymentModelFlags(t *testing.T) {
 				// Verify the error mentions either mutual exclusion or missing configuration
 				g.Expect(err.Error()).To(SatisfyAny(
 					ContainSubstring("mutually exclusive"),
-					ContainSubstring("at least one identity configuration must be provided"),
+					ContainSubstring("--workload-identities-file is required"),
 				), "Error should mention validation failure: %s", test.description)
 			} else {
 				g.Expect(err).To(BeNil(), test.description)

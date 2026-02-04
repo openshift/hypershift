@@ -338,9 +338,7 @@ func (o *CreateInfraOptions) validateDeploymentModelFlags() error {
 		o.WorkloadIdentitiesFile != ""
 
 	if !hasAnyIdentityConfig {
-		return fmt.Errorf("at least one identity configuration must be provided:\n" +
-			"  - For ARO HCP: use --managed-identities-file and --data-plane-identities-file\n" +
-			"  - For self-managed Azure: use --workload-identities-file (created with 'hypershift create iam azure')")
+		return fmt.Errorf("--workload-identities-file is required (created with 'hypershift create iam azure')")
 	}
 
 	return nil

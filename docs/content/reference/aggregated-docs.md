@@ -3,7 +3,7 @@
 This file contains all HyperShift documentation aggregated into a single file
 for use with AI tools like NotebookLM.
 
-Total documents: 258
+Total documents: 260
 
 ---
 
