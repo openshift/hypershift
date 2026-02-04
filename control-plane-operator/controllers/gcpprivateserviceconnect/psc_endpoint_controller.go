@@ -8,13 +8,18 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+
 	"github.com/openshift/hypershift/support/upsert"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/util/workqueue"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -33,6 +38,7 @@ import (
 const (
 	pscEndpointFinalizer               = "hypershift.openshift.io/gcp-psc-customer"
 	pscEndpointDeletionRequeueDuration = 5 * time.Second // Match AWS pattern
+	externalPrivateServiceLabelGCP     = "hypershift.openshift.io/gcp-psc-external-private-svc"
 
 	// gcpAPITimeout is the timeout for individual GCP API calls to prevent hung reconcilers.
 	// GCP SDK has connection-level timeouts (dial: 30s, TLS: 10s) but no overall request timeout.
@@ -226,7 +232,236 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 	}
 
 	// 10. Reconcile PSC Endpoint
-	return r.reconcilePSCEndpoint(ctx, gcpPSC, hcp, customerGCPClient, customerProject, region, log)
+	if result, err := r.reconcilePSCEndpoint(ctx, gcpPSC, hcp, customerGCPClient, customerProject, region, log); err != nil || !result.IsZero() {
+		return result, err
+	}
+
+	// 11. Reconcile DNS zones and records (after PSC endpoint is available)
+	if result, err := r.reconcileDNS(ctx, gcpPSC, hcp, log); err != nil || !result.IsZero() {
+		return result, err
+	}
+
+	// 12. Reconcile external-dns services for private clusters with external names
+	return r.reconcileExternalServices(ctx, gcpPSC, hcp, log)
+}
+
+// reconcileDNS reconciles DNS zones and records after PSC endpoint is available
+func (r *GCPPrivateServiceConnectReconciler) reconcileDNS(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane, log logr.Logger) (ctrl.Result, error) {
+	// Add nil safety checks
+	if hcp == nil || hcp.Spec.Platform.GCP == nil {
+		log.Info("Invalid HCP configuration for DNS reconciliation")
+		return ctrl.Result{}, nil
+	}
+
+	// Ensure PSC endpoint is available before creating DNS records
+	endpointAvailable := false
+	for _, condition := range gcpPSC.Status.Conditions {
+		if condition.Type == string(hyperv1.GCPEndpointAvailable) && condition.Status == metav1.ConditionTrue {
+			endpointAvailable = true
+			break
+		}
+	}
+
+	if !endpointAvailable {
+		log.Info("PSC endpoint not available yet, skipping DNS reconciliation")
+		return ctrl.Result{}, nil
+	}
+
+	if gcpPSC.Status.EndpointIP == "" {
+		log.Info("PSC endpoint IP not available yet, skipping DNS reconciliation")
+		return ctrl.Result{}, nil
+	}
+
+	log.Info("Reconciling DNS zones and records", "endpointIP", gcpPSC.Status.EndpointIP)
+
+	// Save current status for comparison
+	patch := client.MergeFrom(gcpPSC.DeepCopy())
+
+	// Call the existing ReconcileDNS function from dns.go
+	dnsResult, err := ReconcileDNS(ctx, hcp, gcpPSC.Status.EndpointIP)
+	if err != nil {
+		log.Error(err, "Failed to reconcile DNS zones and records")
+
+		// Set GCPDNSAvailable condition to False
+		meta.SetStatusCondition(&gcpPSC.Status.Conditions, metav1.Condition{
+			Type:               string(hyperv1.GCPDNSAvailable),
+			Status:             metav1.ConditionFalse,
+			Reason:             hyperv1.GCPErrorReason,
+			Message:            fmt.Sprintf("DNS reconciliation failed: %s", err.Error()),
+			LastTransitionTime: metav1.Now(),
+		})
+
+		if statusErr := r.Status().Patch(ctx, gcpPSC, patch); statusErr != nil {
+			log.Error(statusErr, "failed to update DNS condition after error")
+		}
+
+		return ctrl.Result{RequeueAfter: time.Minute * 2}, nil
+	}
+
+	// Update status fields with DNS information
+	gcpPSC.Status.DNSZones = []hyperv1.DNSZoneStatus{
+		{
+			Name:    dnsResult.HypershiftLocalZone.Name,
+			Records: dnsResult.HypershiftLocalCreatedRecords,
+		},
+		{
+			Name:    dnsResult.PublicIngressZone.Name,
+			Records: dnsResult.PublicIngressCreatedRecords,
+		},
+		{
+			Name:    dnsResult.PrivateIngressZone.Name,
+			Records: dnsResult.PrivateIngressCreatedRecords,
+		},
+	}
+
+	// Set GCPDNSAvailable condition to True
+	meta.SetStatusCondition(&gcpPSC.Status.Conditions, metav1.Condition{
+		Type:               string(hyperv1.GCPDNSAvailable),
+		Status:             metav1.ConditionTrue,
+		Reason:             hyperv1.GCPSuccessReason,
+		Message:            "DNS zones and records successfully created",
+		LastTransitionTime: metav1.Now(),
+	})
+
+	// Update status with DNS information
+	if err := r.Status().Patch(ctx, gcpPSC, patch); err != nil {
+		log.Error(err, "failed to update status with DNS information")
+		return ctrl.Result{}, err
+	}
+
+	log.Info("DNS reconciliation completed successfully", "zones", len(gcpPSC.Status.DNSZones))
+	return ctrl.Result{}, nil
+}
+
+// cleanupDNS cleans up DNS zones using zone names stored in PSC status
+func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) error {
+	// Check if we have zone information in status
+	if len(gcpPSC.Status.DNSZones) == 0 {
+		return nil // No DNS zones to clean up
+	}
+
+	// Check if we have the customer project for cleanup
+	if !r.gcpClientBuilder.initialized || r.gcpClientBuilder.customerProject == "" {
+		return nil // Cannot clean up without project information
+	}
+
+	customerProject := r.gcpClientBuilder.customerProject
+
+	// Create DNS client for cleanup operations
+	svc, err := newDNSClient(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create DNS client for cleanup: %w", err)
+	}
+
+	// Delete all zones (they are always managed by the operator)
+	var errs []error
+	for _, zoneStatus := range gcpPSC.Status.DNSZones {
+		if zoneStatus.Name == "" {
+			continue // Skip empty zone names
+		}
+
+		if err := deleteZone(ctx, svc, customerProject, zoneStatus.Name); err != nil {
+			errs = append(errs, fmt.Errorf("failed to delete DNS zone %s: %w", zoneStatus.Name, err))
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("DNS zone cleanup errors: %v", errs)
+	}
+
+	return nil
+}
+
+// reconcileExternalServices creates external-dns services for private clusters with external names
+// This enables external-dns to create DNS records for private PSC endpoints with custom hostnames
+func (r *GCPPrivateServiceConnectReconciler) reconcileExternalServices(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, hcp *hyperv1.HostedControlPlane, log logr.Logger) (ctrl.Result, error) {
+	if isPublic, externalNames := util.IsPublicHCP(hcp), hcpExternalNamesGCP(hcp); !isPublic && len(externalNames) > 0 {
+		// Only if not public and external names are configured, create services of type ExternalName so external-dns
+		// can create records for them
+		var errs []error
+		for svcType, externalName := range externalNames {
+			var svc *corev1.Service
+			switch svcType {
+			case "api":
+				svc = manifests.KubeAPIServerExternalPrivateService(hcp.Namespace)
+			case "oauth":
+				svc = manifests.OauthServerExternalPrivateService(hcp.Namespace)
+			}
+			if _, err := r.CreateOrUpdate(ctx, r, svc, func() error {
+				log.Info("Reconciling external name service for GCP PSC", "service", svc.Name, "externalName", externalName)
+				return reconcileExternalServiceGCP(svc, hcp, externalName, gcpPSC.Status.EndpointIP)
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile %s external service: %w", svcType, err))
+			}
+		}
+		if len(errs) > 0 {
+			return ctrl.Result{}, fmt.Errorf("failed to create external services for private PSC endpoints: %w", utilerrors.NewAggregate(errs))
+		}
+	} else {
+		// If the cluster is public, ensure that any ExternalName services are removed
+		privateExternalServices := &corev1.ServiceList{}
+		if err := r.List(ctx, privateExternalServices, client.HasLabels{externalPrivateServiceLabelGCP}); err != nil {
+			return ctrl.Result{}, fmt.Errorf("cannot list private external services: %w", err)
+		}
+		if len(privateExternalServices.Items) > 0 {
+			log.Info("Removing private external services for GCP PSC", "count", len(privateExternalServices.Items))
+			var errs []error
+			for i := range privateExternalServices.Items {
+				svc := &privateExternalServices.Items[i]
+				if err := r.Delete(ctx, svc); err != nil {
+					errs = append(errs, fmt.Errorf("failed to delete private external service %s: %w", svc.Name, err))
+				}
+			}
+			if len(errs) > 0 {
+				return ctrl.Result{}, utilerrors.NewAggregate(errs)
+			}
+		}
+	}
+
+	return ctrl.Result{}, nil
+}
+
+// hcpExternalNamesGCP extracts external hostnames from HCP configuration for GCP
+func hcpExternalNamesGCP(hcp *hyperv1.HostedControlPlane) map[string]string {
+	result := map[string]string{}
+	apiStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.APIServer)
+	if apiStrategy != nil && apiStrategy.Type == hyperv1.Route && apiStrategy.Route != nil && apiStrategy.Route.Hostname != "" {
+		result["api"] = apiStrategy.Route.Hostname
+	}
+
+	oauthStrategy := util.ServicePublishingStrategyByTypeForHCP(hcp, hyperv1.OAuthServer)
+	if oauthStrategy != nil && oauthStrategy.Type == hyperv1.Route && oauthStrategy.Route != nil && oauthStrategy.Route.Hostname != "" {
+		result["oauth"] = oauthStrategy.Route.Hostname
+	}
+	return result
+}
+
+// reconcileExternalServiceGCP configures external service for GCP PSC endpoint integration
+func reconcileExternalServiceGCP(svc *corev1.Service, hcp *hyperv1.HostedControlPlane, hostName, targetIP string) error {
+	ownerRef := config.OwnerRefFrom(hcp)
+	ownerRef.ApplyTo(svc)
+	if svc.Labels == nil {
+		svc.Labels = map[string]string{}
+	}
+	if svc.Annotations == nil {
+		svc.Annotations = map[string]string{}
+	}
+	svc.Labels[externalPrivateServiceLabelGCP] = "true"
+	svc.Annotations[hyperv1.ExternalDNSHostnameAnnotation] = hostName
+
+	// For GCP PSC, we point external-dns to the PSC endpoint IP
+	// external-dns will create A records pointing to this IP
+	svc.Spec.Type = corev1.ServiceTypeExternalName
+	svc.Spec.ExternalName = targetIP
+	svc.Spec.Ports = []corev1.ServicePort{
+		{
+			Name:     "https",
+			Port:     443,
+			Protocol: corev1.ProtocolTCP,
+		},
+	}
+
+	return nil
 }
 
 // isServiceAttachmentReady checks if the management-side Service Attachment is ready
@@ -449,6 +684,14 @@ func (r *GCPPrivateServiceConnectReconciler) updateStatusFromEndpoint(ctx contex
 func (r *GCPPrivateServiceConnectReconciler) reconcileDelete(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect, customerGCPClient *compute.Service, log logr.Logger) (bool, error) {
 	customerProject := r.gcpClientBuilder.customerProject
 	region := r.gcpClientBuilder.region
+
+	// Clean up DNS zones and records using zone names from PSC status (following AWS blocking pattern)
+	log.Info("Cleaning up DNS zones and records")
+	if dnsErr := r.cleanupDNS(ctx, gcpPSC); dnsErr != nil {
+		log.Error(dnsErr, "failed to clean up DNS zones")
+		return false, fmt.Errorf("failed to clean up DNS zones: %w", dnsErr)
+	}
+	log.Info("DNS cleanup completed successfully")
 
 	// Step 1: Delete PSC endpoint (ForwardingRule)
 	endpointName := r.constructEndpointName(gcpPSC)
