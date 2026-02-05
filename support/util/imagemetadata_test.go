@@ -1,9 +1,11 @@
 package util
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -564,4 +566,270 @@ func TestTryOnlyRootRegistryOverride(t *testing.T) {
 			g.Expect(err != nil).To(Equal(tc.expectAnErr))
 		})
 	}
+}
+
+func TestMirrorAvailabilityCache(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	// Create a new cache instance for testing
+	testCache := &MirrorAvailabilityCache{
+		cache: make(map[string]mirrorCacheEntry),
+	}
+
+	testURL := "test-mirror.example.com/image:tag"
+	testPullSecret := []byte(`{"auths":{"registry.example.com":{"username":"test","password":"secret"}}}`)
+
+	t.Run("cache miss returns false", func(t *testing.T) {
+		available, found := testCache.get(testURL, testPullSecret)
+		g.Expect(found).To(BeFalse())
+		g.Expect(available).To(BeFalse())
+	})
+
+	t.Run("cache hit returns stored value", func(t *testing.T) {
+		// Set available = true
+		testCache.set(testURL, testPullSecret, true)
+
+		available, found := testCache.get(testURL, testPullSecret)
+		g.Expect(found).To(BeTrue())
+		g.Expect(available).To(BeTrue())
+	})
+
+	t.Run("cache stores negative results", func(t *testing.T) {
+		testURL2 := "unavailable-mirror.example.com/image:tag"
+
+		// Set available = false
+		testCache.set(testURL2, testPullSecret, false)
+
+		available, found := testCache.get(testURL2, testPullSecret)
+		g.Expect(found).To(BeTrue())
+		g.Expect(available).To(BeFalse())
+	})
+
+	t.Run("cache expiration works", func(t *testing.T) {
+		testURL3 := "expired-mirror.example.com/image:tag"
+
+		// Set with false (1 minute TTL)
+		testCache.set(testURL3, testPullSecret, false)
+
+		// Manually expire the entry
+		cacheKey3 := generateCacheKey(testURL3, testPullSecret)
+		testCache.mutex.Lock()
+		if entry, exists := testCache.cache[cacheKey3]; exists {
+			entry.timestamp = time.Now().Add(-2 * time.Minute) // 2 minutes ago
+			testCache.cache[cacheKey3] = entry
+		}
+		testCache.mutex.Unlock()
+
+		// Should be cache miss now
+		available, found := testCache.get(testURL3, testPullSecret)
+		g.Expect(found).To(BeFalse())
+		g.Expect(available).To(BeFalse())
+
+		// Entry should be cleaned up
+		testCache.mutex.RLock()
+		_, exists := testCache.cache[cacheKey3]
+		testCache.mutex.RUnlock()
+		g.Expect(exists).To(BeFalse())
+	})
+
+	t.Run("TTL is different for available vs unavailable", func(t *testing.T) {
+		availableURL := "available-ttl.example.com/image:tag"
+		unavailableURL := "unavailable-ttl.example.com/image:tag"
+
+		testCache.set(availableURL, testPullSecret, true)
+		testCache.set(unavailableURL, testPullSecret, false)
+
+		availableCacheKey := generateCacheKey(availableURL, testPullSecret)
+		unavailableCacheKey := generateCacheKey(unavailableURL, testPullSecret)
+
+		testCache.mutex.RLock()
+		availableEntry := testCache.cache[availableCacheKey]
+		unavailableEntry := testCache.cache[unavailableCacheKey]
+		testCache.mutex.RUnlock()
+
+		g.Expect(availableEntry.ttl).To(Equal(5 * time.Minute))
+		g.Expect(unavailableEntry.ttl).To(Equal(1 * time.Minute))
+	})
+
+	t.Run("concurrent access is thread safe", func(t *testing.T) {
+		concurrentURL := "concurrent-test.example.com/image:tag"
+
+		// Test concurrent reads and writes
+		done := make(chan bool, 10)
+
+		// Start multiple goroutines that read and write
+		for i := 0; i < 5; i++ {
+			go func() {
+				testCache.set(concurrentURL, testPullSecret, true)
+				testCache.get(concurrentURL, testPullSecret)
+				done <- true
+			}()
+		}
+
+		for i := 0; i < 5; i++ {
+			go func() {
+				testCache.set(concurrentURL, testPullSecret, false)
+				testCache.get(concurrentURL, testPullSecret)
+				done <- true
+			}()
+		}
+
+		// Wait for all goroutines to complete
+		for i := 0; i < 10; i++ {
+			<-done
+		}
+
+		// Should not panic and should have some value
+		_, found := testCache.get(concurrentURL, testPullSecret)
+		g.Expect(found).To(BeTrue())
+	})
+}
+
+func TestSeekOverrideWithCache(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	// Reset the global cache for clean test
+	mirrorCache.mutex.Lock()
+	mirrorCache.cache = make(map[string]mirrorCacheEntry)
+	mirrorCache.mutex.Unlock()
+
+	ctx := context.Background()
+
+	t.Run("cache prevents repeated network verification", func(t *testing.T) {
+		overrides := map[string][]string{
+			"quay.io": {"mirror.example.com"},
+		}
+
+		parsedRef := reference.DockerImageReference{
+			Registry:  "quay.io",
+			Namespace: "test",
+			Name:      "image",
+			Tag:       "latest",
+		}
+
+		// First call will attempt network verification (which will likely fail for our test mirror)
+		// and cache the result
+		result1 := SeekOverride(ctx, overrides, parsedRef, []byte(`{"auths":{}}`))
+
+		// Second call should use cache and return same result without network call
+		result2 := SeekOverride(ctx, overrides, parsedRef, []byte(`{"auths":{}}`))
+
+		g.Expect(result1).To(Equal(result2))
+
+		// Check that result is cached
+		mirrorURL := "mirror.example.com/test/image:latest"
+		pullSecret := []byte(`{"auths":{}}`)
+		_, found := mirrorCache.get(mirrorURL, pullSecret)
+		g.Expect(found).To(BeTrue(), "Mirror availability should be cached")
+	})
+
+	t.Run("cache respects different mirror URLs", func(t *testing.T) {
+		overrides1 := map[string][]string{
+			"quay.io": {"mirror1.example.com"},
+		}
+		overrides2 := map[string][]string{
+			"quay.io": {"mirror2.example.com"},
+		}
+
+		parsedRef := reference.DockerImageReference{
+			Registry:  "quay.io",
+			Namespace: "test",
+			Name:      "image",
+			Tag:       "latest",
+		}
+
+		// Test with first mirror
+		SeekOverride(ctx, overrides1, parsedRef, []byte(`{"auths":{}}`))
+
+		// Test with second mirror
+		SeekOverride(ctx, overrides2, parsedRef, []byte(`{"auths":{}}`))
+
+		// Both mirrors should be cached separately
+		pullSecret := []byte(`{"auths":{}}`)
+		_, found1 := mirrorCache.get("mirror1.example.com/test/image:latest", pullSecret)
+		_, found2 := mirrorCache.get("mirror2.example.com/test/image:latest", pullSecret)
+
+		g.Expect(found1).To(BeTrue(), "First mirror should be cached")
+		g.Expect(found2).To(BeTrue(), "Second mirror should be cached")
+	})
+}
+
+func TestSeekOverrideTimeout(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	// Reset the global cache
+	mirrorCache.mutex.Lock()
+	mirrorCache.cache = make(map[string]mirrorCacheEntry)
+	mirrorCache.mutex.Unlock()
+
+	ctx := context.Background()
+
+	overrides := map[string][]string{
+		"quay.io": {"nonexistent-mirror.invalid"},
+	}
+
+	parsedRef := reference.DockerImageReference{
+		Registry:  "quay.io",
+		Namespace: "test",
+		Name:      "image",
+		Tag:       "latest",
+	}
+
+	// This should timeout and fallback to original image
+	result := SeekOverride(ctx, overrides, parsedRef, []byte(`{"auths":{}}`))
+
+	// Should return original reference since mirror is invalid
+	g.Expect(result.Registry).To(Equal("quay.io"))
+	g.Expect(result.Namespace).To(Equal("test"))
+	g.Expect(result.Name).To(Equal("image"))
+	g.Expect(result.Tag).To(Equal("latest"))
+
+	// Should cache the negative result
+	mirrorURL := "nonexistent-mirror.invalid/test/image:latest"
+	pullSecret := []byte(`{"auths":{}}`)
+	available, found := mirrorCache.get(mirrorURL, pullSecret)
+	g.Expect(found).To(BeTrue())
+	g.Expect(available).To(BeFalse())
+}
+
+func TestCacheCleanupOnExpiration(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	testCache := &MirrorAvailabilityCache{
+		cache: make(map[string]mirrorCacheEntry),
+	}
+
+	testPullSecret := []byte(`{"auths":{"registry.example.com":{"username":"test","password":"secret"}}}`)
+
+	// Add multiple entries
+	testCache.set("url1.example.com/image:tag", testPullSecret, true)
+	testCache.set("url2.example.com/image:tag", testPullSecret, false)
+	testCache.set("url3.example.com/image:tag", testPullSecret, true)
+
+	// Verify all are cached
+	g.Expect(len(testCache.cache)).To(Equal(3))
+
+	// Manually expire some entries
+	cacheKey1 := generateCacheKey("url1.example.com/image:tag", testPullSecret)
+	cacheKey2 := generateCacheKey("url2.example.com/image:tag", testPullSecret)
+
+	testCache.mutex.Lock()
+	for cacheKey, entry := range testCache.cache {
+		if cacheKey == cacheKey1 || cacheKey == cacheKey2 {
+			entry.timestamp = time.Now().Add(-10 * time.Minute) // Long ago
+			testCache.cache[cacheKey] = entry
+		}
+	}
+	testCache.mutex.Unlock()
+
+	// Access expired entries should clean them up
+	testCache.get("url1.example.com/image:tag", testPullSecret)
+	testCache.get("url2.example.com/image:tag", testPullSecret)
+
+	// Only non-expired entry should remain
+	testCache.mutex.RLock()
+	remainingEntries := len(testCache.cache)
+	testCache.mutex.RUnlock()
+
+	g.Expect(remainingEntries).To(Equal(1))
 }
