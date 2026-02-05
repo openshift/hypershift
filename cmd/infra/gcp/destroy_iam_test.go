@@ -70,6 +70,7 @@ func TestDestroyIAMNewDestroyIAMCommand(t *testing.T) {
 
 	if cmd == nil {
 		t.Fatal("expected command to be non-nil")
+		return
 	}
 
 	if cmd.Use != "gcp" {

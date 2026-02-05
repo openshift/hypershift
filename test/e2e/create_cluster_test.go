@@ -2683,6 +2683,7 @@ func TestCreateCluster(t *testing.T) {
 		if globalOpts.Platform == hyperv1.AzurePlatform {
 			e2eutil.EnsureKubeAPIServerAllowedCIDRs(t, ctx, mgtClient, guestConfig, hostedCluster)
 		}
+
 		e2eutil.EnsureGlobalPullSecret(t, ctx, mgtClient, hostedCluster)
 
 		// Verify CPO override image if TEST_CPO_OVERRIDE=1 is set
