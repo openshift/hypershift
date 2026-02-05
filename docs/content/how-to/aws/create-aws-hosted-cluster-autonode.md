@@ -21,7 +21,7 @@ on AWS with AutoNode feature by Karpenter.
 
 ## Prerequisites
 
-- [Install the latest and greatest HyperShift CLI](https://hypershift-docs.netlify.app/getting-started/#prerequisites).
+- [Install the latest and greatest HyperShift CLI](https://hypershift.pages.dev/getting-started/#prerequisites).
     - Make sure all prerequisites have been satisfied (Pull Secret, Hosted Zone, OIDC Bucket, etc)
 - Ensure that the AWS service-linked role for Spot is enabled in the account where the hosted cluster will be installed. This is a one-time setup per account.
     - You can verify if the role already exists using the following command:
@@ -46,7 +46,7 @@ export SSH_PUB_KEY_FILE=$HOME/.ssh/id_rsa.pub
 
 ## S3 Bucket name hosting the OIDC discovery documents
 # You must have set it up, see Getting Started for more information:
-# https://hypershift-docs.netlify.app/getting-started/
+# https://hypershift.pages.dev/getting-started/
 export OIDC_BUCKET_NAME="${CLUSTER_PREFIX}-oidc"
 ```
 
@@ -54,7 +54,7 @@ export OIDC_BUCKET_NAME="${CLUSTER_PREFIX}-oidc"
 
 This section describes hands on steps to install the Hypershift Operator with AutoNode feature by enabling the feature gate `tech-preview-no-upgrade`. See the following documents for more information:
 
-- [Install HyperShift Operator](https://hypershift-docs.netlify.app/getting-started/#install-hypershift-operator)
+- [Install HyperShift Operator](https://hypershift.pages.dev/getting-started/#install-hypershift-operator)
 - [Feature Gates][featuregate]
 
 Steps:
@@ -265,7 +265,7 @@ oc get pods -l app=web-app -o wide
 This command filters the pods by the label `app=web-app`, allowing you to confirm that the application is running on the expected node provisioned by AutoNode.
 
 
-[featuregate]: https://hypershift-docs.netlify.app/how-to/feature-gates
+[featuregate]: https://hypershift.pages.dev/how-to/feature-gates
 [ec2nodeclass]: https://karpenter.sh/docs/concepts/nodeclasses/
 [nodepools]: https://karpenter.sh/docs/concepts/nodepools/
 [OpenshiftEC2NodeClassSpec]: https://github.com/openshift/hypershift/blob/892474ca2fd481eeab741da377d017051256914a/api/karpenter/v1beta1/karpenter_types.go#L53-L55
