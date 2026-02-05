@@ -1,6 +1,7 @@
 package util
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/x509"
@@ -779,7 +780,7 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 						}
 					}
 
-					if isLeaderElectionFailure(ctx, guestClient, &pod, containerStatus.Name) {
+					if isLeaderElectionFailure(ctx, guestClient, &pod, containerStatus.Name, t) {
 						t.Logf("Leader election failure detected in container %s in pod %s", containerStatus.Name, pod.Name)
 						continue
 					}
@@ -790,7 +791,7 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 	})
 }
 
-func isLeaderElectionFailure(ctx context.Context, guestClient *kubeclient.Clientset, pod *corev1.Pod, containerName string) bool {
+func isLeaderElectionFailure(ctx context.Context, guestClient *kubeclient.Clientset, pod *corev1.Pod, containerName string, t *testing.T) bool {
 	podLogOpts := corev1.PodLogOptions{
 		Container: containerName,
 		Previous:  true,
@@ -799,17 +800,30 @@ func isLeaderElectionFailure(ctx context.Context, guestClient *kubeclient.Client
 	req := guestClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &podLogOpts)
 	podLogs, err := req.Stream(ctx)
 	if err != nil {
+		t.Logf("couldn't stream pod log; pod namespace: %s, pod name: %s, error: %v", pod.Namespace, pod.Name, err)
 		return false
 	}
 	defer podLogs.Close()
 
-	buf := new(bytes.Buffer)
-	_, err = buf.ReadFrom(podLogs)
-	if err != nil {
-		return false
+	scanner := bufio.NewScanner(podLogs)
+	const (
+		bufSize          = 256 * 1024
+		maxScanTokenSize = 512 * 1024
+	)
+
+	buf := make([]byte, bufSize)
+	scanner.Buffer(buf, maxScanTokenSize)
+	for scanner.Scan() {
+		if strings.Contains(strings.ToLower(scanner.Text()), "election lost") {
+			return true
+		}
 	}
 
-	return strings.Contains(buf.String(), "election lost")
+	if err = scanner.Err(); err != nil {
+		t.Logf("failed to read pod log; pod namespace: %s, pod name: %s, error: %v", pod.Namespace, pod.Name, err)
+	}
+
+	return false
 }
 
 func NoticePreemptionOrFailedScheduling(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
