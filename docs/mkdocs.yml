@@ -74,6 +74,7 @@ nav:
   - how-to/metrics-sets.md
   - how-to/troubleshooting-general.md
   - 'Common':
+    - 'HCP Networking Requirements': how-to/common/hcp-networking-requirements.md
     - how-to/common/exposing-services-from-hcp.md
     - how-to/common/multi-arch-on-hcp.md
     - 'Global Pull Secret': how-to/common/global-pull-secret.md
