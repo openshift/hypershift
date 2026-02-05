@@ -52,7 +52,7 @@ Running this command will create [infra](create-infra-separately.md) and manifes
 
 !!! important
 
-        Need to understand --recreate-secrets flag usage before using it. Enabling this flag will result in recreating the creds mentioned here [PowerVSPlatformSpec](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec)
+        Need to understand --recreate-secrets flag usage before using it. Enabling this flag will result in recreating the creds mentioned here [PowerVSPlatformSpec](https://hypershift.pages.dev/reference/api/#hypershift.openshift.io/v1alpha1.PowerVSPlatformSpec)
 
         This is required when rerunning `hypershift create cluster powervs` command, since API Key once created cannot be retrieved again.
 

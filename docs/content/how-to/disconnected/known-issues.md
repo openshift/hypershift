@@ -61,7 +61,7 @@ Explicitly set `--network-type OVNKubernetes` (or other valid SDN provider if ne
 ## HCP: imageRegistryOverrides information is extracted only once on HyperShift operator initialization and never refreshed
 
 See: [OCPBUGS-29110](https://issues.redhat.com/browse/OCPBUGS-29110)
-According to https://hypershift-docs.netlify.app/how-to/disconnected/automatically-initialize-registry-overrides/ , the HyperShift Operator (HO) will automatically initialize the control plane operator (CPO) with any image registry override information from any ImageContentSourcePolicy (ICSP) or any ImageDigestMirrorSet (IDMS) instances from an OpenShift management cluster.
+According to https://hypershift.pages.dev/how-to/disconnected/idms-icsp-for-management-clusters/ , the HyperShift Operator (HO) will automatically initialize the control plane operator (CPO) with any image registry override information from any ImageContentSourcePolicy (ICSP) or any ImageDigestMirrorSet (IDMS) instances from an OpenShift management cluster.
 But due to a bug, the HyperShift Operator (HO) reads the image registry override information only during its startup and never refreshes them at runtime so ICSP and IDMS added after the initialization of the HyperShift Operator are going to get ignored.
 
 **Workaround:**

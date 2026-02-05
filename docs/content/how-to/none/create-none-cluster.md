@@ -106,9 +106,9 @@ oc apply -f ./hypershift-install.yaml
 
 There are two main CRDs to describe a hosted cluster:
 
-* [`HostedCluster`](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.HostedCluster) defines the control plane hosted in the management OpenShift
+* [`HostedCluster`](https://hypershift.pages.dev/reference/api/#hypershift.openshift.io/v1alpha1.HostedCluster) defines the control plane hosted in the management OpenShift
 
-* [`NodePool`](https://hypershift-docs.netlify.app/reference/api/#hypershift.openshift.io/v1alpha1.NodePool) defines the nodes that will be created/attached to a hosted cluster
+* [`NodePool`](https://hypershift.pages.dev/reference/api/#hypershift.openshift.io/v1alpha1.NodePool) defines the nodes that will be created/attached to a hosted cluster
 
 The `hostedcluster.spec.platform` specifies the underlying infrastructure provider for the cluster and is used to configure platform specific behavior, so depending on the environment it is required to configure it properly.
 

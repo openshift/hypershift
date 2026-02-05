@@ -62,7 +62,7 @@ least be able to install 4.16, 4.15, and 4.14 Hosted Clusters. See the Multi-Clu
 section titled "OpenShift Advanced Cluster Management" on [this page](https://access.redhat.com/support/policy/updates/openshift_operators) for more details. 
 
 ### API
-There are two user facing resources exposed by HyperShift: [HostedClusters and NodePools](https://hypershift-docs.netlify.app/reference/api/).
+There are two user facing resources exposed by HyperShift: [HostedClusters and NodePools](https://hypershift.pages.dev/reference/api/).
 
 The HyperShift API version policy generally aligns with the [Kubernetes API versioning](https://kubernetes.io/docs/reference/using-api/#api-versioning).
 

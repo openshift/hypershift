@@ -4361,7 +4361,7 @@ export SSH_PUB_KEY_FILE=$HOME/.ssh/id_rsa.pub
 
 ## S3 Bucket name hosting the OIDC discovery documents
 # You must have set it up, see Getting Started for more information:
-# https://hypershift-docs.netlify.app/getting-started/
+# https://hypershift.pages.dev/getting-started/
 export OIDC_BUCKET_NAME="${CLUSTER_PREFIX}-oidc"
 ```
 
@@ -4580,7 +4580,7 @@ oc get pods -l app=web-app -o wide
 This command filters the pods by the label `app=web-app`, allowing you to confirm that the application is running on the expected node provisioned by AutoNode.
 
 
-[featuregate]: https://hypershift-docs.netlify.app/how-to/feature-gates
+[featuregate]: https://hypershift.pages.dev/how-to/feature-gates
 [ec2nodeclass]: https://karpenter.sh/docs/concepts/nodeclasses/
 [nodepools]: https://karpenter.sh/docs/concepts/nodepools/
 [OpenshiftEC2NodeClassSpec]: https://github.com/openshift/hypershift/blob/892474ca2fd481eeab741da377d017051256914a/api/karpenter/v1beta1/karpenter_types.go#L53-L55
@@ -14949,7 +14949,7 @@ Explicitly set `--network-type OVNKubernetes` (or other valid SDN provider if ne
 ## HCP: imageRegistryOverrides information is extracted only once on HyperShift operator initialization and never refreshed
 
 See: OCPBUGS-29110
-According to https://hypershift-docs.netlify.app/how-to/disconnected/automatically-initialize-registry-overrides/ , the HyperShift Operator (HO) will automatically initialize the control plane operator (CPO) with any image registry override information from any ImageContentSourcePolicy (ICSP) or any ImageDigestMirrorSet (IDMS) instances from an OpenShift management cluster.
+According to https://hypershift.pages.dev/how-to/disconnected/idms-icsp-for-management-clusters/ , the HyperShift Operator (HO) will automatically initialize the control plane operator (CPO) with any image registry override information from any ImageContentSourcePolicy (ICSP) or any ImageDigestMirrorSet (IDMS) instances from an OpenShift management cluster.
 But due to a bug, the HyperShift Operator (HO) reads the image registry override information only during its startup and never refreshes them at runtime so ICSP and IDMS added after the initialization of the HyperShift Operator are going to get ignored.
 
 **Workaround:**
