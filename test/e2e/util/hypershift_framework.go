@@ -259,15 +259,18 @@ func (h *hypershiftTest) teardown(hostedCluster *hyperv1.HostedCluster, opts *Pl
 		h.Logf("skipping teardown, already called")
 		return
 	}
-	h.hasBeenTornedDown = true
 
 	// t.Run() is not supported in cleanup phase
 	if cleanupPhase {
+		h.hasBeenTornedDown = true
 		teardownHostedCluster(h.T, context.Background(), hostedCluster, h.client, opts, artifactDir)
 		return
 	}
 
 	h.Run("Teardown", func(t *testing.T) {
+		// Set the flag inside the subtest callback to ensure it's only set
+		// when the subtest actually runs (not filtered out by -test.run)
+		h.hasBeenTornedDown = true
 		teardownHostedCluster(t, h.ctx, hostedCluster, h.client, opts, artifactDir)
 	})
 }
