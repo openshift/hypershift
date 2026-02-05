@@ -931,6 +931,7 @@ func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient ia
 		ccmPolicyStatement := `{
 				"Effect": "Allow",
 				"Action": [
+					"elasticloadbalancing:*",
 					"elasticloadbalancing:DescribeTargetGroupAttributes",
 					"elasticloadbalancing:ModifyTargetGroupAttributes"
 				],
