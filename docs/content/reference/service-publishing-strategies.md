@@ -19,20 +19,48 @@ Each service can be published using one of the following strategies:
 
 | Strategy Type | Description | Use Case |
 |--------------|-------------|----------|
-| **LoadBalancer** | Exposes the service through a dedicated cloud load balancer | Primary method for exposing KubeAPIServer in cloud environments with external DNS support |
+| **LoadBalancer** | Exposes the service through a dedicated cloud load balancer | Primary method for exposing KubeAPIServer in cloud environments without external DNS configured |
 | **Route** | Exposes the service through OpenShift Routes and the management cluster's ingress controller | Default for most services; requires management cluster to have Route capability |
 | **NodePort** | Exposes the service on a static port on each node | Used in on-premise and bare metal scenarios (Agent, None platforms) |
+
+### Terminology
+
+Understanding the following terms is essential for configuring service publishing strategies:
+
+| Term | Definition |
+|------|------------|
+| **Public** | Services accessible from the public internet. Uses external-facing load balancers or publicly accessible routes. |
+| **Private** | Services accessible only through private networking (e.g., AWS PrivateLink, GCP Private Service Connect). Not accessible from the public internet. |
+| **External** | Refers to resources or endpoints accessible from outside the management cluster's VPC or network. Typically synonymous with "public" but may also include cross-VPC access. |
+| **Internal** | Refers to resources or endpoints accessible only within the management cluster's VPC or network. Uses internal load balancers or private networking. |
+| **External DNS** | A system that manages DNS records in a public or shared DNS zone. The `--external-dns-domain` flag enables this functionality, allowing custom hostnames for services. |
+| **External Load Balancer** | A cloud load balancer with a public IP address, accessible from the internet. |
+| **Internal Load Balancer** | A cloud load balancer with a private IP address, accessible only within the VPC or through private networking (e.g., PrivateLink). |
+| **HCP Router** | A dedicated router (typically HAProxy or OpenShift Router) deployed within the Hosted Control Plane namespace, scoped to a specific hosted cluster. Used when Route publishing strategy is configured with external DNS. |
+| **Management Cluster Ingress** | The shared ingress controller of the management cluster (e.g., OpenShift Router). Used for Route publishing when external DNS is not configured. |
 
 ### Configuration Requirements
 
 1. **Unique Hostnames**: Each service must have a unique hostname if a hostname is specified in the publishing strategy
-2. **Route Publishing**: Services using the `Route` publishing strategy can be exposed either through the management cluster's ingress controller (requires OpenShift) or through HyperShift's dedicated internal router (works on any Kubernetes cluster)
+2. **Route Publishing**: Services using the `Route` publishing strategy can be exposed either through the management cluster's ingress controller (requires OpenShift) or through HyperShift's dedicated HCP router (a router deployed in the hosted control plane namespace, scoped to the specific hosted cluster, which works on any Kubernetes cluster)
 
 ## Platform-Specific Configurations
 
 ### AWS
 
 AWS publishing strategies are determined by the endpoint access mode and whether external DNS is configured.
+
+#### Endpoint Access Types
+
+AWS HostedClusters support three endpoint access modes that control how the API server and other control plane services are exposed:
+
+| Access Type | Description |
+|------------|-------------|
+| **Public** | Control plane endpoints are accessible from the public internet. External users and data plane nodes connect via public load balancers or routes. |
+| **PublicAndPrivate** | Control plane endpoints are accessible from both the public internet AND from within the VPC via AWS PrivateLink. Provides flexibility for both external access and private VPC connectivity. |
+| **Private** | Control plane endpoints are only accessible from within the VPC via AWS PrivateLink. No public internet access. External users must connect through VPN or other private connectivity solutions. |
+
+The endpoint access type is specified in `spec.platform.aws.endpointAccess` and affects which service publishing strategies are valid and how services are exposed.
 
 #### Public Endpoint Access
 
@@ -607,12 +635,12 @@ Self-managed Azure clusters are customer-managed HyperShift deployments on Azure
 ##### Defaults
 
 When creating a self-managed Azure cluster using `--workload-identities-file`:
-- **APIServer**: `LoadBalancer` (always)
-- **OAuthServer**: `Route` (always)
-- **Konnectivity**: `Route` (always)
-- **Ignition**: `Route` (always)
+- **APIServer**: `LoadBalancer` (default)
+- **OAuthServer**: `Route` (enforced)
+- **Konnectivity**: `Route` (enforced)
+- **Ignition**: `Route` (enforced)
 
-**Note**: The `--external-dns-domain` flag is not exposed in the customer-facing product CLI for self-managed Azure clusters. When using the developer CLI with this flag, services will use Route publishing strategy with custom hostnames.
+**Note**: When using the `--external-dns-domain` flag with self-managed Azure clusters, the APIServer can use Route publishing strategy with a custom hostname instead of LoadBalancer.
 
 ##### Example Configuration
 
@@ -672,9 +700,9 @@ graph RL
     class HCP hcpStyle
 ```
 
-### GCP
+### Managed GCP
 
-GCP publishing strategies are determined by the endpoint access mode. GCP uses Route for all services, including APIServer.
+Managed GCP (Google Cloud Platform) HostedClusters are managed service deployments on GCP. Publishing strategies are determined by the endpoint access mode. All services use Route publishing strategy, including APIServer.
 
 #### PublicAndPrivate Endpoint Access
 
@@ -1144,8 +1172,8 @@ graph RL
 |----------|------------------|----------------------|---------------------|-----------------|------------------|
 | AWS | LoadBalancer or Route | Route | Yes | No | Endpoint access modes |
 | Azure (Managed/ARO HCP) | Route (hostname required) | Route (hostname required) | No | No | Shared ingress HAProxy, all Routes need explicit hostnames |
-| Azure (Self-Managed) | LoadBalancer | Route (enforced) | Developer CLI only | No | Uses workload identities |
-| GCP | Route | Route | Required | No | Endpoint access modes (PublicAndPrivate, Private) |
+| Azure (Self-Managed) | LoadBalancer | Route (enforced) | Yes | No | Uses workload identities |
+| GCP (Managed) | Route | Route | Required | No | Endpoint access modes (PublicAndPrivate, Private) |
 | KubeVirt | LoadBalancer or Route | Route | Yes | Yes | Dual strategy support via flag |
 | Agent | NodePort (default), LoadBalancer | NodePort, Route | No | Yes (default) | LoadBalancer recommended for production |
 
@@ -1153,7 +1181,7 @@ graph RL
 
 ## Best Practices
 
-1. **Use External DNS when available**: For cloud platforms that support it (AWS, KubeVirt), using the `--external-dns-domain` flag provides a cleaner configuration with predictable hostnames for all services.
+1. **Use External DNS when available**: For cloud platforms that support it (AWS, Azure, GCP, KubeVirt), using the `--external-dns-domain` flag provides a cleaner configuration with predictable hostnames for all services. Note that Managed GCP requires external DNS, while it's optional for AWS, Azure, and KubeVirt.
 
 2. **Understand endpoint access modes**: On AWS, choose the endpoint access mode that matches your security requirements:
    - `Public`: Services accessible from the internet
