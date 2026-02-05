@@ -2299,3 +2299,237 @@ func TestUseHCPRouter(t *testing.T) {
 		})
 	}
 }
+
+func TestControlPlaneComponentsAvailable(t *testing.T) {
+	testNamespace := "test-namespace"
+
+	testCases := []struct {
+		name           string
+		components     []hyperv1.ControlPlaneComponent
+		expectError    bool
+		expectedMsg    string
+		setupClientErr bool
+	}{
+		{
+			name:        "When no components exist, it should return message indicating components not created",
+			components:  []hyperv1.ControlPlaneComponent{},
+			expectError: false,
+			expectedMsg: "Control plane components have not been created yet",
+		},
+		{
+			name: "When all components are available, it should return empty message",
+			components: []hyperv1.ControlPlaneComponent{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-apiserver",
+						Namespace: testNamespace,
+					},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Conditions: []metav1.Condition{
+							{
+								Type:   string(hyperv1.ControlPlaneComponentAvailable),
+								Status: metav1.ConditionTrue,
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-controller-manager",
+						Namespace: testNamespace,
+					},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Conditions: []metav1.Condition{
+							{
+								Type:   string(hyperv1.ControlPlaneComponentAvailable),
+								Status: metav1.ConditionTrue,
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+			expectedMsg: "",
+		},
+		{
+			name: "When component has no Available condition, it should list component as not available",
+			components: []hyperv1.ControlPlaneComponent{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-apiserver",
+						Namespace: testNamespace,
+					},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Conditions: []metav1.Condition{},
+					},
+				},
+			},
+			expectError: false,
+			expectedMsg: "Waiting for components to be available: kube-apiserver",
+		},
+		{
+			name: "When component Available condition is False, it should list component as not available",
+			components: []hyperv1.ControlPlaneComponent{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-apiserver",
+						Namespace: testNamespace,
+					},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Conditions: []metav1.Condition{
+							{
+								Type:   string(hyperv1.ControlPlaneComponentAvailable),
+								Status: metav1.ConditionFalse,
+								Reason: "Deploying",
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+			expectedMsg: "Waiting for components to be available: kube-apiserver",
+		},
+		{
+			name: "When multiple components are not available, it should list all unavailable components",
+			components: []hyperv1.ControlPlaneComponent{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-apiserver",
+						Namespace: testNamespace,
+					},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Conditions: []metav1.Condition{
+							{
+								Type:   string(hyperv1.ControlPlaneComponentAvailable),
+								Status: metav1.ConditionFalse,
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-controller-manager",
+						Namespace: testNamespace,
+					},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Conditions: []metav1.Condition{
+							{
+								Type:   string(hyperv1.ControlPlaneComponentAvailable),
+								Status: metav1.ConditionTrue,
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-scheduler",
+						Namespace: testNamespace,
+					},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Conditions: []metav1.Condition{},
+					},
+				},
+			},
+			expectError: false,
+			expectedMsg: "Waiting for components to be available: kube-apiserver, kube-scheduler",
+		},
+		{
+			name: "When some components are available and others are not, it should list only unavailable components",
+			components: []hyperv1.ControlPlaneComponent{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "kube-apiserver",
+						Namespace: testNamespace,
+					},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Conditions: []metav1.Condition{
+							{
+								Type:   string(hyperv1.ControlPlaneComponentAvailable),
+								Status: metav1.ConditionTrue,
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "oauth-server",
+						Namespace: testNamespace,
+					},
+					Status: hyperv1.ControlPlaneComponentStatus{
+						Conditions: []metav1.Condition{
+							{
+								Type:   string(hyperv1.ControlPlaneComponentAvailable),
+								Status: metav1.ConditionFalse,
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+			expectedMsg: "Waiting for components to be available: oauth-server",
+		},
+		{
+			name:           "When client fails to list components, it should return error",
+			components:     []hyperv1.ControlPlaneComponent{},
+			setupClientErr: true,
+			expectError:    true,
+			expectedMsg:    "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: testNamespace,
+				},
+			}
+
+			// Convert components to runtime objects
+			objs := []client.Object{hcp}
+			for i := range tc.components {
+				objs = append(objs, &tc.components[i])
+			}
+
+			// Setup client with or without error interceptor
+			var c client.Client
+			if tc.setupClientErr {
+				c = fake.NewClientBuilder().
+					WithScheme(api.Scheme).
+					WithObjects(objs...).
+					WithInterceptorFuncs(interceptor.Funcs{
+						List: func(ctx context.Context, client client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+							return fmt.Errorf("simulated list error")
+						},
+					}).
+					Build()
+			} else {
+				c = fake.NewClientBuilder().
+					WithScheme(api.Scheme).
+					WithObjects(objs...).
+					Build()
+			}
+
+			// Create reconciler
+			r := &HostedControlPlaneReconciler{
+				Client: c,
+				Log:    zapr.NewLogger(zaptest.NewLogger(t)),
+			}
+
+			// Execute the function under test
+			msg, err := r.controlPlaneComponentsAvailable(context.Background(), hcp)
+
+			// Verify results
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring("failed to list control plane components"))
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(msg).To(Equal(tc.expectedMsg))
+			}
+		})
+	}
+}

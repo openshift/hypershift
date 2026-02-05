@@ -249,6 +249,8 @@ const (
 	KubeVirtNodesLiveMigratableReason = "KubeVirtNodesNotLiveMigratable"
 
 	RecoveryFinishedReason = "RecoveryFinished"
+
+	ControlPlaneComponentsNotAvailable = "ComponentsNotAvailable"
 )
 
 // Messages.

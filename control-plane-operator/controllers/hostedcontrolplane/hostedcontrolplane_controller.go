@@ -698,6 +698,15 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		kubeAPIServerCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.KubeAPIServerAvailable))
 		healthCheckErr := r.healthCheckKASLoadBalancers(ctx, hostedControlPlane)
 
+		// Check control plane components availability only if the HCP is not already marked as available
+		var componentsNotAvailableMsg string
+		var componentsErr error
+		availableCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.HostedControlPlaneAvailable))
+		alreadyAvailable := availableCondition != nil && availableCondition.Status == metav1.ConditionTrue
+		if !alreadyAvailable {
+			componentsNotAvailableMsg, componentsErr = r.controlPlaneComponentsAvailable(ctx, hostedControlPlane)
+		}
+
 		status := metav1.ConditionFalse
 		var reason, message string
 		switch {
@@ -719,6 +728,12 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		case healthCheckErr != nil:
 			reason = hyperv1.KASLoadBalancerNotReachableReason
 			message = healthCheckErr.Error()
+		case componentsErr != nil:
+			reason = hyperv1.ControlPlaneComponentsNotAvailable
+			message = fmt.Sprintf("Failed to check control plane component availability: %v", componentsErr)
+		case componentsNotAvailableMsg != "":
+			reason = hyperv1.ControlPlaneComponentsNotAvailable
+			message = componentsNotAvailableMsg
 		default:
 			reason = hyperv1.AsExpectedReason
 			message = ""
@@ -895,6 +910,36 @@ func healthCheckKASEndpoint(ingressPoint string, port int) error {
 		return fmt.Errorf("APIServer endpoint %s is not healthy", ingressPoint)
 	}
 	return nil
+}
+
+// controlPlaneComponentsAvailable checks that all ControlPlaneComponents in the namespace
+// have their Available condition set to True.
+// Returns an empty string if all components are available, otherwise returns a message describing
+// which components are not yet available.
+func (r *HostedControlPlaneReconciler) controlPlaneComponentsAvailable(ctx context.Context, hcp *hyperv1.HostedControlPlane) (string, error) {
+	componentsList := &hyperv1.ControlPlaneComponentList{}
+	if err := r.Client.List(ctx, componentsList, client.InNamespace(hcp.Namespace)); err != nil {
+		return "", fmt.Errorf("failed to list control plane components: %w", err)
+	}
+
+	// If there are no components yet, return a message indicating they haven't been created
+	if len(componentsList.Items) == 0 {
+		return "Control plane components have not been created yet", nil
+	}
+
+	var notAvailable []string
+	for _, component := range componentsList.Items {
+		availableCondition := meta.FindStatusCondition(component.Status.Conditions, string(hyperv1.ControlPlaneComponentAvailable))
+		if availableCondition == nil || availableCondition.Status != metav1.ConditionTrue {
+			notAvailable = append(notAvailable, component.Name)
+		}
+	}
+
+	if len(notAvailable) > 0 {
+		return fmt.Sprintf("Waiting for components to be available: %s", strings.Join(notAvailable, ", ")), nil
+	}
+
+	return "", nil
 }
 
 func (r *HostedControlPlaneReconciler) validateConfigAndClusterCapabilities(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
