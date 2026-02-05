@@ -20,3 +20,25 @@ func ReconcilePodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, availabilit
 	pdb.Spec.MinAvailable = minAvailable
 	pdb.Spec.MaxUnavailable = maxUnavailable
 }
+
+// IsPDBDisabled checks if PDB is disabled either globally or for a specific component.
+// It checks both the global disable-pdb-all annotation and the component-specific annotation.
+func IsPDBDisabled(annotations map[string]string, componentAnnotation string) bool {
+	if annotations == nil {
+		return false
+	}
+
+	// Check global disable annotation
+	if val, exists := annotations[DisablePDBsAllAnnotation]; exists && val == "true" {
+		return true
+	}
+
+	// Check component-specific annotation
+	if componentAnnotation != "" {
+		if val, exists := annotations[componentAnnotation]; exists && val == "true" {
+			return true
+		}
+	}
+
+	return false
+}
