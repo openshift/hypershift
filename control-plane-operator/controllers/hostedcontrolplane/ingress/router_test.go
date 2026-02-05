@@ -143,6 +143,29 @@ func TestReconcileRouterService_AppliesLoadBalancerSourceRanges(t *testing.T) {
 	})
 }
 
+// Test that router service is configured with PreferDualStack IPFamilyPolicy for DualStack support
+func TestReconcileRouterService_IPFamilyPolicy(t *testing.T) {
+	// Given a HostedControlPlane on KubeVirt platform (or any platform)
+	hcp := &hyperv1.HostedControlPlane{}
+	hcp.Spec.Platform.Type = hyperv1.KubevirtPlatform
+
+	// And an empty Service to reconcile
+	svc := &corev1.Service{}
+
+	// When reconciling the router service
+	if err := ReconcileRouterService(svc, false /* internal */, false /* cross-zone */, hcp); err != nil {
+		t.Fatalf("ReconcileRouterService returned error: %v", err)
+	}
+
+	// Then the service should be configured with PreferDualStack IPFamilyPolicy
+	if svc.Spec.IPFamilyPolicy == nil {
+		t.Fatalf("expected IPFamilyPolicy to be set, got nil")
+	}
+	if *svc.Spec.IPFamilyPolicy != corev1.IPFamilyPolicyPreferDualStack {
+		t.Fatalf("expected IPFamilyPolicy to be PreferDualStack, got %v", *svc.Spec.IPFamilyPolicy)
+	}
+}
+
 // Test that GCP router service is configured with Internal Load Balancer
 func TestReconcileRouterService_GCPInternalLoadBalancer(t *testing.T) {
 	// Given a HostedControlPlane on GCP platform
