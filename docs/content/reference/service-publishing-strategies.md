@@ -674,45 +674,49 @@ graph RL
 
 ### GCP
 
-GCP uses LoadBalancer for APIServer and Route for other services, similar to other cloud platforms.
+GCP publishing strategies are determined by the endpoint access mode. GCP uses Route for all services, including APIServer.
 
-#### Supported Publishing Strategies
+#### PublicAndPrivate Endpoint Access
 
-| Service | Supported Strategies |
-|---------|---------------------|
-| **APIServer** | `LoadBalancer` |
-| **OAuthServer** | `Route` |
-| **Konnectivity** | `Route` |
-| **Ignition** | `Route` |
+External DNS is required for GCP (`--external-dns-domain` flag):
 
-#### Validation Rules
+- **APIServer**: `Route` (hostname required)
+- **OAuthServer**: `Route` (hostname required)
+- **Konnectivity**: `Route` (hostname required)
+- **Ignition**: `Route` (hostname required)
 
-- External DNS is NOT currently supported (planned for future implementation)
-- APIServer uses `LoadBalancer` by default
-- All other services use `Route`
+All Route-based services are exposed through a dedicated HCP router with both internal and external load balancers.
 
-#### Example Configuration
+**Example Configuration:**
 
 ```yaml
 spec:
   platform:
     type: GCP
+    gcp:
+      endpointAccess: PublicAndPrivate
   services:
   - service: APIServer
     servicePublishingStrategy:
-      type: LoadBalancer
+      type: Route
+      route:
+        hostname: api.my-cluster.example.com
   - service: OAuthServer
     servicePublishingStrategy:
       type: Route
+      route:
+        hostname: oauth.my-cluster.example.com
   - service: Konnectivity
     servicePublishingStrategy:
       type: Route
+      route:
+        hostname: konnectivity.my-cluster.example.com
   - service: Ignition
     servicePublishingStrategy:
       type: Route
+      route:
+        hostname: ignition.my-cluster.example.com
 ```
-
-**Architecture Diagram:**
 
 ```mermaid
 graph RL
@@ -722,7 +726,9 @@ graph RL
             OAuth[OAuthServer]
             Konnectivity[Konnectivity]
             Ignition[Ignition]
-            KASLB[KAS LoadBalancer]
+            Router[HCP Router]
+            InternalLB[Internal LB]
+            ExternalLB[External LB]
         end
         MCIngress[Management Cluster<br/>Ingress]
     end
@@ -730,15 +736,89 @@ graph RL
     DataPlane[Data Plane]
     ExtUsers[External Users]
     
-    DataPlane --> KASLB
-    DataPlane --> MCIngress
-    ExtUsers --> KASLB
-    ExtUsers --> MCIngress
+    DataPlane -->|Private Service Connect| InternalLB
+    ExtUsers --> ExternalLB
     
-    KASLB --> KAS
-    MCIngress --> OAuth
-    MCIngress --> Konnectivity
-    MCIngress --> Ignition
+    InternalLB --> Router
+    ExternalLB --> Router
+    
+    Router --> KAS
+    Router --> OAuth
+    Router --> Konnectivity
+    Router --> Ignition
+
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    class HCP hcpStyle
+```
+
+#### Private Endpoint Access
+
+External DNS is required for GCP (`--external-dns-domain` flag):
+
+- **APIServer**: `Route` (hostname required)
+- **OAuthServer**: `Route` (hostname required)
+- **Konnectivity**: `Route` (hostname required)
+- **Ignition**: `Route` (hostname required)
+
+All Route-based services are exposed through a dedicated HCP router with an internal load balancer.
+
+**Example Configuration:**
+
+```yaml
+spec:
+  platform:
+    type: GCP
+    gcp:
+      endpointAccess: Private
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api.my-cluster.example.com
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: oauth.my-cluster.example.com
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: konnectivity.my-cluster.example.com
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: ignition.my-cluster.example.com
+```
+
+```mermaid
+graph RL
+    subgraph "Management Cluster"
+        subgraph HCP ["Hosted Control Plane"]
+            KAS[APIServer]
+            OAuth[OAuthServer]
+            Konnectivity[Konnectivity]
+            Ignition[Ignition]
+            Router[HCP Router]
+            InternalLB[Internal LB]
+        end
+        MCIngress[Management Cluster<br/>Ingress]
+    end
+    
+    DataPlane[Data Plane]
+    ExtUsers[ExtUsers]
+    
+    DataPlane -->|Private Service Connect| InternalLB
+    ExtUsers-->|Private Service Connect| InternalLB
+    
+    InternalLB --> Router
+    
+    Router --> KAS
+    Router --> OAuth
+    Router --> Konnectivity
+    Router --> Ignition
 
     classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
     class HCP hcpStyle
@@ -1065,7 +1145,7 @@ graph RL
 | AWS | LoadBalancer or Route | Route | Yes | No | Endpoint access modes |
 | Azure (Managed/ARO HCP) | Route (hostname required) | Route (hostname required) | No | No | Shared ingress HAProxy, all Routes need explicit hostnames |
 | Azure (Self-Managed) | LoadBalancer | Route (enforced) | Developer CLI only | No | Uses workload identities |
-| GCP | LoadBalancer | Route | No (planned) | No | - |
+| GCP | Route | Route | Required | No | Endpoint access modes (PublicAndPrivate, Private) |
 | KubeVirt | LoadBalancer or Route | Route | Yes | Yes | Dual strategy support via flag |
 | Agent | NodePort (default), LoadBalancer | NodePort, Route | No | Yes (default) | LoadBalancer recommended for production |
 
