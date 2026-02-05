@@ -40,7 +40,7 @@ type OptionalFieldsPointers struct {
 	// Valid values are "Always" and "WhenRequired".
 	// When set to "Always", the linter will prefer pointers for all optional fields.
 	// When set to "WhenRequired", the linter will prefer pointers for optional fields where validation or serialization requires a pointer.
-	// The "WhenRequired" option requires bounds on strings and numerical values to be able to acurately determine the correct pointer vs non-pointer decision.
+	// The "WhenRequired" option requires bounds on strings and numerical values to be able to accurately determine the correct pointer vs non-pointer decision.
 	// When otherwise not specified, the default value is "Always".
 	Preference OptionalFieldsPointerPreference `json:"preference"`
 	// policy is the policy for the pointer preferences for optional fields.

@@ -69,6 +69,10 @@ unit: ## Run unit tests.
 build: ## Build the golangci-lint custom plugin binary.
 	go build -o ./bin ./cmd/golangci-lint-kube-api-linter 
 
+.PHONY: validate-linter-registration
+validate-linter-registration: ## Validate registration linters.
+	hack/validate-linter-registration.sh
+
 .PHONY: verify-%
 verify-%:
 	make $*

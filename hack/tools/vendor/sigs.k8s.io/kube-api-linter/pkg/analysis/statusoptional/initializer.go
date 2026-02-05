@@ -35,7 +35,7 @@ func Initializer() initializer.AnalyzerInitializer {
 	return initializer.NewConfigurableInitializer(
 		name,
 		initAnalyzer,
-		true,
+		false,
 		validateConfig,
 	)
 }

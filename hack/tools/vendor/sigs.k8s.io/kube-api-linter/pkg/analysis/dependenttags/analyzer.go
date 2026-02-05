@@ -41,7 +41,7 @@ func newAnalyzer(cfg Config) *analysis.Analyzer {
 	for _, rule := range cfg.Rules {
 		markers.DefaultRegistry().Register(rule.Identifier)
 
-		for _, dep := range rule.Dependents {
+		for _, dep := range rule.DependsOn {
 			markers.DefaultRegistry().Register(dep)
 		}
 	}
@@ -89,9 +89,9 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 	return nil, nil //nolint:nilnil
 }
 func handleAll(pass *analysis.Pass, field *ast.Field, rule Rule, fieldMarkers markers.MarkerSet, qualifiedFieldName string) {
-	missing := make([]string, 0, len(rule.Dependents))
+	missing := make([]string, 0, len(rule.DependsOn))
 
-	for _, dependent := range rule.Dependents {
+	for _, dependent := range rule.DependsOn {
 		if _, depOk := fieldMarkers[dependent]; !depOk {
 			missing = append(missing, fmt.Sprintf("+%s", dependent))
 		}
@@ -105,7 +105,7 @@ func handleAll(pass *analysis.Pass, field *ast.Field, rule Rule, fieldMarkers ma
 func handleAny(pass *analysis.Pass, field *ast.Field, rule Rule, fieldMarkers markers.MarkerSet, qualifiedFieldName string) {
 	found := false
 
-	for _, dependent := range rule.Dependents {
+	for _, dependent := range rule.DependsOn {
 		if _, depOk := fieldMarkers[dependent]; depOk {
 			found = true
 			break
@@ -113,11 +113,11 @@ func handleAny(pass *analysis.Pass, field *ast.Field, rule Rule, fieldMarkers ma
 	}
 
 	if !found {
-		dependents := make([]string, len(rule.Dependents))
-		for i, d := range rule.Dependents {
-			dependents[i] = fmt.Sprintf("+%s", d)
+		dependsOn := make([]string, len(rule.DependsOn))
+		for i, d := range rule.DependsOn {
+			dependsOn[i] = fmt.Sprintf("+%s", d)
 		}
 
-		pass.Reportf(field.Pos(), "field %s with marker +%s requires at least one of the following markers, but none were found: %s", qualifiedFieldName, rule.Identifier, strings.Join(dependents, ", "))
+		pass.Reportf(field.Pos(), "field %s with marker +%s requires at least one of the following markers, but none were found: %s", qualifiedFieldName, rule.Identifier, strings.Join(dependsOn, ", "))
 	}
 }

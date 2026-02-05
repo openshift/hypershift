@@ -63,8 +63,8 @@ github.com/Djarvur/go-err113
 # github.com/Masterminds/semver/v3 v3.4.0
 ## explicit; go 1.21
 github.com/Masterminds/semver/v3
-# github.com/Microsoft/go-winio v0.6.1
-## explicit; go 1.17
+# github.com/Microsoft/go-winio v0.6.2
+## explicit; go 1.21
 github.com/Microsoft/go-winio
 github.com/Microsoft/go-winio/internal/fs
 github.com/Microsoft/go-winio/internal/socket
@@ -1025,11 +1025,12 @@ github.com/nunnatsa/ginkgolinter/internal/rules
 github.com/nunnatsa/ginkgolinter/internal/typecheck
 github.com/nunnatsa/ginkgolinter/linter
 github.com/nunnatsa/ginkgolinter/version
-# github.com/openshift/api/tools v0.0.0-20250915151906-94481d71bb6f
+# github.com/openshift/api/tools v0.0.0-20260205045418-81371d13d1fc
 ## explicit; go 1.24.2
 github.com/openshift/api/tools
 github.com/openshift/api/tools/codegen/cmd
 github.com/openshift/api/tools/codegen/pkg/compatibility
+github.com/openshift/api/tools/codegen/pkg/crdify
 github.com/openshift/api/tools/codegen/pkg/deepcopy
 github.com/openshift/api/tools/codegen/pkg/emptypartialschemas
 github.com/openshift/api/tools/codegen/pkg/generation
@@ -1512,12 +1513,11 @@ golang.org/x/text/transform
 golang.org/x/text/unicode/bidi
 golang.org/x/text/unicode/norm
 golang.org/x/text/width
-# golang.org/x/time v0.11.0
+# golang.org/x/time v0.12.0
 ## explicit; go 1.23.0
 golang.org/x/time/rate
 # golang.org/x/tools v0.40.0
 ## explicit; go 1.24.0
-golang.org/x/tools/cmd/stringer
 golang.org/x/tools/go/analysis
 golang.org/x/tools/go/analysis/passes/appends
 golang.org/x/tools/go/analysis/passes/asmdecl
@@ -1968,7 +1968,7 @@ k8s.io/api/admissionregistration/v1
 k8s.io/api/authentication/v1
 k8s.io/api/core/v1
 k8s.io/api/rbac/v1
-# k8s.io/apiextensions-apiserver v0.33.2 => k8s.io/apiextensions-apiserver v0.34.2
+# k8s.io/apiextensions-apiserver v0.34.1 => k8s.io/apiextensions-apiserver v0.34.2
 ## explicit; go 1.24.0
 k8s.io/apiextensions-apiserver/pkg/apihelpers
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions
@@ -2143,9 +2143,6 @@ k8s.io/component-base/version
 k8s.io/component-base/zpages/features
 # k8s.io/gengo v0.0.0-20250704022524-ddb642e17a28
 ## explicit; go 1.13
-k8s.io/gengo/args
-k8s.io/gengo/generator
-k8s.io/gengo/namer
 k8s.io/gengo/parser
 k8s.io/gengo/types
 # k8s.io/gengo/v2 v2.0.0-20250922181213-ec3ebc5fd46b
@@ -2216,7 +2213,7 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/common/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/proto/client
-# sigs.k8s.io/controller-tools v0.15.0 => github.com/openshift/controller-tools v0.12.1-0.20250402141027-24f590ca0886
+# sigs.k8s.io/controller-tools v0.18.0 => github.com/openshift/controller-tools v0.12.1-0.20250402141027-24f590ca0886
 ## explicit; go 1.23.0
 sigs.k8s.io/controller-tools/cmd/controller-gen
 sigs.k8s.io/controller-tools/pkg/crd
@@ -2232,11 +2229,28 @@ sigs.k8s.io/controller-tools/pkg/schemapatcher
 sigs.k8s.io/controller-tools/pkg/schemapatcher/internal/yaml
 sigs.k8s.io/controller-tools/pkg/version
 sigs.k8s.io/controller-tools/pkg/webhook
+# sigs.k8s.io/crdify v0.5.0
+## explicit; go 1.24.0
+sigs.k8s.io/crdify/pkg/config
+sigs.k8s.io/crdify/pkg/loaders/composite
+sigs.k8s.io/crdify/pkg/loaders/file
+sigs.k8s.io/crdify/pkg/loaders/git
+sigs.k8s.io/crdify/pkg/loaders/scheme
+sigs.k8s.io/crdify/pkg/runner
+sigs.k8s.io/crdify/pkg/slices
+sigs.k8s.io/crdify/pkg/validations
+sigs.k8s.io/crdify/pkg/validations/crd/existingfieldremoval
+sigs.k8s.io/crdify/pkg/validations/crd/scope
+sigs.k8s.io/crdify/pkg/validations/crd/storedversionremoval
+sigs.k8s.io/crdify/pkg/validations/property
+sigs.k8s.io/crdify/pkg/validators/crd
+sigs.k8s.io/crdify/pkg/validators/version/same
+sigs.k8s.io/crdify/pkg/validators/version/served
 # sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8
 ## explicit; go 1.23
 sigs.k8s.io/json
 sigs.k8s.io/json/internal/golang/encoding/json
-# sigs.k8s.io/kube-api-linter v0.0.0-20251205122056-74c4ae94ad3d
+# sigs.k8s.io/kube-api-linter v0.0.0-20260114104534-18147eee9c49
 ## explicit; go 1.24.0
 sigs.k8s.io/kube-api-linter
 sigs.k8s.io/kube-api-linter/pkg/analysis/arrayofstruct
@@ -2244,6 +2258,7 @@ sigs.k8s.io/kube-api-linter/pkg/analysis/commentstart
 sigs.k8s.io/kube-api-linter/pkg/analysis/conditions
 sigs.k8s.io/kube-api-linter/pkg/analysis/conflictingmarkers
 sigs.k8s.io/kube-api-linter/pkg/analysis/defaultorrequired
+sigs.k8s.io/kube-api-linter/pkg/analysis/defaults
 sigs.k8s.io/kube-api-linter/pkg/analysis/dependenttags
 sigs.k8s.io/kube-api-linter/pkg/analysis/duplicatemarkers
 sigs.k8s.io/kube-api-linter/pkg/analysis/errors
@@ -2255,6 +2270,7 @@ sigs.k8s.io/kube-api-linter/pkg/analysis/initializer
 sigs.k8s.io/kube-api-linter/pkg/analysis/integers
 sigs.k8s.io/kube-api-linter/pkg/analysis/jsontags
 sigs.k8s.io/kube-api-linter/pkg/analysis/maxlength
+sigs.k8s.io/kube-api-linter/pkg/analysis/minlength
 sigs.k8s.io/kube-api-linter/pkg/analysis/namingconventions
 sigs.k8s.io/kube-api-linter/pkg/analysis/nobools
 sigs.k8s.io/kube-api-linter/pkg/analysis/nodurations

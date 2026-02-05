@@ -25,7 +25,7 @@ values larger than int32.
 It also states that unsigned integers should be replaced with signed integers, and then numeric
 lower bounds added to prevent negative integers.
 
-Succinctly this anaylzer checks for int, int8, int16, uint, uint8, uint16, uint32 and uint64 types
+Succinctly this analyzer checks for int, int8, int16, uint, uint8, uint16, uint32 and uint64 types
 and highlights that they should not be used.
 */
 package integers

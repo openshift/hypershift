@@ -20,7 +20,7 @@ go build -o ./bin ./cmd/golangci-lint-kube-api-linter
 ```
 
 The binary builds a custom version of `golangci-lint` with Kube API Linter included as a module.
-See [Golangci-lint Moduule](#golangci-lint-module) for details on configuration of the module
+See [Golangci-lint Module](#golangci-lint-module) for details on configuration of the module
 under `settings`.
 
 ### Golangci-lint Module

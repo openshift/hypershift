@@ -17,7 +17,7 @@ limitations under the License.
 /*
 conditions is a linter that verifies that the conditions field within the struct is correctly defined.
 
-conditions fields in Kuberenetes API types are expected to be a slice of metav1.Condition.
+conditions fields in Kubernetes API types are expected to be a slice of metav1.Condition.
 This linter verifies that the field is a slice of metav1.Condition and that it is correctly annotated with the required markers,
 and tags.
 

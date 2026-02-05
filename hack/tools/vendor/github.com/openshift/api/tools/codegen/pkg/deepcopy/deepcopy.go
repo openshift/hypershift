@@ -6,18 +6,20 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/openshift/api/tools/codegen/pkg/generation"
 	"github.com/openshift/api/tools/codegen/pkg/utils"
+	"k8s.io/gengo/v2/parser"
+	"k8s.io/gengo/v2/types"
 	"k8s.io/klog/v2"
 
 	"k8s.io/code-generator/cmd/deepcopy-gen/args"
 	"k8s.io/code-generator/cmd/deepcopy-gen/generators"
 
-	"k8s.io/gengo/v2"
 	gengogenerator "k8s.io/gengo/v2/generator"
 )
 
 // generateDeepcopyFunctions generates the DeepCopy functions for the given API package paths.
-func generateDeepcopyFunctions(path, packagePath, outputBaseFileName, headerFilePath string, verify bool) error {
+func generateDeepcopyFunctions(p *parser.Parser, universe types.Universe, path, packagePath, outputBaseFileName, headerFilePath string, verify bool) error {
 	wd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get working directory: %w", err)
@@ -38,7 +40,7 @@ func generateDeepcopyFunctions(path, packagePath, outputBaseFileName, headerFile
 	}
 
 	args := &args.Args{
-		BoundingDirs: []string{inputPath},
+		BoundingDirs: []string{packagePath},
 		GoHeaderFile: headerFilePath,
 		OutputFile:   outputBaseFileName,
 	}
@@ -49,12 +51,11 @@ func generateDeepcopyFunctions(path, packagePath, outputBaseFileName, headerFile
 		return generators.GetTargets(context, args)
 	}
 
-	if err := gengo.Execute(
+	if err := generation.Execute(p, universe,
 		generators.NameSystems(),
 		generators.DefaultNameSystem(),
 		myTargets,
-		gengo.StdBuildTag,
-		[]string{inputPath},
+		[]string{packagePath},
 	); err != nil {
 		return fmt.Errorf("error executing deepcopy generator: %w", err)
 	}

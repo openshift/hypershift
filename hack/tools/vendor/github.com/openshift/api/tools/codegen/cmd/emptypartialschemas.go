@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/openshift/api/tools/codegen/pkg/emptypartialschemas"
 
 	"github.com/openshift/api/tools/codegen/pkg/generation"
@@ -25,7 +26,7 @@ var emptyPartialSchemasCmd = &cobra.Command{
 			return fmt.Errorf("could not build generation context: %w", err)
 		}
 
-		gen := newEmptyPartialSchemaGenerator()
+		gen := newEmptyPartialSchemaGenerator(genCtx)
 
 		return executeGenerators(genCtx, gen)
 	},
@@ -36,9 +37,11 @@ func init() {
 }
 
 // newDeepcopyhGenerator builds a new empty-partial-schemas generator.
-func newEmptyPartialSchemaGenerator() generation.Generator {
+func newEmptyPartialSchemaGenerator(genCtx generation.Context) generation.Generator {
 	return emptypartialschemas.NewGenerator(emptypartialschemas.Options{
 		OutputFileBaseName: emptyPartialSchemaReportOutputFileBaseName,
 		Verify:             verify,
+		GlobalParser:       genCtx.GlobalParser,
+		Universe:           genCtx.Universe,
 	})
 }
