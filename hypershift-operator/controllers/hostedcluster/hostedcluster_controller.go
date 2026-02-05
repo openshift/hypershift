@@ -4135,7 +4135,11 @@ func parseNodePortRange(rangeStr string) (min, max int32, err error) {
 		return 0, 0, fmt.Errorf("invalid maximum port: %s", parts[1])
 	}
 
-	return int32(minVal), int32(maxVal), nil
+	minPort, maxPort := int32(minVal), int32(maxVal)
+	if minPort > maxPort {
+		return 0, 0, fmt.Errorf("invalid range: minimum port %d must be less than or equal to maximum port %d", minPort, maxPort)
+	}
+	return minPort, maxPort, nil
 }
 
 // validateNodePortPortRange validates that NodePort.Port is within the configured ServiceNodePortRange.

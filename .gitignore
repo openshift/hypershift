@@ -43,6 +43,9 @@ tools/bin
 # Mocked interface generate through mockgen
 *_mock.go
 
+# Claude Code working directory
+.work/
+
 # dev
 dev/
 

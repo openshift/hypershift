@@ -5133,6 +5133,18 @@ func TestParseNodePortRange(t *testing.T) {
 			expectedMax: 99999,
 			expectError: false, // parseNodePortRange doesn't validate port limits
 		},
+		{
+			name:        "min greater than max - invalid range",
+			rangeStr:    "32767-30000",
+			expectError: true,
+		},
+		{
+			name:        "min equals max - valid single port range",
+			rangeStr:    "31000-31000",
+			expectedMin: 31000,
+			expectedMax: 31000,
+			expectError: false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -5321,6 +5333,33 @@ func TestValidateNodePortPortRange(t *testing.T) {
 			},
 			expectedErrorList: field.ErrorList{
 				field.Invalid(field.NewPath("spec.configuration.network.serviceNodePortRange"), "invalid-range", "invalid ServiceNodePortRange format: invalid minimum port: invalid"),
+			},
+		},
+		{
+			name: "reversed range - min greater than max",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Network: &configv1.NetworkSpec{
+							ServiceNodePortRange: "35000-25000",
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+								NodePort: &hyperv1.NodePortPublishingStrategy{
+									Address: "1.1.1.1",
+									Port:    31000,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErrorList: field.ErrorList{
+				field.Invalid(field.NewPath("spec.configuration.network.serviceNodePortRange"), "35000-25000", "invalid ServiceNodePortRange format: invalid range: minimum port 35000 must be less than or equal to maximum port 25000"),
 			},
 		},
 		{
