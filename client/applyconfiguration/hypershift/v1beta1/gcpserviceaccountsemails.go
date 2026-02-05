@@ -20,8 +20,9 @@ package v1beta1
 // GCPServiceAccountsEmailsApplyConfiguration represents a declarative configuration of the GCPServiceAccountsEmails type for use
 // with apply.
 type GCPServiceAccountsEmailsApplyConfiguration struct {
-	NodePool     *string `json:"nodePool,omitempty"`
-	ControlPlane *string `json:"controlPlane,omitempty"`
+	NodePool        *string `json:"nodePool,omitempty"`
+	ControlPlane    *string `json:"controlPlane,omitempty"`
+	CloudController *string `json:"cloudController,omitempty"`
 }
 
 // GCPServiceAccountsEmailsApplyConfiguration constructs a declarative configuration of the GCPServiceAccountsEmails type for use with
@@ -43,5 +44,13 @@ func (b *GCPServiceAccountsEmailsApplyConfiguration) WithNodePool(value string) 
 // If called multiple times, the ControlPlane field is set to the value of the last call.
 func (b *GCPServiceAccountsEmailsApplyConfiguration) WithControlPlane(value string) *GCPServiceAccountsEmailsApplyConfiguration {
 	b.ControlPlane = &value
+	return b
+}
+
+// WithCloudController sets the CloudController field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the CloudController field is set to the value of the last call.
+func (b *GCPServiceAccountsEmailsApplyConfiguration) WithCloudController(value string) *GCPServiceAccountsEmailsApplyConfiguration {
+	b.CloudController = &value
 	return b
 }

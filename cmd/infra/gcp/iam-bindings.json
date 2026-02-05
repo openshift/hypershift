@@ -25,6 +25,20 @@
         "namespace": "kube-system",
         "name": "control-plane-operator"
       }
+    },
+    {
+      "name": "cloud-controller",
+      "displayName": "Cloud Controller Manager Service Account",
+      "description": "Service account for GCP Cloud Controller Manager (LoadBalancer and node management)",
+      "roles": [
+        "roles/compute.loadBalancerAdmin",
+        "roles/compute.securityAdmin",
+        "roles/compute.viewer"
+      ],
+      "k8sServiceAccount": {
+        "namespace": "kube-system",
+        "name": "cloud-controller-manager"
+      }
     }
   ]
 }
