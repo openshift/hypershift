@@ -74,7 +74,7 @@ func evaluateSequence(cmd *cobra.Command, args []string) (cmdError error) {
 	}
 
 	if writeInplace {
-		// only use colors if its forced
+		// only use colours if its forced
 		colorsEnabled = forceColor
 		writeInPlaceHandler := yqlib.NewWriteInPlaceHandler(args[0])
 		out, err = writeInPlaceHandler.CreateTempFile()
@@ -105,6 +105,11 @@ func evaluateSequence(cmd *cobra.Command, args []string) (cmdError error) {
 	}
 
 	printer := yqlib.NewPrinter(encoder, printerWriter)
+
+	if printNodeInfo {
+		printer = yqlib.NewNodeInfoPrinter(printerWriter)
+	}
+
 	if nulSepOutput {
 		printer.SetNulSepOutput(true)
 	}

@@ -1,3 +1,101 @@
+4.52.2:
+  - Fixed bad instructions file breaking go-install (#2587) Thanks @theyoprst
+  - Fixed TOML table scope after comments (#2588) Thanks @tomers
+  - Multiply uses a readonly context (#2558)
+  - Fixed merge globbing wildcards in keys (#2564)
+  - Fixing TOML subarray parsing issue (#2581)
+
+4.52.1:
+  - TOML encoder support - you can now roundtrip! #1364
+  - Parent now supports negative indices, and added a 'root' command for referencing the top level document
+  - Fixed scalar encoding for HCL
+  - Add --yaml-compact-seq-indent / -c flag for compact sequence indentation (#2583) Thanks @jfenal
+  - Add symlink check to file rename util (#2576) Thanks @Elias-elastisys
+  - Powershell fixed default command used for __completeNoDesc alias (#2568) Thanks @teejaded
+  - Unwrap scalars in shell output mode. (#2548) Thanks @flintwinters
+  - Added K8S KYAML output format support (#2560) Thanks @robbat2
+
+  - Bumped dependencies
+  - Special shout out to @ccoVeille for reviewing my PRs!
+
+4.50.1:
+  - Added HCL support!
+  - Fixing handling of CRLF #2352
+  - Bumped dependencies
+
+4.49.2:
+  - Fixing escape character bugs :sweat: #2517
+  - Fixing snap release pipeline #2518 Thanks @aalexjo
+
+
+4.49.1:
+  - Added `--security` flags to disable env and file ops #2515
+  - Fixing TOML ArrayTable parsing issues #1758
+  - Fixing parsing of escaped characters #2506
+
+4.48.2:
+  - Strip whitespace when decoding base64 #2507
+  - Upgraded to go-yaml v4! (thanks @ccoVeille, @ingydotnet)
+  - Add linux/loong64 to release target (thanks @znley)
+  - Added --shell-key-separator flag for customizable shell output format #2497 (thanks @rsleedbx)
+  - Bumped dependencies 
+
+4.48.1:
+  - Added 'parents' operator, to return a list of all the hierarchical parents of a node
+  - Added 'first(exp)' operator, to return the first entry matching an expression in an array 
+  - Fixed xml namespace prefixes #1730 (thanks @baodrate)
+  - Fixed out of range panic in yaml decoder #2460 (thanks @n471d)
+  - Bumped dependencies 
+
+4.47.2:
+  - Conversion from TOML to JSON no longer omits empty tables #2459 (thanks @louislouislouislouis)
+  - Bumped dependencies
+
+4.47.1:
+  - Fixed merge anchor behaviour (`<<`); #2404, #2110, #2386, #2178 Huge thanks to @stevenwdv!
+    Note that you will need to set --yaml-fix-merge-anchor-to-spec to see the fixes
+  - Fixed panic for syntax error when creating a map #2423
+  - Bumped dependencies
+
+4.46.1:
+  - Added INI support
+  - Fixed 'add' operator when piped in with no data #2378, #2383, #2384
+  - Fixed delete after slice problem (bad node path) #2387 Thanks @antoinedeschenes
+  - Fixed yq small build Thanks @imzue
+  - Switched to YAML org supported go-yaml!
+  - Bumped dependencies
+
+
+4.45.4:
+  - Fixing wrong map() behaviour on empty map #2359
+  - Bumped dependencies
+
+4.45.3:
+  - Fixing regression introduced with in 4.45.2 with #2325 fix :sweat: sorry folks!
+  - Bumped dependencies
+
+4.45.2:
+  - Added windows arm builds (Thanks @albertocavalcante, @ShukantPal)
+  - Added s390x platform support (Thanks @ashokpariya0)
+  - Additionally push docker images to ghcr.io (Thanks @reegnz)
+  - Fixing add when there is no node match #2325
+  - sort_by works on maps
+  - Bumped dependencies
+
+4.45.1:
+  - Create parent directories when --split-exp is used, Thanks @rudo-thomas
+  - Bumped dependencies 
+
+4.44.6:
+  - Fixed deleting items in array bug #2027, #2172; Thanks @jandubois 
+  - Docker image for armv7 / raspberry pi3, Thanks @brianegge
+  - Fixed no-colors regression #2218
+  - Fixed various panic scenarios #2211
+  - Bumped dependencies 
+
+4.44.5:
+  - Fixing release pipeline
+
 4.44.4:
 - Format comments with a gray foreground (Thanks @gabe565)
 - Fixed handling of nulls with sort_by expressions #2164

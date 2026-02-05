@@ -7,6 +7,8 @@ type YamlPreferences struct {
 	PrintDocSeparators          bool
 	UnwrapScalar                bool
 	EvaluateTogether            bool
+	FixMergeAnchorToSpec        bool
+	CompactSequenceIndent       bool
 }
 
 func NewDefaultYamlPreferences() YamlPreferences {
@@ -17,6 +19,8 @@ func NewDefaultYamlPreferences() YamlPreferences {
 		PrintDocSeparators:          true,
 		UnwrapScalar:                true,
 		EvaluateTogether:            false,
+		FixMergeAnchorToSpec:        false,
+		CompactSequenceIndent:       false,
 	}
 }
 
@@ -28,6 +32,8 @@ func (p *YamlPreferences) Copy() YamlPreferences {
 		PrintDocSeparators:          p.PrintDocSeparators,
 		UnwrapScalar:                p.UnwrapScalar,
 		EvaluateTogether:            p.EvaluateTogether,
+		FixMergeAnchorToSpec:        p.FixMergeAnchorToSpec,
+		CompactSequenceIndent:       p.CompactSequenceIndent,
 	}
 }
 

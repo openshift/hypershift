@@ -57,7 +57,7 @@ var participleYqRules = []*participleYqRule{
 	simpleOp("sort_?keys", sortKeysOpType),
 
 	{"ArrayToMap", "array_?to_?map", expressionOpToken(`(.[] | select(. != null) ) as $i ireduce({}; .[$i | key] = $i)`), 0},
-
+	{"Root", "root", expressionOpToken(`parent(-1)`), 0},
 	{"YamlEncodeWithIndent", `to_?yaml\([0-9]+\)`, encodeParseIndent(YamlFormat), 0},
 	{"XMLEncodeWithIndent", `to_?xml\([0-9]+\)`, encodeParseIndent(XMLFormat), 0},
 	{"JSONEncodeWithIndent", `to_?json\([0-9]+\)`, encodeParseIndent(JSONFormat), 0},
@@ -118,6 +118,7 @@ var participleYqRules = []*participleYqRule{
 
 	simpleOp("sort_?by", sortByOpType),
 	simpleOp("sort", sortOpType),
+	simpleOp("first", firstOpType),
 
 	simpleOp("reverse", reverseOpType),
 
@@ -130,7 +131,8 @@ var participleYqRules = []*participleYqRule{
 	simpleOp("contains", containsOpType),
 	simpleOp("split", splitStringOpType),
 
-	{"ParentWithLevel", `parent\([0-9]+\)`, parentWithLevel(), 0},
+	simpleOp("parents", getParentsOpType),
+	{"ParentWithLevel", `parent\(-?[0-9]+\)`, parentWithLevel(), 0},
 	{"ParentWithDefaultLevel", `parent`, parentWithDefaultLevel(), 0},
 
 	simpleOp("keys", keysOpType),
@@ -377,9 +379,7 @@ func stringValue() yqAction {
 		log.Debug("rawTokenvalue: %v", rawToken.Value)
 		value := unwrap(rawToken.Value)
 		log.Debug("unwrapped: %v", value)
-		value = strings.ReplaceAll(value, "\\\"", "\"")
-		value = strings.ReplaceAll(value, "\\n", "\n")
-		log.Debug("replaced: %v", value)
+		value = processEscapeCharacters(value)
 		return &token{TokenType: operationToken, Operation: &Operation{
 			OperationType: stringInterpolationOpType,
 			StringValue:   value,
@@ -451,6 +451,7 @@ func multiplyWithPrefs(op *operationType) yqAction {
 			prefs.AssignPrefs.ClobberCustomTags = true
 		}
 		prefs.TraversePrefs.DontFollowAlias = true
+		prefs.TraversePrefs.ExactKeyMatch = true
 		op := &Operation{OperationType: op, Value: multiplyOpType.Type, StringValue: options, Preferences: prefs}
 		return &token{TokenType: operationToken, Operation: op}, nil
 	}

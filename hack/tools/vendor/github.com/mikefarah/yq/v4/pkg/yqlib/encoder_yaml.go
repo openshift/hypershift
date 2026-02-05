@@ -1,15 +1,11 @@
 package yqlib
 
 import (
-	"bufio"
 	"bytes"
-	"errors"
 	"io"
-	"regexp"
 	"strings"
 
-	"github.com/fatih/color"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 )
 
 type yamlEncoder struct {
@@ -25,64 +21,24 @@ func (ye *yamlEncoder) CanHandleAliases() bool {
 }
 
 func (ye *yamlEncoder) PrintDocumentSeparator(writer io.Writer) error {
-	if ye.prefs.PrintDocSeparators {
-		log.Debug("writing doc sep")
-		if err := writeString(writer, "---\n"); err != nil {
-			return err
-		}
-	}
-	return nil
+	return PrintYAMLDocumentSeparator(writer, ye.prefs.PrintDocSeparators)
 }
 
 func (ye *yamlEncoder) PrintLeadingContent(writer io.Writer, content string) error {
-	reader := bufio.NewReader(strings.NewReader(content))
-
-	var commentLineRegEx = regexp.MustCompile(`^\s*#`)
-
-	for {
-
-		readline, errReading := reader.ReadString('\n')
-		if errReading != nil && !errors.Is(errReading, io.EOF) {
-			return errReading
-		}
-		if strings.Contains(readline, "$yqDocSeparator$") {
-
-			if err := ye.PrintDocumentSeparator(writer); err != nil {
-				return err
-			}
-
-		} else {
-			if len(readline) > 0 && readline != "\n" && readline[0] != '%' && !commentLineRegEx.MatchString(readline) {
-				readline = "# " + readline
-			}
-			if ye.prefs.ColorsEnabled && strings.TrimSpace(readline) != "" {
-				readline = format(color.FgHiBlack) + readline + format(color.Reset)
-			}
-			if err := writeString(writer, readline); err != nil {
-				return err
-			}
-		}
-
-		if errors.Is(errReading, io.EOF) {
-			if readline != "" {
-				// the last comment we read didn't have a newline, put one in
-				if err := writeString(writer, "\n"); err != nil {
-					return err
-				}
-			}
-			break
-		}
-	}
-
-	return nil
+	return PrintYAMLLeadingContent(writer, content, ye.prefs.PrintDocSeparators, ye.prefs.ColorsEnabled)
 }
 
 func (ye *yamlEncoder) Encode(writer io.Writer, node *CandidateNode) error {
 	log.Debug("encoderYaml - going to print %v", NodeToString(node))
+	// Detect line ending style from LeadingContent
+	lineEnding := "\n"
+	if strings.Contains(node.LeadingContent, "\r\n") {
+		lineEnding = "\r\n"
+	}
 	if node.Kind == ScalarNode && ye.prefs.UnwrapScalar {
 		valueToPrint := node.Value
 		if node.LeadingContent == "" || valueToPrint != "" {
-			valueToPrint = valueToPrint + "\n"
+			valueToPrint = valueToPrint + lineEnding
 		}
 		return writeString(writer, valueToPrint)
 	}
@@ -96,6 +52,9 @@ func (ye *yamlEncoder) Encode(writer io.Writer, node *CandidateNode) error {
 	var encoder = yaml.NewEncoder(destination)
 
 	encoder.SetIndent(ye.prefs.Indent)
+	if ye.prefs.CompactSequenceIndent {
+		encoder.CompactSeqIndent()
+	}
 
 	target, err := node.MarshalYAML()
 
