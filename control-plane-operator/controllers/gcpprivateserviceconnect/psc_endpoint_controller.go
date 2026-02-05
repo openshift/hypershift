@@ -271,7 +271,12 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 	}
 
 	// 12. Reconcile external-dns services for private clusters with external names
-	return r.reconcileExternalServices(ctx, gcpPSC, hcp, log)
+	if result, err := r.reconcileExternalServices(ctx, gcpPSC, hcp, log); err != nil || !result.IsZero() {
+		return result, err
+	}
+
+	// 13. Requeue for drift detection - periodically check GCP resources for out-of-band changes
+	return ctrl.Result{RequeueAfter: driftDetectionRequeueInterval}, nil
 }
 
 // reconcileDNS reconciles DNS zones and records after PSC endpoint is available
@@ -704,8 +709,8 @@ func (r *GCPPrivateServiceConnectReconciler) updateStatusFromEndpoint(ctx contex
 		return ctrl.Result{}, err
 	}
 
-	// Always requeue to catch and report out-of-band changes in GCP (drift detection)
-	return ctrl.Result{RequeueAfter: driftDetectionRequeueInterval}, nil
+	// Return success - drift detection requeue is applied at the end of Reconcile
+	return ctrl.Result{}, nil
 }
 
 // reconcileDelete handles cleanup when the CR is being deleted.
