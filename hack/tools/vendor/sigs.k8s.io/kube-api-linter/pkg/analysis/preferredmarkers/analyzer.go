@@ -34,6 +34,9 @@ const name = "preferredmarkers"
 type analyzer struct {
 	// equivalentToPreferred maps equivalent marker identifiers to their preferred identifiers
 	equivalentToPreferred map[string]string
+
+	// preferredToMessage maps preferred marker identifiers to their custom message
+	preferredToMessage map[string]string
 }
 
 // newAnalyzer creates a new analysis.Analyzer for the preferredmarkers
@@ -41,12 +44,18 @@ type analyzer struct {
 func newAnalyzer(cfg *Config) *analysis.Analyzer {
 	a := &analyzer{
 		equivalentToPreferred: make(map[string]string),
+		preferredToMessage:    make(map[string]string),
 	}
 
 	// Build the mapping from equivalent identifiers to preferred identifiers
 	for _, marker := range cfg.Markers {
 		for _, equivalent := range marker.EquivalentIdentifiers {
 			a.equivalentToPreferred[equivalent.Identifier] = marker.PreferredIdentifier
+		}
+
+		msg := marker.Message
+		if msg != "" {
+			a.preferredToMessage[marker.PreferredIdentifier] = msg
 		}
 	}
 
@@ -75,11 +84,11 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 	}
 
 	inspect.InspectFields(func(field *ast.Field, _ extractjsontags.FieldTagInfo, markersAccess markers.Markers, qualifiedFieldName string) {
-		checkField(pass, field, markersAccess, a.equivalentToPreferred, qualifiedFieldName)
+		checkField(pass, field, markersAccess, a.equivalentToPreferred, a.preferredToMessage, qualifiedFieldName)
 	})
 
 	inspect.InspectTypeSpec(func(typeSpec *ast.TypeSpec, markersAccess markers.Markers) {
-		checkType(pass, typeSpec, markersAccess, a.equivalentToPreferred)
+		checkType(pass, typeSpec, markersAccess, a.equivalentToPreferred, a.preferredToMessage)
 	})
 
 	return nil, nil //nolint:nilnil
@@ -88,26 +97,26 @@ func (a *analyzer) run(pass *analysis.Pass) (any, error) {
 // checkField validates a single struct field for marker usage.
 // Only checks markers directly on the field, not inherited from type aliases,
 // since inherited markers are already reported at the type level.
-func checkField(pass *analysis.Pass, field *ast.Field, markersAccess markers.Markers, equivalentToPreferred map[string]string, qualifiedFieldName string) {
+func checkField(pass *analysis.Pass, field *ast.Field, markersAccess markers.Markers, equivalentToPreferred, preferredToMessage map[string]string, qualifiedFieldName string) {
 	if field == nil || len(field.Names) == 0 {
 		return
 	}
 
 	markerSet := markersAccess.FieldMarkers(field)
 	check(markerSet, equivalentToPreferred, func(marks []markers.Marker, preferredIdentifier string, preferredExists bool) {
-		reportMarkers(pass, marks, preferredIdentifier, qualifiedFieldName, field.Pos(), "field", preferredExists)
+		reportMarkers(pass, marks, preferredIdentifier, preferredToMessage[preferredIdentifier], qualifiedFieldName, field.Pos(), "field", preferredExists)
 	})
 }
 
 // checkType validates a single type definition for marker usage.
-func checkType(pass *analysis.Pass, typeSpec *ast.TypeSpec, markersAccess markers.Markers, equivalentToPreferred map[string]string) {
+func checkType(pass *analysis.Pass, typeSpec *ast.TypeSpec, markersAccess markers.Markers, equivalentToPreferred, preferredToMessage map[string]string) {
 	if typeSpec == nil {
 		return
 	}
 
 	markerSet := markersAccess.TypeMarkers(typeSpec)
 	check(markerSet, equivalentToPreferred, func(marks []markers.Marker, preferredIdentifier string, preferredExists bool) {
-		reportMarkers(pass, marks, preferredIdentifier, typeSpec.Name.Name, typeSpec.Pos(), "type", preferredExists)
+		reportMarkers(pass, marks, preferredIdentifier, preferredToMessage[preferredIdentifier], typeSpec.Name.Name, typeSpec.Pos(), "type", preferredExists)
 	})
 }
 
@@ -193,7 +202,7 @@ func buildTextEdits(marks []markers.Marker, preferredIdentifier string, preferre
 // reportMarkers generates a diagnostic report for markers that should be
 // replaced. This function handles the common logic for both field and type
 // reporting.
-func reportMarkers(pass *analysis.Pass, marks []markers.Marker, preferredIdentifier, elementName string, pos token.Pos, elementType string, preferredExists bool) {
+func reportMarkers(pass *analysis.Pass, marks []markers.Marker, preferredIdentifier, customMessage, elementName string, pos token.Pos, elementType string, preferredExists bool) {
 	if len(marks) == 0 {
 		return
 	}
@@ -205,6 +214,10 @@ func reportMarkers(pass *analysis.Pass, marks []markers.Marker, preferredIdentif
 
 	message := fmt.Sprintf("%s %s uses %s %s, should use preferred marker %q instead",
 		elementType, elementName, markerWord, formatMarkerList(marks), preferredIdentifier)
+
+	if customMessage != "" {
+		message += fmt.Sprintf(": %s", customMessage)
+	}
 
 	fixMessage := "remove equivalent markers"
 	if !preferredExists {

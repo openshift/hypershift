@@ -45,7 +45,7 @@ const (
 // OmitEmptyPolicy is the policy for omitempty.
 // SuggestFix will suggest a fix for the field to add omitempty.
 // Warn will warn about the field to add omitempty.
-// Ignore will ignore the the absence of omitempty.
+// Ignore will ignore the absence of omitempty.
 type OmitEmptyPolicy string
 
 const (

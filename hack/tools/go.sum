@@ -891,8 +891,8 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.2 h1:jpcvIRr3GLoUo
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.2/go.mod h1:Ve9uj1L+deCXFrPOk1LpFXqTg7LCFzFso6PA48q/XZw=
 sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 h1:gBQPwqORJ8d8/YNZWEjoZs7npUVDpVXUUOFfW6CgAqE=
 sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8/go.mod h1:mdzfpAEoE6DHQEN0uh9ZbOCuHbLK5wOm7dK4ctXE9Tg=
-sigs.k8s.io/kube-api-linter v0.0.0-20251205122056-74c4ae94ad3d h1:IvCjirI9B/yN5FfckV6WRWRUPeg38qB9BpSpwq6ED+Q=
-sigs.k8s.io/kube-api-linter v0.0.0-20251205122056-74c4ae94ad3d/go.mod h1:5mP60UakkCye+eOcZ5p98VnV2O49qreW1gq9TdsUf7Q=
+sigs.k8s.io/kube-api-linter v0.0.0-20260205134631-d65d24a9df89 h1:QuWBEzbBkQyuwWPKDEaUBGr8QdHilkc4CdJYCeU1SIo=
+sigs.k8s.io/kube-api-linter v0.0.0-20260205134631-d65d24a9df89/go.mod h1:5mP60UakkCye+eOcZ5p98VnV2O49qreW1gq9TdsUf7Q=
 sigs.k8s.io/randfill v1.0.0 h1:JfjMILfT8A6RbawdsK2JXGBR5AQVfd+9TbzrlneTyrU=
 sigs.k8s.io/randfill v1.0.0/go.mod h1:XeLlZ/jmk4i1HRopwe7/aU3H5n1zNUcX6TM94b3QxOY=
 sigs.k8s.io/structured-merge-diff/v6 v6.3.0 h1:jTijUJbW353oVOd9oTlifJqOGEkUw2jB/fXCbTiQEco=

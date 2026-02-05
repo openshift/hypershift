@@ -2236,7 +2236,7 @@ sigs.k8s.io/controller-tools/pkg/webhook
 ## explicit; go 1.23
 sigs.k8s.io/json
 sigs.k8s.io/json/internal/golang/encoding/json
-# sigs.k8s.io/kube-api-linter v0.0.0-20251205122056-74c4ae94ad3d
+# sigs.k8s.io/kube-api-linter v0.0.0-20260205134631-d65d24a9df89
 ## explicit; go 1.24.0
 sigs.k8s.io/kube-api-linter
 sigs.k8s.io/kube-api-linter/pkg/analysis/arrayofstruct
@@ -2244,6 +2244,7 @@ sigs.k8s.io/kube-api-linter/pkg/analysis/commentstart
 sigs.k8s.io/kube-api-linter/pkg/analysis/conditions
 sigs.k8s.io/kube-api-linter/pkg/analysis/conflictingmarkers
 sigs.k8s.io/kube-api-linter/pkg/analysis/defaultorrequired
+sigs.k8s.io/kube-api-linter/pkg/analysis/defaults
 sigs.k8s.io/kube-api-linter/pkg/analysis/dependenttags
 sigs.k8s.io/kube-api-linter/pkg/analysis/duplicatemarkers
 sigs.k8s.io/kube-api-linter/pkg/analysis/errors
@@ -2255,6 +2256,7 @@ sigs.k8s.io/kube-api-linter/pkg/analysis/initializer
 sigs.k8s.io/kube-api-linter/pkg/analysis/integers
 sigs.k8s.io/kube-api-linter/pkg/analysis/jsontags
 sigs.k8s.io/kube-api-linter/pkg/analysis/maxlength
+sigs.k8s.io/kube-api-linter/pkg/analysis/minlength
 sigs.k8s.io/kube-api-linter/pkg/analysis/namingconventions
 sigs.k8s.io/kube-api-linter/pkg/analysis/nobools
 sigs.k8s.io/kube-api-linter/pkg/analysis/nodurations
