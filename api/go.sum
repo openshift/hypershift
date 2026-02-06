@@ -116,8 +116,8 @@ github.com/onsi/ginkgo/v2 v2.27.5 h1:ZeVgZMx2PDMdJm/+w5fE/OyG6ILo1Y3e+QX4zSR0zTE
 github.com/onsi/ginkgo/v2 v2.27.5/go.mod h1:ArE1D/XhNXBXCBkKOLkbsb2c81dQHCRcF5zwn/ykDRo=
 github.com/onsi/gomega v1.39.0 h1:y2ROC3hKFmQZJNFeGAMeHZKkjBL65mIZcvrLQBF9k6Q=
 github.com/onsi/gomega v1.39.0/go.mod h1:ZCU1pkQcXDO5Sl9/VVEGlDyp+zm0m1cmeG5TOzLgdh4=
-github.com/openshift/api v0.0.0-20260120150926-4c643a652d54 h1:Gm81lfkiXFgg/N0x90WsplERGF2NqYjK0vd8YY/aFpU=
-github.com/openshift/api v0.0.0-20260120150926-4c643a652d54/go.mod h1:d5uzF0YN2nQQFA0jIEWzzOZ+edmo6wzlGLvx5Fhz4uY=
+github.com/openshift/api v0.0.0-20260205045418-81371d13d1fc h1:Crx99bQsvRhRMOMLssfVChaOItelVQhsv3esIFpcszc=
+github.com/openshift/api v0.0.0-20260205045418-81371d13d1fc/go.mod h1:d5uzF0YN2nQQFA0jIEWzzOZ+edmo6wzlGLvx5Fhz4uY=
 github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7 h1:b+tEDhAZIvcjMvVTzG4GxM0Q+QJ8SSeeifLD6EnkRr4=
 github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7/go.mod h1:NV0o688+ZO1jh9neBy8N5HIM9GuWgyWUNpEvl8LBLBI=
 github.com/patrickmn/go-cache v2.1.0+incompatible h1:HRMgzkcYKYpi3C8ajMPV8OFXaaRUnok+kx1WdO15EQc=
