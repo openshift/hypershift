@@ -116,6 +116,7 @@ type Options struct {
 	WaitUntilAvailable                        bool
 	WaitUntilEstablished                      bool
 	RHOBSMonitoring                           bool
+	CVOPrometheusURL                          string
 	SLOsAlerts                                bool
 	MonitoringDashboards                      bool
 	CertRotationScale                         time.Duration
@@ -187,6 +188,10 @@ func (o *Options) Validate() error {
 
 	if o.RHOBSMonitoring && o.EnableCVOManagementClusterMetricsAccess {
 		errs = append(errs, fmt.Errorf("when invoking this command with the --rhobs-monitoring flag, the --enable-cvo-management-cluster-metrics-access flag is not supported "))
+	}
+
+	if len(o.CVOPrometheusURL) > 0 && !o.RHOBSMonitoring && !o.EnableCVOManagementClusterMetricsAccess {
+		errs = append(errs, fmt.Errorf("--cvo-prometheus-url requires either --rhobs-monitoring or --enable-cvo-management-cluster-metrics-access to be enabled"))
 	}
 
 	if len(o.ManagedService) > 0 && o.ManagedService != hyperv1.AroHCP {
@@ -269,7 +274,8 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.EnableCVOManagementClusterMetricsAccess, "enable-cvo-management-cluster-metrics-access", opts.EnableCVOManagementClusterMetricsAccess, "If true, the hosted CVO will have access to the management cluster metrics server to evaluate conditional updates (supported for OpenShift management clusters)")
 	cmd.Flags().BoolVar(&opts.WaitUntilAvailable, "wait-until-available", opts.WaitUntilAvailable, "If true, pauses installation until hypershift operator has been rolled out and its webhook service is available (if installing the webhook)")
 	cmd.Flags().BoolVar(&opts.WaitUntilEstablished, "wait-until-crds-established", opts.WaitUntilEstablished, "If true, pauses installation until all custom resource definitions are established before applying other manifests.")
-	cmd.PersistentFlags().BoolVar(&opts.RHOBSMonitoring, "rhobs-monitoring", opts.RHOBSMonitoring, "If true, HyperShift will generate and use the RHOBS version of monitoring resources (ServiceMonitors, PodMonitors, etc)")
+	cmd.PersistentFlags().BoolVar(&opts.RHOBSMonitoring, "rhobs-monitoring", opts.RHOBSMonitoring, "If true, HyperShift will generate and use the RHOBS version of monitoring resources (ServiceMonitors, PodMonitors, etc). For ROSA HCP, this also enables the Cluster Version Operator to query the RHOBS Prometheus for conditional update evaluation. Use --cvo-prometheus-url to override the default Prometheus endpoint.")
+	cmd.PersistentFlags().StringVar(&opts.CVOPrometheusURL, "cvo-prometheus-url", opts.CVOPrometheusURL, "Prometheus URL for the Cluster Version Operator to query metrics for conditional update risk evaluation. Only effective when --rhobs-monitoring or --enable-cvo-management-cluster-metrics-access is enabled. If not specified, defaults to the RHOBS monitoring stack for ROSA HCP, or the Thanos querier for self-managed HyperShift.")
 	cmd.PersistentFlags().BoolVar(&opts.SLOsAlerts, "slos-alerts", opts.SLOsAlerts, "If true, HyperShift will generate and use the prometheus alerts for monitoring HostedCluster and NodePools")
 	cmd.PersistentFlags().BoolVar(&opts.MonitoringDashboards, "monitoring-dashboards", opts.MonitoringDashboards, "If true, HyperShift will generate a monitoring dashboard for every HostedCluster that it creates")
 	cmd.PersistentFlags().DurationVar(&opts.CertRotationScale, "cert-rotation-scale", opts.CertRotationScale, "The scaling factor for certificate rotation. It is not supported to set this to anything other than 24h.")
@@ -821,6 +827,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		IncludeVersion:                          !opts.Template,
 		UWMTelemetry:                            opts.EnableUWMTelemetryRemoteWrite,
 		RHOBSMonitoring:                         opts.RHOBSMonitoring,
+		CVOPrometheusURL:                        opts.CVOPrometheusURL,
 		MonitoringDashboards:                    opts.MonitoringDashboards,
 		CertRotationScale:                       opts.CertRotationScale,
 		EnableCVOManagementClusterMetricsAccess: opts.EnableCVOManagementClusterMetricsAccess,
@@ -985,6 +992,7 @@ func setupRBAC(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Servi
 
 	operatorClusterRole := assets.HyperShiftOperatorClusterRole{
 		EnableCVOManagementClusterMetricsAccess: opts.EnableCVOManagementClusterMetricsAccess,
+		RHOBSMonitoring:                         opts.RHOBSMonitoring,
 		ManagedService:                          opts.ManagedService,
 		EnableAuditLogPersistence:               opts.EnableAuditLogPersistence,
 	}.Build()
