@@ -53,7 +53,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/openshift/api v0.0.0-20260120150926-4c643a652d54
 	github.com/openshift/client-go v0.0.0-20251202151200-fb4471581cf8
-	github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3
+	github.com/openshift/cloud-credential-operator af37b111bece
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250624174747-899af6573f5f
 	github.com/openshift/cluster-autoscaler-operator v0.0.1-0.20241204142113-43631b045675
 	github.com/openshift/cluster-node-tuning-operator v0.0.0-20250225115807-f166846b7256
