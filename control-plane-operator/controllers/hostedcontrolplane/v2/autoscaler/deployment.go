@@ -75,6 +75,7 @@ const (
 	CommonIgnoredLabelAzureDiskZone     = "topology.disk.csi.azure.com/zone"
 	CommonIgnoredLabelIBMCloudWorkerID  = "ibm-cloud.kubernetes.io/worker-id"
 	CommonIgnoredLabelVPCBlockCSIDriver = "vpc-block-csi-driver-labels"
+	CommonIgnoredLabelGlobalPSENABLED   = "hypershift.openshift.io/nodepool-globalps-enabled"
 )
 
 func (a AutoscalerArg) String() string {
@@ -185,7 +186,8 @@ func appendBasicIgnoreLabels(args []string, platformType hyperv1.PlatformType) [
 		BalancingIgnoreLabelArg.Value(CommonIgnoredLabelAWSEBSZone),
 		BalancingIgnoreLabelArg.Value(CommonIgnoredLabelAzureDiskZone),
 		BalancingIgnoreLabelArg.Value(CommonIgnoredLabelIBMCloudWorkerID),
-		BalancingIgnoreLabelArg.Value(CommonIgnoredLabelVPCBlockCSIDriver))
+		BalancingIgnoreLabelArg.Value(CommonIgnoredLabelVPCBlockCSIDriver),
+		BalancingIgnoreLabelArg.Value(CommonIgnoredLabelGlobalPSENABLED))
 
 	// Add platform-specific labels
 	switch platformType {
