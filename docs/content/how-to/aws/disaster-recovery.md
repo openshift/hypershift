@@ -807,3 +807,58 @@ EXTERNAL_DNS_DOMAIN="guest.jpdv.aws.kerbeross.com"
 - Migration Script
 The migration script is maintained at https://github.com/openshift/hypershift/blob/main/contrib/migration/migrate-hcp.sh
 </details>
+
+## HostedCluster Configuration Requirements for AWS Self-Managed Platforms
+
+!!! important "AWS Self-Managed Platform Configuration"
+
+    When using AWS platform with self-managed infrastructure, to ensure workloads from existing nodes propagate correctly to new NodePool nodes during disaster recovery, the APIServer service configuration must use either **LoadBalancer** or **Route** service publishing strategy with a **fixed hostname** specified.
+
+    This configuration is critical for:
+    - Proper workload migration to new nodes in restored NodePools
+    - Service continuity during disaster recovery processes
+    - Consistent DNS resolution for applications
+    - Maintaining cluster connectivity after node reprovisioning
+
+### Required Configuration
+
+For AWS self-managed platforms, ensure your HostedCluster includes the APIServer service publishing strategy with a fixed hostname:
+
+**Option 1: LoadBalancer with fixed hostname**
+```yaml
+spec:
+  platform:
+    aws:
+      # AWS self-managed configuration
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+      loadBalancer:
+        hostname: api.example.com
+```
+
+**Option 2: Route with fixed hostname**
+```yaml
+spec:
+  platform:
+    aws:
+      # AWS self-managed configuration
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api.example.com
+```
+
+### Why This Configuration is Required
+
+During disaster recovery scenarios:
+
+1. **Node Reprovisioning**: New NodePool nodes are created to replace the original nodes
+2. **Workload Migration**: Applications and workloads need to be transferred from old nodes to new nodes
+3. **Service Continuity**: The fixed hostname ensures that services remain accessible throughout the migration process
+4. **DNS Consistency**: A stable hostname prevents DNS resolution issues that could disrupt application connectivity
+
+Without this configuration, workloads may fail to propagate correctly to new nodes, potentially causing service disruptions during the disaster recovery process.
