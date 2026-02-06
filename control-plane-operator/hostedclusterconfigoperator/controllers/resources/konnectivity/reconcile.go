@@ -63,6 +63,7 @@ func ReconcileAgentDaemonSet(daemonset *appsv1.DaemonSet, params *KonnectivityPa
 				// Default is not the default, it means that the kubelets will reuse the hosts DNS resolver
 				DNSPolicy:                    corev1.DNSDefault,
 				HostNetwork:                  useHostNetwork,
+				ServiceAccountName:           "konnectivity-agent",
 				AutomountServiceAccountToken: ptr.To(false),
 				SecurityContext: &corev1.PodSecurityContext{
 					RunAsUser: ptr.To[int64](1000),

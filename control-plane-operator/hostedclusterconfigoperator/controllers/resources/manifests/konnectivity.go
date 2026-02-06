@@ -50,3 +50,12 @@ func KonnectivityControlPlaneCAConfigMap(ns string) *corev1.ConfigMap {
 		},
 	}
 }
+
+func KonnectivityAgentServiceAccount() *corev1.ServiceAccount {
+	return &corev1.ServiceAccount{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "konnectivity-agent",
+			Namespace: "kube-system",
+		},
+	}
+}
