@@ -576,6 +576,15 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			specifiedArch: "arm64",
 			expectedImage: "",
 		},
+		{
+			name:          "fail because stream metadata is nil",
+			region:        "us-east-1",
+			specifiedArch: "amd64",
+			releaseImage: &releaseinfo.ReleaseImage{
+				StreamMetadata: nil,
+			},
+			expectedImage: "",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -605,7 +614,9 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			}
 
 			ctx := t.Context()
-			tc.releaseImage = fakereleaseprovider.GetReleaseImage(ctx, hc, client, releaseProvider)
+			if tc.releaseImage == nil {
+				tc.releaseImage = fakereleaseprovider.GetReleaseImage(ctx, hc, client, releaseProvider)
+			}
 
 			tc.image, tc.err = defaultNodePoolAMI(tc.region, tc.specifiedArch, tc.releaseImage)
 			if strings.Contains(tc.name, "successfully") {
@@ -617,6 +628,9 @@ func TestDefaultNodePoolAMI(t *testing.T) {
 			} else if strings.Contains(tc.name, "fail because architecture") {
 				g.Expect(tc.image).To(BeEmpty())
 				g.Expect(tc.err.Error()).To(Equal("couldn't find OS metadata for architecture \"" + tc.specifiedArch + "\""))
+			} else if strings.Contains(tc.name, "stream metadata is nil") {
+				g.Expect(tc.image).To(BeEmpty())
+				g.Expect(tc.err.Error()).To(Equal("release image stream metadata is nil"))
 			} else {
 				g.Expect(tc.image).To(BeEmpty())
 				g.Expect(tc.err.Error()).To(Equal("release image metadata has no image for region \"" + tc.region + "\""))

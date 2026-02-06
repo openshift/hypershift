@@ -367,15 +367,9 @@ func (t *Token) reconcileUserDataSecret(userDataSecret *corev1.Secret, token str
 	if karpenterutil.IsKarpenterEnabled(t.hostedCluster.Spec.AutoNode) {
 		npLabels := t.nodePool.GetLabels()
 		if npLabels != nil && npLabels[karpenterutil.ManagedByKarpenterLabel] == "true" {
-			ami := ""
-			if t.nodePool.Spec.Platform.AWS != nil && t.nodePool.Spec.Platform.AWS.AMI != "" {
-				ami = t.nodePool.Spec.Platform.AWS.AMI
-			} else {
-				var err error
-				ami, err = defaultNodePoolAMI(t.hostedCluster.Spec.Platform.AWS.Region, t.nodePool.Spec.Arch, t.releaseImage)
-				if err != nil {
-					return fmt.Errorf("failed to get default node pool AMI: %w", err)
-				}
+			ami, err := defaultNodePoolAMI(t.hostedCluster.Spec.Platform.AWS.Region, t.nodePool.Spec.Arch, t.releaseImage)
+			if err != nil {
+				return fmt.Errorf("failed to get default node pool AMI: %w", err)
 			}
 			userDataSecret.Labels[hyperkarpenterv1.UserDataAMILabel] = ami
 			userDataSecret.Labels[karpenterutil.ManagedByKarpenterLabel] = "true"
