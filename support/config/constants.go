@@ -65,6 +65,14 @@ const (
 	HypershiftImageTag  = "latest"
 )
 
+// Azure Default Values
+const (
+	// DefaultAzureLocation is the default Azure region for resource creation
+	DefaultAzureLocation = "eastus"
+	// DefaultAzureCloud is the default Azure cloud environment
+	DefaultAzureCloud = "AzurePublicCloud"
+)
+
 // Managed Azure Related Constants
 const (
 	// AROHCPKeyVaultManagedIdentityClientID captures the client ID of the managed identity created on an ARO HCP
