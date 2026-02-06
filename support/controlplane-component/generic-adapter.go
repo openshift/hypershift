@@ -16,7 +16,8 @@ type Predicate func(cpContext WorkloadContext) bool
 type genericAdapter struct {
 	adapt             func(cpContext WorkloadContext, resource client.Object) error
 	predicate         Predicate
-	reconcileExisting bool // if true, causes the existing resource to be fetched before adapting
+	platformPredicate Predicate // if false, completely skip this resource (no API calls)
+	reconcileExisting bool      // if true, causes the existing resource to be fetched before adapting
 }
 
 type option func(*genericAdapter)
@@ -35,6 +36,16 @@ func WithPredicate(predicate Predicate) option {
 	}
 }
 
+// WithPlatformPredicate sets a predicate that determines if this resource is applicable to the current platform.
+// If the predicate returns false, the resource is completely skipped (no API calls, no informer creation).
+// Use this for platform-specific resources (e.g., Azure components on AWS).
+// For configuration-based enabling/disabling (where cleanup is needed), use WithPredicate instead.
+func WithPlatformPredicate(predicate Predicate) option {
+	return func(ga *genericAdapter) {
+		ga.platformPredicate = predicate
+	}
+}
+
 // ReconcileExisting can be used as an option when the existing resource should be fetched
 // and passed to the adapt function. This is necessary for resources such as certificates that
 // can result in a change every time we reconcile if we don't load the existing one first.
@@ -47,6 +58,14 @@ func ReconcileExisting() option {
 func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, obj client.Object) error {
 	workloadContext := cpContext.workloadContext()
 
+	// Check platformPredicate first - if false, completely skip this resource
+	// This prevents any API calls for platform-specific resources on the wrong platform
+	if ga.platformPredicate != nil && !ga.platformPredicate(workloadContext) {
+		return nil
+	}
+
+	// Check regular predicate - if false, attempt cleanup
+	// This handles configuration-based enabling/disabling where resources should be removed when disabled
 	if ga.predicate != nil && !ga.predicate(workloadContext) {
 		// get the existing object to read its ownerRefs
 		existing := obj.DeepCopyObject().(client.Object)
