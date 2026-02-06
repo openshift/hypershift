@@ -341,8 +341,9 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	}
 
 	for email, secret := range map[string]*corev1.Secret{
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool:     NodePoolManagementCredsSecret(controlPlaneNamespace),
-		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane: ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
+		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool:        NodePoolManagementCredsSecret(controlPlaneNamespace),
+		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane:    ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
+		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController: CloudControllerCredsSecret(controlPlaneNamespace),
 	} {
 		if err := syncSecret(secret, email); err != nil {
 			errs = append(errs, err)
@@ -386,6 +387,17 @@ func ControlPlaneOperatorCredsSecret(controlPlaneNamespace string) *corev1.Secre
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
 			Name:      "control-plane-operator-creds",
+		},
+	}
+}
+
+// CloudControllerCredsSecret returns the secret containing Workload Identity Federation credentials
+// for the GCP Cloud Controller Manager.
+func CloudControllerCredsSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "cloud-controller-manager-creds",
 		},
 	}
 }
@@ -524,6 +536,10 @@ func (p GCP) validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedClust
 
 	if wif.ServiceAccountsEmails.ControlPlane == "" {
 		return fmt.Errorf("control plane service account email is required")
+	}
+
+	if wif.ServiceAccountsEmails.CloudController == "" {
+		return fmt.Errorf("cloud controller service account email is required")
 	}
 
 	return nil
