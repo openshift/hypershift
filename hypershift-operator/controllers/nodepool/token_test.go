@@ -228,6 +228,115 @@ func TestNewToken(t *testing.T) {
 			expectedError:   "secrets \"ignition-server-ca-cert\" not found",
 		},
 		{
+			name: "When AWS platform with AMI override it should use the override AMI",
+			configGenerator: &ConfigGenerator{
+				hostedCluster: &hyperv1.HostedCluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      hcName,
+						Namespace: hcNamespace,
+					},
+					Spec: hyperv1.HostedClusterSpec{
+						PullSecret: corev1.LocalObjectReference{
+							Name: pullSecret.GetName(),
+						},
+						AdditionalTrustBundle: &corev1.LocalObjectReference{
+							Name: additionalTrustBundle.GetName(),
+						},
+						Configuration: &hyperv1.ClusterConfiguration{
+							Proxy: &configv1.ProxySpec{
+								HTTPProxy:  "http://proxy.example.com",
+								HTTPSProxy: "https://proxy.example.com",
+								NoProxy:    "example.com,10.0.0.0/8,192.168.0.0/16",
+							},
+						},
+						Platform: hyperv1.PlatformSpec{
+							AWS: &hyperv1.AWSPlatformSpec{
+								Region: "us-iso-east-1",
+							},
+						},
+					},
+					Status: hyperv1.HostedClusterStatus{
+						IgnitionEndpoint: "https://example.com",
+					},
+				},
+				nodePool: &hyperv1.NodePool{
+					Spec: hyperv1.NodePoolSpec{
+						Platform: hyperv1.NodePoolPlatform{
+							Type: hyperv1.AWSPlatform,
+							AWS: &hyperv1.AWSNodePoolPlatform{
+								AMI: "ami-custom-override",
+							},
+						},
+					},
+				},
+				controlplaneNamespace: controlplaneNamespace,
+			},
+			fakeObjects: []crclient.Object{
+				pullSecret,
+				additionalTrustBundle,
+				ignitionServerCACert,
+			},
+			cpoCapabilities: &CPOCapabilities{},
+			expectedError:   "",
+		},
+		{
+			name: "When AWS platform with AMI override and nil stream metadata it should use the override AMI",
+			configGenerator: &ConfigGenerator{
+				hostedCluster: &hyperv1.HostedCluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      hcName,
+						Namespace: hcNamespace,
+					},
+					Spec: hyperv1.HostedClusterSpec{
+						PullSecret: corev1.LocalObjectReference{
+							Name: pullSecret.GetName(),
+						},
+						AdditionalTrustBundle: &corev1.LocalObjectReference{
+							Name: additionalTrustBundle.GetName(),
+						},
+						Configuration: &hyperv1.ClusterConfiguration{
+							Proxy: &configv1.ProxySpec{
+								HTTPProxy:  "http://proxy.example.com",
+								HTTPSProxy: "https://proxy.example.com",
+								NoProxy:    "example.com,10.0.0.0/8,192.168.0.0/16",
+							},
+						},
+						Platform: hyperv1.PlatformSpec{
+							AWS: &hyperv1.AWSPlatformSpec{
+								Region: "us-iso-east-1",
+							},
+						},
+					},
+					Status: hyperv1.HostedClusterStatus{
+						IgnitionEndpoint: "https://example.com",
+					},
+				},
+				nodePool: &hyperv1.NodePool{
+					Spec: hyperv1.NodePoolSpec{
+						Platform: hyperv1.NodePoolPlatform{
+							Type: hyperv1.AWSPlatform,
+							AWS: &hyperv1.AWSNodePoolPlatform{
+								AMI: "ami-custom-iso-region",
+							},
+						},
+					},
+				},
+				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig: &rolloutConfig{
+					releaseImage: &releaseinfo.ReleaseImage{
+						StreamMetadata: nil,
+					},
+				},
+			},
+			fakeObjects: []crclient.Object{
+				pullSecret,
+				additionalTrustBundle,
+				ignitionServerCACert,
+			},
+			cpoCapabilities: &CPOCapabilities{},
+			expectedError:   "",
+		},
+		{
 			name:            "When missing configGenerator it should fail",
 			configGenerator: nil,
 			fakeObjects: []crclient.Object{
@@ -288,6 +397,11 @@ func TestNewToken(t *testing.T) {
 			}
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(token).NotTo(BeNil())
+
+			// Validate AMI override is honored when set.
+			if tc.configGenerator.nodePool.Spec.Platform.AWS != nil && tc.configGenerator.nodePool.Spec.Platform.AWS.AMI != "" {
+				g.Expect(token.userData.ami).To(Equal(tc.configGenerator.nodePool.Spec.Platform.AWS.AMI))
+			}
 
 			// Validate expected hashes against raw strings to guarantee expected output.
 			expectedPullSecretHash := []byte(supportutil.HashSimple([]byte(`{"auths":{"example.com":{"auth":"dGVzdDp0ZXN0"}}}`)))
