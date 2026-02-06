@@ -4,6 +4,8 @@
 ## explicit; go 1.23
 # github.com/aws/aws-sdk-go-v2/service/eks v1.64.0
 ## explicit; go 1.22
+# github.com/aws/aws-sdk-go-v2/service/pricing v1.40.11
+## explicit; go 1.23
 # github.com/aws/aws-sdk-go-v2/service/sqs v1.38.8
 ## explicit; go 1.22
 # github.com/aws/aws-sdk-go-v2/service/ssm v1.59.1
