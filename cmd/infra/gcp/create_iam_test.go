@@ -166,6 +166,7 @@ func TestOutput(t *testing.T) {
 					"nodepool-mgmt":    "my-cluster-infra-nodepool-mgmt@my-gcp-project.iam.gserviceaccount.com",
 					"ctrlplane-op":     "my-cluster-infra-ctrlplane-op@my-gcp-project.iam.gserviceaccount.com",
 					"cloud-controller": "my-cluster-infra-cloud-controller@my-gcp-project.iam.gserviceaccount.com",
+					"gcp-pd-csi":       "my-cluster-infra-gcp-pd-csi@my-gcp-project.iam.gserviceaccount.com",
 				},
 			},
 			validateJSON: true,
