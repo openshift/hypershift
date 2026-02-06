@@ -267,3 +267,195 @@ func OpenshiftOVNKubeDaemonSet() *appsv1.DaemonSet {
 		},
 	}
 }
+
+// CreatePreserveRegistriesConfigMap creates a ConfigMap that lists registries to preserve
+// from the existing config.json when syncing pull secrets
+func CreatePreserveRegistriesConfigMap(ctx context.Context, guestClient crclient.Client, registries []string) error {
+	registriesData := ""
+	for _, r := range registries {
+		registriesData += r + "\n"
+	}
+
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hccomanifests.PreserveRegistriesConfigMapName,
+			Namespace: hccomanifests.GlobalPullSecretNamespace,
+		},
+		Data: map[string]string{
+			"registries": registriesData,
+		},
+	}
+
+	if err := guestClient.Create(ctx, cm); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return fmt.Errorf("failed to create preserve-registries ConfigMap: %w", err)
+		}
+		// Update existing ConfigMap
+		existing := &corev1.ConfigMap{}
+		if err := guestClient.Get(ctx, crclient.ObjectKeyFromObject(cm), existing); err != nil {
+			return fmt.Errorf("failed to get existing preserve-registries ConfigMap: %w", err)
+		}
+		existing.Data = cm.Data
+		if err := guestClient.Update(ctx, existing); err != nil {
+			return fmt.Errorf("failed to update preserve-registries ConfigMap: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// DeletePreserveRegistriesConfigMap deletes the preserve-registries ConfigMap
+func DeletePreserveRegistriesConfigMap(ctx context.Context, guestClient crclient.Client) error {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hccomanifests.PreserveRegistriesConfigMapName,
+			Namespace: hccomanifests.GlobalPullSecretNamespace,
+		},
+	}
+
+	if err := guestClient.Delete(ctx, cm); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete preserve-registries ConfigMap: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// CreatePreserveRegistriesVerifierDaemonSet creates a DaemonSet that verifies preserved registries
+// are present in the config.json on all nodes
+func CreatePreserveRegistriesVerifierDaemonSet(ctx context.Context, guestClient crclient.Client, dsImage string, preservedRegistry string) error {
+	daemonSet := &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "preserve-registries-verifier",
+			Namespace: KubeletConfigVerifierNamespace,
+		},
+		Spec: appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": "preserve-registries-verifier",
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"name": "preserve-registries-verifier",
+					},
+				},
+				Spec: corev1.PodSpec{
+					SecurityContext: &corev1.PodSecurityContext{},
+					DNSPolicy:       corev1.DNSDefault,
+					Tolerations:     []corev1.Toleration{{Operator: corev1.TolerationOpExists}},
+					Containers: []corev1.Container{
+						{
+							Name:            "preserve-registries-verifier",
+							Image:           dsImage,
+							ImagePullPolicy: corev1.PullIfNotPresent,
+							Command: []string{
+								"/bin/sh", "-c",
+							},
+							Args: []string{
+								fmt.Sprintf(`
+									echo "Starting preserved registry verification..."
+									echo "Checking for preserved registry: %s"
+
+									# Check if the config.json exists
+									if [ ! -f %s ]; then
+										echo "ERROR: config.json does not exist at %s"
+										exit 1
+									fi
+
+									# Check if the preserved registry is in the config.json
+									if grep -q '"%s"' %s; then
+										echo "SUCCESS: Preserved registry '%s' is present in config.json"
+									else
+										echo "ERROR: Preserved registry '%s' is NOT present in config.json"
+										echo "File content:"
+										cat %s
+										exit 1
+									fi
+
+									echo "SUCCESS: Preserved registry verification completed"
+
+									# Keep the pod running with infinite loop
+									echo "Starting infinite loop to keep pod running..."
+									while true; do
+										echo "Pod is still running... $(date)"
+										sleep 30
+									done
+								`, preservedRegistry, NodePullSecretPath, NodePullSecretPath, preservedRegistry, NodePullSecretPath, preservedRegistry, preservedRegistry, NodePullSecretPath),
+							},
+							SecurityContext: &corev1.SecurityContext{
+								Privileged: ptr.To(true),
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "kubelet-config",
+									MountPath: "/var/lib/kubelet",
+								},
+							},
+							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("40Mi"),
+									corev1.ResourceCPU:    resource.MustParse("20m"),
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "kubelet-config",
+							VolumeSource: corev1.VolumeSource{
+								HostPath: &corev1.HostPathVolumeSource{
+									Path: "/var/lib/kubelet",
+									Type: ptr.To(corev1.HostPathDirectory),
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	return guestClient.Create(ctx, daemonSet)
+}
+
+// PreserveRegistriesVerifierDaemonSet returns a manifest for the preserve-registries verifier DaemonSet
+func PreserveRegistriesVerifierDaemonSet() *appsv1.DaemonSet {
+	return &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "preserve-registries-verifier",
+			Namespace: KubeletConfigVerifierNamespace,
+		},
+	}
+}
+
+// VerifyPreservedRegistries verifies that specified registries are preserved in config.json
+// after additional-pull-secret is added/updated
+func VerifyPreservedRegistries(t *testing.T, ctx context.Context, guestClient crclient.Client, dsImage string, preservedRegistry string) {
+	g := NewWithT(t)
+
+	// Create the DaemonSet
+	t.Logf("Creating preserve-registries verifier DaemonSet to check for registry: %s", preservedRegistry)
+	err := CreatePreserveRegistriesVerifierDaemonSet(ctx, guestClient, dsImage, preservedRegistry)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to create preserve-registries verifier DaemonSet")
+
+	// Wait for DaemonSet to be ready
+	t.Log("Waiting for preserve-registries verifier DaemonSet to be ready")
+	availableNodesCount, err := hyperutil.CountAvailableNodes(ctx, guestClient)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to count available nodes")
+
+	daemonSetsToCheck := []DaemonSetManifest{
+		{GetFunc: PreserveRegistriesVerifierDaemonSet, AllowPartialNodes: true},
+	}
+
+	err = waitForDaemonSetsReady(t, ctx, guestClient, daemonSetsToCheck, availableNodesCount)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to wait for preserve-registries verifier DaemonSet to be ready")
+
+	// Clean up the DaemonSet after verification
+	t.Log("Cleaning up preserve-registries verifier DaemonSet")
+	daemonSet := PreserveRegistriesVerifierDaemonSet()
+	g.Expect(guestClient.Delete(ctx, daemonSet)).To(Succeed())
+}
