@@ -15,12 +15,14 @@ limitations under the License.
 package v1
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
 
 	"github.com/mitchellh/hashstructure/v2"
 	"github.com/samber/lo"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -28,26 +30,33 @@ import (
 // EC2NodeClassSpec is the top level specification for the AWS Karpenter Provider.
 // This will contain configuration necessary to launch instances in AWS.
 type EC2NodeClassSpec struct {
-	// SubnetSelectorTerms is a list of or subnet selector terms. The terms are ORed.
+	// SubnetSelectorTerms is a list of subnet selector terms. The terms are ORed.
 	// +kubebuilder:validation:XValidation:message="subnetSelectorTerms cannot be empty",rule="self.size() != 0"
 	// +kubebuilder:validation:XValidation:message="expected at least one, got none, ['tags', 'id']",rule="self.all(x, has(x.tags) || has(x.id))"
-	// +kubebuilder:validation:XValidation:message="'id' is mutually exclusive, cannot be set with a combination of other fields in subnetSelectorTerms",rule="!self.all(x, has(x.id) && has(x.tags))"
+	// +kubebuilder:validation:XValidation:message="'id' is mutually exclusive, cannot be set with a combination of other fields in a subnet selector term",rule="!self.all(x, has(x.id) && has(x.tags))"
 	// +kubebuilder:validation:MaxItems:=30
 	// +required
 	SubnetSelectorTerms []SubnetSelectorTerm `json:"subnetSelectorTerms" hash:"ignore"`
-	// SecurityGroupSelectorTerms is a list of or security group selector terms. The terms are ORed.
+	// SecurityGroupSelectorTerms is a list of security group selector terms. The terms are ORed.
 	// +kubebuilder:validation:XValidation:message="securityGroupSelectorTerms cannot be empty",rule="self.size() != 0"
 	// +kubebuilder:validation:XValidation:message="expected at least one, got none, ['tags', 'id', 'name']",rule="self.all(x, has(x.tags) || has(x.id) || has(x.name))"
-	// +kubebuilder:validation:XValidation:message="'id' is mutually exclusive, cannot be set with a combination of other fields in securityGroupSelectorTerms",rule="!self.all(x, has(x.id) && (has(x.tags) || has(x.name)))"
-	// +kubebuilder:validation:XValidation:message="'name' is mutually exclusive, cannot be set with a combination of other fields in securityGroupSelectorTerms",rule="!self.all(x, has(x.name) && (has(x.tags) || has(x.id)))"
+	// +kubebuilder:validation:XValidation:message="'id' is mutually exclusive, cannot be set with a combination of other fields in a security group selector term",rule="!self.all(x, has(x.id) && (has(x.tags) || has(x.name)))"
+	// +kubebuilder:validation:XValidation:message="'name' is mutually exclusive, cannot be set with a combination of other fields in a security group selector term",rule="!self.all(x, has(x.name) && (has(x.tags) || has(x.id)))"
 	// +kubebuilder:validation:MaxItems:=30
 	// +required
 	SecurityGroupSelectorTerms []SecurityGroupSelectorTerm `json:"securityGroupSelectorTerms" hash:"ignore"`
+	// CapacityReservationSelectorTerms is a list of capacity reservation selector terms. Each term is ORed together to
+	// determine the set of eligible capacity reservations.
+	// +kubebuilder:validation:XValidation:message="expected at least one, got none, ['tags', 'id']",rule="self.all(x, has(x.tags) || has(x.id))"
+	// +kubebuilder:validation:XValidation:message="'id' is mutually exclusive, cannot be set along with tags in a capacity reservation selector term",rule="!self.all(x, has(x.id) && (has(x.tags) || has(x.ownerID)))"
+	// +kubebuilder:validation:MaxItems:=30
+	// +optional
+	CapacityReservationSelectorTerms []CapacityReservationSelectorTerm `json:"capacityReservationSelectorTerms" hash:"ignore"`
 	// AssociatePublicIPAddress controls if public IP addresses are assigned to instances that are launched with the nodeclass.
 	// +optional
 	AssociatePublicIPAddress *bool `json:"associatePublicIPAddress,omitempty"`
 	// AMISelectorTerms is a list of or ami selector terms. The terms are ORed.
-	// +kubebuilder:validation:XValidation:message="expected at least one, got none, ['tags', 'id', 'name', 'alias']",rule="self.all(x, has(x.tags) || has(x.id) || has(x.name) || has(x.alias))"
+	// +kubebuilder:validation:XValidation:message="expected at least one, got none, ['tags', 'id', 'name', 'alias', 'ssmParameter']",rule="self.all(x, has(x.tags) || has(x.id) || has(x.name) || has(x.alias) || has(x.ssmParameter))"
 	// +kubebuilder:validation:XValidation:message="'id' is mutually exclusive, cannot be set with a combination of other fields in amiSelectorTerms",rule="!self.exists(x, has(x.id) && (has(x.alias) || has(x.tags) || has(x.name) || has(x.owner)))"
 	// +kubebuilder:validation:XValidation:message="'alias' is mutually exclusive, cannot be set with a combination of other fields in amiSelectorTerms",rule="!self.exists(x, has(x.alias) && (has(x.id) || has(x.tags) || has(x.name) || has(x.owner)))"
 	// +kubebuilder:validation:XValidation:message="'alias' is mutually exclusive, cannot be set with a combination of other amiSelectorTerms",rule="!(self.exists(x, has(x.alias)) && self.size() != 1)"
@@ -169,6 +178,23 @@ type SecurityGroupSelectorTerm struct {
 	Name string `json:"name,omitempty"`
 }
 
+type CapacityReservationSelectorTerm struct {
+	// Tags is a map of key/value tags used to select capacity reservations.
+	// Specifying '*' for a value selects all values for a given tag key.
+	// +kubebuilder:validation:XValidation:message="empty tag keys or values aren't supported",rule="self.all(k, k != '' && self[k] != '')"
+	// +kubebuilder:validation:MaxProperties:=20
+	// +optional
+	Tags map[string]string `json:"tags,omitempty"`
+	// ID is the capacity reservation id in EC2
+	// +kubebuilder:validation:Pattern:="^cr-[0-9a-z]+$"
+	// +optional
+	ID string `json:"id,omitempty"`
+	// Owner is the owner id for the ami.
+	// +kubebuilder:validation:Pattern:="^[0-9]{12}$"
+	// +optional
+	OwnerID string `json:"ownerID,omitempty"`
+}
+
 // AMISelectorTerm defines selection logic for an ami used by Karpenter to launch nodes.
 // If multiple fields are used for selection, the requirements are ANDed.
 type AMISelectorTerm struct {
@@ -202,6 +228,9 @@ type AMISelectorTerm struct {
 	// You can specify a combination of AWS account IDs, "self", "amazon", and "aws-marketplace"
 	// +optional
 	Owner string `json:"owner,omitempty"`
+	//SSMParameter is the name (or ARN) of the SSM parameter containing the Image ID.
+	// +optional
+	SSMParameter string `json:"ssmParameter,omitempty"`
 }
 
 // KubeletConfiguration defines args to be used when configuring kubelet on provisioned nodes.
@@ -367,7 +396,7 @@ type BlockDevice struct {
 	// is not supported for gp2, st1, sc1, or standard volumes.
 	// +optional
 	IOPS *int64 `json:"iops,omitempty"`
-	// KMSKeyID (ARN) of the symmetric Key Management Service (KMS) CMK used for encryption.
+	// Identifier (key ID, key alias, key ARN, or alias ARN) of the customer managed KMS key to use for EBS encryption.
 	// +optional
 	KMSKeyID *string `json:"kmsKeyID,omitempty"`
 	// SnapshotID is the ID of an EBS snapshot
@@ -439,6 +468,8 @@ type EC2NodeClass struct {
 	Status EC2NodeClassStatus `json:"status,omitempty"`
 }
 
+// TODO(maxcao13): if we ever change any hashes downstream, we will have to bump this version ourselves, irrespective of upstream.
+
 // We need to bump the EC2NodeClassHashVersion when we make an update to the EC2NodeClass CRD under these conditions:
 // 1. A field changes its default value for an existing field that is already hashed
 // 2. A field is added to the hash calculation with an already-set value
@@ -446,8 +477,10 @@ type EC2NodeClass struct {
 const EC2NodeClassHashVersion = "v4"
 
 func (in *EC2NodeClass) Hash() string {
+	spec := in.Spec
+	spec.UserData = lo.ToPtr(in.UserDataHash())
 	return fmt.Sprint(lo.Must(hashstructure.Hash([]interface{}{
-		in.Spec,
+		spec,
 		// AMIFamily should be hashed using the dynamically resolved value rather than the literal value of the field.
 		// This ensures that scenarios such as changing the field from nil to AL2023 with the alias "al2023@latest"
 		// doesn't trigger drift.
@@ -467,11 +500,12 @@ func (in *EC2NodeClass) InstanceProfileRole() string {
 	return in.Spec.Role
 }
 
-func (in *EC2NodeClass) InstanceProfileTags(clusterName string) map[string]string {
+func (in *EC2NodeClass) InstanceProfileTags(clusterName string, region string) map[string]string {
 	return lo.Assign(in.Spec.Tags, map[string]string{
 		fmt.Sprintf("kubernetes.io/cluster/%s", clusterName): "owned",
-		EKSClusterNameTagKey: clusterName,
-		LabelNodeClass:       in.Name,
+		EKSClusterNameTagKey:   clusterName,
+		LabelNodeClass:         in.Name,
+		v1.LabelTopologyRegion: region,
 	})
 }
 
@@ -543,6 +577,47 @@ func amiVersionFromAlias(alias string) string {
 		log.Fatalf("failed to parse AMI alias %q, invalid format", alias)
 	}
 	return components[1]
+}
+
+// UPSTREAM: <carry>: We need to specially hash our custom user data because we pass in a rotating token into the userData field
+// which unintentionally causes the hash to change and trigger drift. We specially handle any ignition userData by parsing it,
+// getting a special header we include in ignition server requests, and only return that header TargetConfigVersionHash's value.
+// The hash is unique and will act as a trigger for Drift rollout, similar to it's usage in HyperShift and the hyperv1.NodePool API.
+// https://github.com/openshift/hypershift/blob/07b5bf9a97d23d6c7a01164a385e5b9d6c513794/hypershift-operator/controllers/nodepool/config.go#L120
+//
+// comes from https://github.com/openshift/hypershift/blob/c6c65ef3a26243489477c984af93655a33c4167b/hypershift-operator/controllers/nodepool/token.go#L426
+const TargetConfigVersionHashHeader = "TargetConfigVersionHash"
+
+// Returns the TargetConfigVersionHash value from the userData's ignition payload, assuming it's a valid config.
+// If not valid, returns the raw userData, effectively bypassing this handling.
+func (in *EC2NodeClass) UserDataHash() string {
+	var ignitionConfig struct {
+		Ignition struct {
+			Config struct {
+				Merge []struct {
+					HTTPHeaders []struct {
+						Name  string  `json:"name"`
+						Value *string `json:"value"`
+					} `json:"httpHeaders"`
+				} `json:"merge"`
+			} `json:"config"`
+		} `json:"ignition"`
+	}
+
+	if err := json.Unmarshal([]byte(*in.Spec.UserData), &ignitionConfig); err != nil {
+		return *in.Spec.UserData
+	}
+
+	if len(ignitionConfig.Ignition.Config.Merge) == 0 {
+		return *in.Spec.UserData
+	}
+
+	for _, header := range ignitionConfig.Ignition.Config.Merge[0].HTTPHeaders {
+		if header.Name == TargetConfigVersionHashHeader && header.Value != nil {
+			return *header.Value
+		}
+	}
+	return *in.Spec.UserData
 }
 
 // EC2NodeClassList contains a list of EC2NodeClass

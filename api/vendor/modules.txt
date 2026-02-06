@@ -8,8 +8,8 @@
 ## explicit; go 1.22
 # github.com/aws/aws-sdk-go-v2/service/ssm v1.59.1
 ## explicit; go 1.22
-# github.com/aws/karpenter-provider-aws v1.0.8 => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
-## explicit; go 1.23.6
+# github.com/aws/karpenter-provider-aws v1.0.8 => github.com/openshift/karpenter-provider-aws v0.0.0-20260205041821-2aa729da471d
+## explicit; go 1.24.6
 github.com/aws/karpenter-provider-aws/pkg/apis
 github.com/aws/karpenter-provider-aws/pkg/apis/v1
 # github.com/awslabs/operatorpkg v0.0.0-20250909182303-e8e550b6f339
@@ -113,6 +113,9 @@ github.com/munnerz/goautoneg
 ## explicit; go 1.24.0
 github.com/openshift/api/config/v1
 github.com/openshift/api/operator/v1
+# github.com/patrickmn/go-cache v2.1.0+incompatible
+## explicit
+github.com/patrickmn/go-cache
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
@@ -651,8 +654,13 @@ k8s.io/client-go/util/flowcontrol
 k8s.io/client-go/util/homedir
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/workqueue
-# k8s.io/cloud-provider v0.32.2
+# k8s.io/cloud-provider v0.32.3
 ## explicit; go 1.23.0
+k8s.io/cloud-provider/api
+# k8s.io/csi-translation-lib v0.32.3
+## explicit; go 1.23.0
+k8s.io/csi-translation-lib
+k8s.io/csi-translation-lib/plugins
 # k8s.io/klog/v2 v2.130.1
 ## explicit; go 1.18
 k8s.io/klog/v2
@@ -733,10 +741,15 @@ sigs.k8s.io/controller-runtime/pkg/webhook/internal/metrics
 ## explicit; go 1.23
 sigs.k8s.io/json
 sigs.k8s.io/json/internal/golang/encoding/json
-# sigs.k8s.io/karpenter v1.2.1-0.20250212185021-45f73ec7a790
-## explicit; go 1.23.6
+# sigs.k8s.io/karpenter v1.4.1
+## explicit; go 1.24.6
 sigs.k8s.io/karpenter/pkg/apis
 sigs.k8s.io/karpenter/pkg/apis/v1
+sigs.k8s.io/karpenter/pkg/cloudprovider
+sigs.k8s.io/karpenter/pkg/scheduling
+sigs.k8s.io/karpenter/pkg/utils/pretty
+sigs.k8s.io/karpenter/pkg/utils/resources
+sigs.k8s.io/karpenter/pkg/utils/volume
 # sigs.k8s.io/randfill v1.0.0
 ## explicit; go 1.18
 sigs.k8s.io/randfill
@@ -751,4 +764,4 @@ sigs.k8s.io/structured-merge-diff/v6/value
 # sigs.k8s.io/yaml v1.6.0
 ## explicit; go 1.22
 sigs.k8s.io/yaml
-# github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20250409201301-54ec662a99e7
+# github.com/aws/karpenter-provider-aws => github.com/openshift/karpenter-provider-aws v0.0.0-20260205041821-2aa729da471d
