@@ -297,6 +297,9 @@ nav:
         - reference/architecture/managed-azure/secrets-csi.md
         - reference/architecture/managed-azure/shared-ingress.md
   - reference/api.md
+  - 'CLI Flags':
+    - reference/cli-flags/index.md
+    - 'AWS': reference/cli-flags/aws.md
   - reference/concepts-and-personas.md
   - reference/controller-architecture.md
   - reference/goals-and-design-invariants.md

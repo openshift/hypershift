@@ -64,7 +64,7 @@ pre-commit: all verify test
 build: hypershift-operator control-plane-operator control-plane-pki-operator karpenter-operator hypershift product-cli
 
 .PHONY: update
-update: api-deps workspace-sync deps api api-docs clients docs-aggregate
+update: api-deps workspace-sync deps api api-docs clients docs-aggregate cli-docs
 
 GOLANGCI_LINT := $(abspath $(TOOLS_BIN_DIR)/golangci-lint)
 $(GOLANGCI_LINT): $(TOOLS_DIR)/go.mod # Build golangci-lint from tools folder.
@@ -252,6 +252,10 @@ cluster-api-provider-openstack: $(CONTROLLER_GEN)
 .PHONY: api-docs
 api-docs: $(GENAPIDOCS)
 	hack/gen-api-docs.sh $(GENAPIDOCS) $(DIR)
+
+.PHONY: cli-docs
+cli-docs: hypershift
+	$(OUT_DIR)/hypershift docs generate --platform aws --output docs/content/reference/cli-flags
 
 .PHONY: clients
 clients: delegating_client
