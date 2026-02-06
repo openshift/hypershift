@@ -41,6 +41,7 @@ type AWSNodePoolPlatform struct {
 	//
 	// +optional
 	// +kubebuilder:validation:MaxItems=50
+	// +listType=atomic
 	SecurityGroups []AWSResourceReference `json:"securityGroups,omitempty"`
 
 	// rootVolume specifies configuration for the root volume of node instances.
@@ -62,6 +63,8 @@ type AWSNodePoolPlatform struct {
 	//
 	// +kubebuilder:validation:MaxItems=25
 	// +optional
+	// +listType=map
+	// +listMapKey=key
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 
 	// placement specifies the placement options for the EC2 instances.
@@ -179,6 +182,8 @@ type AWSResourceReference struct {
 	// https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Using_Filtering.html
 	// +optional
 	// +kubebuilder:validation:MaxItems=50
+	// +listType=map
+	// +listMapKey=name
 	Filters []Filter `json:"filters,omitempty"`
 }
 
@@ -193,6 +198,7 @@ type Filter struct {
 	// +required
 	// +kubebuilder:validation:MaxItems=50
 	// +kubebuilder:validation:items:MaxLength=255
+	// +listType=set
 	Values []string `json:"values"`
 }
 
@@ -293,6 +299,8 @@ type AWSPlatformSpec struct {
 	// +optional
 	// +immutable
 	// +kubebuilder:validation:MaxItems=50
+	// +listType=map
+	// +listMapKey=name
 	ServiceEndpoints []AWSServiceEndpoint `json:"serviceEndpoints,omitempty"`
 
 	// rolesRef contains references to various AWS IAM roles required to enable
@@ -315,6 +323,8 @@ type AWSPlatformSpec struct {
 	//
 	// +kubebuilder:validation:MaxItems=25
 	// +optional
+	// +listType=map
+	// +listMapKey=key
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 
 	// endpointAccess specifies the publishing scope of cluster endpoints. The
@@ -334,6 +344,7 @@ type AWSPlatformSpec struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=25
 	// +kubebuilder:validation:items:MaxLength=255
+	// +listType=set
 	AdditionalAllowedPrincipals []string `json:"additionalAllowedPrincipals,omitempty"`
 
 	// multiArch specifies whether the Hosted Cluster will be expected to support NodePools with different

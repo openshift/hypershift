@@ -43,6 +43,7 @@ type OpenStackNodePoolPlatform struct {
 
 	// additionalPorts is a list of additional ports to create on the node instances.
 	//
+	// +listType=atomic
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	AdditionalPorts []PortSpec `json:"additionalPorts,omitempty"`
@@ -162,6 +163,7 @@ type SubnetSpec struct {
 	// dnsNameservers holds a list of DNS server addresses that will be provided when creating
 	// the subnet. These addresses need to have the same IP version as CIDR.
 	//
+	// +listType=set
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	// +kubebuilder:validation:items:MaxLength=45
@@ -171,6 +173,7 @@ type SubnetSpec struct {
 	// If set, OpenStack will only allocate these IPs for Machines. It will still be possible to create ports from
 	// outside of these ranges manually.
 	//
+	// +listType=atomic
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	AllocationPools []AllocationPool `json:"allocationPools,omitempty"`
@@ -414,6 +417,8 @@ type PortSpec struct {
 	// of the port. Depending on the configuration of Neutron, it may be
 	// supported to specify a CIDR instead of a specific IP address.
 	//
+	// +listType=map
+	// +listMapKey=ipAddress
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	AllowedAddressPairs []AddressPair `json:"allowedAddressPairs,omitempty"`
