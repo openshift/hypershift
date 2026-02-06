@@ -18,8 +18,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cvo"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	cpoauth "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/ocm"
-	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	alerts "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/alerts"
 	azureresources "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
@@ -54,7 +52,6 @@ import (
 	"github.com/openshift/api/annotations"
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
-	openshiftcpv1 "github.com/openshift/api/openshiftcontrolplane/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -425,70 +422,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile rbac: %w", err))
 	}
 
-	registryConfig := manifests.Registry()
-	var registryConfigExists bool
-	// Check if the registry config exists
-	if err := r.client.Get(ctx, client.ObjectKeyFromObject(registryConfig), registryConfig); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to get registry config: %w", err)
-		}
-	} else {
-		registryConfigExists = true
-	}
-
-	// For platforms where cluster-image-registry-operator (CIRO) needs a PVC to be created, bootstrap needs to happen
-	// in CIRO before the registry config is created. For now, this is the case for the OpenStack platform.
-	// If the object exist, we reconcile the registry config for other fields as it should be fine since the PVC would
-	// exist at this point.
+	// Reconcile the image registry only if the image registry capability is enabled.
+	// Skip this step if the user explicitly disabled image registry.
 	if capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
-		if imageRegistryPlatformWithPVC(hcp.Spec.Platform.Type) && (!registryConfigExists || registryConfig == nil) {
-			log.Info("skipping registry config to let CIRO bootstrap")
-		} else {
-			log.Info("reconciling image registry validating admission policy")
-			if r.platformType == hyperv1.AzurePlatform {
-				if err := registry.ReconcileRegistryConfigValidatingAdmissionPolicies(ctx, hcp, r.client, r.CreateOrUpdate); err != nil {
-					errs = append(errs, fmt.Errorf("failed to reconcile image registry validating admission policy: %w", err))
-				}
-			}
-			log.Info("reconciling registry config")
-			if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
-				err = registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
-				if err != nil {
-					return err
-				}
-				return nil
-			}); err != nil {
-				errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
-			}
-
-			// TODO: remove this when ROSA HCP stops setting the managementState to Removed to disable the Image Registry
-			if registryConfig.Spec.ManagementState == operatorv1.Removed && r.platformType != hyperv1.IBMCloudPlatform && r.platformType != hyperv1.AzurePlatform {
-				log.Info("imageregistry operator managementstate is removed, disabling openshift-controller-manager controllers and cleaning up resources")
-				ocmConfigMap := cpomanifests.OpenShiftControllerManagerConfig(r.hcpNamespace)
-				if _, err := r.CreateOrUpdate(ctx, r.cpClient, ocmConfigMap, func() error {
-					if ocmConfigMap.Data == nil {
-						// CPO has not created the configmap yet, wait for create
-						// This should not happen as we are started by the CPO after the configmap should be created
-						return nil
-					}
-					config := &openshiftcpv1.OpenShiftControllerManagerConfig{}
-					if configStr, exists := ocmConfigMap.Data[ocm.ConfigKey]; exists && len(configStr) > 0 {
-						err := util.DeserializeResource(configStr, config, api.Scheme)
-						if err != nil {
-							return fmt.Errorf("unable to decode existing openshift controller manager configuration: %w", err)
-						}
-					}
-					config.Controllers = []string{"*", fmt.Sprintf("-%s", openshiftcpv1.OpenShiftServiceAccountPullSecretsController)}
-					configStr, err := util.SerializeResource(config, api.Scheme)
-					if err != nil {
-						return fmt.Errorf("failed to serialize openshift controller manager configuration: %w", err)
-					}
-					ocmConfigMap.Data[ocm.ConfigKey] = configStr
-					return nil
-				}); err != nil {
-					errs = append(errs, fmt.Errorf("failed to reconcile openshift-controller-manager config: %w", err))
-				}
-			}
+		log.Info("reconciling image registry")
+		if regErrs := r.reconcileImageRegistry(ctx, hcp); len(regErrs) > 0 {
+			errs = append(errs, regErrs...)
 		}
 	}
 
@@ -3157,4 +3096,53 @@ func imageRegistryPlatformWithPVC(platform hyperv1.PlatformType) bool {
 	default:
 		return false
 	}
+}
+
+// reconcileImageRegistry reconciles the image registry configuration.
+// It handles:
+// - Platform-specific PVC logic (e.g., OpenStack needs CIRO bootstrap first)
+// - Validating admission policies (Azure only)
+// - Registry configuration reconciliation
+func (r *reconciler) reconcileImageRegistry(
+	ctx context.Context,
+	hcp *hyperv1.HostedControlPlane,
+) []error {
+	log := ctrl.LoggerFrom(ctx)
+	var errs []error
+
+	registryConfig := manifests.Registry()
+	var registryConfigExists bool
+	// Check if the registry config exists
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(registryConfig), registryConfig); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return []error{fmt.Errorf("failed to get registry config: %w", err)}
+		}
+	} else {
+		registryConfigExists = true
+	}
+
+	// For platforms where cluster-image-registry-operator (CIRO) needs a PVC to be created, bootstrap needs to happen
+	// in CIRO before the registry config is created. For now, this is the case for the OpenStack platform.
+	// If the object exist, we reconcile the registry config for other fields as it should be fine since the PVC would
+	// exist at this point.
+	if imageRegistryPlatformWithPVC(hcp.Spec.Platform.Type) && (!registryConfigExists || registryConfig == nil) {
+		log.Info("skipping registry config to let CIRO bootstrap")
+		return nil
+	}
+
+	log.Info("reconciling image registry validating admission policy")
+	if r.platformType == hyperv1.AzurePlatform {
+		if err := registry.ReconcileRegistryConfigValidatingAdmissionPolicies(ctx, hcp, r.client, r.CreateOrUpdate); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile image registry validating admission policy: %w", err))
+		}
+	}
+
+	log.Info("reconciling registry config")
+	if _, err := r.CreateOrUpdate(ctx, r.client, registryConfig, func() error {
+		return registry.ReconcileRegistryConfig(registryConfig, r.platformType, hcp.Spec.InfrastructureAvailabilityPolicy)
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile imageregistry config: %w", err))
+	}
+
+	return errs
 }

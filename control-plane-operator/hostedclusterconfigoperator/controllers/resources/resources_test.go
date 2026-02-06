@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -35,7 +34,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 	clientset "k8s.io/client-go/kubernetes"
@@ -1598,79 +1596,6 @@ region = us-east-1
 	}
 }
 
-// TestReconcileOcmConfigChange checks if the OCM(Openshift Controller Manager)'s configuration has changed
-// for the platforms Azure and AWS when the ImageRegistry Operator's managementState is set to Removed
-func TestReconcileOcmConfigChange(t *testing.T) {
-	registryConfig := &imageregistryv1.Config{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "cluster",
-		},
-		Spec: imageregistryv1.ImageRegistrySpec{
-			OperatorSpec: operatorv1.OperatorSpec{
-				ManagementState: "Removed",
-			},
-		},
-	}
-	initialOcmConfigMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "openshift-controller-manager-config",
-			Namespace: "bar",
-		},
-		Data: map[string]string{
-			"config": "original-data",
-		},
-	}
-
-	testCases := []struct {
-		name                     string
-		platformType             hyperv1.PlatformType
-		expectConfigMapUnchanged bool
-	}{
-		{
-			name:                     "OCM configuration remains unchanged for Azure platform",
-			platformType:             hyperv1.AzurePlatform,
-			expectConfigMapUnchanged: true,
-		},
-		{
-			// OCM configuration should remain unchanged for AWS platform also after transitioning from
-			// using managementState: Removed to disable the Image Registry in ROSA HCP
-			name:                     "OCM configuration changes for AWS platform",
-			platformType:             hyperv1.AWSPlatform,
-			expectConfigMapUnchanged: false,
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewWithT(t)
-			// Create a context with a logger for the test
-			ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
-
-			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(initialObjects, registryConfig)...).WithStatusSubresource(&configv1.Infrastructure{}).Build()
-			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(cpObjects, initialOcmConfigMap)...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
-			r := &reconciler{
-				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
-				client:                 fakeClient,
-				uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build(),
-				cpClient:               cpClient,
-				hcpName:                "foo",
-				hcpNamespace:           "bar",
-				releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
-				ImageMetaDataProvider:  &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
-				platformType:           tc.platformType,
-			}
-			_, err := r.Reconcile(ctx, controllerruntime.Request{})
-			g.Expect(err).NotTo(HaveOccurred())
-
-			// Check if the OCM configuration has changed or not
-			updatedOcmConfigMap := &corev1.ConfigMap{}
-			err = cpClient.Get(ctx, types.NamespacedName{Name: "openshift-controller-manager-config", Namespace: "bar"}, updatedOcmConfigMap)
-			g.Expect(err).NotTo(HaveOccurred())
-			g.Expect(reflect.DeepEqual(updatedOcmConfigMap.Data, initialOcmConfigMap.Data)).To(Equal(tc.expectConfigMapUnchanged))
-		})
-	}
-
-}
-
 func makeKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -2551,6 +2476,130 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				if !found {
 					t.Fatal("couldn't find expected condition")
 				}
+			}
+		})
+	}
+}
+
+func TestReconcileImageRegistry(t *testing.T) {
+	testCases := []struct {
+		name                     string
+		hcp                      *hyperv1.HostedControlPlane
+		platformType             hyperv1.PlatformType
+		existingRegistryConfig   *imageregistryv1.Config
+		expectRegistryReconciled bool
+		expectErrors             bool
+		expectVAPReconciled      bool
+	}{
+		{
+			name: "When OpenStack platform has no existing config it should skip to let CIRO bootstrap",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := fakeHCP()
+				hcp.Spec.Platform.Type = hyperv1.OpenStackPlatform
+				return hcp
+			}(),
+			platformType:             hyperv1.OpenStackPlatform,
+			existingRegistryConfig:   nil,
+			expectRegistryReconciled: false,
+			expectErrors:             false,
+		},
+		{
+			name: "When OpenStack platform has existing config it should reconcile normally",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := fakeHCP()
+				hcp.Spec.Platform.Type = hyperv1.OpenStackPlatform
+				return hcp
+			}(),
+			platformType: hyperv1.OpenStackPlatform,
+			existingRegistryConfig: &imageregistryv1.Config{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "cluster",
+					ResourceVersion: "1",
+					Finalizers:      []string{"imageregistry.operator.openshift.io/finalizer"},
+				},
+				Spec: imageregistryv1.ImageRegistrySpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: operatorv1.Managed,
+					},
+				},
+			},
+			expectRegistryReconciled: true,
+			expectErrors:             false,
+		},
+		{
+			name: "When Azure platform it should reconcile validating admission policies",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := fakeHCP()
+				hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+				return hcp
+			}(),
+			platformType:             hyperv1.AzurePlatform,
+			expectRegistryReconciled: true,
+			expectVAPReconciled:      true,
+			expectErrors:             false,
+		},
+		{
+			name: "When AWS platform it should reconcile registry config",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := fakeHCP()
+				hcp.Spec.Platform.Type = hyperv1.AWSPlatform
+				return hcp
+			}(),
+			platformType:             hyperv1.AWSPlatform,
+			expectRegistryReconciled: true,
+			expectErrors:             false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			var guestObjects []client.Object
+			if tc.existingRegistryConfig != nil {
+				guestObjects = append(guestObjects, tc.existingRegistryConfig)
+			}
+
+			guestClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(guestObjects...).
+				Build()
+
+			cpClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(tc.hcp).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+				Build()
+
+			r := &reconciler{
+				client:                 guestClient,
+				cpClient:               cpClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				platformType:           tc.platformType,
+			}
+
+			ctx := logr.NewContext(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
+			errs := r.reconcileImageRegistry(ctx, tc.hcp)
+
+			if tc.expectErrors {
+				g.Expect(len(errs)).To(BeNumerically(">", 0), "expected errors but got none")
+			} else {
+				g.Expect(len(errs)).To(Equal(0), "expected no errors but got: %v", errs)
+			}
+
+			registryConfig := manifests.Registry()
+			err := guestClient.Get(t.Context(), client.ObjectKeyFromObject(registryConfig), registryConfig)
+			if tc.expectRegistryReconciled {
+				g.Expect(err).ToNot(HaveOccurred(), "expected registry config to exist after reconciliation")
+				g.Expect(registryConfig.Spec.HTTPSecret).ToNot(BeEmpty(), "expected HTTPSecret to be set")
+			} else if tc.existingRegistryConfig == nil {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected registry config to not exist")
+			}
+
+			if tc.expectVAPReconciled {
+				vap := manifests.ValidatingAdmissionPolicy("deny-removed-managementstate")
+				err := guestClient.Get(t.Context(), client.ObjectKeyFromObject(vap), vap)
+				g.Expect(err).ToNot(HaveOccurred(), "expected ValidatingAdmissionPolicy to exist for Azure platform")
 			}
 		})
 	}
