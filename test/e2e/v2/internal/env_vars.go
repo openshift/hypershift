@@ -1,4 +1,4 @@
-// +build e2ev2
+//go:build e2ev2
 
 /*
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -145,11 +145,5 @@ func init() {
 		"E2E_SHOW_ENV_HELP",
 		"When set to any non-empty value, displays environment variable help and exits without running tests.",
 		false,
-	)
-	RegisterEnvVarWithDefault(
-		"E2E_STRICT_MODE",
-		"When set to true, enables strict mode validation that requires all pods to belong to predefined workloads.",
-		false,
-		"false",
 	)
 }

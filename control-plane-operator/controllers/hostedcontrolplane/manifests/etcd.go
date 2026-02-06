@@ -103,5 +103,18 @@ func EtcdBackupCronJob(hcpNamespace string) *batchv1.CronJob {
 			Name:      "etcd-backup",
 			Namespace: hcpNamespace,
 		},
+		Spec: batchv1.CronJobSpec{
+			JobTemplate: batchv1.JobTemplateSpec{
+				Spec: batchv1.JobSpec{
+					Template: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{
+								"app": "etcd-backup",
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 }

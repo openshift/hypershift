@@ -1,4 +1,4 @@
-// +build e2ev2
+//go:build e2ev2
 
 /*
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -41,7 +41,7 @@ func TestE2EV2(t *testing.T) {
 	}
 
 	// Register fail handler with gomega
-	RegisterFailHandler(Fail)
+	RegisterFailHandler(internal.InformingAwareFailHandler)
 
 	// Run the ginkgo test suite
 	RunSpecs(t, "HyperShift End To End Test Suite")
