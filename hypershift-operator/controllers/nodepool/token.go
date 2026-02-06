@@ -67,7 +67,6 @@ type userData struct {
 	caCert                 []byte
 	ignitionServerEndpoint string
 	proxy                  *configv1.Proxy
-	ami                    string
 }
 
 // NewToken is the contract to create a new Token struct.
@@ -134,19 +133,10 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 	proxy := globalconfig.ProxyConfig()
 	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, configGenerator.hostedCluster)
 
-	ami := ""
-	if configGenerator.hostedCluster.Spec.Platform.AWS != nil {
-		ami, err = defaultNodePoolAMI(configGenerator.hostedCluster.Spec.Platform.AWS.Region, configGenerator.nodePool.Spec.Arch, configGenerator.releaseImage)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	token.userData = &userData{
 		ignitionServerEndpoint: ignEndpoint,
 		caCert:                 caCert,
 		proxy:                  proxy,
-		ami:                    ami,
 	}
 
 	return token, nil
@@ -377,7 +367,17 @@ func (t *Token) reconcileUserDataSecret(userDataSecret *corev1.Secret, token str
 	if karpenterutil.IsKarpenterEnabled(t.hostedCluster.Spec.AutoNode) {
 		npLabels := t.nodePool.GetLabels()
 		if npLabels != nil && npLabels[karpenterutil.ManagedByKarpenterLabel] == "true" {
-			userDataSecret.Labels[hyperkarpenterv1.UserDataAMILabel] = t.userData.ami
+			ami := ""
+			if t.nodePool.Spec.Platform.AWS != nil && t.nodePool.Spec.Platform.AWS.AMI != "" {
+				ami = t.nodePool.Spec.Platform.AWS.AMI
+			} else {
+				var err error
+				ami, err = defaultNodePoolAMI(t.hostedCluster.Spec.Platform.AWS.Region, t.nodePool.Spec.Arch, t.releaseImage)
+				if err != nil {
+					return fmt.Errorf("failed to get default node pool AMI: %w", err)
+				}
+			}
+			userDataSecret.Labels[hyperkarpenterv1.UserDataAMILabel] = ami
 			userDataSecret.Labels[karpenterutil.ManagedByKarpenterLabel] = "true"
 		}
 	}
