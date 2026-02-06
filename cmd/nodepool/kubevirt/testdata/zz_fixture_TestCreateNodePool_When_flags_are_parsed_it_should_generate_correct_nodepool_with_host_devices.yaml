@@ -1,0 +1,12 @@
+attachDefaultNetwork: true
+compute:
+  cores: 8
+  memory: 16Gi
+hostDevices:
+- count: 2
+  deviceName: gpu-device
+networkInterfaceMultiqueue: Enable
+rootVolume:
+  persistent:
+    size: 128Gi
+  type: Persistent

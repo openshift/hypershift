@@ -112,17 +112,29 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 			RawCreateOptions: o,
 		},
 	}
-	var err error
-	validOpts.ValidatedKubevirtPlatformCreateOptions, err = o.NodePoolOpts.Validate()
 
-	return validOpts, err
+	// Validate the nodepool options
+	// Note: We pass nil for core.CreateNodePoolOptions since cluster create doesn't have NodePool options yet
+	completer, err := o.NodePoolOpts.Validate(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Type assert to get the validated options back
+	if validated, ok := completer.(*kubevirtnodepool.ValidatedKubevirtPlatformCreateOptions); ok {
+		validOpts.ValidatedKubevirtPlatformCreateOptions = validated
+	} else {
+		return nil, fmt.Errorf("unexpected type returned from Validate")
+	}
+
+	return validOpts, nil
 }
 
 // completedCreateOptions is a private wrapper that enforces a call of Complete() before cluster creation can be invoked.
 type completedCreateOptions struct {
 	*ValidatedCreateOptions
 
-	CompletedNodePoolOpts *kubevirtnodepool.KubevirtPlatformCreateOptions
+	CompletedNodePoolOpts *kubevirtnodepool.CompletedKubevirtPlatformCreateOptions
 
 	externalDNSDomain string
 
@@ -147,9 +159,21 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		},
 	}
 
-	completed, err := o.ValidatedKubevirtPlatformCreateOptions.Complete()
-	output.CompletedNodePoolOpts = completed
-	return output, err
+	// Complete the nodepool options
+	// Note: We pass nil for core.CreateNodePoolOptions since cluster create doesn't have NodePool options yet
+	platformOpts, err := o.ValidatedKubevirtPlatformCreateOptions.Complete(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Type assert to get the completed options back
+	if completed, ok := platformOpts.(*kubevirtnodepool.CompletedKubevirtPlatformCreateOptions); ok {
+		output.CompletedNodePoolOpts = completed
+	} else {
+		return nil, fmt.Errorf("unexpected type returned from Complete")
+	}
+
+	return output, nil
 }
 
 func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {

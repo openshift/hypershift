@@ -1,0 +1,16 @@
+availabilityZone: "1"
+encryptionAtHost: Enabled
+image:
+  azureMarketplace:
+    imageGeneration: Gen2
+    offer: aro4
+    publisher: redhat
+    sku: aro_414
+    version: 414.1.20240101
+  type: AzureMarketplace
+osDisk:
+  diskStorageAccountType: StandardSSD_LRS
+  persistence: Ephemeral
+  sizeGiB: 256
+subnetID: /subscriptions/test/resourceGroups/test/providers/Microsoft.Network/virtualNetworks/test/subnets/test
+vmSize: Standard_D8s_v5

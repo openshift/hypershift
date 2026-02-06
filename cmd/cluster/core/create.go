@@ -817,14 +817,20 @@ func (opts *ValidatedCreateOptions) Complete() (*CreateOptions, error) {
 }
 
 // PlatformValidator knows how to validate platform options.
+// All platform implementations MUST use this exact signature for their Validate() method.
+// This unified signature enables interface-based programming and easier maintenance.
 type PlatformValidator interface {
 	// Validate allows the platform-specific logic to validate inputs.
+	// Returns a PlatformCompleter on success, or an error if validation fails.
 	Validate(context.Context, *CreateOptions) (PlatformCompleter, error)
 }
 
 // PlatformCompleter knows how to absorb configuration.
+// All platform implementations MUST use this exact signature for their Complete() method.
+// This unified signature enables interface-based programming and easier maintenance.
 type PlatformCompleter interface {
 	// Complete allows the platform-specific logic to default values from the agnostic set.
+	// Returns a Platform implementation on success, or an error if completion fails.
 	Complete(context.Context, *CreateOptions) (Platform, error)
 }
 
