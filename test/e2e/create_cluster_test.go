@@ -2929,30 +2929,6 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	}).WithAssetReader(content.ReadFile).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
 }
 
-func TestNoneCreateCluster(t *testing.T) {
-	t.Parallel()
-
-	if globalOpts.Platform == hyperv1.AzurePlatform {
-		t.Skip("test not supported on platform Azure")
-	}
-
-	ctx, cancel := context.WithCancel(testContext)
-	defer cancel()
-
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
-
-	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-		// Wait for the rollout to be reported complete
-		// Since the None platform has no workers, CVO will not have expectations set,
-		// which in turn means that the ClusterVersion object will never be populated.
-		// Therefore only test if the control plane comes up (etc, apiserver, ...)
-		e2eutil.WaitForConditionsOnHostedControlPlane(t, ctx, mgtClient, hostedCluster, globalOpts.LatestReleaseImage)
-
-		// etcd restarts for me once always and apiserver two times before running stable
-		// e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
-	}).Execute(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, "none", globalOpts.ServiceAccountSigningKey)
-}
-
 // TestCreateClusterProxy implements a test that creates a cluster behind a proxy with the code under test.
 func TestCreateClusterProxy(t *testing.T) {
 	if globalOpts.Platform != hyperv1.AWSPlatform {

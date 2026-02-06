@@ -28,6 +28,7 @@ import (
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -189,6 +190,9 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		NoticePreemptionOrFailedScheduling(t, context.Background(), h.client, hostedCluster)
 		EnsureAllRoutesUseHCPRouter(t, context.Background(), h.client, hostedCluster)
 		EnsureNetworkPolicies(t, context.Background(), h.client, hostedCluster)
+		if capabilities.IsNodeTuningCapabilityEnabled(hostedCluster.Spec.Capabilities) {
+			EnsureNodeTuningOperatorMetricsEndpoint(t, context.Background(), h.client, hostedCluster)
+		}
 
 		if platform == hyperv1.AWSPlatform {
 			EnsureHCPPodsAffinitiesAndTolerations(t, context.Background(), h.client, hostedCluster)
