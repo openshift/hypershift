@@ -24,12 +24,11 @@ import (
 // GCPPrivateServiceConnectStatusApplyConfiguration represents a declarative configuration of the GCPPrivateServiceConnectStatus type for use
 // with apply.
 type GCPPrivateServiceConnectStatusApplyConfiguration struct {
-	Conditions            []v1.ConditionApplyConfiguration `json:"conditions,omitempty"`
-	ServiceAttachmentName *string                          `json:"serviceAttachmentName,omitempty"`
-	ServiceAttachmentURI  *string                          `json:"serviceAttachmentURI,omitempty"`
-	EndpointIP            *string                          `json:"endpointIP,omitempty"`
-	DNSZoneName           *string                          `json:"dnsZoneName,omitempty"`
-	DNSRecords            []string                         `json:"dnsRecords,omitempty"`
+	Conditions            []v1.ConditionApplyConfiguration  `json:"conditions,omitempty"`
+	ServiceAttachmentName *string                           `json:"serviceAttachmentName,omitempty"`
+	ServiceAttachmentURI  *string                           `json:"serviceAttachmentURI,omitempty"`
+	EndpointIP            *string                           `json:"endpointIP,omitempty"`
+	DNSZones              []DNSZoneStatusApplyConfiguration `json:"dnsZones,omitempty"`
 }
 
 // GCPPrivateServiceConnectStatusApplyConfiguration constructs a declarative configuration of the GCPPrivateServiceConnectStatus type for use with
@@ -75,20 +74,15 @@ func (b *GCPPrivateServiceConnectStatusApplyConfiguration) WithEndpointIP(value 
 	return b
 }
 
-// WithDNSZoneName sets the DNSZoneName field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the DNSZoneName field is set to the value of the last call.
-func (b *GCPPrivateServiceConnectStatusApplyConfiguration) WithDNSZoneName(value string) *GCPPrivateServiceConnectStatusApplyConfiguration {
-	b.DNSZoneName = &value
-	return b
-}
-
-// WithDNSRecords adds the given value to the DNSRecords field in the declarative configuration
+// WithDNSZones adds the given value to the DNSZones field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, values provided by each call will be appended to the DNSRecords field.
-func (b *GCPPrivateServiceConnectStatusApplyConfiguration) WithDNSRecords(values ...string) *GCPPrivateServiceConnectStatusApplyConfiguration {
+// If called multiple times, values provided by each call will be appended to the DNSZones field.
+func (b *GCPPrivateServiceConnectStatusApplyConfiguration) WithDNSZones(values ...*DNSZoneStatusApplyConfiguration) *GCPPrivateServiceConnectStatusApplyConfiguration {
 	for i := range values {
-		b.DNSRecords = append(b.DNSRecords, values[i])
+		if values[i] == nil {
+			panic("nil value passed to WithDNSZones")
+		}
+		b.DNSZones = append(b.DNSZones, *values[i])
 	}
 	return b
 }

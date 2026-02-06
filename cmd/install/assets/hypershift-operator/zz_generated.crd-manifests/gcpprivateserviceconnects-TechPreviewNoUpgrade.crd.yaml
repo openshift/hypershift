@@ -166,17 +166,32 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              dnsRecords:
-                description: dnsRecords lists the created DNS A records
+              dnsZones:
+                description: dnsZones contains DNS zone information created for this
+                  cluster
                 items:
-                  maxLength: 253
-                  type: string
-                maxItems: 10
+                  description: DNSZoneStatus represents a single DNS zone and its
+                    records
+                  properties:
+                    name:
+                      description: name is the DNS zone name
+                      maxLength: 253
+                      minLength: 1
+                      type: string
+                    records:
+                      description: records lists the DNS records created in this zone
+                      items:
+                        maxLength: 253
+                        type: string
+                      maxItems: 10
+                      type: array
+                      x-kubernetes-list-type: atomic
+                  required:
+                  - name
+                  type: object
+                maxItems: 5
                 type: array
-              dnsZoneName:
-                description: dnsZoneName is the private DNS zone name
-                maxLength: 253
-                type: string
+                x-kubernetes-list-type: atomic
               endpointIP:
                 description: |-
                   endpointIP is the reserved IP address for the PSC endpoint
