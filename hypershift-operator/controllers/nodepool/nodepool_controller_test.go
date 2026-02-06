@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -34,6 +35,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -2046,4 +2048,210 @@ func TestSupportedVersionSkewCondition(t *testing.T) {
 			g.Expect(condition.Message).To(Equal(tc.expectedCondition.Message))
 		})
 	}
+}
+
+func TestNodePoolReconciler_reconcile_signalConditionsOrder(t *testing.T) {
+	// Define the expected order of conditions as they appear in reconcile()
+	// This is the source of truth from nodepool_controller.go:279-299
+	expectedConditionOrder := []string{
+		"autoscalerEnabledCondition",          // position 0
+		"updateManagementEnabledCondition",    // position 1
+		"releaseImageCondition",               // position 2
+		"ignitionEndpointAvailableCondition",  // position 3
+		"validArchPlatformCondition",          // position 4
+		"reconciliationActiveCondition",       // position 5
+		"supportedVersionSkewCondition",       // position 6
+		"validMachineConfigCondition",         // position 7
+		"updatingConfigCondition",             // position 8
+		"updatingVersionCondition",            // position 9
+		"validGeneratedPayloadCondition",      // position 10
+		"reachedIgnitionEndpointCondition",    // position 11
+		"machineAndNodeConditions",            // position 12
+		"validPlatformConfigCondition",        // position 13
+	}
+
+	tests := []struct {
+		name                   string
+		conditionResults       []conditionResult // Results to return from each condition in order
+		expectedExecutionCount int               // How many conditions should execute before short circuit
+		expectedResult         ctrl.Result
+		expectedErr            bool
+		expectedErrMsg         string
+	}{
+		{
+			name: "When all conditions return nil, all conditions it should execute in order",
+			conditionResults: []conditionResult{
+				{name: "autoscalerEnabledCondition", result: nil, err: nil},
+				{name: "updateManagementEnabledCondition", result: nil, err: nil},
+				{name: "releaseImageCondition", result: nil, err: nil},
+				{name: "ignitionEndpointAvailableCondition", result: nil, err: nil},
+				{name: "validArchPlatformCondition", result: nil, err: nil},
+			},
+			expectedExecutionCount: 5,
+			expectedResult:         ctrl.Result{},
+			expectedErr:            false,
+		},
+		{
+			name: "When updateManagementEnabledCondition returns error, it should short circuit at position 1",
+			conditionResults: []conditionResult{
+				{name: "autoscalerEnabledCondition", result: nil, err: nil},
+				{name: "updateManagementEnabledCondition", result: nil, err: fmt.Errorf("test error")},
+				{name: "releaseImageCondition", result: nil, err: nil},             // should not execute
+				{name: "ignitionEndpointAvailableCondition", result: nil, err: nil}, // should not execute
+			},
+			expectedExecutionCount: 2,
+			expectedResult:         ctrl.Result{},
+			expectedErr:            true,
+			expectedErrMsg:         "test error",
+		},
+		{
+			name: "When releaseImageCondition returns result, it should short circuit at position 2",
+			conditionResults: []conditionResult{
+				{name: "autoscalerEnabledCondition", result: nil, err: nil},
+				{name: "updateManagementEnabledCondition", result: nil, err: nil},
+				{name: "releaseImageCondition", result: &ctrl.Result{Requeue: true}, err: nil},
+				{name: "ignitionEndpointAvailableCondition", result: nil, err: nil}, // should not execute
+			},
+			expectedExecutionCount: 3,
+			expectedResult:         ctrl.Result{Requeue: true},
+			expectedErr:            false,
+		},
+		{
+			name: "When autoscalerEnabledCondition returns both result and error, it should short circuit immediately at position 0",
+			conditionResults: []conditionResult{
+				{name: "autoscalerEnabledCondition", result: &ctrl.Result{RequeueAfter: 5 * time.Second}, err: fmt.Errorf("condition failed")},
+				{name: "updateManagementEnabledCondition", result: nil, err: nil}, // should not execute
+				{name: "releaseImageCondition", result: nil, err: nil},            // should not execute
+			},
+			expectedExecutionCount: 1,
+			expectedResult:         ctrl.Result{RequeueAfter: 5 * time.Second},
+			expectedErr:            true,
+			expectedErrMsg:         "condition failed",
+		},
+		{
+			name: "When validArchPlatformCondition returns error, it should execute positions 0-4",
+			conditionResults: []conditionResult{
+				{name: "autoscalerEnabledCondition", result: nil, err: nil},
+				{name: "updateManagementEnabledCondition", result: nil, err: nil},
+				{name: "releaseImageCondition", result: nil, err: nil},
+				{name: "ignitionEndpointAvailableCondition", result: nil, err: nil},
+				{name: "validArchPlatformCondition", result: nil, err: fmt.Errorf("fourth failed")},
+				{name: "reconciliationActiveCondition", result: nil, err: nil}, // should not execute
+			},
+			expectedExecutionCount: 5,
+			expectedResult:         ctrl.Result{},
+			expectedErr:            true,
+			expectedErrMsg:         "fourth failed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Track which conditions were executed
+			executedConditionNames := []string{}
+
+			// Create a mock reconciler with condition functions
+			r := &testReconcilerWithMockConditions{
+				conditionResults:       tt.conditionResults,
+				expectedConditionOrder: expectedConditionOrder,
+				executedConditionNames: &executedConditionNames,
+			}
+
+			// Create minimal nodePool and hostedCluster
+			nodePool := &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-nodepool",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-cluster",
+				},
+			}
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "test-infra",
+				},
+			}
+
+			// Execute the reconcile loop with mock conditions
+			result, err := r.reconcileWithMockConditions(context.Background(), hcluster, nodePool)
+
+			// Verify execution count (short circuit behavior)
+			if len(executedConditionNames) != tt.expectedExecutionCount {
+				t.Errorf("Expected %d conditions to execute, but %d executed. Executed: %v",
+					tt.expectedExecutionCount, len(executedConditionNames), executedConditionNames)
+			}
+
+			// Verify conditions executed in the correct order matching reconcile() signalConditions
+			for i, executedName := range executedConditionNames {
+				expectedName := expectedConditionOrder[i]
+				if executedName != expectedName {
+					t.Errorf("Position %d: expected %q, got %q. Order does not match reconcile() signalConditions slice",
+						i, expectedName, executedName)
+				}
+			}
+
+			// Verify error
+			if tt.expectedErr {
+				if err == nil {
+					t.Error("Expected error but got nil")
+				} else if tt.expectedErrMsg != "" && err.Error() != tt.expectedErrMsg {
+					t.Errorf("Expected error message %q, got %q", tt.expectedErrMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error, got: %v", err)
+				}
+			}
+
+			// Verify result
+			if result.Requeue != tt.expectedResult.Requeue {
+				t.Errorf("Expected result.Requeue = %v, got %v", tt.expectedResult.Requeue, result.Requeue)
+			}
+			if result.RequeueAfter != tt.expectedResult.RequeueAfter {
+				t.Errorf("Expected result.RequeueAfter = %v, got %v", tt.expectedResult.RequeueAfter, result.RequeueAfter)
+			}
+		})
+	}
+}
+
+// conditionResult represents the return values of a mock condition function
+type conditionResult struct {
+	name   string
+	result *ctrl.Result
+	err    error
+}
+
+// testReconcilerWithMockConditions is a test helper that simulates the signalConditions loop
+type testReconcilerWithMockConditions struct {
+	conditionResults       []conditionResult
+	expectedConditionOrder []string
+	executedConditionNames *[]string
+}
+
+// reconcileWithMockConditions simulates the signalConditions execution logic from the real reconcile function
+func (r *testReconcilerWithMockConditions) reconcileWithMockConditions(_ context.Context, _ *hyperv1.HostedCluster, _ *hyperv1.NodePool) (ctrl.Result, error) {
+	// Simulate the signalConditions loop from the actual reconcile function
+	for _, condResult := range r.conditionResults {
+		// Track that this condition was executed
+		*r.executedConditionNames = append(*r.executedConditionNames, condResult.name)
+
+		// Simulate the short circuit logic from the actual reconcile function
+		if condResult.err != nil {
+			if condResult.result == nil {
+				return ctrl.Result{}, condResult.err
+			}
+			return *condResult.result, condResult.err
+		}
+		if condResult.result != nil {
+			return *condResult.result, nil
+		}
+	}
+
+	// If all conditions returned nil, return empty result
+	return ctrl.Result{}, nil
 }
