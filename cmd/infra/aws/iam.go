@@ -931,8 +931,20 @@ func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient ia
 		ccmPolicyStatement := `{
 				"Effect": "Allow",
 				"Action": [
+					"elasticloadbalancing:*",
 					"elasticloadbalancing:DescribeTargetGroupAttributes",
 					"elasticloadbalancing:ModifyTargetGroupAttributes"
+				],
+				"Resource": "*"
+			},
+			{
+				"Effect": "Allow",
+				"Action": [
+					"ec2:CreateSecurityGroup",
+					"ec2:AuthorizeSecurityGroupIngress",
+					"ec2:RevokeSecurityGroupIngress",
+					"ec2:DeleteSecurityGroup",
+					"elasticloadbalancing:ApplySecurityGroupsToLoadBalancer"
 				],
 				"Resource": "*"
 			}`
