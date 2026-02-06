@@ -5849,10 +5849,33 @@ spec:
                                 x-kubernetes-validations:
                                 - message: NodePool is immutable
                                   rule: self == oldSelf
+                              storage:
+                                description: |-
+                                  storage is the Google Service Account email for the GCP PD CSI Driver
+                                  that manages Persistent Disk storage operations (create, attach, delete volumes).
+                                  This GSA requires the following IAM roles:
+                                  - roles/compute.storageAdmin (Compute Storage Admin - for managing persistent disks)
+                                  - roles/compute.instanceAdmin.v1 (Compute Instance Admin - for attaching disks to VMs)
+                                  - roles/iam.serviceAccountUser (Service Account User - for impersonation)
+                                  - roles/resourcemanager.tagUser (Tag User - for applying resource tags to disks)
+                                  See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+                                  Format: service-account-name@project-id.iam.gserviceaccount.com
+
+                                  This is a user-provided value referencing a pre-created Google Service Account.
+                                  Typically obtained from the output of `hypershift infra create gcp` which creates
+                                  the required service accounts with appropriate IAM roles and WIF bindings.
+                                maxLength: 100
+                                minLength: 38
+                                pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$
+                                type: string
+                                x-kubernetes-validations:
+                                - message: Storage is immutable
+                                  rule: self == oldSelf
                             required:
                             - cloudController
                             - controlPlane
                             - nodePool
+                            - storage
                             type: object
                         required:
                         - poolID
@@ -5883,6 +5906,10 @@ spec:
                         same project
                       rule: self.workloadIdentity.serviceAccountsEmails.cloudController.contains('@')
                         && self.workloadIdentity.serviceAccountsEmails.cloudController.endsWith('@'
+                        + self.project + '.iam.gserviceaccount.com')
+                    - message: storage service account must belong to the same project
+                      rule: self.workloadIdentity.serviceAccountsEmails.storage.contains('@')
+                        && self.workloadIdentity.serviceAccountsEmails.storage.endsWith('@'
                         + self.project + '.iam.gserviceaccount.com')
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components

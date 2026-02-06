@@ -23,6 +23,7 @@ type GCPServiceAccountsEmailsApplyConfiguration struct {
 	NodePool        *string `json:"nodePool,omitempty"`
 	ControlPlane    *string `json:"controlPlane,omitempty"`
 	CloudController *string `json:"cloudController,omitempty"`
+	Storage         *string `json:"storage,omitempty"`
 }
 
 // GCPServiceAccountsEmailsApplyConfiguration constructs a declarative configuration of the GCPServiceAccountsEmails type for use with
@@ -52,5 +53,13 @@ func (b *GCPServiceAccountsEmailsApplyConfiguration) WithControlPlane(value stri
 // If called multiple times, the CloudController field is set to the value of the last call.
 func (b *GCPServiceAccountsEmailsApplyConfiguration) WithCloudController(value string) *GCPServiceAccountsEmailsApplyConfiguration {
 	b.CloudController = &value
+	return b
+}
+
+// WithStorage sets the Storage field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Storage field is set to the value of the last call.
+func (b *GCPServiceAccountsEmailsApplyConfiguration) WithStorage(value string) *GCPServiceAccountsEmailsApplyConfiguration {
+	b.Storage = &value
 	return b
 }
