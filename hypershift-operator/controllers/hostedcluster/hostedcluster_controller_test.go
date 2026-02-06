@@ -4677,7 +4677,7 @@ func TestReconcileComponents(t *testing.T) {
 			CertRotationScale: 2 * time.Minute,
 			FeatureSet:        configv1.CustomNoUpgrade,
 		}),
-		capiproviderv2.NewComponent(capiDeploymentSpec, nil),
+		capiproviderv2.NewComponent(capiDeploymentSpec, nil, hyperv1.AWSPlatform),
 		capimanagerv2.NewComponent(""),
 		karpenteroperatorv2.NewComponent(&karpenteroperatorv2.KarpenterOperatorOptions{
 			HyperShiftOperatorImage:   "test-image",
@@ -5421,6 +5421,168 @@ func TestIsAWSNodeTerminationHandlerNeeded(t *testing.T) {
 			result, err := reconciler.isAWSNodeTerminationHandlerNeeded(context.Background(), tc.hcluster)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(result).To(Equal(tc.expectedResult))
+		})
+	}
+}
+
+func TestComputeGCPPSCCondition(t *testing.T) {
+	tests := []struct {
+		name          string
+		pscConditions []metav1.Condition
+		conditionType hyperv1.ConditionType
+		expected      metav1.Condition
+	}{
+		{
+			name: "When GCPEndpointAvailable is true it should return condition true",
+			pscConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.GCPEndpointAvailable),
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperv1.GCPSuccessReason,
+					Message: hyperv1.AllIsWellMessage,
+				},
+			},
+			conditionType: hyperv1.GCPEndpointAvailable,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.GCPEndpointAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.GCPSuccessReason,
+				Message: hyperv1.AllIsWellMessage,
+			},
+		},
+		{
+			name: "When GCPEndpointAvailable is false it should return condition false",
+			pscConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.GCPEndpointAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.GCPErrorReason,
+					Message: "endpoint error",
+				},
+			},
+			conditionType: hyperv1.GCPEndpointAvailable,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.GCPEndpointAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.GCPErrorReason,
+				Message: "endpoint error",
+			},
+		},
+		{
+			name: "When GCPServiceAttachmentAvailable is true it should return condition true",
+			pscConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.GCPServiceAttachmentAvailable),
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperv1.GCPSuccessReason,
+					Message: hyperv1.AllIsWellMessage,
+				},
+			},
+			conditionType: hyperv1.GCPServiceAttachmentAvailable,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.GCPServiceAttachmentAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.GCPSuccessReason,
+				Message: hyperv1.AllIsWellMessage,
+			},
+		},
+		{
+			name: "When GCPServiceAttachmentAvailable is false it should return condition false",
+			pscConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.GCPServiceAttachmentAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.GCPErrorReason,
+					Message: "service attachment error",
+				},
+			},
+			conditionType: hyperv1.GCPServiceAttachmentAvailable,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.GCPServiceAttachmentAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.GCPErrorReason,
+				Message: "service attachment error",
+			},
+		},
+		{
+			name:          "When PSC has no conditions it should return condition unknown",
+			pscConditions: []metav1.Condition{},
+			conditionType: hyperv1.GCPEndpointAvailable,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.GCPEndpointAvailable),
+				Status:  metav1.ConditionUnknown,
+				Reason:  hyperv1.StatusUnknownReason,
+				Message: "GCPPrivateServiceConnect conditions not found",
+			},
+		},
+		{
+			name: "When querying GCPEndpointAvailable it should ignore GCPServiceAttachmentAvailable",
+			pscConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.GCPEndpointAvailable),
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperv1.GCPSuccessReason,
+					Message: hyperv1.AllIsWellMessage,
+				},
+				{
+					Type:    string(hyperv1.GCPServiceAttachmentAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.GCPErrorReason,
+					Message: "service attachment error",
+				},
+			},
+			conditionType: hyperv1.GCPEndpointAvailable,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.GCPEndpointAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.GCPSuccessReason,
+				Message: hyperv1.AllIsWellMessage,
+			},
+		},
+		{
+			name: "When querying GCPServiceAttachmentAvailable it should ignore GCPEndpointAvailable",
+			pscConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.GCPEndpointAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.GCPErrorReason,
+					Message: "endpoint error",
+				},
+				{
+					Type:    string(hyperv1.GCPServiceAttachmentAvailable),
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperv1.GCPSuccessReason,
+					Message: hyperv1.AllIsWellMessage,
+				},
+			},
+			conditionType: hyperv1.GCPServiceAttachmentAvailable,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.GCPServiceAttachmentAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.GCPSuccessReason,
+				Message: hyperv1.AllIsWellMessage,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gcpPSCList := hyperv1.GCPPrivateServiceConnectList{
+				Items: []hyperv1.GCPPrivateServiceConnect{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "psc",
+						},
+						Status: hyperv1.GCPPrivateServiceConnectStatus{
+							Conditions: tc.pscConditions,
+						},
+					},
+				},
+			}
+			condition := computeGCPPSCCondition(gcpPSCList, tc.conditionType)
+			if condition != tc.expected {
+				t.Errorf("error, expected %v\nbut got %v", tc.expected, condition)
+			}
 		})
 	}
 }

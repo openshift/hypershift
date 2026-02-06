@@ -244,5 +244,35 @@ func (cpo *ControlPlaneOperatorOptions) applyPlatformSpecificConfig(hcp *hyperv1
 				)
 			}
 		}
+	case hyperv1.GCPPlatform:
+		// Mount GCP Workload Identity Federation credentials
+		deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes,
+			corev1.Volume{
+				Name: "gcp-credentials",
+				VolumeSource: corev1.VolumeSource{
+					Secret: &corev1.SecretVolumeSource{
+						SecretName: "control-plane-operator-creds",
+					},
+				},
+			})
+		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
+			corev1.EnvVar{
+				Name:  "GOOGLE_APPLICATION_CREDENTIALS",
+				Value: "/etc/gcp/application_default_credentials.json",
+			},
+			corev1.EnvVar{
+				Name:  "GOOGLE_CLOUD_PROJECT",
+				Value: hcp.Spec.Platform.GCP.Project,
+			},
+			corev1.EnvVar{
+				Name:  "GCP_REGION",
+				Value: hcp.Spec.Platform.GCP.Region,
+			})
+		deployment.Spec.Template.Spec.Containers[0].VolumeMounts = append(deployment.Spec.Template.Spec.Containers[0].VolumeMounts,
+			corev1.VolumeMount{
+				Name:      "gcp-credentials",
+				MountPath: "/etc/gcp",
+				ReadOnly:  true,
+			})
 	}
 }

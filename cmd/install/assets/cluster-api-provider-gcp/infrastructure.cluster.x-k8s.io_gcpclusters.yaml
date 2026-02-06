@@ -1,0 +1,480 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.15.0
+  name: gcpclusters.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: GCPCluster
+    listKind: GCPClusterList
+    plural: gcpclusters
+    singular: gcpcluster
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Cluster to which this GCPCluster belongs
+      jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+      name: Cluster
+      type: string
+    - description: Cluster infrastructure is ready for GCE instances
+      jsonPath: .status.ready
+      name: Ready
+      type: string
+    - description: GCP network the cluster is using
+      jsonPath: .spec.network.name
+      name: Network
+      type: string
+    - description: API Endpoint
+      jsonPath: .status.apiEndpoints[0]
+      name: Endpoint
+      priority: 1
+      type: string
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: GCPCluster is the Schema for the gcpclusters API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: GCPClusterSpec defines the desired state of GCPCluster.
+            properties:
+              additionalLabels:
+                additionalProperties:
+                  type: string
+                description: |-
+                  AdditionalLabels is an optional set of tags to add to GCP resources managed by the GCP provider, in addition to the
+                  ones added by default.
+                type: object
+              controlPlaneEndpoint:
+                description: ControlPlaneEndpoint represents the endpoint used to
+                  communicate with the control plane.
+                properties:
+                  host:
+                    description: host is the hostname on which the API server is serving.
+                    maxLength: 512
+                    type: string
+                  port:
+                    description: port is the port on which the API server is serving.
+                    format: int32
+                    type: integer
+                required:
+                - host
+                - port
+                type: object
+              credentialsRef:
+                description: |-
+                  CredentialsRef is a reference to a Secret that contains the credentials to use for provisioning this cluster. If not
+                  supplied then the credentials of the controller will be used.
+                properties:
+                  name:
+                    description: |-
+                      Name of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+              failureDomains:
+                description: |-
+                  FailureDomains is an optional field which is used to assign selected availability zones to a cluster
+                  FailureDomains if empty, defaults to all the zones in the selected region and if specified would override
+                  the default zones.
+                items:
+                  type: string
+                type: array
+              loadBalancer:
+                description: LoadBalancer contains configuration for one or more LoadBalancers.
+                properties:
+                  apiServerInstanceGroupTagOverride:
+                    description: |-
+                      APIServerInstanceGroupTagOverride overrides the default setting for the
+                      tag used when creating the API Server Instance Group.
+                    maxLength: 16
+                    pattern: (^[1-9][0-9]{0,31}$)|(^[a-z][a-z0-9-]{4,28}[a-z0-9]$)
+                    type: string
+                  internalLoadBalancer:
+                    description: InternalLoadBalancer is the configuration for an
+                      Internal Passthrough Network Load Balancer.
+                    properties:
+                      internalAccess:
+                        default: Regional
+                        description: |-
+                          InternalAccess defines the access for the Internal Passthrough Load Balancer.
+                          It determines whether the load balancer allows global access,
+                          or restricts traffic to clients within the same region as the load balancer.
+                          If unspecified, the value defaults to "Regional".
+
+                          Possible values:
+                            "Regional" - Only clients in the same region as the load balancer can access it.
+                            "Global" - Clients from any region can access the load balancer.
+                        enum:
+                        - Regional
+                        - Global
+                        type: string
+                      name:
+                        description: |-
+                          Name is the name of the Load Balancer. If not set a default name
+                          will be used. For an Internal Load Balancer service the default
+                          name is "api-internal".
+                        pattern: (^[1-9][0-9]{0,31}$)|(^[a-z][a-z0-9-]{4,28}[a-z0-9]$)
+                        type: string
+                      subnet:
+                        description: |-
+                          Subnet is the name of the subnet to use for a regional Load Balancer. A subnet is
+                          required for the Load Balancer, if not defined the first configured subnet will be
+                          used.
+                        type: string
+                    type: object
+                  loadBalancerType:
+                    description: |-
+                      LoadBalancerType defines the type of Load Balancer that should be created.
+                      If not set, a Global External Proxy Load Balancer will be created by default.
+                    type: string
+                type: object
+              network:
+                description: NetworkSpec encapsulates all things related to GCP network.
+                properties:
+                  autoCreateSubnetworks:
+                    description: |-
+                      AutoCreateSubnetworks: When set to true, the VPC network is created
+                      in "auto" mode. When set to false, the VPC network is created in
+                      "custom" mode.
+
+                      An auto mode VPC network starts with one subnet per region. Each
+                      subnet has a predetermined range as described in Auto mode VPC
+                      network IP ranges.
+
+                      Defaults to true.
+                    type: boolean
+                  hostProject:
+                    description: HostProject is the name of the project hosting the
+                      shared VPC network resources.
+                    type: string
+                  loadBalancerBackendPort:
+                    description: Allow for configuration of load balancer backend
+                      (useful for changing apiserver port)
+                    format: int32
+                    type: integer
+                  mtu:
+                    default: 1460
+                    description: |-
+                      Mtu: Maximum Transmission Unit in bytes. The minimum value for this field is
+                      1300 and the maximum value is 8896. The suggested value is 1500, which is
+                      the default MTU used on the Internet, or 8896 if you want to use Jumbo
+                      frames. If unspecified, the value defaults to 1460.
+                      More info: https://pkg.go.dev/google.golang.org/api/compute/v1#Network
+                    format: int64
+                    maximum: 8896
+                    minimum: 1300
+                    type: integer
+                  name:
+                    description: Name is the name of the network to be used.
+                    type: string
+                  subnets:
+                    description: Subnets configuration.
+                    items:
+                      description: SubnetSpec configures an GCP Subnet.
+                      properties:
+                        cidrBlock:
+                          description: |-
+                            CidrBlock is the range of internal addresses that are owned by this
+                            subnetwork. Provide this property when you create the subnetwork. For
+                            example, 10.0.0.0/8 or 192.168.0.0/16. Ranges must be unique and
+                            non-overlapping within a network. Only IPv4 is supported. This field
+                            can be set only at resource creation time.
+                          type: string
+                        description:
+                          description: Description is an optional description associated
+                            with the resource.
+                          type: string
+                        enableFlowLogs:
+                          description: |-
+                            EnableFlowLogs: Whether to enable flow logging for this subnetwork.
+                            If this field is not explicitly set, it will not appear in get
+                            listings. If not set the default behavior is to disable flow logging.
+                          type: boolean
+                        name:
+                          description: Name defines a unique identifier to reference
+                            this resource.
+                          type: string
+                        privateGoogleAccess:
+                          description: |-
+                            PrivateGoogleAccess defines whether VMs in this subnet can access
+                            Google services without assigning external IP addresses
+                          type: boolean
+                        purpose:
+                          default: PRIVATE_RFC_1918
+                          description: |-
+                            Purpose: The purpose of the resource.
+                            If unspecified, the purpose defaults to PRIVATE_RFC_1918.
+                            The enableFlowLogs field isn't supported with the purpose field set to INTERNAL_HTTPS_LOAD_BALANCER.
+
+                            Possible values:
+                              "INTERNAL_HTTPS_LOAD_BALANCER" - Subnet reserved for Internal
+                            HTTP(S) Load Balancing.
+                              "PRIVATE" - Regular user created or automatically created subnet.
+                              "PRIVATE_RFC_1918" - Regular user created or automatically created
+                            subnet.
+                              "PRIVATE_SERVICE_CONNECT" - Subnetworks created for Private Service
+                            Connect in the producer network.
+                              "REGIONAL_MANAGED_PROXY" - Subnetwork used for Regional
+                            Internal/External HTTP(S) Load Balancing.
+                          enum:
+                          - INTERNAL_HTTPS_LOAD_BALANCER
+                          - PRIVATE_RFC_1918
+                          - PRIVATE
+                          - PRIVATE_SERVICE_CONNECT
+                          - REGIONAL_MANAGED_PROXY
+                          type: string
+                        region:
+                          description: Region is the name of the region where the
+                            Subnetwork resides.
+                          type: string
+                        secondaryCidrBlocks:
+                          additionalProperties:
+                            type: string
+                          description: |-
+                            SecondaryCidrBlocks defines secondary CIDR ranges,
+                            from which secondary IP ranges of a VM may be allocated
+                          type: object
+                        stackType:
+                          default: IPV4_ONLY
+                          description: |-
+                            StackType: The stack type for the subnet. If set to IPV4_ONLY, new VMs in
+                            the subnet are assigned IPv4 addresses only. If set to IPV4_IPV6, new VMs in
+                            the subnet can be assigned both IPv4 and IPv6 addresses. If not specified,
+                            IPV4_ONLY is used. This field can be both set at resource creation time and
+                            updated using patch.
+
+                            Possible values:
+                              "IPV4_IPV6" - New VMs in this subnet can have both IPv4 and IPv6
+                            addresses.
+                              "IPV4_ONLY" - New VMs in this subnet will only be assigned IPv4 addresses.
+                              "IPV6_ONLY" - New VMs in this subnet will only be assigned IPv6 addresses.
+                          enum:
+                          - IPV4_ONLY
+                          - IPV4_IPV6
+                          - IPV6_ONLY
+                          type: string
+                      type: object
+                    type: array
+                type: object
+              project:
+                description: Project is the name of the project to deploy the cluster
+                  to.
+                type: string
+              region:
+                description: The GCP Region the cluster lives in.
+                type: string
+              resourceManagerTags:
+                description: |-
+                  ResourceManagerTags is an optional set of tags to apply to GCP resources managed
+                  by the GCP provider. GCP supports a maximum of 50 tags per resource.
+                items:
+                  description: ResourceManagerTag is a tag to apply to GCP resources
+                    managed by the GCP provider.
+                  properties:
+                    key:
+                      description: |-
+                        Key is the key part of the tag. A tag key can have a maximum of 63 characters and cannot
+                        be empty. Tag key must begin and end with an alphanumeric character, and must contain
+                        only uppercase, lowercase alphanumeric characters, and the following special
+                        characters `._-`.
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-zA-Z0-9]([0-9A-Za-z_.-]{0,61}[a-zA-Z0-9])?$
+                      type: string
+                    parentID:
+                      description: |-
+                        ParentID is the ID of the hierarchical resource where the tags are defined
+                        e.g. at the Organization or the Project level. To find the Organization or Project ID ref
+                        https://cloud.google.com/resource-manager/docs/creating-managing-organization#retrieving_your_organization_id
+                        https://cloud.google.com/resource-manager/docs/creating-managing-projects#identifying_projects
+                        An OrganizationID must consist of decimal numbers, and cannot have leading zeroes.
+                        A ProjectID must be 6 to 30 characters in length, can only contain lowercase letters,
+                        numbers, and hyphens, and must start with a letter, and cannot end with a hyphen.
+                      maxLength: 32
+                      minLength: 1
+                      pattern: (^[1-9][0-9]{0,31}$)|(^[a-z][a-z0-9-]{4,28}[a-z0-9]$)
+                      type: string
+                    value:
+                      description: |-
+                        Value is the value part of the tag. A tag value can have a maximum of 63 characters and
+                        cannot be empty. Tag value must begin and end with an alphanumeric character, and must
+                        contain only uppercase, lowercase alphanumeric characters, and the following special
+                        characters `_-.@%=+:,*#&(){}[]` and spaces.
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-zA-Z0-9]([0-9A-Za-z_.@%=+:,*#&()\[\]{}\-\s]{0,61}[a-zA-Z0-9])?$
+                      type: string
+                  required:
+                  - key
+                  - parentID
+                  - value
+                  type: object
+                type: array
+              serviceEndpoints:
+                description: |-
+                  ServiceEndpoints contains the custom GCP Service Endpoint urls for each applicable service.
+                  For instance, the user can specify a new endpoint for the compute service.
+                properties:
+                  compute:
+                    description: ComputeServiceEndpoint is the custom endpoint url
+                      for the Compute Service
+                    format: uri
+                    pattern: ^https://
+                    type: string
+                  container:
+                    description: ContainerServiceEndpoint is the custom endpoint url
+                      for the Container Service
+                    format: uri
+                    pattern: ^https://
+                    type: string
+                  iam:
+                    description: IAMServiceEndpoint is the custom endpoint url for
+                      the IAM Service
+                    format: uri
+                    pattern: ^https://
+                    type: string
+                  resourceManager:
+                    description: ResourceManagerServiceEndpoint is the custom endpoint
+                      url for the Resource Manager Service
+                    format: uri
+                    pattern: ^https://
+                    type: string
+                type: object
+            required:
+            - project
+            - region
+            type: object
+          status:
+            description: GCPClusterStatus defines the observed state of GCPCluster.
+            properties:
+              failureDomains:
+                additionalProperties:
+                  description: |-
+                    FailureDomainSpec is the Schema for Cluster API failure domains.
+                    It allows controllers to understand how many failure domains a cluster can optionally span across.
+                  properties:
+                    attributes:
+                      additionalProperties:
+                        type: string
+                      description: attributes is a free form map of attributes an
+                        infrastructure provider might use or require.
+                      type: object
+                    controlPlane:
+                      description: controlPlane determines if this failure domain
+                        is suitable for use by control plane machines.
+                      type: boolean
+                  type: object
+                description: FailureDomains is a slice of FailureDomains.
+                type: object
+              network:
+                description: Network encapsulates GCP networking resources.
+                properties:
+                  apiInternalBackendService:
+                    description: |-
+                      APIInternalBackendService is the full reference to the backend service
+                      created for the internal Load Balancer.
+                    type: string
+                  apiInternalForwardingRule:
+                    description: |-
+                      APIInternalForwardingRule is the full reference to the forwarding rule
+                      created for the internal Load Balancer.
+                    type: string
+                  apiInternalHealthCheck:
+                    description: |-
+                      APIInternalHealthCheck is the full reference to the health check
+                      created for the internal Load Balancer.
+                    type: string
+                  apiInternalIpAddress:
+                    description: |-
+                      APIInternalAddress is the IPV4 regional address assigned to the
+                      internal Load Balancer.
+                    type: string
+                  apiServerBackendService:
+                    description: |-
+                      APIServerBackendService is the full reference to the backend service
+                      created for the API Server.
+                    type: string
+                  apiServerForwardingRule:
+                    description: |-
+                      APIServerForwardingRule is the full reference to the forwarding rule
+                      created for the API Server.
+                    type: string
+                  apiServerHealthCheck:
+                    description: |-
+                      APIServerHealthCheck is the full reference to the health check
+                      created for the API Server.
+                    type: string
+                  apiServerInstanceGroups:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      APIServerInstanceGroups is a map from zone to the full reference
+                      to the instance groups created for the control plane nodes created in the same zone.
+                    type: object
+                  apiServerIpAddress:
+                    description: |-
+                      APIServerAddress is the IPV4 global address assigned to the load balancer
+                      created for the API Server.
+                    type: string
+                  apiServerTargetProxy:
+                    description: |-
+                      APIServerTargetProxy is the full reference to the target proxy
+                      created for the API Server.
+                    type: string
+                  firewallRules:
+                    additionalProperties:
+                      type: string
+                    description: FirewallRules is a map from the name of the rule
+                      to its full reference.
+                    type: object
+                  router:
+                    description: |-
+                      Router is the full reference to the router created within the network
+                      it'll contain the cloud nat gateway
+                    type: string
+                  selfLink:
+                    description: SelfLink is the link to the Network used for this
+                      cluster.
+                    type: string
+                type: object
+              ready:
+                description: Bastion Instance `json:"bastion,omitempty"`
+                type: boolean
+            required:
+            - ready
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -8,11 +9,19 @@ import (
 
 	"github.com/openshift/hypershift/cmd/util"
 
+	// AWS SDK v2
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	"github.com/aws/aws-sdk-go-v2/aws/retry"
+	configv2 "github.com/aws/aws-sdk-go-v2/config"
+	credentialsv2 "github.com/aws/aws-sdk-go-v2/credentials"
+	// AWS SDK v1
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/client"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/smithy-go/middleware"
 
 	"k8s.io/utils/ptr"
 
@@ -86,6 +95,34 @@ func (opts *AWSCredentialsOptions) GetSession(agent string, secretData *util.Cre
 	return nil, errors.New("could not create AWS session, no credentials were given")
 }
 
+func (opts *AWSCredentialsOptions) GetSessionV2(ctx context.Context, agent string, secretData *util.CredentialsSecretData, region string) (*awsv2.Config, error) {
+	if opts.AWSCredentialsFile != "" {
+		return NewSessionV2(ctx, agent, opts.AWSCredentialsFile, "", "", region), nil
+	}
+
+	if opts.STSCredentialsFile != "" {
+		creds, err := ParseSTSCredentialsFileV2(opts.STSCredentialsFile)
+		if err != nil {
+			return nil, err
+		}
+
+		return NewSTSSessionV2(ctx, agent, opts.RoleArn, region, creds)
+	}
+
+	// Credentials from secret data
+	if secretData != nil {
+		v2Creds := awsv2.Credentials{
+			AccessKeyID:     secretData.AWSAccessKeyID,
+			SecretAccessKey: secretData.AWSSecretAccessKey,
+			SessionToken:    secretData.AWSSessionToken,
+		}
+
+		return NewSTSSessionV2(ctx, agent, opts.RoleArn, region, &v2Creds)
+	}
+
+	return nil, errors.New("could not create AWS session, no credentials were given")
+}
+
 func NewSession(agent, credentialsFile, credKey, credSecretKey, region string) *session.Session {
 	sessionOpts := session.Options{}
 	if credentialsFile != "" {
@@ -103,6 +140,26 @@ func NewSession(agent, credentialsFile, credKey, credSecretKey, region string) *
 		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", agent),
 	})
 	return awsSession
+}
+
+func NewSessionV2(ctx context.Context, agent, credentialsFile, credKey, credSecretKey, region string) *awsv2.Config {
+	var configOpts []func(*configv2.LoadOptions) error
+	if credentialsFile != "" {
+		configOpts = append(configOpts, configv2.WithSharedConfigFiles([]string{credentialsFile}))
+	}
+	if credKey != "" && credSecretKey != "" {
+		credsProvider := credentialsv2.NewStaticCredentialsProvider(credKey, credSecretKey, "")
+		configOpts = append(configOpts, configv2.WithCredentialsProvider(credsProvider))
+	}
+	if region != "" {
+		configOpts = append(configOpts, configv2.WithRegion(region))
+	}
+	configOpts = append(configOpts, configv2.WithAPIOptions([]func(*middleware.Stack) error{
+		awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", agent),
+	}))
+
+	cfg, _ := configv2.LoadDefaultConfig(ctx, configOpts...)
+	return &cfg
 }
 
 // NewAWSRoute53Config generates an AWS config with slightly different Retryer timings
@@ -126,6 +183,16 @@ func NewConfig() *aws.Config {
 		MinThrottleDelay: 5 * time.Second,
 	}
 	return awsConfig
+}
+
+// NewConfigV2 creates a v2 retryer function with the same retry configuration as NewConfig
+func NewConfigV2() func() awsv2.Retryer {
+	return func() awsv2.Retryer {
+		return retry.NewStandard(func(o *retry.StandardOptions) {
+			o.MaxAttempts = 11                                             // 1 initial + 10 retries (match v1's NumMaxRetries: 10)
+			o.Backoff = retry.NewExponentialJitterBackoff(5 * time.Second) // Initial delay 5s (match v1's MinRetryDelay)
+		})
+	}
 }
 
 func ValidateVPCCIDR(in string) error {

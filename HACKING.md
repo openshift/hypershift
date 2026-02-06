@@ -85,7 +85,7 @@ The bot will build a release image and link the job that created it, the image c
 
 ### How to run the e2e tests
 
-1. Complete [Prerequisites](https://hypershift-docs.netlify.app/getting-started/#prerequisites) with a public Route53
+1. Complete [Prerequisites](https://hypershift.pages.dev/getting-started/#prerequisites) with a public Route53
    Hosted Zone, for example with the following environment variables:
 
    ```shell

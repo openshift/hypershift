@@ -32,6 +32,266 @@ except ImportError:
     HAS_AIOHTTP = False
     print("Warning: aiohttp not available, using synchronous requests (slower)")
 
+# URL encoding for Jira queries
+from urllib.parse import urlencode
+
+# Jira rate limiting constants (conservative for Red Hat Jira)
+JIRA_REQUEST_DELAY_SECONDS = 0.2  # 200ms between requests
+JIRA_MAX_CONCURRENT_REQUESTS = 3  # Max 3 parallel requests
+JIRA_BATCH_SIZE = 40  # Max tickets per JQL query
+
+
+class JiraClient:
+    """Client for fetching Jira issues via REST API with batch support and rate limiting."""
+
+    # Fields to fetch from Jira for hierarchy building
+    FIELDS = 'summary,description,parent,customfield_12311140,customfield_12313140,issuelinks,labels,priority,status'
+
+    def __init__(self):
+        self.base_url = os.getenv('JIRA_URL', 'https://issues.redhat.com')
+        self.token = os.getenv('JIRA_TOKEN')
+        self.enabled = bool(self.token)
+        self.session: Optional["aiohttp.ClientSession"] = None
+        self.semaphore = asyncio.Semaphore(JIRA_MAX_CONCURRENT_REQUESTS)
+        self.request_count = 0
+
+    def _get_headers(self) -> Dict:
+        """Get authentication headers for Jira API."""
+        headers = {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+        }
+        if self.token:
+            headers['Authorization'] = f'Bearer {self.token}'
+        return headers
+
+    async def _fetch_json(self, url: str, _retry_count: int = 0) -> Optional[Dict]:
+        """Fetch JSON from URL with rate limiting and error handling."""
+        MAX_RETRIES = 3
+        async with self.semaphore:
+            await asyncio.sleep(JIRA_REQUEST_DELAY_SECONDS)
+            self.request_count += 1
+
+            if HAS_AIOHTTP and self.session:
+                try:
+                    async with self.session.get(url, headers=self._get_headers()) as response:
+                        if response.status == 200:
+                            return await response.json()
+                        elif response.status == 401:
+                            print("Warning: Jira authentication failed (401). Check JIRA_TOKEN.")
+                            return None
+                        elif response.status == 404:
+                            return None
+                        elif response.status == 429:
+                            if _retry_count >= MAX_RETRIES:
+                                print(f"  Rate limited {MAX_RETRIES} times, giving up on {url}")
+                                return None
+                            print("  Rate limited! Waiting 30 seconds...")
+                            await asyncio.sleep(30)
+                            return await self._fetch_json(url, _retry_count + 1)
+                        else:
+                            text = await response.text()
+                            print(f"Warning: Jira API returned {response.status}: {text[:200]}")
+                            return None
+                except Exception as e:
+                    print(f"Error fetching {url}: {e}")
+                    return None
+            else:
+                try:
+                    response = requests.get(url, headers=self._get_headers(), timeout=30)
+                    if response.status_code == 200:
+                        return response.json()
+                    elif response.status_code == 401:
+                        print("Warning: Jira authentication failed (401). Check JIRA_TOKEN.")
+                        return None
+                    elif response.status_code == 404:
+                        return None
+                    elif response.status_code == 429:
+                        if _retry_count >= MAX_RETRIES:
+                            print(f"  Rate limited {MAX_RETRIES} times, giving up on {url}")
+                            return None
+                        print("  Rate limited! Waiting 30 seconds...")
+                        await asyncio.sleep(30)
+                        return await self._fetch_json(url, _retry_count + 1)
+                    else:
+                        return None
+                except Exception as e:
+                    print(f"Error fetching {url}: {e}")
+                    return None
+
+    async def fetch_issues_batch(self, ticket_keys: List[str]) -> Dict[str, Dict]:
+        """Fetch multiple issues using JQL: key in (TICKET1, TICKET2, ...)"""
+        if not ticket_keys:
+            return {}
+
+        # Build JQL query
+        keys_str = ','.join(ticket_keys)
+        jql = f'key in ({keys_str})'
+
+        params = {
+            'jql': jql,
+            'fields': self.FIELDS,
+            'maxResults': len(ticket_keys) + 10,
+        }
+        url = f'{self.base_url}/rest/api/2/search?{urlencode(params)}'
+
+        results = {}
+        data = await self._fetch_json(url)
+
+        if data:
+            for issue in data.get('issues', []):
+                results[issue['key']] = self._parse_issue(issue)
+
+        return results
+
+    def _parse_issue(self, issue: Dict) -> Dict:
+        """Parse Jira issue response into simplified dict."""
+        fields = issue.get('fields', {})
+
+        # Extract epic link (customfield_12311140)
+        epic_link_field = fields.get('customfield_12311140')
+        epic_link = None
+        if isinstance(epic_link_field, dict):
+            epic_link = epic_link_field.get('value')
+        elif isinstance(epic_link_field, str):
+            epic_link = epic_link_field
+
+        # Extract OCPSTRAT parent (customfield_12313140)
+        ocpstrat_field = fields.get('customfield_12313140')
+        ocpstrat = None
+        if isinstance(ocpstrat_field, dict):
+            ocpstrat = ocpstrat_field.get('value')
+        elif isinstance(ocpstrat_field, str):
+            ocpstrat = ocpstrat_field
+
+        # Get description (truncate for storage)
+        description = fields.get('description') or ''
+        if len(description) > 2000:
+            description = description[:2000] + '...'
+
+        # Extract labels
+        labels = []
+        for label in fields.get('labels', []):
+            if isinstance(label, dict):
+                labels.append(label.get('name', ''))
+            else:
+                labels.append(label)
+
+        # Extract priority and status
+        priority = fields.get('priority', {})
+        priority_name = priority.get('name') if isinstance(priority, dict) else None
+
+        status = fields.get('status', {})
+        status_name = status.get('name') if isinstance(status, dict) else None
+
+        return {
+            'key': issue['key'],
+            'summary': fields.get('summary', ''),
+            'description': description,
+            'epicLink': epic_link,
+            'ocpstratParent': ocpstrat,
+            'labels': labels,
+            'priority': priority_name,
+            'status': status_name,
+        }
+
+    async def fetch_all_tickets(self, tickets: Set[str]) -> Dict[str, Dict]:
+        """Fetch all tickets in batches with rate limiting."""
+        ticket_list = list(tickets)
+        all_results = {}
+
+        for i in range(0, len(ticket_list), JIRA_BATCH_SIZE):
+            batch = ticket_list[i:i + JIRA_BATCH_SIZE]
+            batch_num = i // JIRA_BATCH_SIZE + 1
+            total_batches = (len(ticket_list) + JIRA_BATCH_SIZE - 1) // JIRA_BATCH_SIZE
+            print(f"  Fetching Jira batch {batch_num}/{total_batches} ({len(batch)} tickets)...")
+            results = await self.fetch_issues_batch(batch)
+            all_results.update(results)
+
+        return all_results
+
+    async def build_hierarchy(self, tickets: Set[str]) -> Dict[str, Dict]:
+        """Build complete hierarchy including epics and OCPSTRAT parents."""
+        if not tickets:
+            return {}
+
+        print(f"Fetching Jira data via REST API ({len(tickets)} tickets)...")
+
+        if HAS_AIOHTTP:
+            async with aiohttp.ClientSession() as session:
+                self.session = session
+                return await self._build_hierarchy_internal(tickets)
+        else:
+            return await self._build_hierarchy_internal(tickets)
+
+    async def _build_hierarchy_internal(self, tickets: Set[str]) -> Dict[str, Dict]:
+        """Internal hierarchy builder."""
+        # Step 1: Fetch all direct tickets
+        ticket_data = await self.fetch_all_tickets(tickets)
+
+        # Step 2: Extract epic links and OCPSTRAT refs that need to be fetched
+        epics_to_fetch = set()
+        ocpstrats_to_fetch = set()
+
+        for ticket_key, data in ticket_data.items():
+            epic_link = data.get('epicLink')
+            if epic_link and epic_link not in ticket_data:
+                epics_to_fetch.add(epic_link)
+
+            ocpstrat = data.get('ocpstratParent')
+            if ocpstrat and ocpstrat not in ticket_data:
+                ocpstrats_to_fetch.add(ocpstrat)
+
+        # Step 3: Fetch epics
+        if epics_to_fetch:
+            print(f"  Fetching {len(epics_to_fetch)} epics...")
+            epic_data = await self.fetch_all_tickets(epics_to_fetch)
+            ticket_data.update(epic_data)
+
+            # Check if epics have OCPSTRAT parents we need
+            for epic_key, data in epic_data.items():
+                ocpstrat = data.get('ocpstratParent')
+                if ocpstrat and ocpstrat not in ticket_data and ocpstrat not in ocpstrats_to_fetch:
+                    ocpstrats_to_fetch.add(ocpstrat)
+
+        # Step 4: Fetch OCPSTRAT issues
+        if ocpstrats_to_fetch:
+            print(f"  Fetching {len(ocpstrats_to_fetch)} OCPSTRAT issues...")
+            ocpstrat_data = await self.fetch_all_tickets(ocpstrats_to_fetch)
+            ticket_data.update(ocpstrat_data)
+
+        print(f"  Total Jira API requests: {self.request_count}")
+
+        # Step 5: Build final hierarchy dict
+        return self._build_hierarchy_dict(ticket_data)
+
+    def _build_hierarchy_dict(self, ticket_data: Dict[str, Dict]) -> Dict[str, Dict]:
+        """Build the final hierarchy dict with resolved references."""
+        hierarchy = {}
+
+        for key, data in ticket_data.items():
+            epic_key = data.get('epicLink')
+            epic_data = ticket_data.get(epic_key, {}) if epic_key else {}
+
+            # Get OCPSTRAT from ticket or its epic
+            ocpstrat_key = data.get('ocpstratParent') or epic_data.get('ocpstratParent')
+            ocpstrat_data = ticket_data.get(ocpstrat_key, {}) if ocpstrat_key else {}
+
+            hierarchy[key] = {
+                'summary': data.get('summary', ''),
+                'description': data.get('description', ''),
+                'labels': data.get('labels', []),
+                'priority': data.get('priority'),
+                'status': data.get('status'),
+                'epic': epic_key,
+                'epicSummary': epic_data.get('summary'),
+                'epicDescription': epic_data.get('description'),
+                'ocpstrat': ocpstrat_key,
+                'ocpstratSummary': ocpstrat_data.get('summary'),
+            }
+
+        return hierarchy
+
 
 class PRReportGenerator:
     def __init__(self, since_date: str):
@@ -308,28 +568,46 @@ class PRReportGenerator:
         self.prs = hypershift_prs + filtered_ai_helpers
         print(f"Found {len(self.prs)} PRs ({len(hypershift_prs)} hypershift, {len(filtered_ai_helpers)} ai-helpers)")
 
-    async def load_jira_hierarchy_cache(self):
-        """Load Jira hierarchy from cache file if available.
+    async def load_jira_hierarchy(self):
+        """Load Jira hierarchy - either via direct API or from cache.
 
-        Note: This does not fetch from Jira directly. The cache is populated
-        by the weekly-pr-report.md command which uses MCP Jira tools.
+        If JIRA_TOKEN is set, fetches data directly via Jira REST API.
+        Otherwise, falls back to loading from cache file (populated by MCP tools).
         """
-        # Extract all unique Jira tickets for logging
+        # Extract all unique Jira tickets
         all_tickets = set()
         for pr in self.prs:
             all_tickets.update(pr['jiraTickets'])
 
         print(f"Found {len(all_tickets)} unique Jira tickets")
 
-        # Load existing hierarchy if available
-        try:
-            with open('/tmp/jira_hierarchy.json', 'r') as f:
-                self.jira_hierarchy = json.load(f)
-            print(f"Loaded Jira hierarchy cache with {len(self.jira_hierarchy)} entries")
-        except FileNotFoundError:
-            print("Warning: Jira hierarchy cache not found at /tmp/jira_hierarchy.json")
-            print("Run the /pr-report command to populate Jira data via MCP tools")
+        if not all_tickets:
             self.jira_hierarchy = {}
+            return
+
+        # Check if we should use direct Jira API
+        jira_client = JiraClient()
+
+        if jira_client.enabled:
+            # Fetch directly via Jira REST API
+            self.jira_hierarchy = await jira_client.build_hierarchy(all_tickets)
+
+            # Save to cache for future runs
+            if self.jira_hierarchy:
+                with open('/tmp/jira_hierarchy.json', 'w') as f:
+                    json.dump(self.jira_hierarchy, f, indent=2)
+                print(f"Saved Jira hierarchy to cache ({len(self.jira_hierarchy)} entries)")
+        else:
+            # Fall back to loading from cache
+            print("JIRA_TOKEN not set, loading from cache (use MCP tools to populate)")
+            try:
+                with open('/tmp/jira_hierarchy.json', 'r') as f:
+                    self.jira_hierarchy = json.load(f)
+                print(f"Loaded Jira hierarchy cache with {len(self.jira_hierarchy)} entries")
+            except FileNotFoundError:
+                print("Warning: Jira hierarchy cache not found at /tmp/jira_hierarchy.json")
+                print("Set JIRA_TOKEN or run /pr-report command to populate Jira data via MCP tools")
+                self.jira_hierarchy = {}
 
     def generate_report(self, output_path: str):
         """Generate markdown report"""
@@ -597,9 +875,9 @@ async def main():
 
     generator = PRReportGenerator(since_date)
 
-    # Fetch all data in parallel
+    # Fetch all data
     await generator.fetch_all_prs()
-    await generator.load_jira_hierarchy_cache()
+    await generator.load_jira_hierarchy()
 
     # Generate outputs
     generator.generate_report('/tmp/weekly_pr_report_fast.md')

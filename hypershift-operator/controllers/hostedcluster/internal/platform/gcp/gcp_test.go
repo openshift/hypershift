@@ -9,29 +9,89 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 
+	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"github.com/blang/semver"
 )
+
+const (
+	// Test service account emails used across GCP tests
+	testNodePoolGSA        = "test-capg-sa@test-project.iam.gserviceaccount.com"
+	testControlPlaneGSA    = "test-control-plane-sa@test-project.iam.gserviceaccount.com"
+	testCloudControllerGSA = "test-cloud-controller@test-project.iam.gserviceaccount.com"
+)
+
+// testCreateOrUpdate is a test helper that implements createOrUpdate functionality
+// for testing without requiring the actual upsert package dependencies.
+func testCreateOrUpdate(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+	// Check if object exists
+	key := client.ObjectKeyFromObject(obj)
+	existing := obj.DeepCopyObject().(client.Object)
+	err := c.Get(ctx, key, existing)
+	if client.IgnoreNotFound(err) != nil {
+		return controllerutil.OperationResultNone, err
+	}
+
+	if err != nil {
+		// Object doesn't exist, create it
+		if err := f(); err != nil {
+			return controllerutil.OperationResultNone, err
+		}
+		if err := c.Create(ctx, obj); err != nil {
+			return controllerutil.OperationResultNone, err
+		}
+		return controllerutil.OperationResultCreated, nil
+	} else {
+		// Object exists, update it
+		if err := f(); err != nil {
+			return controllerutil.OperationResultNone, err
+		}
+		obj.SetResourceVersion(existing.GetResourceVersion())
+		if err := c.Update(ctx, obj); err != nil {
+			return controllerutil.OperationResultNone, err
+		}
+		return controllerutil.OperationResultUpdated, nil
+	}
+}
+
+// testSimpleCreateOrUpdate is a simplified test helper for tests that don't need
+// the complex createOrUpdate logic (just applies the mutation).
+func testSimpleCreateOrUpdate(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+	return controllerutil.OperationResultCreated, f()
+}
 
 func TestGCPPlatformInterface(t *testing.T) {
 	g := NewWithT(t)
 
 	// Test that GCP implements the Platform interface
-	platform := New()
+	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
 	g.Expect(platform).ToNot(BeNil())
 }
 
 func TestReconcileCAPIInfraCR(t *testing.T) {
 	g := NewWithT(t)
 
-	platform := New()
-	fakeClient := fake.NewClientBuilder().Build()
+	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
 
-	// Test minimal implementation returns nil (no CAPI infrastructure)
+	// Create a scheme with both HyperShift and CAPG types
+	scheme := runtime.NewScheme()
+	g.Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+	g.Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
+	g.Expect(capigcp.AddToScheme(scheme)).To(Succeed())
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&capigcp.GCPCluster{}).WithObjects().Build()
+
+	// Test CAPI infrastructure reconciliation
 	obj, err := platform.ReconcileCAPIInfraCR(
 		context.Background(),
 		fakeClient,
-		nil, // createOrUpdate function
+		testCreateOrUpdate,
 		&hyperv1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-cluster",
@@ -43,6 +103,16 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 					GCP: &hyperv1.GCPPlatformSpec{
 						Project: "test-project",
 						Region:  "us-central1",
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "test-pool",
+							ProviderID:    "test-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:        testNodePoolGSA,
+								ControlPlane:    testControlPlaneGSA,
+								CloudController: testCloudControllerGSA,
+							},
+						},
 					},
 				},
 			},
@@ -52,13 +122,18 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 	)
 
 	g.Expect(err).To(BeNil())
-	g.Expect(obj).To(BeNil()) // Minimal implementation returns nil
+	g.Expect(obj).ToNot(BeNil()) // Should create GCPCluster object
+
+	// Verify that the object has the Ready status set
+	gcpCluster, ok := obj.(*capigcp.GCPCluster)
+	g.Expect(ok).To(BeTrue())
+	g.Expect(gcpCluster.Status.Ready).To(BeTrue()) // Critical: Ready status must be set
 }
 
 func TestCAPIProviderDeploymentSpec(t *testing.T) {
 	g := NewWithT(t)
 
-	platform := New()
+	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
 
 	// Test minimal implementation returns nil (no CAPI provider)
 	spec, err := platform.CAPIProviderDeploymentSpec(
@@ -73,6 +148,16 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 					GCP: &hyperv1.GCPPlatformSpec{
 						Project: "test-project",
 						Region:  "us-central1",
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "test-pool",
+							ProviderID:    "test-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:        testNodePoolGSA,
+								ControlPlane:    testControlPlaneGSA,
+								CloudController: testCloudControllerGSA,
+							},
+						},
 					},
 				},
 			},
@@ -81,20 +166,16 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 	)
 
 	g.Expect(err).To(BeNil())
-	g.Expect(spec).To(BeNil()) // Minimal implementation returns nil
+	g.Expect(spec).ToNot(BeNil()) // Should return deployment spec
 }
 
-func TestReconcileCredentials(t *testing.T) {
+func TestCAPIProviderDeploymentSpecNilGCPPlatform(t *testing.T) {
 	g := NewWithT(t)
 
-	platform := New()
-	fakeClient := fake.NewClientBuilder().Build()
+	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
 
-	// Test minimal implementation returns no error
-	err := platform.ReconcileCredentials(
-		context.Background(),
-		fakeClient,
-		nil, // createOrUpdate function
+	// Test that nil GCP platform configuration returns appropriate error
+	spec, err := platform.CAPIProviderDeploymentSpec(
 		&hyperv1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-cluster",
@@ -103,30 +184,120 @@ func TestReconcileCredentials(t *testing.T) {
 			Spec: hyperv1.HostedClusterSpec{
 				Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.GCPPlatform,
-					GCP: &hyperv1.GCPPlatformSpec{
-						Project: "test-project",
-						Region:  "us-central1",
+					GCP:  nil, // This should trigger the nil check error
+				},
+			},
+		},
+		nil, // HostedControlPlane
+	)
+
+	g.Expect(err).ToNot(BeNil())
+	g.Expect(err.Error()).To(ContainSubstring("GCP platform configuration is missing"))
+	g.Expect(spec).To(BeNil())
+}
+
+func TestReconcileCredentials(t *testing.T) {
+	g := NewWithT(t)
+
+	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+
+	// Create a scheme with both HyperShift and CAPG types
+	scheme := runtime.NewScheme()
+	g.Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+	g.Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
+	g.Expect(capigcp.AddToScheme(scheme)).To(Succeed())
+
+	// Create test HostedCluster object
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.GCPPlatform,
+				GCP: &hyperv1.GCPPlatformSpec{
+					Project: "test-project",
+					Region:  "us-central1",
+					WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+						ProjectNumber: "123456789012",
+						PoolID:        "test-pool",
+						ProviderID:    "test-provider",
+						ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+							NodePool:        testNodePoolGSA,
+							ControlPlane:    testControlPlaneGSA,
+							CloudController: testCloudControllerGSA,
+						},
 					},
 				},
 			},
 		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&hyperv1.HostedCluster{}).WithObjects(hcluster).Build()
+
+	// Test minimal implementation returns no error
+	err := platform.ReconcileCredentials(
+		context.Background(),
+		fakeClient,
+		testSimpleCreateOrUpdate,
+		hcluster,
 		"test-control-plane-namespace",
 	)
 
 	g.Expect(err).To(BeNil()) // Minimal implementation returns nil
 }
 
+func TestReconcileCredentialsNilGCPPlatform(t *testing.T) {
+	g := NewWithT(t)
+
+	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+
+	// Create a scheme with HyperShift types
+	scheme := runtime.NewScheme()
+	g.Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+	g.Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
+
+	// Create test HostedCluster object WITHOUT GCP platform configuration
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.GCPPlatform,
+				GCP:  nil, // This should trigger the nil check error
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&hyperv1.HostedCluster{}).WithObjects(hcluster).Build()
+
+	// Test that nil GCP platform configuration returns appropriate error
+	err := platform.ReconcileCredentials(
+		context.Background(),
+		fakeClient,
+		testSimpleCreateOrUpdate,
+		hcluster,
+		"test-control-plane-namespace",
+	)
+
+	g.Expect(err).ToNot(BeNil())
+	g.Expect(err.Error()).To(ContainSubstring("GCP platform configuration is missing"))
+}
+
 func TestReconcileSecretEncryption(t *testing.T) {
 	g := NewWithT(t)
 
-	platform := New()
+	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
 	fakeClient := fake.NewClientBuilder().Build()
 
 	// Test minimal implementation returns no error
 	err := platform.ReconcileSecretEncryption(
 		context.Background(),
 		fakeClient,
-		nil, // createOrUpdate function
+		testSimpleCreateOrUpdate,
 		&hyperv1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-cluster",
@@ -138,6 +309,16 @@ func TestReconcileSecretEncryption(t *testing.T) {
 					GCP: &hyperv1.GCPPlatformSpec{
 						Project: "test-project",
 						Region:  "us-central1",
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "test-pool",
+							ProviderID:    "test-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:        testNodePoolGSA,
+								ControlPlane:    testControlPlaneGSA,
+								CloudController: testCloudControllerGSA,
+							},
+						},
 					},
 				},
 			},
@@ -151,17 +332,17 @@ func TestReconcileSecretEncryption(t *testing.T) {
 func TestCAPIProviderPolicyRules(t *testing.T) {
 	g := NewWithT(t)
 
-	platform := New()
+	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
 
-	// Test minimal implementation returns nil
+	// Test implementation follows AWS/Azure pattern - returns nil for standard CAPI RBAC
 	rules := platform.CAPIProviderPolicyRules()
-	g.Expect(rules).To(BeNil()) // Minimal implementation returns nil
+	g.Expect(rules).To(BeNil()) // Should return nil like AWS/Azure platforms
 }
 
 func TestDeleteCredentials(t *testing.T) {
 	g := NewWithT(t)
 
-	platform := New()
+	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
 	fakeClient := fake.NewClientBuilder().Build()
 
 	// Test minimal implementation returns no error
@@ -179,6 +360,16 @@ func TestDeleteCredentials(t *testing.T) {
 					GCP: &hyperv1.GCPPlatformSpec{
 						Project: "test-project",
 						Region:  "us-central1",
+						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+							ProjectNumber: "123456789012",
+							PoolID:        "test-pool",
+							ProviderID:    "test-provider",
+							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+								NodePool:        testNodePoolGSA,
+								ControlPlane:    testControlPlaneGSA,
+								CloudController: testCloudControllerGSA,
+							},
+						},
 					},
 				},
 			},
@@ -187,4 +378,219 @@ func TestDeleteCredentials(t *testing.T) {
 	)
 
 	g.Expect(err).To(BeNil()) // Minimal implementation returns nil
+}
+
+func TestBuildGCPWorkloadIdentityCredentials(t *testing.T) {
+	g := NewWithT(t)
+
+	wif := hyperv1.GCPWorkloadIdentityConfig{
+		ProjectNumber: "123456789012",
+		PoolID:        "test-pool",
+		ProviderID:    "test-provider",
+		ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+			NodePool:        testNodePoolGSA,
+			ControlPlane:    testControlPlaneGSA,
+			CloudController: testCloudControllerGSA,
+		},
+	}
+
+	// Using NodePool GSA as an example - the function is generic and works the same
+	// for any service account email (NodePool, ControlPlane, CloudController, etc.)
+	credentials, err := buildGCPWorkloadIdentityCredentials(wif, wif.ServiceAccountsEmails.NodePool)
+	g.Expect(err).To(BeNil())
+	g.Expect(credentials).To(ContainSubstring(`"type":"external_account"`))
+	g.Expect(credentials).To(ContainSubstring("123456789012"))
+	g.Expect(credentials).To(ContainSubstring("test-pool"))
+	g.Expect(credentials).To(ContainSubstring("test-provider"))
+	g.Expect(credentials).To(ContainSubstring("/var/run/secrets/openshift/serviceaccount/token"))
+}
+
+func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
+	g := NewWithT(t)
+
+	tests := []struct {
+		name        string
+		wif         hyperv1.GCPWorkloadIdentityConfig
+		expectError bool
+	}{
+		{
+			name: "valid configuration",
+			wif: hyperv1.GCPWorkloadIdentityConfig{
+				ProjectNumber: "123456789012",
+				PoolID:        "test-pool",
+				ProviderID:    "test-provider",
+				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+					NodePool:        testNodePoolGSA,
+					ControlPlane:    testControlPlaneGSA,
+					CloudController: testCloudControllerGSA,
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "missing project number",
+			wif: hyperv1.GCPWorkloadIdentityConfig{
+				PoolID:     "test-pool",
+				ProviderID: "test-provider",
+				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+					NodePool:        testNodePoolGSA,
+					ControlPlane:    testControlPlaneGSA,
+					CloudController: testCloudControllerGSA,
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "missing pool ID",
+			wif: hyperv1.GCPWorkloadIdentityConfig{
+				ProjectNumber: "123456789012",
+				ProviderID:    "test-provider",
+				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+					NodePool:        testNodePoolGSA,
+					ControlPlane:    testControlPlaneGSA,
+					CloudController: testCloudControllerGSA,
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "missing provider ID",
+			wif: hyperv1.GCPWorkloadIdentityConfig{
+				ProjectNumber: "123456789012",
+				PoolID:        "test-pool",
+				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+					NodePool:        testNodePoolGSA,
+					ControlPlane:    testControlPlaneGSA,
+					CloudController: testCloudControllerGSA,
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "missing service account email",
+			wif: hyperv1.GCPWorkloadIdentityConfig{
+				ProjectNumber: "123456789012",
+				PoolID:        "test-pool",
+				ProviderID:    "test-provider",
+				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+					NodePool:        "",
+					ControlPlane:    testControlPlaneGSA,
+					CloudController: testCloudControllerGSA,
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Using NodePool GSA as the serviceAccountEmail parameter - the function
+			// is generic and works the same for any service account email
+			_, err := buildGCPWorkloadIdentityCredentials(tt.wif, tt.wif.ServiceAccountsEmails.NodePool)
+			if tt.expectError {
+				g.Expect(err).ToNot(BeNil())
+			} else {
+				g.Expect(err).To(BeNil())
+			}
+		})
+	}
+}
+
+func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
+	g := NewWithT(t)
+
+	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+
+	tests := []struct {
+		name        string
+		hcluster    *hyperv1.HostedCluster
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "valid configuration",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPPlatformSpec{
+							WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+								ProjectNumber: "123456789012",
+								PoolID:        "test-pool",
+								ProviderID:    "test-provider",
+								ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+									NodePool:        testNodePoolGSA,
+									ControlPlane:    testControlPlaneGSA,
+									CloudController: testCloudControllerGSA,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "missing node pool service account email",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPPlatformSpec{
+							WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+								ProjectNumber: "123456789012",
+								PoolID:        "test-pool",
+								ProviderID:    "test-provider",
+								ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+									NodePool:        "",
+									ControlPlane:    testControlPlaneGSA,
+									CloudController: testCloudControllerGSA,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    "node pool service account email is required",
+		},
+		{
+			name: "missing control plane service account email",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPPlatformSpec{
+							WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+								ProjectNumber: "123456789012",
+								PoolID:        "test-pool",
+								ProviderID:    "test-provider",
+								ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+									NodePool:        testNodePoolGSA,
+									ControlPlane:    "",
+									CloudController: testCloudControllerGSA,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    "control plane service account email is required",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := platform.validateWorkloadIdentityConfiguration(tt.hcluster)
+			if tt.expectError {
+				g.Expect(err).ToNot(BeNil())
+				if tt.errorMsg != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tt.errorMsg))
+				}
+			} else {
+				g.Expect(err).To(BeNil())
+			}
+		})
+	}
 }

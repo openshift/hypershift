@@ -52,6 +52,7 @@ import (
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -945,6 +946,24 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		} else {
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointAvailable))
 			meta.SetStatusCondition(&hcluster.Status.Conditions, computeAWSEndpointServiceCondition(awsEndpointServiceList, hyperv1.AWSEndpointServiceAvailable))
+		}
+	}
+
+	// Copy GCPEndpointAvailable and GCPServiceAttachmentAvailable conditions from the GCPPrivateServiceConnect resources.
+	if hcluster.Spec.Platform.Type == hyperv1.GCPPlatform {
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		var gcpPSCList hyperv1.GCPPrivateServiceConnectList
+		if err := r.List(ctx, &gcpPSCList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
+			condition := metav1.Condition{
+				Type:    string(hyperv1.GCPEndpointAvailable),
+				Status:  metav1.ConditionUnknown,
+				Reason:  hyperv1.NotFoundReason,
+				Message: fmt.Sprintf("error listing GCPPrivateServiceConnect in namespace %s: %v", hcpNamespace, err),
+			}
+			meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+		} else {
+			meta.SetStatusCondition(&hcluster.Status.Conditions, computeGCPPSCCondition(gcpPSCList, hyperv1.GCPEndpointAvailable))
+			meta.SetStatusCondition(&hcluster.Status.Conditions, computeGCPPSCCondition(gcpPSCList, hyperv1.GCPServiceAttachmentAvailable))
 		}
 	}
 
@@ -2446,11 +2465,16 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecom
 
 	imageOverride := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
 
-	// temporary override for 4.21 to unblock CAPI bump to 1.11 which introduces a new API version.
-	// used image from multiArch release payload 4.20.5 (quay.io/openshift-release-dev/ocp-release@sha256:1f2c28ac126453a3b9e83b349822b9f1fb7662973a212f936b90fdc40e06eb58)
-	// TODO(https://issues.redhat.com/browse/CNTRLPLANE-1200): Remove this override once Hypershift installs the CAPI v1beta2 API version
-	if imageOverride == "" && releaseVersion.GTE(semver.MustParse("4.21.0-0")) {
-		imageOverride = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:f82ee3586bba6ea0479e3154f959123ef8ebdb2594c4ed9e5899b7ce728a3eb2"
+	if imageOverride == "" {
+		pullSecret, err := hyperutil.GetPullSecretBytes(cpContext, r.Client, hcluster)
+		if err != nil {
+			return err
+		}
+
+		imageOverride, err = backwardcompat.GetBackwardCompatibleCAPIImage(cpContext, pullSecret, r.RegistryProvider.GetReleaseProvider(), releaseVersion, ImageStreamCAPI)
+		if err != nil {
+			return err
+		}
 	}
 
 	capiManager := capimanagerv2.NewComponent(imageOverride)
@@ -2497,7 +2521,7 @@ func (r *HostedClusterReconciler) reconcileCAPIProvider(cpContext controlplaneco
 		}
 	}
 
-	capi := capiproviderv2.NewComponent(capiProviderDeploymentSpec, p.CAPIProviderPolicyRules())
+	capi := capiproviderv2.NewComponent(capiProviderDeploymentSpec, p.CAPIProviderPolicyRules(), hcluster.Spec.Platform.Type)
 	if err := capi.Reconcile(cpContext); err != nil {
 		return fmt.Errorf("failed to reconcile capi provider component: %w", err)
 	}
@@ -5006,4 +5030,45 @@ func (r *HostedClusterReconciler) reconcileCAPIFinalizers(ctx context.Context, h
 	}
 
 	return nil
+}
+
+func computeGCPPSCCondition(gcpPSCList hyperv1.GCPPrivateServiceConnectList, conditionType hyperv1.ConditionType) metav1.Condition {
+	var messages []string
+	var conditions []metav1.Condition
+
+	for _, psc := range gcpPSCList.Items {
+		condition := meta.FindStatusCondition(psc.Status.Conditions, string(conditionType))
+		if condition != nil {
+			conditions = append(conditions, *condition)
+
+			if condition.Status == metav1.ConditionFalse {
+				messages = append(messages, condition.Message)
+			}
+		}
+	}
+
+	if len(conditions) == 0 {
+		return metav1.Condition{
+			Type:    string(conditionType),
+			Status:  metav1.ConditionUnknown,
+			Reason:  hyperv1.StatusUnknownReason,
+			Message: "GCPPrivateServiceConnect conditions not found",
+		}
+	}
+
+	if len(messages) > 0 {
+		return metav1.Condition{
+			Type:    string(conditionType),
+			Status:  metav1.ConditionFalse,
+			Reason:  hyperv1.GCPErrorReason,
+			Message: strings.Join(messages, "; "),
+		}
+	}
+
+	return metav1.Condition{
+		Type:    string(conditionType),
+		Status:  metav1.ConditionTrue,
+		Reason:  hyperv1.GCPSuccessReason,
+		Message: hyperv1.AllIsWellMessage,
+	}
 }

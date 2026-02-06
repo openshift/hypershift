@@ -57,7 +57,7 @@ If that's the case, you need to make sure your Hosted Cluster is paused:
 oc get hostedcluster -n <HC Namespace> <HC Name> -ojsonpath={.Spec.pausedUntil}
 ```
 
-If this command does not give you any output, make sure you've followed properly the "[Disaster Recovery](https://hypershift-docs.netlify.app/how-to/aws/disaster-recovery/)" procedure, more concretelly pausing the Hosted Cluster and NodePool.
+If this command does not give you any output, make sure you've followed properly the "[Disaster Recovery](https://hypershift.pages.dev/how-to/aws/disaster-recovery/)" procedure, more concretelly pausing the Hosted Cluster and NodePool.
 
 Even if it's paused and is still in that situation, please **continue to the next section** because it's highly probable that you don't have the code which manages this situation properly.
 

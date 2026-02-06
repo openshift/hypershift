@@ -1,55 +1,59 @@
 package awsutil
 
 import (
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sts"
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	credentialsv2 "github.com/aws/aws-sdk-go-v2/credentials"
+	stsv2 "github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
-func AssumeRoleWithWebIdentity(sess *session.Session, roleSessionName, roleArn, token string) (*credentials.Credentials, error) {
-	svc := sts.New(sess)
-	input := &sts.AssumeRoleWithWebIdentityInput{
-		RoleArn:          aws.String(roleArn),
-		WebIdentityToken: aws.String(token),
-		RoleSessionName:  aws.String(roleSessionName),
-	}
+var (
+	// ErrEmptyCredentials indicates that the STS response did not contain credentials.
+	ErrEmptyCredentials = errors.New("STS response contains empty credentials")
+)
 
-	resp, err := svc.AssumeRoleWithWebIdentity(input)
+func AssumeRoleWithWebIdentity(ctx context.Context, cfg *aws.Config, roleSessionName, roleArn, token string) (*aws.Credentials, error) {
+	client := stsv2.NewFromConfig(*cfg)
+	resp, err := client.AssumeRoleWithWebIdentity(ctx, &stsv2.AssumeRoleWithWebIdentityInput{
+		RoleArn:          aws.String(roleArn),
+		RoleSessionName:  aws.String(roleSessionName),
+		WebIdentityToken: aws.String(token),
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to assume role with web identity: %w", err)
 	}
 	if resp.Credentials == nil {
-		return nil, credentials.ErrStaticCredentialsEmpty
-
+		return nil, ErrEmptyCredentials
 	}
 
-	return credentials.NewStaticCredentials(
-		*resp.Credentials.AccessKeyId,
-		*resp.Credentials.SecretAccessKey,
-		*resp.Credentials.SessionToken,
-	), nil
+	credentials, err := credentialsv2.NewStaticCredentialsProvider(
+		aws.ToString(resp.Credentials.AccessKeyId),
+		aws.ToString(resp.Credentials.SecretAccessKey),
+		aws.ToString(resp.Credentials.SessionToken),
+	).Retrieve(ctx)
+	return &credentials, err
 }
 
-func AssumeRole(sess *session.Session, roleSessionName, roleArn string) (*credentials.Credentials, error) {
-	svc := sts.New(sess)
-	input := &sts.AssumeRoleInput{
+func AssumeRole(ctx context.Context, cfg aws.Config, roleSessionName, roleArn string) (*aws.Credentials, error) {
+	client := stsv2.NewFromConfig(cfg)
+	resp, err := client.AssumeRole(ctx, &stsv2.AssumeRoleInput{
 		RoleArn:         aws.String(roleArn),
 		RoleSessionName: aws.String(roleSessionName),
-	}
-
-	resp, err := svc.AssumeRole(input)
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to assume role: %w", err)
 	}
 	if resp.Credentials == nil {
-		return nil, credentials.ErrStaticCredentialsEmpty
-
+		return nil, ErrEmptyCredentials
 	}
 
-	return credentials.NewStaticCredentials(
-		*resp.Credentials.AccessKeyId,
-		*resp.Credentials.SecretAccessKey,
-		*resp.Credentials.SessionToken,
-	), nil
+	credentials, err := credentialsv2.NewStaticCredentialsProvider(
+		aws.ToString(resp.Credentials.AccessKeyId),
+		aws.ToString(resp.Credentials.SecretAccessKey),
+		aws.ToString(resp.Credentials.SessionToken),
+	).Retrieve(ctx)
+	return &credentials, err
 }

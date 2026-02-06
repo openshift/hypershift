@@ -163,8 +163,9 @@ func TestOutput(t *testing.T) {
 					Audience:   "//iam.googleapis.com/projects/987654321/locations/global/workloadIdentityPools/my-cluster-infra-wi-pool/providers/my-cluster-infra-k8s-provider",
 				},
 				ServiceAccounts: map[string]string{
-					"nodepool-mgmt": "my-cluster-infra-nodepool-mgmt@my-gcp-project.iam.gserviceaccount.com",
-					"ctrlplane-op":  "my-cluster-infra-ctrlplane-op@my-gcp-project.iam.gserviceaccount.com",
+					"nodepool-mgmt":    "my-cluster-infra-nodepool-mgmt@my-gcp-project.iam.gserviceaccount.com",
+					"ctrlplane-op":     "my-cluster-infra-ctrlplane-op@my-gcp-project.iam.gserviceaccount.com",
+					"cloud-controller": "my-cluster-infra-cloud-controller@my-gcp-project.iam.gserviceaccount.com",
 				},
 			},
 			validateJSON: true,

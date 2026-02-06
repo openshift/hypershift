@@ -26,6 +26,7 @@ import (
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
+	"github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/util"
 
@@ -48,14 +49,16 @@ type PlatformAgnosticOptions struct {
 	PowerVSPlatform   powervs.RawCreateOptions
 	OpenStackPlatform openstack.RawCreateOptions
 
-	ExtOIDCConfig *ExtOIDCConfig
+	ExtOIDCConfig       *ExtOIDCConfig
+	ExternalCNIProvider string
 }
 
 type hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
 type hypershiftTest struct {
 	*testing.T
-	ctx    context.Context
-	client crclient.Client
+	ctx         context.Context
+	client      crclient.Client
+	assetReader assets.AssetReader
 
 	test hypershiftTestFunc
 
@@ -74,6 +77,11 @@ func NewHypershiftTest(t *testing.T, ctx context.Context, test hypershiftTestFun
 		client: client,
 		test:   test,
 	}
+}
+
+func (h *hypershiftTest) WithAssetReader(reader assets.AssetReader) *hypershiftTest {
+	h.assetReader = reader
+	return h
 }
 
 func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1.PlatformType, artifactDir, name string, serviceAccountSigningKey []byte) {
@@ -124,7 +132,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 // runs before each test.
 func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, platform hyperv1.PlatformType) {
 	h.Run("ValidateHostedCluster", func(t *testing.T) {
-		if platform != hyperv1.NonePlatform {
+		if platform != hyperv1.NonePlatform && hostedCluster.Spec.Networking.NetworkType != hyperv1.Other {
 			if opts.AWSPlatform.EndpointAccess == string(hyperv1.Private) {
 				ValidatePrivateCluster(t, h.ctx, h.client, hostedCluster, opts)
 			} else {
@@ -136,6 +144,27 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 			if opts.ExtOIDCConfig != nil && opts.ExtOIDCConfig.ExternalOIDCProvider == ProviderKeycloak {
 				ValidateAuthenticationSpec(t, h.ctx, h.client, hostedCluster, opts.ExtOIDCConfig)
 			}
+		}
+		if opts.ExternalCNIProvider == CiliumCNIProvider {
+			// Only install Cilium when there are worker nodes configured.
+			// The cilium-olm deployment requires worker nodes to schedule its pods.
+			// TestNodePool sets NodePoolReplicas=0 and creates NodePools later in individual tests,
+			// so we skip Cilium installation during the initial cluster validation phase.
+			if !util.IsPrivateHC(hostedCluster) {
+				if opts.NodePoolReplicas == 0 {
+					t.Fatal("NodePool replicas must be positive for Cilium to install.")
+				}
+				if h.assetReader == nil {
+					t.Fatal("AssetReader is required for Cilium installation. Call WithAssetReader() on the test instance.")
+				}
+				guestClient := WaitForGuestClient(t, context.Background(), h.client, hostedCluster)
+				InstallCilium(t, context.Background(), guestClient, hostedCluster, h.assetReader)
+				// wait hosted cluster ready
+				WaitForNReadyNodes(t, context.Background(), guestClient, opts.NodePoolReplicas, platform)
+				WaitForImageRollout(t, context.Background(), h.client, hostedCluster)
+				ValidateHostedClusterConditions(t, context.Background(), h.client, hostedCluster, true, 10*time.Minute)
+			}
+
 		}
 	})
 }
@@ -214,13 +243,6 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 			}
 			ValidateHostedClusterConditions(t, t.Context(), h.client, hostedCluster, hasWorkerNodes, 10*time.Minute)
 		}
-
-		// Run EnsureGlobalPullSecret at the end to avoid interference with upgrade tests
-		// that may have executed earlier in the same cluster. This test modifies
-		// /var/lib/kubelet/config.json and can cause disk validation failures in upgrades.
-		t.Run("EnsureGlobalPullSecret", func(t *testing.T) {
-			EnsureGlobalPullSecret(t, context.Background(), h.client, hostedCluster)
-		})
 	})
 }
 
@@ -230,15 +252,18 @@ func (h *hypershiftTest) teardown(hostedCluster *hyperv1.HostedCluster, opts *Pl
 		h.Logf("skipping teardown, already called")
 		return
 	}
-	h.hasBeenTornedDown = true
 
 	// t.Run() is not supported in cleanup phase
 	if cleanupPhase {
+		h.hasBeenTornedDown = true
 		teardownHostedCluster(h.T, context.Background(), hostedCluster, h.client, opts, artifactDir)
 		return
 	}
 
 	h.Run("Teardown", func(t *testing.T) {
+		// Set the flag inside the subtest callback to ensure it's only set
+		// when the subtest actually runs (not filtered out by -test.run)
+		h.hasBeenTornedDown = true
 		teardownHostedCluster(t, h.ctx, hostedCluster, h.client, opts, artifactDir)
 	})
 }

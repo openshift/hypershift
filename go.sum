@@ -1060,6 +1060,8 @@ sigs.k8s.io/cluster-api-provider-aws/v2 v2.8.2-0.20250820205306-645f38e4c152 h1:
 sigs.k8s.io/cluster-api-provider-aws/v2 v2.8.2-0.20250820205306-645f38e4c152/go.mod h1:wdqD8SRkgbIAoj0L2geEItos4X4xmCr8yQpEOqIwLp4=
 sigs.k8s.io/cluster-api-provider-azure v1.21.0 h1:8SYwQX4ANgy2CAa2NEk41mqBZrmyAH03Xlk214qvxCA=
 sigs.k8s.io/cluster-api-provider-azure v1.21.0/go.mod h1:NJMrRzRf/Ua5Uhm9qmuK4M/4Jl/f74jBpkgPqJN0vQQ=
+sigs.k8s.io/cluster-api-provider-gcp v1.10.0 h1:gngUxo9bz8l+otpdw9v3ULEXwAvijyqiBx2v8HSoRwA=
+sigs.k8s.io/cluster-api-provider-gcp v1.10.0/go.mod h1:VkmOqBgi3Jj+VR+YTZEHAlMMmyjqcKl4lXhpLsYnYok=
 sigs.k8s.io/cluster-api-provider-ibmcloud v0.11.0 h1:aunR3nnDzQ5x1Qj1hJbR3Xq4SCZth4XyTWAyUCN46kE=
 sigs.k8s.io/cluster-api-provider-ibmcloud v0.11.0/go.mod h1:9yPLATyiqLx4crMzbX11YQU+GuR5txjtiCt8z9sxDfM=
 sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9 h1:hQO7Y5GP7FMnH6Aono9WVE90I3vRLBxw/48iKHerjtg=

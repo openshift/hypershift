@@ -2683,6 +2683,7 @@ func TestCreateCluster(t *testing.T) {
 		if globalOpts.Platform == hyperv1.AzurePlatform {
 			e2eutil.EnsureKubeAPIServerAllowedCIDRs(t, ctx, mgtClient, guestConfig, hostedCluster)
 		}
+
 		e2eutil.EnsureGlobalPullSecret(t, ctx, mgtClient, hostedCluster)
 		e2eutil.EnsurePreserveRegistries(t, ctx, mgtClient, hostedCluster)
 
@@ -2696,7 +2697,7 @@ func TestCreateCluster(t *testing.T) {
 			// ensure Ingress Operator configuration is properly applied
 			e2eutil.EnsureIngressOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
 		}
-	}).
+	}).WithAssetReader(content.ReadFile).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster", globalOpts.ServiceAccountSigningKey)
 }
 
@@ -2926,7 +2927,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 
 		// ensure CNO operator configuration changes are properly handled
 		e2eutil.EnsureCNOOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
+	}).WithAssetReader(content.ReadFile).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
 }
 
 func TestNoneCreateCluster(t *testing.T) {

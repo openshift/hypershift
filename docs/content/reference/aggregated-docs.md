@@ -3,7 +3,7 @@
 This file contains all HyperShift documentation aggregated into a single file
 for use with AI tools like NotebookLM.
 
-Total documents: 248
+Total documents: 250
 
 ---
 
@@ -4361,7 +4361,7 @@ export SSH_PUB_KEY_FILE=$HOME/.ssh/id_rsa.pub
 
 ## S3 Bucket name hosting the OIDC discovery documents
 # You must have set it up, see Getting Started for more information:
-# https://hypershift-docs.netlify.app/getting-started/
+# https://hypershift.pages.dev/getting-started/
 export OIDC_BUCKET_NAME="${CLUSTER_PREFIX}-oidc"
 ```
 
@@ -4580,7 +4580,7 @@ oc get pods -l app=web-app -o wide
 This command filters the pods by the label `app=web-app`, allowing you to confirm that the application is running on the expected node provisioned by AutoNode.
 
 
-[featuregate]: https://hypershift-docs.netlify.app/how-to/feature-gates
+[featuregate]: https://hypershift.pages.dev/how-to/feature-gates
 [ec2nodeclass]: https://karpenter.sh/docs/concepts/nodeclasses/
 [nodepools]: https://karpenter.sh/docs/concepts/nodepools/
 [OpenshiftEC2NodeClassSpec]: https://github.com/openshift/hypershift/blob/892474ca2fd481eeab741da377d017051256914a/api/karpenter/v1beta1/karpenter_types.go#L53-L55
@@ -9637,6 +9637,334 @@ This section of the HyperShift documentation contains pages related to troublesh
 
 ---
 
+## Source: docs/content/how-to/ci/ai-assisted-ci-jobs.md
+
+# AI-Assisted CI Jobs
+
+This document describes the AI-assisted CI jobs that help automate issue resolution and PR review handling in the HyperShift repository.
+
+!!! warning "Human Review Required"
+    **AI-generated code must not be relied upon without human review.** All PRs created by these jobs are drafts and must go through the standard GitHub PR review process. HyperShift repository OWNERS are responsible for reviewing and approving all changes.
+
+!!! info "Responsible Use"
+    Please review the Guidelines on Responsible Use of AI Code Assistants before using these tools.
+
+## Overview
+
+HyperShift uses two AI-assisted CI jobs powered by Claude Code to help with development workflows:
+
+| Job | Purpose | Schedule |
+|-----|---------|----------|
+| `periodic-jira-agent` | Analyzes Jira issues and creates draft PRs with fixes | Weekly on Mondays at 8:30 AM UTC |
+| `periodic-review-agent` | Addresses PR review comments on agent-created PRs | Every 3 hours (8:00-23:00 UTC) daily |
+| `review-agent-single-pr` | On-demand review agent for a single PR | Triggered via `/test review-agent-single-pr` |
+
+### Usage Scope
+
+These jobs process **internal Red Hat tickets only** from the following Jira projects:
+
+- **OCPBUGS** - OpenShift bug tracking
+- **CNTRLPLANE** - HyperShift/Control Plane team issues
+
+---
+
+## Jira Agent
+
+### Overview
+
+The Jira Agent (`periodic-jira-agent`) automatically analyzes Jira issues and creates draft pull requests with proposed fixes.
+
+- **Job name**: `periodic-jira-agent`
+- **Schedule**: Weekly on Mondays at 8:30 AM UTC (`30 8 * * 1`)
+- **Max issues per run**: 1 (configurable via `JIRA_AGENT_MAX_ISSUES`)
+- **Max agentic turns**: 100 per issue
+
+### How It Works
+
+1. **Queries Jira** for unresolved issues matching the criteria (see JQL below)
+2. **Clones repositories**: ai-helpers and hypershift-community/hypershift fork
+3. **Runs Claude Code** with the `/jira-solve` command to analyze each issue and implement a fix
+4. **Creates draft PR** from the `hypershift-community/hypershift` fork to `openshift/hypershift`
+5. **Updates Jira** after successful processing:
+   - Adds `agent-processed` label
+   - Transitions to "ASSIGNED" (OCPBUGS) or "Code Review" (CNTRLPLANE)
+   - Sets assignee to `hypershift-automation`
+
+### JQL Query
+
+Issues are selected for processing using this query:
+
+```sql
+project in (OCPBUGS, CNTRLPLANE)
+  AND resolution = Unresolved
+  AND status in (New, "To Do")
+  AND labels = issue-for-agent
+  AND labels != agent-processed
+```
+
+### Data Flow
+
+```mermaid
+flowchart TD
+    subgraph "Prow CI Environment"
+        A[Periodic Job Trigger<br/>Weekly Monday 8:30 UTC] --> B[Setup Step]
+        B --> C[Process Step]
+
+        subgraph "Process Step"
+            C --> D[Query Jira API]
+            D --> E{Issues Found?}
+            E -->|No| F[Exit Successfully]
+            E -->|Yes| G[Clone Repositories]
+            G --> H[For Each Issue]
+            H --> I[Run Claude Code<br/>/jira-solve command]
+            I --> J[Create Branch]
+            J --> K[Push to Fork]
+            K --> L[Create Draft PR]
+            L --> M[Update Jira Labels]
+            M --> N{More Issues?}
+            N -->|Yes| H
+            N -->|No| F
+        end
+    end
+
+    subgraph "External Systems"
+        D <--> JIRA[(Jira API<br/>issues.redhat.com)]
+        I <--> CLAUDE[Claude API<br/>via Vertex AI]
+        K <--> FORK[(GitHub Fork<br/>hypershift-community)]
+        L <--> UPSTREAM[(GitHub Upstream<br/>openshift/hypershift)]
+    end
+```
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JIRA_AGENT_MAX_ISSUES` | 1 | Maximum issues to process per run |
+| Rate limit | 60 seconds | Delay between processing issues |
+
+---
+
+## Review Agent
+
+### Overview
+
+The Review Agent (`periodic-review-agent`) automatically addresses PR review comments on PRs created by the Jira Agent.
+
+- **Job name**: `periodic-review-agent`
+- **Schedule**: Every 3 hours (8:00-23:00 UTC) daily (`0 8-23/3 * * *`)
+- **Max PRs per run**: 10 (configurable via `REVIEW_AGENT_MAX_PRS`)
+- **Max agentic turns**: 100 per PR
+- **On-demand job**: `review-agent-single-pr` (trigger with `/test review-agent-single-pr`)
+
+### How It Works
+
+1. **Queries GitHub** for open PRs authored by `app/hypershift-jira-solve-ci`
+2. **Analyzes review threads** to identify comments needing attention
+3. **Runs Claude Code** with the `/utils:address-reviews` command
+4. **Pushes changes** back to the PR branch
+
+### Comment Analysis Logic
+
+The agent uses a Python-based comment analyzer to intelligently determine which review threads need attention. This prevents duplicate responses and ensures only actionable feedback is processed.
+
+#### What Gets Processed
+
+| Condition | Action |
+|-----------|--------|
+| No bot reply in thread | Process (first response needed) |
+| Human replied after bot's last comment | Process (follow-up needed) |
+| Bot already replied, no human follow-up | Skip (already addressed) |
+| Thread is resolved | Skip (marked complete by reviewer) |
+| Thread is outdated (code changed) | Skip (likely addressed by code change) |
+
+#### What Counts as an Unresolved Review Thread
+
+A review thread is considered **unresolved** when:
+
+- **Inline code comments**: A reviewer left a comment on a specific line of code in the "Files changed" tab, and no one has clicked "Resolve conversation"
+- **Review comments with suggestions**: Comments that include suggested code changes that haven't been resolved
+- **Threaded discussions**: Any reply chain started from a code review that remains open
+
+A review thread is **NOT** created by:
+
+- General PR comments (comments in the main "Conversation" tab that aren't attached to code)
+- PR reviews that only contain an approval/request changes without inline comments
+- Commit comments
+
+#### Author Authorization
+
+The review agent only responds to feedback from authorized authors:
+
+| Author Type | Example |
+|-------------|---------|
+| OpenShift org members | Members of the `openshift` GitHub organization |
+| OWNERS file entries | Users listed in `OWNERS` or `OWNERS_ALIASES` |
+| Approved bots | `coderabbitai[bot]` |
+
+Comments from unauthorized users are ignored to prevent abuse.
+
+#### Response Rules
+
+When addressing feedback, the bot follows these rules:
+
+1. **One response per feedback**: Never responds to the same feedback via both inline reply AND general PR comment
+2. **Code changes only when requested**: Only modifies code when explicitly asked (imperative language like "change", "fix", "update")
+3. **Explanations for questions**: Replies with explanation only for clarifying questions, without code changes
+
+### Data Flow
+
+```mermaid
+flowchart TD
+    subgraph "Prow CI Environment"
+        A[Periodic Job Trigger<br/>Every 3 hours 8:00-23:00 UTC] --> B[Setup Step]
+        B --> C[Process Step]
+
+        subgraph "Process Step"
+            C --> D[Query GitHub API<br/>for Agent PRs]
+            D --> E{PRs Found?}
+            E -->|No| F[Exit Successfully]
+            E -->|Yes| G[For Each PR]
+            G --> H[Analyze Review Threads]
+            H --> I{Threads Need<br/>Attention?}
+            I -->|No| J{More PRs?}
+            I -->|Yes| K[Checkout PR Branch]
+            K --> L[Run Claude Code<br/>/utils:address-reviews]
+            L --> M[Push Changes]
+            M --> J
+            J -->|Yes| G
+            J -->|No| F
+        end
+    end
+
+    subgraph "External Systems"
+        D <--> GH[(GitHub API<br/>github.com)]
+        L <--> CLAUDE[Claude API<br/>via Vertex AI]
+        M <--> FORK[(GitHub Fork<br/>hypershift-community)]
+    end
+```
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REVIEW_AGENT_MAX_PRS` | 10 | Maximum PRs to process per run |
+
+---
+
+## User Guide
+
+### Submitting Issues for Processing
+
+To have an issue processed by the Jira Agent:
+
+1. Ensure the issue is in **OCPBUGS** or **CNTRLPLANE** project
+2. Set status to **New** or **To Do**
+3. Ensure resolution is **Unresolved**
+4. Add the label **`issue-for-agent`**
+5. Security set to none
+
+The issue will be picked up on the next weekly run (Mondays at 8:30 AM UTC).
+
+### Viewing AI-Generated Output
+
+Track PRs created by the Jira Agent:
+
+- **PR List**: github.com/openshift/hypershift/pulls?q=is:pr+author:app/hypershift-jira-solve-ci
+
+PRs are created as **drafts** and require human review before merging.
+
+### Reprocessing Issues
+
+To have an issue reprocessed:
+
+1. Remove the **`agent-processed`** label from the Jira issue
+2. The issue will be picked up on the next weekly run
+
+### Triggering Review Agent On-Demand
+
+For a single PR, you can trigger the review agent manually:
+
+```
+/test review-agent-single-pr
+```
+
+This runs the review agent for that specific PR only.
+
+---
+
+## Limitations
+
+- **AI may produce incorrect or incomplete solutions** - always review carefully
+- **Complex issues may not be fully addressed** - multi-faceted problems may need human intervention
+- **Rate limited**: 1 issue per weekly run (jira-agent), 10 PRs per run (review-agent)
+- **Cannot access private resources** - no access to internal systems beyond Jira/GitHub
+- **Cannot execute destructive operations** - no ability to delete resources or force-push
+- **Maximum agentic turns**: 100 per issue (jira-agent), 100 per PR (review-agent)
+
+---
+
+## Support and Feedback
+
+- **Slack channel**: #project-hypershift
+- **Feedback**: File issues in openshift/hypershift with label `ai-feedback`
+- **Urgent issues**: Contact HyperShift OWNERS directly
+
+---
+
+## Monitoring and Effectiveness
+
+### Performance Monitoring
+
+- **Prow job logs**: prow.ci.openshift.org
+- Track job success/failure rates
+- Monitor for recurring authentication errors
+
+### Metrics and Indicators
+
+| Metric | Description |
+|--------|-------------|
+| Issues processed per week | Number of issues successfully analyzed |
+| PRs merged vs. closed | Success rate of generated PRs |
+| Review cycles needed | Average iterations before merge |
+| Time to PR creation | Duration from issue creation to PR |
+
+### Periodic Review Process
+
+The HyperShift team conducts monthly reviews:
+
+- Review AI-generated PRs for quality and accuracy
+- Track false positives and missed solutions
+- Adjust issue labeling criteria based on results
+- Document lessons learned and improve the `/jira-solve` command
+
+---
+
+## Data Flow and Security
+
+### Authentication
+
+| System | Method |
+|--------|--------|
+| GitHub | GitHub App tokens (JWT-based) for fork and upstream |
+| Claude API | GCP service account via Vertex AI |
+| Jira | Personal access token for label management |
+
+### Data Retention
+
+- No persistent storage beyond PR content
+- Logs retained per Prow standard retention policy
+
+### External Systems
+
+| System | Purpose |
+|--------|---------|
+| Jira API (issues.redhat.com) | Issue queries and label updates |
+| GitHub API (github.com) | PR creation and management |
+| Claude API via Vertex AI (GCP) | AI-powered code analysis and generation |
+
+
+---
+
 ## Source: docs/content/how-to/ci/checking-ci.md
 
 # Daily CI Health Check Procedures
@@ -14621,7 +14949,7 @@ Explicitly set `--network-type OVNKubernetes` (or other valid SDN provider if ne
 ## HCP: imageRegistryOverrides information is extracted only once on HyperShift operator initialization and never refreshed
 
 See: OCPBUGS-29110
-According to https://hypershift-docs.netlify.app/how-to/disconnected/automatically-initialize-registry-overrides/ , the HyperShift Operator (HO) will automatically initialize the control plane operator (CPO) with any image registry override information from any ImageContentSourcePolicy (ICSP) or any ImageDigestMirrorSet (IDMS) instances from an OpenShift management cluster.
+According to https://hypershift.pages.dev/how-to/disconnected/idms-icsp-for-management-clusters/ , the HyperShift Operator (HO) will automatically initialize the control plane operator (CPO) with any image registry override information from any ImageContentSourcePolicy (ICSP) or any ImageDigestMirrorSet (IDMS) instances from an OpenShift management cluster.
 But due to a bug, the HyperShift Operator (HO) reads the image registry override information only during its startup and never refreshes them at runtime so ICSP and IDMS added after the initialization of the HyperShift Operator are going to get ignored.
 
 **Workaround:**
@@ -15077,6 +15405,239 @@ The minimum criteria for promotion is:
 - There is e2e test coverage for day 2 on update UX failure expectations via this e2e test
 
 In general we aim to adhere and converge with stand alone principles in openshift/api
+
+---
+
+## Source: docs/content/how-to/gcp-platform.md
+
+# GCP Platform Implementation for HyperShift
+
+This document describes the implementation of Google Cloud Platform (GCP) support in HyperShift with Cluster API Provider GCP (CAPG) integration.
+
+## Overview
+
+The GCP platform implementation enables HyperShift to create and manage OpenShift hosted clusters on Google Cloud Platform using CAPG (Cluster API Provider GCP) for NodePool support. This implementation follows established patterns from AWS and Azure platforms.
+
+## Architecture
+
+### Key Components
+
+1. **Platform Interface Implementation** (`/hypershift-operator/controllers/hostedcluster/internal/platform/gcp/gcp.go`)
+   - Implements the HyperShift Platform interface for GCP
+   - Provides CAPG controller deployment specification
+   - Manages credential validation and condition management
+   - Handles CAPI infrastructure resource reconciliation
+
+2. **API Types** (`/api/hypershift/v1beta1/gcp.go`)
+   - `GCPPlatformSpec`: Main configuration for GCP clusters
+   - `GCPNetworkConfig`: VPC and Private Service Connect configuration
+   - `GCPWorkloadIdentityConfig`: Workload Identity Federation preparation
+   - `GCPResourceReference`: GCP resource naming standards
+
+3. **Condition Management** (`/api/hypershift/v1beta1/hostedcluster_conditions.go`)
+   - `ValidGCPCredentials`: GCP credential validation status
+   - `ValidGCPWorkloadIdentity`: WIF configuration validation status
+
+## Features
+
+### Credential Management
+
+The GCP platform uses **Workload Identity Federation (WIF)** for secure, short-lived token-based authentication. This eliminates the need for long-term service account keys and provides better security.
+
+#### Workload Identity Federation (Required)
+```yaml
+spec:
+  platform:
+    gcp:
+      workloadIdentity:
+        projectNumber: "123456789012"
+        poolID: "hypershift-pool"
+        providerID: "hypershift-provider"
+        serviceAccountsRef:
+          nodePoolEmail: "capg-controller@my-gcp-project.iam.gserviceaccount.com"
+```
+
+**Note**: Workload Identity Federation is mandatory for GCP clusters. The token minter sidecar is automatically deployed to handle token exchange and service account impersonation for CAPG controllers. The specified Google Service Account (GSA) will be impersonated to access GCP APIs for node pool management.
+
+**Getting the Project Number**: The `projectNumber` is the numeric identifier for your GCP project (different from the project ID). You can get it with:
+```bash
+gcloud projects describe PROJECT_ID --format="value(projectNumber)"
+```
+
+### Network Configuration
+
+Supports VPC and Private Service Connect configuration:
+
+```yaml
+spec:
+  platform:
+    gcp:
+      networkConfig:
+        network:
+          name: "my-vpc-network"
+        privateServiceConnectSubnet:
+          name: "my-psc-subnet"
+```
+
+### Resource Labeling
+
+Automatic resource labeling for organization and billing. Labels can be updated after cluster creation and will be propagated to GCP resources where supported:
+
+```yaml
+spec:
+  platform:
+    gcp:
+      resourceLabels:
+        - key: environment
+          value: production
+        - key: team
+          value: platform
+        - key: cost-center
+          value: engineering
+```
+
+## CAPG Integration
+
+### Controller Deployment
+
+The GCP platform deploys CAPG controllers with:
+
+- **Manager Container**: Main CAPG controller with proper image handling
+- **Token Minter Sidecar**: Prepared for Workload Identity Federation
+- **Comprehensive RBAC**: Full permissions for CAPI resource management
+- **Feature Gates**: Version-conditional settings for compatibility
+
+### RBAC Policies
+
+Comprehensive policy rules covering:
+
+- **CAPG Resources**: `gcpclusters`, `gcpmachines`, `gcpmachinetemplates`
+- **CAPI Resources**: `clusters`, `machines`, `machinesets`
+- **Kubernetes Resources**: `nodes`, `pods`, `secrets`, `configmaps`
+- **HyperShift Resources**: `nodepools`, `hostedclusters`
+- **Bootstrap Resources**: `kubeadmconfigs`, `kubeadmconfigtemplates`
+- **Certificate Management**: CSRs and approval handling
+- **Coordination**: Leader election and distributed coordination
+
+### Infrastructure Reconciliation
+
+Creates and manages `GCPCluster` CAPI resources with:
+
+- **External Management**: Marked with `cluster.x-k8s.io/managed-by: external`
+- **Project/Region Configuration**: From HostedCluster specification
+- **Network Settings**: VPC and subnet configuration for Private Service Connect
+- **Resource Labels**: Applied to all created GCP resources
+- **Failure Domains**: Multi-zone deployment support
+- **Control Plane Endpoint**: API server endpoint configuration
+
+## Configuration Examples
+
+### Complete GCP Cluster Example
+```yaml
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: example-gcp
+  namespace: clusters
+spec:
+  platform:
+    type: GCP
+    gcp:
+      project: "my-gcp-project"
+      region: "us-central1"
+      networkConfig:
+        network:
+          name: "hypershift-vpc"
+        privateServiceConnectSubnet:
+          name: "hypershift-psc"
+      workloadIdentity:
+        projectNumber: "123456789012"
+        poolID: "hypershift-pool"
+        providerID: "hypershift-provider"
+        serviceAccountsRef:
+          nodePoolEmail: "capg-controller@my-gcp-project.iam.gserviceaccount.com"
+      resourceLabels:
+        - key: environment
+          value: production
+        - key: team
+          value: platform
+```
+
+## Validation and Defaulting
+
+### API Validation
+- **Project ID**: RFC-compliant format with length and character restrictions
+- **Region**: Valid GCP region format
+- **Resource Labels**: GCP label requirements (63 char max, valid characters)
+- **Cross-Field Validation**: Either credentials or WIF required
+- **Network Naming**: GCP resource naming standards
+
+### Default Conditions
+- **ValidGCPCredentials**: Set to `True` by default
+- **ValidGCPWorkloadIdentity**: Set when WIF is configured
+- **Platform-Agnostic**: Standard HyperShift conditions apply
+
+## Implementation Status
+
+### ✅ Completed (Phase 1)
+- [x] Platform interface implementation
+- [x] CAPG controller deployment specification
+- [x] API types with comprehensive validation
+- [x] Credential validation and condition management
+- [x] CAPI infrastructure resource reconciliation
+- [x] Comprehensive RBAC policy rules
+- [x] Default condition management
+- [x] Integration testing framework
+- [x] Code generation and documentation
+
+### 🚧 Future Work (Not in Current Scope)
+- [ ] NodePool implementation and CAPG machine management
+- [ ] Workload Identity Federation token exchange implementation
+- [ ] GCP KMS secret encryption integration
+- [ ] External infrastructure creation (VPC, IAM) via CLI
+- [ ] Production deployment and testing
+
+## Testing
+
+Integration tests are provided in `/test/integration/gcp_test.go` covering:
+
+1. **Platform Creation**: Basic constructor and instance validation
+2. **Deployment Specification**: CAPG controller deployment configuration
+3. **Credential Validation**: Condition management and validation logic
+4. **Infrastructure Reconciliation**: CAPI resource creation and configuration
+5. **Policy Rules**: RBAC rule completeness and correctness
+6. **Default Conditions**: Platform-specific condition initialization
+
+Run tests with:
+```bash
+go test ./test/integration/gcp_test.go -v
+```
+
+## Technical Details
+
+### Image Handling Priority
+1. Annotation override: `hypershift.openshift.io/capi-provider-gcp-image`
+2. Environment variable: `IMAGE_GCP_CAPI_PROVIDER`
+3. Payload discovery: From OpenShift release payload
+
+### Naming Conventions
+- **ServiceAccount**: `capi-gcp-controller-manager`
+- **ClusterRole**: `capi-gcp-controller-manager-<namespace>`
+- **Secret**: `capg-manager-bootstrap-credentials`
+- **GCPCluster**: Same as HostedCluster name
+
+### Error Handling
+- Comprehensive credential validation with detailed error messages
+- Condition-based status reporting following HyperShift patterns
+- Graceful handling of optional configuration (WIF, resource labels)
+- Proper error aggregation and propagation
+
+## References
+
+- CAPG Documentation
+- GCP Resource Naming Standards
+- HyperShift Platform Development Guide
+- Workload Identity Federation
 
 ---
 
@@ -33589,6 +34150,27 @@ that manages control plane infrastructure and resources.
 This GSA requires the following IAM roles:
 - roles/storage.admin (Storage Admin)
 - roles/iam.serviceAccountUser (Service Account User)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>cloudController</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>cloudController is the Google Service Account email for the Cloud Controller Manager
+that manages LoadBalancer services and node lifecycle in the hosted cluster.
+This GSA requires the following IAM roles:
+- roles/compute.loadBalancerAdmin (Load Balancer Admin - for provisioning GCP load balancers)
+- roles/compute.securityAdmin (Security Admin - for managing firewall rules)
+- roles/compute.viewer (Compute Viewer - for reading instance metadata for node management)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.

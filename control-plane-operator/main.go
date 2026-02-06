@@ -522,18 +522,29 @@ func NewStartCommand() *cobra.Command {
 		}
 
 		if hcp.Spec.Platform.Type == hyperv1.GCPPlatform && util.IsPrivateHCP(hcp) && mgmtClusterCaps.Has(capabilities.CapabilityRoute) {
-			controllerName := "GCPPrivateServiceObserver"
+			observerControllerName := "GCPPrivateServiceObserver"
 
 			if err = (&gcpprivateserviceconnect.GCPPrivateServiceObserver{
 				Client:                 mgr.GetClient(),
-				ControllerName:         controllerName,
+				ControllerName:         observerControllerName,
 				ServiceNamespace:       namespace,
 				ServiceName:            manifests.PrivateRouterService("").Name,
 				HCPNamespace:           namespace,
 				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
 			}).SetupWithManager(ctx, mgr); err != nil {
-				controllerName = gcpprivateserviceconnect.ControllerName(manifests.PrivateRouterService("").Name)
-				setupLog.Error(err, "unable to create controller", "controller", controllerName)
+				observerControllerName = gcpprivateserviceconnect.ControllerName(manifests.PrivateRouterService("").Name)
+				setupLog.Error(err, "unable to create controller", "controller", observerControllerName)
+				os.Exit(1)
+			}
+
+			// Add customer-side PSC endpoint controller
+			endpointControllerName := "GCPPrivateServiceConnectEndpoint"
+
+			if err = (&gcpprivateserviceconnect.GCPPrivateServiceConnectReconciler{
+				Client:                 mgr.GetClient(),
+				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+			}).SetupWithManager(mgr); err != nil {
+				setupLog.Error(err, "unable to create controller", "controller", endpointControllerName)
 				os.Exit(1)
 			}
 		}

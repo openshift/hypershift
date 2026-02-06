@@ -14,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/none"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/openstack"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/powervs"
+	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	imgUtil "github.com/openshift/hypershift/support/util"
@@ -32,15 +33,18 @@ const (
 	PowerVSCAPIProvider         = "ibmcloud-cluster-api-controllers"
 	OpenStackCAPIProvider       = "openstack-cluster-api-controllers"
 	OpenStackResourceController = "openstack-resource-controller"
+	GCPCAPIProvider             = "gcp-cluster-api-controllers"
 )
 
-var _ Platform = aws.AWS{}
-var _ Platform = azure.Azure{}
-var _ Platform = ibmcloud.IBMCloud{}
-var _ Platform = none.None{}
-var _ Platform = agent.Agent{}
-var _ Platform = kubevirt.Kubevirt{}
-var _ Platform = gcp.GCP{}
+var (
+	_ Platform = aws.AWS{}
+	_ Platform = azure.Azure{}
+	_ Platform = ibmcloud.IBMCloud{}
+	_ Platform = none.None{}
+	_ Platform = agent.Agent{}
+	_ Platform = kubevirt.Kubevirt{}
+	_ Platform = gcp.GCP{}
+)
 
 type Platform interface {
 	// ReconcileCAPIInfraCR is called during HostedCluster reconciliation prior to reconciling the CAPI Cluster CR.
@@ -104,14 +108,18 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
 			}
+
+			if payloadVersion != nil {
+				imageOverride, err := backwardcompat.GetBackwardCompatibleCAPIImage(ctx, pullSecretBytes, releaseProvider, *payloadVersion, AWSCAPIProvider)
+				if err != nil {
+					return nil, err
+				}
+				if imageOverride != "" {
+					capiImageProvider = imageOverride
+				}
+			}
 		}
 
-		// temporary override for 4.21 to unblock CAPI bump to 1.11 which introduces a new API version.
-		// used image from multiArch release payload 4.20.5 (quay.io/openshift-release-dev/ocp-release@sha256:1f2c28ac126453a3b9e83b349822b9f1fb7662973a212f936b90fdc40e06eb58)
-		// TODO(https://issues.redhat.com/browse/CNTRLPLANE-1200): Remove this override once Hypershift installs the CAPI v1beta2 API version
-		if payloadVersion != nil && payloadVersion.GTE(semver.MustParse("4.21.0-0")) {
-			capiImageProvider = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:b8881eafb5fdb31bdaffe03d2cb74ee6729a4776ce879c550e0ea26c489e2cf6"
-		}
 		platform = aws.New(utilitiesImage, capiImageProvider, payloadVersion)
 	case hyperv1.IBMCloudPlatform:
 		platform = &ibmcloud.IBMCloud{}
@@ -131,14 +139,18 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 			if err != nil {
 				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
 			}
+
+			if payloadVersion != nil {
+				imageOverride, err := backwardcompat.GetBackwardCompatibleCAPIImage(ctx, pullSecretBytes, releaseProvider, *payloadVersion, AzureCAPIProvider)
+				if err != nil {
+					return nil, err
+				}
+				if imageOverride != "" {
+					capiImageProvider = imageOverride
+				}
+			}
 		}
 
-		// temporary override for 4.21 to unblock CAPI bump to 1.11 which introduces a new API version.
-		// used image from multiArch release payload 4.20.5 (quay.io/openshift-release-dev/ocp-release@sha256:1f2c28ac126453a3b9e83b349822b9f1fb7662973a212f936b90fdc40e06eb58)
-		// TODO(https://issues.redhat.com/browse/CNTRLPLANE-1200): Remove this override once Hypershift installs the CAPI v1beta2 API version
-		if payloadVersion != nil && payloadVersion.GTE(semver.MustParse("4.21.0-0")) {
-			capiImageProvider = "quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:54c33e77c60da570e9f18dcae94c4c320145a77a78df9de615a9949fbebf6b40"
-		}
 		platform = azure.New(utilitiesImage, capiImageProvider, payloadVersion)
 	case hyperv1.PowerVSPlatform:
 		if pullSecretBytes != nil {
@@ -169,7 +181,17 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 		}
 		platform = openstack.New(capiImageProvider, orcImage, payloadVersion)
 	case hyperv1.GCPPlatform:
-		platform = gcp.New()
+		if pullSecretBytes != nil {
+			capiImageProvider, err = imgUtil.GetPayloadImage(ctx, releaseProvider, hcluster, GCPCAPIProvider, pullSecretBytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to retrieve capi image: %w", err)
+			}
+			payloadVersion, err = imgUtil.GetPayloadVersion(ctx, releaseProvider, hcluster, pullSecretBytes)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch payload version: %w", err)
+			}
+		}
+		platform = gcp.New(utilitiesImage, capiImageProvider, payloadVersion)
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}

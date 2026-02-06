@@ -55,7 +55,7 @@ func TestAzureScheduler(t *testing.T) {
 		scaleNodePool(ctx, t, g, mgtClient, guestClient, hostedCluster)
 		checkHCSizeAndAnnotations(ctx, t, mgtClient, hostedCluster, "medium", hcAnnotations)
 		checkCPOPodRescheduled(ctx, t, mgtClient, controlPlaneNamespace)
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "azure-scheduler", globalOpts.ServiceAccountSigningKey)
+	}).WithAssetReader(content.ReadFile).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "azure-scheduler", globalOpts.ServiceAccountSigningKey)
 }
 
 func updateClusterSizingConfig(ctx context.Context, t *testing.T, g Gomega, mgtClient crclient.Client) {
