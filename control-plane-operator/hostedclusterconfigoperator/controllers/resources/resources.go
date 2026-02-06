@@ -1594,17 +1594,21 @@ func (r *reconciler) reconcileControlPlaneConnectionAvailable(ctx context.Contex
 
 	if err := r.client.Get(ctx, daemonSetKey, daemonSet); err != nil {
 		if apierrors.IsNotFound(err) {
-			condition.Message = "KAS connection checker DaemonSet not found"
+			condition.Reason = hyperv1.ControlPlaneConnectionDaemonSetNotFoundReason
+			condition.Message = fmt.Sprintf("KAS connection checker DaemonSet %s/%s not found; the hosted cluster config operator may not have reconciled it yet",
+				manifests.KASConnectionCheckerNamespace, manifests.KASConnectionCheckerName)
 			return r.patchHCPStatusCondition(ctx, hcp, condition, string(hyperv1.ControlPlaneConnectionAvailable))
 		}
 		condition.Reason = hyperv1.ReconcileErrorReason
-		condition.Message = fmt.Sprintf("Failed to get KAS connection checker DaemonSet: %v", err)
+		condition.Message = fmt.Sprintf("Failed to get KAS connection checker DaemonSet %s/%s: %v",
+			manifests.KASConnectionCheckerNamespace, manifests.KASConnectionCheckerName, err)
 		return r.patchHCPStatusCondition(ctx, hcp, condition, string(hyperv1.ControlPlaneConnectionAvailable))
 	}
 
 	// Check if there are any nodes to schedule pods on
 	if daemonSet.Status.DesiredNumberScheduled == 0 {
-		condition.Message = "No worker nodes available to check control plane connection"
+		condition.Reason = hyperv1.ControlPlaneConnectionNoWorkerNodesAvailableReason
+		condition.Message = "KAS connection checker DaemonSet has 0 desired pods scheduled; no worker nodes are available to verify control plane connectivity"
 		return r.patchHCPStatusCondition(ctx, hcp, condition, string(hyperv1.ControlPlaneConnectionAvailable))
 	}
 

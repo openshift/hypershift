@@ -293,6 +293,10 @@ const (
 
 	ControlPlaneConnectionKASAccessFailedReason = "KASAccessFailed"
 
+	ControlPlaneConnectionDaemonSetNotFoundReason = "DaemonSetNotFound"
+
+	ControlPlaneConnectionNoWorkerNodesAvailableReason = "NoWorkerNodesAvailable"
+
 	ControlPlaneComponentsNotAvailable = "ComponentsNotAvailable"
 )
 

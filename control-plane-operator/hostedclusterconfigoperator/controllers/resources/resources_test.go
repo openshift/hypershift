@@ -2591,26 +2591,27 @@ func Test_reconciler_reconcileControlPlaneConnectionAvailable(t *testing.T) {
 		daemonSet         *appsv1.DaemonSet
 	}{
 		{
-			name:    "When DaemonSet does not exist it should set condition to Unknown",
+			name:    "When DaemonSet does not exist it should set condition to Unknown with DaemonSetNotFound reason",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: newCondition(
 				string(hyperv1.ControlPlaneConnectionAvailable),
 				metav1.ConditionUnknown,
-				hyperv1.StatusUnknownReason,
-				"KAS connection checker DaemonSet not found",
+				hyperv1.ControlPlaneConnectionDaemonSetNotFoundReason,
+				fmt.Sprintf("KAS connection checker DaemonSet %s/%s not found; the hosted cluster config operator may not have reconciled it yet",
+					manifests.KASConnectionCheckerNamespace, manifests.KASConnectionCheckerName),
 			),
 			daemonSet: nil, // No DaemonSet
 		},
 		{
-			name:    "When DesiredNumberScheduled is 0 it should set condition to Unknown",
+			name:    "When DesiredNumberScheduled is 0 it should set condition to Unknown with NoWorkerNodesAvailable reason",
 			hcp:     fakeHCP(),
 			wantErr: false,
 			expectedCondition: newCondition(
 				string(hyperv1.ControlPlaneConnectionAvailable),
 				metav1.ConditionUnknown,
-				hyperv1.StatusUnknownReason,
-				"No worker nodes available to check control plane connection",
+				hyperv1.ControlPlaneConnectionNoWorkerNodesAvailableReason,
+				"KAS connection checker DaemonSet has 0 desired pods scheduled; no worker nodes are available to verify control plane connectivity",
 			),
 			daemonSet: newKASConnectionCheckerDaemonSet(0, 0),
 		},
