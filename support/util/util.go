@@ -47,6 +47,17 @@ const (
 	HostedClustersScopeAnnotationEnv         = "HOSTEDCLUSTERS_SCOPE_ANNOTATION"
 	HostedClustersScopeAnnotation            = "hypershift.openshift.io/scope"
 	HostedClusterAnnotation                  = "hypershift.openshift.io/cluster"
+
+	// DisablePDBsAllAnnotation when set to "true" disables PDB creation for all control plane components.
+	DisablePDBsAllAnnotation = "hypershift.openshift.io/disable-pdb-all"
+
+	// Per-component PDB disable annotations. When set to "true", disables PDB creation for the specific component.
+	DisablePDBEtcdAnnotation                 = "hypershift.openshift.io/disable-pdb-etcd"
+	DisablePDBKubeAPIServerAnnotation        = "hypershift.openshift.io/disable-pdb-kube-apiserver"
+	DisablePDBOpenShiftAPIServerAnnotation   = "hypershift.openshift.io/disable-pdb-openshift-apiserver"
+	DisablePDBOAuthAPIServerAnnotation       = "hypershift.openshift.io/disable-pdb-openshift-oauth-apiserver"
+	DisablePDBOAuthOpenShiftAnnotation       = "hypershift.openshift.io/disable-pdb-oauth-openshift"
+	DisablePDBRouterAnnotation               = "hypershift.openshift.io/disable-pdb-router"
 )
 
 type JSONMapper func(jsonData []byte) []byte

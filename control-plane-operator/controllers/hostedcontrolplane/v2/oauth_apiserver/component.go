@@ -44,6 +44,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"pdb.yaml",
 			component.AdaptPodDisruptionBudget(),
+			component.DisableIfPDBDisabled(util.DisablePDBOAuthAPIServerAnnotation),
 		).
 		WithDependencies(oapiv2.ComponentName).
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).

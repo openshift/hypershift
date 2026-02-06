@@ -48,6 +48,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"pdb.yaml",
 			component.AdaptPodDisruptionBudget(),
+			component.DisableIfPDBDisabled(util.DisablePDBOpenShiftAPIServerAnnotation),
 		).
 		InjectKonnectivityContainer(component.KonnectivityContainerOptions{
 			Mode: component.HTTPS,

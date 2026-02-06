@@ -95,6 +95,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"pdb.yaml",
 			component.AdaptPodDisruptionBudget(),
+			component.DisableIfPDBDisabled(hyperutils.DisablePDBKubeAPIServerAnnotation),
 		).
 		WithManifestAdapter(
 			"servicemonitor.yaml",

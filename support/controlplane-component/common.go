@@ -60,3 +60,11 @@ func EnableForPlatform(platform hyperv1.PlatformType) option {
 		return cpContext.HCP.Spec.Platform.Type == platform
 	})
 }
+
+// DisableIfPDBDisabled is a helper predicate that disables a PDB resource if either the global
+// disable-pdb-all annotation or the component-specific annotation is set to "true".
+func DisableIfPDBDisabled(componentAnnotation string) option {
+	return WithPredicate(func(cpContext WorkloadContext) bool {
+		return !util.IsPDBDisabled(cpContext.HCP.Annotations, componentAnnotation)
+	})
+}

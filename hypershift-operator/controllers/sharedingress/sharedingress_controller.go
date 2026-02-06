@@ -233,14 +233,29 @@ func (r *SharedIngressReconciler) reconcileRouter(ctx context.Context, pullSecre
 
 	routerDeploymentOwnerRef := supportconfig.OwnerRefFrom(deployment)
 
+	// Check if any HostedCluster has PDB disabled for router
+	pdbDisabled, err := r.isRouterPDBDisabled(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to check if router PDB is disabled: %w", err)
+	}
+
 	pdb := RouterPodDisruptionBudget()
-	if result, err := r.createOrUpdate(ctx, r.Client, pdb, func() error {
-		ReconcileRouterPodDisruptionBudget(pdb, routerDeploymentOwnerRef)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile etcd pdb: %w", err)
+	if pdbDisabled {
+		// Delete PDB if it exists
+		if err := r.Client.Delete(ctx, pdb); err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete router pdb: %w", err)
+		}
+		log.Log.Info("deleted router pdb as it is disabled")
 	} else {
-		log.Log.Info("reconciled etcd pdb", "result", result)
+		// Create or update PDB
+		if result, err := r.createOrUpdate(ctx, r.Client, pdb, func() error {
+			ReconcileRouterPodDisruptionBudget(pdb, routerDeploymentOwnerRef)
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile router pdb: %w", err)
+		} else {
+			log.Log.Info("reconciled router pdb", "result", result)
+		}
 	}
 
 	// Reconcile KAS Network Policy
@@ -387,4 +402,26 @@ func Hostname(hcp *hyperv1.HostedControlPlane) string {
 		return ""
 	}
 	return kasPublishStrategy.Route.Hostname
+}
+
+// isRouterPDBDisabled checks if any HostedCluster has the router PDB disabled.
+// Since the shared ingress router is a shared resource across multiple hosted clusters,
+// we disable the PDB if ANY hosted cluster requests it to be disabled.
+func (r *SharedIngressReconciler) isRouterPDBDisabled(ctx context.Context) (bool, error) {
+	// List all HostedClusters
+	hcList := &hyperv1.HostedClusterList{}
+	if err := r.Client.List(ctx, hcList); err != nil {
+		return false, fmt.Errorf("failed to list HostedClusters: %w", err)
+	}
+
+	// Check if any HostedCluster has PDB disabled for router
+	for i := range hcList.Items {
+		hc := &hcList.Items[i]
+		if util.IsPDBDisabled(hc.Annotations, util.DisablePDBRouterAnnotation) {
+			log.Log.Info("router PDB is disabled", "hostedCluster", hc.Name)
+			return true, nil
+		}
+	}
+
+	return false, nil
 }

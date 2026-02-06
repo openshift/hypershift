@@ -49,6 +49,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"pdb.yaml",
 			component.AdaptPodDisruptionBudget(),
+			component.DisableIfPDBDisabled(util.DisablePDBOAuthOpenShiftAnnotation),
 		).
 		WithManifestAdapter(
 			"service-session-secret.yaml",

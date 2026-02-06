@@ -3,6 +3,7 @@ package etcd
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/util"
 )
 
 const (
@@ -41,6 +42,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"pdb.yaml",
 			component.AdaptPodDisruptionBudget(),
+			component.DisableIfPDBDisabled(util.DisablePDBEtcdAnnotation),
 		).
 		WithManifestAdapter(
 			"defrag-role.yaml",

@@ -42,6 +42,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"pdb.yaml",
 			component.AdaptPodDisruptionBudget(),
+			component.DisableIfPDBDisabled(util.DisablePDBRouterAnnotation),
 		).
 		WithDependencies(oapiv2.ComponentName).
 		Build()
