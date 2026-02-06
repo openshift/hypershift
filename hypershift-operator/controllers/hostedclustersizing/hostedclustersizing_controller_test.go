@@ -1486,7 +1486,259 @@ func TestSizingController_Reconcile(t *testing.T) {
 			}},
 		},
 		{
-			name:   "transition, use resource based autoscaling",
+			// Tests that valid override annotation takes precedence over autoscaling recommendation
+			name:   "sizing priority: valid override takes precedence over autoscaling",
+			config: validCommonConfig,
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "ns", Name: "hc",
+					Annotations: map[string]string{
+						hypershiftv1beta1.ClusterSizeOverrideAnnotation:                  "large",
+						hypershiftv1beta1.ResourceBasedControlPlaneAutoscalingAnnotation: "true",
+						hypershiftv1beta1.RecommendedClusterSizeAnnotation:               "medium", // Would be used if override wasn't set
+					},
+				},
+			},
+			listHostedClusters: func(_ context.Context) (*hypershiftv1beta1.HostedClusterList, error) {
+				return &hypershiftv1beta1.HostedClusterList{Items: []hypershiftv1beta1.HostedCluster{}}, nil
+			},
+			hccoReportsNodeCount: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (bool, error) {
+				return true, nil
+			},
+			hostedControlPlaneForHostedCluster: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (*hypershiftv1beta1.HostedControlPlane, error) {
+				return &hypershiftv1beta1.HostedControlPlane{
+					// Node count would suggest "small"
+					Status: hypershiftv1beta1.HostedControlPlaneStatus{NodeCount: ptr.To(5)},
+				}, nil
+			},
+			expected: &action{applyCfg: &hypershiftv1beta1applyconfigurations.HostedClusterApplyConfiguration{
+				ObjectMetaApplyConfiguration: &metav1applyconfigurations.ObjectMetaApplyConfiguration{Namespace: ptr.To("ns"), Name: ptr.To("hc")},
+				Status: &hypershiftv1beta1applyconfigurations.HostedClusterStatusApplyConfiguration{
+					Conditions: []metav1applyconfigurations.ConditionApplyConfiguration{
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeComputed),
+							Status:             ptr.To(metav1.ConditionTrue),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To("large"), // Override wins over autoscaling
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeTransitionPending),
+							Status:             ptr.To(metav1.ConditionFalse),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To("ClusterSizeTransitioned"),
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeTransitionRequired),
+							Status:             ptr.To(metav1.ConditionFalse),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To(hypershiftv1beta1.AsExpectedReason),
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+					},
+				},
+			}},
+		},
+		{
+			// Tests that when override is invalid AND autoscaling is NOT enabled, it falls back to node count sizing
+			name:   "sizing priority: invalid override falls back to node count when autoscaling disabled",
+			config: validCommonConfig,
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "ns", Name: "hc",
+					Annotations: map[string]string{
+						hypershiftv1beta1.ClusterSizeOverrideAnnotation: "nonexistent_size",
+						// autoscaling NOT enabled
+					},
+				},
+			},
+			listHostedClusters: func(_ context.Context) (*hypershiftv1beta1.HostedClusterList, error) {
+				return &hypershiftv1beta1.HostedClusterList{Items: []hypershiftv1beta1.HostedCluster{}}, nil
+			},
+			hccoReportsNodeCount: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (bool, error) {
+				return true, nil
+			},
+			hostedControlPlaneForHostedCluster: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (*hypershiftv1beta1.HostedControlPlane, error) {
+				return &hypershiftv1beta1.HostedControlPlane{
+					// Node count of 5 should result in "small" size (0-10 range)
+					Status: hypershiftv1beta1.HostedControlPlaneStatus{NodeCount: ptr.To(5)},
+				}, nil
+			},
+			expected: &action{applyCfg: &hypershiftv1beta1applyconfigurations.HostedClusterApplyConfiguration{
+				ObjectMetaApplyConfiguration: &metav1applyconfigurations.ObjectMetaApplyConfiguration{Namespace: ptr.To("ns"), Name: ptr.To("hc")},
+				Status: &hypershiftv1beta1applyconfigurations.HostedClusterStatusApplyConfiguration{
+					Conditions: []metav1applyconfigurations.ConditionApplyConfiguration{
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeComputed),
+							Status:             ptr.To(metav1.ConditionTrue),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To("small"), // Falls back to node count sizing
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeTransitionPending),
+							Status:             ptr.To(metav1.ConditionFalse),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To("ClusterSizeTransitioned"),
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeTransitionRequired),
+							Status:             ptr.To(metav1.ConditionFalse),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To(hypershiftv1beta1.AsExpectedReason),
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+					},
+				},
+			}},
+		},
+		{
+			// Tests that when override is invalid AND autoscaling is enabled, it falls back to autoscaling
+			name:   "sizing priority: invalid override falls back to autoscaling when enabled",
+			config: validCommonConfig,
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "ns", Name: "hc",
+					Annotations: map[string]string{
+						hypershiftv1beta1.ClusterSizeOverrideAnnotation:                  "nonexistent_size",
+						hypershiftv1beta1.ResourceBasedControlPlaneAutoscalingAnnotation: "true",
+						hypershiftv1beta1.RecommendedClusterSizeAnnotation:               "medium",
+					},
+				},
+			},
+			listHostedClusters: func(_ context.Context) (*hypershiftv1beta1.HostedClusterList, error) {
+				return &hypershiftv1beta1.HostedClusterList{Items: []hypershiftv1beta1.HostedCluster{}}, nil
+			},
+			hccoReportsNodeCount: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (bool, error) {
+				return true, nil
+			},
+			hostedControlPlaneForHostedCluster: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (*hypershiftv1beta1.HostedControlPlane, error) {
+				return &hypershiftv1beta1.HostedControlPlane{
+					// Node count would suggest "small", but autoscaling should be used
+					Status: hypershiftv1beta1.HostedControlPlaneStatus{NodeCount: ptr.To(5)},
+				}, nil
+			},
+			expected: &action{applyCfg: &hypershiftv1beta1applyconfigurations.HostedClusterApplyConfiguration{
+				ObjectMetaApplyConfiguration: &metav1applyconfigurations.ObjectMetaApplyConfiguration{Namespace: ptr.To("ns"), Name: ptr.To("hc")},
+				Status: &hypershiftv1beta1applyconfigurations.HostedClusterStatusApplyConfiguration{
+					Conditions: []metav1applyconfigurations.ConditionApplyConfiguration{
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeComputed),
+							Status:             ptr.To(metav1.ConditionTrue),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To("medium"), // Falls back to autoscaling
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeTransitionPending),
+							Status:             ptr.To(metav1.ConditionFalse),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To("ClusterSizeTransitioned"),
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeTransitionRequired),
+							Status:             ptr.To(metav1.ConditionFalse),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To(hypershiftv1beta1.AsExpectedReason),
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+					},
+				},
+			}},
+		},
+		{
+			// Tests triple fallback: invalid override + autoscaling enabled + invalid recommended size = first size class
+			name:   "sizing priority: invalid override and invalid recommended falls back to first size class",
+			config: validCommonConfig,
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "ns", Name: "hc",
+					Annotations: map[string]string{
+						hypershiftv1beta1.ClusterSizeOverrideAnnotation:                  "nonexistent_size",
+						hypershiftv1beta1.ResourceBasedControlPlaneAutoscalingAnnotation: "true",
+						hypershiftv1beta1.RecommendedClusterSizeAnnotation:               "also_nonexistent", // Invalid recommended size
+					},
+				},
+			},
+			listHostedClusters: func(_ context.Context) (*hypershiftv1beta1.HostedClusterList, error) {
+				return &hypershiftv1beta1.HostedClusterList{Items: []hypershiftv1beta1.HostedCluster{}}, nil
+			},
+			hccoReportsNodeCount: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (bool, error) {
+				return true, nil
+			},
+			hostedControlPlaneForHostedCluster: func(_ context.Context, _ *hypershiftv1beta1.HostedCluster) (*hypershiftv1beta1.HostedControlPlane, error) {
+				return &hypershiftv1beta1.HostedControlPlane{
+					// Node count would suggest "medium", but autoscaling with invalid recommended falls back to first size
+					Status: hypershiftv1beta1.HostedControlPlaneStatus{NodeCount: ptr.To(50)},
+				}, nil
+			},
+			expected: &action{applyCfg: &hypershiftv1beta1applyconfigurations.HostedClusterApplyConfiguration{
+				ObjectMetaApplyConfiguration: &metav1applyconfigurations.ObjectMetaApplyConfiguration{Namespace: ptr.To("ns"), Name: ptr.To("hc")},
+				Status: &hypershiftv1beta1applyconfigurations.HostedClusterStatusApplyConfiguration{
+					Conditions: []metav1applyconfigurations.ConditionApplyConfiguration{
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeComputed),
+							Status:             ptr.To(metav1.ConditionTrue),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To("small"), // Falls back to first size class in config
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeTransitionPending),
+							Status:             ptr.To(metav1.ConditionFalse),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To("ClusterSizeTransitioned"),
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+						{
+							Type:               ptr.To(hypershiftv1beta1.ClusterSizeTransitionRequired),
+							Status:             ptr.To(metav1.ConditionFalse),
+							LastTransitionTime: ptr.To(metav1.NewTime(fakeClock.Now())),
+							Reason:             ptr.To(hypershiftv1beta1.AsExpectedReason),
+							Message:            ptr.To("The HostedCluster has transitioned to a new t-shirt size."),
+						},
+					},
+				},
+			}},
+		},
+		{
+			// Tests error handling when override is invalid, autoscaling enabled, but no sizes configured
+			name: "sizing priority: invalid override with autoscaling but empty sizes list returns nil",
+			config: &schedulingv1alpha1.ClusterSizingConfiguration{
+				ObjectMeta: metav1.ObjectMeta{Generation: 1},
+				Spec: schedulingv1alpha1.ClusterSizingConfigurationSpec{
+					Sizes: []schedulingv1alpha1.SizeConfiguration{}, // Empty sizes list
+					Concurrency: schedulingv1alpha1.ConcurrencyConfiguration{
+						SlidingWindow: metav1.Duration{Duration: 10 * time.Minute},
+						Limit:         5,
+					},
+					TransitionDelay: schedulingv1alpha1.TransitionDelayConfiguration{
+						Increase: metav1.Duration{Duration: 30 * time.Second},
+						Decrease: metav1.Duration{Duration: 10 * time.Minute},
+					},
+				},
+				Status: schedulingv1alpha1.ClusterSizingConfigurationStatus{
+					Conditions: []metav1.Condition{{Type: schedulingv1alpha1.ClusterSizingConfigurationValidType, Status: metav1.ConditionTrue}},
+				},
+			},
+			hostedCluster: &hypershiftv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "ns", Name: "hc",
+					Annotations: map[string]string{
+						hypershiftv1beta1.ClusterSizeOverrideAnnotation:                  "nonexistent_size",
+						hypershiftv1beta1.ResourceBasedControlPlaneAutoscalingAnnotation: "true",
+					},
+				},
+			},
+			// When override is invalid, autoscaling is enabled, but sizes list is empty,
+			// the controller should log an error and return nil (no action)
+			expected: nil,
+		},
+		{
+			name:   "transition, use resource based autoscaling with concurrency limit",
 			config: validCommonConfig,
 			hostedCluster: &hypershiftv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1632,5 +1884,36 @@ func compareActions() []cmp.Option {
 			metav1applyconfigurations.TypeMetaApplyConfiguration{}, // these are entirely set by generated code
 		),
 		cmpopts.IgnoreFields(metav1applyconfigurations.ConditionApplyConfiguration{}, "ObservedGeneration"),
+	}
+}
+
+func Test_sizesNames(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		sizes    []schedulingv1alpha1.SizeConfiguration
+		expected []string
+	}{
+		{
+			name:     "When given multiple sizes it should return all names in order",
+			sizes:    []schedulingv1alpha1.SizeConfiguration{{Name: "small"}, {Name: "medium"}, {Name: "large"}},
+			expected: []string{"small", "medium", "large"},
+		},
+		{
+			name:     "When given an empty slice it should return an empty slice",
+			sizes:    []schedulingv1alpha1.SizeConfiguration{},
+			expected: []string{},
+		},
+		{
+			name:     "When given a single size it should return a single-element slice",
+			sizes:    []schedulingv1alpha1.SizeConfiguration{{Name: "only"}},
+			expected: []string{"only"},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			got := sizesNames(testCase.sizes)
+			if diff := cmp.Diff(got, testCase.expected); diff != "" {
+				t.Errorf("sizesNames() mismatch (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
