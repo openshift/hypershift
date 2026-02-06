@@ -32890,6 +32890,10 @@ performance degradation due to fragmentation of the double encapsulation in ovn-
 detected as invalid.
 A failure here may require external user intervention to resolve. E.g. oidc was deleted out of band.</p>
 </td>
+</tr><tr><td><p>&#34;ValidProxyConfiguration&#34;</p></td>
+<td><p>ValidProxyConfiguration indicates if the proxy CA bundle is valid.
+A failure here may require external user intervention to resolve. E.g. certificates in the CA bundle have expired.</p>
+</td>
 </tr><tr><td><p>&#34;ValidReleaseImage&#34;</p></td>
 <td><p>ValidReleaseImage indicates if the release image set in the spec is valid
 for the HostedCluster. For example, this can be set false if the
