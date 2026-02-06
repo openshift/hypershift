@@ -4187,6 +4187,21 @@ spec:
                         - localZoneID
                         - rolesRef
                         type: object
+                      terminationHandlerQueueURL:
+                        description: |-
+                          terminationHandlerQueueURL specifies the SQS queue URL for EC2 spot interruption events.
+                          This is required when using spot instances (marketType: Spot) in NodePools to enable
+                          graceful handling of spot instance terminations.
+
+                          The queue should be configured to receive EC2 Spot Instance Interruption Warnings
+                          and EC2 Instance Rebalance Recommendations via EventBridge rules.
+                          The AWS Node Termination Handler will poll this queue and cordon/drain nodes
+                          before they are terminated, providing a best effort for graceful shutdown.
+
+                          Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).
+                        maxLength: 512
+                        pattern: ^https://sqs\.[a-z0-9-]+\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$
+                        type: string
                     required:
                     - region
                     - rolesRef

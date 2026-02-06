@@ -98,5 +98,6 @@ rules:
   - get
   - patch
   - update
+  - delete
   - list
   - watch
