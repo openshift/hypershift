@@ -7,6 +7,8 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
@@ -66,7 +68,8 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 		return ctrl.Result{}, err
 	} else if apierrors.IsNotFound(err) {
 		// this is expected, don't delete the secret.
-		if strings.HasSuffix(nodePoolName, "karpenter") {
+		labels := secret.GetLabels()
+		if labels != nil && labels[karpenterutil.ManagedByKarpenterLabel] == "true" {
 			return ctrl.Result{}, nil
 		}
 
@@ -98,7 +101,8 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 		return ctrl.Result{}, fmt.Errorf("failed to generate HAProxy raw config: %w", err)
 	}
 
-	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig)
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	configGenerator, err := NewConfigGenerator(ctx, r.Client, hcluster, nodePool, releaseImage, haproxyRawConfig, controlPlaneNamespace)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

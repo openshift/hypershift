@@ -6,9 +6,11 @@ import (
 	"os"
 
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter"
+	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenterignition"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/nodeclass"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/util"
 
 	awskarpenterapis "github.com/aws/karpenter-provider-aws/pkg/apis"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
@@ -32,6 +34,9 @@ var (
 	targetKubeconfig          string
 	namespace                 string
 	controlPlaneOperatorImage string
+	hypershiftOperatorImage   string
+	ignitionEndpoint          string
+	registryOverrides         map[string]string
 )
 
 func main() {
@@ -56,10 +61,15 @@ func main() {
 	rootCmd.PersistentFlags().StringVar(&targetKubeconfig, "target-kubeconfig", "", "Path to guest side kubeconfig file. Where the karpenter CRs (nodeClaim, nodePool, nodeClass) live")
 	rootCmd.PersistentFlags().StringVar(&namespace, "namespace", "", "The namespace to infer input for reconciliation, e.g the userData secret")
 	rootCmd.PersistentFlags().StringVar(&controlPlaneOperatorImage, "control-plane-operator-image", "", "The image to run the tokenMinter and the availability prober")
+	rootCmd.PersistentFlags().StringVar(&hypershiftOperatorImage, "hypershift-operator-image", "", "The HyperShift operator image to use for token generation")
+	rootCmd.PersistentFlags().StringVar(&ignitionEndpoint, "ignition-endpoint", "", "The ignition server endpoint for node bootstrap")
+	rootCmd.PersistentFlags().StringToStringVar(&registryOverrides, "registry-overrides", map[string]string{}, "Registry overrides in format: sr1=dr1,sr2=dr2")
 
 	_ = rootCmd.MarkPersistentFlagRequired("target-kubeconfig")
 	_ = rootCmd.MarkPersistentFlagRequired("namespace")
 	_ = rootCmd.MarkPersistentFlagRequired("control-plane-operator-image")
+	_ = rootCmd.MarkPersistentFlagRequired("hypershift-operator-image")
+	_ = rootCmd.MarkPersistentFlagRequired("ignition-endpoint")
 
 	if err := rootCmd.Execute(); err != nil {
 		setupLog.Error(err, "problem executing command")
@@ -127,6 +137,46 @@ func run(ctx context.Context) error {
 	}
 	if err := encr.SetupWithManager(ctx, mgr, managementCluster); err != nil {
 		return fmt.Errorf("failed to setup controller with manager: %w", err)
+	}
+
+	imageRegistryOverrides := map[string][]string{}
+	openShiftImgOverrides, ok := os.LookupEnv("OPENSHIFT_IMG_OVERRIDES")
+	if ok {
+		imageRegistryOverrides = util.ConvertImageRegistryOverrideStringToMap(openShiftImgOverrides)
+	}
+	for registry, override := range registryOverrides {
+		if _, exists := imageRegistryOverrides[registry]; !exists {
+			imageRegistryOverrides[registry] = []string{}
+		}
+		imageRegistryOverrides[registry] = append(imageRegistryOverrides[registry], override)
+	}
+
+	releaseProvider := &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
+		Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
+			Delegate: &releaseinfo.StaticProviderDecorator{
+				Delegate: &releaseinfo.CachedProvider{
+					Inner: &releaseinfo.RegistryClientProvider{},
+					Cache: map[string]*releaseinfo.ReleaseImage{},
+				},
+			},
+			RegistryOverrides: nil,
+		},
+		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	}
+
+	imageMetaDataProvider := &util.RegistryClientImageMetadataProvider{
+		OpenShiftImageRegistryOverrides: imageRegistryOverrides,
+	}
+
+	kir := karpenterignition.KarpenterIgnitionReconciler{
+		ReleaseProvider:         releaseProvider,
+		ImageMetadataProvider:   imageMetaDataProvider,
+		HypershiftOperatorImage: hypershiftOperatorImage,
+		IgnitionEndpoint:        ignitionEndpoint,
+		Namespace:               namespace,
+	}
+	if err := kir.SetupWithManager(mgr, managementCluster); err != nil {
+		return fmt.Errorf("failed to setup karpenter ignition controller with manager: %w", err)
 	}
 
 	if err := setupOperatorInfoMetric(managementCluster); err != nil {

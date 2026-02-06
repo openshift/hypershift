@@ -2,6 +2,7 @@ package karpenter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	supportassets "github.com/openshift/hypershift/support/assets"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
@@ -147,13 +149,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling", "req", req)
 
-	hcp, err := r.getHCP(ctx)
+	hcp, err := karpenterutil.GetHCP(ctx, r.ManagementClient, r.Namespace)
 	if err != nil {
+		if errors.Is(err, karpenterutil.ErrHCPNotFound) {
+			log.Info("HostedControlPlane not found, requeueing")
+			return ctrl.Result{RequeueAfter: time.Second * 5}, nil
+		}
 		return ctrl.Result{}, err
-	}
-	if hcp == nil {
-		log.Info("HostedControlPlane not found")
-		return ctrl.Result{}, nil
 	}
 
 	// Setup for ControlPlaneContext and the Karpenter control plane v2 component.
@@ -352,18 +354,6 @@ func (r *Reconciler) reconcileOpenshiftEC2NodeClassDefault(ctx context.Context, 
 
 	log.Info("Reconciled default OpenshiftEC2NodeClass", "op", op)
 	return nil
-}
-
-func (r *Reconciler) getHCP(ctx context.Context) (*hyperv1.HostedControlPlane, error) {
-	hcpList := &hyperv1.HostedControlPlaneList{}
-	if err := r.ManagementClient.List(ctx, hcpList, client.InNamespace(r.Namespace)); err != nil {
-		return nil, err
-	}
-	if len(hcpList.Items) == 0 {
-		return nil, nil
-	}
-
-	return &hcpList.Items[0], nil
 }
 
 // handleForcefulNodeClaimDeletion handles the timeout of a NodeClaim during cluster deletion.
