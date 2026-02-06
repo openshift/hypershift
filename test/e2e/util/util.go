@@ -36,6 +36,7 @@ import (
 	suppconfig "github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	hyperutil "github.com/openshift/hypershift/support/util"
+	"github.com/openshift/hypershift/test/e2e/controlplanemetrics"
 
 	configv1 "github.com/openshift/api/config/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
@@ -595,6 +596,8 @@ func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crc
 }
 
 func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	recordControlPlaneRolloutMetric(t, ctx, client, hostedCluster, "creation")
+
 	var lastVersionCompletionTime *metav1.Time
 	if hostedCluster.Status.Version != nil &&
 		len(hostedCluster.Status.Version.History) > 0 {
@@ -637,6 +640,146 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 	)
 }
 
+// WaitForImageRolloutWithMetrics waits for the hosted cluster image rollout to complete and records
+// metrics with the specified context. The testName and platform parameters are reserved for future
+// use when additional metric labels are needed.
+func WaitForImageRolloutWithMetrics(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, testName string, platform string, metricContext string) {
+	// testName and platform are reserved for future metric labels
+	_ = testName
+	_ = platform
+
+	recordControlPlaneRolloutMetric(t, ctx, client, hostedCluster, metricContext)
+
+	var lastVersionCompletionTime *metav1.Time
+	if hostedCluster.Status.Version != nil &&
+		len(hostedCluster.Status.Version.History) > 0 {
+		lastVersionCompletionTime = hostedCluster.Status.Version.History[0].CompletionTime
+	}
+	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to rollout", hostedCluster.Namespace, hostedCluster.Name),
+		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+			hc := &hyperv1.HostedCluster{}
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+			return hc, err
+		},
+		[]Predicate[*hyperv1.HostedCluster]{
+			ConditionPredicate[*hyperv1.HostedCluster](Condition{
+				Type:   string(hyperv1.HostedClusterAvailable),
+				Status: metav1.ConditionTrue,
+			}),
+			ConditionPredicate[*hyperv1.HostedCluster](Condition{
+				Type:   string(hyperv1.HostedClusterProgressing),
+				Status: metav1.ConditionFalse,
+			}),
+			func(hostedCluster *hyperv1.HostedCluster) (done bool, reasons string, err error) {
+				if len(ptr.Deref(hostedCluster.Status.Version, hyperv1.ClusterVersionStatus{}).History) == 0 {
+					return false, "HostedCluster has no version history", nil
+				}
+				if lastVersionCompletionTime != nil &&
+					hostedCluster.Status.Version.History[0].CompletionTime != nil &&
+					lastVersionCompletionTime.Equal(hostedCluster.Status.Version.History[0].CompletionTime) {
+					return false, "HostedCluster version history has not been updated yet", nil
+				}
+				if wanted, got := hostedCluster.Status.Version.Desired.Image, hostedCluster.Status.Version.History[0].Image; wanted != got {
+					return false, fmt.Sprintf("desired image %s doesn't match most recent image in history %s", wanted, got), nil
+				}
+				if wanted, got := configv1.CompletedUpdate, hostedCluster.Status.Version.History[0].State; wanted != got {
+					return false, fmt.Sprintf("wanted most recent version history to have state %s, has state %s", wanted, got), nil
+				}
+				return true, "cluster rolled out", nil
+			},
+		},
+		WithTimeout(30*time.Minute),
+	)
+}
+
+// measureControlPlaneRolloutTime calculates the duration from the rollout start time
+// to when all control plane components first became ready by examining their condition timestamps.
+// For upgrades, it measures from the upgrade start time (version history StartedTime).
+// For fresh cluster creation, it measures from the HostedCluster creation timestamp.
+// This provides the actual control plane rollout time even when called after the rollout is complete.
+func measureControlPlaneRolloutTime(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) time.Duration {
+	controlPlaneComponents := &hyperv1.ControlPlaneComponentList{}
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+
+	err := client.List(ctx, controlPlaneComponents, crclient.InNamespace(controlPlaneNamespace))
+	if err != nil {
+		t.Logf("Warning: failed to list control plane components: %v", err)
+		return 0
+	}
+
+	if len(controlPlaneComponents.Items) == 0 {
+		t.Logf("Warning: no control plane components found")
+		return 0
+	}
+
+	// Find the latest timestamp when a control plane component became ready
+	var latestReadyTime *metav1.Time
+	for _, cpComponent := range controlPlaneComponents.Items {
+		for _, condition := range cpComponent.Status.Conditions {
+			if condition.Type == string(hyperv1.ControlPlaneComponentRolloutComplete) &&
+				condition.Status == metav1.ConditionTrue {
+				if latestReadyTime == nil || condition.LastTransitionTime.After(latestReadyTime.Time) {
+					latestReadyTime = &condition.LastTransitionTime
+				}
+				break
+			}
+		}
+	}
+
+	if latestReadyTime == nil {
+		t.Logf("Warning: no control plane components have ControlPlaneComponentRolloutComplete=True yet")
+		return 0
+	}
+
+	// Determine the baseline time to measure from
+	// For upgrades: use the StartedTime from the most recent version history entry
+	// For fresh cluster creation: use the HC creation timestamp
+	baselineTime := hostedCluster.CreationTimestamp.Time
+	if hostedCluster.Status.Version != nil && len(hostedCluster.Status.Version.History) > 0 {
+		// Use the most recent version's start time (index 0 is the newest)
+		startedTime := hostedCluster.Status.Version.History[0].StartedTime
+		if !startedTime.IsZero() {
+			baselineTime = startedTime.Time
+		}
+	}
+
+	// Calculate duration from baseline to last component becoming ready
+	duration := latestReadyTime.Sub(baselineTime)
+	if duration < 0 {
+		t.Logf("Warning: calculated negative duration, using 0")
+		return 0
+	}
+
+	return duration
+}
+
+// recordControlPlaneRolloutMetric measures and records the control plane rollout time as a Prometheus metric.
+// It calculates the duration from cluster creation (or upgrade start) to when all control plane components
+// became ready, and records this as the e2e_control_plane_rollout_duration_seconds metric.
+func recordControlPlaneRolloutMetric(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, metricContext string) {
+	t.Logf("Measuring control plane rollout time for HostedCluster %s/%s", hostedCluster.Namespace, hostedCluster.Name)
+	cpRolloutDuration := measureControlPlaneRolloutTime(t, ctx, client, hostedCluster)
+
+	// Log with context-appropriate message
+	if metricContext == "upgrade" {
+		t.Logf("Control plane components became ready in %v after upgrade start", cpRolloutDuration)
+	} else {
+		t.Logf("Control plane components became ready in %v after HostedCluster creation", cpRolloutDuration)
+	}
+
+	// Record the metric
+	controlplanemetrics.RecordControlPlaneRolloutDuration(
+		hostedCluster.Namespace,
+		hostedCluster.Name,
+		metricContext,
+		cpRolloutDuration.Seconds(),
+	)
+}
+
+// WaitForControlPlaneComponentRollout waits for all control plane components to complete their rollout.
+// The initialVersion parameter controls the version check behavior:
+//   - If empty (""), waits only for the ControlPlaneComponentRolloutComplete condition (use for initial cluster creation)
+//   - If non-empty, additionally waits for components to move away from the specified version (use for upgrades)
 func WaitForControlPlaneComponentRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, initialVersion string) {
 	controlPlaneComponents := &hyperv1.ControlPlaneComponentList{}
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)

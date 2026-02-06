@@ -193,7 +193,7 @@ func TestKarpenter(t *testing.T) {
 			}()
 
 			// Wait for the new rollout to be complete
-			e2eutil.WaitForImageRollout(t, ctx, mgtClient, hostedCluster)
+			e2eutil.WaitForImageRolloutWithMetrics(t, ctx, mgtClient, hostedCluster, "TestKarpenter", string(globalOpts.Platform), "upgrade")
 			err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to get hostedcluster")
 
