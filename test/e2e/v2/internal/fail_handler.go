@@ -1,4 +1,4 @@
-// +build e2ev2
+//go:build e2ev2
 
 package internal
 

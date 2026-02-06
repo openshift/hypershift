@@ -1,4 +1,4 @@
-// +build e2ev2
+//go:build e2ev2
 
 // This file is generated. Do not edit manually.
 // Run: go run /tmp/generate_workloads.go > generated_workloads.go
