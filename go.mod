@@ -86,7 +86,7 @@ require (
 	golang.org/x/time v0.14.0
 	google.golang.org/api v0.258.0
 	google.golang.org/grpc v1.77.0
-	gopkg.in/ini.v1 v1.67.0
+	gopkg.in/ini.v1 v1.67.1
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.34.3

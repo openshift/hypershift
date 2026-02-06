@@ -1732,8 +1732,8 @@ google.golang.org/protobuf/types/known/wrapperspb
 # gopkg.in/inf.v0 v0.9.1
 ## explicit
 gopkg.in/inf.v0
-# gopkg.in/ini.v1 v1.67.0
-## explicit
+# gopkg.in/ini.v1 v1.67.1
+## explicit; go 1.13
 gopkg.in/ini.v1
 # gopkg.in/op/go-logging.v1 v1.0.0-20160211212156-b2cb9fa56473
 ## explicit
