@@ -11,7 +11,7 @@ updates:
       time: "01:00"
       timezone: "Etc/UTC"
     commit-message:
-      prefix: "NO-JIRA"
+      prefix: "build(deps)"
     labels:
       - "area/ci-tooling"
       - "ok-to-test"
@@ -46,7 +46,7 @@ updates:
       time: "01:00"
       timezone: "Etc/UTC"
     commit-message:
-      prefix: "NO-JIRA"
+      prefix: "build(deps)"
     labels:
       - "area/ci-tooling"
       - "ok-to-test"
@@ -67,7 +67,7 @@ updates:
       time: "01:00"
       timezone: "Etc/UTC"
     commit-message:
-      prefix: "NO-JIRA"
+      prefix: "build(deps)"
     labels:
       - "area/ci-tooling"
       - "ok-to-test"
