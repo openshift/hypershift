@@ -539,6 +539,10 @@ func (p GCP) validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedClust
 		return fmt.Errorf("control plane service account email is required")
 	}
 
+	if wif.ServiceAccountsEmails.CloudController == "" {
+		return fmt.Errorf("cloud controller service account email is required")
+	}
+
 	return nil
 }
 
