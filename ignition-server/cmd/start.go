@@ -125,6 +125,10 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.UserAgent = "ignition-server-manager"
+	leaseDuration := time.Second * 60
+	renewDeadline := time.Second * 40
+	retryPeriod := time.Second * 15
+	namespace := os.Getenv(namespaceEnvVariableName)
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme: hyperapi.Scheme,
 		WebhookServer: webhook.NewServer(webhook.Options{
@@ -133,8 +137,16 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 		Metrics: metricsserver.Options{
 			BindAddress: metricsAddr,
 		},
+		LeaderElection:                true,
+		LeaderElectionID:              "ignition-server-leader-elect",
+		LeaderElectionResourceLock:    "leases",
+		LeaderElectionNamespace:       namespace,
+		LeaderElectionReleaseOnCancel: true,
+		LeaseDuration:                 &leaseDuration,
+		RenewDeadline:                 &renewDeadline,
+		RetryPeriod:                   &retryPeriod,
 		Cache: cache.Options{
-			DefaultNamespaces: map[string]cache.Config{os.Getenv(namespaceEnvVariableName): {}},
+			DefaultNamespaces: map[string]cache.Config{namespace: {}},
 		},
 	})
 	if err != nil {
