@@ -18,7 +18,7 @@ package v1beta1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 
 	capoerrors "sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/errors"
 	"sigs.k8s.io/cluster-api-provider-openstack/pkg/utils/optional"
@@ -166,7 +166,7 @@ type OpenStackClusterSpec struct {
 	// values set elsewhere.
 	// ControlPlaneEndpoint cannot be modified after ControlPlaneEndpoint.Host has been set.
 	// +optional
-	ControlPlaneEndpoint *clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
+	ControlPlaneEndpoint *clusterv1beta1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
 
 	// ControlPlaneAvailabilityZones is the set of availability zones which
 	// control plane machines may be deployed to.
@@ -219,7 +219,7 @@ type OpenStackClusterStatus struct {
 	APIServerLoadBalancer *LoadBalancer `json:"apiServerLoadBalancer,omitempty"`
 
 	// FailureDomains represent OpenStack availability zones
-	FailureDomains clusterv1.FailureDomains `json:"failureDomains,omitempty"`
+	FailureDomains clusterv1beta1.FailureDomains `json:"failureDomains,omitempty"`
 
 	// ControlPlaneSecurityGroup contains the information about the
 	// OpenStack Security Group that needs to be applied to control plane

@@ -16,7 +16,7 @@ limitations under the License.
 
 package v1alpha1
 
-import clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+import clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta1" //nolint SA1019
 
 // Conditions and condition Reasons for the KubevirtMachine object
 

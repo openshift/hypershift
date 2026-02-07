@@ -31,6 +31,28 @@ var recordingRules embed.FS
 
 const capiLabel = "cluster.x-k8s.io/v1beta1"
 
+// CAPICRDOverrides configures CAPI CRDs that have both v1beta1 and v1beta2 versions.
+// These CRDs need storage version overrides and conversion webhooks.
+// Key is the CRD name (e.g., "clusters.cluster.x-k8s.io").
+// TODO(user): remove StorageVersion override once storage version is v1beta2.
+var CAPICRDOverrides = map[string]struct {
+	StorageVersion  string
+	NeedsConversion bool
+}{
+	"clusterclasses.cluster.x-k8s.io":                    {StorageVersion: "v1beta1", NeedsConversion: true},
+	"clusters.cluster.x-k8s.io":                          {StorageVersion: "v1beta1", NeedsConversion: true},
+	"machinedeployments.cluster.x-k8s.io":                {StorageVersion: "v1beta1", NeedsConversion: true},
+	"machinedrainrules.cluster.x-k8s.io":                 {StorageVersion: "v1beta1", NeedsConversion: true},
+	"machinehealthchecks.cluster.x-k8s.io":               {StorageVersion: "v1beta1", NeedsConversion: true},
+	"machinepools.cluster.x-k8s.io":                      {StorageVersion: "v1beta1", NeedsConversion: true},
+	"machines.cluster.x-k8s.io":                          {StorageVersion: "v1beta1", NeedsConversion: true},
+	"machinesets.cluster.x-k8s.io":                       {StorageVersion: "v1beta1", NeedsConversion: true},
+	"ipaddressclaims.ipam.cluster.x-k8s.io":              {StorageVersion: "v1beta1", NeedsConversion: true},
+	"ipaddresses.ipam.cluster.x-k8s.io":                  {StorageVersion: "v1beta1", NeedsConversion: true},
+	"clusterresourcesetbindings.addons.cluster.x-k8s.io": {StorageVersion: "v1beta1", NeedsConversion: true},
+	"clusterresourcesets.addons.cluster.x-k8s.io":        {StorageVersion: "v1beta1", NeedsConversion: true},
+}
+
 // capiResources specifies which CRDs should get labeled with capiLabel
 // to satisfy CAPI contracts. There might be a way to achieve this during CRD
 // generation, but for now we're just post-processing at runtime here.
@@ -126,6 +148,14 @@ func getCustomResourceDefinition(files embed.FS, file string) *apiextensionsv1.C
 		}
 		crd.Labels[capiLabel] = label
 	}
+
+	// Override storage version if specified in CAPICRDOverrides
+	if override, ok := CAPICRDOverrides[crd.Name]; ok && override.StorageVersion != "" {
+		for i := range crd.Spec.Versions {
+			crd.Spec.Versions[i].Storage = crd.Spec.Versions[i].Name == override.StorageVersion
+		}
+	}
+
 	return &crd
 }
 

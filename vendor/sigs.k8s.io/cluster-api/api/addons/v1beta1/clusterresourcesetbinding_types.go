@@ -23,8 +23,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
-// ANCHOR: ResourceBinding
-
 // ResourceBinding shows the status of a resource that belongs to a ClusterResourceSet matched by the owner cluster of the ClusterResourceSetBinding object.
 type ResourceBinding struct {
 	// ResourceRef specifies a resource.
@@ -45,8 +43,6 @@ type ResourceBinding struct {
 	// +required
 	Applied bool `json:"applied"`
 }
-
-// ANCHOR_END: ResourceBinding
 
 // ResourceSetBinding keeps info on all of the resources in a ClusterResourceSet.
 type ResourceSetBinding struct {
@@ -175,7 +171,7 @@ func referSameObject(a, b metav1.OwnerReference) bool {
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:path=clusterresourcesetbindings,scope=Namespaced,categories=cluster-api
 // +kubebuilder:subresource:status
-// +kubebuilder:storageversion
+// +kubebuilder:deprecatedversion
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description="Time duration since creation of ClusterResourceSetBinding"
 
 // ClusterResourceSetBinding lists all matching ClusterResourceSets with the cluster it belongs to.
@@ -189,8 +185,6 @@ type ClusterResourceSetBinding struct {
 	// +optional
 	Spec ClusterResourceSetBindingSpec `json:"spec,omitempty"`
 }
-
-// ANCHOR: ClusterResourceSetBindingSpec
 
 // ClusterResourceSetBindingSpec defines the desired state of ClusterResourceSetBinding.
 type ClusterResourceSetBindingSpec struct {
@@ -206,8 +200,6 @@ type ClusterResourceSetBindingSpec struct {
 	// +kubebuilder:validation:MaxLength=63
 	ClusterName string `json:"clusterName,omitempty"`
 }
-
-// ANCHOR_END: ClusterResourceSetBindingSpec
 
 // +kubebuilder:object:root=true
 
