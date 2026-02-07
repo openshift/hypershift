@@ -1,19 +1,20 @@
 package util
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
+	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/oidc"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go/service/iam/iamiface"
-	s3 "github.com/aws/aws-sdk-go/service/s3"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
@@ -21,7 +22,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-func oidcProviderClients(opts *Options) (iamiface.IAMAPI, *s3.S3) {
+func oidcProviderClients(ctx context.Context, opts *Options) (iamiface.IAMAPI, awsapi.S3API) {
 	iamCredsFile := opts.ConfigurableClusterOptions.AWSCredentialsFile
 	s3CredsFile := opts.HOInstallationOptions.AWSOidcS3Credentials
 	if s3CredsFile == "" {
@@ -35,7 +36,7 @@ func oidcProviderClients(opts *Options) (iamiface.IAMAPI, *s3.S3) {
 	}
 
 	iamClient := GetIAMClient(iamCredsFile, iamRegion)
-	s3Client := GetS3Client(s3CredsFile, s3Region)
+	s3Client := GetS3Client(ctx, s3CredsFile, s3Region)
 
 	return iamClient, s3Client
 }
@@ -46,7 +47,8 @@ func SetupSharedOIDCProvider(opts *Options, artifactDir string) error {
 		return errors.New("please supply a public S3 bucket name with --e2e.aws-oidc-s3-bucket-name")
 	}
 
-	iamClient, s3Client := oidcProviderClients(opts)
+	ctx := context.Background()
+	iamClient, s3Client := oidcProviderClients(ctx, opts)
 
 	s3Region := opts.HOInstallationOptions.AWSOidcS3Region
 	if s3Region == "" {
@@ -83,19 +85,13 @@ func SetupSharedOIDCProvider(opts *Options, artifactDir string) error {
 		if err != nil {
 			return fmt.Errorf("failed to generate OIDC document %s: %w", path, err)
 		}
-		_, err = s3Client.PutObject(&s3.PutObjectInput{
+		_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
 			Body:   bodyReader,
-			Bucket: aws.String(opts.ConfigurableClusterOptions.AWSOidcS3BucketName),
-			Key:    aws.String(providerID + path),
+			Bucket: awsv2.String(opts.ConfigurableClusterOptions.AWSOidcS3BucketName),
+			Key:    awsv2.String(providerID + path),
 		})
 		if err != nil {
-			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket", path, opts.ConfigurableClusterOptions.AWSOidcS3BucketName)
-			if awsErr, ok := err.(awserr.Error); ok {
-				// Generally, the underlying message from AWS has unique per-request
-				// info not suitable for publishing as condition messages, so just
-				// return the code.
-				wrapped = fmt.Errorf("%w: aws returned an error: %s", wrapped, awsErr.Code())
-			}
+			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket: %w", path, opts.ConfigurableClusterOptions.AWSOidcS3BucketName, err)
 			return wrapped
 		}
 	}
@@ -131,8 +127,9 @@ func SetupSharedOIDCProvider(opts *Options, artifactDir string) error {
 }
 
 func CleanupSharedOIDCProvider(opts *Options, log logr.Logger) {
-	iamClient, s3Client := oidcProviderClients(opts)
+	ctx := context.Background()
+	iamClient, s3Client := oidcProviderClients(ctx, opts)
 
 	DestroyOIDCProvider(log, iamClient, opts.IssuerURL)
-	CleanupOIDCBucketObjects(log, s3Client, opts.ConfigurableClusterOptions.AWSOidcS3BucketName, opts.IssuerURL)
+	CleanupOIDCBucketObjects(ctx, log, s3Client, opts.ConfigurableClusterOptions.AWSOidcS3BucketName, opts.IssuerURL)
 }

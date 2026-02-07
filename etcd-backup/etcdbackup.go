@@ -3,6 +3,7 @@ package etcdbackup
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -11,9 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/spf13/cobra"
 )
@@ -104,42 +106,57 @@ func run(ctx context.Context, opts options) error {
 }
 
 func uploadToS3(ctx context.Context, opts options) error {
-	config := aws.NewConfig()
 	// AWS_REGION must be set if s3BucketRegion is empty
+	var configOpts []func(*config.LoadOptions) error
 	if opts.s3BucketRegion != "" {
-		config.Region = aws.String(opts.s3BucketRegion)
+		configOpts = append(configOpts, config.WithRegion(opts.s3BucketRegion))
 	}
-	awsSession := session.Must(session.NewSession(config))
+	cfg, err := config.LoadDefaultConfig(ctx, configOpts...)
+	if err != nil {
+		return fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	s3Client := s3.NewFromConfig(cfg)
 
 	f, err := os.Open(opts.snapshotFilePath)
 	if err != nil {
 		return fmt.Errorf("failed to open file %q, %v", opts.snapshotFilePath, err)
 	}
+	defer f.Close()
 
 	opts.s3KeyPrefix = strings.TrimSuffix(opts.s3KeyPrefix, "/")
 	key := fmt.Sprintf("%s/%d.db", opts.s3KeyPrefix, time.Now().Unix())
 
-	uploader := s3manager.NewUploader(awsSession, s3manager.WithUploaderRequestOptions())
-	output, err := uploader.UploadWithContext(ctx, &s3manager.UploadInput{
-		Bucket:  aws.String(opts.s3BucketName),
-		Key:     aws.String(key),
+	uploader := transfermanager.New(s3Client, transfermanager.Options{})
+	_, err = uploader.PutObject(ctx, &transfermanager.PutObjectInput{
+		Bucket:  opts.s3BucketName,
+		Key:     key,
 		Body:    f,
-		Tagging: mapToTags(opts.s3ObjectTags),
+		Tagging: aws.ToString(mapToTags(opts.s3ObjectTags)),
 	})
 
 	if err != nil {
 		return fmt.Errorf("failed to upload snapshot file: %w", err)
 	}
 
-	fmt.Printf("snapshot successfully uploaded to %s\n", output.Location)
+	fmt.Printf("snapshot successfully uploaded to s3://%s/%s\n", opts.s3BucketName, key)
 	return nil
 }
 
 func mapToTags(m map[string]string) *string {
-	output := ""
-	for key, value := range m {
-		output += fmt.Sprintf("%s=%s&", key, value)
+	if len(m) == 0 {
+		empty := ""
+		return &empty
 	}
 
-	return &output
+	// Use url.Values to ensure proper URL encoding of tag keys and values
+	// This handles special characters like spaces, &, =, etc.
+	values := url.Values{}
+	for k, v := range m {
+		values.Set(k, v)
+	}
+
+	// Encode() returns URL-encoded string in format "key1=value1&key2=value2"
+	// It also sorts keys alphabetically for deterministic output
+	encoded := values.Encode()
+	return &encoded
 }

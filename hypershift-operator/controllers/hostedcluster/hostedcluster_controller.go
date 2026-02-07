@@ -51,6 +51,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -71,10 +72,9 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -180,7 +180,7 @@ type HostedClusterReconciler struct {
 	PrivatePlatform hyperv1.PlatformType
 
 	OIDCStorageProviderS3BucketName string
-	S3Client                        s3iface.S3API
+	S3Client                        awsapi.S3API
 
 	MetricsSet    metrics.MetricsSet
 	SREConfigHash string
@@ -4233,25 +4233,23 @@ func (r *HostedClusterReconciler) reconcileAWSOIDCDocuments(ctx context.Context,
 		if err != nil {
 			return fmt.Errorf("failed to generate OIDC document %s: %w", path, err)
 		}
-		_, err = r.S3Client.PutObject(&s3.PutObjectInput{
+		_, err = r.S3Client.PutObject(ctx, &s3.PutObjectInput{
 			Body:   bodyReader,
 			Bucket: aws.String(r.OIDCStorageProviderS3BucketName),
 			Key:    aws.String(hcluster.Spec.InfraID + path),
 		})
 		if err != nil {
 			wrapped := fmt.Errorf("failed to upload %s to the %s s3 bucket", path, r.OIDCStorageProviderS3BucketName)
-			if awsErr := awserr.Error(nil); errors.As(err, &awsErr) {
-				switch awsErr.Code() {
-				case s3.ErrCodeNoSuchBucket:
-					wrapped = fmt.Errorf("%w: %s: this could be a misconfiguration of the hypershift operator; check the --oidc-storage-provider-s3-bucket-name flag", wrapped, awsErr.Code())
-				default:
-					// Generally, the underlying message from AWS has unique per-request
-					// info not suitable for publishing as condition messages, so just
-					// return the code. If other specific error types can be handled, add
-					// new switch cases and try to provide more actionable info to the
-					// user.
-					wrapped = fmt.Errorf("%w: aws returned an error: %s", wrapped, awsErr.Code())
-				}
+			var nsbErr *s3types.NoSuchBucket
+			if errors.As(err, &nsbErr) {
+				wrapped = fmt.Errorf("%w: NoSuchBucket: this could be a misconfiguration of the hypershift operator; check the --oidc-storage-provider-s3-bucket-name flag", wrapped)
+			} else {
+				// Generally, the underlying message from AWS has unique per-request
+				// info not suitable for publishing as condition messages, so just
+				// return the code. If other specific error types can be handled, add
+				// new switch cases and try to provide more actionable info to the
+				// user.
+				wrapped = fmt.Errorf("%w: aws returned an error: %v", wrapped, err)
 			}
 			return wrapped
 		}
@@ -4276,18 +4274,19 @@ func (r *HostedClusterReconciler) cleanupOIDCBucketData(ctx context.Context, log
 		return fmt.Errorf("hypershift wasn't configured with AWS credentials and a bucket, can not clean up OIDC documents from bucket. Please either set those up or clean up manually and then remove the %s finalizer from the hosted cluster", oidcDocumentsFinalizer)
 	}
 
-	var objectsToDelete []*s3.ObjectIdentifier
+	var objectsToDelete []s3types.ObjectIdentifier
 	for path := range oidcDocumentGenerators() {
-		objectsToDelete = append(objectsToDelete, &s3.ObjectIdentifier{
+		objectsToDelete = append(objectsToDelete, s3types.ObjectIdentifier{
 			Key: aws.String(hcluster.Spec.InfraID + path),
 		})
 	}
 
-	if _, err := r.S3Client.DeleteObjects(&s3.DeleteObjectsInput{
+	if _, err := r.S3Client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 		Bucket: aws.String(r.OIDCStorageProviderS3BucketName),
-		Delete: &s3.Delete{Objects: objectsToDelete},
+		Delete: &s3types.Delete{Objects: objectsToDelete},
 	}); err != nil {
-		if awsErr := awserr.Error(nil); !errors.As(err, &awsErr) || awsErr.Code() != s3.ErrCodeNoSuchBucket {
+		var nsbErr *s3types.NoSuchBucket
+		if !errors.As(err, &nsbErr) {
 			return fmt.Errorf("failed to delete OIDC objects from %s S3 bucket: %w", r.OIDCStorageProviderS3BucketName, err)
 		}
 	}

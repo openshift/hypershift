@@ -88,30 +88,53 @@ func main() {
 				}
 				return group + "." + outputType
 			},
+			"IsV2Service": isV2Service,
 		}).Parse(`package aws
 
 import (
+	"context"
 	"fmt"
 
     awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/support/awsapi"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
+	configv2 "github.com/aws/aws-sdk-go-v2/config"
+	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	"github.com/aws/smithy-go/middleware"
 {{- range $service := .Services }}
+	{{- if IsV2Service $service }}
+	{{$service}}v2 "github.com/aws/aws-sdk-go-v2/service/{{$service}}"
+	{{- else }}
 	"github.com/aws/aws-sdk-go/service/{{$service}}"
 	"github.com/aws/aws-sdk-go/service/{{$service}}/{{$service}}iface"
+	{{- end }}
 {{- end}}
 )
 
 // NewDelegatingClient creates a new set of AWS service clients that delegate individual calls to the right credentials.
 func NewDelegatingClient (
+	ctx context.Context,
 {{- range $name := $.Delegates }}
 	{{$name | ToName}}CredentialsFile string,
 {{- end}}
 ) (*DelegatingClient, error) {
 	awsConfig := awsutil.NewConfig()
+	awsConfigv2 := awsutil.NewConfigV2()
 {{- range $name := $.Delegates }}
+	{{- with $services := $name | index $.DelegatesByName }}
+	{{- $hasV1 := false }}
+	{{- $hasV2 := false }}
+	{{- range $service, $apis := $services }}
+		{{- if IsV2Service $service }}
+			{{- $hasV2 = true }}
+		{{- else }}
+			{{- $hasV1 = true }}
+		{{- end }}
+	{{- end }}
+	{{- if $hasV1 }}
 	{{$name | ToName}}Session, err := session.NewSessionWithOptions(session.Options{SharedConfigFiles: []string{ {{- $name | ToName}}CredentialsFile}})
 	if err != nil {
 		return nil, fmt.Errorf("error creating new AWS session for {{$name | ToName}}: %w", err)
@@ -120,19 +143,39 @@ func NewDelegatingClient (
 		Name: "openshift.io/hypershift",
 		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", "{{$name}}"),
 	})
+	{{- end }}
+	{{- if $hasV2 }}
+	{{$name | ToName}}Cfg, err := configv2.LoadDefaultConfig(ctx,
+		configv2.WithSharedConfigFiles([]string{ {{- $name | ToName}}CredentialsFile}),
+		configv2.WithAPIOptions([]func(*middleware.Stack) error{
+			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", "{{$name}}"),
+		}))
+	if err != nil {
+		return nil, fmt.Errorf("error loading AWS config for {{$name | ToName}}: %w", err)
+	}
+	{{- end }}
 	{{$name | ToName}} := &{{$name | ToName}}ClientDelegate{
-{{- with $services := $name | index $.DelegatesByName }}
 {{- range $service, $apis := $services }}
+		{{- if IsV2Service $service }}
+		{{$service}}Client: {{$service}}v2.NewFromConfig({{$name | ToName}}Cfg, func(o *{{$service}}v2.Options) {
+			o.Retryer = awsConfigv2()
+		}),
+		{{- else }}
 		{{$service}}Client: {{$service}}.New({{$name | ToName}}Session, awsConfig),
-{{- end}}
+		{{- end }}
 {{- end}}
 	}
+	{{- end }}
 {{- end}}
 	return &DelegatingClient{
 {{- range $service := .Services }}
+		{{- if IsV2Service $service }}
+		{{$service | ToIfaceName}}Client: &{{$service}}Client{
+		{{- else }}
 		{{$service | ToIfaceName}}API: &{{$service}}Client{
-{{- with $delegates := $service | index $.DelegatesByService }}
 			{{$service | ToIfaceName}}API: nil,
+		{{- end }}
+{{- with $delegates := $service | index $.DelegatesByService }}
 {{- range $name, $apis := $delegates }}
 			{{$name | ToName}}: {{$name | ToName}},
 {{- end}}
@@ -146,7 +189,11 @@ func NewDelegatingClient (
 {{- with $services := $name | index $.DelegatesByName }}
 type {{$name | ToName}}ClientDelegate struct {
 {{- range $service, $apis := $services }}
+	{{- if IsV2Service $service }}
+	{{$service}}Client awsapi.{{$service | ToIfaceName}}API
+	{{- else }}
 	{{$service}}Client {{$service}}iface.{{$service | ToIfaceName}}API
+	{{- end }}
 {{- end}}
 }
 {{- end}}
@@ -155,7 +202,11 @@ type {{$name | ToName}}ClientDelegate struct {
 // DelegatingClient embeds clients for AWS services we have privileges to use with guest cluster component roles.
 type DelegatingClient struct {
 {{- range $service := .Services }}
+	{{- if IsV2Service $service }}
+	{{$service | ToIfaceName}}Client awsapi.{{$service | ToIfaceName}}API
+	{{- else }}
 	{{$service}}iface.{{$service | ToIfaceName}}API
+	{{- end }}
 {{- end}}
 }
 
@@ -163,8 +214,10 @@ type DelegatingClient struct {
 {{- with $delegates := $service | index $.DelegatesByService }}
 // {{$service}}Client delegates to individual component clients for API calls we know those components will have privileges to make.
 type {{$service}}Client struct {
+	{{- if not (IsV2Service $service) }}
 	// embedding this fulfills the interface and falls back to a panic for APIs we don't have privileges for
 	{{$service}}iface.{{$service | ToIfaceName}}API
+	{{- end }}
 {{ range $name, $apis := $delegates }}
 	{{$name | ToName}} *{{$name | ToName}}ClientDelegate
 {{- end}}
@@ -173,9 +226,15 @@ type {{$service}}Client struct {
 {{- range $name := $.Delegates }}
 {{- with $apis := $name | index $delegates }}
 {{ range $api := $apis }}
+{{- if IsV2Service $service }}
+func (c *{{$service}}Client) {{$api}}(ctx context.Context, input *{{$service}}v2.{{$api}}Input, optFns ...func(*{{$service}}v2.Options)) (*{{$service}}v2.{{$api}}Output, error) {
+	return c.{{$name | ToName}}.{{$service}}Client.{{$api}}(ctx, input, optFns...)
+}
+{{- else }}
 func (c *{{$service}}Client) {{$api}}WithContext(ctx aws.Context, input *{{$service}}.{{$api}}Input, opts ...request.Option) (*{{Output $service $api}}, error) {
 	return c.{{$name | ToName}}.{{$service}}Client.{{$api}}WithContext(ctx, input, opts...)
 }
+{{- end }}
 {{- end}}
 {{- end}}
 {{- end}}
@@ -203,6 +262,11 @@ func (c *{{$service}}Client) {{$api}}WithContext(ctx aws.Context, input *{{$serv
 
 	if _, err := fmt.Fprintln(os.Stdout, out.String()); err != nil {
 		panic(fmt.Errorf("unable to write delegate client template: %w", err))
+	}
+
+	// Generate interface definitions for v2 services
+	if err := generateV2Interfaces(delegatesByService); err != nil {
+		panic(fmt.Errorf("unable to generate v2 interfaces: %w", err))
 	}
 }
 
@@ -259,6 +323,28 @@ func delegateNames(delegates aws.ServicesByDelegate) []string {
 	delegateNameSlice := allDelegates.UnsortedList()
 	sort.Strings(delegateNameSlice)
 	return delegateNameSlice
+}
+
+// v1Services lists services still using AWS SDK v1.
+// As services are migrated to v2, remove them from this list.
+// When this list is empty, all services have been migrated and this logic can be removed.
+var v1Services = []string{
+	"ec2",
+	"elb",
+	"elbv2",
+	"route53",
+	"sqs",
+}
+
+// isV2Service returns true if the service uses AWS SDK v2.
+// Services not in the v1Services list are assumed to use v2 (default for new services).
+func isV2Service(service string) bool {
+	for _, v1 := range v1Services {
+		if service == v1 {
+			return false
+		}
+	}
+	return true
 }
 
 // adjustServices maps permission attestation names to the Go SDK names, as necessary, and
@@ -331,17 +417,19 @@ func adjustAPIs(delegates aws.ServicesByDelegate) aws.ServicesByDelegate {
 	}
 
 	// most but not all the Go SDK APIs match the privilege attestations
-	apiMapping := map[string]map[string]string{
+	// Note: Some IAM permissions cover multiple SDK API calls
+	apiMapping := map[string]map[string][]string{
 		"s3": {
-			"ListBucket":                 "ListBuckets",
-			"ListBucketMultipartUploads": "ListMultipartUploads",
-			"GetLifecycleConfiguration":  "GetBucketLifecycleConfiguration",
-			"GetEncryptionConfiguration": "GetBucketEncryption",
-			"PutLifecycleConfiguration":  "PutBucketLifecycleConfiguration",
-			"ListMultipartUploadParts":   "ListMultipartUploads",
-			"PutBucketPublicAccessBlock": "PutPublicAccessBlock",
-			"GetBucketPublicAccessBlock": "GetPublicAccessBlock",
-			"PutEncryptionConfiguration": "PutBucketEncryption",
+			"ListBucket":                 {"ListBuckets", "ListObjectsV2"},  // s3:ListBucket covers multiple list APIs
+			"DeleteObject":               {"DeleteObject", "DeleteObjects"}, // s3:DeleteObject covers both single and batch delete
+			"ListBucketMultipartUploads": {"ListMultipartUploads"},
+			"GetLifecycleConfiguration":  {"GetBucketLifecycleConfiguration"},
+			"GetEncryptionConfiguration": {"GetBucketEncryption"},
+			"PutLifecycleConfiguration":  {"PutBucketLifecycleConfiguration"},
+			"ListMultipartUploadParts":   {"ListMultipartUploads"},
+			"PutBucketPublicAccessBlock": {"PutPublicAccessBlock"},
+			"GetBucketPublicAccessBlock": {"GetPublicAccessBlock"},
+			"PutEncryptionConfiguration": {"PutBucketEncryption"},
 		},
 	}
 
@@ -351,8 +439,8 @@ func adjustAPIs(delegates aws.ServicesByDelegate) aws.ServicesByDelegate {
 		for service, apis := range services {
 			var mapped []string
 			for _, api := range apis {
-				if mapping, remapped := apiMapping[service][api]; remapped {
-					mapped = append(mapped, mapping)
+				if mappings, remapped := apiMapping[service][api]; remapped {
+					mapped = append(mapped, mappings...)
 				} else if removals, ok := apiRemovals[service]; !ok || !removals.Has(api) {
 					mapped = append(mapped, api)
 				}
@@ -384,4 +472,85 @@ func deduplicateAPIs(delegatesByService DelegatesByService, delegateNames []stri
 		}
 	}
 	return updated
+}
+
+// generateV2Interfaces generates interface definitions for AWS SDK v2 services
+func generateV2Interfaces(delegatesByService DelegatesByService) error {
+	for service := range delegatesByService {
+		if !isV2Service(service) {
+			continue
+		}
+
+		// Collect all APIs for this service
+		allAPIs := sets.New[string]()
+		for _, apis := range delegatesByService[service] {
+			allAPIs.Insert(apis...)
+		}
+		sortedAPIs := allAPIs.UnsortedList()
+		slices.Sort(sortedAPIs)
+
+		// Generate interface file
+		if err := generateInterfaceFile(service, sortedAPIs); err != nil {
+			return fmt.Errorf("failed to generate interface for %s: %w", service, err)
+		}
+	}
+	return nil
+}
+
+// generateInterfaceFile generates a single interface file for a v2 service
+func generateInterfaceFile(service string, apis []string) error {
+	interfaceTemplate := `// Code generated by delegatingclientgenerator. DO NOT EDIT.
+
+package awsapi
+
+//` + `go:generate ../../hack/tools/bin/mockgen -source={{.Service}}.go -package=awsapi -destination={{.Service}}_mock.go
+
+import (
+	"context"
+
+	{{.Service}}v2 "github.com/aws/aws-sdk-go-v2/service/{{.Service}}"
+)
+
+// {{.Service | ToUpper}}API defines the {{.Service | ToUpper}} operations allowed by IAM policies.
+// Generated from: cmd/infra/aws/iam.go
+//
+// This interface includes all methods corresponding to IAM permissions granted to HyperShift.
+// Some IAM permissions map to multiple SDK methods (e.g., s3:ListBucket covers both
+// ListBuckets and ListObjectsV2). See delegatingclientgenerator for mapping rules.
+type {{.Service | ToUpper}}API interface {
+{{- range .APIs }}
+	{{.}}(ctx context.Context, input *{{$.Service}}v2.{{.}}Input, optFns ...func(*{{$.Service}}v2.Options)) (*{{$.Service}}v2.{{.}}Output, error)
+{{- end }}
+}
+
+// Ensure *{{.Service}}v2.Client implements {{.Service | ToUpper}}API
+var _ {{.Service | ToUpper}}API = (*{{.Service}}v2.Client)(nil)
+`
+
+	tmpl, err := template.New("interface").Funcs(template.FuncMap{
+		"ToUpper": strings.ToUpper,
+	}).Parse(interfaceTemplate)
+	if err != nil {
+		return fmt.Errorf("unable to parse interface template: %w", err)
+	}
+
+	out := bytes.Buffer{}
+	if err := tmpl.Execute(&out, struct {
+		Service string
+		APIs    []string
+	}{
+		Service: service,
+		APIs:    apis,
+	}); err != nil {
+		return fmt.Errorf("unable to execute interface template: %w", err)
+	}
+
+	// Write to support/awsapi/{service}.go
+	filename := fmt.Sprintf("support/awsapi/%s.go", service)
+	if err := os.WriteFile(filename, out.Bytes(), 0644); err != nil {
+		return fmt.Errorf("unable to write interface file %s: %w", filename, err)
+	}
+
+	// Note: Don't print to stderr here as it interferes with stdout redirection
+	return nil
 }

@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -9,9 +10,12 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/awsapi"
 
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/elb"
@@ -22,9 +26,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/ram/ramiface"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
-	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -200,7 +201,7 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 	var elbClient elbiface.ELBAPI
 	var elbv2Client elbv2iface.ELBV2API
 	var clusterRoute53Client, vpcOwnerRoute53Client, listRoute53Client, recordsRoute53Client route53iface.Route53API
-	var s3Client s3iface.S3API
+	var s3Client awsapi.S3API
 	var ramClient ramiface.RAMAPI
 	if o.AWSCredentialsOpts.AWSCredentialsOpts.AWSCredentialsFile != "" || o.AWSCredentialsOpts.AWSCredentialsOpts.STSCredentialsFile != "" {
 		awsSession, err := o.AWSCredentialsOpts.AWSCredentialsOpts.GetSession("cli-destroy-infra", o.CredentialsSecretData, o.Region)
@@ -208,12 +209,19 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 			return err
 		}
 		awsConfig := awsutil.NewConfig()
+		awsSessionv2, err := o.AWSCredentialsOpts.AWSCredentialsOpts.GetSessionV2(ctx, "cli-destroy-infra-s3", o.CredentialsSecretData, o.Region)
+		if err != nil {
+			return err
+		}
+		awsConfigv2 := awsutil.NewConfigV2()
 		ec2Client = ec2.New(awsSession, awsConfig)
 		vpcOwnerEC2Client = ec2Client
 		elbClient = elb.New(awsSession, awsConfig)
 		elbv2Client = elbv2.New(awsSession, awsConfig)
 		clusterRoute53Client = route53.New(awsSession, awsutil.NewAWSRoute53Config())
-		s3Client = s3.New(awsSession, awsConfig)
+		s3Client = s3.NewFromConfig(*awsSessionv2, func(o *s3.Options) {
+			o.Retryer = awsConfigv2()
+		})
 
 		if o.VPCOwnerCredentialsOpts.AWSCredentialsFile != "" {
 			vpcOwnerAWSSession, err := o.VPCOwnerCredentialsOpts.GetSession("cli-destroy-infra", nil, o.Region)
@@ -240,6 +248,7 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 			return fmt.Errorf("delegating client is not supported for shared vpc infrastructure")
 		}
 		delegatingClent, err := NewDelegatingClient(
+			ctx,
 			o.AWSEbsCsiDriverControllerCredentialsFile,
 			o.CloudControllerCredentialsFile,
 			o.CloudNetworkConfigControllerCredentialsFile,
@@ -255,7 +264,7 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 		elbv2Client = delegatingClent.ELBV2API
 		listRoute53Client = delegatingClent.Route53API
 		recordsRoute53Client = delegatingClent.Route53API
-		s3Client = delegatingClent.S3API
+		s3Client = delegatingClent.S3Client
 	}
 
 	errs := o.destroyInstances(ctx, ec2Client)
@@ -274,46 +283,85 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 	return utilerrors.NewAggregate(errs)
 }
 
-func (o *DestroyInfraOptions) DestroyS3Buckets(ctx context.Context, client s3iface.S3API) []error {
+func (o *DestroyInfraOptions) DestroyS3Buckets(ctx context.Context, client awsapi.S3API) []error {
 	var errs []error
-	result, err := client.ListBucketsWithContext(ctx, &s3.ListBucketsInput{})
+	result, err := client.ListBuckets(ctx, &s3.ListBucketsInput{})
 	if err != nil {
 		errs = append(errs, err)
 		return errs
 	}
 	for _, bucket := range result.Buckets {
-		if strings.HasPrefix(*bucket.Name, fmt.Sprintf("%s-image-registry-", o.InfraID)) {
-			if err := emptyBucket(ctx, client, *bucket.Name); err != nil {
-				errs = append(errs, fmt.Errorf("failed to empty bucket %s: %w", *bucket.Name, err))
+		if strings.HasPrefix(awsv2.ToString(bucket.Name), fmt.Sprintf("%s-image-registry-", o.InfraID)) {
+			if err := emptyBucket(ctx, client, awsv2.ToString(bucket.Name)); err != nil {
+				errs = append(errs, fmt.Errorf("failed to empty bucket %s: %w", awsv2.ToString(bucket.Name), err))
 				continue
 			}
-			_, err := client.DeleteBucketWithContext(ctx, &s3.DeleteBucketInput{
+			_, err := client.DeleteBucket(ctx, &s3.DeleteBucketInput{
 				Bucket: bucket.Name,
 			})
 			if err != nil {
-				if aerr, ok := err.(awserr.Error); ok && aerr.Code() == s3.ErrCodeNoSuchBucket {
-					o.Log.Info("S3 Bucket already deleted", "name", *bucket.Name)
+				var nsbErr *s3types.NoSuchBucket
+				if errors.As(err, &nsbErr) {
+					o.Log.Info("S3 Bucket already deleted", "name", awsv2.ToString(bucket.Name))
 				} else {
 					errs = append(errs, err)
 				}
 			} else {
-				o.Log.Info("Deleted S3 Bucket", "name", *bucket.Name)
+				o.Log.Info("Deleted S3 Bucket", "name", awsv2.ToString(bucket.Name))
 			}
 		}
 	}
 	return errs
 }
 
-func emptyBucket(ctx context.Context, client s3iface.S3API, name string) error {
-	iter := s3manager.NewDeleteListIterator(client, &s3.ListObjectsInput{
-		Bucket: aws.String(name),
+// emptyBucket deletes all objects in an S3 bucket.
+// Note: AWS SDK Go v2 does not provide a BatchDelete utility like v1's s3manager.BatchDelete.
+// This is a known limitation tracked in https://github.com/aws/aws-sdk-go-v2/issues/1463
+// We manually implement batch deletion using ListObjectsV2Paginator + DeleteObjects API.
+func emptyBucket(ctx context.Context, client awsapi.S3API, name string) error {
+	paginator := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{
+		Bucket: awsv2.String(name),
 	})
-
-	if err := s3manager.NewBatchDeleteWithClient(client).Delete(ctx, iter); err != nil {
-		if strings.Contains(err.Error(), s3.ErrCodeNoSuchBucket) {
-			return nil
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			var nsbErr *s3types.NoSuchBucket
+			if errors.As(err, &nsbErr) {
+				return nil
+			}
+			return err
 		}
-		return err
+		if len(page.Contents) == 0 {
+			continue
+		}
+		var objects []s3types.ObjectIdentifier
+		for _, obj := range page.Contents {
+			objects = append(objects, s3types.ObjectIdentifier{Key: obj.Key})
+		}
+		output, err := client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+			Bucket: awsv2.String(name),
+			Delete: &s3types.Delete{Objects: objects},
+		})
+		if err != nil {
+			var nsbErr *s3types.NoSuchBucket
+			if errors.As(err, &nsbErr) {
+				return nil // Bucket doesn't exist, consistent with v1 behavior
+			}
+			return fmt.Errorf("failed to delete objects from bucket %s: %w", name, err)
+		}
+
+		// Check for partial failures (consistent with v1 BatchDelete behavior)
+		// v1's BatchDelete returns error on partial failure, v2 should behave the same
+		if len(output.Errors) > 0 {
+			errMsgs := make([]string, 0, len(output.Errors))
+			for _, delErr := range output.Errors {
+				errMsgs = append(errMsgs, fmt.Sprintf("%s: %s",
+					awsv2.ToString(delErr.Key),
+					awsv2.ToString(delErr.Message)))
+			}
+			return fmt.Errorf("failed to delete %d objects from bucket %s: %s",
+				len(output.Errors), name, strings.Join(errMsgs, "; "))
+		}
 	}
 	return nil
 }
