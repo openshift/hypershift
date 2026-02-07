@@ -9,6 +9,7 @@ import (
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	capigcp "sigs.k8s.io/cluster-api-provider-gcp/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -41,8 +42,12 @@ func (c *CAPI) gcpMachineTemplate(ctx context.Context, templateNameGenerator fun
 		return nil, fmt.Errorf("failed to generate GCP machine template spec: %w", err)
 	}
 
-	// Create hash of the template spec for naming
-	templateName, err := templateNameGenerator(templateSpec)
+	// Create hash of the template spec for naming.
+	// Exclude AdditionalLabels from the hash so that label-only changes
+	// do not trigger a rolling upgrade of nodes (following the AWS pattern).
+	hashedSpec := templateSpec.DeepCopy()
+	hashedSpec.AdditionalLabels = nil
+	templateName, err := templateNameGenerator(hashedSpec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate template name: %w", err)
 	}
@@ -267,26 +272,18 @@ func configureGCPLabels(hcGCPPlatform *hyperv1.GCPPlatformSpec, gcpPlatform *hyp
 
 	// Add cluster-level resource labels
 	for _, label := range hcGCPPlatform.ResourceLabels {
-		if label.Value != nil {
-			labels[label.Key] = *label.Value
-		} else {
-			labels[label.Key] = ""
-		}
+		labels[label.Key] = ptr.Deref(label.Value, "")
 	}
 
 	// Add NodePool-level resource labels (overrides cluster labels)
 	for _, label := range gcpPlatform.ResourceLabels {
-		if label.Value != nil {
-			labels[label.Key] = *label.Value
-		} else {
-			labels[label.Key] = ""
-		}
+		labels[label.Key] = ptr.Deref(label.Value, "")
 	}
 
 	// Add HyperShift-specific labels for resource identification
-	labels["hypershift-openshift-io-cluster"] = clusterName
+	labels[supportutil.GCPLabelCluster] = clusterName
 	if infraID != "" {
-		labels["hypershift-openshift-io-infra-id"] = infraID
+		labels[supportutil.GCPLabelInfraID] = infraID
 	}
 
 	return labels
@@ -312,7 +309,7 @@ func configureGCPNetworkTags(userTags []string, infraID string) []string {
 // configureGCPMaintenanceBehavior determines the host maintenance behavior.
 func configureGCPMaintenanceBehavior(userMaintenance *string, provisioningModel *hyperv1.GCPProvisioningModel) capigcp.HostMaintenancePolicy {
 	if userMaintenance != nil && *userMaintenance != "" {
-		if *userMaintenance == "TERMINATE" {
+		if *userMaintenance == string(hyperv1.GCPOnHostMaintenanceTerminate) {
 			return capigcp.HostMaintenancePolicyTerminate
 		}
 		return capigcp.HostMaintenancePolicyMigrate

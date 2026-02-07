@@ -292,6 +292,17 @@ type GCPServiceAccountsEmails struct {
 	ControlPlane string `json:"controlPlane,omitempty"`
 }
 
+// GCPOnHostMaintenance defines the behavior when a host maintenance event occurs.
+type GCPOnHostMaintenance string
+
+const (
+	// GCPOnHostMaintenanceMigrate causes Compute Engine to live migrate an instance during host maintenance.
+	GCPOnHostMaintenanceMigrate GCPOnHostMaintenance = "MIGRATE"
+
+	// GCPOnHostMaintenanceTerminate causes Compute Engine to stop an instance during host maintenance.
+	GCPOnHostMaintenanceTerminate GCPOnHostMaintenance = "TERMINATE"
+)
+
 // GCPNodePoolPlatform specifies the configuration of a NodePool when operating on GCP.
 // This follows the AWS and Azure patterns for platform-specific NodePool configuration.
 // +kubebuilder:validation:XValidation:rule="!has(self.onHostMaintenance) || !has(self.provisioningModel) || self.provisioningModel == 'Standard' || self.onHostMaintenance == 'TERMINATE'",message="onHostMaintenance must be TERMINATE when provisioningModel is Spot or Preemptible"

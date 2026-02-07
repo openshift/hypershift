@@ -25,6 +25,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
+	supportutil "github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -151,11 +152,7 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 			gcpCluster.Spec.AdditionalLabels = make(map[string]string)
 		}
 		for _, label := range gcpSpec.ResourceLabels {
-			if label.Value != nil {
-				gcpCluster.Spec.AdditionalLabels[label.Key] = *label.Value
-			} else {
-				gcpCluster.Spec.AdditionalLabels[label.Key] = ""
-			}
+			gcpCluster.Spec.AdditionalLabels[label.Key] = ptr.Deref(label.Value, "")
 		}
 	}
 
@@ -163,9 +160,9 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 	if gcpCluster.Spec.AdditionalLabels == nil {
 		gcpCluster.Spec.AdditionalLabels = make(map[string]string)
 	}
-	gcpCluster.Spec.AdditionalLabels["hypershift-openshift-io-cluster"] = hcluster.Name
+	gcpCluster.Spec.AdditionalLabels[supportutil.GCPLabelCluster] = hcluster.Name
 	if hcluster.Spec.InfraID != "" {
-		gcpCluster.Spec.AdditionalLabels["hypershift-openshift-io-infra-id"] = hcluster.Spec.InfraID
+		gcpCluster.Spec.AdditionalLabels[supportutil.GCPLabelInfraID] = hcluster.Spec.InfraID
 	}
 
 	// Set control plane endpoint (following AWS pattern)

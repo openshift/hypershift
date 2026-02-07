@@ -47,6 +47,11 @@ const (
 	HostedClustersScopeAnnotationEnv         = "HOSTEDCLUSTERS_SCOPE_ANNOTATION"
 	HostedClustersScopeAnnotation            = "hypershift.openshift.io/scope"
 	HostedClusterAnnotation                  = "hypershift.openshift.io/cluster"
+
+	// GCPLabelCluster is the GCP resource label key used to identify the HostedCluster name.
+	GCPLabelCluster = "hypershift-openshift-io-cluster"
+	// GCPLabelInfraID is the GCP resource label key used to identify the infrastructure ID.
+	GCPLabelInfraID = "hypershift-openshift-io-infra-id"
 )
 
 type JSONMapper func(jsonData []byte) []byte
