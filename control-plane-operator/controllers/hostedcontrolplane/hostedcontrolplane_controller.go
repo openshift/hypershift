@@ -1102,7 +1102,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		return fmt.Errorf("failed to reconcile metrics config: %w", err)
 	}
 
-	if useHCPRouter(hcp) {
+	if routerv2.UseHCPRouter(hcp) {
 		if err := r.admitHCPManagedRoutes(ctx, hcp, infraStatus.InternalHCPRouterHost, infraStatus.ExternalHCPRouterHost); err != nil {
 			return fmt.Errorf("failed to admit HCP managed routes: %w", err)
 		}
@@ -1166,22 +1166,6 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 	}
 
 	return utilerrors.NewAggregate(errs)
-}
-
-// useHCPRouter returns true if a dedicated common router is created for a HCP to handle ingress for the managed endpoints.
-// This is true when the API input specifies intent for the following:
-// 1 - AWS endpointAccess is private somehow (i.e. publicAndPrivate or private) or is public and configured with external DNS.
-// 2 - When 1 is true, we recommend (and automate via CLI) ServicePublishingStrategy to be "Route" for all endpoints but the KAS
-// which needs a dedicated Service type LB external to be exposed if no external DNS is supported.
-// Otherwise, the Routes use the management cluster Domain and resolve through the default ingress controller.
-func useHCPRouter(hostedControlPlane *hyperv1.HostedControlPlane) bool {
-	if sharedingress.UseSharedIngress() {
-		return false
-	}
-	if hostedControlPlane.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-		return false
-	}
-	return util.IsPrivateHCP(hostedControlPlane) || util.IsPublicWithDNS(hostedControlPlane)
 }
 
 func IsStorageAndCSIManaged(hostedControlPlane *hyperv1.HostedControlPlane) bool {
@@ -1445,6 +1429,8 @@ func (r *HostedControlPlaneReconciler) reconcileOLMPackageServerService(ctx cont
 }
 
 func (r *HostedControlPlaneReconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
+	// ARO uses swift to handle ingress, so we don't need to create a router service.
+	// This check might check in future if a platform with shared ingress has also a private path which requires the SVC.
 	if sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return nil
 	}
@@ -1578,7 +1564,8 @@ func (r *HostedControlPlaneReconciler) defaultReconcileInfrastructureStatus(ctx 
 }
 
 func (r *HostedControlPlaneReconciler) reconcileInternalRouterServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, needed bool, message string, err error) {
-	if !util.IsPrivateHCP(hcp) || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+	// ARO is always private but there's no router service. Connection goes through swift.
+	if !util.IsPrivateHCP(hcp) || hyperazureutil.IsAroHCP() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return
 	}
 	return r.reconcileRouterServiceStatus(ctx, manifests.PrivateRouterService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))
@@ -1620,7 +1607,7 @@ func (r *HostedControlPlaneReconciler) reconcileAPIServerServiceStatus(ctx conte
 	}
 
 	if sharedingress.UseSharedIngress() || (hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform && serviceStrategy.Type == hyperv1.Route) {
-		return sharedingress.Hostname(hcp), sharedingress.ExternalDNSLBPort, "", nil
+		return sharedingress.KasRouteHostname(hcp), sharedingress.ExternalDNSLBPort, "", nil
 	}
 
 	var svc *corev1.Service
