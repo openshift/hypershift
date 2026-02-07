@@ -6306,6 +6306,25 @@ Common scopes include:
 </tr>
 </tbody>
 </table>
+###GCPOnHostMaintenance { #hypershift.openshift.io/v1beta1.GCPOnHostMaintenance }
+<p>
+<p>GCPOnHostMaintenance defines the behavior when a host maintenance event occurs.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;MIGRATE&#34;</p></td>
+<td><p>GCPOnHostMaintenanceMigrate causes Compute Engine to live migrate an instance during host maintenance.</p>
+</td>
+</tr><tr><td><p>&#34;TERMINATE&#34;</p></td>
+<td><p>GCPOnHostMaintenanceTerminate causes Compute Engine to stop an instance during host maintenance.</p>
+</td>
+</tr></tbody>
+</table>
 ###GCPPlatformSpec { #hypershift.openshift.io/v1beta1.GCPPlatformSpec }
 <p>
 (<em>Appears on:</em>
