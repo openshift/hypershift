@@ -395,3 +395,76 @@ func (n *NetworkManager) formatRouterName() string {
 func (n *NetworkManager) formatNATName() string {
 	return fmt.Sprintf("%s-nat", n.infraID)
 }
+
+// formatFirewallName returns the firewall rule name for kubelet access.
+func (n *NetworkManager) formatFirewallName() string {
+	return fmt.Sprintf("%s-allow-kubelet", n.infraID)
+}
+
+// CreateFirewallRule creates a firewall rule to allow kubelet API access.
+func (n *NetworkManager) CreateFirewallRule(ctx context.Context, networkSelfLink string) (*compute.Firewall, error) {
+	firewallName := n.formatFirewallName()
+	n.logger.Info("Creating firewall rule for kubelet access", "name", firewallName)
+
+	firewall := &compute.Firewall{
+		Name:        firewallName,
+		Network:     networkSelfLink,
+		Description: fmt.Sprintf("Allow kubelet API access for HyperShift cluster %s", n.infraID),
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: "tcp",
+				Ports:      []string{"10250"},
+			},
+		},
+		Direction: "INGRESS",
+		// Allow traffic from the 10.0.0.0/8 range which covers:
+		// - Worker node subnet (e.g., 10.0.0.0/24)
+		// - Pod CIDR (e.g., 10.132.0.0/14)
+		// This enables kube-apiserver to reach kubelets via konnectivity and
+		// allows pods to scrape kubelet metrics.
+		SourceRanges: []string{"10.0.0.0/8"},
+	}
+
+	op, err := n.computeService.Firewalls.Insert(n.projectID, firewall).Context(ctx).Do()
+	if err != nil {
+		if isAlreadyExistsError(err) {
+			n.logger.Info("Using existing firewall rule", "name", firewallName)
+			return n.getFirewall(ctx, firewallName)
+		}
+		return nil, fmt.Errorf("failed to create firewall rule: %w", err)
+	}
+
+	if err := n.waitForGlobalOperation(ctx, op.Name); err != nil {
+		return nil, fmt.Errorf("failed waiting for firewall rule creation: %w", err)
+	}
+
+	n.logger.Info("Created firewall rule for kubelet access", "name", firewallName)
+	return n.getFirewall(ctx, firewallName)
+}
+
+// DeleteFirewallRule deletes the firewall rule for kubelet access.
+func (n *NetworkManager) DeleteFirewallRule(ctx context.Context) error {
+	firewallName := n.formatFirewallName()
+	n.logger.Info("Deleting firewall rule", "name", firewallName)
+
+	op, err := n.computeService.Firewalls.Delete(n.projectID, firewallName).Context(ctx).Do()
+	if err != nil {
+		if isNotFoundError(err) {
+			n.logger.Info("Firewall rule not found, skipping", "name", firewallName)
+			return nil
+		}
+		return fmt.Errorf("failed to delete firewall rule: %w", err)
+	}
+
+	if err := n.waitForGlobalOperation(ctx, op.Name); err != nil {
+		return fmt.Errorf("failed waiting for firewall rule deletion: %w", err)
+	}
+
+	n.logger.Info("Deleted firewall rule", "name", firewallName)
+	return nil
+}
+
+// getFirewall retrieves a firewall rule by name.
+func (n *NetworkManager) getFirewall(ctx context.Context, name string) (*compute.Firewall, error) {
+	return n.computeService.Firewalls.Get(n.projectID, name).Context(ctx).Do()
+}

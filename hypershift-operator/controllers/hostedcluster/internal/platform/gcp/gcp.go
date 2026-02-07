@@ -25,6 +25,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
+	supportutil "github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -159,9 +160,9 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 	if gcpCluster.Spec.AdditionalLabels == nil {
 		gcpCluster.Spec.AdditionalLabels = make(map[string]string)
 	}
-	gcpCluster.Spec.AdditionalLabels[toGCPLabel("hypershift.openshift.io/cluster")] = hcluster.Name
+	gcpCluster.Spec.AdditionalLabels[supportutil.GCPLabelCluster] = hcluster.Name
 	if hcluster.Spec.InfraID != "" {
-		gcpCluster.Spec.AdditionalLabels[toGCPLabel("hypershift.openshift.io/infra-id")] = hcluster.Spec.InfraID
+		gcpCluster.Spec.AdditionalLabels[supportutil.GCPLabelInfraID] = hcluster.Spec.InfraID
 	}
 
 	// Set control plane endpoint (following AWS pattern)
@@ -527,31 +528,6 @@ func (p GCP) validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedClust
 	}
 
 	return nil
-}
-
-// toGCPLabel converts a label key to GCP-compliant format.
-// GCP labels must start with a lowercase letter and can only contain lowercase letters,
-// numeric characters, underscores and dashes. The key can be at most 63 characters long.
-// This function ensures full compliance with GCP label requirements.
-func toGCPLabel(label string) string {
-	// Replace both dots and forward slashes with dashes for GCP compliance
-	result := strings.ReplaceAll(label, ".", "-")
-	result = strings.ReplaceAll(result, "/", "-")
-
-	// Convert to lowercase to ensure compliance
-	result = strings.ToLower(result)
-
-	// Ensure it starts with a lowercase letter - prefix with 'x' if needed
-	if len(result) > 0 && (result[0] < 'a' || result[0] > 'z') {
-		result = "x" + result
-	}
-
-	// Truncate to 63 characters max to meet GCP requirements
-	if len(result) > 63 {
-		result = result[:63]
-	}
-
-	return result
 }
 
 // setCondition updates or creates a condition on the HostedCluster.

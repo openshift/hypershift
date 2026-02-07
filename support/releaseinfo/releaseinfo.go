@@ -67,8 +67,22 @@ type CoreOSFormat struct {
 
 type CoreOSImages struct {
 	AWS      CoreOSAWSImages      `json:"aws"`
+	GCP      CoreOSGCPImage       `json:"gcp"`
 	PowerVS  CoreOSPowerVSImages  `json:"powervs"`
 	Kubevirt CoreOSKubevirtImages `json:"kubevirt"`
+}
+
+// CoreOSGCPImage contains GCP image information from stream metadata.
+// GCP images are global (not regional like AWS), so there's a single image reference.
+type CoreOSGCPImage struct {
+	// Image is the full GCP image path (e.g., projects/rhcos-cloud/global/images/rhcos-xxx)
+	Image string `json:"image"`
+	// Project is the GCP project hosting the image (e.g., rhcos-cloud)
+	Project string `json:"project"`
+	// Name is the image name within the project
+	Name string `json:"name"`
+	// Family is the image family (optional, used for latest image lookups)
+	Family string `json:"family"`
 }
 
 type CoreRHCOSImage struct {
