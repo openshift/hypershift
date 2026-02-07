@@ -136,9 +136,13 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 
 	ami := ""
 	if configGenerator.hostedCluster.Spec.Platform.AWS != nil {
-		ami, err = defaultNodePoolAMI(configGenerator.hostedCluster.Spec.Platform.AWS.Region, configGenerator.nodePool.Spec.Arch, configGenerator.releaseImage)
-		if err != nil {
-			return nil, err
+		if configGenerator.nodePool.Spec.Platform.AWS != nil && configGenerator.nodePool.Spec.Platform.AWS.AMI != "" {
+			ami = configGenerator.nodePool.Spec.Platform.AWS.AMI
+		} else {
+			ami, err = defaultNodePoolAMI(configGenerator.hostedCluster.Spec.Platform.AWS.Region, configGenerator.nodePool.Spec.Arch, configGenerator.releaseImage)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
