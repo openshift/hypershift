@@ -514,6 +514,7 @@ type NodePoolPollOptions struct {
 	predicates           []Predicate[*corev1.Node]
 	clientOpts           []crclient.ListOption
 	suffix               string
+	waitTimeout          time.Duration
 }
 
 type NodePoolPollOption func(*NodePoolPollOptions)
@@ -542,6 +543,12 @@ func WithSuffix(suffix string) NodePoolPollOption {
 	}
 }
 
+func WithWaitTimeout(timeout time.Duration) NodePoolPollOption {
+	return func(options *NodePoolPollOptions) {
+		options.waitTimeout = timeout
+	}
+}
+
 func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crclient.Client, n int32, platform hyperv1.PlatformType, suffix string, opts ...NodePoolPollOption) []corev1.Node {
 	options := &NodePoolPollOptions{}
 	for _, opt := range opts {
@@ -549,16 +556,20 @@ func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crc
 	}
 	// waitTimeout for nodes to become Ready
 	waitTimeout := 30 * time.Minute
-	switch platform {
-	case hyperv1.AzurePlatform:
-		// Azure VMs are experiencing slow provisioning (30+ minutes instead of 10-15 minutes).
-		// Azure platform has a hardcoded 20-minute timeout that marks VMs as failed,
-		// but VMs often succeed eventually. Give them 45 minutes to complete.
-		waitTimeout = 45 * time.Minute
-	case hyperv1.KubevirtPlatform:
-		waitTimeout = 45 * time.Minute
-	case hyperv1.PowerVSPlatform:
-		waitTimeout = 60 * time.Minute
+	if options.waitTimeout != 0 {
+		waitTimeout = options.waitTimeout
+	} else {
+		switch platform {
+		case hyperv1.AzurePlatform:
+			// Azure VMs are experiencing slow provisioning (30+ minutes instead of 10-15 minutes).
+			// Azure platform has a hardcoded 20-minute timeout that marks VMs as failed,
+			// but VMs often succeed eventually. Give them 45 minutes to complete.
+			waitTimeout = 45 * time.Minute
+		case hyperv1.KubevirtPlatform:
+			waitTimeout = 45 * time.Minute
+		case hyperv1.PowerVSPlatform:
+			waitTimeout = 60 * time.Minute
+		}
 	}
 	nodes := &corev1.NodeList{}
 	if suffix != "" {
