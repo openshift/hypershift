@@ -1,0 +1,290 @@
+routes:
+  items:
+  - metadata:
+      annotations:
+        haproxy.router.openshift.io/balance: roundrobin
+      labels:
+        hypershift.openshift.io/hosted-control-plane: test-namespace
+        hypershift.openshift.io/internal-route: "true"
+      name: konnectivity-server
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      host: konnectivity-server.apps.test-cluster.hypershift.local
+      tls:
+        insecureEdgeTerminationPolicy: None
+        termination: passthrough
+      to:
+        kind: Service
+        name: konnectivity-server
+        weight: null
+    status: {}
+  - metadata:
+      labels:
+        hypershift.openshift.io/hosted-control-plane: test-namespace
+        hypershift.openshift.io/internal-route: "true"
+      name: kube-apiserver-internal
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      host: api.test-cluster.hypershift.local
+      tls:
+        insecureEdgeTerminationPolicy: None
+        termination: passthrough
+      to:
+        kind: Service
+        name: kube-apiserver
+        weight: null
+    status: {}
+  - metadata:
+      labels:
+        hypershift.openshift.io/hosted-control-plane: test-namespace
+        hypershift.openshift.io/internal-route: "true"
+        hypershift.openshift.io/route-visibility: private
+      name: kube-apiserver-private
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      host: api.test.example.com
+      tls:
+        insecureEdgeTerminationPolicy: None
+        termination: passthrough
+      to:
+        kind: Service
+        name: kube-apiserver
+        weight: null
+    status: {}
+  - metadata:
+      labels:
+        hypershift.openshift.io/hosted-control-plane: test-namespace
+        hypershift.openshift.io/internal-route: "true"
+      name: oauth-internal
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      host: oauth.apps.test-cluster.hypershift.local
+      tls:
+        insecureEdgeTerminationPolicy: None
+        termination: passthrough
+      to:
+        kind: Service
+        name: oauth-openshift
+        weight: null
+    status: {}
+  - metadata:
+      labels:
+        hypershift.openshift.io/hosted-control-plane: test-namespace
+        hypershift.openshift.io/internal-route: "true"
+        hypershift.openshift.io/route-visibility: private
+      name: oauth-private
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      host: oauth.test.example.com
+      tls:
+        insecureEdgeTerminationPolicy: None
+        termination: passthrough
+      to:
+        kind: Service
+        name: oauth-openshift
+        weight: null
+    status: {}
+  metadata: {}
+services:
+  items:
+  - metadata:
+      name: konnectivity-server
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      ports:
+      - port: 8091
+        protocol: TCP
+        targetPort: 8091
+      selector:
+        app: kube-apiserver
+        hypershift.openshift.io/control-plane-component: kube-apiserver
+      type: ClusterIP
+    status:
+      loadBalancer: {}
+  - metadata:
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: nlb
+      labels:
+        app: kube-apiserver
+        hypershift.openshift.io/control-plane-component: kube-apiserver
+      name: kube-apiserver
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      ipFamilyPolicy: PreferDualStack
+      ports:
+      - port: 6443
+        protocol: TCP
+        targetPort: client
+      selector:
+        app: kube-apiserver
+        hypershift.openshift.io/control-plane-component: kube-apiserver
+      type: ClusterIP
+    status:
+      loadBalancer: {}
+  - metadata:
+      name: oauth-openshift
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      ipFamilyPolicy: PreferDualStack
+      ports:
+      - port: 6443
+        protocol: TCP
+        targetPort: 6443
+      selector:
+        app: oauth-openshift
+        hypershift.openshift.io/control-plane-component: oauth-openshift
+      type: ClusterIP
+    status:
+      loadBalancer: {}
+  - metadata:
+      labels:
+        app: openshift-apiserver
+        hypershift.openshift.io/control-plane-component: openshift-apiserver
+      name: openshift-apiserver
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      ports:
+      - name: https
+        port: 443
+        protocol: TCP
+        targetPort: 8443
+      selector:
+        app: openshift-apiserver
+        hypershift.openshift.io/control-plane-component: openshift-apiserver
+      type: ClusterIP
+    status:
+      loadBalancer: {}
+  - metadata:
+      labels:
+        app: openshift-apiserver
+        hypershift.openshift.io/control-plane-component: openshift-apiserver
+      name: openshift-oauth-apiserver
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      ports:
+      - name: https
+        port: 443
+        protocol: TCP
+        targetPort: 8443
+      selector:
+        app: openshift-oauth-apiserver
+        hypershift.openshift.io/control-plane-component: openshift-oauth-apiserver
+      type: ClusterIP
+    status:
+      loadBalancer: {}
+  - metadata:
+      labels:
+        app: openshift-apiserver
+        hypershift.openshift.io/control-plane-component: openshift-apiserver
+      name: packageserver
+      namespace: test-namespace
+      ownerReferences:
+      - apiVersion: hypershift.openshift.io/v1beta1
+        blockOwnerDeletion: true
+        controller: true
+        kind: HostedControlPlane
+        name: test-cluster
+        uid: ""
+    spec:
+      ports:
+      - name: https
+        port: 443
+        protocol: TCP
+        targetPort: 5443
+      selector:
+        app: packageserver
+        hypershift.openshift.io/control-plane-component: packageserver
+      type: ClusterIP
+    status:
+      loadBalancer: {}
+  - metadata:
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+        service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+        service.beta.kubernetes.io/aws-load-balancer-type: nlb
+      labels:
+        app: private-router
+      name: private-router
+      namespace: test-namespace
+    spec:
+      ports:
+      - name: https
+        port: 443
+        protocol: TCP
+        targetPort: https
+      selector:
+        app: private-router
+      type: LoadBalancer
+    status:
+      loadBalancer: {}
+  metadata: {}
