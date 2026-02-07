@@ -1,10 +1,15 @@
 package aws
 
 import (
+	"context"
 	"fmt"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/support/awsapi"
 
+	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	configv2 "github.com/aws/aws-sdk-go-v2/config"
+	s3v2 "github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -16,14 +21,14 @@ import (
 	"github.com/aws/aws-sdk-go/service/elbv2/elbv2iface"
 	"github.com/aws/aws-sdk-go/service/route53"
 	"github.com/aws/aws-sdk-go/service/route53/route53iface"
-	"github.com/aws/aws-sdk-go/service/s3"
-	"github.com/aws/aws-sdk-go/service/s3/s3iface"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
+	"github.com/aws/smithy-go/middleware"
 )
 
 // NewDelegatingClient creates a new set of AWS service clients that delegate individual calls to the right credentials.
 func NewDelegatingClient(
+	ctx context.Context,
 	awsEbsCsiDriverControllerCredentialsFile string,
 	cloudControllerCredentialsFile string,
 	cloudNetworkConfigControllerCredentialsFile string,
@@ -32,6 +37,7 @@ func NewDelegatingClient(
 	openshiftImageRegistryCredentialsFile string,
 ) (*DelegatingClient, error) {
 	awsConfig := awsutil.NewConfig()
+	awsConfigv2 := awsutil.NewConfigV2()
 	awsEbsCsiDriverControllerSession, err := session.NewSessionWithOptions(session.Options{SharedConfigFiles: []string{awsEbsCsiDriverControllerCredentialsFile}})
 	if err != nil {
 		return nil, fmt.Errorf("error creating new AWS session for awsEbsCsiDriverController: %w", err)
@@ -91,16 +97,18 @@ func NewDelegatingClient(
 		ec2Client: ec2.New(nodePoolSession, awsConfig),
 		sqsClient: sqs.New(nodePoolSession, awsConfig),
 	}
-	openshiftImageRegistrySession, err := session.NewSessionWithOptions(session.Options{SharedConfigFiles: []string{openshiftImageRegistryCredentialsFile}})
+	openshiftImageRegistryCfg, err := configv2.LoadDefaultConfig(ctx,
+		configv2.WithSharedConfigFiles([]string{openshiftImageRegistryCredentialsFile}),
+		configv2.WithAPIOptions([]func(*middleware.Stack) error{
+			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", "openshift-image-registry"),
+		}))
 	if err != nil {
-		return nil, fmt.Errorf("error creating new AWS session for openshiftImageRegistry: %w", err)
+		return nil, fmt.Errorf("error loading AWS config for openshiftImageRegistry: %w", err)
 	}
-	openshiftImageRegistrySession.Handlers.Build.PushBackNamed(request.NamedHandler{
-		Name: "openshift.io/hypershift",
-		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", "openshift-image-registry"),
-	})
 	openshiftImageRegistry := &openshiftImageRegistryClientDelegate{
-		s3Client: s3.New(openshiftImageRegistrySession, awsConfig),
+		s3Client: s3v2.NewFromConfig(openshiftImageRegistryCfg, func(o *s3v2.Options) {
+			o.Retryer = awsConfigv2()
+		}),
 	}
 	return &DelegatingClient{
 		EC2API: &ec2Client{
@@ -123,8 +131,7 @@ func NewDelegatingClient(
 			Route53API:           nil,
 			controlPlaneOperator: controlPlaneOperator,
 		},
-		S3API: &s3Client{
-			S3API:                  nil,
+		S3Client: &s3Client{
 			openshiftImageRegistry: openshiftImageRegistry,
 		},
 		SQSAPI: &sqsClient{
@@ -159,7 +166,7 @@ type nodePoolClientDelegate struct {
 }
 
 type openshiftImageRegistryClientDelegate struct {
-	s3Client s3iface.S3API
+	s3Client awsapi.S3API
 }
 
 // DelegatingClient embeds clients for AWS services we have privileges to use with guest cluster component roles.
@@ -168,7 +175,7 @@ type DelegatingClient struct {
 	elbiface.ELBAPI
 	elbv2iface.ELBV2API
 	route53iface.Route53API
-	s3iface.S3API
+	S3Client awsapi.S3API
 	sqsiface.SQSAPI
 }
 
@@ -551,62 +558,65 @@ func (c *route53Client) ListResourceRecordSetsWithContext(ctx aws.Context, input
 
 // s3Client delegates to individual component clients for API calls we know those components will have privileges to make.
 type s3Client struct {
-	// embedding this fulfills the interface and falls back to a panic for APIs we don't have privileges for
-	s3iface.S3API
-
 	openshiftImageRegistry *openshiftImageRegistryClientDelegate
 }
 
-func (c *s3Client) AbortMultipartUploadWithContext(ctx aws.Context, input *s3.AbortMultipartUploadInput, opts ...request.Option) (*s3.AbortMultipartUploadOutput, error) {
-	return c.openshiftImageRegistry.s3Client.AbortMultipartUploadWithContext(ctx, input, opts...)
+func (c *s3Client) AbortMultipartUpload(ctx context.Context, input *s3v2.AbortMultipartUploadInput, optFns ...func(*s3v2.Options)) (*s3v2.AbortMultipartUploadOutput, error) {
+	return c.openshiftImageRegistry.s3Client.AbortMultipartUpload(ctx, input, optFns...)
 }
-func (c *s3Client) CreateBucketWithContext(ctx aws.Context, input *s3.CreateBucketInput, opts ...request.Option) (*s3.CreateBucketOutput, error) {
-	return c.openshiftImageRegistry.s3Client.CreateBucketWithContext(ctx, input, opts...)
+func (c *s3Client) CreateBucket(ctx context.Context, input *s3v2.CreateBucketInput, optFns ...func(*s3v2.Options)) (*s3v2.CreateBucketOutput, error) {
+	return c.openshiftImageRegistry.s3Client.CreateBucket(ctx, input, optFns...)
 }
-func (c *s3Client) DeleteBucketWithContext(ctx aws.Context, input *s3.DeleteBucketInput, opts ...request.Option) (*s3.DeleteBucketOutput, error) {
-	return c.openshiftImageRegistry.s3Client.DeleteBucketWithContext(ctx, input, opts...)
+func (c *s3Client) DeleteBucket(ctx context.Context, input *s3v2.DeleteBucketInput, optFns ...func(*s3v2.Options)) (*s3v2.DeleteBucketOutput, error) {
+	return c.openshiftImageRegistry.s3Client.DeleteBucket(ctx, input, optFns...)
 }
-func (c *s3Client) DeleteObjectWithContext(ctx aws.Context, input *s3.DeleteObjectInput, opts ...request.Option) (*s3.DeleteObjectOutput, error) {
-	return c.openshiftImageRegistry.s3Client.DeleteObjectWithContext(ctx, input, opts...)
+func (c *s3Client) DeleteObject(ctx context.Context, input *s3v2.DeleteObjectInput, optFns ...func(*s3v2.Options)) (*s3v2.DeleteObjectOutput, error) {
+	return c.openshiftImageRegistry.s3Client.DeleteObject(ctx, input, optFns...)
 }
-func (c *s3Client) GetBucketEncryptionWithContext(ctx aws.Context, input *s3.GetBucketEncryptionInput, opts ...request.Option) (*s3.GetBucketEncryptionOutput, error) {
-	return c.openshiftImageRegistry.s3Client.GetBucketEncryptionWithContext(ctx, input, opts...)
+func (c *s3Client) DeleteObjects(ctx context.Context, input *s3v2.DeleteObjectsInput, optFns ...func(*s3v2.Options)) (*s3v2.DeleteObjectsOutput, error) {
+	return c.openshiftImageRegistry.s3Client.DeleteObjects(ctx, input, optFns...)
 }
-func (c *s3Client) GetBucketLifecycleConfigurationWithContext(ctx aws.Context, input *s3.GetBucketLifecycleConfigurationInput, opts ...request.Option) (*s3.GetBucketLifecycleConfigurationOutput, error) {
-	return c.openshiftImageRegistry.s3Client.GetBucketLifecycleConfigurationWithContext(ctx, input, opts...)
+func (c *s3Client) GetBucketEncryption(ctx context.Context, input *s3v2.GetBucketEncryptionInput, optFns ...func(*s3v2.Options)) (*s3v2.GetBucketEncryptionOutput, error) {
+	return c.openshiftImageRegistry.s3Client.GetBucketEncryption(ctx, input, optFns...)
 }
-func (c *s3Client) GetBucketLocationWithContext(ctx aws.Context, input *s3.GetBucketLocationInput, opts ...request.Option) (*s3.GetBucketLocationOutput, error) {
-	return c.openshiftImageRegistry.s3Client.GetBucketLocationWithContext(ctx, input, opts...)
+func (c *s3Client) GetBucketLifecycleConfiguration(ctx context.Context, input *s3v2.GetBucketLifecycleConfigurationInput, optFns ...func(*s3v2.Options)) (*s3v2.GetBucketLifecycleConfigurationOutput, error) {
+	return c.openshiftImageRegistry.s3Client.GetBucketLifecycleConfiguration(ctx, input, optFns...)
 }
-func (c *s3Client) GetBucketTaggingWithContext(ctx aws.Context, input *s3.GetBucketTaggingInput, opts ...request.Option) (*s3.GetBucketTaggingOutput, error) {
-	return c.openshiftImageRegistry.s3Client.GetBucketTaggingWithContext(ctx, input, opts...)
+func (c *s3Client) GetBucketLocation(ctx context.Context, input *s3v2.GetBucketLocationInput, optFns ...func(*s3v2.Options)) (*s3v2.GetBucketLocationOutput, error) {
+	return c.openshiftImageRegistry.s3Client.GetBucketLocation(ctx, input, optFns...)
 }
-func (c *s3Client) GetObjectWithContext(ctx aws.Context, input *s3.GetObjectInput, opts ...request.Option) (*s3.GetObjectOutput, error) {
-	return c.openshiftImageRegistry.s3Client.GetObjectWithContext(ctx, input, opts...)
+func (c *s3Client) GetBucketTagging(ctx context.Context, input *s3v2.GetBucketTaggingInput, optFns ...func(*s3v2.Options)) (*s3v2.GetBucketTaggingOutput, error) {
+	return c.openshiftImageRegistry.s3Client.GetBucketTagging(ctx, input, optFns...)
 }
-func (c *s3Client) GetPublicAccessBlockWithContext(ctx aws.Context, input *s3.GetPublicAccessBlockInput, opts ...request.Option) (*s3.GetPublicAccessBlockOutput, error) {
-	return c.openshiftImageRegistry.s3Client.GetPublicAccessBlockWithContext(ctx, input, opts...)
+func (c *s3Client) GetObject(ctx context.Context, input *s3v2.GetObjectInput, optFns ...func(*s3v2.Options)) (*s3v2.GetObjectOutput, error) {
+	return c.openshiftImageRegistry.s3Client.GetObject(ctx, input, optFns...)
 }
-func (c *s3Client) ListBucketsWithContext(ctx aws.Context, input *s3.ListBucketsInput, opts ...request.Option) (*s3.ListBucketsOutput, error) {
-	return c.openshiftImageRegistry.s3Client.ListBucketsWithContext(ctx, input, opts...)
+func (c *s3Client) GetPublicAccessBlock(ctx context.Context, input *s3v2.GetPublicAccessBlockInput, optFns ...func(*s3v2.Options)) (*s3v2.GetPublicAccessBlockOutput, error) {
+	return c.openshiftImageRegistry.s3Client.GetPublicAccessBlock(ctx, input, optFns...)
 }
-func (c *s3Client) ListMultipartUploadsWithContext(ctx aws.Context, input *s3.ListMultipartUploadsInput, opts ...request.Option) (*s3.ListMultipartUploadsOutput, error) {
-	return c.openshiftImageRegistry.s3Client.ListMultipartUploadsWithContext(ctx, input, opts...)
+func (c *s3Client) ListBuckets(ctx context.Context, input *s3v2.ListBucketsInput, optFns ...func(*s3v2.Options)) (*s3v2.ListBucketsOutput, error) {
+	return c.openshiftImageRegistry.s3Client.ListBuckets(ctx, input, optFns...)
 }
-func (c *s3Client) PutBucketEncryptionWithContext(ctx aws.Context, input *s3.PutBucketEncryptionInput, opts ...request.Option) (*s3.PutBucketEncryptionOutput, error) {
-	return c.openshiftImageRegistry.s3Client.PutBucketEncryptionWithContext(ctx, input, opts...)
+func (c *s3Client) ListMultipartUploads(ctx context.Context, input *s3v2.ListMultipartUploadsInput, optFns ...func(*s3v2.Options)) (*s3v2.ListMultipartUploadsOutput, error) {
+	return c.openshiftImageRegistry.s3Client.ListMultipartUploads(ctx, input, optFns...)
 }
-func (c *s3Client) PutBucketLifecycleConfigurationWithContext(ctx aws.Context, input *s3.PutBucketLifecycleConfigurationInput, opts ...request.Option) (*s3.PutBucketLifecycleConfigurationOutput, error) {
-	return c.openshiftImageRegistry.s3Client.PutBucketLifecycleConfigurationWithContext(ctx, input, opts...)
+func (c *s3Client) ListObjectsV2(ctx context.Context, input *s3v2.ListObjectsV2Input, optFns ...func(*s3v2.Options)) (*s3v2.ListObjectsV2Output, error) {
+	return c.openshiftImageRegistry.s3Client.ListObjectsV2(ctx, input, optFns...)
 }
-func (c *s3Client) PutBucketTaggingWithContext(ctx aws.Context, input *s3.PutBucketTaggingInput, opts ...request.Option) (*s3.PutBucketTaggingOutput, error) {
-	return c.openshiftImageRegistry.s3Client.PutBucketTaggingWithContext(ctx, input, opts...)
+func (c *s3Client) PutBucketEncryption(ctx context.Context, input *s3v2.PutBucketEncryptionInput, optFns ...func(*s3v2.Options)) (*s3v2.PutBucketEncryptionOutput, error) {
+	return c.openshiftImageRegistry.s3Client.PutBucketEncryption(ctx, input, optFns...)
 }
-func (c *s3Client) PutObjectWithContext(ctx aws.Context, input *s3.PutObjectInput, opts ...request.Option) (*s3.PutObjectOutput, error) {
-	return c.openshiftImageRegistry.s3Client.PutObjectWithContext(ctx, input, opts...)
+func (c *s3Client) PutBucketLifecycleConfiguration(ctx context.Context, input *s3v2.PutBucketLifecycleConfigurationInput, optFns ...func(*s3v2.Options)) (*s3v2.PutBucketLifecycleConfigurationOutput, error) {
+	return c.openshiftImageRegistry.s3Client.PutBucketLifecycleConfiguration(ctx, input, optFns...)
 }
-func (c *s3Client) PutPublicAccessBlockWithContext(ctx aws.Context, input *s3.PutPublicAccessBlockInput, opts ...request.Option) (*s3.PutPublicAccessBlockOutput, error) {
-	return c.openshiftImageRegistry.s3Client.PutPublicAccessBlockWithContext(ctx, input, opts...)
+func (c *s3Client) PutBucketTagging(ctx context.Context, input *s3v2.PutBucketTaggingInput, optFns ...func(*s3v2.Options)) (*s3v2.PutBucketTaggingOutput, error) {
+	return c.openshiftImageRegistry.s3Client.PutBucketTagging(ctx, input, optFns...)
+}
+func (c *s3Client) PutObject(ctx context.Context, input *s3v2.PutObjectInput, optFns ...func(*s3v2.Options)) (*s3v2.PutObjectOutput, error) {
+	return c.openshiftImageRegistry.s3Client.PutObject(ctx, input, optFns...)
+}
+func (c *s3Client) PutPublicAccessBlock(ctx context.Context, input *s3v2.PutPublicAccessBlockInput, optFns ...func(*s3v2.Options)) (*s3v2.PutPublicAccessBlockOutput, error) {
+	return c.openshiftImageRegistry.s3Client.PutPublicAccessBlock(ctx, input, optFns...)
 }
 
 // sqsClient delegates to individual component clients for API calls we know those components will have privileges to make.

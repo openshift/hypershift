@@ -57,9 +57,9 @@ import (
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/s3"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -375,9 +375,11 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		OpenShiftTrustedCAFilePath:              "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
 	}
 	if opts.OIDCStorageProviderS3BucketName != "" {
-		awsSession := awsutil.NewSession("hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
-		awsConfig := awsutil.NewConfig()
-		s3Client := s3.New(awsSession, awsConfig)
+		awsSessionv2 := awsutil.NewSessionV2(ctx, "hypershift-operator-oidc-bucket", opts.OIDCStorageProviderS3Credentials, "", "", opts.OIDCStorageProviderS3Region)
+		awsConfigv2 := awsutil.NewConfigV2()
+		s3Client := s3.NewFromConfig(*awsSessionv2, func(o *s3.Options) {
+			o.Retryer = awsConfigv2()
+		})
 		hostedClusterReconciler.S3Client = s3Client
 		hostedClusterReconciler.OIDCStorageProviderS3BucketName = opts.OIDCStorageProviderS3BucketName
 	}
