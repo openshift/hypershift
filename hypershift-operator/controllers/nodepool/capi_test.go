@@ -173,7 +173,7 @@ func TestSetMachineSetReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it enforces min=1 for Azure platform even when NodePool specifies min=0",
+			name: "it allows min=0 for Azure platform (scale-from-zero support)",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -194,9 +194,9 @@ func TestSetMachineSetReplicas(t *testing.T) {
 					Replicas: nil,
 				},
 			},
-			expectReplicas: 1,
+			expectReplicas: 0,
 			expectAutoscalerAnnotations: map[string]string{
-				autoscalerMinAnnotation: "1",
+				autoscalerMinAnnotation: "0",
 				autoscalerMaxAnnotation: "5",
 			},
 		},
@@ -498,7 +498,7 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 			},
 		},
 		{
-			name: "it enforces min=1 for Azure platform even when NodePool specifies min=0",
+			name: "it allows min=0 for Azure platform (scale-from-zero support)",
 			nodePool: &hyperv1.NodePool{
 				ObjectMeta: metav1.ObjectMeta{},
 				Spec: hyperv1.NodePoolSpec{
@@ -519,9 +519,9 @@ func TestSetMachineDeploymentReplicas(t *testing.T) {
 					Replicas: nil,
 				},
 			},
-			expectReplicas: 1,
+			expectReplicas: 0,
 			expectAutoscalerAnnotations: map[string]string{
-				autoscalerMinAnnotation: "1",
+				autoscalerMinAnnotation: "0",
 				autoscalerMaxAnnotation: "5",
 			},
 		},
