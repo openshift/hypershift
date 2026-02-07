@@ -115,6 +115,11 @@ func NewComponent() component.ControlPlaneComponent {
 			component.WithAdaptFunction(kms.AdaptAzureSecretProvider),
 			component.WithPredicate(enableAzureKMSSecretProvider),
 		).
+		WithManifestAdapter(
+			"dns-proxy-configmap.yaml",
+			component.WithAdaptFunction(adaptDNSProxyConfigMap),
+			component.WithPredicate(enableDNSProxySidecar),
+		).
 		Build()
 }
 

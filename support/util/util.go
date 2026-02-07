@@ -426,6 +426,35 @@ func FirstUsableIP(cidr string) (string, error) {
 	return ip.String(), nil
 }
 
+// NthIP returns the Nth usable IP address from a CIDR.
+// n=1 returns the first usable IP (network address + 1), n=2 returns network address + 2, etc.
+// For example, NthIP("172.30.0.0/16", 10) returns "172.30.0.10"
+func NthIP(cidr string, n int) (string, error) {
+	_, ipNet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return "", fmt.Errorf("error validating the incoming CIDR %s: %w", cidr, err)
+	}
+	if n < 1 {
+		return "", fmt.Errorf("n must be >= 1, got %d", n)
+	}
+
+	ip := make(net.IP, len(ipNet.IP))
+	copy(ip, ipNet.IP)
+
+	// Add n to the IP address
+	for i := len(ip) - 1; i >= 0 && n > 0; i-- {
+		val := int(ip[i]) + n
+		ip[i] = byte(val & 0xFF)
+		n = val >> 8
+	}
+
+	if n > 0 {
+		return "", fmt.Errorf("overflow: %d is too large for CIDR %s", n, cidr)
+	}
+
+	return ip.String(), nil
+}
+
 // ParseNodeSelector parses a comma separated string of key=value pairs into a map
 func ParseNodeSelector(str string) map[string]string {
 	if len(str) == 0 {

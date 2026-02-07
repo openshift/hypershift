@@ -324,13 +324,9 @@ func GetKeyVaultDNSSuffixFromCloudType(cloud string) (string, error) {
 	switch cloud {
 	case "AZURECHINACLOUD":
 		return "vault.azure.cn", nil
-	case "AZURECLOUD":
+	case "AZURECLOUD", "AZUREPUBLICCLOUD":
 		return "vault.azure.net", nil
-	case "AZUREPUBLICCLOUD":
-		return "vault.azure.net", nil
-	case "AZUREUSGOVERNMENT":
-		return "vault.usgovcloudapi.net", nil
-	case "AZUREUSGOVERNMENTCLOUD":
+	case "AZUREUSGOVERNMENT", "AZUREUSGOVERNMENTCLOUD":
 		return "vault.usgovcloudapi.net", nil
 	default:
 		return "", fmt.Errorf("unknown cloud type %q", cloud)

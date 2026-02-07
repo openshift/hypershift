@@ -7,6 +7,13 @@ import (
 	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
+
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
+	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/testutil"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestAddImagePrePullInitContainers(t *testing.T) {
@@ -128,6 +135,166 @@ func TestAddImagePrePullInitContainers(t *testing.T) {
 			if firstOtherInitContainerIndex != -1 && lastPrePullInitContainerIndex != -1 {
 				g.Expect(lastPrePullInitContainerIndex).To(BeNumerically("<", firstOtherInitContainerIndex),
 					"pre-pull init containers must come before other init containers")
+			}
+		})
+	}
+}
+
+func TestAdaptDeployment_SwiftPodNetworkInstance(t *testing.T) {
+	tests := []struct {
+		name                    string
+		hcp                     *hyperv1.HostedControlPlane
+		wantSwiftLabel          bool
+		expectedSwiftLabelValue string
+	}{
+		{
+			name: "When Swift is enabled it should add the Swift pod network instance label",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.SwiftPodNetworkInstanceAnnotationCpo: "test-swift-instance",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+					Configuration: &hyperv1.ClusterConfiguration{},
+				},
+			},
+			wantSwiftLabel:          true,
+			expectedSwiftLabelValue: "test-swift-instance",
+		},
+		{
+			name: "When Swift annotation is not present it should not add the label",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+					Configuration: &hyperv1.ClusterConfiguration{},
+				},
+			},
+			wantSwiftLabel: false,
+		},
+		{
+			name: "When Swift annotation is empty it should not add the label",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.SwiftPodNetworkInstanceAnnotationCpo: "",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+					Configuration: &hyperv1.ClusterConfiguration{},
+				},
+			},
+			wantSwiftLabel: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			deployment, err := assets.LoadDeploymentManifest(ComponentName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			cpContext := component.WorkloadContext{
+				Context:                  t.Context(),
+				HCP:                      tt.hcp,
+				UserReleaseImageProvider: testutil.FakeImageProvider(),
+			}
+
+			err = adaptDeployment(cpContext, deployment)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			swiftLabel, exists := deployment.Spec.Template.Labels["kubernetes.azure.com/pod-network-instance"]
+			if tt.wantSwiftLabel {
+				g.Expect(exists).To(BeTrue(), "expected Swift pod network instance label to be set, but it was not found")
+				g.Expect(swiftLabel).To(Equal(tt.expectedSwiftLabelValue))
+			} else {
+				g.Expect(exists).To(BeFalse(), "expected Swift pod network instance label to not be set, but it was found with value: %v", swiftLabel)
+			}
+		})
+	}
+}
+
+func TestAdaptDeployment_SwiftDNSSidecarRemovesWaitForEtcd(t *testing.T) {
+	tests := []struct {
+		name                   string
+		hcp                    *hyperv1.HostedControlPlane
+		wantWaitForEtcdRemoved bool
+	}{
+		{
+			name: "When Swift is enabled it should remove wait-for-etcd init container",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						hyperv1.SwiftPodNetworkInstanceAnnotationCpo: "swift-instance-1",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+					},
+					Configuration: &hyperv1.ClusterConfiguration{},
+				},
+			},
+			wantWaitForEtcdRemoved: true,
+		},
+		{
+			name: "When Swift is not enabled it should keep wait-for-etcd init container",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+					Etcd: hyperv1.EtcdSpec{
+						ManagementType: hyperv1.Managed,
+					},
+					Configuration: &hyperv1.ClusterConfiguration{},
+				},
+			},
+			wantWaitForEtcdRemoved: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			deployment, err := assets.LoadDeploymentManifest(ComponentName)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			cpContext := component.WorkloadContext{
+				Context:                  t.Context(),
+				HCP:                      tt.hcp,
+				UserReleaseImageProvider: testutil.FakeImageProvider(),
+			}
+
+			err = adaptDeployment(cpContext, deployment)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// Check if wait-for-etcd init container exists
+			waitForEtcdExists := false
+			for _, container := range deployment.Spec.Template.Spec.InitContainers {
+				if container.Name == "wait-for-etcd" {
+					waitForEtcdExists = true
+					break
+				}
+			}
+
+			if tt.wantWaitForEtcdRemoved {
+				g.Expect(waitForEtcdExists).To(BeFalse(), "expected wait-for-etcd init container to be removed when Swift is enabled")
+			} else {
+				g.Expect(waitForEtcdExists).To(BeTrue(), "expected wait-for-etcd init container to exist when Swift is not enabled")
 			}
 		})
 	}
