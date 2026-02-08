@@ -53,6 +53,8 @@ rules:
   - get
   - list
   - watch
+  - patch
+  - update
 - apiGroups:
   - hypershift.openshift.io
   resources:

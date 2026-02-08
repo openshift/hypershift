@@ -64,7 +64,7 @@ spec:
       - name: serving-cert
         secret:
           defaultMode: 416
-          secretName: ignition-server-serving-cert
+          secretName: ignition-server
       - configMap:
           defaultMode: 420
           name: root-ca

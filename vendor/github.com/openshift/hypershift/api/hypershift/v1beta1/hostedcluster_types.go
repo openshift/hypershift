@@ -91,6 +91,16 @@ const (
 	// IngressControllerLoadBalancerScope is an annotation that allows the specification of the LoadBalancer scope for ingress controller.
 	IngressControllerLoadBalancerScope = "hypershift.openshift.io/ingress-controller-load-balancer-scope"
 
+	// PrimaryUDNAnnotation indicates that the HostedControlPlane is using Primary UDN
+	// (User Defined Network) for KubeVirt worker node isolation. When set, the control plane
+	// components will use internal service endpoints instead of external routes.
+	PrimaryUDNAnnotation = "hypershift.openshift.io/primary-udn"
+
+	// RouterClusterIPAnnotation contains the ClusterIP of the router-default service in the
+	// guest cluster's openshift-ingress namespace. This is used for Primary UDN scenarios
+	// where the apps domain needs to resolve to the internal router ClusterIP.
+	RouterClusterIPAnnotation = "hypershift.openshift.io/router-cluster-ip"
+
 	// CertifiedOperatorsCatalogImageAnnotation, CommunityOperatorsCatalogImageAnnotation, RedHatMarketplaceCatalogImageAnnotation and RedHatOperatorsCatalogImageAnnotation
 	// are annotations that can be used to override the address of the images used for the OLM catalogs if in the `management` OLMCatalogPlacement mode.
 	// If used, all of them should be set at the same time referring images only by digest (`...@sha256:<id>`).

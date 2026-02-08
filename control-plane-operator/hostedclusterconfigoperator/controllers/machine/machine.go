@@ -2,6 +2,7 @@ package machine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/netip"
 	"strings"
@@ -28,6 +29,12 @@ import (
 
 const (
 	managedByValue = "control-plane-operator.hypershift.openshift.io"
+
+	// OVN-Kubernetes UDN EndpointSlice plumbing.
+	ovnUDNServiceNameLabelKey         = "k8s.ovn.org/service-name"
+	ovnUDNEndpointSliceNetworkAnnoKey = "k8s.ovn.org/endpointslice-network"
+	ovnPodNetworksAnnotationKey       = "k8s.ovn.org/pod-networks"
+	ovnPrimaryRole                    = "primary"
 )
 
 func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
@@ -190,8 +197,25 @@ func (r *reconciler) reconcileKubevirtPassthroughServiceEndpointsByIPFamily(ctx 
 		if endpointSlice.Labels == nil {
 			endpointSlice.Labels = map[string]string{}
 		}
-		endpointSlice.Labels[discoveryv1.LabelServiceName] = cpService.Name
 		endpointSlice.Labels[discoveryv1.LabelManagedBy] = managedByValue
+
+		udnNetworkName, isPrimaryUDN := r.primaryUDNNetworkName(ctx, cpService.Namespace)
+
+		if isPrimaryUDN {
+			if endpointSlice.Annotations == nil {
+				endpointSlice.Annotations = map[string]string{}
+			}
+			endpointSlice.Labels[ovnUDNServiceNameLabelKey] = cpService.Name
+			endpointSlice.Annotations[ovnUDNEndpointSliceNetworkAnnoKey] = udnNetworkName
+			delete(endpointSlice.Labels, discoveryv1.LabelServiceName) // remove kubernetes.io/service-name
+		} else {
+			endpointSlice.Labels[discoveryv1.LabelServiceName] = cpService.Name
+			delete(endpointSlice.Labels, ovnUDNServiceNameLabelKey)
+			if endpointSlice.Annotations != nil {
+				delete(endpointSlice.Annotations, ovnUDNEndpointSliceNetworkAnnoKey)
+			}
+		}
+
 		endpointSlice.AddressType = discoveryv1.AddressType(ipFamily)
 		if len(machineAddresses) > 0 {
 			endpointSlice.Endpoints = []discoveryv1.Endpoint{{
@@ -209,6 +233,46 @@ func (r *reconciler) reconcileKubevirtPassthroughServiceEndpointsByIPFamily(ctx 
 	}
 	log.Info(fmt.Sprintf("Reconciled kubevirt default ingress %s endpoints", ipFamily), "result", result)
 	return nil
+}
+
+type podNetworksAnnotationEntry struct {
+	Role string `json:"role"`
+}
+
+// primaryUDNNetworkName determines if the namespace is using a Primary UDN network and returns the OVN-K
+// endpointslice-network value (<namespace>_<udnName>) when it is.
+//
+// Note: HCCO runs with namespaced RBAC, so it cannot reliably read Namespace labels (cluster-scoped).
+// Instead, we infer Primary UDN by inspecting the OVN pod-networks annotation on virt-launcher pods.
+func (r *reconciler) primaryUDNNetworkName(ctx context.Context, namespace string) (string, bool) {
+	derived, ok := r.detectPrimaryUDNNetworkNameFromVirtLauncher(ctx, namespace)
+	return derived, ok
+}
+
+// detectPrimaryUDNNetworkNameFromVirtLauncher derives the OVN-K primary network name used in
+// k8s.ovn.org/endpointslice-network, from any virt-launcher pod's k8s.ovn.org/pod-networks annotation.
+// The annotation JSON key is typically "<namespace>/<udnName>" which OVN-K expects as "<namespace>_<udnName>".
+func (r *reconciler) detectPrimaryUDNNetworkNameFromVirtLauncher(ctx context.Context, namespace string) (string, bool) {
+	podList := &corev1.PodList{}
+	if err := r.kubevirtInfraClient.List(ctx, podList, client.InNamespace(namespace), client.MatchingLabels{"kubevirt.io": "virt-launcher"}); err != nil {
+		return "", false
+	}
+	for i := range podList.Items {
+		raw := podList.Items[i].Annotations[ovnPodNetworksAnnotationKey]
+		if raw == "" {
+			continue
+		}
+		var m map[string]podNetworksAnnotationEntry
+		if err := json.Unmarshal([]byte(raw), &m); err != nil {
+			continue
+		}
+		for networkKey, v := range m {
+			if v.Role == ovnPrimaryRole && networkKey != "default" {
+				return strings.ReplaceAll(networkKey, "/", "_"), true
+			}
+		}
+	}
+	return "", false
 }
 
 func serviceHasIPFamily(service *corev1.Service, ipFamilyToFind corev1.IPFamily) bool {
@@ -237,6 +301,10 @@ func (r *reconciler) removeOrphanKubevirtPassthroughEndpointSlices(ctx context.C
 
 	for _, endpointSlice := range endpointSliceList.Items {
 		serviceName := endpointSlice.Labels[discoveryv1.LabelServiceName]
+		if serviceName == "" {
+			// UDN EndpointSlices use a different service name label.
+			serviceName = endpointSlice.Labels[ovnUDNServiceNameLabelKey]
+		}
 		if serviceName == "" {
 			continue
 		}

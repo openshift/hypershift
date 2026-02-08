@@ -1041,6 +1041,21 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 		switch serviceStrategy.Type {
 		case hyperv1.Route:
+			// For KubeVirt with Primary UDN, use internal service DNS instead of external route
+			// because Primary UDN namespace isolation prevents external ingress from reaching backend pods.
+			// Workers on Primary UDN can reach ClusterIP services directly via the UDN gateway.
+			if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+				// Check if namespace has Primary UDN label
+				if err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace); err == nil {
+					if _, hasPrimaryUDN := controlPlaneNamespace.Labels["k8s.ovn.org/primary-user-defined-network"]; hasPrimaryUDN {
+						// Use internal service DNS instead of external route
+						hcluster.Status.IgnitionEndpoint = fmt.Sprintf("ignition-server.%s.svc.cluster.local", controlPlaneNamespace.GetName())
+						// Skip the rest of the Route logic
+						break
+					}
+				}
+			}
+
 			if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
 				hcluster.Status.IgnitionEndpoint = serviceStrategy.Route.Hostname
 			} else {
@@ -1777,12 +1792,23 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
+		if err := reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
 			annotationsForCertRenewal(log,
 				hcp,
 				shouldCheckForStaleCerts(hcluster, defaultToControlPlaneV2),
 				r.kasServingCertHashFromSecret(ctx, hcp),
-				r.kasServingCertHashFromEndpoint(kasHostAndPortFromHCP(hcp))))
+				r.kasServingCertHashFromEndpoint(kasHostAndPortFromHCP(hcp)))); err != nil {
+			return err
+		}
+		// Set Primary UDN annotation if namespace has Primary UDN label
+		if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+			if _, hasPrimaryUDN := controlPlaneNamespace.Labels["k8s.ovn.org/primary-user-defined-network"]; hasPrimaryUDN {
+				hcp.Annotations["hypershift.openshift.io/primary-udn"] = "true"
+			} else {
+				delete(hcp.Annotations, "hypershift.openshift.io/primary-udn")
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)
