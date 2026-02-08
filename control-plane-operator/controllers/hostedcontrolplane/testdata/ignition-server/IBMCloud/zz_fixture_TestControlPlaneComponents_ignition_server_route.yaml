@@ -1,6 +1,8 @@
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
+  labels:
+    hypershift.openshift.io/hosted-control-plane: __REMOVE_LABEL__
   name: ignition-server
   namespace: hcp-namespace
   ownerReferences:

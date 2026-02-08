@@ -40,5 +40,19 @@ func (ign *ignitionServer) adaptRoute(cpContext component.WorkloadContext, route
 	if strategy.Route != nil {
 		hostname = strategy.Route.Hostname
 	}
-	return util.ReconcileExternalRoute(route, hostname, ign.defaultIngressDomain, serviceName, util.UseDedicatedDNSForIgnition(hcp))
+
+	labelHCPRoutes := util.LabelHCPRoutes(hcp)
+	if err := util.ReconcileExternalRoute(route, hostname, ign.defaultIngressDomain, serviceName, labelHCPRoutes); err != nil {
+		return err
+	}
+
+	// When using ApplyManifest (component framework), we need to explicitly mark labels
+	// for removal because preserveOriginalMetadata merges labels instead of replacing them.
+	// ReconcileExternalRoute works on the manifest object (no existing label), so we mark
+	// it for removal here to ensure preserveOriginalMetadata deletes it from the cluster object.
+	if !labelHCPRoutes {
+		util.MarkHCPRouteLabelForRemoval(route)
+	}
+
+	return nil
 }
