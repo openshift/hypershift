@@ -105,6 +105,28 @@ This directory contains Claude Code skills that are automatically applied when w
 - Provides ready-to-use kubectl commands
 - Covers common scenarios and resolutions
 
+### CLI Conventions
+
+**Location:** `.claude/skills/cli-conventions/`
+
+**Description:** Applies HyperShift CLI conventions for the `hypershift` and `hcp` CLIs.
+
+**Auto-applies when:**
+- Writing or reviewing CLI code (commands, flags, options)
+- Designing new CLI commands or subcommands
+
+**Covers:**
+- Two-CLI placement rules (hypershift vs hcp)
+- Cobra best practices (RunE, argument validation, help text)
+- Flag naming conventions (kebab-case)
+- Options struct pattern (Validate/Complete/Run)
+- Flag exposure audit checklist
+
+**Benefits:**
+- Prevents internal/dev flags from leaking into customer-facing CLI
+- Ensures consistent cobra patterns across all CLI code
+- Provides quick checklist for CLI changes
+
 ## How Skills Work
 
 Skills are automatically invoked by Claude based on context. You don't need to do anything special - just ask Claude to:
