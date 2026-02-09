@@ -98,7 +98,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		applyGenericSecretEncryptionConfig(&deployment.Spec.Template.Spec)
 		switch secretEncryption.Type {
 		case hyperv1.KMS:
-			if err := applyKMSConfig(&deployment.Spec.Template.Spec, secretEncryption, newKMSImages(hcp)); err != nil {
+			if err := applyKMSConfig(&deployment.Spec.Template.Spec, secretEncryption, newKMSImages(hcp), hcp); err != nil {
 				return err
 			}
 		}

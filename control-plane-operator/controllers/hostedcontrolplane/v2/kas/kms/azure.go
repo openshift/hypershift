@@ -59,15 +59,17 @@ var _ KMSProvider = &azureKMSProvider{}
 type azureKMSProvider struct {
 	kmsSpec  *hyperv1.AzureKMSSpec
 	kmsImage string
+	hcp      *hyperv1.HostedControlPlane
 }
 
-func NewAzureKMSProvider(kmsSpec *hyperv1.AzureKMSSpec, image string) (*azureKMSProvider, error) {
+func NewAzureKMSProvider(kmsSpec *hyperv1.AzureKMSSpec, image string, hcp *hyperv1.HostedControlPlane) (*azureKMSProvider, error) {
 	if kmsSpec == nil {
 		return nil, fmt.Errorf("azure kms metadata not specified")
 	}
 	return &azureKMSProvider{
 		kmsSpec:  kmsSpec,
 		kmsImage: image,
+		hcp:      hcp,
 	}, nil
 }
 
@@ -128,16 +130,23 @@ func (p *azureKMSProvider) GenerateKMSPodConfig() (*KMSPodConfig, error) {
 		util.BuildVolume(kasVolumeKMSSecretStore(), buildVolumeKMSSecretStore),
 	)
 
+	// Check if Swift networking is enabled for HTTP proxy configuration
+	useHTTPProxy := false
+	if p.hcp != nil {
+		swiftPodNetworkInstance := p.hcp.Annotations[hyperv1.SwiftPodNetworkInstanceAnnotation]
+		useHTTPProxy = swiftPodNetworkInstance != ""
+	}
+
 	podConfig.Containers = append(podConfig.Containers,
 		util.BuildContainer(
 			kasContainerAzureKMSActive(),
-			p.buildKASContainerAzureKMS(p.kmsSpec.ActiveKey, azureActiveKMSUnixSocket, azureActiveKMSHealthPort, azureActiveKMSMetricsAddr)),
+			p.buildKASContainerAzureKMS(p.kmsSpec.ActiveKey, azureActiveKMSUnixSocket, azureActiveKMSHealthPort, azureActiveKMSMetricsAddr, useHTTPProxy)),
 	)
 	if p.kmsSpec.BackupKey != nil {
 		podConfig.Containers = append(podConfig.Containers,
 			util.BuildContainer(
 				kasContainerAzureKMSBackup(),
-				p.buildKASContainerAzureKMS(*p.kmsSpec.BackupKey, azureBackupKMSUnixSocket, azureBackupKMSHealthPort, azureBackupKMSMetricsAddr)),
+				p.buildKASContainerAzureKMS(*p.kmsSpec.BackupKey, azureBackupKMSUnixSocket, azureBackupKMSHealthPort, azureBackupKMSMetricsAddr, useHTTPProxy)),
 		)
 	}
 
@@ -147,7 +156,7 @@ func (p *azureKMSProvider) GenerateKMSPodConfig() (*KMSPodConfig, error) {
 	return podConfig, nil
 }
 
-func (p *azureKMSProvider) buildKASContainerAzureKMS(kmsKey hyperv1.AzureKMSKey, unixSocketPath string, healthPort int, metricsAddr string) func(c *corev1.Container) {
+func (p *azureKMSProvider) buildKASContainerAzureKMS(kmsKey hyperv1.AzureKMSKey, unixSocketPath string, healthPort int, metricsAddr string, useHTTPProxy bool) func(c *corev1.Container) {
 	return func(c *corev1.Container) {
 		c.Image = p.kmsImage
 		c.ImagePullPolicy = corev1.PullIfNotPresent
@@ -170,6 +179,27 @@ func (p *azureKMSProvider) buildKASContainerAzureKMS(kmsKey hyperv1.AzureKMSKey,
 			fmt.Sprintf("--config-file-path=%s/%s", azureKMSVolumeMounts.Path(c.Name, kasVolumeAzureKMSCredentials().Name), azureKMSCredsFileKey),
 			"-v=1",
 		}
+
+		// Configure HTTP_PROXY when Swift networking is enabled
+		// The proxy is running in the router pod and exposed via service
+		if useHTTPProxy && p.hcp != nil {
+			proxyURL := fmt.Sprintf("http://azure-dns-proxy.%s.svc.cluster.local:8888", p.hcp.Namespace)
+			c.Env = []corev1.EnvVar{
+				{
+					Name:  "HTTP_PROXY",
+					Value: proxyURL,
+				},
+				{
+					Name:  "HTTPS_PROXY",
+					Value: proxyURL,
+				},
+				{
+					Name:  "NO_PROXY",
+					Value: "localhost,127.0.0.1,.svc,.svc.cluster.local",
+				},
+			}
+		}
+
 		c.VolumeMounts = azureKMSVolumeMounts.ContainerMounts(c.Name)
 		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
 			Name:      config.ManagedAzureKMSSecretStoreVolumeName,

@@ -35,6 +35,7 @@ func (k *router) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &router{}).
 		WithPredicate(useHCPRouter).
+		WithAdaptFunction(adaptDeployment).
 		WithManifestAdapter(
 			"config.yaml",
 			component.WithAdaptFunction(adaptConfig),
@@ -43,8 +44,19 @@ func NewComponent() component.ControlPlaneComponent {
 			"pdb.yaml",
 			component.AdaptPodDisruptionBudget(),
 		).
+		WithManifestAdapter(
+			"azure-dns-proxy-service.yaml",
+			component.WithPredicate(enableAzureDNSProxyService),
+		).
 		WithDependencies(oapiv2.ComponentName).
 		Build()
+}
+
+// enableAzureDNSProxyService returns true when Swift networking is enabled
+// The Azure DNS proxy service is only needed when the router has Swift networking
+func enableAzureDNSProxyService(cpContext component.WorkloadContext) bool {
+	swiftPodNetworkInstance := cpContext.HCP.Annotations[hyperv1.SwiftPodNetworkInstanceAnnotation]
+	return swiftPodNetworkInstance != ""
 }
 
 // useHCPRouter returns true if a dedicated common router is created for a HCP to handle ingress for the managed endpoints.

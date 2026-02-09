@@ -10,6 +10,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	availabilityprober "github.com/openshift/hypershift/availability-prober"
+	azurednsproxy "github.com/openshift/hypershift/azure-dns-proxy"
 	hyperclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/gcpprivateserviceconnect"
@@ -91,6 +92,8 @@ func commandFor(name string) *cobra.Command {
 		cmd = konnectivityhttpsproxy.NewStartCommand()
 	case "availability-prober":
 		cmd = availabilityprober.NewStartCommand()
+	case "azure-dns-proxy":
+		cmd = azurednsproxy.NewStartCommand()
 	case "token-minter":
 		cmd = tokenminter.NewStartCommand()
 	case "etcd-defrag-controller":
@@ -143,6 +146,7 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(konnectivitysocks5proxy.NewStartCommand())
 	cmd.AddCommand(konnectivityhttpsproxy.NewStartCommand())
 	cmd.AddCommand(availabilityprober.NewStartCommand())
+	cmd.AddCommand(azurednsproxy.NewStartCommand())
 	cmd.AddCommand(tokenminter.NewStartCommand())
 	cmd.AddCommand(ignitionserver.NewStartCommand())
 	cmd.AddCommand(etcddefrag.NewStartCommand())
