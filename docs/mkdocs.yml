@@ -292,6 +292,8 @@ nav:
 - 'Reference':
   - 'Architecture':
     - reference/architecture/index.md
+    - 'AWS':
+      - 'PrivateLink': reference/architecture/aws/privatelink.md
     - 'Multicluster Engine and Agent': reference/architecture/mce-and-agent.md
     - 'Managed Azure':
         - reference/architecture/managed-azure/secrets-csi.md
