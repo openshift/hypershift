@@ -24,7 +24,7 @@ Use the Task tool to delegate to specialized agents in sequence:
    - Include unit, integration, and e2e tests
 
 4. **Cloud provider integration**
-   - Use Task tool with subagent_type="cloud-provider-sme"
+   - Use Task tool with subagent_type="cloud-platform-expert"
    - Prompt: "Review the control plane and data plane changes and implement any further changes needed to support the new feature and ensure it has proper cloud integration: $ARGUMENTS. Add support to create a new HostedCluster in the new platform via CLI"
    - Include unit, integration, and e2e tests
 
