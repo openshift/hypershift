@@ -77,6 +77,11 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 			})
 		}
 		infra.Status.PlatformStatus.AWS.ResourceTags = tags
+		// Set CloudConfig to reference the cloud-provider-config ConfigMap in the guest cluster.
+		// This allows the kube-cloud-config controller and CCCMO to locate the cloud provider
+		// configuration, including any additional trust bundles for custom AWS API endpoints.
+		infra.Spec.CloudConfig.Name = "cloud-provider-config"
+		infra.Spec.CloudConfig.Key = "config"
 	case hyperv1.AzurePlatform:
 		infra.Spec.CloudConfig.Name = "cloud.conf"
 		if infra.Status.PlatformStatus.Azure == nil {
