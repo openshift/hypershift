@@ -44,7 +44,7 @@ tools/bin
 *_mock.go
 
 # dev
-dev/
+/dev/
 
 # Python
 __pycache__/
