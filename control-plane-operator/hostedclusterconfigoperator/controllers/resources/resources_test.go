@@ -600,6 +600,144 @@ func TestReconcileUserCertCABundle(t *testing.T) {
 	}
 }
 
+func TestReconcileCloudConfigAWS(t *testing.T) {
+	testNamespace := "master-cluster1"
+	testHCPName := "cluster1"
+	tests := map[string]struct {
+		inputHCP       *hyperv1.HostedControlPlane
+		inputObjects   []client.Object
+		expectConfig   bool
+		expectCABundle bool
+	}{
+		"When AWS platform has no additionalTrustBundle it should create cloud-provider-config without ca-bundle.pem": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			inputObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: cpomanifests.AWSProviderConfig(testNamespace).ObjectMeta,
+					Data: map[string]string{
+						"aws.conf": "[Global]\nZone = us-east-1a\n",
+					},
+				},
+			},
+			expectConfig:   true,
+			expectCABundle: false,
+		},
+		"When AWS platform has additionalTrustBundle it should include ca-bundle.pem in cloud-provider-config": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: cpomanifests.UserCAConfigMap(testNamespace).Name,
+					},
+				},
+			},
+			inputObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: cpomanifests.AWSProviderConfig(testNamespace).ObjectMeta,
+					Data: map[string]string{
+						"aws.conf": "[Global]\nZone = us-east-1a\n",
+					},
+				},
+				&corev1.ConfigMap{
+					ObjectMeta: cpomanifests.UserCAConfigMap(testNamespace).ObjectMeta,
+					Data: map[string]string{
+						"ca-bundle.crt": "-----BEGIN CERTIFICATE-----\ntest-ca-cert\n-----END CERTIFICATE-----\n",
+					},
+				},
+			},
+			expectConfig:   true,
+			expectCABundle: true,
+		},
+		"When AWS platform removes additionalTrustBundle it should remove ca-bundle.pem from cloud-provider-config": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			inputObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: cpomanifests.AWSProviderConfig(testNamespace).ObjectMeta,
+					Data: map[string]string{
+						"aws.conf": "[Global]\nZone = us-east-1a\n",
+					},
+				},
+			},
+			expectConfig:   true,
+			expectCABundle: false,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			// For the "remove" test case, pre-populate the guest cluster with a ConfigMap that has ca-bundle.pem
+			guestObjects := []client.Object{}
+			if strings.Contains(name, "removes") {
+				guestObjects = append(guestObjects, &corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: ConfigNamespace,
+						Name:      CloudProviderCMName,
+					},
+					Data: map[string]string{
+						"config":        "[Global]\nZone = us-east-1a\n",
+						"ca-bundle.pem": "old-ca-bundle",
+					},
+				})
+			}
+
+			r := &reconciler{
+				client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(guestObjects...).Build(),
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(test.inputObjects, test.inputHCP)...).Build(),
+				hcpName:                testHCPName,
+				hcpNamespace:           testNamespace,
+			}
+			err := r.reconcileCloudConfig(t.Context(), test.inputHCP)
+			g.Expect(err).To(BeNil())
+
+			guestCloudConfig := &corev1.ConfigMap{}
+			err = r.client.Get(t.Context(), types.NamespacedName{
+				Namespace: ConfigNamespace,
+				Name:      CloudProviderCMName,
+			}, guestCloudConfig)
+
+			if test.expectConfig {
+				g.Expect(err).To(BeNil())
+				g.Expect(guestCloudConfig.Data["config"]).To(Equal("[Global]\nZone = us-east-1a\n"))
+			}
+
+			if test.expectCABundle {
+				g.Expect(guestCloudConfig.Data["ca-bundle.pem"]).To(Equal("-----BEGIN CERTIFICATE-----\ntest-ca-cert\n-----END CERTIFICATE-----\n"))
+			} else if test.expectConfig {
+				_, hasCABundle := guestCloudConfig.Data["ca-bundle.pem"]
+				g.Expect(hasCABundle).To(BeFalse())
+			}
+		})
+	}
+}
+
 var _ manifestReconciler = manifestAndReconcile[*rbacv1.ClusterRole]{}
 
 func TestDestroyCloudResources(t *testing.T) {
