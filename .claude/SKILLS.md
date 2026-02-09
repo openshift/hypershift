@@ -170,6 +170,25 @@ Commands are manually invoked using `/command-name` syntax.
 - Never closes original PR if validation fails
 - Atomic: Original PR only closed after new PR is created
 
+### Pre-Commit Quality Review
+
+**Location:** `.claude/commands/pre-commit-quality-review.md`
+
+**Description:** Performs comprehensive pre-commit quality review including unit test coverage, idiomatic Go checks, DRY/SOLID compliance, and build verification.
+
+**Usage:**
+```
+/pre-commit-quality-review
+```
+
+**What it does:**
+1. Identifies all changed/staged files via `git diff`
+2. Reviews unit test coverage for new/modified functions
+3. Checks idiomatic Go patterns (error handling, naming, structure)
+4. Evaluates DRY and SOLID principle compliance
+5. Runs `make test` and `make verify` for build verification
+6. Produces a structured review with verdict (APPROVED, APPROVED WITH SUGGESTIONS, or BLOCKED)
+
 ### Update Konflux Tasks
 
 **Location:** `.claude/commands/update-konflux-tasks.md`
