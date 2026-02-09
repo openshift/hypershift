@@ -23,7 +23,7 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-operator-hotfix-{{.versionName}}:{{revision}}
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-operator-hotfix-ocpbugs-61296:{{revision}}
   - name: build-platforms
     value:
     - linux/x86_64
