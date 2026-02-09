@@ -4,6 +4,21 @@ This file provides guidance when working with code in this repository.
 
 HyperShift is a middleware for hosting OpenShift control planes at scale. It provides cost-effective and time-efficient cluster provisioning with portability across clouds while maintaining strong separation between management and workloads.
 
+## Specialized Agents
+
+Custom agents are defined in `.claude/agents/` and can be invoked via the Task tool with the corresponding `subagent_type`. Use these when a task falls within a specific domain to get more targeted guidance.
+
+| Agent | Focus Area | When to Use |
+|-------|-----------|-------------|
+| **api-sme** | API/CRD design review | Changes to `api/` types, new API fields, or Kubernetes API surface modifications |
+| **cli-expert** | `hypershift` and `hcp` CLI code | New commands, flags, CLI debugging, or CLI convention questions |
+| **cloud-platform-expert** | Cloud provider integrations | AWS, Azure, GCP, or IBM Cloud provider code and best practices |
+| **control-plane-sme** | HostedCluster/HostedControlPlane, CPOv2 framework | Control plane lifecycle, reconciliation, and component management |
+| **data-plane-sme** | NodePool, ClusterAPI, machine management | Data plane operations, node lifecycle, and automated machine management |
+| **hcp-architect-sme** | HCP architecture across ROSA/ARO/IBM/self-hosted | Architecture decisions, design review, and cross-platform considerations |
+| **hypershift-operator-sme** | HyperShift operator controllers, ExternalDNS | Operator code, debugging, and operator-level feature development |
+| **hypershift-staff-engineer** | Code review, architecture guidance, best practices | PR reviews, design feedback, and implementation quality assessment |
+
 ## Architecture
 
 ### Core Components
