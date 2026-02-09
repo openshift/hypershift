@@ -21,7 +21,6 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 
 	projectID := gcpPlatform.Project
 	networkName := gcpPlatform.NetworkConfig.Network.Name
-	subnetworkName := "" // Subnetwork is optional for CCM
 
 	// Node tags are used for firewall rules. The nodepool controller applies
 	// the tag "{infraID}-worker" to all worker nodes. GCP network tags must be
@@ -30,7 +29,7 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 
 	// Get the config template and populate it
 	configTemplate := cm.Data[configKey]
-	config := fmt.Sprintf(configTemplate, projectID, networkName, subnetworkName, nodeTags)
+	config := fmt.Sprintf(configTemplate, projectID, networkName, nodeTags)
 
 	cm.Data[configKey] = config
 	return nil

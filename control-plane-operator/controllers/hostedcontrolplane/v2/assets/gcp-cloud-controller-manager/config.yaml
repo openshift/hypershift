@@ -4,7 +4,6 @@ data:
     [Global]
     project-id = %s
     network-name = %s
-    subnetwork-name = %s
     node-tags = %s
     token-url = "nil"
 kind: ConfigMap
