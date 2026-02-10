@@ -619,7 +619,7 @@ type HostedClusterSpec struct {
 
 	// networking specifies network configuration for the hosted cluster.
 	// Defaults to OVNKubernetes with a cluster network of cidr: "10.132.0.0/14" and a service network of cidr: "172.31.0.0/16".
-	// +required
+	// +optional
 	// +kubebuilder:default={networkType: "OVNKubernetes", clusterNetwork: {{cidr: "10.132.0.0/14"}}, serviceNetwork: {{cidr: "172.31.0.0/16"}}}
 	Networking ClusterNetworking `json:"networking"`
 
@@ -639,7 +639,7 @@ type HostedClusterSpec struct {
 	// changed.
 	//
 	// +kubebuilder:default={managementType: "Managed", managed: {storage: {type: "PersistentVolume", persistentVolume: {size: "8Gi"}}}}
-	// +required
+	// +optional
 	// +immutable
 	Etcd EtcdSpec `json:"etcd"`
 
@@ -657,6 +657,8 @@ type HostedClusterSpec struct {
 	// TODO(alberto): this breaks the cost budget for < 4.17. We should figure why and enable it back. And If not fixable, consider imposing a minimum version on the management cluster.
 	// +required
 	// +immutable
+	// +listType=map
+	// +listMapKey=service
 	Services []ServicePublishingStrategyMapping `json:"services"`
 
 	// pullSecret is a local reference to a Secret that must have a ".dockerconfigjson" key whose content must be a valid Openshift pull secret JSON.
@@ -742,6 +744,8 @@ type HostedClusterSpec struct {
 	// Changing this value will trigger a rollout for all existing NodePools in the cluster.
 	// +optional
 	// +kubebuilder:validation:MaxItems=255
+	// +listType=map
+	// +listMapKey=source
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 
 	// additionalTrustBundle is a local reference to a ConfigMap that must have a "ca-bundle.crt" key
@@ -800,6 +804,7 @@ type HostedClusterSpec struct {
 	//
 	// +optional
 	// +kubebuilder:validation:MaxItems=25
+	// +listType=atomic
 	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
 
 	// labels when specified, define what custom labels are added to the hcp pods.
@@ -1071,6 +1076,7 @@ type ClusterNetworking struct {
 	// +kubebuilder:validation:ListType=atomic
 	// +immutable
 	// +optional
+	// +listType=atomic
 	MachineNetwork []MachineNetworkEntry `json:"machineNetwork,omitempty"`
 
 	// clusterNetwork is the list of IP address pools for pods.
@@ -1083,6 +1089,7 @@ type ClusterNetworking struct {
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="clusterNetwork is immutable and cannot be modified once set."
 	// +kubebuilder:validation:MaxItems=2
 	// +kubebuilder:validation:MinItems=1
+	// +listType=atomic
 	ClusterNetwork []ClusterNetworkEntry `json:"clusterNetwork,omitempty"`
 
 	// serviceNetwork is the list of IP address pools for services.
@@ -1094,6 +1101,7 @@ type ClusterNetworking struct {
 	// +kubebuilder:validation:MinItems=1
 	// +optional
 	// +kubebuilder:default:={{cidr: "172.31.0.0/16"}}
+	// +listType=atomic
 	ServiceNetwork []ServiceNetworkEntry `json:"serviceNetwork,omitempty"`
 
 	// networkType specifies the SDN provider used for cluster networking.
@@ -1357,7 +1365,6 @@ type AutoNode struct {
 type ProvisionerConfig struct {
 	// name specifies the name of the provisioner to use.
 	// +required
-	// +kubebuilder:validation:Enum=Karpenter
 	Name Provisioner `json:"name"`
 	// karpenter specifies the configuration for the Karpenter provisioner.
 	// +optional
@@ -1506,6 +1513,7 @@ type ClusterAutoscaling struct {
 	// +kubebuilder:validation:items:MaxLength=317
 	// +kubebuilder:validation:XValidation:rule="self.all(l, l.matches('^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[a-zA-Z0-9]([a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9])?$'))", message="Each balancingIgnoredLabels item must be a valid label key"
 	// +optional
+	// +listType=set
 	BalancingIgnoredLabels []string `json:"balancingIgnoredLabels,omitempty"`
 
 	// maxNodesTotal is the maximum allowable number of nodes for the Autoscaler scale out to be operational.
@@ -1566,7 +1574,7 @@ type ClusterAutoscaling struct {
 	// Maximum of 3 expanders can be specified.
 	// +kubebuilder:validation:MaxItems=3
 	// +kubebuilder:validation:MinItems=1
-	//
+	// +listType=set
 	// +optional
 	Expanders []ExpanderString `json:"expanders,omitempty"`
 }
@@ -1905,7 +1913,7 @@ type ClusterVersionStatus struct {
 	// Completed if the rollout completed - if an update was failing or halfway
 	// applied the state will be Partial. Only a limited amount of update history
 	// is preserved.
-	//
+	// +listType=atomic
 	// +optional
 	History []configv1.UpdateHistory `json:"history,omitempty"`
 
@@ -1923,6 +1931,7 @@ type ClusterVersionStatus struct {
 	// +nullable
 	// +required
 	// +kubebuilder:validation:MaxItems=100
+	// +listType=atomic
 	AvailableUpdates []configv1.Release `json:"availableUpdates"`
 
 	// conditionalUpdates contains the list of updates that may be

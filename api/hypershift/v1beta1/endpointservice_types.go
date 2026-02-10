@@ -41,11 +41,14 @@ type AWSEndpointServiceSpec struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	// +kubebuilder:validation:items:MaxLength=63
+	// +listType=set
 	SubnetIDs []string `json:"subnetIDs,omitempty"`
 
 	// resourceTags is the list of tags to apply to the EndpointService
 	// +optional
 	// +kubebuilder:validation:MaxItems=25
+	// +listType=map
+	// +listMapKey=key
 	ResourceTags []AWSResourceTag `json:"resourceTags,omitempty"`
 }
 
@@ -80,6 +83,7 @@ type AWSEndpointServiceStatus struct {
 	// +optional
 	// +kubebuilder:validation:MaxItems=10
 	// +kubebuilder:validation:items:MaxLength=253
+	// +listType=set
 	DNSNames []string `json:"dnsNames,omitempty"`
 
 	// dnsZoneID is ID for the hypershift private zone
