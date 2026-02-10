@@ -18,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	fakeimagemetadataprovider "github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
@@ -34,6 +35,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -2044,6 +2046,281 @@ func TestSupportedVersionSkewCondition(t *testing.T) {
 			g.Expect(condition.Status).To(Equal(tc.expectedCondition.Status))
 			g.Expect(condition.Reason).To(Equal(tc.expectedCondition.Reason))
 			g.Expect(condition.Message).To(Equal(tc.expectedCondition.Message))
+		})
+	}
+}
+
+func TestNodePoolReconciler_reconcile(t *testing.T) {
+	tests := []struct {
+		name string // description of this test case
+		// Named input parameters for target function.
+		hcluster *hyperv1.HostedCluster
+		nodePool *hyperv1.NodePool
+		want     ctrl.Result
+		wantErr  bool
+	}{
+		{
+			name: "when NodePool and HostedCluster are valid it should reconcile successfully",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hc",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "quay.io/openshift-release-dev/ocp-release:4.18.5-x86_64",
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						History: []configv1.UpdateHistory{
+							{
+								State:   configv1.CompletedUpdate,
+								Version: "4.18.5",
+							},
+						},
+					},
+				},
+			},
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-np",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-hc",
+					Replicas:    ptr.To(int32(3)),
+					Release: hyperv1.Release{
+						Image: "quay.io/openshift-release-dev/ocp-release:4.18.5-x86_64",
+					},
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			want:    ctrl.Result{},
+			wantErr: false,
+		},
+		{
+			name: "when reconciling it should set conditions in the expected order",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hc",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "quay.io/openshift-release-dev/ocp-release:4.18.5-x86_64",
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						History: []configv1.UpdateHistory{
+							{
+								State:   configv1.CompletedUpdate,
+								Version: "4.18.5",
+							},
+						},
+					},
+				},
+			},
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-np",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-hc",
+					Replicas:    ptr.To(int32(3)),
+					Release: hyperv1.Release{
+						Image: "quay.io/openshift-release-dev/ocp-release:4.18.5-x86_64",
+					},
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			want:    ctrl.Result{},
+			wantErr: false,
+		},
+		{
+			name: "when ignition endpoint is missing it should exit early from condition loop",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hc",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Release: hyperv1.Release{
+						Image: "quay.io/openshift-release-dev/ocp-release:4.18.5-x86_64",
+					},
+					PullSecret: corev1.LocalObjectReference{
+						Name: "pull-secret",
+					},
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+				Status: hyperv1.HostedClusterStatus{
+					// Missing IgnitionEndpoint - this should cause early exit
+					IgnitionEndpoint: "",
+					Version: &hyperv1.ClusterVersionStatus{
+						History: []configv1.UpdateHistory{
+							{
+								State:   configv1.CompletedUpdate,
+								Version: "4.18.5",
+							},
+						},
+					},
+				},
+			},
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-np",
+					Namespace: "test-ns",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: "test-hc",
+					Replicas:    ptr.To(int32(3)),
+					Release: hyperv1.Release{
+						Image: "quay.io/openshift-release-dev/ocp-release:4.18.5-x86_64",
+					},
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+					Management: hyperv1.NodePoolManagement{
+						UpgradeType: hyperv1.UpgradeTypeReplace,
+						Replace: &hyperv1.ReplaceUpgrade{
+							Strategy: hyperv1.UpgradeStrategyRollingUpdate,
+							RollingUpdate: &hyperv1.RollingUpdate{
+								MaxUnavailable: ptr.To(intstr.FromInt(0)),
+								MaxSurge:       ptr.To(intstr.FromInt(1)),
+							},
+						},
+					},
+				},
+			},
+			want:    ctrl.Result{},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			pullSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pull-secret",
+					Namespace: "test-ns",
+				},
+				Data: map[string][]byte{
+					corev1.DockerConfigJsonKey: []byte(`{"auths":{"quay.io":{"auth":"","email":""}}}`),
+				},
+			}
+
+			r := NodePoolReconciler{
+				Client: fake.NewClientBuilder().
+					WithScheme(api.Scheme).
+					WithObjects([]client.Object{tt.hcluster, tt.nodePool, pullSecret}...).
+					Build(),
+				ReleaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+					Version: "4.18.5",
+				},
+				ImageMetadataProvider:  &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{},
+				CreateOrUpdateProvider: upsert.New(false),
+			}
+
+			got, gotErr := r.reconcile(context.Background(), tt.hcluster, tt.nodePool)
+			if gotErr != nil {
+				if !tt.wantErr {
+					t.Errorf("reconcile() failed: %v", gotErr)
+				}
+				return
+			}
+			if tt.wantErr {
+				t.Fatal("reconcile() succeeded unexpectedly")
+			}
+			g.Expect(got).To(Equal(tt.want))
+
+			// For the condition order test, verify conditions are set in the expected order
+			if tt.name == "when reconciling it should set conditions in the expected order" {
+				// Expected condition order based on reconcile() signalConditions array
+				expectedConditionOrder := []string{
+					hyperv1.NodePoolAutoscalingEnabledConditionType,
+					hyperv1.NodePoolUpdateManagementEnabledConditionType,
+					hyperv1.NodePoolValidReleaseImageConditionType,
+					string(hyperv1.IgnitionEndpointAvailable),
+					hyperv1.NodePoolValidArchPlatform,
+					hyperv1.NodePoolReconciliationActiveConditionType,
+					hyperv1.NodePoolSupportedVersionSkewConditionType,
+					hyperv1.NodePoolValidMachineConfigConditionType,
+					hyperv1.NodePoolUpdatingConfigConditionType,
+					hyperv1.NodePoolUpdatingVersionConditionType,
+					hyperv1.NodePoolValidGeneratedPayloadConditionType,
+					hyperv1.NodePoolReachedIgnitionEndpoint,
+					hyperv1.NodePoolReadyConditionType,
+					hyperv1.NodePoolAllMachinesReadyConditionType,
+					hyperv1.NodePoolAllNodesHealthyConditionType,
+					hyperv1.NodePoolValidPlatformConfigConditionType,
+				}
+
+				// Build a map of condition type to index in the expected order
+				expectedOrderMap := make(map[string]int)
+				for i, condType := range expectedConditionOrder {
+					expectedOrderMap[condType] = i
+				}
+
+				// Verify that conditions that are present appear in the correct relative order
+				lastSeenIndex := -1
+				for _, condition := range tt.nodePool.Status.Conditions {
+					if expectedIndex, found := expectedOrderMap[condition.Type]; found {
+						if expectedIndex < lastSeenIndex {
+							t.Errorf("Condition %s (expected index %d) appears after condition with index %d, violating expected order",
+								condition.Type, expectedIndex, lastSeenIndex)
+						}
+						lastSeenIndex = expectedIndex
+					}
+				}
+			}
+
+			// For the early exit test, verify the function exited early from the condition loop
+			if tt.name == "when ignition endpoint is missing it should exit early from condition loop" {
+				// Verify IgnitionEndpointAvailable condition is set to False
+				ignitionCondition := FindStatusCondition(tt.nodePool.Status.Conditions, string(hyperv1.IgnitionEndpointAvailable))
+				g.Expect(ignitionCondition).NotTo(BeNil(), "IgnitionEndpointAvailable condition should be set")
+				g.Expect(ignitionCondition.Status).To(Equal(corev1.ConditionFalse), "IgnitionEndpointAvailable should be False")
+				g.Expect(ignitionCondition.Reason).To(Equal(hyperv1.IgnitionEndpointMissingReason), "Reason should be IgnitionEndpointMissing")
+
+				// Verify that conditions processed after ignitionEndpointAvailableCondition are NOT set
+				// These conditions come later in the signalConditions array and should not be evaluated
+				// due to early exit at nodepool_controller.go:308-310
+				laterConditions := []string{
+					hyperv1.NodePoolSupportedVersionSkewConditionType,
+					hyperv1.NodePoolValidMachineConfigConditionType,
+					hyperv1.NodePoolUpdatingConfigConditionType,
+					hyperv1.NodePoolUpdatingVersionConditionType,
+					hyperv1.NodePoolValidGeneratedPayloadConditionType,
+					hyperv1.NodePoolReachedIgnitionEndpoint,
+				}
+				for _, condType := range laterConditions {
+					condition := FindStatusCondition(tt.nodePool.Status.Conditions, condType)
+					if condition != nil {
+						t.Errorf("Condition %s should not be set due to early exit, but was found", condType)
+					}
+				}
+			}
 		})
 	}
 }
