@@ -36,7 +36,7 @@ const (
 	NeedMetricsServerAccessLabel = "hypershift.openshift.io/need-metrics-server-access"
 )
 
-func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
+func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
 	// Reconcile openshift-ingress Network Policy
@@ -196,7 +196,7 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	return nil
 }
 
-func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) error {
+func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, _ bool, _ *configv1.Network) error {
 	port := intstr.FromInt32(config.KASSVCPort)
 	if hcluster.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		port = intstr.FromInt32(config.KASSVCIBMCloudPort)
@@ -240,7 +240,7 @@ func reconcileKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyp
 }
 
 //nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
-func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network, ingressOnly bool) error {
+func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster, kubernetesEndpoint *corev1.Endpoints, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network, ingressOnly bool) error {
 	httpPort := intstr.FromInt(8080)
 	httpsPort := intstr.FromInt(8443)
 	protocol := corev1.ProtocolTCP
@@ -363,7 +363,7 @@ func reconcilePrivateRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 	return nil
 }
 
-func reconcileNodePortOauthNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileNodePortOauthNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster) error {
 	port := intstr.FromInt(6443)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
@@ -386,7 +386,7 @@ func reconcileNodePortOauthNetworkPolicy(policy *networkingv1.NetworkPolicy, hcl
 	return nil
 }
 
-func reconcileNodePortIgnitionProxyNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileNodePortIgnitionProxyNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster) error {
 	port := intstr.FromInt(8443)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
@@ -409,7 +409,7 @@ func reconcileNodePortIgnitionProxyNetworkPolicy(policy *networkingv1.NetworkPol
 	return nil
 }
 
-func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster) error {
 	port := intstr.FromInt(9090)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
@@ -432,7 +432,7 @@ func reconcileNodePortIgnitionNetworkPolicy(policy *networkingv1.NetworkPolicy, 
 	return nil
 }
 
-func reconcileNodePortKonnectivityKASNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileNodePortKonnectivityKASNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster) error {
 	port := intstr.FromInt(8091)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
@@ -455,7 +455,7 @@ func reconcileNodePortKonnectivityKASNetworkPolicy(policy *networkingv1.NetworkP
 	return nil
 }
 
-func reconcileNodePortKonnectivityNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileNodePortKonnectivityNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster) error {
 	port := intstr.FromInt(8091)
 	protocol := corev1.ProtocolTCP
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
@@ -478,7 +478,7 @@ func reconcileNodePortKonnectivityNetworkPolicy(policy *networkingv1.NetworkPoli
 	return nil
 }
 
-func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster) error {
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
 			From: []networkingv1.NetworkPolicyPeer{
@@ -497,7 +497,7 @@ func reconcileOpenshiftMonitoringNetworkPolicy(policy *networkingv1.NetworkPolic
 	return nil
 }
 
-func reconcileSharedIngressNetworkPolicy(policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster) error {
+func reconcileSharedIngressNetworkPolicy(policy *networkingv1.NetworkPolicy, _ *hyperv1.HostedCluster) error {
 	policy.Spec.Ingress = []networkingv1.NetworkPolicyIngressRule{
 		{
 			From: []networkingv1.NetworkPolicyPeer{

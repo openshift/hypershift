@@ -196,7 +196,7 @@ func (v hostedClusterValidator) ValidateDelete(_ context.Context, _ runtime.Obje
 	return nil, nil
 }
 
-func (v hostedClusterValidator) validateCreateKubevirtHostedCluster(ctx context.Context, hc *hyperv1.HostedCluster) (admission.Warnings, error) {
+func (v hostedClusterValidator) validateCreateKubevirtHostedCluster(_ context.Context, hc *hyperv1.HostedCluster) (admission.Warnings, error) {
 	err := validateJsonAnnotation(hc.Annotations)
 	if err != nil {
 		return nil, err
@@ -205,7 +205,7 @@ func (v hostedClusterValidator) validateCreateKubevirtHostedCluster(ctx context.
 	return nil, nil
 }
 
-func (v hostedClusterValidator) validateUpdateKubevirtHostedCluster(ctx context.Context, oldHC, newHC *hyperv1.HostedCluster) error {
+func (v hostedClusterValidator) validateUpdateKubevirtHostedCluster(_ context.Context, _, newHC *hyperv1.HostedCluster) error {
 	err := validateJsonAnnotation(newHC.Annotations)
 	if err != nil {
 		return err
@@ -264,7 +264,7 @@ func (v nodePoolValidator) ValidateDelete(_ context.Context, _ runtime.Object) (
 	return nil, nil
 }
 
-func (v nodePoolValidator) validateCreateKubevirtNodePool(ctx context.Context, np *hyperv1.NodePool) (admission.Warnings, error) {
+func (v nodePoolValidator) validateCreateKubevirtNodePool(_ context.Context, np *hyperv1.NodePool) (admission.Warnings, error) {
 	err := validateJsonAnnotation(np.Annotations)
 	if err != nil {
 		return nil, err
@@ -273,7 +273,7 @@ func (v nodePoolValidator) validateCreateKubevirtNodePool(ctx context.Context, n
 	return nil, nil
 }
 
-func (v nodePoolValidator) validateUpdateKubevirtNodePool(ctx context.Context, oldNP, newNP *hyperv1.NodePool) error {
+func (v nodePoolValidator) validateUpdateKubevirtNodePool(_ context.Context, _, newNP *hyperv1.NodePool) error {
 	err := validateJsonAnnotation(newNP.Annotations)
 	if err != nil {
 		return err

@@ -1382,7 +1382,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 			},
 		},
 	}
-	deserializeFunc := func(payload []byte) (*manifestlist.DeserializedManifestList, error) {
+	deserializeFunc := func(_ []byte) (*manifestlist.DeserializedManifestList, error) { //nolint:unparam // error return required to match type assertion in registryclient
 		return &manifestlist.DeserializedManifestList{
 			ManifestList: manifestlist.ManifestList{
 				Manifests: manifests,

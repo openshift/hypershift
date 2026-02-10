@@ -165,7 +165,7 @@ type action struct {
 }
 
 func (r *reconciler) reconcile(
-	ctx context.Context, request reconcile.Request,
+	ctx context.Context, _ reconcile.Request,
 	config *schedulingv1alpha1.ClusterSizingConfiguration, hostedCluster *hypershiftv1beta1.HostedCluster,
 ) (*action, error) {
 	var configValid bool

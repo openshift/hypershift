@@ -18,13 +18,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
-	"github.com/blang/semver"
 )
 
 func TestReconcileAzureClusterIdentity(t *testing.T) {
 	// Set up initial conditions
-	hcVersion := semver.MustParse("4.19.0")
 	controlPlaneNamespace := "test-namespace"
 	initialAzureClusterIdentity := &capiazure.AzureClusterIdentity{
 		ObjectMeta: metav1.ObjectMeta{
@@ -126,7 +123,7 @@ func TestReconcileAzureClusterIdentity(t *testing.T) {
 				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
 			}
 
-			err := reconcileAzureClusterIdentity(tc.hc, initialAzureClusterIdentity, controlPlaneNamespace, &hcVersion)
+			err := reconcileAzureClusterIdentity(tc.hc, initialAzureClusterIdentity, controlPlaneNamespace)
 			g.Expect(err).ToNot(HaveOccurred())
 			g.Expect(initialAzureClusterIdentity.Spec.TenantID).Should(Equal(tc.expectedAzureClusterIdentity.Spec.TenantID))
 			g.Expect(initialAzureClusterIdentity.Spec.Type).Should(Equal(tc.expectedAzureClusterIdentity.Spec.Type))
@@ -230,7 +227,7 @@ func TestReconcileCredentials(t *testing.T) {
 
 	// Mock createOrUpdate function
 	var createdSecrets []*corev1.Secret
-	mockCreateOrUpdate := func(ctx context.Context, client client.Client, obj client.Object, mutate controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+	mockCreateOrUpdate := func(_ context.Context, _ client.Client, obj client.Object, mutate controllerutil.MutateFn) (controllerutil.OperationResult, error) {
 		secret, ok := obj.(*corev1.Secret)
 		if !ok {
 			return controllerutil.OperationResultNone, fmt.Errorf("expected Secret, got %T", obj)

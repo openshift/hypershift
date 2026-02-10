@@ -4357,8 +4357,8 @@ func (r *HostedClusterReconciler) reconcileAWSResourceTags(ctx context.Context, 
 	return nil
 }
 
-func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN,
-	infraCR client.Object, namespace, clusterName, hcpNamespace string,
+func (r *HostedClusterReconciler) reconcileAWSSubnets(ctx context.Context, _ upsert.CreateOrUpdateFN,
+	_ client.Object, namespace, clusterName, _ string,
 ) error {
 	nodePools, err := listNodePools(ctx, r.Client, namespace, clusterName)
 	if err != nil {
