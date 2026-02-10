@@ -235,7 +235,7 @@ func TestCertificateSigningRequestApprovalController_processCertificateSigningRe
 				getCSR:     test.getCSR,
 				getCSRA:    test.getCSRA,
 			}
-			out, _, err := c.processCertificateSigningRequest(test.name)
+			out, err := c.processCertificateSigningRequest(test.name)
 			if test.expectedErr && err == nil {
 				t.Errorf("expected an error but got none")
 			} else if !test.expectedErr && err != nil {

@@ -82,12 +82,9 @@ func (c *CertificateSigningController) syncCertificateSigningRequest(ctx context
 		return err
 	}
 
-	cfg, requeue, validationErr, err := c.processCertificateSigningRequest(ctx, name, nil)
+	cfg, validationErr, err := c.processCertificateSigningRequest(ctx, name, nil)
 	if err != nil {
 		return err
-	}
-	if requeue {
-		return factory.SyntheticRequeueError
 	}
 	if cfg != nil {
 		if validationErr != nil {
@@ -107,13 +104,13 @@ func (c *CertificateSigningController) syncCertificateSigningRequest(ctx context
 
 const backdate = 5 * time.Minute
 
-func (c *CertificateSigningController) processCertificateSigningRequest(ctx context.Context, name string, now func() time.Time) (*certificatesv1applyconfigurations.CertificateSigningRequestApplyConfiguration, bool, error, error) {
+func (c *CertificateSigningController) processCertificateSigningRequest(ctx context.Context, name string, now func() time.Time) (*certificatesv1applyconfigurations.CertificateSigningRequestApplyConfiguration, error, error) {
 	csr, err := c.getCSR(name)
 	if apierrors.IsNotFound(err) {
-		return nil, false, nil, nil // nothing to be done, CSR is gone
+		return nil, nil, nil // nothing to be done, CSR is gone
 	}
 	if err != nil {
-		return nil, false, nil, err
+		return nil, nil, err
 	}
 
 	// Ignore the CSR in the following conditions:
@@ -121,12 +118,12 @@ func (c *CertificateSigningController) processCertificateSigningRequest(ctx cont
 		certificates.HasTrueCondition(csr, certificatesv1.CertificateFailed) || // it's already failed
 		csr.Spec.SignerName != c.signerName || // it doesn't match our signer
 		csr.Status.Certificate != nil { // it's already signed
-		return nil, false, nil, nil
+		return nil, nil, nil
 	}
 
 	x509cr, err := certificates.ParseCSR(csr.Spec.Request)
 	if err != nil {
-		return nil, false, nil, fmt.Errorf("unable to parse csr %q: %v", csr.Name, err)
+		return nil, nil, fmt.Errorf("unable to parse csr %q: %v", csr.Name, err)
 	}
 	if validationErr := c.validator(csr, x509cr); validationErr != nil {
 		cfg := certificatesv1applyconfigurations.CertificateSigningRequest(name)
@@ -138,22 +135,22 @@ func (c *CertificateSigningController) processCertificateSigningRequest(ctx cont
 				WithMessage(validationErr.Error()).
 				WithLastUpdateTime(metav1.Now()),
 		)
-		return cfg, false, validationErr, nil
+		return cfg, validationErr, nil
 	}
 
 	ca, err := c.getCurrentCABundleContent(ctx)
 	if err != nil {
-		return nil, false, nil, err
+		return nil, nil, err
 	}
 
 	raw, err := sign(ca, x509cr, csr.Spec.Usages, c.certTTL, csr.Spec.ExpirationSeconds, now)
 	if err != nil {
-		return nil, false, nil, err
+		return nil, nil, err
 	}
 
 	cfg := certificatesv1applyconfigurations.CertificateSigningRequest(name)
 	cfg.Status = certificatesv1applyconfigurations.CertificateSigningRequestStatus().WithCertificate(raw...)
-	return cfg, false, nil, nil
+	return cfg, nil, nil
 }
 
 func sign(ca *librarygocrypto.CA, x509cr *x509.CertificateRequest, usages []certificatesv1.KeyUsage, certTTL time.Duration, expirationSeconds *int32, now func() time.Time) ([]byte, error) {
@@ -232,7 +229,8 @@ func boundaries(now func() time.Time, ttl, backdate, horizon time.Duration, sign
 
 	instant := now()
 
-	var notBefore, notAfter time.Time
+	notBefore := instant.Add(-backdate)
+	var notAfter time.Time
 	if ttl < horizon {
 		// do not backdate the end time if we consider this to be a short-lived certificate
 		notAfter = instant.Add(ttl)

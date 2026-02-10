@@ -87,12 +87,9 @@ func (c *CertificateSigningRequestApprovalController) syncCertificateSigningRequ
 		return err
 	}
 
-	csr, requeue, err := c.processCertificateSigningRequest(name)
+	csr, err := c.processCertificateSigningRequest(name)
 	if err != nil {
 		return err
-	}
-	if requeue {
-		return factory.SyntheticRequeueError
 	}
 	if csr != nil {
 		syncContext.Recorder().Eventf("CertificateSigningRequestApproved", "%q in is approved", csr.Name)
@@ -103,29 +100,29 @@ func (c *CertificateSigningRequestApprovalController) syncCertificateSigningRequ
 	return nil
 }
 
-func (c *CertificateSigningRequestApprovalController) processCertificateSigningRequest(name string) (*certificatesv1.CertificateSigningRequest, bool, error) {
+func (c *CertificateSigningRequestApprovalController) processCertificateSigningRequest(name string) (*certificatesv1.CertificateSigningRequest, error) {
 	csr, err := c.getCSR(name)
 	if apierrors.IsNotFound(err) {
-		return nil, false, nil // nothing to do
+		return nil, nil // nothing to do
 	}
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	if csr.Spec.SignerName != c.signerName {
-		return nil, false, nil
+		return nil, nil
 	}
 
 	if approved, denied := certificates.GetCertApprovalCondition(&csr.Status); approved || denied {
-		return nil, false, nil
+		return nil, nil
 	}
 
 	_, approvalGetErr := c.getCSRA(c.namespace, name)
 	if approvalGetErr != nil && !apierrors.IsNotFound(approvalGetErr) {
-		return nil, false, approvalGetErr
+		return nil, approvalGetErr
 	}
 	if apierrors.IsNotFound(approvalGetErr) {
-		return nil, false, nil
+		return nil, nil
 	}
 
 	// a CertificateSigningRequestApproval resource exists and matches the CertificateSigningRequest, so we can approve it
@@ -137,5 +134,5 @@ func (c *CertificateSigningRequestApprovalController) processCertificateSigningR
 		Message:        "The requisite approval resource exists.",
 		LastUpdateTime: metav1.Now(),
 	})
-	return csr, false, nil
+	return csr, nil
 }

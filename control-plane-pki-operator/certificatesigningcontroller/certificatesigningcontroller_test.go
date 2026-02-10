@@ -399,7 +399,7 @@ func TestCertificateSigningController_processCertificateSigningRequest(t *testin
 				certTTL: 12 * time.Hour,
 			}
 
-			cfg, _, validationErr, err := c.processCertificateSigningRequest(t.Context(), testCase.name, fakeClock.Now)
+			cfg, validationErr, err := c.processCertificateSigningRequest(t.Context(), testCase.name, fakeClock.Now)
 			if testCase.expectedErr && err == nil {
 				t.Errorf("expected an error but got none")
 			} else if !testCase.expectedErr && err != nil {
@@ -525,7 +525,7 @@ func TestSign(t *testing.T) {
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
-		NotBefore:             fakeClock.Now(),
+		NotBefore:             fakeClock.Now().Add(-backdate),
 		NotAfter:              fakeClock.Now().Add(1 * time.Hour),
 		PublicKeyAlgorithm:    x509.ECDSA,
 		SignatureAlgorithm:    x509.SHA256WithRSA,
