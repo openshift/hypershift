@@ -21,6 +21,10 @@ func hcpRouterLabels() map[string]string {
 }
 
 func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancingEnabled bool, hcp *hyperv1.HostedControlPlane) error {
+	// Setting this to PreferDualStack will make the service to be created with IPv4 and IPv6 addresses if the management cluster is dual stack.
+	IPFamilyPolicy := corev1.IPFamilyPolicyPreferDualStack
+	svc.Spec.IPFamilyPolicy = &IPFamilyPolicy
+
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
 		if svc.Annotations == nil {
 			svc.Annotations = map[string]string{}

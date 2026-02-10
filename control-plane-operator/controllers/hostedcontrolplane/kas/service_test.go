@@ -225,3 +225,19 @@ func TestKonnectivityServiceReconcile(t *testing.T) {
 		})
 	}
 }
+
+func TestKonnectivityServiceReconcile_IPFamilyPolicy(t *testing.T) {
+	// Given a HostedControlPlane on KubeVirt platform with LoadBalancer strategy
+	hcp := hyperv1.HostedControlPlane{Spec: hyperv1.HostedControlPlaneSpec{Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform}}}
+	strategy := hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}
+	svc := corev1.Service{}
+
+	// When reconciling the Konnectivity service
+	err := ReconcileKonnectivityServerService(&svc, config.OwnerRef{}, &strategy, &hcp)
+
+	// Then the service should be configured with PreferDualStack IPFamilyPolicy
+	g := NewWithT(t)
+	g.Expect(err).To(BeNil())
+	g.Expect(svc.Spec.IPFamilyPolicy).NotTo(BeNil())
+	g.Expect(*svc.Spec.IPFamilyPolicy).To(Equal(corev1.IPFamilyPolicyPreferDualStack))
+}

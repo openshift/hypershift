@@ -1369,6 +1369,7 @@ func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 func TestReconcileHCPRouterServices(t *testing.T) {
 	const namespace = "test-ns"
 	publicService := func(m ...func(*corev1.Service)) *corev1.Service {
+		ipFamilyPolicy := corev1.IPFamilyPolicyPreferDualStack
 		svc := corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "router",
@@ -1379,8 +1380,9 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 				Labels: map[string]string{"app": "private-router"},
 			},
 			Spec: corev1.ServiceSpec{
-				Type:     corev1.ServiceTypeLoadBalancer,
-				Selector: map[string]string{"app": "private-router"},
+				Type:           corev1.ServiceTypeLoadBalancer,
+				Selector:       map[string]string{"app": "private-router"},
+				IPFamilyPolicy: &ipFamilyPolicy,
 				Ports: []corev1.ServicePort{
 					{Name: "https", Port: 443, TargetPort: intstr.FromString("https"), Protocol: corev1.ProtocolTCP},
 				},
