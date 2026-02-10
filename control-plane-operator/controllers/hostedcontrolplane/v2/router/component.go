@@ -2,7 +2,6 @@ package router
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
@@ -34,7 +33,9 @@ func (k *router) NeedsManagementKASAccess() bool {
 
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &router{}).
-		WithPredicate(useHCPRouter).
+		WithPredicate(func(cpContext component.WorkloadContext) (bool, error) {
+			return UseHCPRouter(cpContext.HCP), nil
+		}).
 		WithAdaptFunction(adaptDeployment).
 		WithManifestAdapter(
 			"config.yaml",
@@ -48,7 +49,6 @@ func NewComponent() component.ControlPlaneComponent {
 			"azure-dns-proxy-service.yaml",
 			component.WithPredicate(enableAzureDNSProxyService),
 		).
-		WithDependencies(oapiv2.ComponentName).
 		Build()
 }
 

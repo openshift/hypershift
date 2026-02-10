@@ -396,6 +396,7 @@ func NewStartCommand() *cobra.Command {
 			"hosted-cluster-config-operator": hostedClusterConfigOperatorImage,
 			"socks5-proxy":                   socks5ProxyImage,
 			"token-minter":                   tokenMinterImage,
+			"azure-dns-proxy":                cpoImage,
 			util.CPOImageName:                cpoImage,
 			util.CPPKIOImageName:             cpoImage,
 		}
