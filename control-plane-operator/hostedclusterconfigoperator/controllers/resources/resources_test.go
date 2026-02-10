@@ -1480,15 +1480,6 @@ func TestReconcileKubeletConfig(t *testing.T) {
 	hcNamespace := "openshift-config-managed"
 	npName1 := "nodepool-test1"
 	npName2 := "nodepool-test2"
-	kubeletConfig1 := `
-    apiVersion: machineconfiguration.openshift.io/v1
-    kind: KubeletConfig
-    metadata:
-      name: set-max-pods
-    spec:
-      kubeletConfig:
-        maxPods: 100
-`
 	testCases := []struct {
 		name                           string
 		hostedControlPlaneObjects      []client.Object
@@ -1498,37 +1489,37 @@ func TestReconcileKubeletConfig(t *testing.T) {
 		{
 			name: "copy kubelet config from control plane NS",
 			hostedControlPlaneObjects: []client.Object{
-				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace),
 			},
 			expectedHostedClusterObjects: []client.Object{
-				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace),
 			},
 		},
 		{
 			name: "some CM already exist and some are not, expect HCCO to catch up",
 			hostedControlPlaneObjects: []client.Object{
-				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
-				makeKubeletConfigConfigMap(supportutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcpNamespace),
 			},
 			existHostedControlPlaneObjects: []client.Object{
-				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace),
 			},
 			expectedHostedClusterObjects: []client.Object{
-				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
-				makeKubeletConfigConfigMap(supportutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcNamespace),
 			},
 		},
 		{
 			name: "CM need to be deleted",
 			hostedControlPlaneObjects: []client.Object{
-				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace, kubeletConfig1),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcpNamespace),
 			},
 			existHostedControlPlaneObjects: []client.Object{
-				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
-				makeKubeletConfigConfigMap(supportutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("foo", npName2, validation.LabelValueMaxLength), hcNamespace),
 			},
 			expectedHostedClusterObjects: []client.Object{
-				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace, kubeletConfig1),
+				makeKubeletConfigConfigMap(supportutil.ShortenName("bar", npName1, validation.LabelValueMaxLength), hcNamespace),
 			},
 		},
 	}
@@ -1618,7 +1609,7 @@ region = us-east-1
 	}
 }
 
-func makeKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap {
+func makeKubeletConfigConfigMap(name, namespace string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -1628,7 +1619,15 @@ func makeKubeletConfigConfigMap(name, namespace, data string) *corev1.ConfigMap 
 			},
 		},
 		Data: map[string]string{
-			"config": data,
+			"config": `
+    apiVersion: machineconfiguration.openshift.io/v1
+    kind: KubeletConfig
+    metadata:
+      name: set-max-pods
+    spec:
+      kubeletConfig:
+        maxPods: 100
+`,
 		},
 	}
 }
@@ -2299,9 +2298,9 @@ func TestReconcileAuthOIDC(t *testing.T) {
 	}
 }
 
-func newCondition(conditionType string, status metav1.ConditionStatus, reason, message string) *metav1.Condition {
+func newCondition(status metav1.ConditionStatus, reason, message string) *metav1.Condition {
 	return &metav1.Condition{
-		Type:    conditionType,
+		Type:    string(hyperv1.DataPlaneConnectionAvailable),
 		Reason:  reason,
 		Status:  status,
 		Message: message,
@@ -2352,7 +2351,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			name:    "no worker nodes Condition Unknown",
 			hcp:     fakeHCP(),
 			wantErr: false,
-			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+			expectedCondition: newCondition(
 				metav1.ConditionUnknown, hyperv1.DataPlaneConnectionNoWorkerNodesAvailableReason, "No worker nodes available"),
 			nodes: []corev1.Node{}, // no Nodes
 			mockedGetPodLogs: func(context context.Context,
@@ -2366,7 +2365,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			name:    "no konnectivity-agent PODs condition False",
 			hcp:     fakeHCP(),
 			wantErr: false,
-			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+			expectedCondition: newCondition(
 				metav1.ConditionFalse, hyperv1.DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason, "Couldn't find any konnectivity-agent running in data plane"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{}, // no Pods
@@ -2381,7 +2380,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			name:    "only one pending POD condition False",
 			hcp:     fakeHCP(),
 			wantErr: false,
-			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+			expectedCondition: newCondition(
 				metav1.ConditionFalse, hyperv1.DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason, "Couldn't find any konnectivity-agent running in data plane"),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodPending)},
@@ -2396,7 +2395,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			name:    "one konnectivity-agent PODs running condition OK",
 			hcp:     fakeHCP(),
 			wantErr: false,
-			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+			expectedCondition: newCondition(
 				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods:  []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax", corev1.PodRunning)},
@@ -2411,7 +2410,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			name:    "may konnectivity-agent PODs only one running condition OK",
 			hcp:     fakeHCP(),
 			wantErr: false,
-			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+			expectedCondition: newCondition(
 				metav1.ConditionTrue, hyperv1.AsExpectedReason, hyperv1.AllIsWellMessage),
 			nodes: []corev1.Node{newRunningNode("node1")},
 			pods: []corev1.Pod{newKonnectivityAgentPod("konnectivity-agent-rdax1", corev1.PodPending),
@@ -2430,7 +2429,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			name:    "one konnectivity-agent PODs running bad since error getting LOG",
 			hcp:     fakeHCP(),
 			wantErr: false,
-			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+			expectedCondition: newCondition(
 				metav1.ConditionFalse, hyperv1.DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason,
 				"failed to read konnectivity-agent logs from data plane"),
 			nodes: []corev1.Node{newRunningNode("node1")},
@@ -2446,7 +2445,7 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			name:    "one konnectivity-agent PODs running bad since no LOG", // unsure this is possible
 			hcp:     fakeHCP(),
 			wantErr: false,
-			expectedCondition: newCondition(string(hyperv1.DataPlaneConnectionAvailable),
+			expectedCondition: newCondition(
 				metav1.ConditionFalse, hyperv1.DataPlaneConnectionNoKonnectivityAgentPodsNotFoundReason,
 				"failed to read konnectivity-agent logs from data plane"),
 			nodes: []corev1.Node{newRunningNode("node1")},

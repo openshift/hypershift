@@ -52,7 +52,7 @@ func ReconcileRegistryConfigValidatingAdmissionPolicies(ctx context.Context, hcp
 // that controls access to the Image Registry config managementState field.
 //
 // During normal operation, it prevents users from setting managementState to 'Removed' except for the HCCO user.
-func reconcileRegistryConfigManagementStateValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
+func reconcileRegistryConfigManagementStateValidatingAdmissionPolicy(ctx context.Context, _ *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
 	log := ctrl.LoggerFrom(ctx)
 	registryConfigManagementStateAdmissionPolicy := AdmissionPolicy{Name: AdmissionPolicyNameManagementState}
 	registryConfigManagementStateAPIVersion := []string{imageregistryv1.GroupVersion.Version}

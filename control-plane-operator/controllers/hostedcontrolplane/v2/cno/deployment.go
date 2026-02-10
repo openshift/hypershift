@@ -21,10 +21,7 @@ import (
 )
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
-	cnoEnvVars, err := buildCNOEnvVars(cpContext)
-	if err != nil {
-		return err
-	}
+	cnoEnvVars := buildCNOEnvVars(cpContext)
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Env = append(c.Env, cnoEnvVars...)
 	})
@@ -69,7 +66,7 @@ if [[ -n $sc ]]; then kubectl --kubeconfig $kc delete --ignore-not-found validat
 	return nil
 }
 
-func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, error) {
+func buildCNOEnvVars(cpContext component.WorkloadContext) []corev1.EnvVar {
 	hcp := cpContext.HCP
 	releaseImageProvider := cpContext.ReleaseImageProvider
 	userReleaseImageProvider := cpContext.UserReleaseImageProvider
@@ -162,5 +159,5 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 		)
 	}
 
-	return cnoEnv, nil
+	return cnoEnv
 }

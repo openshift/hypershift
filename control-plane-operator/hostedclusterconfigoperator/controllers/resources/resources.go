@@ -1848,7 +1848,7 @@ func (r *reconciler) reconcileOpenStackCredentialsSecret(ctx context.Context, pl
 // reconcileOperatorHub gets the OperatorHubConfig from the HCP, for now the controller only reconcile over the DisableAllDefaultSources field and only once.
 // After that the HCCO checks the OperatorHub object in the HC to manage the OLM resources.
 // TODO (jparrill): Include in the reconciliation the OperatorHub.Sources to disable only the selected sources.
-func (r *reconciler) reconcileOperatorHub(ctx context.Context, operatorHub *configv1.OperatorHub, hcp *hyperv1.HostedControlPlane) []error {
+func (r *reconciler) reconcileOperatorHub(ctx context.Context, operatorHub *configv1.OperatorHub, hcp *hyperv1.HostedControlPlane) {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling HCP OperatorHub config")
 	if operatorHub.ResourceVersion == "" {
@@ -1856,8 +1856,6 @@ func (r *reconciler) reconcileOperatorHub(ctx context.Context, operatorHub *conf
 			operatorHub.Spec.DisableAllDefaultSources = hcp.Spec.Configuration.OperatorHub.DisableAllDefaultSources
 		}
 	}
-
-	return nil
 }
 
 func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedControlPlane, pullSecret *corev1.Secret) []error {
@@ -2684,7 +2682,7 @@ func (r *reconciler) ensureImageRegistryStorageRemoved(ctx context.Context) (boo
 }
 
 func (r *reconciler) ensureServiceLoadBalancersRemoved(ctx context.Context) (bool, error) {
-	_, err := cleanupResources(ctx, r.client, &corev1.ServiceList{}, func(obj client.Object) bool {
+	err := cleanupResources(ctx, r.client, &corev1.ServiceList{}, func(obj client.Object) bool {
 		svc := obj.(*corev1.Service)
 		if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
 			return false
@@ -2720,7 +2718,7 @@ func (r *reconciler) ensureVolumeSnapshotsRemoved(ctx context.Context) (bool, er
 		log.Info("There are no more volume snapshots. Nothing to cleanup.")
 		return true, nil
 	}
-	if _, err := cleanupResources(ctx, r.client, &snapshotv1.VolumeSnapshotList{}, nil, false); err != nil {
+	if err := cleanupResources(ctx, r.client, &snapshotv1.VolumeSnapshotList{}, nil, false); err != nil {
 		return false, fmt.Errorf("failed to remove volume snapshots: %w", err)
 	}
 	return false, nil
@@ -2736,10 +2734,10 @@ func (r *reconciler) ensurePersistentVolumesRemoved(ctx context.Context) (bool, 
 		log.Info("There are no more persistent volumes. Nothing to cleanup.")
 		return true, nil
 	}
-	if _, err := cleanupResources(ctx, r.client, &corev1.PersistentVolumeClaimList{}, nil, false); err != nil {
+	if err := cleanupResources(ctx, r.client, &corev1.PersistentVolumeClaimList{}, nil, false); err != nil {
 		return false, fmt.Errorf("failed to remove persistent volume claims: %w", err)
 	}
-	if _, err := cleanupResources(ctx, r.uncachedClient, &corev1.PodList{}, func(obj client.Object) bool {
+	if err := cleanupResources(ctx, r.uncachedClient, &corev1.PodList{}, func(obj client.Object) bool {
 		pod := obj.(*corev1.Pod)
 		return hasAttachedPVC(pod)
 	}, true); err != nil {
@@ -2805,19 +2803,17 @@ func isConnectionError(err error) bool {
 // cleanupResources generically deletes resources of a given type using an optional filter
 // function. The result is a boolean indicating whether resources were found that match
 // the filter and an error if one occurred.
-func cleanupResources(ctx context.Context, c client.Client, list client.ObjectList, filter func(client.Object) bool, force bool) (bool, error) {
+func cleanupResources(ctx context.Context, c client.Client, list client.ObjectList, filter func(client.Object) bool, force bool) error {
 	log := ctrl.LoggerFrom(ctx)
 	if err := c.List(ctx, list); err != nil {
-		return false, fmt.Errorf("cannot list %T: %w", list, err)
+		return fmt.Errorf("cannot list %T: %w", list, err)
 	}
 
 	var errs []error
-	foundResource := false
 	a := listAccessor(list)
 	for i := 0; i < a.len(); i++ {
 		obj := a.item(i)
 		if filter == nil || filter(obj) {
-			foundResource = true
 			if obj.GetDeletionTimestamp().IsZero() {
 				log.Info("Deleting resource", "type", fmt.Sprintf("%T", obj), "name", client.ObjectKeyFromObject(obj).String())
 				var deleteErr error
@@ -2832,7 +2828,7 @@ func cleanupResources(ctx context.Context, c client.Client, list client.ObjectLi
 			}
 		}
 	}
-	return foundResource, utilerrors.NewAggregate(errs)
+	return utilerrors.NewAggregate(errs)
 }
 
 type genericListAccessor struct {

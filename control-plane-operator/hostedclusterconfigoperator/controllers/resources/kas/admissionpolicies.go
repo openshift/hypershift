@@ -118,7 +118,7 @@ func reconcileConfigValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 	return nil
 }
 
-func reconcileInfraValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
+func reconcileInfraValidatingAdmissionPolicy(ctx context.Context, _ *hyperv1.HostedControlPlane, client client.Client, createOrUpdate upsert.CreateOrUpdateFN) error {
 	// Infra AdmissionPolicy
 	// This VAP only reconciles the ValidationAdmissionPolicy for the Infrastructure resource
 	// in order to allow certain SAs to update the spec field of the resource.

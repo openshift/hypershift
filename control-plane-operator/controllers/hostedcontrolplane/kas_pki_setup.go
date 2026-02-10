@@ -21,7 +21,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	hcp *hyperv1.HostedControlPlane,
 	p *pki.PKIParams,
 	createOrUpdate upsert.CreateOrUpdateFN,
-	rootCASecret *corev1.Secret,
+	_ *corev1.Secret,
 	additionalClientCAs ...*corev1.ConfigMap,
 ) error {
 	reconcileSigner := func(s *corev1.Secret, reconciler signerReconciler) (*corev1.Secret, error) {
@@ -35,15 +35,15 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 		return s, nil
 	}
 
-	reconcileSub := func(target, ca *corev1.Secret, reconciler subReconciler) (*corev1.Secret, error) {
+	reconcileSub := func(target, ca *corev1.Secret, reconciler subReconciler) error {
 		applyFunc := func() error {
 			return reconciler(target, ca, p.OwnerRef)
 		}
 
 		if _, err := createOrUpdate(ctx, r, target, applyFunc); err != nil {
-			return nil, fmt.Errorf("failed to reconcile secret '%s/%s': %v", target.Namespace, target.Name, err)
+			return fmt.Errorf("failed to reconcile secret '%s/%s': %v", target.Namespace, target.Name, err)
 		}
-		return target, nil
+		return nil
 	}
 
 	// ----------
@@ -60,7 +60,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	}
 
 	// KAS aggregator client cert
-	if _, err := reconcileSub(
+	if err := reconcileSub(
 		manifests.KASAggregatorCertSecret(hcp.Namespace),
 		kasAggregateClientSigner,
 		pki.ReconcileKASAggregatorCertSecret,
@@ -94,7 +94,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	totalClientCABundle = append(totalClientCABundle, kubeControlPlaneSigner)
 
 	// kube-scheduler client cert
-	if _, err := reconcileSub(
+	if err := reconcileSub(
 		manifests.KubeSchedulerClientCertSecret(hcp.Namespace),
 		kubeControlPlaneSigner,
 		pki.ReconcileKubeSchedulerClientCertSecret,
@@ -103,7 +103,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	}
 
 	// KCM client cert
-	if _, err := reconcileSub(
+	if err := reconcileSub(
 		manifests.KubeControllerManagerClientCertSecret(hcp.Namespace),
 		kubeControlPlaneSigner,
 		pki.ReconcileKubeControllerManagerClientCertSecret,
@@ -128,7 +128,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	kubeletClientCABundle = append(kubeletClientCABundle, kasToKubeletSigner)
 
 	// KAS to kubelet client cert
-	if _, err := reconcileSub(
+	if err := reconcileSub(
 		manifests.KASKubeletClientCertSecret(hcp.Namespace),
 		kasToKubeletSigner,
 		pki.ReconcileKASKubeletClientCertSecret,
@@ -152,7 +152,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	totalClientCABundle = append(totalClientCABundle, adminKubeconfigSigner)
 
 	// system:admin client cert
-	if _, err := reconcileSub(
+	if err := reconcileSub(
 		manifests.SystemAdminClientCertSecret(hcp.Namespace),
 		adminKubeconfigSigner,
 		pki.ReconcileSystemAdminClientCertSecret,
@@ -175,7 +175,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	totalClientCABundle = append(totalClientCABundle, hccoKubeconfigSigner)
 
 	// system:hosted-cluster-config client cert
-	if _, err := reconcileSub(
+	if err := reconcileSub(
 		manifests.HCCOClientCertSecret(hcp.Namespace),
 		hccoKubeconfigSigner,
 		pki.ReconcileHCCOClientCertSecret,
@@ -200,7 +200,7 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	kubeletClientCABundle = append(kubeletClientCABundle, csrSigner)
 
 	// KAS bootstrap client cert secret
-	if _, err := reconcileSub(
+	if err := reconcileSub(
 		manifests.KASMachineBootstrapClientCertSecret(hcp.Namespace),
 		csrSigner,
 		pki.ReconcileKASMachineBootstrapClientCertSecret,

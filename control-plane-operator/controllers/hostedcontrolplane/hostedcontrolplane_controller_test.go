@@ -285,10 +285,7 @@ func TestReconcileIgnitionServer(t *testing.T) {
 			hcp.ObjectMeta.Annotations = tt.annotations
 
 			ignitionComponent := ignitionserverv2.NewComponent(mockedProviderWithOpenshiftImageRegistryOverrides, "")
-			fakeObjects, err := componentsFakeObjects(hcp.Namespace, configv1.Default)
-			if err != nil {
-				t.Fatalf("failed to generate fake objects: %v", err)
-			}
+			fakeObjects := componentsFakeObjects(hcp.Namespace, configv1.Default)
 			fakeDeps := componentsFakeDependencies(ignitionComponent.Name(), hcp.Namespace)
 
 			ignitionCerts := []client.Object{}
@@ -327,7 +324,7 @@ func TestReconcileIgnitionServer(t *testing.T) {
 			expectCACert := !hasPKIAnnotation || tt.caCert != nil
 			expectServingCert := !hasPKIAnnotation || tt.servingCert != nil
 
-			err = fakeClient.Get(t.Context(), client.ObjectKeyFromObject(gotCACert), gotCACert)
+			err := fakeClient.Get(t.Context(), client.ObjectKeyFromObject(gotCACert), gotCACert)
 			if err != nil && expectCACert {
 				t.Fatalf("ignition-server-ca-cert does not exist")
 			} else if err == nil && !expectCACert {
@@ -1207,10 +1204,7 @@ func TestControlPlaneComponents(t *testing.T) {
 		cpContext.ApplyProvider = upsert.NewApplyProvider(true)
 
 		for _, component := range reconciler.components {
-			fakeObjects, err := componentsFakeObjects(hcp.Namespace, tt.featureSet)
-			if err != nil {
-				t.Fatalf("failed to generate fake objects: %v", err)
-			}
+			fakeObjects := componentsFakeObjects(hcp.Namespace, tt.featureSet)
 
 			createdObjects := []client.Object{}
 			fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).
@@ -1370,7 +1364,7 @@ var testFeatureGateYAML string
 //go:embed testdata/featuregate-generator/feature-gate-tech-preview-no-upgrade.yaml
 var testFeatureGateTechPreviewNoUpgradeYAML string
 
-func componentsFakeObjects(namespace string, featureSet configv1.FeatureSet) ([]client.Object, error) {
+func componentsFakeObjects(namespace string, featureSet configv1.FeatureSet) []client.Object {
 	rootCA := manifests.RootCASecret(namespace)
 	rootCA.Data = map[string][]byte{
 		certs.CASignerCertMapKey: []byte("fake"),
@@ -1432,7 +1426,7 @@ func componentsFakeObjects(namespace string, featureSet configv1.FeatureSet) ([]
 		cloudCredsSecret,
 		csrSigner,
 		fgConfigMap,
-	}, nil
+	}
 }
 
 func componentsFakeDependencies(componentName string, namespace string) []client.Object {
