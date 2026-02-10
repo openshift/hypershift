@@ -36,6 +36,7 @@ func TestCreateOptionsApplyPlatformSpecifics(t *testing.T) {
 						WorkloadIdentityProviderID:    "test-provider-id",
 						NodePoolServiceAccount:        "nodepool@test-project-123.iam.gserviceaccount.com",
 						ControlPlaneServiceAccount:    "controlplane@test-project-123.iam.gserviceaccount.com",
+						CloudControllerServiceAccount: "cloudcontroller@test-project-123.iam.gserviceaccount.com",
 					},
 				},
 			},
@@ -57,6 +58,7 @@ func TestCreateOptionsApplyPlatformSpecifics(t *testing.T) {
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ProviderID).To(Equal("test-provider-id"))
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool).To(Equal("nodepool@test-project-123.iam.gserviceaccount.com"))
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane).To(Equal("controlplane@test-project-123.iam.gserviceaccount.com"))
+	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController).To(Equal("cloudcontroller@test-project-123.iam.gserviceaccount.com"))
 }
 
 func TestValidateGCPOptions(t *testing.T) {
@@ -72,6 +74,7 @@ func TestValidateGCPOptions(t *testing.T) {
 		WorkloadIdentityProviderID:    "test-provider-id",
 		NodePoolServiceAccount:        "nodepool@test-project-123.iam.gserviceaccount.com",
 		ControlPlaneServiceAccount:    "controlplane@test-project-123.iam.gserviceaccount.com",
+		CloudControllerServiceAccount: "cloudcontroller@test-project-123.iam.gserviceaccount.com",
 	}
 
 	tests := map[string]struct {
@@ -80,19 +83,24 @@ func TestValidateGCPOptions(t *testing.T) {
 		expectSubstr string
 	}{
 		"missing project": {
-			opts:         RawCreateOptions{Region: validOpts.Region, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount},
+			opts:         RawCreateOptions{Region: validOpts.Region, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount},
 			expectErr:    true,
 			expectSubstr: "required flag(s) \"project\" not set",
 		},
 		"missing region": {
-			opts:         RawCreateOptions{Project: validOpts.Project, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount},
+			opts:         RawCreateOptions{Project: validOpts.Project, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount},
 			expectErr:    true,
 			expectSubstr: "required flag(s) \"region\" not set",
 		},
 		"missing network": {
-			opts:         RawCreateOptions{Project: validOpts.Project, Region: validOpts.Region, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount},
+			opts:         RawCreateOptions{Project: validOpts.Project, Region: validOpts.Region, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount},
 			expectErr:    true,
 			expectSubstr: "required flag(s) \"network\" not set",
+		},
+		"missing cloud-controller-service-account": {
+			opts:         RawCreateOptions{Project: validOpts.Project, Region: validOpts.Region, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount},
+			expectErr:    true,
+			expectSubstr: "required flag(s) \"cloud-controller-service-account\" not set",
 		},
 		"all required fields provided": {
 			opts:      validOpts,
@@ -143,6 +151,7 @@ func TestCreateCluster(t *testing.T) {
 				"--workload-identity-provider-id=test-provider",
 				"--node-pool-service-account=nodepool@test-project-123.iam.gserviceaccount.com",
 				"--control-plane-service-account=controlplane@test-project-123.iam.gserviceaccount.com",
+				"--cloud-controller-service-account=cloudcontroller@test-project-123.iam.gserviceaccount.com",
 				"--node-pool-replicas=-1",
 				"--name=example",
 				"--pull-secret=" + pullSecretFile,
