@@ -309,7 +309,7 @@ func (r *NodePoolReconciler) ignitionEndpointAvailableCondition(ctx context.Cont
 	return nil, nil
 }
 
-func (r *NodePoolReconciler) validArchPlatformCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
+func (r *NodePoolReconciler) validArchPlatformCondition(_ context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	// Validate modifying CPU arch support for platform
 	if !isArchAndPlatformSupported(nodePool) {
 		SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{
@@ -519,10 +519,7 @@ func (r NodePoolReconciler) validGeneratedPayloadCondition(ctx context.Context, 
 		return &ctrl.Result{}, fmt.Errorf("error getting token: %w", err)
 	}
 	tokenSecret := token.TokenSecret()
-	condition, err := r.createValidGeneratedPayloadCondition(ctx, tokenSecret, nodePool.Generation)
-	if err != nil {
-		return &ctrl.Result{}, fmt.Errorf("error setting ValidGeneratedPayload condition: %w", err)
-	}
+	condition := r.createValidGeneratedPayloadCondition(ctx, tokenSecret, nodePool.Generation)
 	SetStatusCondition(&nodePool.Status.Conditions, *condition)
 	return nil, nil
 }
@@ -541,11 +538,7 @@ func (r NodePoolReconciler) reachedIgnitionEndpointCondition(ctx context.Context
 	// if ignition is already reached and InPlace upgrade is used, skip recomputing the NodePoolReachedIgnitionEndpoint condition
 	// to avoid resetting the condition to False because of the missing the annotation on the new generated token-secret.
 	if oldReachedIgnitionEndpointCondition == nil || oldReachedIgnitionEndpointCondition.Status != corev1.ConditionTrue || nodePool.Spec.Management.UpgradeType != hyperv1.UpgradeTypeInPlace {
-		reachedIgnitionEndpointCondition, err := r.createReachedIgnitionEndpointCondition(ctx, tokenSecret, nodePool.Generation)
-		if err != nil {
-			return &ctrl.Result{}, fmt.Errorf("error setting IgnitionReached condition: %w", err)
-		}
-
+		reachedIgnitionEndpointCondition := r.createReachedIgnitionEndpointCondition(ctx, tokenSecret, nodePool.Generation)
 		SetStatusCondition(&nodePool.Status.Conditions, *reachedIgnitionEndpointCondition)
 	}
 	return nil, nil
@@ -561,7 +554,7 @@ func (r NodePoolReconciler) machineAndNodeConditions(ctx context.Context, nodePo
 	return nil, nil
 }
 
-func (r NodePoolReconciler) reconciliationActiveCondition(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error) {
+func (r NodePoolReconciler) reconciliationActiveCondition(_ context.Context, nodePool *hyperv1.NodePool, _ *hyperv1.HostedCluster) (*ctrl.Result, error) {
 	// Set ReconciliationActive condition
 	SetStatusCondition(&nodePool.Status.Conditions, generateReconciliationActiveCondition(nodePool.Spec.PausedUntil, nodePool.Generation))
 	return nil, nil
@@ -764,7 +757,7 @@ func (r *NodePoolReconciler) setCIDRConflictCondition(nodePool *hyperv1.NodePool
 }
 
 // createReachedIgnitionEndpointCondition creates a condition for the NodePool based on the tokenSecret data.
-func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.Context, tokenSecret *corev1.Secret, generation int64) (*hyperv1.NodePoolCondition, error) {
+func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.Context, tokenSecret *corev1.Secret, generation int64) *hyperv1.NodePoolCondition {
 	var condition *hyperv1.NodePoolCondition
 	if err := r.Get(ctx, crclient.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -784,7 +777,7 @@ func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.C
 				ObservedGeneration: generation,
 			}
 		}
-		return condition, nil
+		return condition
 	}
 
 	if _, ok := tokenSecret.Annotations[TokenSecretIgnitionReachedAnnotation]; !ok {
@@ -795,7 +788,7 @@ func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.C
 			Message:            "",
 			ObservedGeneration: generation,
 		}
-		return condition, nil
+		return condition
 	}
 
 	condition = &hyperv1.NodePoolCondition{
@@ -806,11 +799,11 @@ func (r NodePoolReconciler) createReachedIgnitionEndpointCondition(ctx context.C
 		ObservedGeneration: generation,
 	}
 
-	return condition, nil
+	return condition
 }
 
 // createValidGeneratedPayloadCondition creates a condition for the NodePool based on the tokenSecret data.
-func (r NodePoolReconciler) createValidGeneratedPayloadCondition(ctx context.Context, tokenSecret *corev1.Secret, generation int64) (*hyperv1.NodePoolCondition, error) {
+func (r NodePoolReconciler) createValidGeneratedPayloadCondition(ctx context.Context, tokenSecret *corev1.Secret, generation int64) *hyperv1.NodePoolCondition {
 	var condition *hyperv1.NodePoolCondition
 	if err := r.Get(ctx, crclient.ObjectKeyFromObject(tokenSecret), tokenSecret); err != nil {
 		if !apierrors.IsNotFound(err) {
@@ -830,7 +823,7 @@ func (r NodePoolReconciler) createValidGeneratedPayloadCondition(ctx context.Con
 				ObservedGeneration: generation,
 			}
 		}
-		return condition, nil
+		return condition
 	}
 
 	if _, ok := tokenSecret.Data[ignserver.TokenSecretReasonKey]; !ok {
@@ -841,7 +834,7 @@ func (r NodePoolReconciler) createValidGeneratedPayloadCondition(ctx context.Con
 			Message:            "Unable to get status data from token secret",
 			ObservedGeneration: generation,
 		}
-		return condition, nil
+		return condition
 	}
 
 	var status corev1.ConditionStatus
@@ -856,7 +849,7 @@ func (r NodePoolReconciler) createValidGeneratedPayloadCondition(ctx context.Con
 		ObservedGeneration: generation,
 	}
 
-	return condition, nil
+	return condition
 }
 
 // validPlatformConfigCondition validates spec.platform config and sets 'ValidPlatformConfig' condition on the NodePool accordingly.
@@ -868,12 +861,10 @@ func (r NodePoolReconciler) validPlatformConfigCondition(ctx context.Context, no
 		Message:            hyperv1.AllIsWellMessage,
 		ObservedGeneration: nodePool.Generation,
 	}
-	oldCondition := FindStatusCondition(nodePool.Status.Conditions, hyperv1.NodePoolValidPlatformConfigConditionType)
-
 	// TODO: add validation for other platforms
 	switch nodePool.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
-		err := r.validateAWSPlatformConfig(ctx, nodePool, hc, oldCondition)
+		err := r.validateAWSPlatformConfig(ctx, nodePool, hc)
 		if err != nil {
 			condition.Status = corev1.ConditionFalse
 			condition.Reason = hyperv1.AWSErrorReason

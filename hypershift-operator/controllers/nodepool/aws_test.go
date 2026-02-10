@@ -571,7 +571,6 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 	testCases := []struct {
 		name                 string
 		hostedClusterVersion string
-		oldCondition         *hyperv1.NodePoolCondition
 		expectedError        string
 	}{
 		{
@@ -609,7 +608,7 @@ func TestValidateAWSPlatformConfig(t *testing.T) {
 			reconciler := &NodePoolReconciler{
 				Client: fakeClient,
 			}
-			err := reconciler.validateAWSPlatformConfig(t.Context(), nodePool, hostedcluster, tc.oldCondition)
+			err := reconciler.validateAWSPlatformConfig(t.Context(), nodePool, hostedcluster)
 			if tc.expectedError == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)

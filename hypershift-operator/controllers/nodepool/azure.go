@@ -249,7 +249,7 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 	return azureMachineTemplate, nil
 }
 
-func (c *CAPI) azureMachineTemplate(ctx context.Context, templateNameGenerator func(spec any) (string, error)) (*capiazure.AzureMachineTemplate, error) {
+func (c *CAPI) azureMachineTemplate(_ context.Context, templateNameGenerator func(spec any) (string, error)) (*capiazure.AzureMachineTemplate, error) {
 	// Apply Azure Marketplace image defaults before generating machine template spec
 	if err := defaultAzureNodePoolImage(c.nodePool, c.ConfigGenerator.rolloutConfig.releaseImage); err != nil {
 		return nil, fmt.Errorf("failed to apply Azure image defaults: %w", err)

@@ -63,10 +63,10 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 						),
 					},
 					Release: hyperv1.Release{},
@@ -87,9 +87,9 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
-							memoryTmpltOpt("5Gi"),
+							memoryTmpltOpt(),
 							cpuTmpltOpt(4),
-							storageTmpltOpt("32Gi"),
+							storageTmpltOpt(),
 						),
 					},
 				},
@@ -111,10 +111,10 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 							qosClassGuaranteedNPOption(),
 						),
 					},
@@ -136,7 +136,7 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
-							storageTmpltOpt("32Gi"),
+							storageTmpltOpt(),
 							guaranteedResourcesOpt(4, "5Gi"),
 						),
 					},
@@ -159,10 +159,10 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 							multiQueueNPOption(hyperv1.MultiQueueDisable),
 						),
 					},
@@ -184,9 +184,9 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
-							memoryTmpltOpt("5Gi"),
+							memoryTmpltOpt(),
 							cpuTmpltOpt(4),
-							storageTmpltOpt("32Gi"),
+							storageTmpltOpt(),
 						),
 					},
 				},
@@ -208,10 +208,10 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 							multiQueueNPOption(hyperv1.MultiQueueEnable),
 						),
 					},
@@ -233,9 +233,9 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
-							memoryTmpltOpt("5Gi"),
+							memoryTmpltOpt(),
 							cpuTmpltOpt(4),
-							storageTmpltOpt("32Gi"),
+							storageTmpltOpt(),
 							networkInterfaceMultiQueueTmpltOpt(),
 						),
 					},
@@ -258,10 +258,10 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 							additionalNetworksNPOption([]hyperv1.KubevirtNetwork{
 								{
 									Name: "ns1/nad1",
@@ -290,9 +290,9 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
-							memoryTmpltOpt("5Gi"),
+							memoryTmpltOpt(),
 							cpuTmpltOpt(4),
-							storageTmpltOpt("32Gi"),
+							storageTmpltOpt(),
 							interfacesTmpltOpt([]kubevirtv1.Interface{
 								{
 									Name: "default",
@@ -358,10 +358,10 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 							attachDefaultNetworkNPOption(false),
 							additionalNetworksNPOption([]hyperv1.KubevirtNetwork{
 								{
@@ -391,9 +391,9 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
-							memoryTmpltOpt("5Gi"),
+							memoryTmpltOpt(),
 							cpuTmpltOpt(4),
-							storageTmpltOpt("32Gi"),
+							storageTmpltOpt(),
 							annotationsTmpltOpt(map[string]string{
 								// Skip the kubevirt.io/allow-pod-bridge-network-live-migration annotation
 								suppconfig.PodSafeToEvictLocalVolumesKey: strings.Join(LocalStorageVolumes, ","),
@@ -451,10 +451,10 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 							attachDefaultNetworkNPOption(false),
 						),
 					},
@@ -488,10 +488,10 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 							hostDevicesOption([]hyperv1.KubevirtHostDevice{
 								{
 									DeviceName: "example.com/my-fast-gpu",
@@ -518,9 +518,9 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
-							memoryTmpltOpt("5Gi"),
+							memoryTmpltOpt(),
 							cpuTmpltOpt(4),
-							storageTmpltOpt("32Gi"),
+							storageTmpltOpt(),
 							hostDevicesTmpltOpt([]kubevirtv1.HostDevice{
 								{
 									Name:       "hostdevice-1",
@@ -552,10 +552,10 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 							hostDevicesOption([]hyperv1.KubevirtHostDevice{
 								{
 									DeviceName: "example.com/my-fast-gpu",
@@ -622,10 +622,10 @@ func TestCacheImage(t *testing.T) {
 			Platform: hyperv1.NodePoolPlatform{
 				Type: hyperv1.KubevirtPlatform,
 				Kubevirt: generateKubevirtPlatform(
-					memoryNPOption("5Gi"),
-					coresNPOption(4),
-					imageNPOption("testimage"),
-					volumeNPOption("32Gi"),
+					memoryNPOption(),
+					coresNPOption(),
+					imageNPOption(),
+					volumeNPOption(),
 				),
 			},
 			Release: hyperv1.Release{},
@@ -780,10 +780,10 @@ func TestJsonPatch(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 						),
 					},
 					Release: hyperv1.Release{},
@@ -804,9 +804,9 @@ func TestJsonPatch(t *testing.T) {
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
-							memoryTmpltOpt("5Gi"),
+							memoryTmpltOpt(),
 							cpuTmpltOpt(4),
-							storageTmpltOpt("32Gi"),
+							storageTmpltOpt(),
 							addNetworkOpt(kubevirtv1.Network{Name: "secondary", NetworkSource: kubevirtv1.NetworkSource{Multus: &kubevirtv1.MultusNetwork{NetworkName: "mynetwork"}}}),
 						),
 					},
@@ -843,10 +843,10 @@ func TestJsonPatch(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 						),
 					},
 					Release: hyperv1.Release{},
@@ -867,9 +867,9 @@ func TestJsonPatch(t *testing.T) {
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
-							memoryTmpltOpt("5Gi"),
+							memoryTmpltOpt(),
 							cpuTmpltOpt(5),
-							storageTmpltOpt("32Gi"),
+							storageTmpltOpt(),
 							addNetworkOpt(kubevirtv1.Network{Name: "secondary", NetworkSource: kubevirtv1.NetworkSource{Multus: &kubevirtv1.MultusNetwork{NetworkName: "mynetwork"}}}),
 						),
 					},
@@ -892,10 +892,10 @@ func TestJsonPatch(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 						),
 					},
 					Release: hyperv1.Release{},
@@ -919,9 +919,9 @@ func TestJsonPatch(t *testing.T) {
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
-							memoryTmpltOpt("5Gi"),
+							memoryTmpltOpt(),
 							cpuTmpltOpt(4),
-							storageTmpltOpt("32Gi"),
+							storageTmpltOpt(),
 							addNetworkOpt(kubevirtv1.Network{Name: "secondary", NetworkSource: kubevirtv1.NetworkSource{Multus: &kubevirtv1.MultusNetwork{NetworkName: "mynetwork"}}}),
 						),
 					},
@@ -944,10 +944,10 @@ func TestJsonPatch(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 						),
 					},
 					Release: hyperv1.Release{},
@@ -982,9 +982,9 @@ func TestJsonPatch(t *testing.T) {
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
-							memoryTmpltOpt("5Gi"),
+							memoryTmpltOpt(),
 							cpuTmpltOpt(5),
-							storageTmpltOpt("32Gi"),
+							storageTmpltOpt(),
 							addNetworkOpt(kubevirtv1.Network{Name: "secondary", NetworkSource: kubevirtv1.NetworkSource{Multus: &kubevirtv1.MultusNetwork{NetworkName: "mynetwork"}}}),
 						),
 					},
@@ -1016,10 +1016,10 @@ func TestJsonPatch(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 						),
 					},
 					Release: hyperv1.Release{},
@@ -1049,9 +1049,9 @@ func TestJsonPatch(t *testing.T) {
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
-							memoryTmpltOpt("5Gi"),
+							memoryTmpltOpt(),
 							cpuTmpltOpt(5),
-							storageTmpltOpt("32Gi"),
+							storageTmpltOpt(),
 							addNetworkOpt(kubevirtv1.Network{Name: "secondary", NetworkSource: kubevirtv1.NetworkSource{Multus: &kubevirtv1.MultusNetwork{NetworkName: "mynetwork"}}}),
 						),
 					},
@@ -1083,10 +1083,10 @@ func TestJsonPatch(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 						),
 					},
 					Release: hyperv1.Release{},
@@ -1116,9 +1116,9 @@ func TestJsonPatch(t *testing.T) {
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
-							memoryTmpltOpt("5Gi"),
+							memoryTmpltOpt(),
 							cpuTmpltOpt(5),
-							storageTmpltOpt("32Gi"),
+							storageTmpltOpt(),
 						),
 					},
 				},
@@ -1143,10 +1143,10 @@ func TestJsonPatch(t *testing.T) {
 					Platform: hyperv1.NodePoolPlatform{
 						Type: hyperv1.KubevirtPlatform,
 						Kubevirt: generateKubevirtPlatform(
-							memoryNPOption("5Gi"),
-							coresNPOption(4),
-							imageNPOption("testimage"),
-							volumeNPOption("32Gi"),
+							memoryNPOption(),
+							coresNPOption(),
+							imageNPOption(),
+							volumeNPOption(),
 						),
 					},
 					Release: hyperv1.Release{},
@@ -1167,9 +1167,9 @@ func TestJsonPatch(t *testing.T) {
 					Spec: capikubevirt.KubevirtMachineSpec{
 						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
 						VirtualMachineTemplate: *generateNodeTemplate(
-							memoryTmpltOpt("5Gi"),
+							memoryTmpltOpt(),
 							cpuTmpltOpt(4),
-							storageTmpltOpt("32Gi"),
+							storageTmpltOpt(),
 							annotationsTmpltOpt(map[string]string{
 								suppconfig.PodSafeToEvictLocalVolumesKey: strings.Join(LocalStorageVolumes, ","),
 							}),
@@ -1203,23 +1203,24 @@ func assertDV(g Gomega, dvs []v1beta1.DataVolume, expectedDVNamePrefix string, b
 
 type nodePoolOption func(kvNodePool *hyperv1.KubevirtNodePoolPlatform)
 
-func memoryNPOption(memory string) nodePoolOption {
+func memoryNPOption() nodePoolOption {
 	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
 		if kvNodePool.Compute == nil {
 			kvNodePool.Compute = &hyperv1.KubevirtCompute{}
 		}
 
-		memoryQuantity := apiresource.MustParse(memory)
+		memoryQuantity := apiresource.MustParse("5Gi")
 		kvNodePool.Compute.Memory = &memoryQuantity
 	}
 }
 
-func coresNPOption(cores uint32) nodePoolOption {
+func coresNPOption() nodePoolOption {
 	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
 		if kvNodePool.Compute == nil {
 			kvNodePool.Compute = &hyperv1.KubevirtCompute{}
 		}
 
+		cores := uint32(4)
 		kvNodePool.Compute.Cores = &cores
 	}
 }
@@ -1235,20 +1236,21 @@ func qosClassGuaranteedNPOption() nodePoolOption {
 	}
 }
 
-func imageNPOption(image string) nodePoolOption {
+func imageNPOption() nodePoolOption {
 	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
 		if kvNodePool.RootVolume == nil {
 			kvNodePool.RootVolume = &hyperv1.KubevirtRootVolume{}
 		}
 
+		image := "testimage"
 		kvNodePool.RootVolume.Image = &hyperv1.KubevirtDiskImage{
 			ContainerDiskImage: &image,
 		}
 	}
 }
 
-func volumeNPOption(volumeSize string) nodePoolOption {
-	volumeSizeQuantity := apiresource.MustParse(volumeSize)
+func volumeNPOption() nodePoolOption {
+	volumeSizeQuantity := apiresource.MustParse("32Gi")
 
 	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
 		if kvNodePool.RootVolume == nil {
@@ -1307,19 +1309,19 @@ func cpuTmpltOpt(cores uint32) nodeTemplateOption {
 	}
 }
 
-func memoryTmpltOpt(memory string) nodeTemplateOption {
-	guestQuantity := apiresource.MustParse(memory)
+func memoryTmpltOpt() nodeTemplateOption {
+	guestQuantity := apiresource.MustParse("5Gi")
 
 	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
 		template.Spec.Template.Spec.Domain.Memory = &kubevirtv1.Memory{Guest: &guestQuantity}
 	}
 }
 
-func storageTmpltOpt(volumeSize string) nodeTemplateOption {
+func storageTmpltOpt() nodeTemplateOption {
 	storage := &v1beta1.StorageSpec{
 		Resources: corev1.VolumeResourceRequirements{
 			Requests: corev1.ResourceList{
-				corev1.ResourceStorage: apiresource.MustParse(volumeSize),
+				corev1.ResourceStorage: apiresource.MustParse("32Gi"),
 			},
 		},
 	}

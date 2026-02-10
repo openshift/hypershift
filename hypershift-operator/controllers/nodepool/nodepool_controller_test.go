@@ -517,8 +517,7 @@ func TestCreateValidGeneratedPayloadCondition(t *testing.T) {
 				Client: client,
 			}
 
-			got, err := r.createValidGeneratedPayloadCondition(t.Context(), tc.tokenSecret, 1)
-			g.Expect(err).ToNot(HaveOccurred())
+			got := r.createValidGeneratedPayloadCondition(t.Context(), tc.tokenSecret, 1)
 			g.Expect(got).To(BeEquivalentTo(tc.expectedCondition))
 		})
 	}
