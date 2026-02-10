@@ -58,10 +58,7 @@ func NewEtcdClient(endpointsFunc func() ([]string, error), eventRecorder events.
 // closed by the caller with Close().
 func newEtcdClientWithClientOpts(endpoints []string, skipConnectionTest bool, opts ...ClientOption) (*clientv3.Client, error) {
 	grpclog.SetLoggerV2(grpclog.NewLoggerV2(io.Discard, io.Discard, os.Stderr))
-	clientOpts, err := newClientOpts(opts...)
-	if err != nil {
-		return nil, fmt.Errorf("error during clientOpts: %w", err)
-	}
+	clientOpts := newClientOpts(opts...)
 
 	dialOptions := []grpc.DialOption{
 		grpc.WithChainUnaryInterceptor(grpcprom.UnaryClientInterceptor),

@@ -171,7 +171,7 @@ func (o *CreateBastionOpts) Run(ctx context.Context, logger logr.Logger) (string
 	// Waiting for instance to be running
 	var publicIP string
 	if o.Wait {
-		publicIP, err = waitForInstanceRunning(ctx, logger, ec2Client, instanceID)
+		publicIP, err = waitForInstanceRunning(ctx, ec2Client, instanceID)
 		if err != nil {
 			return "", "", fmt.Errorf("failed to wait for instance to be running: %w", err)
 		}
@@ -562,7 +562,7 @@ func existingInstance(ctx context.Context, ec2Client *ec2.EC2, infraID string) (
 	return "", nil
 }
 
-func waitForInstanceRunning(ctx context.Context, logger logr.Logger, ec2Client *ec2.EC2, instanceID string) (string, error) {
+func waitForInstanceRunning(ctx context.Context, ec2Client *ec2.EC2, instanceID string) (string, error) {
 
 	waitCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()

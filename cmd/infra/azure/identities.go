@@ -29,8 +29,8 @@ func NewIdentityManager(subscriptionID string, creds azcore.TokenCredential) *Id
 }
 
 // createManagedIdentity creates a managed identity using Azure SDK
-// Returns: resourceID, clientID, principalID, error
-func (i *IdentityManager) createManagedIdentity(ctx context.Context, l logr.Logger, resourceGroupName string, name string, infraID string, location string) (string, string, string, error) {
+// Returns: clientID, error
+func (i *IdentityManager) createManagedIdentity(ctx context.Context, l logr.Logger, resourceGroupName string, name string, infraID string, location string) (string, error) {
 	identityName := fmt.Sprintf("%s-%s", name, infraID)
 
 	l.Info("Creating managed identity",
@@ -41,18 +41,18 @@ func (i *IdentityManager) createManagedIdentity(ctx context.Context, l logr.Logg
 
 	client, err := armmsi.NewUserAssignedIdentitiesClient(i.subscriptionID, i.creds, nil)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to create managed identity client: %w", err)
+		return "", fmt.Errorf("failed to create managed identity client: %w", err)
 	}
 
 	identity, err := client.CreateOrUpdate(ctx, resourceGroupName, identityName, armmsi.Identity{
 		Location: ptr.To(location),
 	}, nil)
 	if err != nil {
-		return "", "", "", fmt.Errorf("failed to create managed identity: %w", err)
+		return "", fmt.Errorf("failed to create managed identity: %w", err)
 	}
 
 	if identity.ID == nil || identity.Properties == nil || identity.Properties.ClientID == nil || identity.Properties.PrincipalID == nil {
-		return "", "", "", fmt.Errorf("managed identity response missing required fields")
+		return "", fmt.Errorf("managed identity response missing required fields")
 	}
 
 	l.Info("Successfully created managed identity",
@@ -62,7 +62,7 @@ func (i *IdentityManager) createManagedIdentity(ctx context.Context, l logr.Logg
 		"principalID", ptr.Deref(identity.Properties.PrincipalID, ""),
 		"resourceGroup", resourceGroupName)
 
-	return ptr.Deref(identity.ID, ""), ptr.Deref(identity.Properties.ClientID, ""), ptr.Deref(identity.Properties.PrincipalID, ""), nil
+	return ptr.Deref(identity.Properties.ClientID, ""), nil
 }
 
 // FederatedCredentialConfig holds configuration for creating federated identity credentials
@@ -115,7 +115,7 @@ func (i *IdentityManager) CreateWorkloadIdentities(ctx context.Context, l logr.L
 
 	// Create Azure Disk managed identity
 	diskIdentityName := fmt.Sprintf("%s-disk", opts.Name)
-	_, diskClientID, _, err := i.createManagedIdentity(ctx, l, resourceGroupName, diskIdentityName, opts.InfraID, opts.Location)
+	diskClientID, err := i.createManagedIdentity(ctx, l, resourceGroupName, diskIdentityName, opts.InfraID, opts.Location)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create disk managed identity: %w", err)
 	}
@@ -148,7 +148,7 @@ func (i *IdentityManager) CreateWorkloadIdentities(ctx context.Context, l logr.L
 
 	// Create Azure File managed identity
 	fileIdentityName := fmt.Sprintf("%s-file", opts.Name)
-	_, fileClientID, _, err := i.createManagedIdentity(ctx, l, resourceGroupName, fileIdentityName, opts.InfraID, opts.Location)
+	fileClientID, err := i.createManagedIdentity(ctx, l, resourceGroupName, fileIdentityName, opts.InfraID, opts.Location)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create file managed identity: %w", err)
 	}
@@ -181,7 +181,7 @@ func (i *IdentityManager) CreateWorkloadIdentities(ctx context.Context, l logr.L
 
 	// Create Image Registry managed identity
 	imageRegistryIdentityName := fmt.Sprintf("%s-image-registry", opts.Name)
-	_, imageRegistryClientID, _, err := i.createManagedIdentity(ctx, l, resourceGroupName, imageRegistryIdentityName, opts.InfraID, opts.Location)
+	imageRegistryClientID, err := i.createManagedIdentity(ctx, l, resourceGroupName, imageRegistryIdentityName, opts.InfraID, opts.Location)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create image registry managed identity: %w", err)
 	}
@@ -210,7 +210,7 @@ func (i *IdentityManager) CreateWorkloadIdentities(ctx context.Context, l logr.L
 
 	// Create Ingress managed identity
 	ingressIdentityName := fmt.Sprintf("%s-ingress", opts.Name)
-	_, ingressClientID, _, err := i.createManagedIdentity(ctx, l, resourceGroupName, ingressIdentityName, opts.InfraID, opts.Location)
+	ingressClientID, err := i.createManagedIdentity(ctx, l, resourceGroupName, ingressIdentityName, opts.InfraID, opts.Location)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create ingress managed identity: %w", err)
 	}
@@ -229,7 +229,7 @@ func (i *IdentityManager) CreateWorkloadIdentities(ctx context.Context, l logr.L
 
 	// Create Cloud Provider managed identity
 	cloudProviderIdentityName := fmt.Sprintf("%s-cloud-provider", opts.Name)
-	_, cloudProviderClientID, _, err := i.createManagedIdentity(ctx, l, resourceGroupName, cloudProviderIdentityName, opts.InfraID, opts.Location)
+	cloudProviderClientID, err := i.createManagedIdentity(ctx, l, resourceGroupName, cloudProviderIdentityName, opts.InfraID, opts.Location)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create cloud provider managed identity: %w", err)
 	}
@@ -249,7 +249,7 @@ func (i *IdentityManager) CreateWorkloadIdentities(ctx context.Context, l logr.L
 
 	// Create Node Pool Management managed identity
 	nodePoolMgmtIdentityName := fmt.Sprintf("%s-node-pool-mgmt", opts.Name)
-	_, nodePoolMgmtClientID, _, err := i.createManagedIdentity(ctx, l, resourceGroupName, nodePoolMgmtIdentityName, opts.InfraID, opts.Location)
+	nodePoolMgmtClientID, err := i.createManagedIdentity(ctx, l, resourceGroupName, nodePoolMgmtIdentityName, opts.InfraID, opts.Location)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create node pool management managed identity: %w", err)
 	}
@@ -269,7 +269,7 @@ func (i *IdentityManager) CreateWorkloadIdentities(ctx context.Context, l logr.L
 
 	// Create Network managed identity
 	networkIdentityName := fmt.Sprintf("%s-network", opts.Name)
-	_, networkClientID, _, err := i.createManagedIdentity(ctx, l, resourceGroupName, networkIdentityName, opts.InfraID, opts.Location)
+	networkClientID, err := i.createManagedIdentity(ctx, l, resourceGroupName, networkIdentityName, opts.InfraID, opts.Location)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create network managed identity: %w", err)
 	}

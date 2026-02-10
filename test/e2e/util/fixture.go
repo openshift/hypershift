@@ -39,7 +39,7 @@ import (
 // know or care about in advance.
 //
 // TODO: Mutates the input, instead should use a copy of the input options
-func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions) (*PlatformAgnosticOptions, error) {
+func createClusterOpts(_ context.Context, _ crclient.Client, hc *hyperv1.HostedCluster, opts *PlatformAgnosticOptions) *PlatformAgnosticOptions {
 	opts.Namespace = hc.Namespace
 	opts.Name = hc.Name
 
@@ -52,7 +52,7 @@ func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.
 		opts.InfraID = fmt.Sprintf("%s-infra", hc.Name)
 	}
 
-	return opts, nil
+	return opts
 }
 
 // createCluster calls the correct cluster create CLI function based on the

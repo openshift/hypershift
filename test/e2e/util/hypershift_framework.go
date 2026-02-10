@@ -432,8 +432,7 @@ func (h *hypershiftTest) createHostedCluster(opts *PlatformAgnosticOptions, plat
 	}
 
 	// Build options specific to the platform.
-	opts, err = createClusterOpts(h.ctx, h.client, hc, opts)
-	g.Expect(err).NotTo(HaveOccurred(), "failed to generate platform specific cluster options")
+	opts = createClusterOpts(h.ctx, h.client, hc, opts)
 
 	// Dump the output from rendering the cluster objects for posterity
 	if err := os.MkdirAll(artifactDir, 0755); err != nil {

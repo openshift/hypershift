@@ -1119,7 +1119,7 @@ func useExistingDHCP(dhcpServers models.DHCPServers) (string, error) {
 }
 
 // setupPowerVSDHCP takes care of setting up dhcp in powervs
-func (infra *Infra) setupPowerVSDHCP(ctx context.Context, logger logr.Logger, options *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
+func (infra *Infra) setupPowerVSDHCP(ctx context.Context, logger logr.Logger, _ *CreateInfraOptions, session *ibmpisession.IBMPISession) error {
 	logger.Info("Setting up PowerVS DHCP ...")
 	client := instance.NewIBMPIDhcpClient(ctx, session, infra.CloudInstanceID)
 
@@ -1152,7 +1152,7 @@ func (infra *Infra) setupPowerVSDHCP(ctx context.Context, logger logr.Logger, op
 		}
 	} else {
 		logger.Info("Creating PowerVS DHCPServer...")
-		dhcpServer, err = infra.createPowerVSDhcp(ctx, logger, options, client)
+		dhcpServer, err = infra.createPowerVSDhcp(ctx, logger, client)
 	}
 
 	if err != nil {
@@ -1213,7 +1213,7 @@ func isDHCPServerActive(logger logr.Logger, client *instance.IBMPIDhcpClient, dh
 }
 
 // createPowerVSDhcp creates a new dhcp server in powervs
-func (infra *Infra) createPowerVSDhcp(ctx context.Context, logger logr.Logger, options *CreateInfraOptions, client *instance.IBMPIDhcpClient) (*models.DHCPServerDetail, error) {
+func (infra *Infra) createPowerVSDhcp(ctx context.Context, logger logr.Logger, client *instance.IBMPIDhcpClient) (*models.DHCPServerDetail, error) {
 	startTime := time.Now()
 	var dhcpServer *models.DHCPServerDetail
 

@@ -8,12 +8,12 @@ type ClientOptions struct {
 	dialTimeout time.Duration
 }
 
-func newClientOpts(opts ...ClientOption) (*ClientOptions, error) {
+func newClientOpts(opts ...ClientOption) *ClientOptions {
 	clientOpts := &ClientOptions{
 		dialTimeout: DefaultDialTimeout,
 	}
 	clientOpts.applyOpts(opts)
-	return clientOpts, nil
+	return clientOpts
 }
 
 func (co *ClientOptions) applyOpts(opts []ClientOption) {

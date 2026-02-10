@@ -375,7 +375,7 @@ func TestCheckDependencies(t *testing.T) {
 	}
 }
 
-func createMockOperandDeployment(name string, ready bool, version string, componentName string) *appsv1.Deployment {
+func createMockOperandDeployment(ready bool, version string, componentName string) *appsv1.Deployment {
 	var replicas int32 = 3
 	generation := int64(1)
 
@@ -401,7 +401,7 @@ func createMockOperandDeployment(name string, ready bool, version string, compon
 
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:       name,
+			Name:       "test-deployment",
 			Generation: generation,
 			Labels: map[string]string{
 				"hypershift.openshift.io/managed-by": componentName,
@@ -437,25 +437,25 @@ func TestCheckOperandsRolloutStatus(t *testing.T) {
 	}{
 		{
 			name:                    "All replicas ready and updated",
-			deployment:              createMockOperandDeployment("test-deployment", true, "4.18.0", componentName),
+			deployment:              createMockOperandDeployment(true, "4.18.0", componentName),
 			expectedRolloutComplete: true,
 			expectedErrorMessage:    "",
 		},
 		{
 			name:                    "Replicas not all ready",
-			deployment:              createMockOperandDeployment("test-deployment", false, "4.18.0", componentName),
+			deployment:              createMockOperandDeployment(false, "4.18.0", componentName),
 			expectedRolloutComplete: false,
 			expectedErrorMessage:    "deployment /test-deployment is not ready",
 		},
 		{
 			name:                    "No deployments to monitor",
-			deployment:              createMockOperandDeployment("test-deployment", true, "4.18.0", "other-component"),
+			deployment:              createMockOperandDeployment(true, "4.18.0", "other-component"),
 			expectedRolloutComplete: true,
 			expectedErrorMessage:    "",
 		},
 		{
 			name:                    "Different version",
-			deployment:              createMockOperandDeployment("test-deployment", true, "4.17.0", componentName),
+			deployment:              createMockOperandDeployment(true, "4.17.0", componentName),
 			expectedRolloutComplete: false,
 			expectedErrorMessage:    "deployment /test-deployment has version 4.17.0, expected 4.18.0",
 		},

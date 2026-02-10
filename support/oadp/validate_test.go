@@ -168,7 +168,7 @@ func TestVerifyDPAStatus(t *testing.T) {
 			name:      "DPA with Reconciled=True condition",
 			namespace: "openshift-adp",
 			objects: []client.Object{
-				createDPAWithCondition("test-dpa", "openshift-adp", "Reconciled", "True"),
+				createDPAWithCondition("test-dpa", "Reconciled", "True"),
 			},
 			expectError: false,
 		},
@@ -176,7 +176,7 @@ func TestVerifyDPAStatus(t *testing.T) {
 			name:      "DPA with Reconciled=False condition",
 			namespace: "openshift-adp",
 			objects: []client.Object{
-				createDPAWithCondition("test-dpa", "openshift-adp", "Reconciled", "False"),
+				createDPAWithCondition("test-dpa", "Reconciled", "False"),
 			},
 			expectError: true,
 			errorMsg:    "no ready DataProtectionApplication found",
@@ -185,7 +185,7 @@ func TestVerifyDPAStatus(t *testing.T) {
 			name:      "DPA with different condition type",
 			namespace: "openshift-adp",
 			objects: []client.Object{
-				createDPAWithCondition("test-dpa", "openshift-adp", "Available", "True"),
+				createDPAWithCondition("test-dpa", "Available", "True"),
 			},
 			expectError: true,
 			errorMsg:    "no ready DataProtectionApplication found",
@@ -194,8 +194,8 @@ func TestVerifyDPAStatus(t *testing.T) {
 			name:      "Multiple DPAs, one ready",
 			namespace: "openshift-adp",
 			objects: []client.Object{
-				createDPAWithCondition("test-dpa-1", "openshift-adp", "Reconciled", "False"),
-				createDPAWithCondition("test-dpa-2", "openshift-adp", "Reconciled", "True"),
+				createDPAWithCondition("test-dpa-1", "Reconciled", "False"),
+				createDPAWithCondition("test-dpa-2", "Reconciled", "True"),
 			},
 			expectError: false,
 		},
@@ -256,7 +256,7 @@ func TestCheckDPAHypershiftPlugin(t *testing.T) {
 			name:      "DPA with hypershift plugin",
 			namespace: "openshift-adp",
 			objects: []client.Object{
-				createDPAWithPlugins("test-dpa", "openshift-adp", []string{"openshift", "aws", "hypershift"}),
+				createDPAWithPlugins("test-dpa", []string{"openshift", "aws", "hypershift"}),
 			},
 			expectError: false,
 		},
@@ -264,7 +264,7 @@ func TestCheckDPAHypershiftPlugin(t *testing.T) {
 			name:      "DPA without hypershift plugin",
 			namespace: "openshift-adp",
 			objects: []client.Object{
-				createDPAWithPlugins("test-dpa", "openshift-adp", []string{"openshift", "aws"}),
+				createDPAWithPlugins("test-dpa", []string{"openshift", "aws"}),
 			},
 			expectError: true,
 			errorMsg:    "HyperShift plugin not found",
@@ -273,8 +273,8 @@ func TestCheckDPAHypershiftPlugin(t *testing.T) {
 			name:      "Multiple DPAs, one with hypershift plugin",
 			namespace: "openshift-adp",
 			objects: []client.Object{
-				createDPAWithPlugins("test-dpa-1", "openshift-adp", []string{"openshift", "aws"}),
-				createDPAWithPlugins("test-dpa-2", "openshift-adp", []string{"openshift", "hypershift"}),
+				createDPAWithPlugins("test-dpa-1", []string{"openshift", "aws"}),
+				createDPAWithPlugins("test-dpa-2", []string{"openshift", "hypershift"}),
 			},
 			expectError: false,
 		},
@@ -398,7 +398,7 @@ func TestValidateAndGetHostedClusterPlatform(t *testing.T) {
 
 // Helper functions to create test objects
 
-func createDPAWithCondition(name, namespace, conditionType, status string) *unstructured.Unstructured {
+func createDPAWithCondition(name, conditionType, status string) *unstructured.Unstructured {
 	dpa := &unstructured.Unstructured{}
 	dpa.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "oadp.openshift.io",
@@ -406,7 +406,7 @@ func createDPAWithCondition(name, namespace, conditionType, status string) *unst
 		Kind:    "DataProtectionApplication",
 	})
 	dpa.SetName(name)
-	dpa.SetNamespace(namespace)
+	dpa.SetNamespace("openshift-adp")
 
 	conditions := []interface{}{
 		map[string]interface{}{
@@ -431,7 +431,7 @@ func createDPAWithoutStatus(name, namespace string) *unstructured.Unstructured {
 	return dpa
 }
 
-func createDPAWithPlugins(name, namespace string, plugins []string) *unstructured.Unstructured {
+func createDPAWithPlugins(name string, plugins []string) *unstructured.Unstructured {
 	dpa := &unstructured.Unstructured{}
 	dpa.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "oadp.openshift.io",
@@ -439,7 +439,7 @@ func createDPAWithPlugins(name, namespace string, plugins []string) *unstructure
 		Kind:    "DataProtectionApplication",
 	})
 	dpa.SetName(name)
-	dpa.SetNamespace(namespace)
+	dpa.SetNamespace("openshift-adp")
 
 	pluginInterfaces := make([]interface{}, len(plugins))
 	for i, plugin := range plugins {

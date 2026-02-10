@@ -2708,7 +2708,7 @@ func ValidateMetrics(t *testing.T, ctx context.Context, client crclient.Client, 
 	})
 }
 
-func getIngressRouterDefaultIP(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) (string, error) {
+func getIngressRouterDefaultIP(t *testing.T, ctx context.Context, client crclient.Client, _ *hyperv1.HostedCluster) (string, error) {
 	t.Helper()
 
 	defaultIngressRouterService := &corev1.Service{
