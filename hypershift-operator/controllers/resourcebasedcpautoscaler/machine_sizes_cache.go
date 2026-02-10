@@ -81,7 +81,8 @@ func (s *machineSizesCache) update(csc *schedulingv1alpha1.ClusterSizingConfigur
 	s.kasMemorySizeFraction = kasMemorySizeFraction
 
 	if sizeMemoryCapacityAvailable(csc) {
-		return s.updateSizesFromConfig(csc)
+		s.updateSizesFromConfig(csc)
+		return nil
 	}
 
 	return s.updateSizesFromMachineSets(csc, listMachineSets)
@@ -103,7 +104,7 @@ func sizeMemoryCapacityAvailable(csc *schedulingv1alpha1.ClusterSizingConfigurat
 
 // updateSizesFromConfig populates the cache using capacity information directly
 // from the ClusterSizingConfiguration.
-func (s *machineSizesCache) updateSizesFromConfig(csc *schedulingv1alpha1.ClusterSizingConfiguration) error {
+func (s *machineSizesCache) updateSizesFromConfig(csc *schedulingv1alpha1.ClusterSizingConfiguration) {
 	sizes := map[string]machineResources{}
 	for _, sizeConfig := range csc.Spec.Sizes {
 		resources := machineResources{
@@ -114,7 +115,6 @@ func (s *machineSizesCache) updateSizesFromConfig(csc *schedulingv1alpha1.Cluste
 	}
 	s.sizes = sizes
 	s.cscGeneration = csc.Generation
-	return nil
 }
 
 // updateSizesFromMachineSets introspects existing MachineSets to determine machine

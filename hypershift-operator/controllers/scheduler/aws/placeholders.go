@@ -238,7 +238,7 @@ func (r *placeholderCreator) reconcile(
 				return nil, nil
 			}
 
-			return newDeployment(placeholderNamespace, sizeClass.Name, missingIndex, pairLabelsAssignedToHostedClusters.UnsortedList()), nil
+			return newDeployment(sizeClass.Name, missingIndex, pairLabelsAssignedToHostedClusters.UnsortedList()), nil
 		}
 	}
 
@@ -359,7 +359,7 @@ func (r *placeholderUpdater) reconcile(
 	if !pairLabelsAssignedToHostedClusters.Equal(existingPairLabels) {
 		// the set of paired nodes on which hosted clusters have been scheduled has changed, we need to update the
 		// node affinity configuration on the deployment
-		return false, newDeployment(placeholderNamespace, placeholderSize, parsedIndex, pairLabelsAssignedToHostedClusters.UnsortedList()), nil
+		return false, newDeployment(placeholderSize, parsedIndex, pairLabelsAssignedToHostedClusters.UnsortedList()), nil
 	}
 	return false, nil, nil
 }
@@ -377,7 +377,7 @@ func parseIndex(sizeClass, name string) (int, error) {
 	return strconv.Atoi(strings.TrimPrefix(name, expectedPrefix))
 }
 
-func newDeployment(namespace, sizeClass string, placeholderIndex int, pairedNodes []string) *appsv1applyconfigurations.DeploymentApplyConfiguration {
+func newDeployment(sizeClass string, placeholderIndex int, pairedNodes []string) *appsv1applyconfigurations.DeploymentApplyConfiguration {
 	var nodeAffinity *corev1applyconfigurations.NodeAffinityApplyConfiguration
 	if len(pairedNodes) > 0 {
 		sort.Strings(pairedNodes)
@@ -397,7 +397,7 @@ func newDeployment(namespace, sizeClass string, placeholderIndex int, pairedNode
 			),
 		)
 	}
-	return appsv1applyconfigurations.Deployment(deploymentName(sizeClass, placeholderIndex), namespace).WithLabels(map[string]string{
+	return appsv1applyconfigurations.Deployment(deploymentName(sizeClass, placeholderIndex), placeholderNamespace).WithLabels(map[string]string{
 		PlaceholderLabel:                         strconv.Itoa(placeholderIndex),
 		hypershiftv1beta1.HostedClusterSizeLabel: sizeClass,
 	}).WithSpec(

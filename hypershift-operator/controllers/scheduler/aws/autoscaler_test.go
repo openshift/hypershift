@@ -43,24 +43,24 @@ func TestHostedClusterMachineSetsToScaleDown(t *testing.T) {
 		{
 			name:          "Hosted cluster has additional node selector (small)",
 			hostedCluster: hostedCluster(withAdditionalNodeSelector(fmt.Sprintf("%s=small", hyperv1.NodeSizeLabel)), withHCSizeLabel("small")),
-			machineSets:   machineSets(10, withReplicas(1)),
+			machineSets:   machineSets(10, withReplicas()),
 			nodes:         nodes(10, withHC(hc, 0, 1, 2, 3, 4, 5), withPairLabel("pair1", 0, 1, 2, 3, 4, 5), withSizeLabel("small", 0, 1), withSizeLabel("medium", 2, 3), withSizeLabel("large", 4, 5)),
 			machines:      machines(10),
-			expected:      machineSets(6, withReplicas(1))[2:], // machinesets 2, 3, 4, 5
+			expected:      machineSets(6, withReplicas())[2:], // machinesets 2, 3, 4, 5
 		},
 		{
 			name:               "Hosted cluster has additional node selector (medium), some nodes are new",
 			hostedCluster:      hostedCluster(withAdditionalNodeSelector(fmt.Sprintf("%s=medium", hyperv1.NodeSizeLabel))),
-			machineSets:        machineSets(10, withReplicas(1)),
+			machineSets:        machineSets(10, withReplicas()),
 			nodes:              nodes(10, withHC(hc, 0, 1, 2, 3, 4, 5), withPairLabel("pair1", 0, 1, 2, 3, 4, 5), withSizeLabel("small", 0, 1), withSizeLabel("medium", 2, 3), withSizeLabel("large", 4, 5), withCreationTimestamp(twoMinutesAgo, 0, 1)),
 			machines:           machines(10),
-			expected:           machineSets(6, withReplicas(1))[4:], // machinesets 4, 5
+			expected:           machineSets(6, withReplicas())[4:], // machinesets 4, 5
 			expectRequeueAfter: nodeScaleDownDelay,
 		},
 		{
 			name:               "Hosted cluster has additional node selector (large), all nodes are new",
 			hostedCluster:      hostedCluster(withAdditionalNodeSelector(fmt.Sprintf("%s=large", hyperv1.NodeSizeLabel)), withHCSizeLabel("large")),
-			machineSets:        machineSets(4, withReplicas(1)),
+			machineSets:        machineSets(4, withReplicas()),
 			nodes:              nodes(4, withHC(hc, 0, 1, 2, 3), withPairLabel("pair1", 0, 1, 2, 3), withSizeLabel("medium", 0, 1), withSizeLabel("large", 2, 3), withCreationTimestamp(twoMinutesAgo, 0, 1, 2, 3)),
 			machines:           machines(10),
 			expected:           nil,
@@ -69,18 +69,18 @@ func TestHostedClusterMachineSetsToScaleDown(t *testing.T) {
 		{
 			name:          "Hosted cluster has additional node selector (medium) and size label(small)",
 			hostedCluster: hostedCluster(withAdditionalNodeSelector(fmt.Sprintf("%s=small", hyperv1.NodeSizeLabel)), withHCSizeLabel("medium")),
-			machineSets:   machineSets(6, withReplicas(1)),
+			machineSets:   machineSets(6, withReplicas()),
 			nodes:         nodes(6, withHC(hc, 0, 1, 2, 3, 4, 5), withPairLabel("pair1", 0, 1, 2, 3, 4, 5), withSizeLabel("small", 0, 1), withSizeLabel("medium", 2, 3), withSizeLabel("large", 4, 5)),
 			machines:      machines(6),
-			expected:      machineSets(6, withReplicas(1))[4:], // machinesets 4, 5
+			expected:      machineSets(6, withReplicas())[4:], // machinesets 4, 5
 		},
 		{
 			name:          "Do not scale down nodes without a size label",
 			hostedCluster: hostedCluster(withAdditionalNodeSelector(fmt.Sprintf("%s=small", hyperv1.NodeSizeLabel)), withHCSizeLabel("small")),
-			machineSets:   machineSets(6, withReplicas(1)),
+			machineSets:   machineSets(6, withReplicas()),
 			nodes:         nodes(6, withHC(hc, 0, 1, 2, 3, 4, 5), withPairLabel("pair1", 0, 1, 2, 3, 4, 5), withSizeLabel("small", 0, 1), withSizeLabel("medium", 2, 3)),
 			machines:      machines(6),
-			expected:      machineSets(6, withReplicas(1))[2:4], //machinesets 2, 3
+			expected:      machineSets(6, withReplicas())[2:4], //machinesets 2, 3
 		},
 	}
 	for _, test := range tests {
@@ -114,9 +114,9 @@ func TestNodeMachineSetsToScaleDown(t *testing.T) {
 				withSizeLabel("medium", 2, 3),
 				withSizeLabel("large", 4, 5),
 				withPairLabel("pair1", 0, 1, 2, 3, 4, 5)),
-			machineSets: machineSets(8, withReplicas(1)),
+			machineSets: machineSets(8, withReplicas()),
 			machines:    machines(8),
-			expected:    machineSets(8, withReplicas(1))[:6], // machinesets 0, 1, 2, 3, 4, 5
+			expected:    machineSets(8, withReplicas())[:6], // machinesets 0, 1, 2, 3, 4, 5
 		},
 		{
 			name: "There are multiple nodes with the same pair label, some machinesets are scaled up",
@@ -130,9 +130,9 @@ func TestNodeMachineSetsToScaleDown(t *testing.T) {
 				withSizeLabel("medium", 2, 3),
 				withSizeLabel("large", 4, 5),
 				withPairLabel("pair1", 0, 1, 2, 3, 4, 5)),
-			machineSets: machineSets(8, withReplicas(1, 0, 1, 4, 5)),
+			machineSets: machineSets(8, withReplicas(0, 1, 4, 5)),
 			machines:    machines(8),
-			expected:    append(machineSets(8, withReplicas(1))[:2], machineSets(8, withReplicas(1))[4:6]...), // machinesets 0, 1, 4, 5
+			expected:    append(machineSets(8, withReplicas())[:2], machineSets(8, withReplicas())[4:6]...), // machinesets 0, 1, 4, 5
 		},
 		{
 			name: "The node does not have a pair label",
@@ -146,9 +146,9 @@ func TestNodeMachineSetsToScaleDown(t *testing.T) {
 				withSizeLabel("medium", 2, 3),
 				withSizeLabel("large", 4, 5),
 				withPairLabel("", 0, 1, 2, 3, 4, 5)),
-			machineSets: machineSets(8, withReplicas(1)),
+			machineSets: machineSets(8, withReplicas()),
 			machines:    machines(8),
-			expected:    machineSets(8, withReplicas(1))[3:4], // machineset 3
+			expected:    machineSets(8, withReplicas())[3:4], // machineset 3
 		},
 		{
 			name: "Do not scale down nodes without a size label",
@@ -162,9 +162,9 @@ func TestNodeMachineSetsToScaleDown(t *testing.T) {
 				withSizeLabel("medium", 2, 3),
 				withSizeLabel("", 4, 5),
 				withPairLabel("pair1", 0, 1, 2, 3, 4, 5)),
-			machineSets: machineSets(8, withReplicas(1)),
+			machineSets: machineSets(8, withReplicas()),
 			machines:    machines(8),
-			expected:    machineSets(8, withReplicas(1))[:4], // machinesets 0, 1, 2, 3
+			expected:    machineSets(8, withReplicas())[:4], // machinesets 0, 1, 2, 3
 		},
 	}
 
@@ -381,8 +381,9 @@ func withCreationTimestamp(t time.Time, indices ...int) func([]corev1.Node) {
 	}
 }
 
-func withReplicas(replicas int32, indices ...int) func(machineSets []machinev1beta1.MachineSet) {
+func withReplicas(indices ...int) func(machineSets []machinev1beta1.MachineSet) {
 	return func(machineSets []machinev1beta1.MachineSet) {
+		var replicas int32 = 1
 		if len(indices) == 0 {
 			for i := range machineSets {
 				machineSets[i].Spec.Replicas = &replicas

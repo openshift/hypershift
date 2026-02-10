@@ -85,7 +85,7 @@ matches:
 
 func TestReconcileUWMConfigContent(t *testing.T) {
 	// helper to locate the telemetry remote write entry and validate core fields
-	validateTelemetryRemoteWrite := func(g *WithT, parsed map[string]interface{}) map[string]interface{} {
+	validateTelemetryRemoteWrite := func(g *WithT, parsed map[string]interface{}) {
 		remoteWrite, found, err := unstructured.NestedSlice(parsed, "prometheus", "remoteWrite")
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(found).To(BeTrue())
@@ -136,7 +136,6 @@ func TestReconcileUWMConfigContent(t *testing.T) {
 			}
 		}
 		g.Expect(foundKeepID).To(BeTrue())
-		return telemetry
 	}
 
 	tests := []struct {
@@ -214,7 +213,7 @@ prometheus:
 `,
 			expectRWCount: 2,
 			validateExtra: func(g *WithT, parsed map[string]interface{}) {
-				_ = validateTelemetryRemoteWrite(g, parsed)
+				validateTelemetryRemoteWrite(g, parsed)
 				// queueConfig numeric assertions are intentionally skipped due to YAML number typing nuances
 			},
 		},
@@ -237,7 +236,7 @@ prometheus:
 			g.Expect(err).ToNot(HaveOccurred())
 
 			// validate telemetry entry exists and core behavior
-			_ = validateTelemetryRemoteWrite(g, parsed)
+			validateTelemetryRemoteWrite(g, parsed)
 
 			// validate remote write count
 			rw, _, _ := unstructured.NestedSlice(parsed, "prometheus", "remoteWrite")

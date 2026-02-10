@@ -89,7 +89,7 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 			listConfigMaps: func(_ context.Context, _ ...client.ListOption) (*corev1.ConfigMapList, error) {
 				return &corev1.ConfigMapList{Items: []corev1.ConfigMap{}}, nil
 			},
-			expected: newDeployment(placeholderNamespace, "small", 0, []string{}),
+			expected: newDeployment("small", 0, []string{}),
 		},
 		{
 			name: "some placeholders necessary, some exist, create next",
@@ -109,7 +109,7 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 			listConfigMaps: func(_ context.Context, _ ...client.ListOption) (*corev1.ConfigMapList, error) {
 				return &corev1.ConfigMapList{Items: []corev1.ConfigMap{}}, nil
 			},
-			expected: newDeployment(placeholderNamespace, "small", 1, []string{}),
+			expected: newDeployment("small", 1, []string{}),
 		},
 		{
 			name: "some placeholders necessary, some exist, create missing",
@@ -129,7 +129,7 @@ func TestPlaceholderCreator_Reconcile(t *testing.T) {
 			listConfigMaps: func(_ context.Context, _ ...client.ListOption) (*corev1.ConfigMapList, error) {
 				return &corev1.ConfigMapList{Items: []corev1.ConfigMap{}}, nil
 			},
-			expected: newDeployment(placeholderNamespace, "small", 0, []string{}),
+			expected: newDeployment("small", 0, []string{}),
 		},
 		{
 			name: "some placeholders necessary, all exist, do nothing",
@@ -335,7 +335,7 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{pairLabelKey: "second"}}},
 				}}, nil
 			},
-			expected: newDeployment(placeholderNamespace, "small", 1, []string{"first", "second"}),
+			expected: newDeployment("small", 1, []string{"first", "second"}),
 		},
 		{
 			name: "placeholder deployment paired nodes out-of-date, update",
@@ -383,7 +383,7 @@ func TestPlaceholderUpdater_Reconcile(t *testing.T) {
 					{ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{pairLabelKey: "second"}}},
 				}}, nil
 			},
-			expected: newDeployment(placeholderNamespace, "small", 1, []string{"first", "second"}),
+			expected: newDeployment("small", 1, []string{"first", "second"}),
 		},
 		{
 			name: "placeholder deployment correct, no-op",
