@@ -21,6 +21,7 @@ import (
 
 const (
 	kubeAPIServerComponentName        = "kube-apiserver"
+	routerComponentName               = "router"
 	etcdComponentName                 = "etcd"
 	featureGateGeneratorComponetName  = "featuregate-generator"
 	controlPlaneOperatorComponentName = "control-plane-operator"
@@ -29,6 +30,7 @@ const (
 var (
 	componentsExcludedFromKubeAPIServerDependency = sets.New(
 		etcdComponentName,
+		routerComponentName,
 		featureGateGeneratorComponetName,
 		controlPlaneOperatorComponentName,
 		"cluster-api",
@@ -55,6 +57,13 @@ func (c *controlPlaneWorkload[T]) checkDependencies(cpContext ControlPlaneContex
 	// we don't deploy etcd for unmanaged, therefore components can't have a dependency on it.
 	if cpContext.HCP.Spec.Etcd.ManagementType != hyperv1.Managed && unavailableDependencies.Has(etcdComponentName) {
 		unavailableDependencies.Delete(etcdComponentName)
+	}
+	// kube-apiserver depends on router when Swift networking is enabled for Azure Private Link access.
+	// The router pod hosts the Azure DNS proxy that KMS containers need to access vault via Private Link.
+	if c.Name() == kubeAPIServerComponentName {
+		if swiftPodNetworkInstance := cpContext.HCP.Annotations[hyperv1.SwiftPodNetworkInstanceAnnotation]; swiftPodNetworkInstance != "" {
+			unavailableDependencies.Insert(routerComponentName)
+		}
 	}
 	// make sure component's don't have a circular dependency.
 	if unavailableDependencies.Has(c.Name()) {

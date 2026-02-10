@@ -33,9 +33,7 @@ func (k *router) NeedsManagementKASAccess() bool {
 
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &router{}).
-		WithPredicate(func(cpContext component.WorkloadContext) (bool, error) {
-			return UseHCPRouter(cpContext.HCP), nil
-		}).
+		WithPredicate(useHCPRouter).
 		WithAdaptFunction(adaptDeployment).
 		WithManifestAdapter(
 			"config.yaml",
