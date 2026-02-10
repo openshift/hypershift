@@ -76,10 +76,8 @@ func addAzureDNSProxySidecar(deployment *appsv1.Deployment, image string) {
 		},
 		LivenessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/",
-					Port:   intstr.FromInt(8888),
-					Scheme: corev1.URISchemeHTTP,
+				TCPSocket: &corev1.TCPSocketAction{
+					Port: intstr.FromInt(8888),
 				},
 			},
 			InitialDelaySeconds: 10,
@@ -90,10 +88,8 @@ func addAzureDNSProxySidecar(deployment *appsv1.Deployment, image string) {
 		},
 		ReadinessProbe: &corev1.Probe{
 			ProbeHandler: corev1.ProbeHandler{
-				HTTPGet: &corev1.HTTPGetAction{
-					Path:   "/",
-					Port:   intstr.FromInt(8888),
-					Scheme: corev1.URISchemeHTTP,
+				TCPSocket: &corev1.TCPSocketAction{
+					Port: intstr.FromInt(8888),
 				},
 			},
 			InitialDelaySeconds: 5,
