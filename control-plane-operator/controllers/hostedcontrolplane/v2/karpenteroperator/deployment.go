@@ -17,6 +17,10 @@ func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.Worklo
 
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Image = karp.HyperShiftOperatorImage
+		c.Args = append(c.Args,
+			"--hypershift-operator-image="+karp.HyperShiftOperatorImage,
+			"--ignition-endpoint="+karp.IgnitionEndpoint,
+		)
 	})
 
 	switch hcp.Spec.Platform.Type {

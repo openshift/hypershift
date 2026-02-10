@@ -311,8 +311,13 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 	tokenSecret.Annotations[TokenSecretNodePoolUpgradeType] = string(t.nodePool.Spec.Management.UpgradeType)
 	tokenSecret.Annotations[nodePoolAnnotation] = client.ObjectKeyFromObject(t.nodePool).String()
 	if karpenterutil.IsKarpenterEnabled(t.hostedCluster.Spec.AutoNode) {
-		if t.nodePool.GetName() == hyperkarpenterv1.KarpenterNodePool {
+		npLabels := t.nodePool.GetLabels()
+		if npLabels != nil && npLabels[karpenterutil.ManagedByKarpenterLabel] == "true" {
 			tokenSecret.Annotations[supportutil.HostedClusterAnnotation] = client.ObjectKeyFromObject(t.ConfigGenerator.hostedCluster).String()
+			if tokenSecret.Labels == nil {
+				tokenSecret.Labels = make(map[string]string)
+			}
+			tokenSecret.Labels[karpenterutil.ManagedByKarpenterLabel] = "true"
 		}
 	}
 	// active token should never be marked as expired.
@@ -370,12 +375,11 @@ func (t *Token) reconcileUserDataSecret(userDataSecret *corev1.Secret, token str
 	}
 
 	if karpenterutil.IsKarpenterEnabled(t.hostedCluster.Spec.AutoNode) {
-		// TODO(alberto): prevent nodePool name collisions adding prefix to karpenter NodePool.
-		if t.nodePool.GetName() == hyperkarpenterv1.KarpenterNodePool {
-			userDataSecret.Labels[hyperv1.NodePoolLabel] = fmt.Sprintf("%s-%s", t.nodePool.Spec.ClusterName, t.nodePool.GetName())
+		npLabels := t.nodePool.GetLabels()
+		if npLabels != nil && npLabels[karpenterutil.ManagedByKarpenterLabel] == "true" {
 			userDataSecret.Labels[hyperkarpenterv1.UserDataAMILabel] = t.userData.ami
+			userDataSecret.Labels[karpenterutil.ManagedByKarpenterLabel] = "true"
 		}
-
 	}
 
 	encodedCACert := base64.StdEncoding.EncodeToString(t.userData.caCert)

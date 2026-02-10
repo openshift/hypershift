@@ -2,16 +2,18 @@ package nodeclass
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
-	"sort"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
 	supportassets "github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/config"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
@@ -47,6 +49,10 @@ const (
 	// DefaultRootVolumeSize is 120Gi because HCP NodePools provisioned with HCP CLI are set with 120Gi root volume by default.
 	// https://github.com/openshift/hypershift/blob/8be1d9c6f8f79106444e48f2b7d0069b942ba0d7/cmd/nodepool/aws/create.go#L30
 	DefaultRootVolumeSize = "120Gi"
+)
+
+var (
+	errKarpenterUserDataSecretNotFound = errors.New("failed to find user data secret for OpenshiftEC2NodeClass")
 )
 
 var (
@@ -94,7 +100,7 @@ func (r *EC2NodeClassReconciler) SetupWithManager(ctx context.Context, mgr ctrl.
 		// Watch secrets in the management cluster and reconcile all ec2nodeclasses
 		WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.mapToOpenShiftEC2NodeClasses),
-			r.userDataSecretPredicate())).
+			r.karpenterSecretPredicate())).
 		// Watch HostedControlPlane for annotation changes
 		WatchesRawSource(source.Kind[client.Object](managementCluster.GetCache(), &hyperv1.HostedControlPlane{},
 			handler.EnqueueRequestsFromMapFunc(r.mapToOpenShiftEC2NodeClasses),
@@ -106,10 +112,11 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling", "req", req)
 
-	hcp, err := r.getHCP(ctx)
+	hcp, err := karpenterutil.GetHCP(ctx, r.managementClient, r.Namespace)
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
+		if errors.Is(err, karpenterutil.ErrHCPNotFound) {
+			log.Info("HostedControlPlane not found, requeueing")
+			return ctrl.Result{RequeueAfter: time.Second * 5}, nil
 		}
 		return ctrl.Result{}, err
 	}
@@ -166,8 +173,14 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	userDataSecret, err := r.getUserDataSecret(ctx, hcp)
+	userDataSecret, err := r.getUserDataSecret(ctx, openshiftEC2NodeClass)
 	if err != nil {
+		if errors.Is(err, errKarpenterUserDataSecretNotFound) {
+			// Don't treat this as an error
+			// ec2nodeclass controller might have been faster than karpenterignition controller to generate the user data secret
+			log.Info(err.Error())
+			return ctrl.Result{RequeueAfter: time.Second * 1}, nil
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -393,8 +406,8 @@ func (r *EC2NodeClassReconciler) reconcileVAP(ctx context.Context) error {
 	return err
 }
 
-func (r *EC2NodeClassReconciler) getUserDataSecret(ctx context.Context, hcp *hyperv1.HostedControlPlane) (*corev1.Secret, error) {
-	labelSelector := labels.SelectorFromSet(labels.Set{hyperv1.NodePoolLabel: fmt.Sprintf("%s-karpenter", hcp.GetName())})
+func (r *EC2NodeClassReconciler) getUserDataSecret(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass) (*corev1.Secret, error) {
+	labelSelector := labels.SelectorFromSet(labels.Set{karpenterutil.ManagedByKarpenterLabel: "true"})
 	listOptions := &client.ListOptions{
 		LabelSelector: labelSelector,
 		Namespace:     r.Namespace,
@@ -405,49 +418,46 @@ func (r *EC2NodeClassReconciler) getUserDataSecret(ctx context.Context, hcp *hyp
 		return nil, fmt.Errorf("failed to list secrets: %w", err)
 	}
 
-	sort.Slice(secretList.Items, func(i, j int) bool {
-		return secretList.Items[i].CreationTimestamp.After(secretList.Items[j].CreationTimestamp.Time)
-	})
-	if len(secretList.Items) < 1 {
-		return nil, fmt.Errorf("expected 1 secret, got 0")
+	expectedNodePoolName := karpenterutil.KarpenterNodePoolName(openshiftEC2NodeClass)
+
+	for _, secret := range secretList.Items {
+		annotations := secret.GetAnnotations()
+		if annotations == nil || annotations[hyperkarpenterv1.TokenSecretNodePoolAnnotation] == "" {
+			continue
+		}
+		// we want the userData secret, not the token secret
+		if annotations[nodepool.TokenSecretAnnotation] == "true" {
+			continue
+		}
+		nodePoolAnnotation := util.ParseNamespacedName(annotations[hyperkarpenterv1.TokenSecretNodePoolAnnotation])
+		if nodePoolAnnotation.Name == expectedNodePoolName {
+			return &secret, nil
+		}
 	}
-	return &secretList.Items[0], err
+
+	return nil, fmt.Errorf("%w: expectedNodePoolName: %s, nodeclassName: %s", errKarpenterUserDataSecretNotFound, expectedNodePoolName, openshiftEC2NodeClass.Name)
 }
 
-func (r *EC2NodeClassReconciler) getHCP(ctx context.Context) (*hyperv1.HostedControlPlane, error) {
-	hcpList := &hyperv1.HostedControlPlaneList{}
-	if err := r.managementClient.List(ctx, hcpList, client.InNamespace(r.Namespace)); err != nil {
-		return nil, err
-	}
-	if len(hcpList.Items) == 0 {
-		return nil, fmt.Errorf("failed to find HostedControlPlane in namespace %s", r.Namespace)
-	}
-
-	return &hcpList.Items[0], nil
-}
-
-// userDataSecretPredicate only returns true on creates/updates on the userData secret tied to the karpenter hyperv1.NodePool
-func (r *EC2NodeClassReconciler) userDataSecretPredicate() predicate.Predicate {
+// karpenterSecretPredicate only returns true on creates/updates on secrets with ManagedByKarpenterLabel
+func (r *EC2NodeClassReconciler) karpenterSecretPredicate() predicate.Predicate {
 	filterKarpenterSecret := func(obj client.Object) bool {
 		if obj.GetNamespace() != r.Namespace {
 			return false
 		}
 		if secret, ok := obj.(*corev1.Secret); ok {
-			if annotationValue, exists := secret.Annotations[hyperkarpenterv1.TokenSecretNodePoolAnnotation]; exists {
-				if util.ParseNamespacedName(annotationValue).Name == hyperkarpenterv1.KarpenterNodePool {
-					return true
-				}
+			labels := secret.GetLabels()
+			if labels != nil && labels[karpenterutil.ManagedByKarpenterLabel] == "true" {
+				return true
 			}
 		}
 		return false
 	}
-	userDataSecretPredicate := predicate.Funcs{
+	return predicate.Funcs{
 		CreateFunc:  func(e event.CreateEvent) bool { return filterKarpenterSecret(e.Object) },
 		UpdateFunc:  func(e event.UpdateEvent) bool { return filterKarpenterSecret(e.ObjectNew) },
 		DeleteFunc:  func(e event.DeleteEvent) bool { return false },
 		GenericFunc: func(e event.GenericEvent) bool { return false },
 	}
-	return userDataSecretPredicate
 }
 
 // hcpAnnotationPredicate filters HostedControlPlane events to only trigger reconciliation when the

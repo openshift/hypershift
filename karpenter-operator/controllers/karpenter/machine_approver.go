@@ -72,6 +72,8 @@ func (r *MachineApproverController) SetupWithManager(mgr ctrl.Manager) error {
 				mgr.GetLogger().Info("Ignoring csr because it does not have the system:nodes group", "csr", csr.Name)
 				return false
 			}
+		default:
+			return false
 		}
 
 		return true
