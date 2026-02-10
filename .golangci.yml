@@ -4,7 +4,11 @@ run:
 linters:
   enable:
     - misspell
+    - unparam
   settings:
+    govet:
+      enable:
+        - nilness
     misspell:
       # The use of US spelling over other English spellings, like UK, is inline with the OpenShift conventions:
       # https://github.com/openshift/enhancements/blob/master/CONVENTIONS.md#terminology-grammar-and-spelling
@@ -60,6 +64,7 @@ linters:
         text: 'SA1019: "github.com/aws/aws-sdk-go'
     paths:
       - third_party$
+      - thirdparty
       - builtin$
       - examples$
 severity:
@@ -85,5 +90,6 @@ formatters:
     generated: lax
     paths:
       - third_party$
+      - thirdparty
       - builtin$
       - examples$
