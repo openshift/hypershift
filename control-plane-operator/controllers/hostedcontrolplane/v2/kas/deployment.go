@@ -22,6 +22,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 )
 
@@ -34,6 +35,43 @@ const (
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	hcp := cpContext.HCP
+
+	// Add Swift pod network instance label if the cluster is Swift-enabled
+	if swiftPodNetworkInstanceCpo := hcp.Annotations[hyperv1.SwiftPodNetworkInstanceAnnotationCpo]; swiftPodNetworkInstanceCpo != "" {
+		if deployment.Spec.Template.Labels == nil {
+			deployment.Spec.Template.Labels = map[string]string{}
+		}
+		deployment.Spec.Template.Labels["kubernetes.azure.com/pod-network-instance"] = swiftPodNetworkInstanceCpo
+	}
+
+	// Add DNS proxy sidecar when Swift is enabled
+	// The sidecar intelligently routes Azure vault domains to Azure DNS (via Swift)
+	// and everything else to management cluster DNS
+	if swiftPodNetworkInstanceCpo := hcp.Annotations[hyperv1.SwiftPodNetworkInstanceAnnotationCpo]; swiftPodNetworkInstanceCpo != "" {
+		addDNSProxySidecar(deployment, hcp)
+
+		// Configure pod to use DNS proxy sidecar (127.0.0.1)
+		deployment.Spec.Template.Spec.DNSPolicy = corev1.DNSNone
+		deployment.Spec.Template.Spec.DNSConfig = &corev1.PodDNSConfig{
+			Nameservers: []string{"127.0.0.1"}, // DNS proxy sidecar
+			Searches: []string{
+				fmt.Sprintf("%s.svc.cluster.local", hcp.Namespace),
+				"svc.cluster.local",
+				"cluster.local",
+			},
+			Options: []corev1.PodDNSConfigOption{
+				{
+					Name:  "ndots",
+					Value: ptr.To("5"),
+				},
+			},
+		}
+
+		// Remove wait-for-etcd init container when Swift is enabled because the DNS
+		// sidecar is a regular container and won't be available during init container execution
+		util.RemoveInitContainer("wait-for-etcd", &deployment.Spec.Template.Spec)
+	}
+
 	updateMainContainer(&deployment.Spec.Template.Spec, hcp)
 
 	util.UpdateContainer("konnectivity-server", deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
@@ -109,6 +147,92 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	addImagePrePullInitContainers(&deployment.Spec.Template.Spec)
 
 	return nil
+}
+
+// addDNSProxySidecar adds a CoreDNS sidecar container that intelligently routes DNS queries
+// Azure vault domains go to Azure DNS (168.63.129.16) via Swift interface
+// Everything else goes to management cluster DNS for cluster services
+func addDNSProxySidecar(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane) {
+	// CoreDNS sidecar container
+	sidecar := corev1.Container{
+		Name:  "dns-proxy",
+		Image: "registry.k8s.io/coredns/coredns:v1.11.1",
+		Args: []string{
+			"-conf",
+			"/etc/coredns/Corefile",
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      "dns-proxy-config",
+				MountPath: "/etc/coredns",
+				ReadOnly:  true,
+			},
+		},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("20Mi"),
+			},
+			Limits: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("100m"),
+				corev1.ResourceMemory: resource.MustParse("50Mi"),
+			},
+		},
+		SecurityContext: &corev1.SecurityContext{
+			RunAsNonRoot:             ptr.To(true),
+			RunAsUser:                ptr.To(int64(1000)),
+			AllowPrivilegeEscalation: ptr.To(false),
+			Capabilities: &corev1.Capabilities{
+				Drop: []corev1.Capability{"ALL"},
+				Add:  []corev1.Capability{"NET_BIND_SERVICE"},
+			},
+		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/health",
+					Port:   intstr.FromInt(8080),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 10,
+			TimeoutSeconds:      5,
+			PeriodSeconds:       10,
+			SuccessThreshold:    1,
+			FailureThreshold:    3,
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/ready",
+					Port:   intstr.FromInt(8181),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 5,
+			TimeoutSeconds:      5,
+			PeriodSeconds:       10,
+			SuccessThreshold:    1,
+			FailureThreshold:    3,
+		},
+	}
+
+	// Add sidecar to containers
+	deployment.Spec.Template.Spec.Containers = append(deployment.Spec.Template.Spec.Containers, sidecar)
+
+	// Add ConfigMap volume for the DNS proxy configuration
+	// The actual ConfigMap is created by adaptDNSProxyConfigMap via the manifest adapter
+	volume := corev1.Volume{
+		Name: "dns-proxy-config",
+		VolumeSource: corev1.VolumeSource{
+			ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{
+					Name: "kas-dns-proxy",
+				},
+			},
+		},
+	}
+	deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, volume)
 }
 
 func updateMainContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {

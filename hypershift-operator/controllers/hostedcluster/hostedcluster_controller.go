@@ -2268,6 +2268,8 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.HostedClusterRestoredFromBackupAnnotation,
 		// TODO: Remove this once the the input is in the HostedCluster AWS API.
 		"hypershift.openshift.io/aws-termination-handler-queue-url",
+		hyperv1.SwiftPodNetworkInstanceAnnotation,
+		hyperv1.SwiftPodNetworkInstanceAnnotationCpo,
 	}
 	for _, key := range mirroredAnnotations {
 		val, hasVal := hcluster.Annotations[key]

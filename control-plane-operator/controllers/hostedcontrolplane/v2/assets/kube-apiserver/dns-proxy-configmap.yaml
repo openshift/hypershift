@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kas-dns-proxy
+  namespace: HCP_NAMESPACE
+data:
+  Corefile: ""
