@@ -11,12 +11,15 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -2622,6 +2625,256 @@ func TestReconcileImageRegistry(t *testing.T) {
 				vap := manifests.ValidatingAdmissionPolicy("deny-removed-managementstate")
 				err := guestClient.Get(t.Context(), client.ObjectKeyFromObject(vap), vap)
 				g.Expect(err).ToNot(HaveOccurred(), "expected ValidatingAdmissionPolicy to exist for Azure platform")
+			}
+		})
+	}
+}
+
+func TestReconcileCloudConfigAWS(t *testing.T) {
+	t.Parallel()
+	testNamespace := "master-cluster1"
+	testHCPName := "cluster1"
+	tests := map[string]struct {
+		inputHCP                  *hyperv1.HostedControlPlane
+		inputObjects              []client.Object
+		existingGuestObjects      []client.Object
+		expectCloudProviderConfig bool
+		expectedCABundleContent   string
+		expectError               bool
+	}{
+		"When AWS platform has no trust bundle it should not create cloud-provider-config": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			inputObjects:              []client.Object{},
+			expectCloudProviderConfig: false,
+		},
+		"When AWS platform has additionalTrustBundle it should create cloud-provider-config with ca-bundle.pem": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: "user-ca-bundle",
+					},
+				},
+			},
+			inputObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: cpomanifests.TrustedCABundleConfigMap(testNamespace).ObjectMeta,
+					Data: map[string]string{
+						certs.UserCABundleMapKey: "-----BEGIN CERTIFICATE-----\ntest-ca-bundle\n-----END CERTIFICATE-----",
+					},
+				},
+			},
+			expectCloudProviderConfig: true,
+			expectedCABundleContent:   "-----BEGIN CERTIFICATE-----\ntest-ca-bundle\n-----END CERTIFICATE-----",
+		},
+		"When AWS platform has proxy trustedCA it should create cloud-provider-config with ca-bundle.pem": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{
+							TrustedCA: configv1.ConfigMapNameReference{
+								Name: "proxy-trusted-ca",
+							},
+						},
+					},
+				},
+			},
+			inputObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: cpomanifests.TrustedCABundleConfigMap(testNamespace).ObjectMeta,
+					Data: map[string]string{
+						certs.UserCABundleMapKey: "-----BEGIN CERTIFICATE-----\nproxy-ca-bundle\n-----END CERTIFICATE-----",
+					},
+				},
+			},
+			expectCloudProviderConfig: true,
+			expectedCABundleContent:   "-----BEGIN CERTIFICATE-----\nproxy-ca-bundle\n-----END CERTIFICATE-----",
+		},
+		"When AWS platform has both additionalTrustBundle and proxy trustedCA it should create cloud-provider-config with merged bundle": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: "user-ca-bundle",
+					},
+					Configuration: &hyperv1.ClusterConfiguration{
+						Proxy: &configv1.ProxySpec{
+							TrustedCA: configv1.ConfigMapNameReference{
+								Name: "proxy-trusted-ca",
+							},
+						},
+					},
+				},
+			},
+			inputObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: cpomanifests.TrustedCABundleConfigMap(testNamespace).ObjectMeta,
+					Data: map[string]string{
+						certs.UserCABundleMapKey: "-----BEGIN CERTIFICATE-----\nmerged-ca-bundle\n-----END CERTIFICATE-----",
+					},
+				},
+			},
+			expectCloudProviderConfig: true,
+			expectedCABundleContent:   "-----BEGIN CERTIFICATE-----\nmerged-ca-bundle\n-----END CERTIFICATE-----",
+		},
+		"When AWS platform has additionalTrustBundle but managed bundle ConfigMap is missing it should return an error": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: "user-ca-bundle",
+					},
+				},
+			},
+			inputObjects: []client.Object{},
+			expectError:  true,
+		},
+		"When AWS platform has additionalTrustBundle but managed bundle ConfigMap has no ca-bundle.crt key it should write empty string": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: "user-ca-bundle",
+					},
+				},
+			},
+			inputObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: cpomanifests.TrustedCABundleConfigMap(testNamespace).ObjectMeta,
+					Data:       map[string]string{},
+				},
+			},
+			expectCloudProviderConfig: true,
+			expectedCABundleContent:   "",
+		},
+		"When AWS platform has no trust bundle but cloud-provider-config exists with ca-bundle.pem it should remove the stale ConfigMap": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			inputObjects: []client.Object{},
+			existingGuestObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName},
+					Data: map[string]string{
+						aws.CABundleKey: "-----BEGIN CERTIFICATE-----\nstale-ca-bundle\n-----END CERTIFICATE-----",
+					},
+				},
+			},
+			expectCloudProviderConfig: false,
+		},
+		"When AWS platform has additionalTrustBundle and cloud-provider-config already exists it should update it": {
+			inputHCP: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testHCPName,
+					Namespace: testNamespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+					AdditionalTrustBundle: &corev1.LocalObjectReference{
+						Name: "user-ca-bundle",
+					},
+				},
+			},
+			inputObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: cpomanifests.TrustedCABundleConfigMap(testNamespace).ObjectMeta,
+					Data: map[string]string{
+						certs.UserCABundleMapKey: "-----BEGIN CERTIFICATE-----\nupdated-ca-bundle\n-----END CERTIFICATE-----",
+					},
+				},
+			},
+			existingGuestObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName},
+					Data: map[string]string{
+						aws.CABundleKey: "-----BEGIN CERTIFICATE-----\nold-ca-bundle\n-----END CERTIFICATE-----",
+					},
+				},
+			},
+			expectCloudProviderConfig: true,
+			expectedCABundleContent:   "-----BEGIN CERTIFICATE-----\nupdated-ca-bundle\n-----END CERTIFICATE-----",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+			guestClientBuilder := fake.NewClientBuilder().WithScheme(api.Scheme)
+			if len(test.existingGuestObjects) > 0 {
+				guestClientBuilder = guestClientBuilder.WithObjects(test.existingGuestObjects...)
+			}
+			r := &reconciler{
+				client:                 guestClientBuilder.Build(),
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(test.inputObjects, test.inputHCP)...).Build(),
+				hcpName:                testHCPName,
+				hcpNamespace:           testNamespace,
+			}
+			err := r.reconcileCloudConfig(t.Context(), test.inputHCP)
+			if test.expectError {
+				g.Expect(err).ToNot(BeNil())
+				return
+			}
+			g.Expect(err).To(BeNil())
+
+			cloudProviderCM := &corev1.ConfigMap{}
+			getErr := r.client.Get(t.Context(), client.ObjectKey{Namespace: ConfigNamespace, Name: CloudProviderCMName}, cloudProviderCM)
+			if test.expectCloudProviderConfig {
+				g.Expect(getErr).To(BeNil())
+				g.Expect(cloudProviderCM.Data[aws.CABundleKey]).To(Equal(test.expectedCABundleContent))
+			} else {
+				g.Expect(apierrors.IsNotFound(getErr)).To(BeTrue())
 			}
 		})
 	}

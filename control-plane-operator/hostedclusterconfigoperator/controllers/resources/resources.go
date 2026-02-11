@@ -12,6 +12,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/aws"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/azure"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/cloud/openstack"
 	kubevirtcsi "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/csi/kubevirt"
@@ -43,6 +44,7 @@ import (
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -2028,6 +2030,53 @@ func (r *reconciler) reconcileObservedConfiguration(ctx context.Context, hcp *hy
 func (r *reconciler) reconcileCloudConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
 
 	switch hcp.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		// Sync custom CA certificates to the cloud-provider-config ConfigMap in the guest cluster
+		// so that cloud components (CCM, CSI drivers, etc.) can use them for AWS API endpoints.
+		// This mirrors the behavior added in the OpenShift installer via CORS-1584.
+		// Both .spec.additionalTrustBundle and .spec.configuration.proxy.trustedCA serve the same
+		// function, so we use the trusted-ca-bundle-managed ConfigMap which merges both sources.
+		// The source key (ca-bundle.crt) is the standard OpenShift user CA bundle key, while the
+		// destination key (ca-bundle.pem) is what the AWS cloud provider expects for custom CA certificates.
+		hasAdditionalTrustBundle := hcp.Spec.AdditionalTrustBundle != nil
+		hasProxyTrustedCA := hcp.Spec.Configuration != nil && hcp.Spec.Configuration.Proxy != nil && hcp.Spec.Configuration.Proxy.TrustedCA.Name != ""
+		if hasAdditionalTrustBundle || hasProxyTrustedCA {
+			cpTrustedCABundle := cpomanifests.TrustedCABundleConfigMap(hcp.Namespace)
+			if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpTrustedCABundle), cpTrustedCABundle); err != nil {
+				return fmt.Errorf("failed to fetch %s/%s configmap from management cluster: %w", cpTrustedCABundle.Namespace, cpTrustedCABundle.Name, err)
+			}
+
+			cm := &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: ConfigNamespace, Name: CloudProviderCMName}}
+			if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
+				if cm.Data == nil {
+					cm.Data = map[string]string{}
+				}
+				cm.Data[aws.CABundleKey] = cpTrustedCABundle.Data[certs.UserCABundleMapKey]
+				return nil
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile the %s/%s configmap: %w", cm.Namespace, cm.Name, err)
+			}
+		} else {
+			// If no trust bundle is configured, remove any previously synced CA bundle from the
+			// guest cloud-provider-config ConfigMap to avoid trusting stale/removed CAs.
+			cm := &corev1.ConfigMap{}
+			if err := r.client.Get(ctx, client.ObjectKey{Namespace: ConfigNamespace, Name: CloudProviderCMName}, cm); err != nil {
+				if !apierrors.IsNotFound(err) {
+					return fmt.Errorf("failed to get %s/%s configmap: %w", ConfigNamespace, CloudProviderCMName, err)
+				}
+			} else if cm.Data != nil {
+				if _, ok := cm.Data[aws.CABundleKey]; ok {
+					delete(cm.Data, aws.CABundleKey)
+					if len(cm.Data) == 0 {
+						if _, err := util.DeleteIfNeeded(ctx, r.client, cm); err != nil {
+							return fmt.Errorf("failed to delete empty %s/%s configmap: %w", cm.Namespace, cm.Name, err)
+						}
+					} else if err := r.client.Update(ctx, cm); err != nil {
+						return fmt.Errorf("failed to update %s/%s configmap: %w", cm.Namespace, cm.Name, err)
+					}
+				}
+			}
+		}
 	case hyperv1.AzurePlatform:
 		// This is needed for the e2e tests and only for Azure: https://github.com/openshift/origin/blob/625733dd1ce7ebf40c3dd0abd693f7bb54f2d580/test/extended/util/cluster/cluster.go#L186
 		reference := cpomanifests.AzureProviderConfig(hcp.Namespace)

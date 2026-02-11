@@ -10,6 +10,7 @@ import (
 const (
 	Provider          = util.AWSCloudProviderName
 	ProviderConfigKey = "aws.conf"
+	CABundleKey       = "ca-bundle.pem"
 )
 
 func AWSKMSCredsSecret(controlPlaneNamespace string) *corev1.Secret {
