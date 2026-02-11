@@ -1035,6 +1035,21 @@ func TestControlPlaneComponents(t *testing.T) {
 				hyperv1.SwiftPodNetworkInstanceAnnotation: "swift-network-instance",
 			},
 			mutateHCP: func(hcp *hyperv1.HostedControlPlane) {
+				// Configure Azure KMS for ARO-HCP
+				hcp.Spec.Platform.Azure.Cloud = "AzurePublicCloud"
+				hcp.Spec.SecretEncryption = &hyperv1.SecretEncryptionSpec{
+					Type: hyperv1.KMS,
+					KMS: &hyperv1.KMSSpec{
+						Provider: hyperv1.AZURE,
+						Azure: &hyperv1.AzureKMSSpec{
+							ActiveKey: hyperv1.AzureKMSKey{
+								KeyVaultName: "test-kms-keyvault",
+								KeyName:      "test-key",
+								KeyVersion:   "1",
+							},
+						},
+					},
+				}
 				// Configure Azure ManagedIdentities for ARO-HCP
 				hcp.Spec.Platform.Azure.AzureAuthenticationConfig = hyperv1.AzureAuthenticationConfiguration{
 					AzureAuthenticationConfigType: hyperv1.AzureAuthenticationTypeManagedIdentities,
@@ -1399,6 +1414,9 @@ func componentsFakeObjects(namespace string, featureSet configv1.FeatureSet) ([]
 		fgConfigMap.Data = map[string]string{"feature-gate.yaml": testFeatureGateYAML}
 	}
 
+	privateRouterSvc := manifests.PrivateRouterService(namespace)
+	privateRouterSvc.Spec.ClusterIP = "172.30.0.100"
+
 	return []client.Object{
 		rootCA, authenticatorCertSecret, bootsrapCertSecret, adminCertSecert, hccoCertSecert,
 		manifests.KubeControllerManagerClientCertSecret(namespace),
@@ -1407,6 +1425,7 @@ func componentsFakeObjects(namespace string, featureSet configv1.FeatureSet) ([]
 		cloudCredsSecret,
 		csrSigner,
 		fgConfigMap,
+		privateRouterSvc,
 	}, nil
 }
 

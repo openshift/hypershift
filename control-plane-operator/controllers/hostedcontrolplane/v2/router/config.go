@@ -96,8 +96,8 @@ func generateRouterConfig(routeList *routev1.RouteList, svcsNameToIP map[string]
 		KASSVCPort              int32
 		KASDestinationServiceIP string
 		Backends                []backendDesc
-		IsAroHCP     bool
-		KeyVaultFQDN string
+		IsAroHCP                bool
+		KeyVaultFQDN            string
 	}
 	p := templateParams{}
 	if keyVaultFQDN != "" {
