@@ -337,6 +337,23 @@ func GetKeyVaultDNSSuffixFromCloudType(cloud string) (string, error) {
 	}
 }
 
+// GetKeyVaultFQDN constructs the fully qualified domain name for an Azure Key Vault
+// from the HCP spec. It uses the active key's vault name and the cloud-specific DNS suffix.
+func GetKeyVaultFQDN(hcp *hyperv1.HostedControlPlane) (string, error) {
+	if hcp.Spec.SecretEncryption == nil || hcp.Spec.SecretEncryption.KMS == nil ||
+		hcp.Spec.SecretEncryption.KMS.Azure == nil ||
+		hcp.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVaultName == "" {
+		return "", fmt.Errorf("azure KMS is not configured")
+	}
+
+	vaultName := hcp.Spec.SecretEncryption.KMS.Azure.ActiveKey.KeyVaultName
+	suffix, err := GetKeyVaultDNSSuffixFromCloudType(hcp.Spec.Platform.Azure.Cloud)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s.%s", vaultName, suffix), nil
+}
+
 // GetAzureEncryptionKeyInfo extracts the key vault name, key name, and key version from an encryption key ID
 // The encryption key ID is in the form of https://<vaultName>.vault.azure.net/keys/<keyName>/<keyVersion>
 func GetAzureEncryptionKeyInfo(encryptionKeyID string) (*AzureEncryptionKey, error) {
