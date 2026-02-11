@@ -1,0 +1,66 @@
+name: "control-plane-sme: guidance on adding a new control plane component"
+description: >
+  Tests that the control-plane-sme agent guides developers to use
+  the cpov2 framework and considers resource footprint and security
+  implications when adding new control plane components.
+type: agent
+target: control-plane-sme
+
+invocation:
+  model: claude-opus-4-6
+  allowed_tools: ""
+  max_budget_usd: 5.00
+
+prompt: |
+  I need to add a new control plane component called "audit-logger"
+  that runs as a deployment in the hosted control plane namespace.
+  It needs to read the kube-apiserver audit logs and forward them
+  to an external endpoint configured by the cluster admin.
+  How should I implement this following HyperShift patterns?
+
+  Assume it will use a sidecar container on the kube-apiserver pod
+  that reads audit logs from a shared volume and forwards them via
+  HTTPS to a user-configured webhook endpoint.
+
+  IMPORTANT: Write your COMPLETE analysis and guidance as your direct response text.
+  Do NOT enter plan mode. Do NOT write to a plan file. Do NOT say "the plan is ready"
+  or refer to any plan file. Instead, include ALL details — API definitions, code
+  patterns, cpov2 framework usage, resource considerations, security concerns —
+  directly in your response output.
+
+criteria:
+  - id: mentions-cpov2
+    description: "References the cpov2/controlplane-component framework"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response reference the cpov2 framework, controlplane-component
+      pattern, or the controlPlaneComponent reconciliation approach used
+      in HyperShift for managing control plane deployments?
+      Answer PASS or FAIL.
+
+  - id: mentions-assets
+    description: "Points to the assets directory for manifests"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response mention creating or placing Kubernetes manifests
+      (deployment, service, RBAC) in an assets directory under the
+      control-plane-operator path?
+      Answer PASS or FAIL.
+
+  - id: resource-footprint
+    description: "Considers control plane resource footprint impact"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response consider or mention the impact of adding a new
+      component on the control plane's compute resource footprint
+      (CPU, memory requests/limits, or overall resource consumption)?
+      Answer PASS or FAIL.
+
+  - id: privilege-minimization
+    description: "Addresses principle of least privilege"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response address security concerns such as minimizing
+      RBAC permissions, not granting unnecessary access to customer
+      cloud accounts, or following least-privilege principles?
+      Answer PASS or FAIL.

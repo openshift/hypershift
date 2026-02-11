@@ -1,0 +1,65 @@
+name: "api-sme: review new API field for K8s conventions"
+description: >
+  Tests that the api-sme agent catches common API design mistakes
+  including Go naming violations, incorrect JSON tags, missing
+  optional markers, and backward compatibility concerns.
+type: agent
+target: api-sme
+
+invocation:
+  model: claude-opus-4-6
+  allowed_tools: ""
+  max_budget_usd: 2.00
+
+prompt: |
+  I want to add a new field to the NodePoolSpec to allow users to
+  specify a custom DNS resolver. Here is my proposed API change:
+
+  ```go
+  type NodePoolSpec struct {
+      // ...existing fields...
+
+      // dns_resolver is the IP address of a custom DNS server.
+      // When set, nodes will use this DNS server instead of the
+      // default cluster DNS.
+      DNS_Resolver string `json:"dns_resolver"`
+  }
+  ```
+
+  Please review this API change for correctness and best practices.
+  Provide your complete review directly in your response.
+  Do not use plan mode or write to a plan file.
+
+criteria:
+  - id: naming-convention
+    description: "Catches Go naming violation (DNS_Resolver should use MixedCaps)"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the review identify that DNS_Resolver should follow Go
+      naming conventions (no underscores, use DNSResolver or similar)?
+      Answer PASS or FAIL.
+
+  - id: json-tag-convention
+    description: "Catches json tag should be camelCase not snake_case"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the review note that the JSON tag should use camelCase
+      (e.g., "dnsResolver") instead of snake_case ("dns_resolver")?
+      Answer PASS or FAIL.
+
+  - id: optional-marker
+    description: "Suggests +optional marker and/or pointer type"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the review suggest using the +optional marker and/or making
+      the field a pointer type (*string) since it is optional?
+      Answer PASS or FAIL.
+
+  - id: comment-convention
+    description: "Notes that the Go doc comment should start with the field name"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the review mention that Go doc comments on struct fields
+      should start with the field name (e.g., "DNSResolver is...")
+      rather than a lowercase description?
+      Answer PASS or FAIL.
