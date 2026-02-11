@@ -27,8 +27,8 @@ spec:
   template:
     metadata:
       annotations:
-        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs,tmp-dir
-        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e1d8949e2360eec75794dc8cc8b110e88a2a4098ce7e69167
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: bootstrap-manifests,logs,kms-socket,tmp-dir
+        component.hypershift.openshift.io/config-hash: 0fd3eed819dc307e1d8949e2360eec75794dc8cc8b110e88a2a4098ca7ac042de7e69167
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: kube-apiserver
@@ -83,6 +83,7 @@ spec:
         - kube-apiserver
         - --openshift-config=/etc/kubernetes/config/config.json
         - --v=2
+        - --encryption-provider-config=/etc/kubernetes/secret-encryption/config.yaml
         command:
         - hyperkube
         env:
@@ -163,6 +164,10 @@ spec:
           name: server-private-crt
         - mountPath: /etc/kubernetes/secrets/svcacct-key
           name: svcacct-key
+        - mountPath: /etc/kubernetes/secret-encryption
+          name: kas-secret-encryption-config
+        - mountPath: /opt
+          name: kms-socket
         - mountPath: /tmp
           name: tmp-dir
         workingDir: /var/log/kube-apiserver
@@ -300,6 +305,54 @@ spec:
           name: logs
         - mountPath: /tmp
           name: tmp-dir
+      - args:
+        - --keyvault-name=test-kms-keyvault
+        - --key-name=test-key
+        - --key-version=1
+        - --listen-addr=unix:///opt/azurekmsactive.socket
+        - --healthz-port=8787
+        - --metrics-addr=8095
+        - --healthz-path=/healthz
+        - --config-file-path=/etc/kubernetes/azure.json
+        - -v=1
+        image: azure-kms-encryption-provider
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 8787
+            scheme: HTTP
+          initialDelaySeconds: 120
+          periodSeconds: 300
+          successThreshold: 1
+          timeoutSeconds: 160
+        name: azure-kms-provider-active
+        ports:
+        - containerPort: 8787
+          name: http
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 10m
+            memory: 10Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/kubernetes
+          name: azure-kms-credentials
+        - mountPath: /opt
+          name: kms-socket
+        - mountPath: /mnt/certs
+          name: kms-cert
+          readOnly: true
+        - mountPath: /tmp
+          name: tmp-dir
+      hostAliases:
+      - hostnames:
+        - test-kms-keyvault.vault.azure.net
+        ip: 172.30.0.100
       initContainers:
       - command:
         - /bin/sh
@@ -326,6 +379,15 @@ spec:
         image: apiserver-network-proxy
         imagePullPolicy: IfNotPresent
         name: pre-pull-image-apiserver-network-proxy
+        resources: {}
+        terminationMessagePolicy: FallbackToLogsOnError
+      - command:
+        - /bin/sh
+        - -c
+        - 'echo ''Image pre-pulled: azure-kms-encryption-provider''; exit 0'
+        image: azure-kms-encryption-provider
+        imagePullPolicy: IfNotPresent
+        name: pre-pull-image-azure-kms-encryption-provider
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
       - args:
@@ -550,6 +612,25 @@ spec:
         secret:
           defaultMode: 416
           secretName: konnectivity-cluster
+      - name: kas-secret-encryption-config
+        secret:
+          defaultMode: 416
+          secretName: kas-secret-encryption-config
+      - name: azure-kms-credentials
+        secret:
+          defaultMode: 416
+          items:
+          - key: cloud.conf
+            path: azure.json
+          secretName: azure-kms-config
+      - emptyDir: {}
+        name: kms-socket
+      - csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: managed-azure-kms
+        name: kms-cert
       - emptyDir: {}
         name: tmp-dir
 status: {}
