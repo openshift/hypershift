@@ -1,0 +1,58 @@
+name: "cloud-provider-sme: KMS encryption design across platforms"
+description: >
+  Tests that the cloud-provider-sme agent demonstrates awareness of
+  platform-specific KMS services and addresses cross-cutting concerns
+  like key rotation and credential management.
+type: agent
+target: cloud-provider-sme
+
+invocation:
+  model: claude-opus-4-6
+  allowed_tools: ""
+  max_budget_usd: 5.00
+
+prompt: |
+  We want to implement customer-managed encryption key support for
+  etcd data at rest in hosted control planes. The feature should work
+  across AWS and Azure. How should we design this in HyperShift?
+  What API changes and controller logic are needed?
+  Provide your complete response directly in your response.
+  Do not use plan mode or write to a plan file.
+
+criteria:
+  - id: platform-specific-services
+    description: "Mentions platform-specific KMS services"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response mention at least AWS KMS and Azure Key Vault
+      (or Azure KMS/Azure Key Encryption Key) as the platform-specific
+      services for key management?
+      Answer PASS or FAIL.
+
+  - id: api-abstraction
+    description: "Proposes an API-level abstraction for cross-platform support"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response discuss how the HyperShift API (e.g.,
+      HostedCluster or HostedControlPlane spec) should abstract
+      KMS configuration across platforms, rather than using
+      platform-specific fields only?
+      Answer PASS or FAIL.
+
+  - id: credential-management
+    description: "Addresses IAM/credential requirements for KMS access"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response address the credential or IAM requirements
+      for the control plane to access the customer's KMS key
+      (e.g., IAM roles, managed identity, service principal)?
+      Answer PASS or FAIL.
+
+  - id: etcd-encryption-mechanism
+    description: "References the etcd encryption config mechanism"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response reference or discuss the Kubernetes
+      EncryptionConfiguration or etcd encryption provider mechanism
+      that would be configured to use the KMS key?
+      Answer PASS or FAIL.
