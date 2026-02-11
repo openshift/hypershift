@@ -5539,6 +5539,47 @@ Once set, this value is immutable.</p>
 </tr>
 </tbody>
 </table>
+###DNSZoneStatus { #hypershift.openshift.io/v1beta1.DNSZoneStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectStatus">GCPPrivateServiceConnectStatus</a>)
+</p>
+<p>
+<p>DNSZoneStatus represents a single DNS zone and its records</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the DNS zone name</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>records</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>records lists the DNS records created in this zone</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###DataPlaneManagedIdentities { #hypershift.openshift.io/v1beta1.DataPlaneManagedIdentities }
 <p>
 (<em>Appears on:</em>
@@ -6238,26 +6279,15 @@ This value must be a valid IPv4 or IPv6 address.</p>
 </tr>
 <tr>
 <td>
-<code>dnsZoneName</code></br>
+<code>dnsZones</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.DNSZoneStatus">
+[]DNSZoneStatus
+</a>
 </em>
 </td>
 <td>
-<em>(Optional)</em>
-<p>dnsZoneName is the private DNS zone name</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>dnsRecords</code></br>
-<em>
-[]string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>dnsRecords lists the created DNS A records</p>
+<p>dnsZones contains DNS zone information created for this cluster</p>
 </td>
 </tr>
 </tbody>
