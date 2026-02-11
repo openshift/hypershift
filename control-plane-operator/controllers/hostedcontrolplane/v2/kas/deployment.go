@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/proxy"
@@ -23,6 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -107,6 +110,30 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	// Pre-pull images to avoid startup delays between containers and timeout errors.
 	// Avoids flakiness in tests: https://issues.redhat.com/browse/OCPBUGS-62760
 	addImagePrePullInitContainers(&deployment.Spec.Template.Spec)
+
+	// When running on ARO HCP, add a hostAlias so the azure-kms-provider
+	// sidecar resolves the Key Vault FQDN to the private-router Service ClusterIP.
+	// The private router has access to the customer VNet (via Swift) and can reach the
+	// Key Vault's private endpoint, acting as a TCP passthrough relay.
+	if azureutil.IsAroHCP() {
+		kvFQDN, err := azureutil.GetKeyVaultFQDN(hcp)
+		if err != nil {
+			return fmt.Errorf("failed to get Key Vault FQDN for hostAlias: %w", err)
+		}
+
+		routerSvc := manifests.PrivateRouterService(hcp.Namespace)
+		if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(routerSvc), routerSvc); err != nil {
+			return fmt.Errorf("failed to get private-router service: %w", err)
+		}
+
+		deployment.Spec.Template.Spec.HostAliases = append(
+			deployment.Spec.Template.Spec.HostAliases,
+			corev1.HostAlias{
+				IP:        routerSvc.Spec.ClusterIP,
+				Hostnames: []string{kvFQDN},
+			},
+		)
+	}
 
 	return nil
 }

@@ -80,7 +80,18 @@ func TestGenerateRouterConfig(t *testing.T) {
 		routeList := buildRouteList()
 		svcsNameToIP := buildSvcsNameToIP(routeList)
 
-		cfg, err := generateRouterConfig(routeList, svcsNameToIP)
+		cfg, err := generateRouterConfig(routeList, svcsNameToIP, "")
+		if err != nil {
+			t.Fatalf("Unexpected error: %v", err)
+		}
+		testutil.CompareWithFixture(t, cfg)
+	})
+
+	t.Run("When Azure KMS is configured it should include keyvault backend", func(t *testing.T) {
+		routeList := buildRouteList()
+		svcsNameToIP := buildSvcsNameToIP(routeList)
+
+		cfg, err := generateRouterConfig(routeList, svcsNameToIP, "my-keyvault.vault.azure.net")
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
