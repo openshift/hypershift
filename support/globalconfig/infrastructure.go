@@ -106,5 +106,27 @@ func ReconcileInfrastructure(infra *configv1.Infrastructure, hcp *hyperv1.Hosted
 			APIServerInternalIPs: []string{},
 			IngressIPs:           []string{},
 		}
+	case hyperv1.GCPPlatform:
+		if infra.Status.PlatformStatus.GCP == nil {
+			infra.Status.PlatformStatus.GCP = &configv1.GCPPlatformStatus{}
+		}
+		infra.Status.PlatformStatus.GCP.ProjectID = hcp.Spec.Platform.GCP.Project
+		infra.Status.PlatformStatus.GCP.Region = hcp.Spec.Platform.GCP.Region
+		var labels []configv1.GCPResourceLabel
+		for _, label := range hcp.Spec.Platform.GCP.ResourceLabels {
+			// Skip labels with reserved prefixes to avoid breaking downstream components.
+			if strings.HasPrefix(label.Key, "kubernetes-io") {
+				continue
+			}
+			value := ""
+			if label.Value != nil {
+				value = *label.Value
+			}
+			labels = append(labels, configv1.GCPResourceLabel{
+				Key:   label.Key,
+				Value: value,
+			})
+		}
+		infra.Status.PlatformStatus.GCP.ResourceLabels = labels
 	}
 }

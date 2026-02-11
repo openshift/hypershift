@@ -32,6 +32,7 @@ type NodePoolPlatformApplyConfiguration struct {
 	Azure     *AzureNodePoolPlatformApplyConfiguration     `json:"azure,omitempty"`
 	PowerVS   *PowerVSNodePoolPlatformApplyConfiguration   `json:"powervs,omitempty"`
 	OpenStack *OpenStackNodePoolPlatformApplyConfiguration `json:"openstack,omitempty"`
+	GCP       *GCPNodePoolPlatformApplyConfiguration       `json:"gcp,omitempty"`
 }
 
 // NodePoolPlatformApplyConfiguration constructs a declarative configuration of the NodePoolPlatform type for use with
@@ -101,5 +102,13 @@ func (b *NodePoolPlatformApplyConfiguration) WithPowerVS(value *PowerVSNodePoolP
 // If called multiple times, the OpenStack field is set to the value of the last call.
 func (b *NodePoolPlatformApplyConfiguration) WithOpenStack(value *OpenStackNodePoolPlatformApplyConfiguration) *NodePoolPlatformApplyConfiguration {
 	b.OpenStack = value
+	return b
+}
+
+// WithGCP sets the GCP field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the GCP field is set to the value of the last call.
+func (b *NodePoolPlatformApplyConfiguration) WithGCP(value *GCPNodePoolPlatformApplyConfiguration) *NodePoolPlatformApplyConfiguration {
+	b.GCP = value
 	return b
 }

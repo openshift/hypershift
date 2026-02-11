@@ -15,6 +15,7 @@ type InstallConfig struct {
 	MachineCIDRs []string
 	Platform     string
 	Region       string
+	ProjectID    string
 }
 
 func NewInstallConfig(hcp *hyperv1.HostedControlPlane) *InstallConfig {
@@ -25,6 +26,9 @@ func NewInstallConfig(hcp *hyperv1.HostedControlPlane) *InstallConfig {
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		cfg.Region = hcp.Spec.Platform.AWS.Region
+	case hyperv1.GCPPlatform:
+		cfg.Region = hcp.Spec.Platform.GCP.Region
+		cfg.ProjectID = hcp.Spec.Platform.GCP.Project
 	}
 	return cfg
 }
@@ -43,6 +47,10 @@ networking:
 platform:
 {{- if eq .Platform "AWS" }}
   aws:
+    region: {{ .Region }}
+{{- else if eq .Platform "GCP" }}
+  gcp:
+    projectID: {{ .ProjectID }}
     region: {{ .Region }}
 {{- else }}
   none: {}
