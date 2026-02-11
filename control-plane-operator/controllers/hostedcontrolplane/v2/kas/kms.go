@@ -12,12 +12,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-func applyKMSConfig(podSpec *corev1.PodSpec, secretEncryptionData *hyperv1.SecretEncryptionSpec, images kmsImages) error {
+func applyKMSConfig(podSpec *corev1.PodSpec, secretEncryptionData *hyperv1.SecretEncryptionSpec, images kmsImages, hcp *hyperv1.HostedControlPlane) error {
 	if secretEncryptionData.KMS == nil {
 		return fmt.Errorf("kms metadata not specified")
 	}
 
-	provider, err := getKMSProvider(secretEncryptionData.KMS, images)
+	provider, err := getKMSProvider(secretEncryptionData.KMS, images, hcp)
 	if err != nil {
 		return err
 	}
@@ -34,7 +34,10 @@ func applyKMSConfig(podSpec *corev1.PodSpec, secretEncryptionData *hyperv1.Secre
 }
 
 func generateKMSEncryptionConfig(kmsSpec *hyperv1.KMSSpec, apiVersion string) ([]byte, error) {
-	provider, err := getKMSProvider(kmsSpec, kmsImages{})
+	// Note: HCP is nil here because this function is called outside the deployment context
+	// For Azure KMS with Swift networking, HTTP_PROXY configuration won't be available here
+	// but it's only needed in the pod containers, not for encryption config generation
+	provider, err := getKMSProvider(kmsSpec, kmsImages{}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -52,14 +55,14 @@ func generateKMSEncryptionConfig(kmsSpec *hyperv1.KMSSpec, apiVersion string) ([
 	return bufferInstance.Bytes(), nil
 }
 
-func getKMSProvider(kmsSpec *hyperv1.KMSSpec, images kmsImages) (kms.KMSProvider, error) {
+func getKMSProvider(kmsSpec *hyperv1.KMSSpec, images kmsImages, hcp *hyperv1.HostedControlPlane) (kms.KMSProvider, error) {
 	switch kmsSpec.Provider {
 	case hyperv1.IBMCloud:
 		return kms.NewIBMCloudKMSProvider(kmsSpec.IBMCloud, images.IBMCloudKMS)
 	case hyperv1.AWS:
 		return kms.NewAWSKMSProvider(kmsSpec.AWS, images.AWSKMS, images.TokenMinterImage)
 	case hyperv1.AZURE:
-		return kms.NewAzureKMSProvider(kmsSpec.Azure, images.AzureKMS)
+		return kms.NewAzureKMSProvider(kmsSpec.Azure, images.AzureKMS, hcp)
 	default:
 		return nil, fmt.Errorf("unrecognized kms provider %s", kmsSpec.Provider)
 	}

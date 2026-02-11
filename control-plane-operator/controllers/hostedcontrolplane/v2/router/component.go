@@ -2,7 +2,6 @@ package router
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
@@ -35,6 +34,7 @@ func (k *router) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &router{}).
 		WithPredicate(useHCPRouter).
+		WithAdaptFunction(adaptDeployment).
 		WithManifestAdapter(
 			"config.yaml",
 			component.WithAdaptFunction(adaptConfig),
@@ -43,8 +43,18 @@ func NewComponent() component.ControlPlaneComponent {
 			"pdb.yaml",
 			component.AdaptPodDisruptionBudget(),
 		).
-		WithDependencies(oapiv2.ComponentName).
+		WithManifestAdapter(
+			"azure-dns-proxy-service.yaml",
+			component.WithPredicate(enableAzureDNSProxyService),
+		).
 		Build()
+}
+
+// enableAzureDNSProxyService returns true when Swift networking is enabled
+// The Azure DNS proxy service is only needed when the router has Swift networking
+func enableAzureDNSProxyService(cpContext component.WorkloadContext) bool {
+	swiftPodNetworkInstance := cpContext.HCP.Annotations[hyperv1.SwiftPodNetworkInstanceAnnotation]
+	return swiftPodNetworkInstance != ""
 }
 
 // useHCPRouter returns true if a dedicated common router is created for a HCP to handle ingress for the managed endpoints.

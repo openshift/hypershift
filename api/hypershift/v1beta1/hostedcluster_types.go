@@ -327,6 +327,12 @@ const (
 	// When set to "servicenodeport", each service gets its own dedicated health probe.
 	AzureLoadBalancerHealthProbeModeAnnotation = "hypershift.openshift.io/azure-load-balancer-health-probe-mode"
 
+	// SwiftPodNetworkInstanceAnnotation specifies the Swift pod network instance ID for Azure CNI Swift networking.
+	// When set on a HostedCluster, it enables Swift networking for control plane pods that need access to
+	// customer VNet resources (e.g., Azure Private Link endpoints for Key Vault).
+	// The value should be the ID of the Swift pod network instance resource in Azure.
+	SwiftPodNetworkInstanceAnnotation = "hypershift.openshift.io/swift-pod-network-instance"
+
 	// DisableClusterAutoscalerAnnotation allows disabling the cluster autoscaler for a hosted cluster.
 	// This annotation is only set by the hypershift-operator on HosterControlPlanes.
 	// It is not set by the end-user.
