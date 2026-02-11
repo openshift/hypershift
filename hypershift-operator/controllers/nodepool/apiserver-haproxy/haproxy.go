@@ -155,7 +155,8 @@ func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, hcluster *
 		clusterNetworkCIDR = hcluster.Spec.Networking.ClusterNetwork[0].CIDR.String()
 	}
 
-	if sharedingress.UseSharedIngress() {
+	// This is true for ARO in CI while swift is not available.
+	if sharedingress.UseSharedIngress() && !util.IsPrivateHC(hcluster) {
 		sharedIngressRouteSVC := &corev1.Service{
 			TypeMeta: metav1.TypeMeta{},
 			ObjectMeta: metav1.ObjectMeta{
@@ -173,10 +174,11 @@ func (r *HAProxy) reconcileHAProxyIgnitionConfig(ctx context.Context, hcluster *
 		apiServerExternalPort = sharedingress.KASSVCLBPort
 	}
 
+	useProxyProtocol := sharedingress.UseSharedIngress() && !util.IsPrivateHC(hcluster)
 	serializedConfig, err := apiServerProxyConfig(r.HAProxyImage, controlPlaneOperatorImage, hcluster.Spec.ClusterID,
 		apiServerExternalAddress, apiServerInternalAddress,
 		apiServerExternalPort, apiServerInternalPort,
-		apiserverProxy, noProxy, serviceNetworkCIDR, clusterNetworkCIDR, hcluster.Spec.Platform.Type)
+		apiserverProxy, noProxy, serviceNetworkCIDR, clusterNetworkCIDR, hcluster.Spec.Platform.Type, useProxyProtocol)
 	if err != nil {
 		return "", fmt.Errorf("failed to create apiserver haproxy config: %w", err)
 	}
@@ -245,7 +247,7 @@ var (
 func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 	externalAPIAddress, internalAPIAddress string,
 	externalAPIPort, internalAPIPort int32,
-	proxyAddr, noProxy, serviceNetwork, clusterNetwork string, platform hyperv1.PlatformType) ([]byte, error) {
+	proxyAddr, noProxy, serviceNetwork, clusterNetwork string, platform hyperv1.PlatformType, useProxyProtocol bool) ([]byte, error) {
 	config := &ignitionapi.Config{}
 	config.Ignition.Version = ignitionapi.MaxVersion.String()
 	livenessProbeEndpoint := "/version"
@@ -290,7 +292,7 @@ func apiServerProxyConfig(haProxyImage, cpoImage, clusterID,
 					"ExternalAPIAddress":    externalAPIAddress,
 					"ExternalAPIPort":       externalAPIPort,
 					"LivenessProbeEndpoint": livenessProbeEndpoint,
-					"UseProxyProtocol":      sharedingress.UseSharedIngress(),
+					"UseProxyProtocol":      useProxyProtocol,
 					"ClusterID":             clusterID,
 				},
 			},

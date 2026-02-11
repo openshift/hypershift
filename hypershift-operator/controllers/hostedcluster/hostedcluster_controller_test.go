@@ -620,6 +620,18 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 
 	tests := []testCase{
 		{
+			name: "Swift annotation is mirrored",
+			hcAnnotations: map[string]string{
+				hyperv1.SwiftPodNetworkInstanceAnnotation: "swift-network-instance",
+			},
+			expectedAnnotations: map[string]string{
+				hyperv1.SwiftPodNetworkInstanceAnnotation:          "swift-network-instance",
+				hyperutil.HostedClusterAnnotation:                  hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
 			name: "Newly set restart annotation",
 			hcAnnotations: map[string]string{
 				hyperv1.RestartDateAnnotation: "01012024",

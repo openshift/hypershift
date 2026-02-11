@@ -122,13 +122,16 @@ func getBackendsForHostedCluster(ctx context.Context, hc hyperv1.HostedCluster, 
 		return nil, nil, fmt.Errorf("failed to get kube-apiserver service: %w", err)
 	}
 
-	backends = append(backends, backendDesc{
-		Name:         kasService.Namespace + "-" + kasService.Name,
-		SVCIP:        kasService.Spec.ClusterIP,
-		SVCPort:      kasService.Spec.Ports[0].Port,
-		ClusterID:    hc.Spec.ClusterID,
-		AllowedCIDRs: allowedCIDRs,
-	})
+	// When is private (ARO with Swift), we don't need to create a backend for the dataplane-kas-svc frontend.
+	if !util.IsPrivateHC(&hc) {
+		backends = append(backends, backendDesc{
+			Name:         kasService.Namespace + "-" + kasService.Name,
+			SVCIP:        kasService.Spec.ClusterIP,
+			SVCPort:      kasService.Spec.Ports[0].Port,
+			ClusterID:    hc.Spec.ClusterID,
+			AllowedCIDRs: allowedCIDRs,
+		})
+	}
 
 	// This enables traffic from external DNS to exposed endpoints (KAS, oauth, ignition and konnectivity).
 	routeList := &routev1.RouteList{}
@@ -163,14 +166,14 @@ func getBackendsForHostedCluster(ctx context.Context, hc hyperv1.HostedCluster, 
 		case ignitionserver.Route("").Name:
 			externalDNSBackends = append(externalDNSBackends, externalDNSBackendDesc{
 				Name:         route.Namespace + "-ignition",
-				HostName:     route.Spec.Host,
+				HostName:     route.Spec.Host, // TODO(alberto): This will be set to hypershift.local by reconcileInternalRoute. We need to have another external route or get from the spec don't expose it at all.
 				SVCIP:        svc.Spec.ClusterIP,
 				SVCPort:      443,
 				AllowedCIDRs: allowedCIDRs})
 		case manifests.KonnectivityServerRoute("").Name:
 			externalDNSBackends = append(externalDNSBackends, externalDNSBackendDesc{
 				Name:         route.Namespace + "-konnectivity",
-				HostName:     route.Spec.Host,
+				HostName:     route.Spec.Host, // TODO(alberto): This will be set to hypershift.local by reconcileInternalRoute. We need to have another external route or get from the spec or don't expose it at all.
 				SVCIP:        svc.Spec.ClusterIP,
 				SVCPort:      8091,
 				AllowedCIDRs: allowedCIDRs})

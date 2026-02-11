@@ -439,6 +439,36 @@ func TestReconcileInfrastructure(t *testing.T) {
 				NeedExternalRouter: false,
 			},
 		},
+		{
+			name: "ARO_Route_SharedIngress_And_Swift",
+			hcp: func() *hyperv1.HostedControlPlane {
+				hcp := withServices(baseAzureHCP(), allServicesRouteWithHostnames())
+				hcp.Annotations = map[string]string{
+					hyperv1.SwiftPodNetworkInstanceAnnotation: "swift-network-instance",
+				}
+				return hcp
+			}(),
+			setupEnv: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			expectError: false,
+			// For ARO with Swift:
+			// - Swift handles pod networking, so no router services are needed
+			// - APIHost comes from shared ingress (KasRouteHostname)
+			// - Port is 443 (ExternalDNSLBPort)
+			// - Konnectivity (and ignition see v2/ignitionserver) Routes use hypershift.local, kas and auth use both hypershift.local and external routes
+			expectedStatus: &InfrastructureStatus{
+				APIHost:            testKASHostname,
+				APIPort:            443,
+				OAuthEnabled:       true,
+				OAuthHost:          testOAuthHostname,
+				OAuthPort:          443,
+				KonnectivityHost:   testKonnectivityHost,
+				KonnectivityPort:   443,
+				NeedInternalRouter: false,
+				NeedExternalRouter: false,
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1347,6 +1377,8 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 		exposeAPIServerThroughRouter bool
 		existingObjects              []client.Object
 		expectedServices             []corev1.Service
+		setupEnv                     func(t *testing.T)
+		hcpModifier                  func(*hyperv1.HostedControlPlane)
 	}{
 		{
 			name:                         "Public HCP gets public LB only",
@@ -1388,9 +1420,25 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 			exposeAPIServerThroughRouter: false,
 			expectedServices:             nil,
 		},
+		{
+			name:                         "When ARO is enabled it should not create any services",
+			endpointAccess:               hyperv1.Public,
+			exposeAPIServerThroughRouter: true,
+			expectedServices:             nil,
+			setupEnv: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			hcpModifier: func(hcp *hyperv1.HostedControlPlane) {
+				hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+				hcp.Spec.Platform.AWS = nil
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			if tc.setupEnv != nil {
+				tc.setupEnv(t)
+			}
 			hcp := &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "hcp",
@@ -1417,6 +1465,9 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 						},
 					},
 				}
+			}
+			if tc.hcpModifier != nil {
+				tc.hcpModifier(hcp)
 			}
 
 			ctx := context.Background()
@@ -1533,6 +1584,67 @@ func TestReconcileRouterServiceStatus(t *testing.T) {
 				if len(msg) > 0 {
 					t.Errorf("got unexpected event message")
 				}
+			}
+		})
+	}
+}
+
+func TestReconcileInternalRouterServiceStatus(t *testing.T) {
+	testCases := []struct {
+		name       string
+		setup      func(t *testing.T)
+		hcp        *hyperv1.HostedControlPlane
+		wantNeeded bool
+		wantHost   string
+		wantMsg    string
+	}{
+		{
+			name: "When ARO swift is enabled it should not need internal router",
+			setup: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						hyperv1.SwiftPodNetworkInstanceAnnotation: "swift-network-instance",
+					},
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Location: "eastus",
+						},
+					},
+				},
+			},
+			wantNeeded: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setup != nil {
+				tc.setup(t)
+			}
+			ctx := context.Background()
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+			r := NewReconciler(c, testIngressDomain)
+
+			host, needed, msg, err := r.reconcileInternalRouterServiceStatus(ctx, tc.hcp)
+			if err != nil {
+				t.Fatalf("unexpected err: %v", err)
+			}
+			if needed != tc.wantNeeded {
+				t.Fatalf("unexpected needed, got %t want %t", needed, tc.wantNeeded)
+			}
+			if host != tc.wantHost {
+				t.Fatalf("unexpected host, got %q want %q", host, tc.wantHost)
+			}
+			if msg != tc.wantMsg {
+				t.Fatalf("unexpected message, got %q want %q", msg, tc.wantMsg)
 			}
 		})
 	}

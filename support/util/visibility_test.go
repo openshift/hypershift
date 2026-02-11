@@ -4,227 +4,176 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type visibilityCase struct {
+	name         string
+	platformType hyperv1.PlatformType
+	awsAccess    *hyperv1.AWSEndpointAccessType
+	gcpAccess    *hyperv1.GCPEndpointAccessType
+	wantPrivate  bool
+	wantPublic   bool
+	setupEnv     func(t *testing.T)
+	annotations  map[string]string
+}
+
+func awsAccess(access hyperv1.AWSEndpointAccessType) *hyperv1.AWSEndpointAccessType {
+	return &access
+}
+
+func gcpAccess(access hyperv1.GCPEndpointAccessType) *hyperv1.GCPEndpointAccessType {
+	return &access
+}
+
+func baseVisibilityCases() []visibilityCase {
+	return []visibilityCase{
+		{
+			name:         "When AWS endpoint is public it should be public and not private",
+			platformType: hyperv1.AWSPlatform,
+			awsAccess:    awsAccess(hyperv1.Public),
+			wantPrivate:  false,
+			wantPublic:   true,
+		},
+		{
+			name:         "When AWS endpoint is public and private it should be public and private",
+			platformType: hyperv1.AWSPlatform,
+			awsAccess:    awsAccess(hyperv1.PublicAndPrivate),
+			wantPrivate:  true,
+			wantPublic:   true,
+		},
+		{
+			name:         "When AWS endpoint is private it should be private and not public",
+			platformType: hyperv1.AWSPlatform,
+			awsAccess:    awsAccess(hyperv1.Private),
+			wantPrivate:  true,
+			wantPublic:   false,
+		},
+		{
+			name:         "When GCP endpoint is private it should be private and not public",
+			platformType: hyperv1.GCPPlatform,
+			gcpAccess:    gcpAccess(hyperv1.GCPEndpointAccessPrivate),
+			wantPrivate:  true,
+			wantPublic:   false,
+		},
+		{
+			name:         "When GCP endpoint is public and private it should be public and private",
+			platformType: hyperv1.GCPPlatform,
+			gcpAccess:    gcpAccess(hyperv1.GCPEndpointAccessPublicAndPrivate),
+			wantPrivate:  true,
+			wantPublic:   true,
+		},
+		{
+			name:         "When is ARO with no Swift annotation (CI) it should not be private",
+			platformType: hyperv1.NonePlatform,
+			setupEnv: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			wantPrivate: false,
+			wantPublic:  true,
+		},
+		{
+			name:         "When is ARO with Swift it should be public and private",
+			platformType: hyperv1.NonePlatform,
+			setupEnv: func(t *testing.T) {
+				t.Setenv("MANAGED_SERVICE", hyperv1.AroHCP)
+			},
+			annotations: map[string]string{
+				hyperv1.SwiftPodNetworkInstanceAnnotation: "test-swift-instance",
+			},
+			wantPrivate: true,
+			wantPublic:  true,
+		},
+	}
+}
+
+func platformSpecFromCase(tc visibilityCase) hyperv1.PlatformSpec {
+	spec := hyperv1.PlatformSpec{
+		Type: tc.platformType,
+	}
+	if tc.awsAccess != nil {
+		spec.AWS = &hyperv1.AWSPlatformSpec{
+			EndpointAccess: *tc.awsAccess,
+		}
+	}
+	if tc.gcpAccess != nil {
+		spec.GCP = &hyperv1.GCPPlatformSpec{
+			EndpointAccess: *tc.gcpAccess,
+		}
+	}
+	return spec
+}
+
+func hcpFromCase(tc visibilityCase) *hyperv1.HostedControlPlane {
+	return &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: tc.annotations,
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: platformSpecFromCase(tc),
+		},
+	}
+}
+
+func hcFromCase(tc visibilityCase) *hyperv1.HostedCluster {
+	return &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: tc.annotations,
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: platformSpecFromCase(tc),
+		},
+	}
+}
+
 func TestIsPrivateHCP(t *testing.T) {
-	type args struct {
-		hcp *hyperv1.HostedControlPlane
-	}
-	tests := []struct {
-		name string
-		args args
-		want bool
-	}{
-		{
-			name: "AWS Public",
-			args: args{
-				hcp: &hyperv1.HostedControlPlane{
-					Spec: hyperv1.HostedControlPlaneSpec{
-						Platform: hyperv1.PlatformSpec{
-							Type: hyperv1.AWSPlatform,
-							AWS: &hyperv1.AWSPlatformSpec{
-								EndpointAccess: hyperv1.Public,
-							},
-						},
-					},
-				},
-			},
-			want: false,
-		},
-		{
-			name: "AWS PublicAndPrivate",
-			args: args{
-				hcp: &hyperv1.HostedControlPlane{
-					Spec: hyperv1.HostedControlPlaneSpec{
-						Platform: hyperv1.PlatformSpec{
-							Type: hyperv1.AWSPlatform,
-							AWS: &hyperv1.AWSPlatformSpec{
-								EndpointAccess: hyperv1.PublicAndPrivate,
-							},
-						},
-					},
-				},
-			},
-			want: true,
-		},
-		{
-			name: "AWS Private",
-			args: args{
-				hcp: &hyperv1.HostedControlPlane{
-					Spec: hyperv1.HostedControlPlaneSpec{
-						Platform: hyperv1.PlatformSpec{
-							Type: hyperv1.AWSPlatform,
-							AWS: &hyperv1.AWSPlatformSpec{
-								EndpointAccess: hyperv1.Private,
-							},
-						},
-					},
-				},
-			},
-			want: true,
-		},
-		{
-			name: "GCP Private",
-			args: args{
-				hcp: &hyperv1.HostedControlPlane{
-					Spec: hyperv1.HostedControlPlaneSpec{
-						Platform: hyperv1.PlatformSpec{
-							Type: hyperv1.GCPPlatform,
-							GCP: &hyperv1.GCPPlatformSpec{
-								EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
-							},
-						},
-					},
-				},
-			},
-			want: true,
-		},
-		{
-			name: "GCP PublicAndPrivate",
-			args: args{
-				hcp: &hyperv1.HostedControlPlane{
-					Spec: hyperv1.HostedControlPlaneSpec{
-						Platform: hyperv1.PlatformSpec{
-							Type: hyperv1.GCPPlatform,
-							GCP: &hyperv1.GCPPlatformSpec{
-								EndpointAccess: hyperv1.GCPEndpointAccessPublicAndPrivate,
-							},
-						},
-					},
-				},
-			},
-			want: true,
-		},
-		{
-			name: "None",
-			args: args{
-				hcp: &hyperv1.HostedControlPlane{
-					Spec: hyperv1.HostedControlPlaneSpec{
-						Platform: hyperv1.PlatformSpec{
-							Type: hyperv1.NonePlatform,
-						},
-					},
-				},
-			},
-			want: false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := IsPrivateHCP(tt.args.hcp); got != tt.want {
-				t.Errorf("IsPrivateHCP() = %v, want %v", got, tt.want)
+	for _, tc := range baseVisibilityCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setupEnv != nil {
+				tc.setupEnv(t)
+			}
+			if got := IsPrivateHCP(hcpFromCase(tc)); got != tc.wantPrivate {
+				t.Errorf("IsPrivateHCP() = %v, want %v", got, tc.wantPrivate)
 			}
 		})
 	}
 }
 
 func TestIsPublicHCP(t *testing.T) {
-	type args struct {
-		hcp *hyperv1.HostedControlPlane
+	for _, tc := range baseVisibilityCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setupEnv != nil {
+				tc.setupEnv(t)
+			}
+			if got := IsPublicHCP(hcpFromCase(tc)); got != tc.wantPublic {
+				t.Errorf("IsPublicHCP() = %v, want %v", got, tc.wantPublic)
+			}
+		})
 	}
-	tests := []struct {
-		name string
-		args args
-		want bool
-	}{
-		{
-			name: "AWS Public",
-			args: args{
-				hcp: &hyperv1.HostedControlPlane{
-					Spec: hyperv1.HostedControlPlaneSpec{
-						Platform: hyperv1.PlatformSpec{
-							Type: hyperv1.AWSPlatform,
-							AWS: &hyperv1.AWSPlatformSpec{
-								EndpointAccess: hyperv1.Public,
-							},
-						},
-					},
-				},
-			},
-			want: true,
-		},
-		{
-			name: "AWS PublicAndPrivate",
-			args: args{
-				hcp: &hyperv1.HostedControlPlane{
-					Spec: hyperv1.HostedControlPlaneSpec{
-						Platform: hyperv1.PlatformSpec{
-							Type: hyperv1.AWSPlatform,
-							AWS: &hyperv1.AWSPlatformSpec{
-								EndpointAccess: hyperv1.PublicAndPrivate,
-							},
-						},
-					},
-				},
-			},
-			want: true,
-		},
-		{
-			name: "AWS Private",
-			args: args{
-				hcp: &hyperv1.HostedControlPlane{
-					Spec: hyperv1.HostedControlPlaneSpec{
-						Platform: hyperv1.PlatformSpec{
-							Type: hyperv1.AWSPlatform,
-							AWS: &hyperv1.AWSPlatformSpec{
-								EndpointAccess: hyperv1.Private,
-							},
-						},
-					},
-				},
-			},
-			want: false,
-		},
-		{
-			name: "GCP Private",
-			args: args{
-				hcp: &hyperv1.HostedControlPlane{
-					Spec: hyperv1.HostedControlPlaneSpec{
-						Platform: hyperv1.PlatformSpec{
-							Type: hyperv1.GCPPlatform,
-							GCP: &hyperv1.GCPPlatformSpec{
-								EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
-							},
-						},
-					},
-				},
-			},
-			want: false,
-		},
-		{
-			name: "GCP PublicAndPrivate",
-			args: args{
-				hcp: &hyperv1.HostedControlPlane{
-					Spec: hyperv1.HostedControlPlaneSpec{
-						Platform: hyperv1.PlatformSpec{
-							Type: hyperv1.GCPPlatform,
-							GCP: &hyperv1.GCPPlatformSpec{
-								EndpointAccess: hyperv1.GCPEndpointAccessPublicAndPrivate,
-							},
-						},
-					},
-				},
-			},
-			want: true,
-		},
-		{
-			name: "None",
-			args: args{
-				hcp: &hyperv1.HostedControlPlane{
-					Spec: hyperv1.HostedControlPlaneSpec{
-						Platform: hyperv1.PlatformSpec{
-							Type: hyperv1.NonePlatform,
-						},
-					},
-				},
-			},
-			want: true,
-		},
+}
+
+func TestIsPrivateHC(t *testing.T) {
+	for _, tc := range baseVisibilityCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setupEnv != nil {
+				tc.setupEnv(t)
+			}
+			if got := IsPrivateHC(hcFromCase(tc)); got != tc.wantPrivate {
+				t.Errorf("IsPrivateHC() = %v, want %v", got, tc.wantPrivate)
+			}
+		})
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := IsPublicHCP(tt.args.hcp); got != tt.want {
-				t.Errorf("IsPublicHCP() = %v, want %v", got, tt.want)
+}
+
+func TestIsPublicHC(t *testing.T) {
+	for _, tc := range baseVisibilityCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setupEnv != nil {
+				tc.setupEnv(t)
+			}
+			if got := IsPublicHC(hcFromCase(tc)); got != tc.wantPublic {
+				t.Errorf("IsPublicHC() = %v, want %v", got, tc.wantPublic)
 			}
 		})
 	}
