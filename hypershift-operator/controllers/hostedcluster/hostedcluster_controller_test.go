@@ -788,6 +788,31 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 			},
 		},
 		{
+			name: "When HostedCluster has image-overrides annotation it should propagate to HCP",
+			hcAnnotations: map[string]string{
+				hyperv1.ImageOverridesAnnotation: "cluster-version-operator=example.com/cvo:latest",
+			},
+			hcpAnnotations: map[string]string{},
+			expectedAnnotations: map[string]string{
+				hyperutil.HostedClusterAnnotation:                  hcKey,
+				hyperv1.ImageOverridesAnnotation:                   "cluster-version-operator=example.com/cvo:latest",
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
+			name:          "When image-overrides annotation is removed from HostedCluster it should be removed from HCP",
+			hcAnnotations: map[string]string{},
+			hcpAnnotations: map[string]string{
+				hyperv1.ImageOverridesAnnotation: "cluster-version-operator=example.com/cvo:latest",
+			},
+			expectedAnnotations: map[string]string{
+				hyperutil.HostedClusterAnnotation:                  hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
 			name:                              "When AWS node termination handler is needed, disable annotation should not be set",
 			isAWSNodeTerminationHandlerNeeded: true,
 			hcAnnotations:                     map[string]string{},
