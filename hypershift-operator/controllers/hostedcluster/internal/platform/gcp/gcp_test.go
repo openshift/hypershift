@@ -25,6 +25,7 @@ const (
 	testNodePoolGSA        = "test-capg-sa@test-project.iam.gserviceaccount.com"
 	testControlPlaneGSA    = "test-control-plane-sa@test-project.iam.gserviceaccount.com"
 	testCloudControllerGSA = "test-cloud-controller@test-project.iam.gserviceaccount.com"
+	testStorageGSA         = "test-storage@test-project.iam.gserviceaccount.com"
 )
 
 // testCreateOrUpdate is a test helper that implements createOrUpdate functionality
@@ -66,6 +67,37 @@ func testSimpleCreateOrUpdate(ctx context.Context, c client.Client, obj client.O
 	return controllerutil.OperationResultCreated, f()
 }
 
+// validHostedCluster returns a baseline HostedCluster with a valid GCP WIF config.
+// Callers can modify individual fields to test specific scenarios.
+func validHostedCluster() *hyperv1.HostedCluster {
+	return &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "test-namespace",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.GCPPlatform,
+				GCP: &hyperv1.GCPPlatformSpec{
+					Project: "test-project",
+					Region:  "us-central1",
+					WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+						ProjectNumber: "123456789012",
+						PoolID:        "test-pool",
+						ProviderID:    "test-provider",
+						ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+							NodePool:        testNodePoolGSA,
+							ControlPlane:    testControlPlaneGSA,
+							CloudController: testCloudControllerGSA,
+							Storage:         testStorageGSA,
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 func TestGCPPlatformInterface(t *testing.T) {
 	g := NewWithT(t)
 
@@ -92,31 +124,7 @@ func TestReconcileCAPIInfraCR(t *testing.T) {
 		context.Background(),
 		fakeClient,
 		testCreateOrUpdate,
-		&hyperv1.HostedCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-cluster",
-				Namespace: "test-namespace",
-			},
-			Spec: hyperv1.HostedClusterSpec{
-				Platform: hyperv1.PlatformSpec{
-					Type: hyperv1.GCPPlatform,
-					GCP: &hyperv1.GCPPlatformSpec{
-						Project: "test-project",
-						Region:  "us-central1",
-						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-							ProjectNumber: "123456789012",
-							PoolID:        "test-pool",
-							ProviderID:    "test-provider",
-							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:        testNodePoolGSA,
-								ControlPlane:    testControlPlaneGSA,
-								CloudController: testCloudControllerGSA,
-							},
-						},
-					},
-				},
-			},
-		},
+		validHostedCluster(),
 		"test-control-plane-namespace",
 		hyperv1.APIEndpoint{Host: "example.com", Port: 443},
 	)
@@ -137,31 +145,7 @@ func TestCAPIProviderDeploymentSpec(t *testing.T) {
 
 	// Test minimal implementation returns nil (no CAPI provider)
 	spec, err := platform.CAPIProviderDeploymentSpec(
-		&hyperv1.HostedCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-cluster",
-				Namespace: "test-namespace",
-			},
-			Spec: hyperv1.HostedClusterSpec{
-				Platform: hyperv1.PlatformSpec{
-					Type: hyperv1.GCPPlatform,
-					GCP: &hyperv1.GCPPlatformSpec{
-						Project: "test-project",
-						Region:  "us-central1",
-						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-							ProjectNumber: "123456789012",
-							PoolID:        "test-pool",
-							ProviderID:    "test-provider",
-							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:        testNodePoolGSA,
-								ControlPlane:    testControlPlaneGSA,
-								CloudController: testCloudControllerGSA,
-							},
-						},
-					},
-				},
-			},
-		},
+		validHostedCluster(),
 		nil, // HostedControlPlane
 	)
 
@@ -207,33 +191,7 @@ func TestReconcileCredentials(t *testing.T) {
 	g.Expect(hyperv1.AddToScheme(scheme)).To(Succeed())
 	g.Expect(capigcp.AddToScheme(scheme)).To(Succeed())
 
-	// Create test HostedCluster object
-	hcluster := &hyperv1.HostedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-cluster",
-			Namespace: "test-namespace",
-		},
-		Spec: hyperv1.HostedClusterSpec{
-			Platform: hyperv1.PlatformSpec{
-				Type: hyperv1.GCPPlatform,
-				GCP: &hyperv1.GCPPlatformSpec{
-					Project: "test-project",
-					Region:  "us-central1",
-					WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-						ProjectNumber: "123456789012",
-						PoolID:        "test-pool",
-						ProviderID:    "test-provider",
-						ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-							NodePool:        testNodePoolGSA,
-							ControlPlane:    testControlPlaneGSA,
-							CloudController: testCloudControllerGSA,
-						},
-					},
-				},
-			},
-		},
-	}
-
+	hcluster := validHostedCluster()
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&hyperv1.HostedCluster{}).WithObjects(hcluster).Build()
 
 	// Test minimal implementation returns no error
@@ -298,31 +256,7 @@ func TestReconcileSecretEncryption(t *testing.T) {
 		context.Background(),
 		fakeClient,
 		testSimpleCreateOrUpdate,
-		&hyperv1.HostedCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-cluster",
-				Namespace: "test-namespace",
-			},
-			Spec: hyperv1.HostedClusterSpec{
-				Platform: hyperv1.PlatformSpec{
-					Type: hyperv1.GCPPlatform,
-					GCP: &hyperv1.GCPPlatformSpec{
-						Project: "test-project",
-						Region:  "us-central1",
-						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-							ProjectNumber: "123456789012",
-							PoolID:        "test-pool",
-							ProviderID:    "test-provider",
-							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:        testNodePoolGSA,
-								ControlPlane:    testControlPlaneGSA,
-								CloudController: testCloudControllerGSA,
-							},
-						},
-					},
-				},
-			},
-		},
+		validHostedCluster(),
 		"test-control-plane-namespace",
 	)
 
@@ -349,31 +283,7 @@ func TestDeleteCredentials(t *testing.T) {
 	err := platform.DeleteCredentials(
 		context.Background(),
 		fakeClient,
-		&hyperv1.HostedCluster{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-cluster",
-				Namespace: "test-namespace",
-			},
-			Spec: hyperv1.HostedClusterSpec{
-				Platform: hyperv1.PlatformSpec{
-					Type: hyperv1.GCPPlatform,
-					GCP: &hyperv1.GCPPlatformSpec{
-						Project: "test-project",
-						Region:  "us-central1",
-						WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-							ProjectNumber: "123456789012",
-							PoolID:        "test-pool",
-							ProviderID:    "test-provider",
-							ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-								NodePool:        testNodePoolGSA,
-								ControlPlane:    testControlPlaneGSA,
-								CloudController: testCloudControllerGSA,
-							},
-						},
-					},
-				},
-			},
-		},
+		validHostedCluster(),
 		"test-control-plane-namespace",
 	)
 
@@ -391,6 +301,7 @@ func TestBuildGCPWorkloadIdentityCredentials(t *testing.T) {
 			NodePool:        testNodePoolGSA,
 			ControlPlane:    testControlPlaneGSA,
 			CloudController: testCloudControllerGSA,
+			Storage:         testStorageGSA,
 		},
 	}
 
@@ -408,87 +319,65 @@ func TestBuildGCPWorkloadIdentityCredentials(t *testing.T) {
 func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
 	g := NewWithT(t)
 
+	// validWIF returns a baseline valid GCPWorkloadIdentityConfig.
+	// Callers mutate individual fields to test specific validation errors.
+	validWIF := func() hyperv1.GCPWorkloadIdentityConfig {
+		return hyperv1.GCPWorkloadIdentityConfig{
+			ProjectNumber: "123456789012",
+			PoolID:        "test-pool",
+			ProviderID:    "test-provider",
+			ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+				NodePool:        testNodePoolGSA,
+				ControlPlane:    testControlPlaneGSA,
+				CloudController: testCloudControllerGSA,
+				Storage:         testStorageGSA,
+			},
+		}
+	}
+
 	tests := []struct {
-		name        string
-		wif         hyperv1.GCPWorkloadIdentityConfig
-		expectError bool
+		name     string
+		mutate   func(*hyperv1.GCPWorkloadIdentityConfig)
+		errorMsg string
 	}{
 		{
-			name: "valid configuration",
-			wif: hyperv1.GCPWorkloadIdentityConfig{
-				ProjectNumber: "123456789012",
-				PoolID:        "test-pool",
-				ProviderID:    "test-provider",
-				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-					NodePool:        testNodePoolGSA,
-					ControlPlane:    testControlPlaneGSA,
-					CloudController: testCloudControllerGSA,
-				},
-			},
-			expectError: false,
+			name:   "valid configuration",
+			mutate: nil,
 		},
 		{
-			name: "missing project number",
-			wif: hyperv1.GCPWorkloadIdentityConfig{
-				PoolID:     "test-pool",
-				ProviderID: "test-provider",
-				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-					NodePool:        testNodePoolGSA,
-					ControlPlane:    testControlPlaneGSA,
-					CloudController: testCloudControllerGSA,
-				},
-			},
-			expectError: true,
+			name:     "missing project number",
+			mutate:   func(wif *hyperv1.GCPWorkloadIdentityConfig) { wif.ProjectNumber = "" },
+			errorMsg: "project number cannot be empty",
 		},
 		{
-			name: "missing pool ID",
-			wif: hyperv1.GCPWorkloadIdentityConfig{
-				ProjectNumber: "123456789012",
-				ProviderID:    "test-provider",
-				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-					NodePool:        testNodePoolGSA,
-					ControlPlane:    testControlPlaneGSA,
-					CloudController: testCloudControllerGSA,
-				},
-			},
-			expectError: true,
+			name:     "missing pool ID",
+			mutate:   func(wif *hyperv1.GCPWorkloadIdentityConfig) { wif.PoolID = "" },
+			errorMsg: "pool ID cannot be empty",
 		},
 		{
-			name: "missing provider ID",
-			wif: hyperv1.GCPWorkloadIdentityConfig{
-				ProjectNumber: "123456789012",
-				PoolID:        "test-pool",
-				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-					NodePool:        testNodePoolGSA,
-					ControlPlane:    testControlPlaneGSA,
-					CloudController: testCloudControllerGSA,
-				},
-			},
-			expectError: true,
+			name:     "missing provider ID",
+			mutate:   func(wif *hyperv1.GCPWorkloadIdentityConfig) { wif.ProviderID = "" },
+			errorMsg: "provider ID cannot be empty",
 		},
 		{
-			name: "missing service account email",
-			wif: hyperv1.GCPWorkloadIdentityConfig{
-				ProjectNumber: "123456789012",
-				PoolID:        "test-pool",
-				ProviderID:    "test-provider",
-				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-					NodePool:        "",
-					ControlPlane:    testControlPlaneGSA,
-					CloudController: testCloudControllerGSA,
-				},
-			},
-			expectError: true,
+			name:     "missing service account email",
+			mutate:   func(wif *hyperv1.GCPWorkloadIdentityConfig) { wif.ServiceAccountsEmails.NodePool = "" },
+			errorMsg: "service account email cannot be empty",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			wif := validWIF()
+			if tt.mutate != nil {
+				tt.mutate(&wif)
+			}
 			// Using NodePool GSA as the serviceAccountEmail parameter - the function
 			// is generic and works the same for any service account email
-			_, err := buildGCPWorkloadIdentityCredentials(tt.wif, tt.wif.ServiceAccountsEmails.NodePool)
-			if tt.expectError {
+			_, err := buildGCPWorkloadIdentityCredentials(wif, wif.ServiceAccountsEmails.NodePool)
+			if tt.errorMsg != "" {
 				g.Expect(err).ToNot(BeNil())
+				g.Expect(err.Error()).To(ContainSubstring(tt.errorMsg))
 			} else {
 				g.Expect(err).To(BeNil())
 			}
@@ -502,116 +391,54 @@ func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
 	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
 
 	tests := []struct {
-		name        string
-		hcluster    *hyperv1.HostedCluster
-		expectError bool
-		errorMsg    string
+		name     string
+		mutate   func(*hyperv1.HostedCluster)
+		errorMsg string
 	}{
 		{
-			name: "valid configuration",
-			hcluster: &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.GCPPlatform,
-						GCP: &hyperv1.GCPPlatformSpec{
-							WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-								ProjectNumber: "123456789012",
-								PoolID:        "test-pool",
-								ProviderID:    "test-provider",
-								ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-									NodePool:        testNodePoolGSA,
-									ControlPlane:    testControlPlaneGSA,
-									CloudController: testCloudControllerGSA,
-								},
-							},
-						},
-					},
-				},
-			},
-			expectError: false,
+			name:   "valid configuration",
+			mutate: nil,
 		},
 		{
 			name: "missing node pool service account email",
-			hcluster: &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.GCPPlatform,
-						GCP: &hyperv1.GCPPlatformSpec{
-							WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-								ProjectNumber: "123456789012",
-								PoolID:        "test-pool",
-								ProviderID:    "test-provider",
-								ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-									NodePool:        "",
-									ControlPlane:    testControlPlaneGSA,
-									CloudController: testCloudControllerGSA,
-								},
-							},
-						},
-					},
-				},
+			mutate: func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool = ""
 			},
-			expectError: true,
-			errorMsg:    "node pool service account email is required",
+			errorMsg: "node pool service account email is required",
 		},
 		{
 			name: "missing control plane service account email",
-			hcluster: &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.GCPPlatform,
-						GCP: &hyperv1.GCPPlatformSpec{
-							WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-								ProjectNumber: "123456789012",
-								PoolID:        "test-pool",
-								ProviderID:    "test-provider",
-								ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-									NodePool:        testNodePoolGSA,
-									ControlPlane:    "",
-									CloudController: testCloudControllerGSA,
-								},
-							},
-						},
-					},
-				},
+			mutate: func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane = ""
 			},
-			expectError: true,
-			errorMsg:    "control plane service account email is required",
+			errorMsg: "control plane service account email is required",
+		},
+		{
+			name: "missing storage service account email",
+			mutate: func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage = ""
+			},
+			errorMsg: "storage service account email is required",
 		},
 		{
 			name: "missing cloud controller service account email",
-			hcluster: &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.GCPPlatform,
-						GCP: &hyperv1.GCPPlatformSpec{
-							WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-								ProjectNumber: "123456789012",
-								PoolID:        "test-pool",
-								ProviderID:    "test-provider",
-								ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-									NodePool:        testNodePoolGSA,
-									ControlPlane:    testControlPlaneGSA,
-									CloudController: "",
-								},
-							},
-						},
-					},
-				},
+			mutate: func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController = ""
 			},
-			expectError: true,
-			errorMsg:    "cloud controller service account email is required",
+			errorMsg: "cloud controller service account email is required",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := platform.validateWorkloadIdentityConfiguration(tt.hcluster)
-			if tt.expectError {
+			hc := validHostedCluster()
+			if tt.mutate != nil {
+				tt.mutate(hc)
+			}
+			err := platform.validateWorkloadIdentityConfiguration(hc)
+			if tt.errorMsg != "" {
 				g.Expect(err).ToNot(BeNil())
-				if tt.errorMsg != "" {
-					g.Expect(err.Error()).To(ContainSubstring(tt.errorMsg))
-				}
+				g.Expect(err.Error()).To(ContainSubstring(tt.errorMsg))
 			} else {
 				g.Expect(err).To(BeNil())
 			}
