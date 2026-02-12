@@ -44,7 +44,7 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider imagepro
 		p.FeatureSet = hcp.Spec.Configuration.FeatureGate.FeatureSet
 	}
 
-	if enableCVOManagementClusterMetricsAccess {
+	if IsManagementClusterMetricsAccessEnabled(hcp, enableCVOManagementClusterMetricsAccess) {
 		p.DeploymentConfig.AdditionalLabels = map[string]string{
 			config.NeedMetricsServerAccessLabel: "true",
 		}
