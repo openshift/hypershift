@@ -2,6 +2,7 @@ package upsert
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 
@@ -20,6 +21,17 @@ import (
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+)
+
+const (
+	// LastAppliedConfigurationAnnotation stores the JSON representation of the
+	// last desired manifest state applied by ApplyManifest. Used to detect
+	// changes in desired state that DeepDerivative cannot detect.
+	LastAppliedConfigurationAnnotation = "hypershift.openshift.io/last-applied-configuration"
+
+	// maxLastAppliedAnnotationSize is the maximum annotation value size in bytes.
+	// Objects exceeding this fall back to DeepDerivative-only comparison.
+	maxLastAppliedAnnotationSize = 128 * 1024 // 128KB
 )
 
 type ApplyProvider interface {
@@ -65,6 +77,9 @@ func (p *applyProvider) ApplyManifest(ctx context.Context, c crclient.Client, ob
 		if !apierrors.IsNotFound(err) {
 			return controllerutil.OperationResultNone, err
 		}
+		if desiredJSON := computeLastAppliedJSON(obj); desiredJSON != "" {
+			setLastAppliedConfiguration(obj, desiredJSON)
+		}
 		if err := c.Create(ctx, obj); err != nil {
 			return controllerutil.OperationResultNone, err
 		}
@@ -100,6 +115,7 @@ func (p *applyProvider) ApplyManifest(ctx context.Context, c crclient.Client, ob
 func (p *applyProvider) update(ctx context.Context, c crclient.Client, obj crclient.Object, existing crclient.Object) (controllerutil.OperationResult, error) {
 	key := crclient.ObjectKeyFromObject(obj)
 
+	// Preserve immutable fields.
 	switch existingTyped := existing.(type) {
 	case *corev1.ServiceAccount:
 		preserveServiceAccountPullSecrets(existingTyped, obj.(*corev1.ServiceAccount))
@@ -109,26 +125,57 @@ func (p *applyProvider) update(ctx context.Context, c crclient.Client, obj crcli
 			obj.(*appsv1.Deployment).Spec.Selector = existingTyped.Spec.Selector
 		}
 	}
+
+	// Compute desired JSON BEFORE preserveOriginalMetadata merges existing
+	// metadata into obj. This captures our pure desired state.
+	desiredJSON := computeLastAppliedJSON(obj)
+
+	// Get the last-applied annotation from the existing object.
+	lastAppliedJSON := ""
+	if existingAnnotations := existing.GetAnnotations(); existingAnnotations != nil {
+		lastAppliedJSON = existingAnnotations[LastAppliedConfigurationAnnotation]
+	}
+
+	// Merge existing metadata (labels, annotations, finalizers, resourceVersion) into obj.
 	preserveOriginalMetadata(existing, obj)
 
-	current, err := toUnstructured(existing)
-	if err != nil {
-		return controllerutil.OperationResultNone, err
-	}
-	modified, err := toUnstructured(obj)
-	if err != nil {
-		return controllerutil.OperationResultNone, err
+	needsUpdate := false
+
+	if desiredJSON != "" && lastAppliedJSON != "" {
+		// Both annotation values available: compare desired vs last-applied.
+		needsUpdate = desiredJSON != lastAppliedJSON
+	} else if desiredJSON != "" && lastAppliedJSON == "" {
+		// Migration: object was created before LastAppliedConfigurationAnnotation annotation was added.
+		// Force-stamp the annotation on first reconcile to ensure full coverage.
+		needsUpdate = true
 	}
 
-	// DeepDerivative ignores unset fields in 'modified' (empty/nil arrays, empty strings, etc.)
-	if equality.Semantic.DeepDerivative(modified, current) {
-		if p.loopDetector != nil {
-			p.loopDetector.recordNoOpUpdate(obj, key)
+	// Fall back to DeepDerivative for drift detection (external modifications
+	// to the cluster object) and when annotation comparison is unavailable.
+	if !needsUpdate {
+		current, err := toUnstructured(existing)
+		if err != nil {
+			return controllerutil.OperationResultNone, err
 		}
-		return controllerutil.OperationResultNone, nil
+		modified, err := toUnstructured(obj)
+		if err != nil {
+			return controllerutil.OperationResultNone, err
+		}
+		if equality.Semantic.DeepDerivative(modified, current) {
+			if p.loopDetector != nil {
+				p.loopDetector.recordNoOpUpdate(obj, key)
+			}
+			return controllerutil.OperationResultNone, nil
+		}
 	}
 
-	// In the case a job, if an update is needed, the previous job must be deleted
+	// Stamp the last-applied annotation on obj, overwriting the old value
+	// that was merged in by preserveOriginalMetadata.
+	if desiredJSON != "" {
+		setLastAppliedConfiguration(obj, desiredJSON)
+	}
+
+	// In the case of a job, if an update is needed, the previous job must be deleted.
 	switch existingTyped := existing.(type) {
 	case *batchv1.Job:
 		if existingTyped.DeletionTimestamp.IsZero() {
@@ -167,6 +214,7 @@ func preserveOriginalMetadata(original, mutated crclient.Object) {
 	finalizers := sets.New(original.GetFinalizers()...).Insert(mutated.GetFinalizers()...)
 	mutated.SetFinalizers(sets.List(finalizers))
 
+	// Required by the Kubernetes Update API for optimistic concurrency. Without it, every Update call fails.
 	mutated.SetResourceVersion(original.GetResourceVersion())
 }
 
@@ -184,17 +232,20 @@ func preserveServiceAccountPullSecrets(original, mutated *corev1.ServiceAccount)
 }
 
 var (
-	// ignore read-only fields managed by k8s.
+	// ignoreMetadataFields lists read-only and server-set metadata fields to
+	// strip when converting objects to unstructured form for comparison.
 	ignoreMetadataFields = []string{
 		"uid",
 		"generation",
 		"creationTimestamp",
+		"resourceVersion",
+		"managedFields",
 	}
 )
 
+// toUnstructured converts a crclient.Object to an unstructured map, stripping
+// server-set metadata fields, status, and the last-applied annotation.
 func toUnstructured(obj crclient.Object) (map[string]any, error) {
-	// Create a copy of the original object as well as converting that copy to
-	// unstructured data.
 	u, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
 	if err != nil {
 		return nil, err
@@ -206,5 +257,45 @@ func toUnstructured(obj crclient.Object) (map[string]any, error) {
 
 	// status is updated separately, ignore.
 	unstructured.RemoveNestedField(u, "status")
+
+	// Remove the last-applied annotation to avoid self-referential comparison
+	// and to prevent it from affecting DeepDerivative results.
+	if annotations, ok, _ := unstructured.NestedMap(u, "metadata", "annotations"); ok {
+		delete(annotations, LastAppliedConfigurationAnnotation)
+		if len(annotations) == 0 {
+			unstructured.RemoveNestedField(u, "metadata", "annotations")
+		} else {
+			_ = unstructured.SetNestedField(u, annotations, "metadata", "annotations")
+		}
+	}
+
 	return u, nil
+}
+
+// computeLastAppliedJSON computes the JSON representation of the desired state
+// for storing in the last-applied annotation. Returns empty string if the object
+// cannot be serialized or exceeds maxLastAppliedAnnotationSize.
+func computeLastAppliedJSON(obj crclient.Object) string {
+	u, err := toUnstructured(obj)
+	if err != nil {
+		return ""
+	}
+	data, err := json.Marshal(u)
+	if err != nil {
+		return ""
+	}
+	if len(data) > maxLastAppliedAnnotationSize {
+		return ""
+	}
+	return string(data)
+}
+
+// setLastAppliedConfiguration sets the last-applied-configuration annotation on the object.
+func setLastAppliedConfiguration(obj crclient.Object, config string) {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+	annotations[LastAppliedConfigurationAnnotation] = config
+	obj.SetAnnotations(annotations)
 }
