@@ -5,6 +5,10 @@ data:
     = \n"
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/last-applied-configuration: '{"apiVersion":"v1","data":{"cloud.conf":"[Global]\nuse-clouds
+      = true\nclouds-file = /etc/openstack/secret/clouds.yaml\ncloud = \n\n[LoadBalancer]\nmax-shared-lb
+      = 1\nmanage-security-groups = true\n\n[Networking]\naddress-sort-order = \n"},"kind":"ConfigMap","metadata":{"name":"openstack-cloud-config","namespace":"hcp-namespace","ownerReferences":[{"apiVersion":"hypershift.openshift.io/v1beta1","blockOwnerDeletion":true,"controller":true,"kind":"HostedControlPlane","name":"hcp","uid":""}]}}'
   name: openstack-cloud-config
   namespace: hcp-namespace
   ownerReferences:

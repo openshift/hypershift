@@ -163,6 +163,60 @@ data:
       requestTimeoutSeconds: 0
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/last-applied-configuration: '{"apiVersion":"v1","data":{"config.yaml":"apiVersion:
+      openshiftcontrolplane.config.openshift.io/v1\nbuild:\n  additionalTrustedCA:
+      \"\"\n  buildDefaults: null\n  buildOverrides: null\n  imageTemplateFormat:\n    format:
+      docker-builder\n    latest: false\ncontrollers: null\ndeployer:\n  imageTemplateFormat:\n    format:
+      deployer\n    latest: false\ndockerPullSecret:\n  internalRegistryHostname:
+      image-registry.openshift-image-registry.svc:5000\n  registryURLs: null\nfeatureGates:\n-
+      AWSEFSDriverVolumeMetrics=true\n- AdditionalRoutingCapabilities=true\n- AdminNetworkPolicy=true\n-
+      AlibabaPlatform=true\n- AzureWorkloadIdentity=true\n- BareMetalLoadBalancer=true\n-
+      BuildCSIVolumes=true\n- ChunkSizeMiB=true\n- CloudDualStackNodeIPs=true\n- DisableKubeletCloudCredentialProviders=true\n-
+      ExternalOIDC=true\n- GCPLabelsTags=true\n- HardwareSpeed=true\n- IngressControllerLBSubnetsAWS=true\n-
+      KMSv1=true\n- ManagedBootImages=true\n- ManagedBootImagesAWS=true\n- MultiArchInstallAWS=true\n-
+      MultiArchInstallGCP=true\n- NetworkDiagnosticsConfig=true\n- NetworkLiveMigration=true\n-
+      NetworkSegmentation=true\n- NodeDisruptionPolicy=true\n- OpenShiftPodSecurityAdmission=true\n-
+      PersistentIPsForVirtualization=true\n- PrivateHostedZoneAWS=true\n- SetEIPForNLBIngressController=true\n-
+      VSphereControlPlaneMachineSet=true\n- VSphereDriverConfiguration=true\n- VSphereMultiVCenters=true\n-
+      VSphereStaticIPs=true\n- ValidatingAdmissionPolicy=true\n- AWSClusterHostedDNS=false\n-
+      AutomatedEtcdBackup=false\n- BootcNodeManagement=false\n- CPMSMachineNamePrefix=false\n-
+      ClusterAPIInstall=false\n- ClusterAPIInstallIBMCloud=false\n- ClusterMonitoringConfig=false\n-
+      ClusterVersionOperatorConfiguration=false\n- ConsolePluginContentSecurityPolicy=false\n-
+      DNSNameResolver=false\n- DualReplica=false\n- DyanmicServiceEndpointIBMCloud=false\n-
+      DynamicResourceAllocation=false\n- EtcdBackendQuota=false\n- EventedPLEG=false\n-
+      Example=false\n- Example2=false\n- GCPClusterHostedDNS=false\n- GCPCustomAPIEndpoints=false\n-
+      GatewayAPI=false\n- GatewayAPIController=false\n- HighlyAvailableArbiter=false\n-
+      ImageStreamImportMode=false\n- IngressControllerDynamicConfigurationManager=false\n-
+      InsightsConfig=false\n- InsightsConfigAPI=false\n- InsightsOnDemandDataGather=false\n-
+      InsightsRuntimeExtractor=false\n- KMSEncryptionProvider=false\n- MachineAPIMigration=false\n-
+      MachineAPIOperatorDisableMachineHealthCheckController=false\n- MachineAPIProviderOpenStack=false\n-
+      MachineConfigNodes=false\n- MaxUnavailableStatefulSet=false\n- MetricsCollectionProfiles=false\n-
+      MinimumKubeletVersion=false\n- MixedCPUsAllocation=false\n- MultiArchInstallAzure=false\n-
+      NewOLM=false\n- NewOLMCatalogdAPIV1Metas=false\n- NodeSwap=false\n- NutanixMultiSubnets=false\n-
+      OVNObservability=false\n- OnClusterBuild=false\n- PinnedImages=false\n- PlatformOperators=false\n-
+      ProcMountType=false\n- RouteAdvertisements=false\n- RouteExternalCertificate=false\n-
+      SELinuxChangePolicy=false\n- SELinuxMount=false\n- ServiceAccountTokenNodeBinding=false\n-
+      ShortCertRotation=false\n- SignatureStores=false\n- SigstoreImageVerification=false\n-
+      SigstoreImageVerificationPKI=false\n- TranslateStreamCloseWebsocketRequests=false\n-
+      UpgradeStatus=false\n- UserNamespacesPodSecurityStandards=false\n- UserNamespacesSupport=false\n-
+      VSphereConfigurableMaxAllowedBlockVolumesPerNode=false\n- VSphereHostVMGroupZonal=false\n-
+      VSphereMultiDisk=false\n- VSphereMultiNetworks=false\n- VolumeAttributesClass=false\n-
+      VolumeGroupSnapshot=false\nimageImport:\n  disableScheduledImport: false\n  maxScheduledImageImportsPerMinute:
+      0\n  scheduledImageImportMinimumIntervalSeconds: 0\ningress:\n  ingressIPNetworkCIDR:
+      \"\"\nkind: OpenShiftControllerManagerConfig\nleaderElection:\n  leaseDuration:
+      0s\n  name: openshift-master-controllers\n  renewDeadline: 0s\n  retryPeriod:
+      0s\nnetwork:\n  clusterNetworks: null\n  networkPluginName: \"\"\n  serviceNetworkCIDR:
+      \"\"\n  vxlanPort: 0\nresourceQuota:\n  concurrentSyncs: 0\n  minResyncPeriod:
+      0s\n  syncPeriod: 0s\nsecurityAllocator:\n  mcsAllocatorRange: \"\"\n  mcsLabelsPerProject:
+      0\n  uidAllocatorRange: \"\"\nserviceAccount:\n  managedNames: null\nserviceServingCert:\n  signer:
+      null\nservingInfo:\n  bindAddress: 0.0.0.0:8443\n  bindNetwork: \"\"\n  certFile:
+      /etc/kubernetes/certs/tls.crt\n  cipherSuites:\n  - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n  -
+      TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n  - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n  -
+      TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n  - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n  -
+      TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n  clientCA: /etc/kubernetes/client-ca/ca.crt\n  keyFile:
+      /etc/kubernetes/certs/tls.key\n  maxRequestsInFlight: 0\n  minTLSVersion: VersionTLS12\n  requestTimeoutSeconds:
+      0\n"},"kind":"ConfigMap","metadata":{"name":"openshift-controller-manager-config","namespace":"hcp-namespace","ownerReferences":[{"apiVersion":"hypershift.openshift.io/v1beta1","blockOwnerDeletion":true,"controller":true,"kind":"HostedControlPlane","name":"hcp","uid":""}]}}'
   name: openshift-controller-manager-config
   namespace: hcp-namespace
   ownerReferences:

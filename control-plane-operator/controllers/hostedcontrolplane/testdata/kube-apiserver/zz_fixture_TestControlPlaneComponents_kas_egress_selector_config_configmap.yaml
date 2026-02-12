@@ -22,6 +22,14 @@ data:
     kind: EgressSelectorConfiguration
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/last-applied-configuration: '{"apiVersion":"v1","data":{"config.yaml":"apiVersion:
+      apiserver.k8s.io/v1beta1\negressSelections:\n- connection:\n    proxyProtocol:
+      Direct\n  name: controlplane\n- connection:\n    proxyProtocol: Direct\n  name:
+      etcd\n- connection:\n    proxyProtocol: HTTPConnect\n    transport:\n      tcp:\n        tlsConfig:\n          caBundle:
+      /etc/kubernetes/certs/konnectivity-ca/ca.crt\n          clientCert: /etc/kubernetes/certs/konnectivity-client/tls.crt\n          clientKey:
+      /etc/kubernetes/certs/konnectivity-client/tls.key\n        url: https://konnectivity-server-local:8090\n  name:
+      cluster\nkind: EgressSelectorConfiguration\n"},"kind":"ConfigMap","metadata":{"name":"kas-egress-selector-config","namespace":"hcp-namespace","ownerReferences":[{"apiVersion":"hypershift.openshift.io/v1beta1","blockOwnerDeletion":true,"controller":true,"kind":"HostedControlPlane","name":"hcp","uid":""}]}}'
   name: kas-egress-selector-config
   namespace: hcp-namespace
   ownerReferences:

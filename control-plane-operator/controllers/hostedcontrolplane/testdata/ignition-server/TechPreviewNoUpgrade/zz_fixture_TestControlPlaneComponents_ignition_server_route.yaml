@@ -1,6 +1,8 @@
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
+  annotations:
+    hypershift.openshift.io/last-applied-configuration: '{"apiVersion":"route.openshift.io/v1","kind":"Route","metadata":{"name":"ignition-server","namespace":"hcp-namespace","ownerReferences":[{"apiVersion":"hypershift.openshift.io/v1beta1","blockOwnerDeletion":true,"controller":true,"kind":"HostedControlPlane","name":"hcp","uid":""}]},"spec":{"tls":{"insecureEdgeTerminationPolicy":"None","termination":"passthrough"},"to":{"kind":"Service","name":"ignition-server-proxy","weight":null},"wildcardPolicy":"None"}}'
   name: ignition-server
   namespace: hcp-namespace
   ownerReferences:

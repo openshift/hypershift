@@ -67,6 +67,27 @@ data:
       storagePrefix: ""
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/last-applied-configuration: '{"apiVersion":"v1","data":{"config.yaml":"admission:
+      {}\napiVersion: osin.config.openshift.io/v1\nauditConfig:\n  auditFilePath:
+      \"\"\n  enabled: false\n  logFormat: \"\"\n  maximumFileRetentionDays: 0\n  maximumFileSizeMegabytes:
+      0\n  maximumRetainedFiles: 0\n  policyConfiguration: null\n  policyFile: \"\"\n  webHookKubeConfig:
+      \"\"\n  webHookMode: \"\"\ncorsAllowedOrigins: null\nkind: OsinServerConfig\nkubeClientConfig:\n  connectionOverrides:\n    acceptContentTypes:
+      \"\"\n    burst: 400\n    contentType: \"\"\n    qps: 400\n  kubeConfig: /etc/kubernetes/secrets/svc-kubeconfig/kubeconfig\noauthConfig:\n  alwaysShowProviderSelection:
+      false\n  assetPublicURL: \"\"\n  grantConfig:\n    method: deny\n    serviceAccountMethod:
+      prompt\n  identityProviders: []\n  loginURL: https://:0\n  masterCA: /etc/kubernetes/certs/master-ca/ca.crt\n  masterPublicURL:
+      https://:0\n  masterURL: https://:0\n  sessionConfig:\n    sessionMaxAgeSeconds:
+      300\n    sessionName: ssn\n    sessionSecretsFile: /etc/kubernetes/secrets/session/v4-0-config-system-session\n  templates:\n    error:
+      /etc/kubernetes/secrets/templates/error/errors.html\n    login: /etc/kubernetes/secrets/templates/login/login.html\n    providerSelection:
+      /etc/kubernetes/secrets/templates/providers/providers.html\n  tokenConfig:\n    accessTokenMaxAgeSeconds:
+      86400\n    authorizeTokenMaxAgeSeconds: 300\nservingInfo:\n  bindAddress: 0.0.0.0:6443\n  bindNetwork:
+      tcp\n  certFile: /etc/kubernetes/certs/serving-cert/tls.crt\n  cipherSuites:\n  -
+      TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256\n  - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256\n  -
+      TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384\n  - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384\n  -
+      TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256\n  - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256\n  keyFile:
+      /etc/kubernetes/certs/serving-cert/tls.key\n  maxRequestsInFlight: 1000\n  minTLSVersion:
+      VersionTLS12\n  requestTimeoutSeconds: 300\nstorageConfig:\n  ca: \"\"\n  certFile:
+      \"\"\n  keyFile: \"\"\n  storagePrefix: \"\"\n"},"kind":"ConfigMap","metadata":{"name":"oauth-openshift","namespace":"hcp-namespace","ownerReferences":[{"apiVersion":"hypershift.openshift.io/v1beta1","blockOwnerDeletion":true,"controller":true,"kind":"HostedControlPlane","name":"hcp","uid":""}]}}'
   name: oauth-openshift
   namespace: hcp-namespace
   ownerReferences:

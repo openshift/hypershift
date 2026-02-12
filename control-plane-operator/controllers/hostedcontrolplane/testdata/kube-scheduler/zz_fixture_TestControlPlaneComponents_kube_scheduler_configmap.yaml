@@ -23,6 +23,14 @@ data:
     }
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/last-applied-configuration: '{"apiVersion":"v1","data":{"config.json":"{\n  \"kind\":
+      \"KubeSchedulerConfiguration\",\n  \"apiVersion\": \"kubescheduler.config.k8s.io/v1\",\n  \"leaderElection\":
+      {\n      \"leaderElect\": true,\n      \"leaseDuration\": \"2m17s\",\n      \"renewDeadline\":
+      \"1m47s\",\n      \"retryPeriod\": \"26s\",\n      \"resourceLock\": \"\",\n      \"resourceName\":
+      \"\",\n      \"resourceNamespace\": \"\"\n  },\n  \"clientConnection\": {\n      \"kubeconfig\":
+      \"/etc/kubernetes/kubeconfig/kubeconfig\",\n      \"acceptContentTypes\": \"\",\n      \"contentType\":
+      \"\",\n      \"qps\": 0,\n      \"burst\": 0\n  }\n}\n"},"kind":"ConfigMap","metadata":{"name":"kube-scheduler","namespace":"hcp-namespace","ownerReferences":[{"apiVersion":"hypershift.openshift.io/v1beta1","blockOwnerDeletion":true,"controller":true,"kind":"HostedControlPlane","name":"hcp","uid":""}]}}'
   name: kube-scheduler
   namespace: hcp-namespace
   ownerReferences:
