@@ -26,6 +26,7 @@ const (
 	flagNodePoolServiceAccount        = "node-pool-service-account"
 	flagControlPlaneServiceAccount    = "control-plane-service-account"
 	flagCloudControllerServiceAccount = "cloud-controller-service-account"
+	flagStorageServiceAccount         = "storage-service-account"
 )
 
 // RawCreateOptions contains the raw command-line options for creating a GCP cluster
@@ -59,6 +60,9 @@ type RawCreateOptions struct {
 
 	// CloudControllerServiceAccount is the Google Service Account email for the Cloud Controller Manager
 	CloudControllerServiceAccount string
+
+	// StorageServiceAccount is the Google Service Account email for the GCP PD CSI Driver
+	StorageServiceAccount string
 }
 
 // BindOptions binds the GCP-specific flags to the provided flag set
@@ -70,9 +74,10 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.WorkloadIdentityProjectNumber, flagWorkloadIdentityProjectNumber, opts.WorkloadIdentityProjectNumber, "Numeric GCP project identifier for Workload Identity Federation (from `hypershift infra create gcp` output)")
 	flags.StringVar(&opts.WorkloadIdentityPoolID, flagWorkloadIdentityPoolID, opts.WorkloadIdentityPoolID, "Workload Identity Pool ID (from `hypershift infra create gcp` output)")
 	flags.StringVar(&opts.WorkloadIdentityProviderID, flagWorkloadIdentityProviderID, opts.WorkloadIdentityProviderID, "Workload Identity Provider ID (from `hypershift infra create gcp` output)")
-	flags.StringVar(&opts.NodePoolServiceAccount, flagNodePoolServiceAccount, opts.NodePoolServiceAccount, "Google Service Account email for NodePool CAPG controllers (from `hypershift infra create gcp` output)")
-	flags.StringVar(&opts.ControlPlaneServiceAccount, flagControlPlaneServiceAccount, opts.ControlPlaneServiceAccount, "Google Service Account email for Control Plane Operator (from `hypershift infra create gcp` output)")
-	flags.StringVar(&opts.CloudControllerServiceAccount, flagCloudControllerServiceAccount, opts.CloudControllerServiceAccount, "Google Service Account email for Cloud Controller Manager (from `hypershift infra create gcp` output)")
+	flags.StringVar(&opts.NodePoolServiceAccount, flagNodePoolServiceAccount, opts.NodePoolServiceAccount, "Google Service Account email for NodePool CAPG controllers (from `hypershift create iam gcp` output)")
+	flags.StringVar(&opts.ControlPlaneServiceAccount, flagControlPlaneServiceAccount, opts.ControlPlaneServiceAccount, "Google Service Account email for Control Plane Operator (from `hypershift create iam gcp` output)")
+	flags.StringVar(&opts.CloudControllerServiceAccount, flagCloudControllerServiceAccount, opts.CloudControllerServiceAccount, "Google Service Account email for Cloud Controller Manager (from `hypershift create iam gcp` output)")
+	flags.StringVar(&opts.StorageServiceAccount, flagStorageServiceAccount, opts.StorageServiceAccount, "Google Service Account email for GCP PD CSI Driver (from `hypershift create iam gcp` output)")
 }
 
 // ValidatedCreateOptions represents validated options for creating a GCP cluster
@@ -117,6 +122,9 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 		return nil, err
 	}
 	if err := util.ValidateRequiredOption(flagCloudControllerServiceAccount, o.CloudControllerServiceAccount); err != nil {
+		return nil, err
+	}
+	if err := util.ValidateRequiredOption(flagStorageServiceAccount, o.StorageServiceAccount); err != nil {
 		return nil, err
 	}
 	return &ValidatedCreateOptions{
@@ -202,6 +210,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(hostedCluster *hyperv1.HostedClus
 				NodePool:        o.NodePoolServiceAccount,
 				ControlPlane:    o.ControlPlaneServiceAccount,
 				CloudController: o.CloudControllerServiceAccount,
+				Storage:         o.StorageServiceAccount,
 			},
 		},
 	}
