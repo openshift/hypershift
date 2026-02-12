@@ -19,4 +19,5 @@ func ReconcilePodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, availabilit
 	}
 	pdb.Spec.MinAvailable = minAvailable
 	pdb.Spec.MaxUnavailable = maxUnavailable
+	pdb.Spec.UnhealthyPodEvictionPolicy = ptr.To(policyv1.AlwaysAllow)
 }
