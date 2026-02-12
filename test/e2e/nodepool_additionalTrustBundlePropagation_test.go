@@ -20,17 +20,19 @@ import (
 
 type AdditionalTrustBundlePropagationTest struct {
 	DummyInfraSetup
-	ctx        context.Context
-	mgmtClient crclient.Client
+	ctx         context.Context
+	mgmtClient  crclient.Client
+	guestClient crclient.Client
 
 	hostedCluster *hyperv1.HostedCluster
 }
 
-func NewAdditionalTrustBundlePropagation(ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) *AdditionalTrustBundlePropagationTest {
+func NewAdditionalTrustBundlePropagation(ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, guestClient crclient.Client) *AdditionalTrustBundlePropagationTest {
 	return &AdditionalTrustBundlePropagationTest{
 		ctx:           ctx,
 		mgmtClient:    mgmtClient,
 		hostedCluster: hostedCluster,
+		guestClient:   guestClient,
 	}
 }
 
@@ -109,6 +111,26 @@ func (k *AdditionalTrustBundlePropagationTest) Run(t *testing.T, nodePool hyperv
 			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(20*time.Minute),
 		)
 
+		// Sanity check: ensure the user-ca-bundle exists in the guest cluster before removal to avoid false positives
+		{
+			userCAConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-ca-bundle",
+					Namespace: "openshift-config",
+				},
+			}
+			e2eutil.EventuallyObject(t, k.ctx, "user-ca-bundle to exist in guest cluster",
+				func(ctx context.Context) (*corev1.ConfigMap, error) {
+					err := k.guestClient.Get(ctx, crclient.ObjectKeyFromObject(userCAConfigMap), userCAConfigMap)
+					return userCAConfigMap, err
+				},
+				[]e2eutil.Predicate[*corev1.ConfigMap]{
+					func(obj *corev1.ConfigMap) (bool, string, error) { return true, "exists", nil },
+				},
+				e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
+			)
+		}
+
 		t.Logf("Updating hosted cluster by removing additional trust bundle.")
 		if err = e2eutil.UpdateObject(t, k.ctx, k.mgmtClient, k.hostedCluster, func(obj *hyperv1.HostedCluster) {
 			obj.Spec.AdditionalTrustBundle = nil
@@ -175,5 +197,19 @@ func (k *AdditionalTrustBundlePropagationTest) Run(t *testing.T, nodePool hyperv
 			},
 			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(20*time.Minute),
 		)
+
+		// Ensure the user-ca-bundle configmap is deleted from the guest cluster
+		// Only applicable for >= 4.22
+		if e2eutil.IsGreaterThanOrEqualTo(e2eutil.Version422) {
+			userCAConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-ca-bundle",
+					Namespace: "openshift-config",
+				},
+			}
+			e2eutil.EventuallyNotFound(t, k.ctx, k.guestClient, userCAConfigMap,
+				e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
+			)
+		}
 	})
 }
