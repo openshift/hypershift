@@ -439,6 +439,8 @@ type HyperShiftOperatorDeployment struct {
 	AWSPrivateSecret                        *corev1.Secret
 	AWSPrivateSecretKey                     string
 	AWSPrivateRegion                        string
+	GCPProject                              string
+	GCPRegion                               string
 	OIDCBucketName                          string
 	OIDCBucketRegion                        string
 	OIDCStorageProviderS3Secret             *corev1.Secret
@@ -705,6 +707,19 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 					Name:  "AWS_SDK_LOAD_CONFIG",
 					Value: "1",
 				})
+		case hyperv1.GCPPlatform:
+			if o.GCPProject != "" {
+				envVars = append(envVars, corev1.EnvVar{
+					Name:  "GCP_PROJECT",
+					Value: o.GCPProject,
+				})
+			}
+			if o.GCPRegion != "" {
+				envVars = append(envVars, corev1.EnvVar{
+					Name:  "GCP_REGION",
+					Value: o.GCPRegion,
+				})
+			}
 		}
 
 		// Add AWS-specific volumes if AWS platform

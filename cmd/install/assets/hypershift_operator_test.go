@@ -247,6 +247,47 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				},
 			},
 		},
+		"When GCP private platform is specified it should set GCP_PROJECT and GCP_REGION env vars": {
+			inputBuildParameters: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				OperatorImage: testOperatorImage,
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "hypershift",
+					},
+				},
+				Replicas:        3,
+				PrivatePlatform: string(hyperv1.GCPPlatform),
+				GCPProject:      "my-gcp-project",
+				GCPRegion:       "us-central1",
+			},
+			expectedVolumeMounts: nil,
+			expectedVolumes:      nil,
+			expectedArgs: []string{
+				"run",
+				"--namespace=$(MY_NAMESPACE)",
+				"--pod-name=$(MY_NAME)",
+				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", false),
+				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
+				fmt.Sprintf("--enable-ci-debug-output=%t", false),
+				fmt.Sprintf("--private-platform=%s", string(hyperv1.GCPPlatform)),
+			},
+			expectedEnvVars: []corev1.EnvVar{
+				{
+					Name:  "GCP_PROJECT",
+					Value: "my-gcp-project",
+				},
+				{
+					Name:  "GCP_REGION",
+					Value: "us-central1",
+				},
+			},
+		},
 		"specify dedicated request serving isolation parameter (true) result in appropriate arguments": {
 			inputBuildParameters: HyperShiftOperatorDeployment{
 				Namespace: &corev1.Namespace{
