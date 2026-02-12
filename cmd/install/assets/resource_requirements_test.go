@@ -6,6 +6,25 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+// assertContainersHaveResourceRequests validates that all containers have CPU and memory resource requests.
+func assertContainersHaveResourceRequests(t *testing.T, containers []corev1.Container, deploymentName string) {
+	t.Helper()
+	for _, container := range containers {
+		if container.Resources.Requests == nil {
+			t.Errorf("container %s in %s deployment is missing resource requests", container.Name, deploymentName)
+			continue
+		}
+
+		if _, hasCPU := container.Resources.Requests[corev1.ResourceCPU]; !hasCPU {
+			t.Errorf("container %s in %s deployment is missing CPU resource request", container.Name, deploymentName)
+		}
+
+		if _, hasMemory := container.Resources.Requests[corev1.ResourceMemory]; !hasMemory {
+			t.Errorf("container %s in %s deployment is missing memory resource request", container.Name, deploymentName)
+		}
+	}
+}
+
 // TestHyperShiftOperatorDeployment_HasResourceRequests verifies that the HyperShift operator deployment
 // has CPU and memory resource requests defined for all containers.
 func TestHyperShiftOperatorDeployment_HasResourceRequests(t *testing.T) {
@@ -25,20 +44,7 @@ func TestHyperShiftOperatorDeployment_HasResourceRequests(t *testing.T) {
 		t.Fatal("HyperShift operator deployment has no containers")
 	}
 
-	for _, container := range deployment.Spec.Template.Spec.Containers {
-		if container.Resources.Requests == nil {
-			t.Errorf("container %s in HyperShift operator deployment missing resource requests", container.Name)
-			continue
-		}
-
-		if _, hasCPU := container.Resources.Requests[corev1.ResourceCPU]; !hasCPU {
-			t.Errorf("container %s in HyperShift operator deployment missing CPU resource request", container.Name)
-		}
-
-		if _, hasMemory := container.Resources.Requests[corev1.ResourceMemory]; !hasMemory {
-			t.Errorf("container %s in HyperShift operator deployment missing memory resource request", container.Name)
-		}
-	}
+	assertContainersHaveResourceRequests(t, deployment.Spec.Template.Spec.Containers, "HyperShift operator")
 }
 
 // TestExternalDNSDeployment_HasResourceRequests verifies that the external-dns deployment
@@ -61,18 +67,5 @@ func TestExternalDNSDeployment_HasResourceRequests(t *testing.T) {
 		t.Fatal("external-dns deployment has no containers")
 	}
 
-	for _, container := range deployment.Spec.Template.Spec.Containers {
-		if container.Resources.Requests == nil {
-			t.Errorf("container %s in external-dns deployment missing resource requests", container.Name)
-			continue
-		}
-
-		if _, hasCPU := container.Resources.Requests[corev1.ResourceCPU]; !hasCPU {
-			t.Errorf("container %s in external-dns deployment missing CPU resource request", container.Name)
-		}
-
-		if _, hasMemory := container.Resources.Requests[corev1.ResourceMemory]; !hasMemory {
-			t.Errorf("container %s in external-dns deployment missing memory resource request", container.Name)
-		}
-	}
+	assertContainersHaveResourceRequests(t, deployment.Spec.Template.Spec.Containers, "external-dns")
 }
