@@ -132,7 +132,7 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		preserveRegistriesName := ""
 		preserveExists, err := preserveRegistriesConfigMapExists(ctx, r.kubeSystemSecretClient)
 		if err != nil {
-			return fmt.Errorf("failed to check if preserve-registries ConfigMap exists: %w", err)
+			log.Error(err, "failed to check if preserve-registries ConfigMap exists")
 		}
 		if preserveExists {
 			preserveRegistriesName = manifests.PreserveRegistriesConfigMapName
@@ -192,7 +192,7 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 	preserveRegistriesName := ""
 	preserveExists, err := preserveRegistriesConfigMapExists(ctx, r.kubeSystemSecretClient)
 	if err != nil {
-		return fmt.Errorf("failed to check if preserve-registries ConfigMap exists: %w", err)
+		log.Error(err, "failed to check if preserve-registries ConfigMap exists")
 	}
 	if preserveExists {
 		preserveRegistriesName = manifests.PreserveRegistriesConfigMapName
