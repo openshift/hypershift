@@ -832,6 +832,31 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 				hyperv1.DisableClusterAutoscalerAnnotation: "true",
 			},
 		},
+		{
+			name: "When HostedCluster has image-overrides annotation it should propagate to HCP",
+			hcAnnotations: map[string]string{
+				hyperv1.ImageOverridesAnnotation: "cluster-version-operator=quay.io/example/cvo:latest",
+			},
+			hcpAnnotations: map[string]string{},
+			expectedAnnotations: map[string]string{
+				hyperutil.HostedClusterAnnotation:                  hcKey,
+				hyperv1.ImageOverridesAnnotation:                   "cluster-version-operator=quay.io/example/cvo:latest",
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
+			name:          "When image-overrides annotation is removed from HostedCluster it should be removed from HCP",
+			hcAnnotations: map[string]string{},
+			hcpAnnotations: map[string]string{
+				hyperv1.ImageOverridesAnnotation: "cluster-version-operator=quay.io/example/cvo:latest",
+			},
+			expectedAnnotations: map[string]string{
+				hyperutil.HostedClusterAnnotation:                  hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
 	}
 
 	for _, tc := range tests {
