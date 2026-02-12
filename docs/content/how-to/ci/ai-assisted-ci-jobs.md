@@ -16,7 +16,7 @@ HyperShift uses two AI-assisted CI jobs powered by Claude Code to help with deve
 |-----|---------|----------|
 | `periodic-jira-agent` | Analyzes Jira issues and creates draft PRs with fixes | Weekly on Mondays at 8:30 AM UTC |
 | `periodic-review-agent` | Addresses PR review comments on agent-created PRs | Every 3 hours (8:00-23:00 UTC) daily |
-| `review-agent-single-pr` | On-demand review agent for a single PR | Triggered via `/test review-agent-single-pr` |
+| `address-review-comments` | On-demand job to address review comments on a single PR | Triggered via `/test address-review-comments` |
 
 ### Usage Scope
 
@@ -113,7 +113,7 @@ The Review Agent (`periodic-review-agent`) automatically addresses PR review com
 - **Schedule**: Every 3 hours (8:00-23:00 UTC) daily (`0 8-23/3 * * *`)
 - **Max PRs per run**: 10 (configurable via `REVIEW_AGENT_MAX_PRS`)
 - **Max agentic turns**: 100 per PR
-- **On-demand job**: `review-agent-single-pr` (trigger with `/test review-agent-single-pr`)
+- **On-demand job**: `address-review-comments` (trigger with `/test address-review-comments`)
 
 ### How It Works
 
@@ -244,7 +244,7 @@ To have an issue reprocessed:
 For a single PR, you can trigger the review agent manually:
 
 ```
-/test review-agent-single-pr
+/test address-review-comments
 ```
 
 This runs the review agent for that specific PR only.
