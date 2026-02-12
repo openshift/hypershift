@@ -3630,7 +3630,10 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 		}
 	}
 
-	if r.EnableCVOManagementClusterMetricsAccess {
+	// Enable RBAC for metrics access when either:
+	// - Self-managed HyperShift with explicit flag
+	// - ROSA HCP with RHOBS monitoring enabled
+	if cvo.IsManagementClusterMetricsAccessEnabled(hcp, r.EnableCVOManagementClusterMetricsAccess) {
 		sa := manifests.ClusterVersionOperatorServiceAccount(hcp.Namespace)
 		if _, err := createOrUpdate(ctx, r.Client, sa, func() error {
 			return cvo.ReconcileServiceAccount(sa, p.OwnerRef)
@@ -3681,7 +3684,7 @@ func (r *HostedControlPlaneReconciler) reconcileClusterVersionOperator(ctx conte
 
 	deployment := manifests.ClusterVersionOperatorDeployment(hcp.Namespace)
 	if _, err := createOrUpdate(ctx, r, deployment, func() error {
-		return cvo.ReconcileDeployment(deployment, p.OwnerRef, p.DeploymentConfig, controlPlaneReleaseImage, dataPlaneReleaseImage, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, hcp.Spec.UpdateService, p.PlatformType, util.HCPOAuthEnabled(hcp), r.EnableCVOManagementClusterMetricsAccess, p.FeatureSet, hcp.Spec.Capabilities)
+		return cvo.ReconcileDeployment(deployment, hcp, p.OwnerRef, p.DeploymentConfig, controlPlaneReleaseImage, dataPlaneReleaseImage, p.CLIImage, p.AvailabilityProberImage, p.ClusterID, hcp.Spec.UpdateService, p.PlatformType, util.HCPOAuthEnabled(hcp), r.EnableCVOManagementClusterMetricsAccess, p.FeatureSet, hcp.Spec.Capabilities)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile cluster version operator deployment: %w", err)
 	}
