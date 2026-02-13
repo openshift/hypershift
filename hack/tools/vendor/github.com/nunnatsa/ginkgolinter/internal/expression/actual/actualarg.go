@@ -42,8 +42,8 @@ func (a ArgType) Is(val ArgType) bool {
 	return a&val != 0
 }
 
-func getActualArgPayload(origActualExpr, actualExprClone *ast.CallExpr, pass *analysis.Pass, info *gomegahandler.GomegaBasicInfo) (ArgPayload, int) {
-	origArgExpr, argExprClone, actualOffset, isGomegaExpr := getActualArg(origActualExpr, actualExprClone, info.MethodName, pass)
+func getActualArgPayload(actualExprClone *ast.CallExpr, pass *analysis.Pass, info *gomegahandler.GomegaBasicInfo) (ArgPayload, int) {
+	origArgExpr, argExprClone, actualOffset, isGomegaExpr := getActualArg(actualExprClone, info, pass)
 	if !isGomegaExpr {
 		return nil, 0
 	}
@@ -79,13 +79,14 @@ func getActualArgPayload(origActualExpr, actualExprClone *ast.CallExpr, pass *an
 	return newRegularArgPayload(origArgExpr, argExprClone, pass), actualOffset
 }
 
-func getActualArg(origActualExpr *ast.CallExpr, actualExprClone *ast.CallExpr, actualMethodName string, pass *analysis.Pass) (ast.Expr, ast.Expr, int, bool) {
+func getActualArg(actualExprClone *ast.CallExpr, info *gomegahandler.GomegaBasicInfo, pass *analysis.Pass) (ast.Expr, ast.Expr, int, bool) {
 	var (
-		origArgExpr  ast.Expr
-		argExprClone ast.Expr
+		origArgExpr    ast.Expr
+		argExprClone   ast.Expr
+		origActualExpr = info.RootCall
 	)
 
-	funcOffset := gomegainfo.ActualArgOffset(actualMethodName)
+	funcOffset := gomegainfo.ActualArgOffset(info.MethodName)
 	if funcOffset < 0 {
 		return nil, nil, 0, false
 	}
@@ -97,7 +98,7 @@ func getActualArg(origActualExpr *ast.CallExpr, actualExprClone *ast.CallExpr, a
 	origArgExpr = origActualExpr.Args[funcOffset]
 	argExprClone = actualExprClone.Args[funcOffset]
 
-	if gomegainfo.IsAsyncActualMethod(actualMethodName) {
+	if info.RootCallType == gomegahandler.AsyncAssertionCall {
 		if ginkgoinfo.IsGinkgoContext(pass.TypesInfo.TypeOf(origArgExpr)) {
 			funcOffset++
 			if len(origActualExpr.Args) <= funcOffset {
