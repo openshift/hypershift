@@ -15,6 +15,7 @@ spec:
   selector:
     matchLabels:
       app: openshift-oauth-apiserver
+  unhealthyPodEvictionPolicy: AlwaysAllow
 status:
   currentHealthy: 0
   desiredHealthy: 0
