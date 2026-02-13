@@ -746,17 +746,15 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 			defaultCrashToleration = 0
 		}
 
-		guestKubeConfigSecretData := WaitForGuestKubeConfig(t, ctx, client, hostedCluster)
-		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
-		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
-		guestClient := kubeclient.NewForConfigOrDie(guestConfig)
+		cfg, err := GetConfig()
+		g.Expect(err).ToNot(HaveOccurred(), "failed to get client configuration")
+		k8sClient := kubeclient.NewForConfigOrDie(cfg)
 
 		namespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
 
 		var podList corev1.PodList
-		if err := client.List(ctx, &podList, crclient.InNamespace(namespace)); err != nil {
-			t.Fatalf("failed to list pods in namespace %s: %v", namespace, err)
-		}
+		g.Expect(client.List(ctx, &podList, crclient.InNamespace(namespace))).To(Succeed())
+
 		for _, pod := range podList.Items {
 			crashToleration := defaultCrashToleration
 			if toleration, ok := podCrashTolerations[getComponentName(&pod)]; ok {
@@ -773,7 +771,7 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 						}
 					}
 
-					if isLeaderElectionFailure(ctx, guestClient, &pod, containerStatus.Name, t) {
+					if isLeaderElectionFailure(ctx, k8sClient, &pod, containerStatus.Name, t) {
 						t.Logf("Leader election failure detected in container %s in pod %s", containerStatus.Name, pod.Name)
 						continue
 					}
@@ -784,13 +782,13 @@ func EnsureNoCrashingPods(t *testing.T, ctx context.Context, client crclient.Cli
 	})
 }
 
-func isLeaderElectionFailure(ctx context.Context, guestClient *kubeclient.Clientset, pod *corev1.Pod, containerName string, t *testing.T) bool {
+func isLeaderElectionFailure(ctx context.Context, client *kubeclient.Clientset, pod *corev1.Pod, containerName string, t *testing.T) bool {
 	podLogOpts := corev1.PodLogOptions{
 		Container: containerName,
 		Previous:  true,
 		TailLines: ptr.To[int64](10),
 	}
-	req := guestClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &podLogOpts)
+	req := client.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &podLogOpts)
 	podLogs, err := req.Stream(ctx)
 	if err != nil {
 		t.Logf("couldn't stream pod log; pod namespace: %s, pod name: %s, error: %v", pod.Namespace, pod.Name, err)
