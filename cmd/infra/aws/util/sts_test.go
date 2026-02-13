@@ -319,10 +319,12 @@ func TestParseSTSCredentialsFileV2_RealWorldFormat(t *testing.T) {
 	creds, err := ParseSTSCredentialsFileV2(tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
+		return
 	}
 
 	if creds == nil {
 		t.Fatal("Expected non-nil credentials")
+		return
 	}
 
 	expectedAccessKey := "ASIAIOSFODNN7EXAMPLE"
