@@ -85,10 +85,12 @@ func (o HyperShiftNamespace) Build() *corev1.Namespace {
 		},
 	}
 
+	// Add component label for workload discovery
+	namespace.Labels = map[string]string{
+		"hypershift.openshift.io/component": "operator",
+	}
 	if o.EnableOCPClusterMonitoring {
-		namespace.Labels = map[string]string{
-			"openshift.io/cluster-monitoring": "true",
-		}
+		namespace.Labels["openshift.io/cluster-monitoring"] = "true"
 	}
 
 	// Enable observability operator monitoring
