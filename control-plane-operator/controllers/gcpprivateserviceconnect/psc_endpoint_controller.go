@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -17,6 +18,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/util/workqueue"
@@ -53,6 +56,12 @@ const (
 	// out-of-band changes to GCP resources. Matches the AWS private link controller pattern.
 	driftDetectionRequeueInterval = 5 * time.Minute
 )
+
+var dnsEndpointGVK = schema.GroupVersionKind{
+	Group:   "externaldns.k8s.io",
+	Version: "v1alpha1",
+	Kind:    "DNSEndpoint",
+}
 
 // isWIFTokenAccessible checks if the WIF service account token file exists and is accessible.
 // The token is written by the token minter after the credential secret is created.
@@ -348,6 +357,24 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileDNS(ctx context.Context, g
 		},
 	}
 
+	// Create DNSEndpoint for NS delegation to region DNS zone
+	// This is a best-effort operation - any failure is logged but doesn't fail the reconciliation
+	if len(dnsResult.PublicIngressNSRecords) > 0 {
+		log.Info("Creating DNSEndpoint for ingress zone delegation",
+			"dnsName", dnsResult.IngressDNSName,
+			"nameservers", dnsResult.PublicIngressNSRecords)
+
+		if err := r.reconcileDNSEndpoint(ctx, hcp, dnsResult.IngressDNSName, dnsResult.PublicIngressNSRecords); err != nil {
+			// Log the error but don't fail reconciliation
+			// DNSEndpoint creation can fail for various reasons (CRD missing, validation webhook,
+			// permissions, network issues, etc.) and shouldn't break PSC reconciliation
+			log.Info("DNSEndpoint creation failed, will retry on next reconciliation",
+				"error", err.Error())
+		} else {
+			log.Info("DNSEndpoint created successfully for ingress delegation")
+		}
+	}
+
 	// Set GCPDNSAvailable condition to True
 	meta.SetStatusCondition(&gcpPSC.Status.Conditions, metav1.Condition{
 		Type:               string(hyperv1.GCPDNSAvailable),
@@ -367,8 +394,27 @@ func (r *GCPPrivateServiceConnectReconciler) reconcileDNS(ctx context.Context, g
 	return ctrl.Result{}, nil
 }
 
-// cleanupDNS cleans up DNS zones using zone names stored in PSC status
+// cleanupDNS cleans up DNS zones and DNSEndpoint using zone names stored in PSC status
 func (r *GCPPrivateServiceConnectReconciler) cleanupDNS(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	// Clean up DNSEndpoint first (even if we don't have zone info)
+	hcp, err := r.getHostedControlPlane(ctx, gcpPSC)
+	if err == nil {
+		// Delete DNSEndpoint if it exists
+		dnsEndpoint := &unstructured.Unstructured{}
+		dnsEndpoint.SetGroupVersionKind(dnsEndpointGVK)
+		dnsEndpoint.SetName(dnsEndpointName(hcp.Name))
+		dnsEndpoint.SetNamespace(hcp.Namespace)
+
+		if err := r.Client.Delete(ctx, dnsEndpoint); err != nil && !apierrors.IsNotFound(err) {
+			log.Error(err, "Failed to delete DNSEndpoint during cleanup")
+			// Don't fail cleanup just because DNSEndpoint deletion failed
+		} else if err == nil {
+			log.Info("Deleted DNSEndpoint during cleanup", "name", dnsEndpoint.GetName())
+		}
+	}
+
 	// Check if we have zone information in status
 	if len(gcpPSC.Status.DNSZones) == 0 {
 		return nil // No DNS zones to clean up
@@ -931,4 +977,85 @@ func InitCustomerGCPClient(ctx context.Context) (*compute.Service, error) {
 	}
 
 	return computeService, nil
+}
+
+// dnsEndpointName returns the name to use for DNSEndpoint resources associated with an HCP.
+func dnsEndpointName(hcpName string) string {
+	return hcpName + "-ingress-delegation"
+}
+
+// trimDNSName removes a trailing dot from a DNS name if present.
+// DNSEndpoint spec doesn't use trailing dots.
+func trimDNSName(dnsName string) string {
+	return strings.TrimSuffix(dnsName, ".")
+}
+
+// trimNameservers strips trailing dots from a list of nameservers.
+// GCP Cloud DNS returns nameservers like "ns-cloud-c1.googledomains.com." but external-dns
+// validation rejects targets ending with dots.
+func trimNameservers(nameservers []string) []string {
+	result := make([]string, len(nameservers))
+	for i, ns := range nameservers {
+		result[i] = strings.TrimSuffix(ns, ".")
+	}
+	return result
+}
+
+// reconcileDNSEndpoint creates or updates a DNSEndpoint resource for NS delegation
+// from the region DNS zone to the customer project's public ingress zone.
+//
+// This enables external-dns running in the region cluster to create NS records
+// that delegate the ingress subdomain to the nameservers of the customer's public zone.
+func (r *GCPPrivateServiceConnectReconciler) reconcileDNSEndpoint(
+	ctx context.Context,
+	hcp *hyperv1.HostedControlPlane,
+	ingressDNSName string,
+	nameservers []string,
+) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	dnsName := trimDNSName(ingressDNSName)
+	trimmed := trimNameservers(nameservers)
+	// Use []interface{} to match JSON unmarshalling types so that
+	// DeepEqual does not report false diffs on every reconcile.
+	nsTargets := make([]interface{}, len(trimmed))
+	for i, ns := range trimmed {
+		nsTargets[i] = ns
+	}
+
+	dnsEndpoint := &unstructured.Unstructured{}
+	dnsEndpoint.SetGroupVersionKind(dnsEndpointGVK)
+	dnsEndpoint.SetName(dnsEndpointName(hcp.Name))
+	dnsEndpoint.SetNamespace(hcp.Namespace)
+
+	result, err := r.CreateOrUpdate(ctx, r, dnsEndpoint, func() error {
+		if err := controllerutil.SetControllerReference(hcp, dnsEndpoint, r.Scheme()); err != nil {
+			return fmt.Errorf("failed to set controller reference on DNSEndpoint: %w", err)
+		}
+		dnsEndpoint.Object["spec"] = map[string]interface{}{
+			"endpoints": []interface{}{
+				map[string]interface{}{
+					"dnsName":    dnsName,
+					"recordType": "NS",
+					"targets":    nsTargets,
+					"recordTTL":  float64(300),
+				},
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile DNSEndpoint: %w", err)
+	}
+
+	if result != controllerutil.OperationResultNone {
+		log.Info("Reconciled DNSEndpoint",
+			"result", result,
+			"name", dnsEndpoint.GetName(),
+			"namespace", dnsEndpoint.GetNamespace(),
+			"dnsName", dnsName,
+			"nameservers", nameservers)
+	}
+
+	return nil
 }

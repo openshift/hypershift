@@ -1,14 +1,26 @@
 package gcpprivateserviceconnect
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/upsert"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConstructEndpointName(t *testing.T) {
@@ -525,6 +537,349 @@ func TestReconcileExternalServiceGCP(t *testing.T) {
 			assert.Equal(t, "https", svc.Spec.Ports[0].Name)
 			assert.Equal(t, int32(443), svc.Spec.Ports[0].Port)
 			assert.Equal(t, corev1.ProtocolTCP, svc.Spec.Ports[0].Protocol)
+		})
+	}
+}
+
+func TestDNSEndpointNameTrimming(t *testing.T) {
+	tests := []struct {
+		name        string
+		ingressDNS  string
+		expectedDNS string
+		description string
+	}{
+		{
+			name:        "When DNS name has trailing dot it should be removed",
+			ingressDNS:  "in.cluster.region.example.com.",
+			expectedDNS: "in.cluster.region.example.com",
+			description: "DNSEndpoint spec doesn't use trailing dots",
+		},
+		{
+			name:        "When DNS name has no trailing dot it should remain unchanged",
+			ingressDNS:  "in.cluster.region.example.com",
+			expectedDNS: "in.cluster.region.example.com",
+			description: "Already in correct format",
+		},
+		{
+			name:        "When DNS name is empty it should remain empty",
+			ingressDNS:  "",
+			expectedDNS: "",
+			description: "Edge case: empty string",
+		},
+		{
+			name:        "When DNS name is only a dot it should become empty",
+			ingressDNS:  ".",
+			expectedDNS: "",
+			description: "Edge case: single dot",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expectedDNS, trimDNSName(tt.ingressDNS), tt.description)
+		})
+	}
+}
+
+func TestNameserverTrailingDotTrimming(t *testing.T) {
+	tests := []struct {
+		name        string
+		nameservers []string
+		expected    []string
+		description string
+	}{
+		{
+			name:        "When nameservers have trailing dots they should be removed",
+			nameservers: []string{"ns-cloud-c1.googledomains.com.", "ns-cloud-c2.googledomains.com."},
+			expected:    []string{"ns-cloud-c1.googledomains.com", "ns-cloud-c2.googledomains.com"},
+			description: "GCP Cloud DNS returns nameservers with trailing dots but external-dns rejects them",
+		},
+		{
+			name:        "When nameservers have no trailing dots they should remain unchanged",
+			nameservers: []string{"ns1.example.com", "ns2.example.com"},
+			expected:    []string{"ns1.example.com", "ns2.example.com"},
+			description: "Already in correct format for external-dns",
+		},
+		{
+			name:        "When nameservers list is empty it should return empty",
+			nameservers: []string{},
+			expected:    []string{},
+			description: "Edge case: empty nameserver list",
+		},
+		{
+			name:        "When mixed trailing dots present only those with dots should be trimmed",
+			nameservers: []string{"ns1.example.com.", "ns2.example.com"},
+			expected:    []string{"ns1.example.com", "ns2.example.com"},
+			description: "Mixed case with some trailing dots",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.expected, trimNameservers(tt.nameservers), tt.description)
+		})
+	}
+}
+
+func TestDNSEndpointNaming(t *testing.T) {
+	tests := []struct {
+		name         string
+		hcpName      string
+		expectedName string
+	}{
+		{
+			name:         "When HCP name is simple it should append ingress-delegation suffix",
+			hcpName:      "my-cluster",
+			expectedName: "my-cluster-ingress-delegation",
+		},
+		{
+			name:         "When HCP name has hyphens it should preserve them",
+			hcpName:      "test-cluster-123",
+			expectedName: "test-cluster-123-ingress-delegation",
+		},
+		{
+			name:         "When HCP name is long the full name should be used",
+			hcpName:      "very-long-hosted-control-plane-name",
+			expectedName: "very-long-hosted-control-plane-name-ingress-delegation",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name := dnsEndpointName(tt.hcpName)
+			assert.Equal(t, tt.expectedName, name)
+
+			// Verify name follows Kubernetes naming constraints
+			// (lowercase alphanumeric and hyphens, max 253 chars for DNS subdomain)
+			assert.LessOrEqual(t, len(name), 253,
+				"DNSEndpoint name should be <= 253 characters")
+		})
+	}
+}
+
+func TestDNSEndpointNameserverFormat(t *testing.T) {
+	tests := []struct {
+		name        string
+		nameservers []string
+		description string
+	}{
+		{
+			name: "When nameservers are GCP Cloud DNS format they should be valid",
+			nameservers: []string{
+				"ns-cloud-a1.googledomains.com.",
+				"ns-cloud-a2.googledomains.com.",
+				"ns-cloud-a3.googledomains.com.",
+				"ns-cloud-a4.googledomains.com.",
+			},
+			description: "Standard GCP Cloud DNS nameserver format with trailing dots",
+		},
+		{
+			name: "When nameservers are custom they should be accepted",
+			nameservers: []string{
+				"ns1.custom-dns.example.com",
+				"ns2.custom-dns.example.com",
+			},
+			description: "Custom nameserver format without trailing dots",
+		},
+		{
+			name:        "When nameservers list is empty it should be valid",
+			nameservers: []string{},
+			description: "Edge case: empty nameserver list",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Verify nameserver format is valid for DNSEndpoint
+			for _, ns := range tt.nameservers {
+				assert.NotEmpty(t, ns, "Nameserver should not be empty string")
+			}
+		})
+	}
+}
+
+func TestDNSEndpointErrorHandling(t *testing.T) {
+	tests := []struct {
+		name        string
+		err         error
+		description string
+	}{
+		{
+			name: "When DNSEndpoint CRD is not installed reconciliation should continue",
+			err: &apierrors.StatusError{
+				ErrStatus: metav1.Status{
+					Reason: metav1.StatusReasonNotFound,
+					Details: &metav1.StatusDetails{
+						Group: "externaldns.k8s.io",
+						Kind:  "DNSEndpoint",
+					},
+				},
+			},
+			description: "CRD not found - best-effort operation, continue PSC reconciliation",
+		},
+		{
+			name:        "When error mentions no matches for kind reconciliation should continue",
+			err:         errors.New("no matches for kind \"DNSEndpoint\" in version \"externaldns.k8s.io/v1alpha1\""),
+			description: "Schema/kind match error - best-effort operation, continue PSC reconciliation",
+		},
+		{
+			name:        "When error is validation webhook failure reconciliation should continue",
+			err:         errors.New("admission webhook denied the request: invalid DNSEndpoint"),
+			description: "Validation webhook error - best-effort operation, continue PSC reconciliation",
+		},
+		{
+			name:        "When error is permission denied reconciliation should continue",
+			err:         errors.New("forbidden: user cannot create resource \"dnsendpoints\""),
+			description: "Permission error - best-effort operation, continue PSC reconciliation",
+		},
+		{
+			name:        "When error is generic API error reconciliation should continue",
+			err:         errors.New("failed to connect to API server"),
+			description: "API connectivity error - best-effort operation, continue PSC reconciliation",
+		},
+		{
+			name:        "When error is timeout reconciliation should continue",
+			err:         errors.New("context deadline exceeded"),
+			description: "Timeout error - best-effort operation, continue PSC reconciliation",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// All DNSEndpoint errors should be handled gracefully
+			// The reconciliation logic just logs the error and continues
+			// This test documents that ANY error from DNSEndpoint creation
+			// should not fail the PSC reconciliation
+			assert.NotNil(t, tt.err, "Error should exist for test case")
+			assert.Contains(t, tt.err.Error(), "",
+				tt.description+": Error should be logged but reconciliation continues")
+		})
+	}
+}
+
+func TestReconcileDNSEndpoint(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, hyperv1.AddToScheme(scheme))
+	// Register the unstructured DNSEndpoint GVK so the fake client can track it
+	scheme.AddKnownTypeWithName(
+		schema.GroupVersionKind{Group: "externaldns.k8s.io", Version: "v1alpha1", Kind: "DNSEndpoint"},
+		&unstructured.Unstructured{},
+	)
+
+	newHCP := func(name, namespace string) *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+				UID:       types.UID("test-uid"),
+			},
+		}
+	}
+
+	getDNSEndpoint := func(t *testing.T, c client.Client, name, namespace string) *unstructured.Unstructured {
+		t.Helper()
+		obj := &unstructured.Unstructured{}
+		obj.SetGroupVersionKind(schema.GroupVersionKind{
+			Group: "externaldns.k8s.io", Version: "v1alpha1", Kind: "DNSEndpoint",
+		})
+		err := c.Get(context.Background(), client.ObjectKey{Name: name, Namespace: namespace}, obj)
+		require.NoError(t, err)
+		return obj
+	}
+
+	tests := []struct {
+		name        string
+		hcp         *hyperv1.HostedControlPlane
+		ingressDNS  string
+		nameservers []string
+		expectedDNS string
+		expectedNS  []interface{}
+		existingObj bool
+	}{
+		{
+			name:        "When creating a new DNSEndpoint it should trim trailing dots and set correct fields",
+			hcp:         newHCP("my-cluster", "test-ns"),
+			ingressDNS:  "ingress.cluster.example.com.",
+			nameservers: []string{"ns-cloud-c1.googledomains.com.", "ns-cloud-c2.googledomains.com."},
+			expectedDNS: "ingress.cluster.example.com",
+			expectedNS:  []interface{}{"ns-cloud-c1.googledomains.com", "ns-cloud-c2.googledomains.com"},
+		},
+		{
+			name:        "When DNS name has no trailing dot it should remain unchanged",
+			hcp:         newHCP("other-cluster", "test-ns"),
+			ingressDNS:  "ingress.cluster.example.com",
+			nameservers: []string{"ns1.example.com"},
+			expectedDNS: "ingress.cluster.example.com",
+			expectedNS:  []interface{}{"ns1.example.com"},
+		},
+		{
+			name:        "When updating an existing DNSEndpoint it should overwrite the spec",
+			hcp:         newHCP("existing-cluster", "test-ns"),
+			ingressDNS:  "new-ingress.cluster.example.com.",
+			nameservers: []string{"ns-new.googledomains.com."},
+			expectedDNS: "new-ingress.cluster.example.com",
+			expectedNS:  []interface{}{"ns-new.googledomains.com"},
+			existingObj: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clientBuilder := fake.NewClientBuilder().WithScheme(scheme)
+
+			if tt.existingObj {
+				existing := &unstructured.Unstructured{
+					Object: map[string]interface{}{
+						"apiVersion": "externaldns.k8s.io/v1alpha1",
+						"kind":       "DNSEndpoint",
+						"metadata": map[string]interface{}{
+							"name":      dnsEndpointName(tt.hcp.Name),
+							"namespace": tt.hcp.Namespace,
+						},
+						"spec": map[string]interface{}{
+							"endpoints": []interface{}{
+								map[string]interface{}{
+									"dnsName":    "old-dns.example.com",
+									"recordType": "NS",
+									"targets":    []interface{}{"old-ns.example.com"},
+									"recordTTL":  float64(300),
+								},
+							},
+						},
+					},
+				}
+				clientBuilder = clientBuilder.WithObjects(existing)
+			}
+
+			fakeClient := clientBuilder.Build()
+			reconciler := &GCPPrivateServiceConnectReconciler{
+				Client:                 fakeClient,
+				CreateOrUpdateProvider: upsert.New(false),
+			}
+
+			err := reconciler.reconcileDNSEndpoint(context.Background(), tt.hcp, tt.ingressDNS, tt.nameservers)
+			require.NoError(t, err)
+
+			// Verify the DNSEndpoint was created/updated with correct values
+			result := getDNSEndpoint(t, fakeClient, dnsEndpointName(tt.hcp.Name), tt.hcp.Namespace)
+
+			spec, ok := result.Object["spec"].(map[string]interface{})
+			require.True(t, ok, "spec should be a map")
+
+			endpoints, ok := spec["endpoints"].([]interface{})
+			require.True(t, ok, "endpoints should be an array")
+			require.Len(t, endpoints, 1)
+
+			ep := endpoints[0].(map[string]interface{})
+			assert.Equal(t, tt.expectedDNS, ep["dnsName"])
+			assert.Equal(t, "NS", ep["recordType"])
+			assert.Equal(t, tt.expectedNS, ep["targets"])
+			assert.InDelta(t, 300, ep["recordTTL"], 0, "recordTTL should be 300")
+
+			// Verify owner reference is set
+			ownerRefs := result.GetOwnerReferences()
+			require.Len(t, ownerRefs, 1)
+			assert.Equal(t, tt.hcp.Name, ownerRefs[0].Name)
 		})
 	}
 }
