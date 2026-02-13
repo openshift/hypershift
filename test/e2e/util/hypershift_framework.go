@@ -85,6 +85,23 @@ func (h *hypershiftTest) WithAssetReader(reader assets.AssetReader) *hypershiftT
 	return h
 }
 
+// numExpectedNodes returns the number of nodes expected for a cluster based on platform.
+// On AWS and Azure, nodes are spread across zones, so the count is replicas * zones.
+// On all other platforms, the count is just replicas.
+func numExpectedNodes(opts *PlatformAgnosticOptions, platform hyperv1.PlatformType) int32 {
+	switch platform {
+	case hyperv1.AWSPlatform:
+		if len(opts.AWSPlatform.Zones) > 0 {
+			return opts.NodePoolReplicas * int32(len(opts.AWSPlatform.Zones))
+		}
+	case hyperv1.AzurePlatform:
+		if len(opts.AzurePlatform.AvailabilityZones) > 0 {
+			return opts.NodePoolReplicas * int32(len(opts.AzurePlatform.AvailabilityZones))
+		}
+	}
+	return opts.NodePoolReplicas
+}
+
 func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1.PlatformType, artifactDir, name string, serviceAccountSigningKey []byte) {
 	artifactDir = filepath.Join(artifactDir, artifactSubdirFor(h.T))
 
@@ -124,7 +141,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 	h.after(hostedCluster, platform)
 
 	if h.Failed() {
-		numNodes := opts.NodePoolReplicas * int32(len(opts.AWSPlatform.Zones))
+		numNodes := numExpectedNodes(opts, platform)
 		h.Logf("Summarizing unexpected conditions for HostedCluster %s ", hostedCluster.Name)
 		ValidateHostedClusterConditions(h.T, h.ctx, h.client, hostedCluster, numNodes > 0, 2*time.Second)
 	}
@@ -134,7 +151,8 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, platform hyperv1.PlatformType) {
 	h.Run("ValidateHostedCluster", func(t *testing.T) {
 		if platform != hyperv1.NonePlatform && hostedCluster.Spec.Networking.NetworkType != hyperv1.Other {
-			if opts.AWSPlatform.EndpointAccess == string(hyperv1.Private) {
+			isPrivate := platform == hyperv1.AWSPlatform && opts.AWSPlatform.EndpointAccess == string(hyperv1.Private)
+			if isPrivate {
 				ValidatePrivateCluster(t, h.ctx, h.client, hostedCluster, opts)
 			} else {
 				ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts)

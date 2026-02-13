@@ -2857,7 +2857,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	}
 
 	// Wait for Nodes to be Ready
-	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	numNodes := numExpectedNodes(clusterOpts, hostedCluster.Spec.Platform.Type)
 	WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// rollout will not complete if there are no worker nodes.
@@ -2910,7 +2910,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	// Ensure NodePools have all Nodes ready.
 	WaitForNodePoolDesiredNodes(t, ctx, client, hostedCluster)
 
-	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	numNodes := numExpectedNodes(clusterOpts, hostedCluster.Spec.Platform.Type)
 	// rollout will not complete if there are no worker nodes.
 	if numNodes > 0 {
 		WaitForImageRollout(t, ctx, client, hostedCluster)
