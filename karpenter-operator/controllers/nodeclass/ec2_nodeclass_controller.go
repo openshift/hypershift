@@ -321,7 +321,17 @@ func (r *EC2NodeClassReconciler) reconcileStatus(ctx context.Context, ec2NodeCla
 
 	originalObj := openshiftNodeClass.DeepCopy()
 
+	// Preserve fields managed by the ignition controller before resetting status
+	resolvedReleaseImage := openshiftNodeClass.Status.ReleaseImage
+	preservedConditions := make([]metav1.Condition, 0)
+	for _, c := range openshiftNodeClass.Status.Conditions {
+		if c.Type == hyperkarpenterv1.ConditionTypeVersionResolved {
+			preservedConditions = append(preservedConditions, c)
+		}
+	}
+
 	openshiftNodeClass.Status = hyperkarpenterv1.OpenshiftEC2NodeClassStatus{}
+	openshiftNodeClass.Status.ReleaseImage = resolvedReleaseImage
 	for _, securityGroup := range ec2NodeClass.Status.SecurityGroups {
 		openshiftNodeClass.Status.SecurityGroups = append(openshiftNodeClass.Status.SecurityGroups, hyperkarpenterv1.SecurityGroup{
 			ID:   securityGroup.ID,
@@ -338,6 +348,8 @@ func (r *EC2NodeClassReconciler) reconcileStatus(ctx context.Context, ec2NodeCla
 	for _, condition := range ec2NodeClass.Status.Conditions {
 		openshiftNodeClass.Status.Conditions = append(openshiftNodeClass.Status.Conditions, metav1.Condition(condition))
 	}
+	// Re-add conditions managed by the ignition controller
+	openshiftNodeClass.Status.Conditions = append(openshiftNodeClass.Status.Conditions, preservedConditions...)
 
 	if !reflect.DeepEqual(originalObj.Status, openshiftNodeClass.Status) {
 		if err := r.guestClient.Status().Patch(ctx, openshiftNodeClass, client.MergeFrom(originalObj)); err != nil {

@@ -19,6 +19,10 @@ const (
 
 	// UserDataAMILabel is a label set in the userData secret generated for karpenter instances.
 	UserDataAMILabel = "hypershift.openshift.io/ami"
+
+	// ConditionTypeVersionResolved indicates whether the spec.version was successfully
+	// resolved to a release image via the Quay registry API.
+	ConditionTypeVersionResolved = "VersionResolved"
 )
 
 // Subnet contains resolved Subnet selector values utilized for node launch
@@ -104,6 +108,14 @@ type OpenshiftEC2NodeClassSpec struct {
 	// DetailedMonitoring controls if detailed monitoring is enabled for instances that are launched
 	// +optional
 	DetailedMonitoring *bool `json:"detailedMonitoring,omitempty"`
+
+	// Version is an OpenShift version (e.g., "4.20.1") specifying the release version
+	// for nodes managed by this NodeClass. When set, the controller resolves this to a
+	// release image via the Quay registry API. When not set, nodes use the control plane's
+	// release image.
+	// +kubebuilder:validation:Pattern=`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$`
+	// +optional
+	Version *string `json:"version,omitempty"`
 }
 
 // SubnetSelectorTerm defines selection logic for a subnet used by Karpenter to launch nodes.
@@ -241,6 +253,12 @@ type OpenshiftEC2NodeClassStatus struct {
 	// cluster under the SecurityGroups selectors.
 	// +optional
 	SecurityGroups []SecurityGroup `json:"securityGroups,omitempty"`
+
+	// ReleaseImage is the fully qualified release image resolved from spec.version,
+	// in the format "quay.io/openshift-release-dev/ocp-release@sha256:<digest>".
+	// Only set when spec.version is specified.
+	// +optional
+	ReleaseImage string `json:"releaseImage,omitempty"`
 
 	// +optional
 	// +listType=map
