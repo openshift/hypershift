@@ -253,6 +253,9 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args.Set("service-account-issuer", p.ServiceAccountIssuerURL)
 	args.Set("service-account-jwks-uri", jwksURL(p.ServiceAccountIssuerURL))
 	args.Set("service-account-lookup", "true")
+	if p.ServiceAccountMaxTokenExpiration != "" {
+		args.Set("service-account-max-token-expiration", p.ServiceAccountMaxTokenExpiration)
+	}
 	args.Set("service-account-signing-key-file", cpath(serviceAccountKeyVolumeName, pki.ServiceSignerPrivateKey))
 	args.Set("service-node-port-range", p.NodePortRange)
 	args.Set("shutdown-delay-duration", "70s")

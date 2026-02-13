@@ -570,6 +570,17 @@ func TestGenerateConfig(t *testing.T) {
 				},
 			),
 		},
+		{
+			name: "with service account max token expiration",
+			params: KubeAPIServerConfigParams{
+				ServiceAccountMaxTokenExpiration: "24h",
+			},
+			expected: modifyKasConfig(defaultKASConfig(),
+				func(kasc *kcpv1.KubeAPIServerConfig) {
+					kasc.APIServerArguments["service-account-max-token-expiration"] = kcpv1.Arguments{"24h"}
+				},
+			),
+		},
 	}
 
 	for _, tc := range testcases {
