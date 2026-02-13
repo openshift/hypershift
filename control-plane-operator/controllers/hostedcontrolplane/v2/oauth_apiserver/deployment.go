@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -74,6 +75,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	if cpContext.HCP.Spec.AuditWebhook != nil && len(cpContext.HCP.Spec.AuditWebhook.Name) > 0 {
 		applyAuditWebhookConfigFileVolume(&deployment.Spec.Template.Spec, cpContext.HCP.Spec.AuditWebhook)
 	}
+
+	kasLivezURL := kas.InClusterKASURL(cpContext.HCP.Spec.Platform.Type) + "/livez"
+	deployment.Spec.Template.Spec.Containers = append(
+		deployment.Spec.Template.Spec.Containers,
+		util.KASReadinessCheckContainer(kasLivezURL),
+	)
 
 	return nil
 }
