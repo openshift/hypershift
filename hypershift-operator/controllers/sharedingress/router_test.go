@@ -4,9 +4,14 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/openshift/hypershift/support/config"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 )
 
 func TestReconcileRouterDeployment(t *testing.T) {
@@ -88,4 +93,50 @@ func TestReconcileRouterDeployment(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileRouterPodDisruptionBudget(t *testing.T) {
+	t.Run("When reconciling a new PDB it should set unhealthyPodEvictionPolicy to AlwaysAllow", func(t *testing.T) {
+		pdb := &policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "router",
+				Namespace: "test-namespace",
+			},
+		}
+		ownerRef := config.OwnerRef{}
+
+		ReconcileRouterPodDisruptionBudget(pdb, ownerRef)
+
+		if !reflect.DeepEqual(pdb.Spec.MinAvailable, ptr.To(intstr.FromInt32(1))) {
+			t.Errorf("Expected minAvailable to be 1, got %v", pdb.Spec.MinAvailable)
+		}
+		if pdb.Spec.UnhealthyPodEvictionPolicy == nil {
+			t.Fatal("Expected unhealthyPodEvictionPolicy to be set, got nil")
+		}
+		if *pdb.Spec.UnhealthyPodEvictionPolicy != policyv1.AlwaysAllow {
+			t.Errorf("Expected unhealthyPodEvictionPolicy to be AlwaysAllow, got %v", *pdb.Spec.UnhealthyPodEvictionPolicy)
+		}
+	})
+
+	t.Run("When PDB already has unhealthyPodEvictionPolicy set to IfHealthyBudget it should overwrite to AlwaysAllow", func(t *testing.T) {
+		pdb := &policyv1.PodDisruptionBudget{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "router",
+				Namespace: "test-namespace",
+			},
+			Spec: policyv1.PodDisruptionBudgetSpec{
+				UnhealthyPodEvictionPolicy: ptr.To(policyv1.IfHealthyBudget),
+			},
+		}
+		ownerRef := config.OwnerRef{}
+
+		ReconcileRouterPodDisruptionBudget(pdb, ownerRef)
+
+		if pdb.Spec.UnhealthyPodEvictionPolicy == nil {
+			t.Fatal("Expected unhealthyPodEvictionPolicy to be set, got nil")
+		}
+		if *pdb.Spec.UnhealthyPodEvictionPolicy != policyv1.AlwaysAllow {
+			t.Errorf("Expected unhealthyPodEvictionPolicy to be AlwaysAllow, got %v", *pdb.Spec.UnhealthyPodEvictionPolicy)
+		}
+	})
 }
