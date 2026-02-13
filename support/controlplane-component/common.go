@@ -24,6 +24,7 @@ func AdaptPodDisruptionBudget() option {
 
 		pdb.Spec.MinAvailable = minAvailable
 		pdb.Spec.MaxUnavailable = maxUnavailable
+		pdb.Spec.UnhealthyPodEvictionPolicy = ptr.To(policyv1.AlwaysAllow)
 		return nil
 	})
 }
