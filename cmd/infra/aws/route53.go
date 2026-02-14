@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/support/awsapi"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/route53"
-	"github.com/aws/aws-sdk-go/service/route53/route53iface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
+	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
@@ -19,7 +19,7 @@ import (
 	"github.com/go-logr/logr"
 )
 
-func (o *CreateInfraOptions) LookupPublicZone(ctx context.Context, logger logr.Logger, client route53iface.Route53API) (string, error) {
+func (o *CreateInfraOptions) LookupPublicZone(ctx context.Context, logger logr.Logger, client awsapi.ROUTE53API) (string, error) {
 	name := o.BaseDomain
 	id, err := LookupZone(ctx, client, name, false)
 	if err != nil {
@@ -39,20 +39,27 @@ func (o *CreateInfraOptions) LookupPublicZone(ctx context.Context, logger logr.L
 	return id, nil
 }
 
-func LookupZone(ctx context.Context, client route53iface.Route53API, name string, isPrivateZone bool) (string, error) {
-	var res *route53.HostedZone
+func LookupZone(ctx context.Context, client awsapi.ROUTE53API, name string, isPrivateZone bool) (string, error) {
+	var res *route53types.HostedZone
 	f := func(resp *route53.ListHostedZonesOutput, lastPage bool) (shouldContinue bool) {
 		for idx, zone := range resp.HostedZones {
-			if zone.Config != nil && isPrivateZone == aws.BoolValue(zone.Config.PrivateZone) && strings.TrimSuffix(aws.StringValue(zone.Name), ".") == strings.TrimSuffix(name, ".") {
-				res = resp.HostedZones[idx]
+			if zone.Config != nil && isPrivateZone == zone.Config.PrivateZone && strings.TrimSuffix(aws.ToString(zone.Name), ".") == strings.TrimSuffix(name, ".") {
+				res = &resp.HostedZones[idx]
 				return false
 			}
 		}
 		return !lastPage
 	}
 	if err := retryRoute53WithBackoff(ctx, func() error {
-		if err := client.ListHostedZonesPagesWithContext(ctx, &route53.ListHostedZonesInput{}, f); err != nil {
-			return err
+		paginator := route53.NewListHostedZonesPaginator(client, &route53.ListHostedZonesInput{})
+		for paginator.HasMorePages() {
+			resp, err := paginator.NextPage(ctx)
+			if err != nil {
+				return err
+			}
+			if !f(resp, !paginator.HasMorePages()) {
+				break
+			}
 		}
 		return nil
 	}); err != nil {
@@ -61,10 +68,10 @@ func LookupZone(ctx context.Context, client route53iface.Route53API, name string
 	if res == nil {
 		return "", fmt.Errorf("hosted zone %s not found", name)
 	}
-	return cleanZoneID(*res.Id), nil
+	return cleanZoneID(aws.ToString(res.Id)), nil
 }
 
-func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.Logger, client route53iface.Route53API, name, vpcID string, authorizeAssociation bool, vpcOwnerClient route53iface.Route53API, initialVPC string) (string, error) {
+func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.Logger, client awsapi.ROUTE53API, name, vpcID string, authorizeAssociation bool, vpcOwnerClient awsapi.ROUTE53API, initialVPC string) (string, error) {
 	id, err := LookupZone(ctx, client, name, true)
 	if err == nil {
 		logger.Info("Found existing private zone", "name", name, "id", id)
@@ -81,18 +88,18 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.
 		createRequest := &route53.CreateHostedZoneInput{
 			CallerReference: aws.String(callRef),
 			Name:            aws.String(name),
-			HostedZoneConfig: &route53.HostedZoneConfig{
-				PrivateZone: aws.Bool(true),
+			HostedZoneConfig: &route53types.HostedZoneConfig{
+				PrivateZone: true,
 			},
-			VPC: &route53.VPC{
+			VPC: &route53types.VPC{
 				VPCId:     aws.String(vpcID),
-				VPCRegion: aws.String(o.Region),
+				VPCRegion: route53types.VPCRegion(o.Region),
 			},
 		}
 		if authorizeAssociation {
 			createRequest.VPC.VPCId = aws.String(initialVPC)
 		}
-		if output, err := client.CreateHostedZoneWithContext(ctx, createRequest); err != nil {
+		if output, err := client.CreateHostedZone(ctx, createRequest); err != nil {
 			return err
 		} else {
 			res = output
@@ -104,7 +111,7 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.
 	if res == nil {
 		return "", fmt.Errorf("unexpected output from hosted zone creation")
 	}
-	id = cleanZoneID(*res.HostedZone.Id)
+	id = cleanZoneID(aws.ToString(res.HostedZone.Id))
 	logger.Info("Created private zone", "name", name, "id", id)
 
 	err = setSOAMinimum(ctx, client, id, name)
@@ -113,33 +120,33 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.
 	}
 
 	if authorizeAssociation {
-		if _, err := client.CreateVPCAssociationAuthorization(&route53.CreateVPCAssociationAuthorizationInput{
+		if _, err := client.CreateVPCAssociationAuthorization(ctx, &route53.CreateVPCAssociationAuthorizationInput{
 			HostedZoneId: aws.String(id),
-			VPC: &route53.VPC{
+			VPC: &route53types.VPC{
 				VPCId:     aws.String(vpcID),
-				VPCRegion: aws.String(o.Region),
+				VPCRegion: route53types.VPCRegion(o.Region),
 			},
 		}); err != nil {
 			return "", fmt.Errorf("failed to create vpc association authorization: %w", err)
 		}
 		logger.Info("Created hosted zone vpc association authorization", "id", id, "vpc", vpcID)
 
-		if _, err := vpcOwnerClient.AssociateVPCWithHostedZone(&route53.AssociateVPCWithHostedZoneInput{
+		if _, err := vpcOwnerClient.AssociateVPCWithHostedZone(ctx, &route53.AssociateVPCWithHostedZoneInput{
 			HostedZoneId: aws.String(id),
-			VPC: &route53.VPC{
+			VPC: &route53types.VPC{
 				VPCId:     aws.String(vpcID),
-				VPCRegion: aws.String(o.Region),
+				VPCRegion: route53types.VPCRegion(o.Region),
 			},
 		}); err != nil {
 			return "", fmt.Errorf("failed to associate VPC with hosted zone: %w", err)
 		}
 		logger.Info("Associated VPC with hosted zone", "vpc", vpcID, "hosted-zone", id)
 
-		if _, err := client.DisassociateVPCFromHostedZone(&route53.DisassociateVPCFromHostedZoneInput{
+		if _, err := client.DisassociateVPCFromHostedZone(ctx, &route53.DisassociateVPCFromHostedZoneInput{
 			HostedZoneId: aws.String(id),
-			VPC: &route53.VPC{
+			VPC: &route53types.VPC{
 				VPCId:     aws.String(initialVPC),
-				VPCRegion: aws.String(o.Region),
+				VPCRegion: route53types.VPCRegion(o.Region),
 			},
 		}); err != nil {
 			return "", fmt.Errorf("failed to remove initial VPC association with hosted zone: %w", err)
@@ -150,16 +157,16 @@ func (o *CreateInfraOptions) CreatePrivateZone(ctx context.Context, logger logr.
 	return id, nil
 }
 
-func (o *DestroyInfraOptions) DestroyDNS(ctx context.Context, client route53iface.Route53API) []error {
+func (o *DestroyInfraOptions) DestroyDNS(ctx context.Context, client awsapi.ROUTE53API) []error {
 	var errs []error
 	errs = append(errs, o.CleanupPublicZone(ctx, client))
 	return errs
 }
 
-func (o *DestroyInfraOptions) DestroyPrivateZones(ctx context.Context, listClient, recordsClient route53iface.Route53API, vpcID *string) []error {
+func (o *DestroyInfraOptions) DestroyPrivateZones(ctx context.Context, listClient, recordsClient awsapi.ROUTE53API, vpcID *string) []error {
 	var output *route53.ListHostedZonesByVPCOutput
 	if err := retryRoute53WithBackoff(ctx, func() (err error) {
-		output, err = listClient.ListHostedZonesByVPCWithContext(ctx, &route53.ListHostedZonesByVPCInput{VPCId: vpcID, VPCRegion: aws.String(o.Region)})
+		output, err = listClient.ListHostedZonesByVPC(ctx, &route53.ListHostedZonesByVPCInput{VPCId: vpcID, VPCRegion: route53types.VPCRegion(o.Region)})
 		return err
 	}); err != nil {
 		return []error{fmt.Errorf("failed to list hosted zones for vpc %s: %w", *vpcID, err)}
@@ -167,17 +174,17 @@ func (o *DestroyInfraOptions) DestroyPrivateZones(ctx context.Context, listClien
 
 	var errs []error
 	for _, zone := range output.HostedZoneSummaries {
-		id := cleanZoneID(*zone.HostedZoneId)
+		id := cleanZoneID(aws.ToString(zone.HostedZoneId))
 		if err := deleteZone(ctx, id, recordsClient, o.Log); err != nil {
 			return []error{fmt.Errorf("failed to delete private hosted zones for vpc %s: %w", *vpcID, err)}
 		}
-		o.Log.Info("Deleted private hosted zone", "id", id, "name", *zone.Name)
+		o.Log.Info("Deleted private hosted zone", "id", id, "name", aws.ToString(zone.Name))
 	}
 
 	return errs
 }
 
-func (o *DestroyInfraOptions) CleanupPublicZone(ctx context.Context, client route53iface.Route53API) error {
+func (o *DestroyInfraOptions) CleanupPublicZone(ctx context.Context, client awsapi.ROUTE53API) error {
 	name := o.BaseDomain
 	id, err := LookupZone(ctx, client, name, false)
 	if err != nil {
@@ -199,16 +206,16 @@ func (o *DestroyInfraOptions) CleanupPublicZone(ctx context.Context, client rout
 	return nil
 }
 
-func setSOAMinimum(ctx context.Context, client route53iface.Route53API, id, name string) error {
-	recordSet, err := findRecord(ctx, client, id, name, "SOA")
+func setSOAMinimum(ctx context.Context, client awsapi.ROUTE53API, id, name string) error {
+	recordSet, err := findRecord(ctx, client, id, name, route53types.RRTypeSoa)
 	if err != nil {
 		return err
 	}
-	if recordSet == nil || recordSet.ResourceRecords[0] == nil || recordSet.ResourceRecords[0].Value == nil {
+	if recordSet == nil || len(recordSet.ResourceRecords) == 0 || recordSet.ResourceRecords[0].Value == nil {
 		return fmt.Errorf("SOA record for private zone %s not found: %w", name, err)
 	}
-	record := recordSet.ResourceRecords[0]
-	fields := strings.Split(*record.Value, " ")
+	record := &recordSet.ResourceRecords[0]
+	fields := strings.Split(aws.ToString(record.Value), " ")
 	if len(fields) != 7 {
 		return fmt.Errorf("SOA record value has %d fields, expected 7", len(fields))
 	}
@@ -216,25 +223,25 @@ func setSOAMinimum(ctx context.Context, client route53iface.Route53API, id, name
 	record.Value = aws.String(strings.Join(fields, " "))
 	input := &route53.ChangeResourceRecordSetsInput{
 		HostedZoneId: aws.String(id),
-		ChangeBatch: &route53.ChangeBatch{
-			Changes: []*route53.Change{
+		ChangeBatch: &route53types.ChangeBatch{
+			Changes: []route53types.Change{
 				{
-					Action:            aws.String("UPSERT"),
+					Action:            route53types.ChangeActionUpsert,
 					ResourceRecordSet: recordSet,
 				},
 			},
 		},
 	}
-	_, err = client.ChangeResourceRecordSetsWithContext(ctx, input)
+	_, err = client.ChangeResourceRecordSets(ctx, input)
 	return err
 }
 
-func deleteZone(ctx context.Context, id string, client route53iface.Route53API, logger logr.Logger) error {
+func deleteZone(ctx context.Context, id string, client awsapi.ROUTE53API, logger logr.Logger) error {
 	err := deleteRecords(ctx, client, id, logger)
 	if err != nil {
 		return fmt.Errorf("failed to delete hosted zone records: %v", err)
 	}
-	if _, err = client.DeleteHostedZoneWithContext(ctx, &route53.DeleteHostedZoneInput{
+	if _, err = client.DeleteHostedZone(ctx, &route53.DeleteHostedZoneInput{
 		Id: aws.String(id),
 	}); err != nil {
 		return fmt.Errorf("failed to delete hosted zone: %v", err)
@@ -242,26 +249,27 @@ func deleteZone(ctx context.Context, id string, client route53iface.Route53API, 
 	return nil
 }
 
-func deleteRecords(ctx context.Context, client route53iface.Route53API, id string, logger logr.Logger) error {
+func deleteRecords(ctx context.Context, client awsapi.ROUTE53API, id string, logger logr.Logger) error {
 	lrrsi := &route53.ListResourceRecordSetsInput{
 		HostedZoneId: aws.String(id),
 	}
-	output, err := client.ListResourceRecordSetsWithContext(ctx, lrrsi)
+	output, err := client.ListResourceRecordSets(ctx, lrrsi)
 	if err != nil {
 		return err
 	}
 	if len(output.ResourceRecordSets) == 0 {
 		return nil
 	}
-	var changeBatch route53.ChangeBatch
+	var changes []route53types.Change
 	var deleteRequired bool
-	for _, rrs := range output.ResourceRecordSets {
-		if *rrs.Type == "NS" || *rrs.Type == "SOA" {
+	for i := range output.ResourceRecordSets {
+		rrs := &output.ResourceRecordSets[i]
+		if rrs.Type == route53types.RRTypeNs || rrs.Type == route53types.RRTypeSoa {
 			continue
 		}
 		deleteRequired = true
-		changeBatch.Changes = append(changeBatch.Changes, &route53.Change{
-			Action:            aws.String("DELETE"),
+		changes = append(changes, route53types.Change{
+			Action:            route53types.ChangeActionDelete,
 			ResourceRecordSet: rrs,
 		})
 	}
@@ -270,32 +278,34 @@ func deleteRecords(ctx context.Context, client route53iface.Route53API, id strin
 	}
 	crrsi := &route53.ChangeResourceRecordSetsInput{
 		HostedZoneId: aws.String(id),
-		ChangeBatch:  &changeBatch,
+		ChangeBatch: &route53types.ChangeBatch{
+			Changes: changes,
+		},
 	}
 
-	if _, err := client.ChangeResourceRecordSetsWithContext(ctx, crrsi); err != nil {
+	if _, err := client.ChangeResourceRecordSets(ctx, crrsi); err != nil {
 		return err
 	}
 
 	var deletedRecordNames []string
-	for _, changeBatch := range changeBatch.Changes {
-		deletedRecordNames = append(deletedRecordNames, *changeBatch.ResourceRecordSet.Name)
+	for _, change := range changes {
+		deletedRecordNames = append(deletedRecordNames, aws.ToString(change.ResourceRecordSet.Name))
 	}
 	logger.Info("Deleted records from private hosted zone", "id", id, "names", deletedRecordNames)
 	return nil
 }
 
-func deleteRecord(ctx context.Context, client route53iface.Route53API, id, recordName string) error {
-	record, err := findRecord(ctx, client, id, recordName, "A")
+func deleteRecord(ctx context.Context, client awsapi.ROUTE53API, id, recordName string) error {
+	record, err := findRecord(ctx, client, id, recordName, route53types.RRTypeA)
 	if err != nil {
 		return err
 	}
 
 	// Change batch for deleting
-	changeBatch := &route53.ChangeBatch{
-		Changes: []*route53.Change{
+	changeBatch := &route53types.ChangeBatch{
+		Changes: []route53types.Change{
 			{
-				Action:            aws.String("DELETE"),
+				Action:            route53types.ChangeActionDelete,
 				ResourceRecordSet: record,
 			},
 		},
@@ -306,47 +316,37 @@ func deleteRecord(ctx context.Context, client route53iface.Route53API, id, recor
 		ChangeBatch:  changeBatch,
 	}
 
-	_, err = client.ChangeResourceRecordSetsWithContext(ctx, input)
+	_, err = client.ChangeResourceRecordSets(ctx, input)
 	return err
 }
 
-func findRecord(ctx context.Context, client route53iface.Route53API, id, name string, recordType string) (*route53.ResourceRecordSet, error) {
+func findRecord(ctx context.Context, client awsapi.ROUTE53API, id, name string, recordType route53types.RRType) (*route53types.ResourceRecordSet, error) {
 	recordName := fqdn(strings.ToLower(name))
 	input := &route53.ListResourceRecordSetsInput{
 		HostedZoneId:    aws.String(id),
 		StartRecordName: aws.String(recordName),
-		StartRecordType: aws.String(recordType),
-		MaxItems:        aws.String("1"),
+		StartRecordType: recordType,
+		MaxItems:        aws.Int32(1),
 	}
 
-	var record *route53.ResourceRecordSet
-	err := client.ListResourceRecordSetsPagesWithContext(ctx, input, func(resp *route53.ListResourceRecordSetsOutput, lastPage bool) bool {
-		if len(resp.ResourceRecordSets) == 0 {
-			return false
-		}
-
-		recordSet := resp.ResourceRecordSets[0]
-		responseName := strings.ToLower(cleanRecordName(*recordSet.Name))
-		responseType := strings.ToUpper(*recordSet.Type)
-
-		if recordName != responseName {
-			return false
-		}
-		if recordType != responseType {
-			return false
-		}
-
-		record = recordSet
-		return false
-	})
-
+	resp, err := client.ListResourceRecordSets(ctx, input)
 	if err != nil {
 		return nil, err
 	}
-	if record == nil {
+	if len(resp.ResourceRecordSets) == 0 {
 		return nil, fmt.Errorf("record not found")
 	}
-	return record, nil
+
+	recordSet := resp.ResourceRecordSets[0]
+	responseName := strings.ToLower(cleanRecordName(aws.ToString(recordSet.Name)))
+
+	if recordName != responseName {
+		return nil, fmt.Errorf("record not found")
+	}
+	if recordType != recordSet.Type {
+		return nil, fmt.Errorf("record not found")
+	}
+	return &recordSet, nil
 }
 
 func fqdn(name string) string {
@@ -378,9 +378,6 @@ func retryRoute53WithBackoff(ctx context.Context, fn func() error) error {
 		Factor:   1.5,
 	}
 	retriable := func(e error) bool {
-		if !awsutil.IsErrorRetryable(e) {
-			return false
-		}
 		select {
 		case <-ctx.Done():
 			return false

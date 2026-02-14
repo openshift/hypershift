@@ -25,8 +25,8 @@ import (
 	autoscalingv1 "github.com/openshift/cluster-autoscaler-operator/pkg/apis/autoscaling/v1"
 	autoscalingv1beta1 "github.com/openshift/cluster-autoscaler-operator/pkg/apis/autoscaling/v1beta1"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/route53"
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -96,15 +96,15 @@ func InferBaseDomain(ctx context.Context, awsCredentialsFile string) (string, er
 	if zoneID == "" {
 		return "", fmt.Errorf("no public zone ID found")
 	}
-	awsSession := awsutil.NewSession("e2e-route53", awsCredentialsFile, "", "", "us-east-1")
-	route53Client := route53.New(awsSession)
-	hostedZoneResult, err := route53Client.GetHostedZone(&route53.GetHostedZoneInput{
-		Id: aws.String(zoneID),
+	awsSessionv2 := awsutil.NewSessionV2(ctx, "e2e-route53", awsCredentialsFile, "", "", "us-east-1")
+	route53Client := route53v2.NewFromConfig(*awsSessionv2)
+	hostedZoneResult, err := route53Client.GetHostedZone(ctx, &route53v2.GetHostedZoneInput{
+		Id: awsv2.String(zoneID),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to get hosted zone: %w", err)
 	}
-	domain := strings.TrimSuffix(aws.StringValue(hostedZoneResult.HostedZone.Name), ".")
+	domain := strings.TrimSuffix(awsv2.ToString(hostedZoneResult.HostedZone.Name), ".")
 	return domain, nil
 }
 
