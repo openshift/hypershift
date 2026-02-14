@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/support/awsapi"
 
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go/aws"
@@ -24,8 +25,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/elbv2/elbv2iface"
 	"github.com/aws/aws-sdk-go/service/ram"
 	"github.com/aws/aws-sdk-go/service/ram/ramiface"
-	"github.com/aws/aws-sdk-go/service/route53"
-	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -200,7 +199,7 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 	var ec2Client, vpcOwnerEC2Client ec2iface.EC2API
 	var elbClient elbiface.ELBAPI
 	var elbv2Client elbv2iface.ELBV2API
-	var clusterRoute53Client, vpcOwnerRoute53Client, listRoute53Client, recordsRoute53Client route53iface.Route53API
+	var clusterRoute53Client, vpcOwnerRoute53Client, listRoute53Client, recordsRoute53Client awsapi.ROUTE53API
 	var s3Client awsapi.S3API
 	var ramClient ramiface.RAMAPI
 	if o.AWSCredentialsOpts.AWSCredentialsOpts.AWSCredentialsFile != "" || o.AWSCredentialsOpts.AWSCredentialsOpts.STSCredentialsFile != "" {
@@ -209,7 +208,7 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 			return err
 		}
 		awsConfig := awsutil.NewConfig()
-		awsSessionv2, err := o.AWSCredentialsOpts.AWSCredentialsOpts.GetSessionV2(ctx, "cli-destroy-infra-s3", o.CredentialsSecretData, o.Region)
+		awsSessionv2, err := o.AWSCredentialsOpts.AWSCredentialsOpts.GetSessionV2(ctx, "cli-destroy-infra", o.CredentialsSecretData, o.Region)
 		if err != nil {
 			return err
 		}
@@ -218,7 +217,10 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 		vpcOwnerEC2Client = ec2Client
 		elbClient = elb.New(awsSession, awsConfig)
 		elbv2Client = elbv2.New(awsSession, awsConfig)
-		clusterRoute53Client = route53.New(awsSession, awsutil.NewAWSRoute53Config())
+		route53Configv2 := awsutil.NewRoute53ConfigV2()
+		clusterRoute53Client = route53v2.NewFromConfig(*awsSessionv2, func(o *route53v2.Options) {
+			o.Retryer = route53Configv2()
+		})
 		s3Client = s3.NewFromConfig(*awsSessionv2, func(o *s3.Options) {
 			o.Retryer = awsConfigv2()
 		})
@@ -228,8 +230,14 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			vpcOwnerSessionv2, err := o.VPCOwnerCredentialsOpts.GetSessionV2(ctx, "cli-destroy-infra", nil, o.Region)
+			if err != nil {
+				return err
+			}
 			vpcOwnerEC2Client = ec2.New(vpcOwnerAWSSession, awsConfig)
-			vpcOwnerRoute53Client = route53.New(vpcOwnerAWSSession, awsutil.NewAWSRoute53Config())
+			vpcOwnerRoute53Client = route53v2.NewFromConfig(*vpcOwnerSessionv2, func(o *route53v2.Options) {
+				o.Retryer = route53Configv2()
+			})
 
 			ramClient = ram.New(vpcOwnerAWSSession, awsConfig)
 		}
@@ -262,8 +270,8 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 		ec2Client = delegatingClent.EC2API
 		elbClient = delegatingClent.ELBAPI
 		elbv2Client = delegatingClent.ELBV2API
-		listRoute53Client = delegatingClent.Route53API
-		recordsRoute53Client = delegatingClent.Route53API
+		listRoute53Client = delegatingClent.ROUTE53Client
+		recordsRoute53Client = delegatingClent.ROUTE53Client
 		s3Client = delegatingClent.S3Client
 	}
 
@@ -776,8 +784,8 @@ func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context,
 	vpcOwnerEC2Client ec2iface.EC2API,
 	elbclient elbiface.ELBAPI,
 	elbv2client elbv2iface.ELBV2API,
-	route53listClient route53iface.Route53API,
-	route53client route53iface.Route53API,
+	route53listClient awsapi.ROUTE53API,
+	route53client awsapi.ROUTE53API,
 	ramClient ramiface.RAMAPI) []error {
 	var errs []error
 	deleteVPC := func(out *ec2.DescribeVpcsOutput, _ bool) bool {

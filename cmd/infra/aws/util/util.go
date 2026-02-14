@@ -162,15 +162,14 @@ func NewSessionV2(ctx context.Context, agent, credentialsFile, credKey, credSecr
 	return &cfg
 }
 
-// NewAWSRoute53Config generates an AWS config with slightly different Retryer timings
-func NewAWSRoute53Config() *aws.Config {
-	awsRoute53Config := NewConfig()
-	awsRoute53Config.Retryer = client.DefaultRetryer{
-		NumMaxRetries:    10,
-		MinRetryDelay:    5 * time.Second,
-		MinThrottleDelay: 10 * time.Second,
+// NewRoute53ConfigV2 creates a v2 retryer with more conservative retry timing for Route53.
+func NewRoute53ConfigV2() func() awsv2.Retryer {
+	return func() awsv2.Retryer {
+		return retry.NewStandard(func(o *retry.StandardOptions) {
+			o.MaxAttempts = 21                                              // 1 initial + 20 retries
+			o.Backoff = retry.NewExponentialJitterBackoff(30 * time.Second) // Higher cap for Route53 throttling
+		})
 	}
-	return awsRoute53Config
 }
 
 // NewConfig creates a new config.

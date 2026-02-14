@@ -13,15 +13,16 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/awsapi"
 
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
 	stsv2 "github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/ram"
-	"github.com/aws/aws-sdk-go/service/route53"
 
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
@@ -221,16 +222,20 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	}
 
 	var clusterCreatorEC2Client, ec2Client *ec2.EC2
-	var vpcOwnerRoute53Client, route53Client *route53.Route53
+	var vpcOwnerRoute53Client, route53Client awsapi.ROUTE53API
 	clusterCreatorEC2Client = ec2.New(awsSession, awsutil.NewConfig())
 	if vpcOwnerAWSSession != nil {
 		ec2Client = ec2.New(vpcOwnerAWSSession, awsutil.NewConfig())
 	} else {
 		ec2Client = clusterCreatorEC2Client
 	}
-	route53Client = route53.New(awsSession, awsutil.NewAWSRoute53Config())
-	if vpcOwnerAWSSession != nil {
-		vpcOwnerRoute53Client = route53.New(vpcOwnerAWSSession, awsutil.NewAWSRoute53Config())
+	route53Client = route53v2.NewFromConfig(*awsSessionv2, func(o *route53v2.Options) {
+		o.Retryer = awsutil.NewRoute53ConfigV2()()
+	})
+	if vpcOwnerSessionv2 != nil {
+		vpcOwnerRoute53Client = route53v2.NewFromConfig(*vpcOwnerSessionv2, func(o *route53v2.Options) {
+			o.Retryer = awsutil.NewRoute53ConfigV2()()
+		})
 	} else {
 		vpcOwnerRoute53Client = route53Client
 	}
