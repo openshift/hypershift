@@ -184,6 +184,29 @@ func (r *HostedControlPlaneReconciler) setupKASClientSigners(
 	}
 
 	// ----------
+	//	KAS bootstrap container signer
+	// ----------
+
+	kasBootstrapContainerSigner, err := reconcileSigner(
+		manifests.KASBootstrapContainerSigner(hcp.Namespace),
+		pki.ReconcileKASBootstrapContainerSigner,
+	)
+
+	if err != nil {
+		return err
+	}
+	totalClientCABundle = append(totalClientCABundle, kasBootstrapContainerSigner)
+
+	// system:kas-bootstrap-container client cert
+	if _, err := reconcileSub(
+		manifests.KASBootstrapContainerClientCertSecret(hcp.Namespace),
+		kasBootstrapContainerSigner,
+		pki.ReconcileKASBootstrapContainerClientCertSecret,
+	); err != nil {
+		return err
+	}
+
+	// ----------
 	//	CSR signer
 	// ----------
 

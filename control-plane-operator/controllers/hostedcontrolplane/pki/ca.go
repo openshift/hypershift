@@ -53,6 +53,10 @@ func ReconcileHCCOSigner(secret *corev1.Secret, ownerRef config.OwnerRef) error 
 	return reconcileSelfSignedCA(secret, ownerRef, "hcco-signer", "openshift")
 }
 
+func ReconcileKASBootstrapContainerSigner(secret *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSelfSignedCA(secret, ownerRef, "kas-bootstrap-container-signer", "openshift")
+}
+
 func ReconcileKubeCSRSigner(secret *corev1.Secret, ownerRef config.OwnerRef) error {
 	return reconcileSelfSignedCA(secret, ownerRef, "kube-csr-signer", "openshift")
 }

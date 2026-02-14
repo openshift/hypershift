@@ -47,6 +47,9 @@ status:
     kind: Secret
     name: hcco-kubeconfig
   - group: ""
+    kind: Secret
+    name: kas-bootstrap-container-kubeconfig
+  - group: ""
     kind: ConfigMap
     name: kas-config
   - group: ""

@@ -96,6 +96,21 @@ func adaptLocalhostKubeconfigSecret(cpContext component.WorkloadContext, secret 
 	return nil
 }
 
+func adaptKASBootstrapContainerKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
+	apiServerPort := util.KASPodPort(cpContext.HCP)
+	localhostURL := fmt.Sprintf("https://localhost:%d", apiServerPort)
+	kubeconfig, err := GenerateKubeConfig(cpContext, manifests.KASBootstrapContainerClientCertSecret(cpContext.HCP.Namespace), localhostURL)
+	if err != nil {
+		return fmt.Errorf("failed to generate kubeconfig: %w", err)
+	}
+
+	if secret.Data == nil {
+		secret.Data = map[string][]byte{}
+	}
+	secret.Data[KubeconfigKey] = kubeconfig
+	return nil
+}
+
 func adapExternalAdminKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
 	if cpContext.HCP.Spec.KubeConfig != nil {
 		secret.Name = cpContext.HCP.Spec.KubeConfig.Name
