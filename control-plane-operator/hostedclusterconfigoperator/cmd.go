@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/configmetrics"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/cmca"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/drainer"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/etcd"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/globalps"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/hcpstatus"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/inplaceupgrader"
@@ -66,6 +67,7 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	"node":                   node.Setup,
 	nodecount.ControllerName: nodecount.Setup,
 	"machine":                machine.Setup,
+	etcd.ControllerName:      etcd.Setup,
 	"drainer":                drainer.Setup,
 	hcpstatus.ControllerName: hcpstatus.Setup,
 }
