@@ -30,6 +30,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/machine"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/node"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/nodecount"
+	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/primaryudn"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 	hyperapi "github.com/openshift/hypershift/support/api"
@@ -68,6 +69,7 @@ var controllerFuncs = map[string]operator.ControllerSetupFunc{
 	nodecount.ControllerName: nodecount.Setup,
 	"machine":                machine.Setup,
 	etcd.ControllerName:      etcd.Setup,
+	primaryudn.ControllerName: primaryudn.Setup,
 	"drainer":                drainer.Setup,
 	hcpstatus.ControllerName: hcpstatus.Setup,
 }
