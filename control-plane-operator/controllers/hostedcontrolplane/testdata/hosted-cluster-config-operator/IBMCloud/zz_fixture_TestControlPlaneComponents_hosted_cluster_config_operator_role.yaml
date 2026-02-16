@@ -92,6 +92,18 @@ rules:
   - patch
   - update
 - apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - patch
+  - update
+  - delete
+- apiGroups:
   - cluster.x-k8s.io
   resources:
   - machinesets
