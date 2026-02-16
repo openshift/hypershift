@@ -487,6 +487,32 @@ var extendedAPIs = map[string][]string{
 	},
 }
 
+// standaloneV2APIs defines v2 service interfaces that are NOT part of the delegating client
+// (i.e. the service is in serviceIgnores) but still need a generated interface file in
+// support/awsapi/ for use by CLI tools and tests.
+var standaloneV2APIs = map[string][]string{
+	"iam": {
+		"AddRoleToInstanceProfile",
+		"AttachRolePolicy",
+		"CreateInstanceProfile",
+		"CreateOpenIDConnectProvider",
+		"CreateRole",
+		"DeleteInstanceProfile",
+		"DeleteOpenIDConnectProvider",
+		"DeleteRole",
+		"DeleteRolePolicy",
+		"DetachRolePolicy",
+		"GetInstanceProfile",
+		"GetRole",
+		"GetRolePolicy",
+		"ListAttachedRolePolicies",
+		"ListOpenIDConnectProviders",
+		"ListRolePolicies",
+		"PutRolePolicy",
+		"RemoveRoleFromInstanceProfile",
+	},
+}
+
 // generateV2Interfaces generates interface definitions for AWS SDK v2 services
 func generateV2Interfaces(delegatesByService DelegatesByService) error {
 	for service := range delegatesByService {
@@ -507,6 +533,16 @@ func generateV2Interfaces(delegatesByService DelegatesByService) error {
 			return fmt.Errorf("failed to generate interface for %s: %w", service, err)
 		}
 	}
+
+	// Generate interface files for standalone v2 services (not in delegating client)
+	for service, apis := range standaloneV2APIs {
+		sortedAPIs := append([]string{}, apis...)
+		slices.Sort(sortedAPIs)
+		if err := generateInterfaceFile(service, nil, sortedAPIs); err != nil {
+			return fmt.Errorf("failed to generate standalone interface for %s: %w", service, err)
+		}
+	}
+
 	return nil
 }
 

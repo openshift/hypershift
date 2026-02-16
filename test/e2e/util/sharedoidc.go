@@ -14,7 +14,6 @@ import (
 
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
@@ -22,7 +21,7 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
-func oidcProviderClients(ctx context.Context, opts *Options) (iamiface.IAMAPI, awsapi.S3API) {
+func oidcProviderClients(ctx context.Context, opts *Options) (awsapi.IAMAPI, awsapi.S3API) {
 	iamCredsFile := opts.ConfigurableClusterOptions.AWSCredentialsFile
 	s3CredsFile := opts.HOInstallationOptions.AWSOidcS3Credentials
 	if s3CredsFile == "" {
@@ -35,7 +34,7 @@ func oidcProviderClients(ctx context.Context, opts *Options) (iamiface.IAMAPI, a
 		s3Region = iamRegion
 	}
 
-	iamClient := GetIAMClient(iamCredsFile, iamRegion)
+	iamClient := GetIAMClient(ctx, iamCredsFile, iamRegion)
 	s3Client := GetS3Client(ctx, s3CredsFile, s3Region)
 
 	return iamClient, s3Client
@@ -116,7 +115,7 @@ func SetupSharedOIDCProvider(opts *Options, artifactDir string) error {
 		}
 	}()
 
-	if _, err := iamOptions.CreateOIDCProvider(iamClient, zapr.NewLogger(createLogger)); err != nil {
+	if _, err := iamOptions.CreateOIDCProvider(ctx, iamClient, zapr.NewLogger(createLogger)); err != nil {
 		return fmt.Errorf("failed to create OIDC provider: %w", err)
 	}
 
@@ -130,6 +129,6 @@ func CleanupSharedOIDCProvider(opts *Options, log logr.Logger) {
 	ctx := context.Background()
 	iamClient, s3Client := oidcProviderClients(ctx, opts)
 
-	DestroyOIDCProvider(log, iamClient, opts.IssuerURL)
+	DestroyOIDCProvider(ctx, log, iamClient, opts.IssuerURL)
 	CleanupOIDCBucketObjects(ctx, log, s3Client, opts.ConfigurableClusterOptions.AWSOidcS3BucketName, opts.IssuerURL)
 }

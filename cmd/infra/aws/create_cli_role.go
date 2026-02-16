@@ -7,10 +7,10 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/log"
 
-	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
-	stsv2 "github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -194,16 +194,13 @@ func (o *CreateCLIRoleOptions) Run(ctx context.Context, logger logr.Logger) erro
 		return err
 	}
 
-	// Create v1 session for IAM (IAM not yet migrated)
-	awsSession := awsutil.NewSession("cli-create-role", o.AWSCredentialsFile, "", "", "")
-	awsConfig := awsutil.NewConfig()
-
-	// Create v2 config for STS
 	awsSessionv2 := awsutil.NewSessionV2(ctx, "cli-create-role", o.AWSCredentialsFile, "", "", "")
 	awsConfigv2 := awsutil.NewConfigV2()
 
-	iamClient := iam.New(awsSession, awsConfig)
-	stsClient := stsv2.NewFromConfig(*awsSessionv2, func(o *stsv2.Options) {
+	iamClient := iam.NewFromConfig(*awsSessionv2, func(o *iam.Options) {
+		o.Retryer = awsConfigv2()
+	})
+	stsClient := sts.NewFromConfig(*awsSessionv2, func(o *sts.Options) {
 		o.Retryer = awsConfigv2()
 	})
 
@@ -228,8 +225,8 @@ func (o *CreateCLIRoleOptions) Run(ctx context.Context, logger logr.Logger) erro
 	return nil
 }
 
-func assumeRoleTrustPolicy(ctx context.Context, client *stsv2.Client) (string, error) {
-	identity, err := client.GetCallerIdentity(ctx, &stsv2.GetCallerIdentityInput{})
+func assumeRoleTrustPolicy(ctx context.Context, client *sts.Client) (string, error) {
+	identity, err := client.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
 		return "", err
 	}
@@ -245,15 +242,15 @@ func assumeRoleTrustPolicy(ctx context.Context, client *stsv2.Client) (string, e
 				"Action": "sts:AssumeRole"
 			}
 		]
-	}`, awsv2.ToString(identity.Arn))
+	}`, aws.ToString(identity.Arn))
 
 	return assumeRolePolicy, nil
 }
 
-func (o *CreateCLIRoleOptions) ParseAdditionalTags() ([]*iam.Tag, error) {
-	additionalIAMTags := make([]*iam.Tag, 0, len(o.AdditionalTags))
+func (o *CreateCLIRoleOptions) ParseAdditionalTags() ([]iamtypes.Tag, error) {
+	additionalIAMTags := make([]iamtypes.Tag, 0, len(o.AdditionalTags))
 	for k, v := range o.AdditionalTags {
-		additionalIAMTags = append(additionalIAMTags, &iam.Tag{
+		additionalIAMTags = append(additionalIAMTags, iamtypes.Tag{
 			Key:   aws.String(k),
 			Value: aws.String(v),
 		})
