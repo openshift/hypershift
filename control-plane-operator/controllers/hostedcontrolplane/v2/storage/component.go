@@ -131,6 +131,22 @@ func checkOperandsRolloutStatus(cpContext component.WorkloadContext) (bool, erro
 				ReleaseImageKey: "azure-file-csi-driver",
 			},
 		}
+	// TODO(GCP): Uncomment once the GCP PD CSI driver operator is migrated to csi-operator
+	// and the operator + controller deployments are running in the control plane namespace.
+	// Enabling this before those deployments exist will cause CPO to report degraded status.
+	// case hyperv1.GCPPlatform:
+	// 	operandsDeploymentsList = []operand{
+	// 		{
+	// 			DeploymentName:  "gcp-pd-csi-driver-operator",
+	// 			ContainerName:   "gcp-pd-csi-driver-operator",
+	// 			ReleaseImageKey: "gcp-pd-csi-driver-operator",
+	// 		},
+	// 		{
+	// 			DeploymentName:  "gcp-pd-csi-driver-controller",
+	// 			ContainerName:   "csi-driver",
+	// 			ReleaseImageKey: "gcp-pd-csi-driver",
+	// 		},
+	// 	}
 	default:
 		return true, nil
 	}

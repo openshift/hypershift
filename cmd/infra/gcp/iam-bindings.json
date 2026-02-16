@@ -41,6 +41,21 @@
         "namespace": "kube-system",
         "name": "cloud-controller-manager"
       }
+    },
+    {
+      "name": "gcp-pd-csi",
+      "displayName": "GCP PD CSI Driver Service Account",
+      "description": "Service account for GCP Persistent Disk CSI driver storage operations",
+      "roles": [
+        "roles/compute.storageAdmin",
+        "roles/compute.instanceAdmin.v1",
+        "roles/iam.serviceAccountUser",
+        "roles/resourcemanager.tagUser"
+      ],
+      "k8sServiceAccount": {
+        "namespace": "openshift-cluster-csi-drivers",
+        "name": "gcp-pd-csi-driver-controller-sa"
+      }
     }
   ]
 }

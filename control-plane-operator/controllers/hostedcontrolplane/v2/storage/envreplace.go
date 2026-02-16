@@ -53,6 +53,7 @@ var (
 		"AWS_EBS_DRIVER_CONTROL_PLANE_IMAGE":              "aws-ebs-csi-driver",
 		"AZURE_DISK_DRIVER_CONTROL_PLANE_IMAGE":           "azure-disk-csi-driver",
 		"AZURE_FILE_DRIVER_CONTROL_PLANE_IMAGE":           "azure-file-csi-driver",
+		"GCP_PD_DRIVER_CONTROL_PLANE_IMAGE":               "gcp-pd-csi-driver",
 		"OPENSTACK_CINDER_DRIVER_CONTROL_PLANE_IMAGE":     "openstack-cinder-csi-driver",
 		"MANILA_DRIVER_CONTROL_PLANE_IMAGE":               "csi-driver-manila",
 		"LIVENESS_PROBE_CONTROL_PLANE_IMAGE":              "csi-livenessprobe",

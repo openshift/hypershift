@@ -3022,6 +3022,8 @@ func (r *reconciler) reconcileStorage(ctx context.Context, hcp *hyperv1.HostedCo
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		driverNames = []operatorv1.CSIDriverName{operatorv1.AWSEBSCSIDriver}
+	case hyperv1.GCPPlatform:
+		driverNames = []operatorv1.CSIDriverName{operatorv1.GCPPDCSIDriver}
 	case hyperv1.OpenStackPlatform:
 		driverNames = []operatorv1.CSIDriverName{
 			operatorv1.CinderCSIDriver,
