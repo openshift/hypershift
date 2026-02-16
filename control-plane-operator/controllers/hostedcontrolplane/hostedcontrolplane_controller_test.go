@@ -209,6 +209,15 @@ func TestReconcileIgnitionServer(t *testing.T) {
 				IBMCloud: &hyperv1.IBMCloudPlatformSpec{
 					ProviderType: configv1.IBMCloudProviderTypeVPC,
 				},
+				GCP: &hyperv1.GCPPlatformSpec{
+					Project: "my-project",
+					Region:  "us-central1",
+					NetworkConfig: hyperv1.GCPNetworkConfig{
+						Network: hyperv1.GCPResourceReference{
+							Name: "my-network",
+						},
+					},
+				},
 			},
 		},
 	}
@@ -1133,6 +1142,15 @@ func TestControlPlaneComponents(t *testing.T) {
 					},
 					IBMCloud: &hyperv1.IBMCloudPlatformSpec{
 						ProviderType: configv1.IBMCloudProviderTypeVPC,
+					},
+					GCP: &hyperv1.GCPPlatformSpec{
+						Project: "my-project",
+						Region:  "us-central1",
+						NetworkConfig: hyperv1.GCPNetworkConfig{
+							Network: hyperv1.GCPResourceReference{
+								Name: "my-network",
+							},
+						},
 					},
 				},
 				ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",

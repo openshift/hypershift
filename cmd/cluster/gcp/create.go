@@ -25,6 +25,7 @@ const (
 	flagWorkloadIdentityProviderID    = "workload-identity-provider-id"
 	flagNodePoolServiceAccount        = "node-pool-service-account"
 	flagControlPlaneServiceAccount    = "control-plane-service-account"
+	flagCloudControllerServiceAccount = "cloud-controller-service-account"
 )
 
 // RawCreateOptions contains the raw command-line options for creating a GCP cluster
@@ -55,6 +56,9 @@ type RawCreateOptions struct {
 
 	// ControlPlaneServiceAccount is the Google Service Account email for the Control Plane Operator
 	ControlPlaneServiceAccount string
+
+	// CloudControllerServiceAccount is the Google Service Account email for the Cloud Controller Manager
+	CloudControllerServiceAccount string
 }
 
 // BindOptions binds the GCP-specific flags to the provided flag set
@@ -68,6 +72,7 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.WorkloadIdentityProviderID, flagWorkloadIdentityProviderID, opts.WorkloadIdentityProviderID, "Workload Identity Provider ID (from `hypershift infra create gcp` output)")
 	flags.StringVar(&opts.NodePoolServiceAccount, flagNodePoolServiceAccount, opts.NodePoolServiceAccount, "Google Service Account email for NodePool CAPG controllers (from `hypershift infra create gcp` output)")
 	flags.StringVar(&opts.ControlPlaneServiceAccount, flagControlPlaneServiceAccount, opts.ControlPlaneServiceAccount, "Google Service Account email for Control Plane Operator (from `hypershift infra create gcp` output)")
+	flags.StringVar(&opts.CloudControllerServiceAccount, flagCloudControllerServiceAccount, opts.CloudControllerServiceAccount, "Google Service Account email for Cloud Controller Manager (from `hypershift infra create gcp` output)")
 }
 
 // ValidatedCreateOptions represents validated options for creating a GCP cluster
@@ -109,6 +114,9 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 		return nil, err
 	}
 	if err := util.ValidateRequiredOption(flagControlPlaneServiceAccount, o.ControlPlaneServiceAccount); err != nil {
+		return nil, err
+	}
+	if err := util.ValidateRequiredOption(flagCloudControllerServiceAccount, o.CloudControllerServiceAccount); err != nil {
 		return nil, err
 	}
 	return &ValidatedCreateOptions{
@@ -191,8 +199,9 @@ func (o *CreateOptions) ApplyPlatformSpecifics(hostedCluster *hyperv1.HostedClus
 			PoolID:        o.WorkloadIdentityPoolID,
 			ProviderID:    o.WorkloadIdentityProviderID,
 			ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-				NodePool:     o.NodePoolServiceAccount,
-				ControlPlane: o.ControlPlaneServiceAccount,
+				NodePool:        o.NodePoolServiceAccount,
+				ControlPlane:    o.ControlPlaneServiceAccount,
+				CloudController: o.CloudControllerServiceAccount,
 			},
 		},
 	}
