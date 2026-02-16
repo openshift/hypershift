@@ -267,11 +267,12 @@ type UserManagedDiagnostics struct {
 	StorageAccountURI string `json:"storageAccountURI"`
 }
 
-// +kubebuilder:validation:Enum=Premium_LRS;PremiumV2_LRS;Standard_LRS;StandardSSD_LRS;UltraSSD_LRS
+// +kubebuilder:validation:Enum=Premium_LRS;PremiumV2_LRS;Standard_LRS;StandardSSD_LRS
 type AzureDiskStorageAccountType string
 
 // Values copied from https://github.com/openshift/cluster-api-provider-azure/blob/release-4.18/vendor/github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5/constants.go#L614
-// excluding zone redundant storage(ZRS) types as they are not available in all regions.
+// excluding zone redundant storage(ZRS) types as they are not available in all regions
+// and UltraSSD_LRS as it is not supported for OS disks (https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison).
 const (
 	// DiskStorageAccountTypesPremiumLRS - Premium SSD locally redundant storage. Best for production and performance sensitive
 	// workloads.
@@ -285,9 +286,6 @@ const (
 	// DiskStorageAccountTypesStandardSSDLRS - Standard SSD locally redundant storage. Best for web servers, lightly used enterprise
 	// applications and dev/test.
 	DiskStorageAccountTypesStandardSSDLRS AzureDiskStorageAccountType = "StandardSSD_LRS"
-	// DiskStorageAccountTypesUltraSSDLRS - Ultra SSD locally redundant storage. Best for IO-intensive workloads such as SAP HANA,
-	// top tier databases (for example, SQL, Oracle), and other transaction-heavy workloads.
-	DiskStorageAccountTypesUltraSSDLRS AzureDiskStorageAccountType = "UltraSSD_LRS"
 )
 
 // +kubebuilder:validation:Enum=Persistent;Ephemeral
@@ -301,21 +299,21 @@ const (
 	EphemeralDiskPersistence AzureDiskPersistence = "Ephemeral"
 )
 
-// +kubebuilder:validation:XValidation:rule="!has(self.diskStorageAccountType) || self.diskStorageAccountType != 'UltraSSD_LRS' || self.sizeGiB <= 32767",message="When not using diskStorageAccountType UltraSSD_LRS, the SizeGB value must be less than or equal to 32,767"
 type AzureNodePoolOSDisk struct {
 	// sizeGiB is the size in GiB (1024^3 bytes) to assign to the OS disk.
-	// This should be between 16 and 65,536 when using the UltraSSD_LRS storage account type and between 16 and 32,767 when using any other storage account type.
+	// This should be between 16 and 32,767.
 	// When not set, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
 	// The current default is 30.
 	//
 	// +kubebuilder:validation:Minimum=16
-	// +kubebuilder:validation:Maximum=65536
+	// +kubebuilder:validation:Maximum=32767
 	// +optional
 	SizeGiB int32 `json:"sizeGiB,omitempty"`
 
 	// diskStorageAccountType is the disk storage account type to use.
-	// Valid values are Premium_LRS, PremiumV2_LRS, Standard_LRS, StandardSSD_LRS, UltraSSD_LRS.
+	// Valid values are Premium_LRS, PremiumV2_LRS, Standard_LRS, StandardSSD_LRS.
 	// Note that Standard means a HDD.
+	// UltraSSD_LRS is not supported for OS disks (see https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison).
 	// The disk performance is tied to the disk type, please refer to the Azure documentation for further details
 	// https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison.
 	// When omitted this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
