@@ -75,6 +75,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	"github.com/google/go-cmp/cmp"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -4258,4 +4259,117 @@ func ApplyYAMLBytes(ctx context.Context, c crclient.Client, yamlContent []byte, 
 			return fmt.Errorf("failed to apply %s %s/%s: %w", obj.GetKind(), obj.GetNamespace(), obj.GetName(), err)
 		}
 	}
+}
+
+// EnsureNodeTuningOperatorMetricsEndpoint verifies that the node-tuning-operator
+// service and servicemonitor are properly configured and that the metrics endpoint
+// is accessible and returns valid metrics data. This validates the fix for OCPBUGS-72596.
+func EnsureNodeTuningOperatorMetricsEndpoint(t *testing.T, ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Run("EnsureNodeTuningOperatorMetricsEndpoint", func(t *testing.T) {
+		// This test is only relevant for 4.22 and later until the fix for OCPBUGS-72596 is backported to 4.21.
+		AtLeast(t, Version422)
+		g := NewWithT(t)
+
+		// Check if cluster has workers - if not, skip validation
+		// Node-tuning-operator metrics are only relevant when there are nodes to tune
+		// This is relevant to skip tests like TestHAEtcdChaos
+		nodePoolList := &hyperv1.NodePoolList{}
+		err := mgmtClient.List(ctx, nodePoolList, crclient.InNamespace(hostedCluster.Namespace))
+		g.Expect(err).NotTo(HaveOccurred(), "should be able to list nodepools")
+
+		totalReplicas := int32(0)
+		for _, nodePool := range nodePoolList.Items {
+			if nodePool.Spec.Replicas != nil {
+				totalReplicas += *nodePool.Spec.Replicas
+			}
+		}
+
+		if totalReplicas == 0 {
+			t.Skipf("Cluster has no workers (total replicas: %d) - node-tuning-operator services not expected. Skipping metrics endpoint validation.", totalReplicas)
+			return
+		}
+
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+		t.Logf("Validating node-tuning-operator metrics endpoint functionality in namespace %s (cluster has %d worker replicas)", hcpNamespace, totalReplicas)
+
+		// 1. Validate Service exists and has metrics port configuration
+		service := &corev1.Service{}
+		err = mgmtClient.Get(ctx, crclient.ObjectKey{
+			Namespace: hcpNamespace,
+			Name:      "node-tuning-operator",
+		}, service)
+		g.Expect(err).NotTo(HaveOccurred(), "node-tuning-operator service should exist when cluster has workers")
+
+		// Find the metrics port (don't care about specific port number)
+		var metricsPort corev1.ServicePort
+		var foundMetricsPort bool
+		for _, port := range service.Spec.Ports {
+			if port.Name == "metrics" {
+				metricsPort = port
+				foundMetricsPort = true
+				break
+			}
+		}
+		g.Expect(foundMetricsPort).To(BeTrue(), "service should have a metrics port defined")
+		t.Logf("Service has metrics port configured on port %d", metricsPort.Port)
+
+		// 2. Validate ServiceMonitor exists and has metrics endpoint configuration
+		serviceMonitor := &monitoringv1.ServiceMonitor{}
+		err = mgmtClient.Get(ctx, crclient.ObjectKey{
+			Namespace: hcpNamespace,
+			Name:      "node-tuning-operator",
+		}, serviceMonitor)
+		g.Expect(err).NotTo(HaveOccurred(), "node-tuning-operator servicemonitor should exist when cluster has workers")
+
+		// Find the metrics endpoint (don't care about specific port)
+		var foundMetricsEndpoint bool
+		for _, endpoint := range serviceMonitor.Spec.Endpoints {
+			if endpoint.Path == "/metrics" {
+				foundMetricsEndpoint = true
+				break
+			}
+		}
+		g.Expect(foundMetricsEndpoint).To(BeTrue(), "servicemonitor should have a metrics endpoint defined")
+		t.Logf("ServiceMonitor has metrics endpoint configured")
+
+		// 3. Test the actual endpoint functionality - use ServiceMonitor configuration exactly
+		// Parse the target port and scheme from ServiceMonitor (what Prometheus actually uses)
+		var targetPort, scheme string
+		for _, endpoint := range serviceMonitor.Spec.Endpoints {
+			if endpoint.Path == "/metrics" {
+				targetPort = endpoint.TargetPort.String()
+				scheme = string(*endpoint.Scheme)
+				break
+			}
+		}
+
+		t.Logf("Testing node-tuning-operator metrics endpoint accessibility...")
+		t.Logf("  - ServiceMonitor scheme: %s", scheme)
+		t.Logf("  - ServiceMonitor targetPort: %s", targetPort)
+		httpsServiceURL := fmt.Sprintf("%s://node-tuning-operator.%s.svc.cluster.local:%s/metrics", scheme, hcpNamespace, targetPort)
+		g.Eventually(func() error {
+			httpsCommand := []string{
+				"curl", "-s", "-f", "--max-time", "10",
+				"--cacert", "/etc/secrets/ca.crt",
+				"--cert", "/tmp/metrics-client-ca/tls.crt",
+				"--key", "/tmp/metrics-client-ca/tls.key",
+				httpsServiceURL,
+			}
+			cmdOutput, err := RunCommandInPod(ctx, mgmtClient, "cluster-node-tuning-operator", hcpNamespace, httpsCommand, "cluster-node-tuning-operator", 30*time.Second)
+			if err != nil {
+				return fmt.Errorf("failed to get metrics via ServiceMonitor HTTPS at %s: %v", httpsServiceURL, err)
+			}
+			if len(cmdOutput) == 0 {
+				return fmt.Errorf("no metrics returned via ServiceMonitor HTTPS at %s", httpsServiceURL)
+			}
+			if !strings.Contains(cmdOutput, "# HELP") {
+				return fmt.Errorf("ServiceMonitor HTTPS access did not return prometheus format metrics")
+			}
+
+			t.Logf("✓ Successfully retrieved metrics via ServiceMonitor HTTPS at %s", httpsServiceURL)
+			return nil
+		}, 3*time.Minute, 10*time.Second).Should(Succeed(), "should be able to get metrics via ServiceMonitor HTTPS configuration")
+
+		t.Logf("✅ Node-tuning-operator metrics endpoint validation completed successfully")
+	})
 }
