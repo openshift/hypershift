@@ -356,6 +356,138 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:                "When v4InternalSubnet is configured it should be applied to OVN config",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				V4InternalSubnet: "10.128.0.0/16",
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							V4InternalSubnet: "10.128.0.0/16",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:                "When v6InternalSubnet is configured it should be applied to OVN config",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				V6InternalSubnet: "fd01::/48",
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							V6InternalSubnet: "fd01::/48",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:                "When both v4InternalSubnet and IPv4 subnets are configured it should apply all settings",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				V4InternalSubnet: "10.128.0.0/16",
+				IPv4: &hyperv1.OVNIPv4Config{
+					InternalJoinSubnet:          "192.168.1.0/24",
+					InternalTransitSwitchSubnet: "192.168.2.0/24",
+				},
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							V4InternalSubnet: "10.128.0.0/16",
+							IPv4: &operatorv1.IPv4OVNKubernetesConfig{
+								InternalJoinSubnet:          "192.168.1.0/24",
+								InternalTransitSwitchSubnet: "192.168.2.0/24",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:                "When v4InternalSubnet is configured with non-OVN network type it should be ignored",
+			inputNetwork:        NetworkOperator(),
+			inputNetworkType:    hyperv1.OpenShiftSDN,
+			inputPlatformType:   hyperv1.AWSPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				V4InternalSubnet: "10.128.0.0/16",
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+				},
+			},
+		},
+		{
+			name: "When v4InternalSubnet is configured on KubeVirt it should override the platform default",
+			inputNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							V4InternalSubnet: kubevirtDefaultV4InternalSubnet,
+							GenevePort:       &genevePort,
+						},
+					},
+				},
+			},
+			inputNetworkType:    hyperv1.OVNKubernetes,
+			inputPlatformType:   hyperv1.KubevirtPlatform,
+			disableMultiNetwork: false,
+			ovnConfig: &hyperv1.OVNKubernetesConfig{
+				V4InternalSubnet: "10.128.0.0/16",
+			},
+			expectedNetwork: &operatorv1.Network{
+				ObjectMeta: NetworkOperator().ObjectMeta,
+				Spec: operatorv1.NetworkSpec{
+					OperatorSpec: operatorv1.OperatorSpec{
+						ManagementState: "Managed",
+					},
+					DefaultNetwork: operatorv1.DefaultNetworkDefinition{
+						OVNKubernetesConfig: &operatorv1.OVNKubernetesConfig{
+							V4InternalSubnet: "10.128.0.0/16",
+							GenevePort:       &genevePort,
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range testsCases {
