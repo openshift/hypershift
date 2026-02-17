@@ -90,6 +90,8 @@ func hash(s string) string {
 func ReconcileExternalRoute(route *routev1.Route, hostname string, defaultIngressDomain string, serviceName string, labelHCPRoutes bool) error {
 	if labelHCPRoutes {
 		AddHCPRouteLabel(route)
+	} else {
+		RemoveHCPRouteLabel(route)
 	}
 	if hostname != "" {
 		route.Spec.Host = hostname
@@ -136,6 +138,14 @@ func AddHCPRouteLabel(target crclient.Object) {
 	}
 	labels[HCPRouteLabel] = target.GetNamespace()
 	target.SetLabels(labels)
+}
+
+func RemoveHCPRouteLabel(target crclient.Object) {
+	labels := target.GetLabels()
+	if labels != nil {
+		delete(labels, HCPRouteLabel)
+		target.SetLabels(labels)
+	}
 }
 
 func AddInternalRouteLabel(target crclient.Object) {
