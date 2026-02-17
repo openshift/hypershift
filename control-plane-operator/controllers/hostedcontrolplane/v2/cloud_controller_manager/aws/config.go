@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 
 	corev1 "k8s.io/api/core/v1"
@@ -58,6 +59,11 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 			return fmt.Errorf("invalid value for annotation %s: %d (must be between 1 and 65535)", hyperv1.SharedLoadBalancerHealthProbePortAnnotation, portNum)
 		}
 		baseConfig += fmt.Sprintf("\nClusterServiceSharedLoadBalancerHealthProbePort = %s", portStr)
+	}
+
+	// Add NLBSecurityGroupMode when the AWSServiceLBNetworkSecurityGroup feature gate is enabled for this cluster.
+	if featuregates.Gate().Enabled(featuregates.AWSServiceLBNetworkSecurityGroup) {
+		baseConfig += "\nNLBSecurityGroupMode = Managed"
 	}
 
 	cm.Data[configKey] = baseConfig
