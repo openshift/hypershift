@@ -112,6 +112,8 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringSliceVar(&opts.EnableClusterCapabilities, "enable-cluster-capabilities", nil, "Optional cluster capabilities to enable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal,Console,NodeTuning,Ingress.")
 	flags.StringVar(&opts.KubeAPIServerDNSName, "kas-dns-name", opts.KubeAPIServerDNSName, "The custom DNS name for the kube-apiserver service. Make sure the DNS name is valid and addressable.")
 	flags.BoolVar(&opts.DisableMultiNetwork, "disable-multi-network", opts.DisableMultiNetwork, "Disables the Multus CNI plugin and related components in the hosted cluster")
+	flags.StringVar(&opts.OVNV4InternalSubnet, "ovn-v4-internal-subnet", opts.OVNV4InternalSubnet, "A v4 subnet in IPv4 CIDR format used internally by ovn-kubernetes. Must not overlap with other cluster networks. Default is 100.64.0.0/16. Only applies when networkType is OVNKubernetes.")
+	flags.StringVar(&opts.OVNV6InternalSubnet, "ovn-v6-internal-subnet", opts.OVNV6InternalSubnet, "A v6 subnet in IPv6 CIDR format used internally by ovn-kubernetes. Must not overlap with other cluster networks. Default is fd98::/64. Only applies when networkType is OVNKubernetes.")
 	flags.BoolVar(&opts.VersionCheck, "version-check", opts.VersionCheck, "Checks version of CLI and Hypershift operator and blocks create if mismatched")
 	flags.BoolVar(&opts.AllocateNodeCIDRs, "allocate-node-cidrs", opts.AllocateNodeCIDRs, "When networkType=Other, it's recommended to set this field to 'true' when using Flannel as the CNI.")
 }
@@ -177,6 +179,8 @@ type RawCreateOptions struct {
 	DisableClusterCapabilities       []string
 	KubeAPIServerDNSName             string
 	DisableMultiNetwork              bool
+	OVNV4InternalSubnet              string
+	OVNV6InternalSubnet              string
 	VersionCheck                     bool
 	RedactBaseDomain                 bool
 	AllocateNodeCIDRs                bool
@@ -472,6 +476,24 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 			prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator = &hyperv1.ClusterNetworkOperatorSpec{}
 		}
 		prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork = &opts.DisableMultiNetwork
+	}
+
+	if opts.OVNV4InternalSubnet != "" || opts.OVNV6InternalSubnet != "" {
+		if prototype.Cluster.Spec.OperatorConfiguration == nil {
+			prototype.Cluster.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
+		}
+		if prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator == nil {
+			prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator = &hyperv1.ClusterNetworkOperatorSpec{}
+		}
+		if prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig == nil {
+			prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig = &hyperv1.OVNKubernetesConfig{}
+		}
+		if opts.OVNV4InternalSubnet != "" {
+			prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.V4InternalSubnet = opts.OVNV4InternalSubnet
+		}
+		if opts.OVNV6InternalSubnet != "" {
+			prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.V6InternalSubnet = opts.OVNV6InternalSubnet
+		}
 	}
 
 	if opts.AllocateNodeCIDRs {
@@ -777,6 +799,14 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 
 	if opts.DisableMultiNetwork && opts.NetworkType != "Other" {
 		return nil, fmt.Errorf("disableMultiNetwork is only allowed when networkType is 'Other' (got '%s')", opts.NetworkType)
+	}
+
+	if opts.OVNV4InternalSubnet != "" && opts.NetworkType != string(hyperv1.OVNKubernetes) {
+		return nil, fmt.Errorf("--ovn-v4-internal-subnet is only allowed when networkType is 'OVNKubernetes' (got '%s')", opts.NetworkType)
+	}
+
+	if opts.OVNV6InternalSubnet != "" && opts.NetworkType != string(hyperv1.OVNKubernetes) {
+		return nil, fmt.Errorf("--ovn-v6-internal-subnet is only allowed when networkType is 'OVNKubernetes' (got '%s')", opts.NetworkType)
 	}
 
 	if opts.AllocateNodeCIDRs && opts.NetworkType != "Other" {
