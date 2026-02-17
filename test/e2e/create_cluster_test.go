@@ -38,6 +38,30 @@ func TestOnCreateAPIUX(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
+	// validGCPPlatformSpec returns a valid GCPPlatformSpec baseline for testing.
+	// Callers can modify individual fields to test specific validation errors.
+	validGCPPlatformSpec := func() *hyperv1.GCPPlatformSpec {
+		return &hyperv1.GCPPlatformSpec{
+			Project: "my-project-123",
+			Region:  "us-central1",
+			NetworkConfig: hyperv1.GCPNetworkConfig{
+				Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
+				PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
+			},
+			WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+				ProjectNumber: "123456789012",
+				PoolID:        "my-wif-pool",
+				ProviderID:    "my-wif-provider",
+				ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+					NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+					ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+					CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
+					Storage:         "storage@my-project-123.iam.gserviceaccount.com",
+				},
+			},
+		}
+	}
+
 	t.Run("HostedCluster creation", func(t *testing.T) {
 		g := NewWithT(t)
 		client, err := e2eutil.GetClient()
@@ -306,24 +330,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when GCP project ID has invalid format it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Platform.Type = hyperv1.GCPPlatform
-							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
-								Project: "My-Project",
-								Region:  "us-central1",
-								NetworkConfig: hyperv1.GCPNetworkConfig{
-									Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
-									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
-								},
-								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-									ProjectNumber: "123456789012",
-									PoolID:        "my-wif-pool",
-									ProviderID:    "my-wif-provider",
-									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
-										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
-									},
-								},
-							}
+							spec := validGCPPlatformSpec()
+							spec.Project = "My-Project"
+							hc.Spec.Platform.GCP = spec
 						},
 						expectedErrorSubstring: "project in body should match",
 					},
@@ -331,24 +340,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when GCP region has invalid format it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Platform.Type = hyperv1.GCPPlatform
-							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
-								Project: "my-project",
-								Region:  "us-central",
-								NetworkConfig: hyperv1.GCPNetworkConfig{
-									Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
-									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
-								},
-								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-									ProjectNumber: "123456789012",
-									PoolID:        "my-wif-pool",
-									ProviderID:    "my-wif-provider",
-									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
-										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
-									},
-								},
-							}
+							spec := validGCPPlatformSpec()
+							spec.Region = "us-central"
+							hc.Spec.Platform.GCP = spec
 						},
 						expectedErrorSubstring: "region in body should match",
 					},
@@ -356,24 +350,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when GCP project and region are valid it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Platform.Type = hyperv1.GCPPlatform
-							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
-								Project: "my-project-123",
-								Region:  "europe-west2",
-								NetworkConfig: hyperv1.GCPNetworkConfig{
-									Network:                     hyperv1.GCPResourceReference{Name: "my-network"},
-									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "my-psc-subnet"},
-								},
-								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-									ProjectNumber: "123456789012",
-									PoolID:        "my-wif-pool",
-									ProviderID:    "my-wif-provider",
-									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
-										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
-									},
-								},
-							}
+							spec := validGCPPlatformSpec()
+							spec.Region = "europe-west2"
+							hc.Spec.Platform.GCP = spec
 						},
 						expectedErrorSubstring: "",
 					},
@@ -391,28 +370,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when GCP network name has invalid format it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Platform.Type = hyperv1.GCPPlatform
-							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
-								Project: "my-project-123",
-								Region:  "us-central1",
-								NetworkConfig: hyperv1.GCPNetworkConfig{
-									Network: hyperv1.GCPResourceReference{
-										Name: "Invalid-Network-Name",
-									},
-									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
-										Name: "valid-subnet",
-									},
-								},
-								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-									ProjectNumber: "123456789012",
-									PoolID:        "my-wif-pool",
-									ProviderID:    "my-wif-provider",
-									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
-										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
-									},
-								},
-							}
+							spec := validGCPPlatformSpec()
+							spec.NetworkConfig.Network.Name = "Invalid-Network-Name"
+							hc.Spec.Platform.GCP = spec
 						},
 						expectedErrorSubstring: "name in body should match",
 					},
@@ -420,28 +380,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when GCP privateServiceConnectSubnet name has invalid format it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Platform.Type = hyperv1.GCPPlatform
-							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
-								Project: "my-project-123",
-								Region:  "us-central1",
-								NetworkConfig: hyperv1.GCPNetworkConfig{
-									Network: hyperv1.GCPResourceReference{
-										Name: "valid-network",
-									},
-									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
-										Name: "Invalid--Subnet",
-									},
-								},
-								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-									ProjectNumber: "123456789012",
-									PoolID:        "my-wif-pool",
-									ProviderID:    "my-wif-provider",
-									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
-										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
-									},
-								},
-							}
+							spec := validGCPPlatformSpec()
+							spec.NetworkConfig.PrivateServiceConnectSubnet.Name = "Invalid--Subnet"
+							hc.Spec.Platform.GCP = spec
 						},
 						expectedErrorSubstring: "name in body should match",
 					},
@@ -449,28 +390,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when GCP network name is too long it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Platform.Type = hyperv1.GCPPlatform
-							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
-								Project: "my-project-123",
-								Region:  "us-central1",
-								NetworkConfig: hyperv1.GCPNetworkConfig{
-									Network: hyperv1.GCPResourceReference{
-										Name: "this-network-name-is-way-way-too-long-and-exceeds-the-maximum-limit",
-									},
-									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
-										Name: "valid-subnet",
-									},
-								},
-								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-									ProjectNumber: "123456789012",
-									PoolID:        "my-wif-pool",
-									ProviderID:    "my-wif-provider",
-									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
-										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
-									},
-								},
-							}
+							spec := validGCPPlatformSpec()
+							spec.NetworkConfig.Network.Name = "this-network-name-is-way-way-too-long-and-exceeds-the-maximum-limit"
+							hc.Spec.Platform.GCP = spec
 						},
 						expectedErrorSubstring: "may not be more than 63 bytes",
 					},
@@ -478,28 +400,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when GCP network name is empty it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Platform.Type = hyperv1.GCPPlatform
-							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
-								Project: "my-project-123",
-								Region:  "us-central1",
-								NetworkConfig: hyperv1.GCPNetworkConfig{
-									Network: hyperv1.GCPResourceReference{
-										Name: "",
-									},
-									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
-										Name: "valid-subnet",
-									},
-								},
-								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-									ProjectNumber: "123456789012",
-									PoolID:        "my-wif-pool",
-									ProviderID:    "my-wif-provider",
-									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
-										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
-									},
-								},
-							}
+							spec := validGCPPlatformSpec()
+							spec.NetworkConfig.Network.Name = ""
+							hc.Spec.Platform.GCP = spec
 						},
 						expectedErrorSubstring: "name in body should be at least 1 chars long",
 					},
@@ -507,29 +410,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when GCP endpointAccess has invalid value it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Platform.Type = hyperv1.GCPPlatform
-							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
-								Project: "my-project-123",
-								Region:  "us-central1",
-								NetworkConfig: hyperv1.GCPNetworkConfig{
-									Network: hyperv1.GCPResourceReference{
-										Name: "valid-network",
-									},
-									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
-										Name: "valid-subnet",
-									},
-								},
-								EndpointAccess: "InvalidAccess",
-								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-									ProjectNumber: "123456789012",
-									PoolID:        "my-wif-pool",
-									ProviderID:    "my-wif-provider",
-									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
-										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
-									},
-								},
-							}
+							spec := validGCPPlatformSpec()
+							spec.EndpointAccess = "InvalidAccess"
+							hc.Spec.Platform.GCP = spec
 						},
 						expectedErrorSubstring: "Unsupported value: \"InvalidAccess\": supported values: \"PublicAndPrivate\", \"Private\"",
 					},
@@ -537,29 +420,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when all GCP network configuration is valid it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Platform.Type = hyperv1.GCPPlatform
-							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
-								Project: "my-project-123",
-								Region:  "us-central1",
-								NetworkConfig: hyperv1.GCPNetworkConfig{
-									Network: hyperv1.GCPResourceReference{
-										Name: "valid-network-name",
-									},
-									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
-										Name: "valid-subnet-name",
-									},
-								},
-								EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
-								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-									ProjectNumber: "123456789012",
-									PoolID:        "my-wif-pool",
-									ProviderID:    "my-wif-provider",
-									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
-										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
-									},
-								},
-							}
+							spec := validGCPPlatformSpec()
+							spec.EndpointAccess = hyperv1.GCPEndpointAccessPrivate
+							hc.Spec.Platform.GCP = spec
 						},
 						expectedErrorSubstring: "",
 					},
@@ -567,29 +430,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when GCP endpointAccess is PublicAndPrivate it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Platform.Type = hyperv1.GCPPlatform
-							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
-								Project: "my-project-123",
-								Region:  "us-central1",
-								NetworkConfig: hyperv1.GCPNetworkConfig{
-									Network: hyperv1.GCPResourceReference{
-										Name: "test-network",
-									},
-									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
-										Name: "test-subnet",
-									},
-								},
-								EndpointAccess: hyperv1.GCPEndpointAccessPublicAndPrivate,
-								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-									ProjectNumber: "123456789012",
-									PoolID:        "my-wif-pool",
-									ProviderID:    "my-wif-provider",
-									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
-										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
-									},
-								},
-							}
+							spec := validGCPPlatformSpec()
+							spec.EndpointAccess = hyperv1.GCPEndpointAccessPublicAndPrivate
+							hc.Spec.Platform.GCP = spec
 						},
 						expectedErrorSubstring: "",
 					},
@@ -597,29 +440,11 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when GCP resource names contain hyphens correctly it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Platform.Type = hyperv1.GCPPlatform
-							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
-								Project: "my-project-123",
-								Region:  "us-central1",
-								NetworkConfig: hyperv1.GCPNetworkConfig{
-									Network: hyperv1.GCPResourceReference{
-										Name: "my-vpc-network",
-									},
-									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
-										Name: "my-psc-subnet-01",
-									},
-								},
-								EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
-								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-									ProjectNumber: "123456789012",
-									PoolID:        "my-wif-pool",
-									ProviderID:    "my-wif-provider",
-									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
-										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
-									},
-								},
-							}
+							spec := validGCPPlatformSpec()
+							spec.NetworkConfig.Network.Name = "my-vpc-network"
+							spec.NetworkConfig.PrivateServiceConnectSubnet.Name = "my-psc-subnet-01"
+							spec.EndpointAccess = hyperv1.GCPEndpointAccessPrivate
+							hc.Spec.Platform.GCP = spec
 						},
 						expectedErrorSubstring: "",
 					},
@@ -627,29 +452,11 @@ func TestOnCreateAPIUX(t *testing.T) {
 						name: "when GCP resource names are single characters it should pass",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
 							hc.Spec.Platform.Type = hyperv1.GCPPlatform
-							hc.Spec.Platform.GCP = &hyperv1.GCPPlatformSpec{
-								Project: "my-project-123",
-								Region:  "us-central1",
-								NetworkConfig: hyperv1.GCPNetworkConfig{
-									Network: hyperv1.GCPResourceReference{
-										Name: "n",
-									},
-									PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
-										Name: "s",
-									},
-								},
-								EndpointAccess: hyperv1.GCPEndpointAccessPrivate,
-								WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
-									ProjectNumber: "123456789012",
-									PoolID:        "my-wif-pool",
-									ProviderID:    "my-wif-provider",
-									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
-										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
-									},
-								},
-							}
+							spec := validGCPPlatformSpec()
+							spec.NetworkConfig.Network.Name = "n"
+							spec.NetworkConfig.PrivateServiceConnectSubnet.Name = "s"
+							spec.EndpointAccess = hyperv1.GCPEndpointAccessPrivate
+							hc.Spec.Platform.GCP = spec
 						},
 						expectedErrorSubstring: "",
 					},
