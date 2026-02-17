@@ -11,6 +11,7 @@ import (
 // Define new featuregates here
 const (
 	ExternalOIDCWithUIDAndExtraClaimMappings featuregate.Feature = "ExternalOIDCWithUIDAndExtraClaimMappings"
+	AWSServiceLBNetworkSecurityGroup         featuregate.Feature = "AWSServiceLBNetworkSecurityGroup"
 )
 
 // Initialize new features here
@@ -18,11 +19,13 @@ var (
 	allFeatures = featuregates.NewFeatureSetAwareFeatures()
 
 	externalOIDCWithUIDAndExtraClaimMappingsFeature = featuregates.NewFeature(ExternalOIDCWithUIDAndExtraClaimMappings, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
+	awsServiceLBNetworkSecurityGroupFeature         = featuregates.NewFeature(AWSServiceLBNetworkSecurityGroup, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
 	// Add featuregates here
 	allFeatures.AddFeature(externalOIDCWithUIDAndExtraClaimMappingsFeature)
+	allFeatures.AddFeature(awsServiceLBNetworkSecurityGroupFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))
