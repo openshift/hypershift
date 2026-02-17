@@ -299,6 +299,13 @@ nav:
     - 'Managed Azure':
         - reference/architecture/managed-azure/secrets-csi.md
         - reference/architecture/managed-azure/shared-ingress.md
+        - 'Identity Flow':
+          - 'Overview': reference/architecture/managed-azure/identity-flow.md
+          - 'HostedCluster Configuration': reference/architecture/managed-azure/hostedcluster-identity-configuration.md
+          - 'Key Vault Secrets': reference/architecture/managed-azure/keyvault-secret-structure.md
+          - 'SecretProviderClass': reference/architecture/managed-azure/secretproviderclass-configuration.md
+          - 'Pod Volume Mounts': reference/architecture/managed-azure/pod-volume-mounts.md
+          - 'Authentication Flow': reference/architecture/managed-azure/azure-authentication-flow.md
   - reference/api.md
   - reference/concepts-and-personas.md
   - reference/controller-architecture.md
