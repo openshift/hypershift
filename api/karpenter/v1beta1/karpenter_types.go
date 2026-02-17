@@ -111,7 +111,7 @@ type OpenshiftEC2NodeClassSpec struct {
 
 	// Version is an OpenShift version (e.g., "4.20.1") specifying the release version
 	// for nodes managed by this NodeClass. When set, the controller resolves this to a
-	// release image via the Quay registry API. When not set, nodes use the control plane's
+	// release image via the Cincinnati graph API. When not set, nodes use the control plane's
 	// release image.
 	// +kubebuilder:validation:Pattern=`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$`
 	// +optional

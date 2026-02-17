@@ -43,13 +43,15 @@ const (
 
 // fakeVersionResolver implements releaseinfo.VersionResolver for testing.
 type fakeVersionResolver struct {
-	image string
-	err   error
-	calls int
+	image       string
+	err         error
+	calls       int
+	lastChannel string
 }
 
-func (f *fakeVersionResolver) Resolve(_ context.Context, version string) (string, error) {
+func (f *fakeVersionResolver) Resolve(_ context.Context, version, channel string) (string, error) {
 	f.calls++
+	f.lastChannel = channel
 	return f.image, f.err
 }
 
@@ -623,5 +625,49 @@ kind: Config`),
 		g.Expect(versionCondition).NotTo(BeNil(), "VersionResolved condition should be set")
 		g.Expect(versionCondition.Status).To(Equal(metav1.ConditionFalse))
 		g.Expect(versionCondition.Reason).To(Equal("ResolutionFailed"))
+	})
+
+	t.Run("When channel is not set it should use HCP channel prefix", func(t *testing.T) {
+		g := NewWithT(t)
+		mockCtrl := gomock.NewController(t)
+		mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
+		resolvedImage := "quay.io/openshift-release-dev/ocp-release@sha256:fast123"
+		mockedReleaseProvider.EXPECT().Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(testutils.InitReleaseImageOrDie("4.17.0"), nil).AnyTimes()
+
+		hcp := baseHCP()
+		hcp.Spec.Channel = "fast-4.17"
+		resolver := &fakeVersionResolver{image: resolvedImage}
+
+		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{Name: "hcp-channel-test"},
+			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				Version: ptr.To("4.17.0"),
+			},
+		}
+
+		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(baseManagementObjects(hcp)...).Build()
+		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(nodeClass).
+			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+			Build()
+
+		r := &KarpenterIgnitionReconciler{
+			ManagementClient:        fakeManagementClient,
+			GuestClient:             fakeGuestClient,
+			ReleaseProvider:         mockedReleaseProvider,
+			VersionResolver:         resolver,
+			ImageMetadataProvider:   fakeImageMetadataProvider,
+			HypershiftOperatorImage: "test-hypershift-operator-image",
+			IgnitionEndpoint:        testIgnitionEndpoint,
+			Namespace:               testNamespace,
+		}
+
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+		_, err := r.Reconcile(ctx, ctrl.Request{
+			NamespacedName: client.ObjectKey{Name: "hcp-channel-test"},
+		})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(resolver.lastChannel).To(Equal("fast-4.17"), "resolver should receive HCP channel prefix combined with version")
 	})
 }

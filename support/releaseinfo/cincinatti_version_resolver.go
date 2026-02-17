@@ -8,20 +8,19 @@ import (
 	"net/http"
 	"sync"
 	"time"
-
-	"github.com/blang/semver"
 )
 
 const (
 	defaultArch          = "multi"
-	defaultChannel       = "stable"
 	defaultCincinnatiURL = "https://api.openshift.com/api/upgrades_info/v1/graph"
 	cacheTTL             = 10 * time.Minute
 )
 
 // VersionResolver resolves an OpenShift version string to a release image pullspec.
 type VersionResolver interface {
-	Resolve(ctx context.Context, version string) (string, error)
+	// Resolve resolves a version to a release image pullspec using the given Cincinnati channel.
+	// The channel should be the full Cincinnati channel string (e.g., "stable-4.20").
+	Resolve(ctx context.Context, version, channel string) (string, error)
 }
 
 type cacheEntry struct {
@@ -62,24 +61,26 @@ type cincinnatiNode struct {
 }
 
 // Resolve resolves an OpenShift version (e.g., "4.20.1") to a fully qualified
-// release image pullspec by querying the Cincinnati graph API.
-func (r *CincinnatiVersionResolver) Resolve(ctx context.Context, version string) (string, error) {
+// release image pullspec by querying the Cincinnati graph API with the given channel.
+func (r *CincinnatiVersionResolver) Resolve(ctx context.Context, version, channel string) (string, error) {
+	cacheKey := channel + "/" + version
+
 	// Check cache
 	r.mu.RLock()
-	if entry, ok := r.cache[version]; ok && time.Now().Before(entry.expiry) {
+	if entry, ok := r.cache[cacheKey]; ok && time.Now().Before(entry.expiry) {
 		r.mu.RUnlock()
 		return entry.releaseImage, nil
 	}
 	r.mu.RUnlock()
 
-	releaseImage, err := r.fetchVersion(ctx, version)
+	releaseImage, err := r.fetchVersion(ctx, version, channel)
 	if err != nil {
 		return "", err
 	}
 
 	// Update cache
 	r.mu.Lock()
-	r.cache[version] = cacheEntry{
+	r.cache[cacheKey] = cacheEntry{
 		releaseImage: releaseImage,
 		expiry:       time.Now().Add(cacheTTL),
 	}
@@ -88,13 +89,7 @@ func (r *CincinnatiVersionResolver) Resolve(ctx context.Context, version string)
 	return releaseImage, nil
 }
 
-func (r *CincinnatiVersionResolver) fetchVersion(ctx context.Context, version string) (string, error) {
-	sv, err := semver.Parse(version)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse version %q: %w", version, err)
-	}
-
-	channel := fmt.Sprintf("%s-%d.%d", defaultChannel, sv.Major, sv.Minor)
+func (r *CincinnatiVersionResolver) fetchVersion(ctx context.Context, version, channel string) (string, error) {
 	url := fmt.Sprintf("%s?channel=%s&arch=%s", r.baseURL, channel, defaultArch)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)

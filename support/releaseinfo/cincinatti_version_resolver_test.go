@@ -28,12 +28,39 @@ func TestCincinnatiVersionResolver_WhenValidResponse_ItShouldReturnReleaseImage(
 		cache:   make(map[string]cacheEntry),
 	}
 
-	image, err := resolver.Resolve(t.Context(), "4.20.1")
+	image, err := resolver.Resolve(t.Context(), "4.20.1", "stable-4.20")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	expected := "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+	if image != expected {
+		t.Errorf("expected %q, got %q", expected, image)
+	}
+}
+
+func TestCincinnatiVersionResolver_WhenCustomChannel_ItShouldPassChannelToAPI(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("channel") != "candidate-4.20" {
+			t.Errorf("expected channel candidate-4.20, got %s", r.URL.Query().Get("channel"))
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"nodes": [{"version": "4.20.1", "payload": "quay.io/openshift-release-dev/ocp-release@sha256:candidate123"}]}`))
+	}))
+	defer server.Close()
+
+	resolver := &CincinnatiVersionResolver{
+		client:  server.Client(),
+		baseURL: server.URL,
+		cache:   make(map[string]cacheEntry),
+	}
+
+	image, err := resolver.Resolve(t.Context(), "4.20.1", "candidate-4.20")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := "quay.io/openshift-release-dev/ocp-release@sha256:candidate123"
 	if image != expected {
 		t.Errorf("expected %q, got %q", expected, image)
 	}
@@ -52,7 +79,7 @@ func TestCincinnatiVersionResolver_WhenVersionNotInGraph_ItShouldReturnError(t *
 		cache:   make(map[string]cacheEntry),
 	}
 
-	_, err := resolver.Resolve(t.Context(), "4.99.1")
+	_, err := resolver.Resolve(t.Context(), "4.99.1", "stable-4.99")
 	if err == nil {
 		t.Fatal("expected error for version not in graph, got nil")
 	}
@@ -71,7 +98,7 @@ func TestCincinnatiVersionResolver_WhenNon200Status_ItShouldReturnError(t *testi
 		cache:   make(map[string]cacheEntry),
 	}
 
-	_, err := resolver.Resolve(t.Context(), "4.20.1")
+	_, err := resolver.Resolve(t.Context(), "4.20.1", "stable-4.20")
 	if err == nil {
 		t.Fatal("expected error for non-200 status, got nil")
 	}
@@ -96,13 +123,13 @@ func TestCincinnatiVersionResolver_WhenCacheIsFresh_ItShouldReturnCachedWithoutH
 	ctx := t.Context()
 
 	// First call should hit the server
-	image1, err := resolver.Resolve(ctx, "4.20.1")
+	image1, err := resolver.Resolve(ctx, "4.20.1", "stable-4.20")
 	if err != nil {
 		t.Fatalf("unexpected error on first call: %v", err)
 	}
 
 	// Second call should return cached
-	image2, err := resolver.Resolve(ctx, "4.20.1")
+	image2, err := resolver.Resolve(ctx, "4.20.1", "stable-4.20")
 	if err != nil {
 		t.Fatalf("unexpected error on second call: %v", err)
 	}
@@ -135,21 +162,21 @@ func TestCincinnatiVersionResolver_WhenCacheIsExpired_ItShouldReQueryAPI(t *test
 	ctx := context.Background()
 
 	// First call
-	_, err := resolver.Resolve(ctx, "4.20.1")
+	_, err := resolver.Resolve(ctx, "4.20.1", "stable-4.20")
 	if err != nil {
 		t.Fatalf("unexpected error on first call: %v", err)
 	}
 
 	// Manually expire the cache
 	resolver.mu.Lock()
-	resolver.cache["4.20.1"] = cacheEntry{
+	resolver.cache["stable-4.20/4.20.1"] = cacheEntry{
 		releaseImage: "quay.io/openshift-release-dev/ocp-release@sha256:abc123",
 		expiry:       time.Now().Add(-1 * time.Minute),
 	}
 	resolver.mu.Unlock()
 
 	// Second call should re-query
-	_, err = resolver.Resolve(ctx, "4.20.1")
+	_, err = resolver.Resolve(ctx, "4.20.1", "stable-4.20")
 	if err != nil {
 		t.Fatalf("unexpected error on second call: %v", err)
 	}
