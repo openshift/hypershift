@@ -2936,7 +2936,6 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
 		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
 		expectedConditions[hyperv1.DataPlaneConnectionAvailable] = metav1.ConditionUnknown
-		expectedConditions[hyperv1.ControlPlaneConnectionAvailable] = metav1.ConditionUnknown
 	}
 	if IsLessThan(Version415) {
 		// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
@@ -2945,17 +2944,6 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 
 	if IsLessThan(Version421) {
 		delete(expectedConditions, hyperv1.DataPlaneConnectionAvailable)
-	}
-
-	if IsLessThan(Version422) {
-		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
-	}
-
-	// TODO: TEMPORARY - Remove this once ControlPlaneConnectionAvailable condition is merged and stable.
-	// Exclude ControlPlaneConnectionAvailable during upgrade tests as the condition
-	// may not be present in all builds during the upgrade window.
-	if strings.Contains(t.Name(), "Upgrade") {
-		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
 	}
 
 	var predicates []Predicate[*hyperv1.HostedCluster]

@@ -218,18 +218,7 @@ const (
 	// A failure here suggests potential issues such as: network policy restrictions,
 	// firewall rules, missing data plane nodes, or problems with infrastructure
 	// components like the konnectivity-agent workload.
-	// **Unknown** means the status cannot be determined (e.g., no worker nodes available or unable to inspect).
 	DataPlaneConnectionAvailable ConditionType = "DataPlaneConnectionAvailable"
-
-	// ControlPlaneConnectionAvailable indicates whether data plane workloads have a successful
-	// network connection to the control plane components. This condition is computed per-node using
-	// a DaemonSet that performs reachability checks from each worker node.
-	// **True** means all data plane nodes can successfully reach the control plane (per-node reachability check passes for every node).
-	// **False** means there are connectivity failures preventing some or all data plane nodes from reaching the control plane,
-	// or required infrastructure components (such as kube-apiserver-proxy pods or the connection checker DaemonSet) are missing or unavailable.
-	// **Unknown** means the status cannot be determined due to true inability to inspect (e.g., no worker nodes exist or inspection cannot be performed),
-	// not due to missing required components.
-	ControlPlaneConnectionAvailable ConditionType = "ControlPlaneConnectionAvailable"
 )
 
 // Reasons.
@@ -295,12 +284,6 @@ const (
 	DataPlaneConnectionLogsAccessFailedReason = "LogsAccessFailed"
 
 	DataPlaneConnectionNoWorkerNodesAvailableReason = "NoWorkerNodesAvailable"
-
-	ControlPlaneConnectionKASAccessFailedReason = "KASAccessFailed"
-
-	ControlPlaneConnectionDaemonSetNotFoundReason = "DaemonSetNotFound"
-
-	ControlPlaneConnectionNoWorkerNodesAvailableReason = "NoWorkerNodesAvailable"
 
 	ControlPlaneComponentsNotAvailable = "ComponentsNotAvailable"
 )
