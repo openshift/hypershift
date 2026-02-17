@@ -39362,6 +39362,44 @@ The value must be in proper IPV4 CIDR format</p>
 <tbody>
 <tr>
 <td>
+<code>v4InternalSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>v4InternalSubnet is a v4 subnet used internally by ovn-kubernetes in case the
+default one is being already used by something else. It must not overlap with
+any other subnet being used by OpenShift or by the node network. The size of the
+subnet must be larger than the number of nodes. The value cannot be changed after
+cluster creation.
+Default is 100.64.0.0/16
+The value must be in proper IPV4 CIDR format
+This field is immutable.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>v6InternalSubnet</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>v6InternalSubnet is a v6 subnet used internally by ovn-kubernetes in case the
+default one is being already used by something else. It must not overlap with
+any other subnet being used by OpenShift or by the node network. The size of the
+subnet must be larger than the number of nodes. The value cannot be changed after
+cluster creation.
+Default is fd98::/64
+The value must be in proper IPV6 CIDR format
+This field is immutable.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>ipv4</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.OVNIPv4Config">

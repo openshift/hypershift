@@ -64,6 +64,39 @@ type ClusterNetworkOperatorSpec struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.ipv4) || !has(self.ipv4.internalJoinSubnet) || !has(self.ipv4.internalTransitSwitchSubnet) || self.ipv4.internalJoinSubnet != self.ipv4.internalTransitSwitchSubnet", message="internalJoinSubnet and internalTransitSwitchSubnet must not be the same"
 // +kubebuilder:validation:MinProperties=1
 type OVNKubernetesConfig struct {
+	// v4InternalSubnet is a v4 subnet used internally by ovn-kubernetes in case the
+	// default one is being already used by something else. It must not overlap with
+	// any other subnet being used by OpenShift or by the node network. The size of the
+	// subnet must be larger than the number of nodes. The value cannot be changed after
+	// cluster creation.
+	// Default is 100.64.0.0/16
+	// The value must be in proper IPV4 CIDR format
+	// This field is immutable.
+	// +kubebuilder:validation:MaxLength=18
+	// +kubebuilder:validation:MinLength=9
+	// +kubebuilder:validation:XValidation:rule="self.matches('^([0-9]{1,3}\\\\.){3}[0-9]{1,3}/([0-9]|[1-2][0-9]|3[0-2])$') && self.split('/')[0].split('.').all(oct, int(oct) >= 0 && int(oct) <= 255)", message="Subnet must be in a valid IPv4 CIDR format"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^.*/[0-9]+$') && int(self.split('/')[1]) <= 30", message="subnet must be in the range /0 to /30 inclusive"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]{1,3}\\\\..*') && int(self.split('/')[0].split('.')[0]) > 0", message="first IP address octet must not be 0"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="v4InternalSubnet is immutable"
+	// +optional
+	// +immutable
+	V4InternalSubnet string `json:"v4InternalSubnet,omitempty"`
+
+	// v6InternalSubnet is a v6 subnet used internally by ovn-kubernetes in case the
+	// default one is being already used by something else. It must not overlap with
+	// any other subnet being used by OpenShift or by the node network. The size of the
+	// subnet must be larger than the number of nodes. The value cannot be changed after
+	// cluster creation.
+	// Default is fd98::/64
+	// The value must be in proper IPV6 CIDR format
+	// This field is immutable.
+	// +kubebuilder:validation:MaxLength=43
+	// +kubebuilder:validation:MinLength=3
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="v6InternalSubnet is immutable"
+	// +optional
+	// +immutable
+	V6InternalSubnet string `json:"v6InternalSubnet,omitempty"`
+
 	// ipv4 allows users to configure IP settings for IPv4 connections. When omitted,
 	// this means no opinions and the default configuration is used. Check individual
 	// fields within ipv4 for details of default values.
