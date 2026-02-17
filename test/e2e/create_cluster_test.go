@@ -318,8 +318,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -342,8 +343,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -366,8 +368,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -404,8 +407,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -432,8 +436,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -460,8 +465,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -488,8 +494,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -517,8 +524,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -546,8 +554,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -575,8 +584,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -604,8 +614,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -633,8 +644,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
