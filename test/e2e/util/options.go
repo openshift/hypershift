@@ -152,6 +152,8 @@ type ConfigurableClusterOptions struct {
 	KubeVirtNodeMemory                    string
 	KubeVirtRootVolumeSize                uint
 	KubeVirtRootVolumeVolumeMode          string
+	KubeVirtPrimaryUDNName                string
+	KubeVirtPrimaryUDNSubnet              string
 	NetworkType                           string
 	NodePoolReplicas                      int
 	OpenStackExternalNetworkID            string
@@ -338,6 +340,8 @@ func (o *Options) DefaultKubeVirtOptions() kubevirt.RawCreateOptions {
 		ServicePublishingStrategy: kubevirt.IngressServicePublishingStrategy,
 		InfraKubeConfigFile:       o.ConfigurableClusterOptions.KubeVirtInfraKubeconfigFile,
 		InfraNamespace:            o.ConfigurableClusterOptions.KubeVirtInfraNamespace,
+		PrimaryUDNName:            o.ConfigurableClusterOptions.KubeVirtPrimaryUDNName,
+		PrimaryUDNSubnet:          o.ConfigurableClusterOptions.KubeVirtPrimaryUDNSubnet,
 		NodePoolOpts: &kubevirtnodepool.RawKubevirtPlatformCreateOptions{
 			KubevirtPlatformOptions: &kubevirtnodepool.KubevirtPlatformOptions{
 				Cores:                uint32(o.ConfigurableClusterOptions.KubeVirtNodeCores),

@@ -135,6 +135,8 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.KubeVirtRootVolumeVolumeMode, "e2e.kubevirt-root-volume-volume-mode", "Filesystem", "The root pvc volume mode")
 	flag.UintVar(&globalOpts.ConfigurableClusterOptions.KubeVirtNodeCores, "e2e.kubevirt-node-cores", 2, "The number of cores provided to each workload node")
 	flag.UintVar(&globalOpts.ConfigurableClusterOptions.KubeVirtRootVolumeSize, "e2e.kubevirt-root-volume-size", 32, "The root volume size in Gi")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.KubeVirtPrimaryUDNName, "e2e.kubevirt-primary-udn-name", "", "Enable Primary UDN by specifying the UserDefinedNetwork name to create/ensure in the hosted control plane namespace")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.KubeVirtPrimaryUDNSubnet, "e2e.kubevirt-primary-udn-subnet", "", "Subnet CIDR for the Primary UDN to create/ensure (e.g. 10.150.0.0/16). Required when e2e.kubevirt-primary-udn-name is set")
 
 	// OpenStack specific flags
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.OpenStackCACertFile, "e2e.openstack-ca-cert-file", "", "Path to the OpenStack CA certificate file")
