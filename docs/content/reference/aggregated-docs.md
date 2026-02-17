@@ -32930,16 +32930,6 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 </tr><tr><td><p>&#34;RolloutComplete&#34;</p></td>
 <td><p>ControlPlaneComponentRolloutComplete indicates whether the ControlPlaneComponent has completed its rollout.</p>
 </td>
-</tr><tr><td><p>&#34;ControlPlaneConnectionAvailable&#34;</p></td>
-<td><p>ControlPlaneConnectionAvailable indicates whether data plane workloads have a successful
-network connection to the control plane components. This condition is computed per-node using
-a DaemonSet that performs reachability checks from each worker node.
-<strong>True</strong> means all data plane nodes can successfully reach the control plane (per-node reachability check passes for every node).
-<strong>False</strong> means there are connectivity failures preventing some or all data plane nodes from reaching the control plane,
-or required infrastructure components (such as kube-apiserver-proxy pods or the connection checker DaemonSet) are missing or unavailable.
-<strong>Unknown</strong> means the status cannot be determined due to true inability to inspect (e.g., no worker nodes exist or inspection cannot be performed),
-not due to missing required components.</p>
-</td>
 </tr><tr><td><p>&#34;DataPlaneConnectionAvailable&#34;</p></td>
 <td><p>DataPlaneConnectionAvailable indicates whether the control plane has a successful
 network connection to the data plane components.
@@ -32947,8 +32937,7 @@ network connection to the data plane components.
 <strong>False</strong> means there are network connection issues preventing the control plane from reaching the data plane.
 A failure here suggests potential issues such as: network policy restrictions,
 firewall rules, missing data plane nodes, or problems with infrastructure
-components like the konnectivity-agent workload.
-<strong>Unknown</strong> means the status cannot be determined (e.g., no worker nodes available or unable to inspect).</p>
+components like the konnectivity-agent workload.</p>
 </td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
