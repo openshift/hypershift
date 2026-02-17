@@ -3,6 +3,7 @@ package kubevirt
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"os"
 	"strings"
 
@@ -37,6 +38,8 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.InfraNamespace, "infra-namespace", opts.InfraNamespace, "The namespace in the external infra cluster that is used to host the KubeVirt virtual machines. The namespace must exist prior to creating the HostedCluster")
 	flags.StringArrayVar(&opts.InfraStorageClassMappings, "infra-storage-class-mapping", opts.InfraStorageClassMappings, "KubeVirt CSI mapping of an infra StorageClass to a guest cluster StorageCluster. Mapping is structured as <infra storage class>/<guest storage class>. Example, mapping the infra storage class ocs-storagecluster-ceph-rbd to a guest storage class called ceph-rdb. --infra-storage-class-mapping=ocs-storagecluster-ceph-rbd/ceph-rdb. Group storage classes and volumesnapshot classes by adding ,group=<group name>")
 	flags.StringArrayVar(&opts.InfraVolumeSnapshotClassMappings, "infra-volumesnapshot-class-mapping", opts.InfraVolumeSnapshotClassMappings, "KubeVirt CSI mapping of an infra VolumeSnapshotClass to a guest cluster VolumeSnapshotCluster. Mapping is structured as <infra volume snapshot class>/<guest volume snapshot class>. Example, mapping the infra volume snapshot class ocs-storagecluster-rbd-snap to a guest volume snapshot class called rdb-snap. --infra-volumesnapshot-class-mapping=ocs-storagecluster-rbd-snap/rdb-snap. Group storage classes and volumesnapshot classes by adding ,group=<group name>")
+	flags.StringVar(&opts.PrimaryUDNName, "primary-udn-name", opts.PrimaryUDNName, "Enable Primary UDN for the hosted control plane namespace by specifying the UserDefinedNetwork name (KubeVirt)")
+	flags.StringVar(&opts.PrimaryUDNSubnet, "primary-udn-subnet", opts.PrimaryUDNSubnet, "Subnet CIDR for the Primary UDN to create/ensure (e.g. 10.150.0.0/16). Required when --primary-udn-name is set")
 }
 
 func BindDeveloperOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
@@ -55,6 +58,8 @@ type RawCreateOptions struct {
 	InfraNamespace                   string
 	InfraStorageClassMappings        []string
 	InfraVolumeSnapshotClassMappings []string
+	PrimaryUDNName                   string
+	PrimaryUDNSubnet                 string
 
 	NodePoolOpts *kubevirtnodepool.RawKubevirtPlatformCreateOptions
 }
@@ -105,6 +110,16 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 
 	if o.InfraNamespace == "" && o.InfraKubeConfigFile != "" {
 		return nil, fmt.Errorf("external infra cluster kubeconfig was provided but an infra namespace is missing")
+	}
+
+	// Primary UDN enablement is atomic: either both name+subnet are set, or neither.
+	if o.PrimaryUDNName != "" || o.PrimaryUDNSubnet != "" {
+		if o.PrimaryUDNName == "" || o.PrimaryUDNSubnet == "" {
+			return nil, fmt.Errorf("--primary-udn-name and --primary-udn-subnet must be set together")
+		}
+		if _, err := netip.ParsePrefix(o.PrimaryUDNSubnet); err != nil {
+			return nil, fmt.Errorf("invalid --primary-udn-subnet %q: %w", o.PrimaryUDNSubnet, err)
+		}
 	}
 
 	validOpts := &ValidatedCreateOptions{
@@ -185,6 +200,14 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 	cluster.Spec.Platform = hyperv1.PlatformSpec{
 		Type:     hyperv1.KubevirtPlatform,
 		Kubevirt: &hyperv1.KubevirtPlatformSpec{},
+	}
+
+	if o.PrimaryUDNName != "" {
+		if cluster.Annotations == nil {
+			cluster.Annotations = map[string]string{}
+		}
+		cluster.Annotations[hyperv1.PrimaryUDNNameAnnotation] = o.PrimaryUDNName
+		cluster.Annotations[hyperv1.PrimaryUDNSubnetAnnotation] = o.PrimaryUDNSubnet
 	}
 
 	if len(o.InfraKubeConfigFile) > 0 {
