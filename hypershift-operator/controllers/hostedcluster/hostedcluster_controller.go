@@ -4150,21 +4150,30 @@ func validateSliceNetworkCIDRs(hc *hyperv1.HostedCluster) field.ErrorList {
 
 	if hc.Spec.Networking.NetworkType == hyperv1.OVNKubernetes &&
 		hc.Spec.OperatorConfiguration != nil && hc.Spec.OperatorConfiguration.ClusterNetworkOperator != nil &&
-		hc.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig != nil &&
-		hc.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.IPv4 != nil {
-		ovnConfig := hc.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.IPv4
-		if ovnConfig.InternalJoinSubnet != "" {
-			_, cidr, err := net.ParseCIDR(ovnConfig.InternalJoinSubnet)
+		hc.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig != nil {
+		ovnKubeConfig := hc.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig
+		if ovnKubeConfig.V4InternalSubnet != "" {
+			_, cidr, err := net.ParseCIDR(ovnKubeConfig.V4InternalSubnet)
 			if err == nil {
-				ce := cidrEntry{*cidr, *field.NewPath("spec", "operatorConfiguration", "clusterNetworkOperator", "ovnKubernetesConfig", "ipv4", "internalJoinSubnet")}
+				ce := cidrEntry{*cidr, *field.NewPath("spec", "operatorConfiguration", "clusterNetworkOperator", "ovnKubernetesConfig", "v4InternalSubnet")}
 				cidrEntries = append(cidrEntries, ce)
 			}
 		}
-		if ovnConfig.InternalTransitSwitchSubnet != "" {
-			_, cidr, err := net.ParseCIDR(ovnConfig.InternalTransitSwitchSubnet)
-			if err == nil {
-				ce := cidrEntry{*cidr, *field.NewPath("spec", "operatorConfiguration", "clusterNetworkOperator", "ovnKubernetesConfig", "ipv4", "internalTransitSwitchSubnet")}
-				cidrEntries = append(cidrEntries, ce)
+		if ovnKubeConfig.IPv4 != nil {
+			ovnConfig := ovnKubeConfig.IPv4
+			if ovnConfig.InternalJoinSubnet != "" {
+				_, cidr, err := net.ParseCIDR(ovnConfig.InternalJoinSubnet)
+				if err == nil {
+					ce := cidrEntry{*cidr, *field.NewPath("spec", "operatorConfiguration", "clusterNetworkOperator", "ovnKubernetesConfig", "ipv4", "internalJoinSubnet")}
+					cidrEntries = append(cidrEntries, ce)
+				}
+			}
+			if ovnConfig.InternalTransitSwitchSubnet != "" {
+				_, cidr, err := net.ParseCIDR(ovnConfig.InternalTransitSwitchSubnet)
+				if err == nil {
+					ce := cidrEntry{*cidr, *field.NewPath("spec", "operatorConfiguration", "clusterNetworkOperator", "ovnKubernetesConfig", "ipv4", "internalTransitSwitchSubnet")}
+					cidrEntries = append(cidrEntries, ce)
+				}
 			}
 		}
 	}

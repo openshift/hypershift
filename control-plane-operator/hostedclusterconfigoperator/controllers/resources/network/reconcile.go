@@ -82,6 +82,15 @@ func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.N
 			network.Spec.DefaultNetwork.OVNKubernetesConfig = &operatorv1.OVNKubernetesConfig{}
 		}
 		ovnCfg := network.Spec.DefaultNetwork.OVNKubernetesConfig
+
+		// Apply top-level internal subnet configuration
+		if ovnConfig.V4InternalSubnet != "" {
+			ovnCfg.V4InternalSubnet = ovnConfig.V4InternalSubnet
+		}
+		if ovnConfig.V6InternalSubnet != "" {
+			ovnCfg.V6InternalSubnet = ovnConfig.V6InternalSubnet
+		}
+
 		// Apply IPv4 configuration
 		if ovnConfig.IPv4 != nil {
 			if ovnCfg.IPv4 == nil {
