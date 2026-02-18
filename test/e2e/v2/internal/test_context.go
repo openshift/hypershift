@@ -39,6 +39,7 @@ type TestContext struct {
 	ClusterName           string
 	ClusterNamespace      string
 	ControlPlaneNamespace string
+	ArtifactDir           string
 	hostedCluster         *hyperv1.HostedCluster
 	hostedClusterOnce     sync.Once
 }
@@ -53,7 +54,7 @@ func (tc *TestContext) GetHostedCluster() *hyperv1.HostedCluster {
 		}
 
 		hostedCluster := &hyperv1.HostedCluster{}
-		err := tc.MgmtClient.Get(context.Background(), crclient.ObjectKey{
+		err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
 			Namespace: tc.ClusterNamespace,
 			Name:      tc.ClusterName,
 		}, hostedCluster)
@@ -62,7 +63,7 @@ func (tc *TestContext) GetHostedCluster() *hyperv1.HostedCluster {
 			panic(fmt.Sprintf("failed to get HostedCluster %s/%s: %v", tc.ClusterNamespace, tc.ClusterName, err))
 		}
 
-		err = e2eutil.SetReleaseVersionFromHostedCluster(context.Background(), hostedCluster)
+		err = e2eutil.SetReleaseVersionFromHostedCluster(tc.Context, hostedCluster)
 		if err != nil {
 			panic(fmt.Sprintf("failed to set release version from HostedCluster: %v", err))
 		}
@@ -123,6 +124,7 @@ func SetupTestContextFromEnv(ctx context.Context) (*TestContext, error) {
 
 	hostedClusterName := GetEnvVarValue("E2E_HOSTED_CLUSTER_NAME")
 	hostedClusterNamespace := GetEnvVarValue("E2E_HOSTED_CLUSTER_NAMESPACE")
+	artifactDir := GetEnvVarValue("ARTIFACT_DIR")
 
 	// If both env vars are present, set up full context with cluster info
 	if hostedClusterName != "" && hostedClusterNamespace != "" {
@@ -130,6 +132,18 @@ func SetupTestContextFromEnv(ctx context.Context) (*TestContext, error) {
 		testCtx.ClusterNamespace = hostedClusterNamespace
 		testCtx.ControlPlaneNamespace = manifests.HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName)
 	}
+	testCtx.ArtifactDir = artifactDir
 
 	return testCtx, nil
+}
+
+// ValidateControlPlaneNamespace checks if the ControlPlaneNamespace is set in the test context.
+// Returns an error with a helpful message if not set.
+func (tc *TestContext) ValidateControlPlaneNamespace() error {
+	if tc.ControlPlaneNamespace == "" {
+		return fmt.Errorf("ControlPlaneNamespace is required but not set. Please set the following environment variables:\n" +
+			"  E2E_HOSTED_CLUSTER_NAME - Name of the HostedCluster to test\n" +
+			"  E2E_HOSTED_CLUSTER_NAMESPACE - Namespace of the HostedCluster to test")
+	}
+	return nil
 }
