@@ -5947,6 +5947,93 @@ EXTERNAL_DNS_DOMAIN="guest.jpdv.aws.kerbeross.com"
 The migration script is maintained at https://github.com/openshift/hypershift/blob/main/contrib/migration/migrate-hcp.sh
 </details>
 
+## HostedCluster Configuration Requirements for AWS Self-Managed Platforms
+
+!!! important "AWS Self-Managed Platform Configuration"
+
+    When using AWS platform with self-managed infrastructure, to ensure workloads from existing nodes propagate correctly to new NodePool nodes during disaster recovery, the APIServer service configuration must use a **Route** service publishing strategy with a **fixed hostname** specified.
+
+    This configuration is critical for:
+    - Proper workload migration to new nodes in restored NodePools
+    - Service continuity during disaster recovery processes
+    - Consistent DNS resolution for applications
+    - Maintaining cluster connectivity after node reprovisioning
+
+### Required Configuration
+
+For AWS self-managed platforms, ensure your HostedCluster includes the APIServer service publishing strategy with a fixed hostname using Route type:
+
+```yaml
+spec:
+  platform:
+    aws:
+      endpointAccess: Public
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api.example.com
+```
+
+### Why This Configuration is Required
+
+During disaster recovery scenarios:
+
+1. **Node Reprovisioning**: New NodePool nodes are created to replace the original nodes
+2. **Workload Migration**: Applications and workloads need to be transferred from old nodes to new nodes
+3. **Service Continuity**: The fixed hostname ensures that services remain accessible throughout the migration process
+4. **DNS Consistency**: A stable hostname prevents DNS resolution issues that could disrupt application connectivity
+
+Without this configuration, workloads may fail to propagate correctly to new nodes, potentially causing service disruptions during the disaster recovery process.
+
+## Fixing OIDC Identity Provider After OADP Restore
+
+After restoring a HostedCluster via OADP, the AWS IAM OIDC identity provider and its S3 discovery documents may be missing or inconsistent. This causes the control-plane-operator to fail with `WebIdentityErr` and prevents the default security group from being reconciled, leaving NodePool nodes in a not-ready state.
+
+The `hypershift fix dr-oidc-iam` command resolves this by re-uploading the OIDC discovery documents using the **existing** service account signing key from the cluster and recreating the IAM OIDC provider if needed. It also schedules a rolling restart of the HostedCluster control plane to recover any pods stuck in CrashLoopBackOff.
+
+### Usage
+
+```bash
+# Recommended: auto-detect configuration from the HostedCluster
+hypershift fix dr-oidc-iam \
+  --hc-name <cluster-name> \
+  --hc-namespace <namespace> \
+  --aws-creds ~/.aws/credentials
+
+# Preview changes without applying them
+hypershift fix dr-oidc-iam \
+  --hc-name <cluster-name> \
+  --hc-namespace <namespace> \
+  --aws-creds ~/.aws/credentials \
+  --dry-run
+
+# Force complete regeneration of OIDC documents and provider
+hypershift fix dr-oidc-iam \
+  --hc-name <cluster-name> \
+  --hc-namespace <namespace> \
+  --aws-creds ~/.aws/credentials \
+  --force-recreate
+
+# Adjust the delay before the rolling restart (default: 5m)
+hypershift fix dr-oidc-iam \
+  --hc-name <cluster-name> \
+  --hc-namespace <namespace> \
+  --aws-creds ~/.aws/credentials \
+  --restart-delay 10m
+```
+
+### What the Command Does
+
+1. Checks if OIDC discovery documents exist in S3
+2. Checks if the IAM OIDC identity provider exists
+3. Ensures the S3 bucket is properly configured with public read access
+4. Retrieves the existing service account signing public key from the `sa-signing-key` secret in the hosted control plane namespace
+5. Generates and uploads OIDC discovery and JWKS documents using the existing key
+6. Creates or recreates the IAM OIDC identity provider
+7. Verifies the configuration and schedules a rolling restart of the HostedCluster
+
 
 ---
 
@@ -11429,7 +11516,7 @@ Ensure the following prerequisites are met on the Management cluster (connected 
 
 !!! warning "⚠️ HostedCluster Configuration"
 
-    The HostedCluster must be configured as `PublicAndPrivate` or `Private`. Public clusters without a hostname will cause restore failures. See HostedCluster Configuration Requirements for details.
+    The HostedCluster must be configured as `PublicAndPrivate`, `Private`, or `Public` with a fixed hostname for the kube-api-server. Public clusters without a hostname will cause restore failures. See HostedCluster Configuration Requirements for details.
 
 !!! Note "Note for Bare Metal Providers"
 
@@ -12303,7 +12390,7 @@ velero delete backup hc-clusters-hosted-backup
 
 ## HostedCluster Configuration Requirements
 
-The HostedCluster must be configured as `PublicAndPrivate` or `Private` for backup/restore operations to work correctly. If the HostedCluster is configured as Public (without a hostname in the ServicePublishingStrategy for the kube-api-server), the restore operation will fail with the following consequences:
+The HostedCluster must be configured as `PublicAndPrivate`, `Private`, or `Public` with a fixed hostname for backup/restore operations to work correctly. If the HostedCluster is configured as `Public` without a hostname in the ServicePublishingStrategy for the kube-api-server, the restore operation will fail with the following consequences:
 
 - **Nodes remain in NotReady state**
 - **NodePool scaling fails to generate new nodes**
@@ -12324,28 +12411,45 @@ Ensure your HostedCluster is configured with either:
 - `Private` service publishing strategy, OR
 - `Public` service publishing strategy with a **hostname** specified for the kube-api-server
 
+### AWS Self-Managed Platform Requirements
+
+!!! important "AWS Self-Managed Platforms"
+
+    When using AWS platform with self-managed infrastructure, the `Public` endpoint access option with a **Route** service publishing strategy and a **fixed hostname** is required. This is a specific case of the `Public` with hostname option described above.
+
+    This ensures that:
+    - Node workloads can be properly migrated to new nodes in the restored NodePools
+    - Service continuity is maintained during the disaster recovery process
+    - DNS resolution remains consistent for applications
+
 ### Example Configuration
 
-**Option 1: PublicAndPrivate or Private**
+**Public endpoint access with Route hostname (required for AWS self-managed platforms)**
 ```yaml
 spec:
   platform:
     aws:
-      servicePublishingStrategy:
-        kubeAPIServer:
-          type: PublicAndPrivate  # or Private
+      endpointAccess: Public
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api.example.com
 ```
 
-**Option 2: Public with hostname**
-```yaml
-spec:
-  platform:
-    aws:
-      servicePublishingStrategy:
-        kubeAPIServer:
-          type: Public
-          hostname: "api.your-cluster.example.com"
+### Fixing OIDC After Restore
+
+After completing the OADP restore, if the control-plane-operator reports `WebIdentityErr` errors or NodePool nodes remain not-ready due to a missing default security group, run the OIDC disaster recovery command:
+
+```bash
+hypershift fix dr-oidc-iam \
+  --hc-name <cluster-name> \
+  --hc-namespace <namespace> \
+  --aws-creds ~/.aws/credentials
 ```
+
+This re-uploads the OIDC discovery documents using the existing cluster signing key and recreates the IAM OIDC provider if needed. See the AWS Disaster Recovery documentation for full details.
 
 
 ---
@@ -12373,7 +12477,7 @@ The first consideration is to ensure we meet the prerequisites. On the Managemen
 
 !!! warning "⚠️ HostedCluster Configuration"
 
-    The HostedCluster must be configured as `PublicAndPrivate` or `Private`. Public clusters without a hostname will cause restore failures. See HostedCluster Configuration Requirements for details.
+    The HostedCluster must be configured as `PublicAndPrivate`, `Private`, or `Public` with a fixed hostname for the kube-api-server. Public clusters without a hostname will cause restore failures. See HostedCluster Configuration Requirements for details.
 
 
 !!! important
@@ -13238,7 +13342,7 @@ velero delete backup hc-clusters-hosted-backup
 
 ## HostedCluster Configuration Requirements for AWS provider
 
-The HostedCluster must be configured as `PublicAndPrivate` or `Private` for backup/restore operations to work correctly. If the HostedCluster is configured as Public (without a hostname in the ServicePublishingStrategy for the kube-api-server), the restore operation will fail with the following consequences:
+The HostedCluster must be configured as `PublicAndPrivate`, `Private`, or `Public` with a fixed hostname for backup/restore operations to work correctly. If the HostedCluster is configured as `Public` without a hostname in the ServicePublishingStrategy for the kube-api-server, the restore operation will fail with the following consequences:
 
 - **Nodes remain in NotReady state**
 - **NodePool scaling fails to generate new nodes**
@@ -13259,33 +13363,45 @@ Ensure your HostedCluster is configured with either:
 - `Private` service publishing strategy, OR
 - `Public` service publishing strategy with a **hostname** specified for the kube-api-server
 
+### AWS Self-Managed Platform Requirements
+
+!!! important "AWS Self-Managed Platforms"
+
+    When using AWS platform with self-managed infrastructure, the `Public` endpoint access option with a **Route** service publishing strategy and a **fixed hostname** is required. This is a specific case of the `Public` with hostname option described above.
+
+    This ensures that:
+    - Node workloads can be properly migrated to new nodes in the restored NodePools
+    - Service continuity is maintained during the disaster recovery process
+    - DNS resolution remains consistent for applications
+
 ### Example Configuration
 
-**Option 1: PublicAndPrivate or Private**
+**Public endpoint access with Route hostname (required for AWS self-managed platforms)**
 ```yaml
 spec:
   platform:
     aws:
-      endpointAccess: PublicAndPrivate  # or Private
-```
-
-**Option 2: Public with hostname**
-```yaml
-spec:
-...
-...
-  platform:
-      aws:
-        endpointAccess: Public
-...
-...
+      endpointAccess: Public
   services:
   - service: APIServer
     servicePublishingStrategy:
-      type: LoadBalancer
-      loadBalancer:
-        hostname: api.basedomain.tld
+      type: Route
+      route:
+        hostname: api.example.com
 ```
+
+### Fixing OIDC After Restore
+
+After completing the OADP restore, if the control-plane-operator reports `WebIdentityErr` errors or NodePool nodes remain not-ready due to a missing default security group, run the OIDC disaster recovery command:
+
+```bash
+hypershift fix dr-oidc-iam \
+  --hc-name <cluster-name> \
+  --hc-namespace <namespace> \
+  --aws-creds ~/.aws/credentials
+```
+
+This re-uploads the OIDC discovery documents using the existing cluster signing key and recreates the IAM OIDC provider if needed. See the AWS Disaster Recovery documentation for full details.
 
 
 
