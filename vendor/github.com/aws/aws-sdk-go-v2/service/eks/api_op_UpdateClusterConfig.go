@@ -91,6 +91,10 @@ type UpdateClusterConfigInput struct {
 	// cluster. For example, enable the capability.
 	ComputeConfig *types.ComputeConfigRequest
 
+	// The control plane scaling tier configuration. For more information, see EKS
+	// Provisioned Control Plane in the Amazon EKS User Guide.
+	ControlPlaneScalingConfig *types.ControlPlaneScalingConfig
+
 	// Specifies whether to enable or disable deletion protection for the cluster.
 	// When enabled ( true ), the cluster cannot be deleted until deletion protection
 	// is explicitly disabled. When disabled ( false ), the cluster can be deleted
@@ -257,40 +261,7 @@ func (c *Client) addOperationUpdateClusterConfigMiddlewares(stack *middleware.St
 	if err = addInterceptAttempt(stack, options); err != nil {
 		return err
 	}
-	if err = addInterceptExecution(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptBeforeSerialization(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptAfterSerialization(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptBeforeSigning(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptAfterSigning(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptTransmit(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptBeforeDeserialization(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptAfterDeserialization(stack, options); err != nil {
-		return err
-	}
-	if err = addSpanInitializeStart(stack); err != nil {
-		return err
-	}
-	if err = addSpanInitializeEnd(stack); err != nil {
-		return err
-	}
-	if err = addSpanBuildRequestStart(stack); err != nil {
-		return err
-	}
-	if err = addSpanBuildRequestEnd(stack); err != nil {
+	if err = addInterceptors(stack, options); err != nil {
 		return err
 	}
 	return nil
