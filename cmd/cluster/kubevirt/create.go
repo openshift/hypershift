@@ -64,6 +64,26 @@ type RawCreateOptions struct {
 	NodePoolOpts *kubevirtnodepool.RawKubevirtPlatformCreateOptions
 }
 
+func shouldDefaultPrimaryUDNForCIConformanceJob(createOpts *core.CreateOptions) bool {
+	// This is intentionally narrow-scoped. It's meant as a temporary spike mechanism to
+	// enable Primary UDN in a single CI lane without changing openshift/release.
+	if os.Getenv("OPENSHIFT_CI") != "true" {
+		return false
+	}
+	jobName := os.Getenv("JOB_NAME")
+	if jobName == "" {
+		return false
+	}
+	// HyperShift presubmit conformance lane name suffix.
+	if !strings.Contains(jobName, "e2e-kubevirt-metal-conformance") {
+		return false
+	}
+	if createOpts == nil || createOpts.Name == "" {
+		return false
+	}
+	return true
+}
+
 // validatedCreateOptions is a private wrapper that enforces a call of Validate() before Complete() can be invoked.
 type validatedCreateOptions struct {
 	*RawCreateOptions
@@ -110,6 +130,13 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 
 	if o.InfraNamespace == "" && o.InfraKubeConfigFile != "" {
 		return nil, fmt.Errorf("external infra cluster kubeconfig was provided but an infra namespace is missing")
+	}
+
+	// CI spike: default Primary UDN for a specific conformance lane only when the user didn't
+	// provide any Primary UDN configuration.
+	if o.PrimaryUDNName == "" && o.PrimaryUDNSubnet == "" && shouldDefaultPrimaryUDNForCIConformanceJob(opts) {
+		o.PrimaryUDNName = fmt.Sprintf("hcp-%s", opts.Name)
+		o.PrimaryUDNSubnet = "10.150.0.0/16"
 	}
 
 	// Primary UDN enablement is atomic: either both name+subnet are set, or neither.
