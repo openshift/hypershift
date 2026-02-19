@@ -174,7 +174,7 @@ func NewStartCommand() *cobra.Command {
 		inCluster                        bool
 		enableCIDebugOutput              bool
 		registryOverrides                map[string]string
-		imageOverrides                   map[string]string
+		imageOverridesStr                string
 		featureSet                       string
 	)
 
@@ -191,7 +191,7 @@ func NewStartCommand() *cobra.Command {
 		"to avoid assuming access to the service network)")
 	cmd.Flags().BoolVar(&enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&registryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
-	cmd.Flags().StringToStringVar(&imageOverrides, "image-overrides", map[string]string{},
+	cmd.Flags().StringVar(&imageOverridesStr, "image-overrides", "",
 		"List of images that should be used for a hosted cluster control plane instead of images from OpenShift release specified in HostedCluster. "+
 			"Format is: name1=image1,name2=image2. \"nameX\" is name of an image in OpenShift release (e.g. \"cluster-network-operator\"). "+
 			"\"imageX\" is container image name (e.g. \"quay.io/foo/my-network-operator:latest\"). The container image name is still subject of registry name "+
@@ -395,8 +395,16 @@ func NewStartCommand() *cobra.Command {
 			util.CPOImageName:                cpoImage,
 			util.CPPKIOImageName:             cpoImage,
 		}
-		for name, image := range imageOverrides {
-			componentImages[name] = image
+		for _, pair := range strings.Split(imageOverridesStr, ",") {
+			if pair == "" {
+				continue
+			}
+			kv := strings.SplitN(pair, "=", 2)
+			if len(kv) != 2 {
+				setupLog.Info("WARNING: skipping malformed image override entry", "entry", pair)
+				continue
+			}
+			componentImages[kv[0]] = kv[1]
 		}
 
 		var imageRegistryOverrides map[string][]string

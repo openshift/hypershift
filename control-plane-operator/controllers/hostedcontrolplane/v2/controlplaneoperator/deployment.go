@@ -31,9 +31,15 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Image = cpo.Image
 
+		imageOverrides := cpo.HostedCluster.Annotations[hyperv1.ImageOverridesAnnotation]
+		if imageOverrides == "" {
+			imageOverrides = "="
+		}
+
 		c.Args = append(c.Args,
 			fmt.Sprintf("--enable-ci-debug-output=%t", cpContext.EnableCIDebugOutput),
 			fmt.Sprintf("--registry-overrides=%s", cpo.RegistryOverrideCommandLine),
+			fmt.Sprintf("--image-overrides=%s", imageOverrides),
 		)
 
 		if !cpo.HasUtilities {
@@ -41,12 +47,6 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 				"--socks5-proxy-image", cpo.UtilitiesImage,
 				"--availability-prober-image", cpo.UtilitiesImage,
 				"--token-minter-image", cpo.UtilitiesImage,
-			)
-		}
-
-		if imageOverrides := cpo.HostedCluster.Annotations[hyperv1.ImageOverridesAnnotation]; imageOverrides != "" {
-			c.Args = append(c.Args,
-				"--image-overrides", imageOverrides,
 			)
 		}
 
