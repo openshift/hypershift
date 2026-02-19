@@ -2626,3 +2626,140 @@ func TestReconcileImageRegistry(t *testing.T) {
 		})
 	}
 }
+
+func TestSetReconciliationCondition(t *testing.T) {
+	testCases := []struct {
+		name              string
+		reconcileErr      error
+		existingCondition *metav1.Condition
+		expectedCondition metav1.Condition
+	}{
+		{
+			name:         "When reconciliation succeeds it should set condition to True",
+			reconcileErr: nil,
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.ConfigOperatorReconciliationSucceeded),
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.AsExpectedReason,
+			},
+		},
+		{
+			name:         "When reconciliation fails it should set condition to False with error message",
+			reconcileErr: fmt.Errorf("failed to reconcile crds: something went wrong"),
+			expectedCondition: metav1.Condition{
+				Type:    string(hyperv1.ConfigOperatorReconciliationSucceeded),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.ReconciliationErrorReason,
+				Message: "failed to reconcile crds: something went wrong",
+			},
+		},
+		{
+			name:         "When reconciliation recovers it should update condition from False to True",
+			reconcileErr: nil,
+			existingCondition: &metav1.Condition{
+				Type:    string(hyperv1.ConfigOperatorReconciliationSucceeded),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.ReconciliationErrorReason,
+				Message: "previous error",
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.ConfigOperatorReconciliationSucceeded),
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.AsExpectedReason,
+			},
+		},
+		{
+			name:         "When reconciliation fails again it should update condition with new error message",
+			reconcileErr: fmt.Errorf("new error occurred"),
+			existingCondition: &metav1.Condition{
+				Type:    string(hyperv1.ConfigOperatorReconciliationSucceeded),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.ReconciliationErrorReason,
+				Message: "old error",
+			},
+			expectedCondition: metav1.Condition{
+				Type:    string(hyperv1.ConfigOperatorReconciliationSucceeded),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.ReconciliationErrorReason,
+				Message: "new error occurred",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "foo",
+					Namespace: "bar",
+				},
+			}
+			if tc.existingCondition != nil {
+				meta.SetStatusCondition(&hcp.Status.Conditions, *tc.existingCondition)
+			}
+
+			cpClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(hcp).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+				Build()
+
+			r := &reconciler{
+				cpClient: cpClient,
+			}
+
+			err := r.setReconciliationCondition(t.Context(), hcp, tc.reconcileErr)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// Re-fetch the HCP to verify the condition was persisted
+			updatedHCP := &hyperv1.HostedControlPlane{}
+			err = cpClient.Get(t.Context(), client.ObjectKeyFromObject(hcp), updatedHCP)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			condition := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.ConfigOperatorReconciliationSucceeded))
+			g.Expect(condition).ToNot(BeNil(), "expected ConfigOperatorReconciliationSucceeded condition to be set")
+			g.Expect(condition.Status).To(Equal(tc.expectedCondition.Status))
+			g.Expect(condition.Reason).To(Equal(tc.expectedCondition.Reason))
+			g.Expect(condition.Message).To(Equal(tc.expectedCondition.Message))
+		})
+	}
+}
+
+func TestReconcileSetsConfigOperatorReconciliationCondition(t *testing.T) {
+	g := NewWithT(t)
+	imageMetaDataProvider := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{}
+	ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+
+	cpClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(cpObjects...).
+		WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+		Build()
+
+	r := &reconciler{
+		client:                 fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(initialObjects...).WithStatusSubresource(&configv1.Infrastructure{}).Build(),
+		uncachedClient:         fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects().Build(),
+		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+		platformType:           hyperv1.NonePlatform,
+		clusterSignerCA:        "foobar",
+		cpClient:               cpClient,
+		hcpName:                "foo",
+		hcpNamespace:           "bar",
+		releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
+		ImageMetaDataProvider:  &imageMetaDataProvider,
+	}
+
+	_, err := r.Reconcile(ctx, controllerruntime.Request{})
+	// We may get some errors from the reconciliation in the test environment
+	// but the condition should still be set on HCP
+	_ = err
+
+	updatedHCP := &hyperv1.HostedControlPlane{}
+	err = cpClient.Get(ctx, client.ObjectKey{Namespace: "bar", Name: "foo"}, updatedHCP)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	condition := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.ConfigOperatorReconciliationSucceeded))
+	g.Expect(condition).ToNot(BeNil(), "expected ConfigOperatorReconciliationSucceeded condition to be set on HCP after reconciliation")
+}
