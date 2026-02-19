@@ -4,6 +4,10 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +18,7 @@ import (
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/infra"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
@@ -65,6 +70,8 @@ import (
 	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/zapr"
+	"github.com/prometheus/client_golang/prometheus"
+	prometheustestutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zaptest"
@@ -1883,4 +1890,94 @@ func TestControlPlaneComponentsAvailable(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHealthCheckKASEndpointMetrics(t *testing.T) {
+	t.Run("When KAS endpoint returns 200, it should set available to 1 and record duration", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		m := newTestKASHealthMetrics(t)
+		host, port := parseHostPort(t, server)
+
+		err := healthCheckKASEndpoint(host, port, m)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(prometheustestutil.ToFloat64(m.Available)).To(Equal(float64(1)))
+		g.Expect(prometheustestutil.CollectAndCount(m.RequestDuration)).To(Equal(1))
+	})
+
+	t.Run("When KAS endpoint returns 503, it should set available to 0", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		defer server.Close()
+
+		m := newTestKASHealthMetrics(t)
+		host, port := parseHostPort(t, server)
+
+		err := healthCheckKASEndpoint(host, port, m)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(prometheustestutil.ToFloat64(m.Available)).To(Equal(float64(0)))
+		g.Expect(prometheustestutil.CollectAndCount(m.RequestDuration)).To(Equal(1))
+	})
+
+	t.Run("When KAS endpoint is unreachable, it should set available to 0", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		m := newTestKASHealthMetrics(t)
+
+		err := healthCheckKASEndpoint("192.0.2.1", 1, m)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(prometheustestutil.ToFloat64(m.Available)).To(Equal(float64(0)))
+		g.Expect(prometheustestutil.CollectAndCount(m.RequestDuration)).To(Equal(1))
+	})
+
+	t.Run("When metrics is nil, it should not panic", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer server.Close()
+
+		host, port := parseHostPort(t, server)
+		err := healthCheckKASEndpoint(host, port, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+	})
+}
+
+func newTestKASHealthMetrics(t *testing.T) *kas.KASHealthMetrics {
+	t.Helper()
+	return &kas.KASHealthMetrics{
+		Available: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: kas.KASAvailableMetricName,
+			Help: "test",
+		}),
+		RequestDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name:    kas.KASRequestDurationMetricName,
+			Help:    "test",
+			Buckets: []float64{0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+		}),
+	}
+}
+
+func parseHostPort(t *testing.T, server *httptest.Server) (string, int) {
+	t.Helper()
+	// server.URL is like "https://127.0.0.1:PORT"
+	u, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("failed to parse server URL: %v", err)
+	}
+	host := u.Hostname()
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		t.Fatalf("failed to parse port: %v", err)
+	}
+	return host, port
 }
