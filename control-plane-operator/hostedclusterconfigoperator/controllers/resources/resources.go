@@ -2801,8 +2801,7 @@ func isConnectionError(err error) bool {
 }
 
 // cleanupResources generically deletes resources of a given type using an optional filter
-// function. The result is a boolean indicating whether resources were found that match
-// the filter and an error if one occurred.
+// function. It returns an error if listing or deleting any matching resources fails.
 func cleanupResources(ctx context.Context, c client.Client, list client.ObjectList, filter func(client.Object) bool, force bool) error {
 	log := ctrl.LoggerFrom(ctx)
 	if err := c.List(ctx, list); err != nil {
