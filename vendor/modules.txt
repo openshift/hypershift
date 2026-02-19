@@ -333,6 +333,7 @@ github.com/aws/aws-sdk-go/private/protocol/query
 github.com/aws/aws-sdk-go/private/protocol/query/queryutil
 github.com/aws/aws-sdk-go/private/protocol/rest
 github.com/aws/aws-sdk-go/private/protocol/restjson
+github.com/aws/aws-sdk-go/private/protocol/restxml
 github.com/aws/aws-sdk-go/private/protocol/xml/xmlutil
 github.com/aws/aws-sdk-go/service/ec2
 github.com/aws/aws-sdk-go/service/ec2/ec2iface
@@ -340,10 +341,14 @@ github.com/aws/aws-sdk-go/service/elb
 github.com/aws/aws-sdk-go/service/elb/elbiface
 github.com/aws/aws-sdk-go/service/elbv2
 github.com/aws/aws-sdk-go/service/elbv2/elbv2iface
+github.com/aws/aws-sdk-go/service/iam
+github.com/aws/aws-sdk-go/service/iam/iamiface
 github.com/aws/aws-sdk-go/service/kms
 github.com/aws/aws-sdk-go/service/ram
 github.com/aws/aws-sdk-go/service/ram/ramiface
 github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi
+github.com/aws/aws-sdk-go/service/route53
+github.com/aws/aws-sdk-go/service/route53/route53iface
 github.com/aws/aws-sdk-go/service/sqs
 github.com/aws/aws-sdk-go/service/sqs/sqsiface
 github.com/aws/aws-sdk-go/service/sso
