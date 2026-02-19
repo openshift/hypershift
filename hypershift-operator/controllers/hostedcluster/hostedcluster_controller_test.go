@@ -65,6 +65,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
@@ -5594,6 +5595,88 @@ func TestComputeGCPPSCCondition(t *testing.T) {
 			condition := computeGCPPSCCondition(gcpPSCList, tc.conditionType)
 			if condition != tc.expected {
 				t.Errorf("error, expected %v\nbut got %v", tc.expected, condition)
+			}
+		})
+	}
+}
+
+func TestRemoveAWSEndpointServiceFinalizerFromHCP(t *testing.T) {
+	awsEndpointServiceFinalizer := "hypershift.openshift.io/aws-endpoint-service-finalizer"
+
+	testCases := []struct {
+		name                   string
+		hcp                    *hyperv1.HostedControlPlane
+		hcpExists              bool
+		expectFinalizerRemoved bool
+	}{
+		{
+			name: "When HCP has the aws-endpoint-service finalizer, it should be removed",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  "test-ns",
+					Finalizers: []string{awsEndpointServiceFinalizer, "other-finalizer"},
+				},
+			},
+			hcpExists:              true,
+			expectFinalizerRemoved: true,
+		},
+		{
+			name: "When HCP does not have the aws-endpoint-service finalizer, it should be a no-op",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-hcp",
+					Namespace:  "test-ns",
+					Finalizers: []string{"other-finalizer"},
+				},
+			},
+			hcpExists:              true,
+			expectFinalizerRemoved: false,
+		},
+		{
+			name:                   "When HCP does not exist, it should not error",
+			hcpExists:              false,
+			expectFinalizerRemoved: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			scheme := api.Scheme
+			builder := fake.NewClientBuilder().WithScheme(scheme)
+			if tc.hcpExists {
+				builder = builder.WithObjects(tc.hcp)
+			}
+			fakeClient := builder.Build()
+
+			namespace := "test-ns"
+			name := "test-hcp"
+			if tc.hcp != nil {
+				namespace = tc.hcp.Namespace
+				name = tc.hcp.Name
+			}
+
+			ctx := ctrl.LoggerInto(context.Background(), zap.New(zap.UseDevMode(true)))
+			err := removeAWSEndpointServiceFinalizerFromHCP(ctx, fakeClient, namespace, name)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.hcpExists {
+				updatedHCP := &hyperv1.HostedControlPlane{}
+				err = fakeClient.Get(ctx, crclient.ObjectKeyFromObject(tc.hcp), updatedHCP)
+				g.Expect(err).ToNot(HaveOccurred())
+				if tc.expectFinalizerRemoved {
+					g.Expect(controllerutil.ContainsFinalizer(updatedHCP, awsEndpointServiceFinalizer)).To(BeFalse(),
+						"aws-endpoint-service finalizer should have been removed")
+					g.Expect(controllerutil.ContainsFinalizer(updatedHCP, "other-finalizer")).To(BeTrue(),
+						"other finalizers should be preserved")
+				} else {
+					for _, f := range tc.hcp.Finalizers {
+						g.Expect(controllerutil.ContainsFinalizer(updatedHCP, f)).To(BeTrue(),
+							"existing finalizers should be preserved")
+					}
+				}
 			}
 		})
 	}

@@ -3253,6 +3253,39 @@ func deleteGCPPrivateServiceConnect(ctx context.Context, c client.Client, hc *hy
 	return false, nil
 }
 
+// removeAWSEndpointServiceFinalizerFromHCP removes the CPO aws-endpoint-service finalizer
+// from the HCP as a fallback safety measure. This runs after all AWSEndpointService resources
+// have been confirmed deleted, so the finalizer is no longer needed. This handles edge cases
+// where CPO is unhealthy (crashed, not running) or has been rolled back to a version that
+// doesn't know about this finalizer, which would otherwise block HCP deletion indefinitely.
+func removeAWSEndpointServiceFinalizerFromHCP(ctx context.Context, c client.Client, namespace, name string) error {
+	log := ctrl.LoggerFrom(ctx)
+	hcp := &hyperv1.HostedControlPlane{}
+	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, hcp); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get HCP: %w", err)
+	}
+
+	awsEndpointServiceFinalizer := "hypershift.openshift.io/aws-endpoint-service-finalizer"
+	if !controllerutil.ContainsFinalizer(hcp, awsEndpointServiceFinalizer) {
+		return nil
+	}
+
+	originalHCP := hcp.DeepCopy()
+	controllerutil.RemoveFinalizer(hcp, awsEndpointServiceFinalizer)
+	if err := c.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
+		if apierrors.IsConflict(err) {
+			// Will be retried on next reconcile
+			return nil
+		}
+		return fmt.Errorf("failed to remove aws-endpoint-service finalizer from HCP: %w", err)
+	}
+	log.Info("Removed aws-endpoint-service finalizer from HCP (fallback)", "namespace", namespace, "name", name)
+	return nil
+}
+
 func deleteControlPlaneOperatorRBAC(ctx context.Context, c client.Client, rbacNamespace string, controlPlaneNamespace string) error {
 	if _, err := hyperutil.DeleteIfNeeded(ctx, c, &rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: "control-plane-operator-" + controlPlaneNamespace, Namespace: rbacNamespace}}); err != nil {
 		return err
@@ -3359,6 +3392,14 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		if exists {
 			log.Info("Waiting for awsendpointservice deletion", "controlPlaneNamespace", controlPlaneNamespace)
 			return false, nil
+		}
+
+		// All AWSEndpointServices are confirmed deleted. Remove the CPO aws-endpoint-service
+		// finalizer from the HCP if it's still present. This is a fallback for cases where
+		// CPO is unhealthy or has been rolled back to a version that doesn't know about this
+		// finalizer, which would otherwise leave the HCP stuck in Terminating indefinitely.
+		if err := removeAWSEndpointServiceFinalizerFromHCP(ctx, r.Client, controlPlaneNamespace, hc.Name); err != nil {
+			return false, fmt.Errorf("failed to remove aws-endpoint-service finalizer from HCP: %w", err)
 		}
 	}
 

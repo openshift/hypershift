@@ -346,13 +346,13 @@ func (r *AWSEndpointServiceReconciler) enqueueOnHCPChange(mgr ctrl.Manager) func
 
 		// If HCP is being deleted and has our finalizer, enqueue all AWSEndpointServices for cleanup
 		if !newHCP.DeletionTimestamp.IsZero() && controllerutil.ContainsFinalizer(newHCP, hcpFinalizer) {
-			r.enqueueAllAWSEndpointServices(logger, q, newHCP.Namespace)
+			r.enqueueAllAWSEndpointServices(ctx, logger, q, newHCP.Namespace)
 			return
 		}
 
 		// Only enqueue awsendpointservices when there is a change in the endpointaccess value, otherwise ignore changes
 		if newHCP.Spec.Platform.AWS != nil && oldHCP.Spec.Platform.AWS != nil && newHCP.Spec.Platform.AWS.EndpointAccess != oldHCP.Spec.Platform.AWS.EndpointAccess {
-			r.enqueueAllAWSEndpointServices(logger, q, newHCP.Namespace)
+			r.enqueueAllAWSEndpointServices(ctx, logger, q, newHCP.Namespace)
 		}
 	}
 }
@@ -366,13 +366,13 @@ func (r *AWSEndpointServiceReconciler) enqueueOnHCPDelete(mgr ctrl.Manager) func
 			return
 		}
 		// Enqueue all AWSEndpointServices for cleanup when HCP is deleted
-		r.enqueueAllAWSEndpointServices(logger, q, hcp.Namespace)
+		r.enqueueAllAWSEndpointServices(ctx, logger, q, hcp.Namespace)
 	}
 }
 
-func (r *AWSEndpointServiceReconciler) enqueueAllAWSEndpointServices(logger logr.Logger, q workqueue.TypedRateLimitingInterface[reconcile.Request], namespace string) {
+func (r *AWSEndpointServiceReconciler) enqueueAllAWSEndpointServices(ctx context.Context, logger logr.Logger, q workqueue.TypedRateLimitingInterface[reconcile.Request], namespace string) {
 	awsEndpointServiceList := &hyperv1.AWSEndpointServiceList{}
-	if err := r.List(context.Background(), awsEndpointServiceList, client.InNamespace(namespace)); err != nil {
+	if err := r.List(ctx, awsEndpointServiceList, client.InNamespace(namespace)); err != nil {
 		logger.Error(err, "cannot list awsendpointservices")
 		return
 	}
@@ -464,6 +464,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if len(hcpList.Items) > 1 {
 		return ctrl.Result{}, fmt.Errorf("unexpected number of HostedControlPlanes in namespace, expected: 1, actual: %d", len(hcpList.Items))
 	}
+	// DeepCopy to avoid mutating the informer cache, since we may modify the HCP (e.g., adding/removing finalizers)
 	hcp := hcpList.Items[0].DeepCopy()
 
 	if isPaused, duration := util.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
@@ -488,8 +489,9 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Ensure the HCP has our finalizer so we can clean up before HCP is deleted
 	if !controllerutil.ContainsFinalizer(hcp, hcpFinalizer) {
+		originalHCP := hcp.DeepCopy()
 		controllerutil.AddFinalizer(hcp, hcpFinalizer)
-		if err := r.Update(ctx, hcp); err != nil {
+		if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 			if apierrors.IsConflict(err) {
 				return ctrl.Result{Requeue: true}, nil
 			}
@@ -1137,9 +1139,14 @@ func (r *AWSEndpointServiceReconciler) reconcileHCPDeletion(ctx context.Context,
 		return ctrl.Result{}, fmt.Errorf("failed to list AWSEndpointServices: %w", err)
 	}
 
-	// Count how many AWSEndpointServices still have our finalizer
+	// Count how many AWSEndpointServices still have our finalizer.
+	// Skip the current AWSEndpointService since we just removed its finalizer above,
+	// but the informer cache may not yet reflect that update.
 	remainingWithFinalizer := 0
 	for i := range awsEndpointServiceList.Items {
+		if awsEndpointServiceList.Items[i].Name == awsEndpointService.Name {
+			continue
+		}
 		if controllerutil.ContainsFinalizer(&awsEndpointServiceList.Items[i], finalizer) {
 			remainingWithFinalizer++
 		}
@@ -1147,8 +1154,9 @@ func (r *AWSEndpointServiceReconciler) reconcileHCPDeletion(ctx context.Context,
 
 	// If no more AWSEndpointServices need cleanup, remove our finalizer from the HCP
 	if remainingWithFinalizer == 0 && controllerutil.ContainsFinalizer(hcp, hcpFinalizer) {
+		originalHCP := hcp.DeepCopy()
 		controllerutil.RemoveFinalizer(hcp, hcpFinalizer)
-		if err := r.Update(ctx, hcp); err != nil {
+		if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 			if apierrors.IsConflict(err) {
 				return ctrl.Result{Requeue: true}, nil
 			}
