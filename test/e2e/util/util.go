@@ -23,6 +23,7 @@ import (
 	awsinfra "github.com/openshift/hypershift/cmd/infra/aws"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	awsprivatelink "github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	cpomanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	hccokasvap "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	hccomanifests "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
@@ -2704,6 +2705,43 @@ func ValidateMetrics(t *testing.T, ctx context.Context, client crclient.Client, 
 		})
 		if err != nil {
 			t.Errorf("Failed to validate all metrics: %v", err)
+		}
+	})
+}
+
+// ValidateCPOMetrics verifies that KAS health metrics are exposed from the
+// control-plane-operator pod in the HCP namespace.
+func ValidateCPOMetrics(t *testing.T, ctx context.Context, c crclient.Client, hc *hyperv1.HostedCluster) {
+	t.Run("When KAS health metrics are exposed, it should contain availability and latency data", func(t *testing.T) {
+		if hc.Spec.Platform.Type == hyperv1.NonePlatform {
+			t.Skip("skipping on None platform")
+		}
+
+		kasMetrics := []string{
+			kas.KASAvailableMetricName,
+			kas.KASRequestDurationMetricName,
+		}
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+
+		err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
+			mf, err := GetMetricsFromPod(ctx, c, "control-plane-operator", "control-plane-operator", hcpNamespace, "8080")
+			if err != nil {
+				t.Logf("unable to get CPO metrics: %v", err)
+				return false, nil
+			}
+			for _, metricName := range kasMetrics {
+				// These metrics are emitted without labels, so check family presence directly
+				// rather than using ValidateMetricPresence which relies on label iteration.
+				family, ok := mf[metricName]
+				if !ok || len(family.Metric) == 0 {
+					t.Logf("Expected results for metric %q, found none", metricName)
+					return false, nil
+				}
+			}
+			return true, nil
+		})
+		if err != nil {
+			t.Errorf("failed to validate KAS health metrics: %v", err)
 		}
 	})
 }
