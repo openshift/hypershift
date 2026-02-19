@@ -1,0 +1,42 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  name: metrics-proxy
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: metrics-proxy Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: 'Waiting for deployment metrics-proxy rollout to finish: 0 out of 2 new
+      replicas have been updated'
+    reason: WaitingForRolloutComplete
+    status: "False"
+    type: RolloutComplete
+  resources:
+  - group: ""
+    kind: Secret
+    name: metrics-proxy-ca-cert
+  - group: rbac.authorization.k8s.io
+    kind: Role
+    name: metrics-proxy
+  - group: rbac.authorization.k8s.io
+    kind: RoleBinding
+    name: metrics-proxy
+  - group: route.openshift.io
+    kind: Route
+    name: metrics-proxy
+  - group: ""
+    kind: Service
+    name: metrics-proxy
+  - group: ""
+    kind: ServiceAccount
+    name: metrics-proxy
+  - group: ""
+    kind: Secret
+    name: metrics-proxy-serving-cert
