@@ -173,6 +173,7 @@ type HostedControlPlaneReconciler struct {
 	OperateOnReleaseImage                   string
 	DefaultIngressDomain                    string
 	MetricsSet                              metrics.MetricsSet
+	KASHealthMetrics                        *kas.KASHealthMetrics
 	SREConfigHash                           string
 	ec2Client                               ec2iface.EC2API
 	awsSession                              *session.Session
@@ -854,9 +855,9 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		// When the cluster is private, checking the load balancers will depend on whether the load balancer is
 		// using the right subnets. To avoid uncertainty, we'll limit the check to the service endpoint.
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
-			return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, config.KASSVCIBMCloudPort)
+			return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, config.KASSVCIBMCloudPort, r.KASHealthMetrics)
 		}
-		return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, config.KASSVCPort)
+		return healthCheckKASEndpoint(manifests.KubeAPIServerService("").Name, config.KASSVCPort, r.KASHealthMetrics)
 	case serviceStrategy.Type == hyperv1.Route:
 		if hcp.Spec.Platform.Type != hyperv1.IBMCloudPlatform {
 			externalRoute := manifests.KubeAPIServerExternalPublicRoute(hcp.Namespace)
@@ -868,7 +869,7 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 			if err != nil {
 				return err
 			}
-			return healthCheckKASEndpoint(endpoint, port)
+			return healthCheckKASEndpoint(endpoint, port, r.KASHealthMetrics)
 		}
 	case serviceStrategy.Type == hyperv1.LoadBalancer:
 		svc := manifests.KubeAPIServerService(hcp.Namespace)
@@ -897,17 +898,30 @@ func (r *HostedControlPlaneReconciler) healthCheckKASLoadBalancers(ctx context.C
 		} else if LBIngress.IP != "" {
 			ingressPoint = LBIngress.IP
 		}
-		return healthCheckKASEndpoint(ingressPoint, port)
+		return healthCheckKASEndpoint(ingressPoint, port, r.KASHealthMetrics)
 	}
 	return nil
 }
 
-func healthCheckKASEndpoint(ingressPoint string, port int) error {
+func healthCheckKASEndpoint(ingressPoint string, port int, m *kas.KASHealthMetrics) error {
 	healthEndpoint := fmt.Sprintf("https://%s:%d/healthz", ingressPoint, port)
 
 	httpClient := util.InsecureHTTPClient()
 	httpClient.Timeout = 10 * time.Second
+
+	start := time.Now()
 	resp, err := httpClient.Get(healthEndpoint)
+	duration := time.Since(start).Seconds()
+
+	if m != nil {
+		m.RequestDuration.Observe(duration)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			m.Available.Set(1)
+		} else {
+			m.Available.Set(0)
+		}
+	}
+
 	if err != nil {
 		return err
 	}
