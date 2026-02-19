@@ -57,6 +57,9 @@ import (
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 
+	awsv2config "github.com/aws/aws-sdk-go-v2/config"
+	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
+	pricingv2 "github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
@@ -414,15 +417,36 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
-	var ec2Client ec2iface.EC2API
+	var (
+		ec2ClientV1   ec2iface.EC2API
+		ec2ClientV2   npmetrics.EC2API
+		pricingClient npmetrics.PricingAPI
+	)
 
 	if hyperv1.PlatformType(opts.PrivatePlatform) == hyperv1.AWSPlatform {
+		// Create AWS SDK v1 session for legacy EC2 client used by NodePoolReconciler
 		awsSession := awsutil.NewSession("hypershift-operator", "", "", "", "")
 		awsConfig := awsutil.NewConfig()
-		ec2Client = ec2.New(awsSession, awsConfig)
+		ec2ClientV1 = ec2.New(awsSession, awsConfig)
+
+		// Create AWS SDK v2 config for metrics EC2 client
+		awsCfg, err := awsv2config.LoadDefaultConfig(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to load AWS SDK v2 config: %w", err)
+		}
+		ec2ClientV2 = ec2v2.NewFromConfig(awsCfg)
+
+		// Create AWS SDK v2 config for Pricing client.
+		// The AWS Pricing API is only available in us-east-1 and ap-south-1.
+		const awsPricingAPIRegion = "us-east-1"
+		pricingCfg, err := awsv2config.LoadDefaultConfig(ctx, awsv2config.WithRegion(awsPricingAPIRegion))
+		if err != nil {
+			return fmt.Errorf("failed to load AWS SDK v2 config for pricing: %w", err)
+		}
+		pricingClient = pricingv2.NewFromConfig(pricingCfg)
 	}
 
-	npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient(), ec2Client)
+	npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient(), ec2ClientV2, pricingClient)
 
 	var instanceTypeProvider instancetype.Provider
 
@@ -447,7 +471,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		HypershiftOperatorImage: operatorImage,
 		ImageMetadataProvider:   registryProvider.MetadataProvider,
 		KubevirtInfraClients:    kvinfra.NewKubevirtInfraClientMap(),
-		EC2Client:               ec2Client,
+		EC2Client:               ec2ClientV1,
 		InstanceTypeProvider:    instanceTypeProvider,
 	}).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller: %w", err)

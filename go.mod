@@ -26,8 +26,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.7
 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.1.0
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.279.2
-	github.com/aws/aws-sdk-go-v2/service/pricing v1.40.11
 	github.com/aws/aws-sdk-go-v2/service/iam v1.53.2
+	github.com/aws/aws-sdk-go-v2/service/pricing v1.40.11
 	github.com/aws/aws-sdk-go-v2/service/route53 v1.62.1
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.94.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.41.6

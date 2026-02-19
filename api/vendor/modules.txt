@@ -3,6 +3,8 @@
 github.com/aws/aws-sdk-go-v2/service/ec2/types
 # github.com/aws/aws-sdk-go-v2/service/iam v1.53.2
 ## explicit; go 1.23
+# github.com/aws/aws-sdk-go-v2/service/pricing v1.40.11
+## explicit; go 1.23
 # github.com/aws/karpenter-provider-aws v1.8.6 => github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260207025257-2e871ee4d207
 ## explicit; go 1.25.3
 github.com/aws/karpenter-provider-aws/pkg/apis
