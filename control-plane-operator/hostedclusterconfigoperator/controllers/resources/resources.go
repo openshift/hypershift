@@ -751,7 +751,11 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		finished, err = r.reconcileRestoredCluster(ctx, hcp)
 		if err != nil {
 			log.Error(err, "failed to reconcile hosted cluster recovery")
-			return ctrl.Result{}, utilerrors.NewAggregate(append(errs, err))
+			recoveryErr := utilerrors.NewAggregate(append(errs, err))
+			if condErr := r.setReconciliationCondition(ctx, hcp, recoveryErr); condErr != nil {
+				log.Error(condErr, "failed to set ConfigOperatorReconciliationSucceeded condition")
+			}
+			return ctrl.Result{}, recoveryErr
 		}
 
 		if !finished {
@@ -779,7 +783,31 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		log.Info("successfully updated hcp status with recovery finished condition")
 	}
 
-	return ctrl.Result{}, utilerrors.NewAggregate(errs)
+	reconcileErr := utilerrors.NewAggregate(errs)
+	if err := r.setReconciliationCondition(ctx, hcp, reconcileErr); err != nil {
+		log.Error(err, "failed to set ConfigOperatorReconciliationSucceeded condition")
+	}
+
+	return ctrl.Result{}, reconcileErr
+}
+
+func (r *reconciler) setReconciliationCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, reconcileErr error) error {
+	condition := metav1.Condition{
+		Type:   string(hyperv1.ConfigOperatorReconciliationSucceeded),
+		Status: metav1.ConditionTrue,
+		Reason: hyperv1.AsExpectedReason,
+	}
+	if reconcileErr != nil {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.ReconciliationErrorReason
+		condition.Message = reconcileErr.Error()
+	}
+
+	originalHCP := hcp.DeepCopy()
+	if !meta.SetStatusCondition(&hcp.Status.Conditions, condition) {
+		return nil // No status change; avoid unnecessary API call.
+	}
+	return r.cpClient.Status().Patch(ctx, hcp, client.MergeFrom(originalHCP))
 }
 
 func (r *reconciler) reconcileCSIDriver(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
