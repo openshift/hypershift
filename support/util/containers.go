@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/utils/ptr"
 )
@@ -118,6 +119,35 @@ func AvailabilityProber(target string, image string, spec *corev1.PodSpec, o ...
 	}
 	if !reflect.DeepEqual(spec.InitContainers[0], availabilityProberContainer) {
 		spec.InitContainers[0] = availabilityProberContainer
+	}
+}
+
+// KASReadinessCheckContainer returns a sidecar container that probes the KAS /livez endpoint.
+// When KAS is unreachable, the readiness probe fails and the pod goes unready,
+// which prevents PDB from treating it as healthy during eviction decisions.
+// This uses /livez (not /readyz) to avoid a circular dependency: KAS /readyz checks
+// aggregated API servers, which include OAS and OAuth API Server.
+func KASReadinessCheckContainer(kasLivezURL string) corev1.Container {
+	return corev1.Container{
+		Name:    "kas-readiness-check",
+		Image:   "cli",
+		Command: []string{"/bin/bash", "-c", "sleep infinity"},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				Exec: &corev1.ExecAction{
+					Command: []string{"/bin/bash", "-c", fmt.Sprintf("curl -kfs %s > /dev/null", kasLivezURL)},
+				},
+			},
+			FailureThreshold: 3,
+			PeriodSeconds:    10,
+			TimeoutSeconds:   5,
+		},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("10Mi"),
+			},
+		},
 	}
 }
 

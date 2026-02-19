@@ -204,6 +204,37 @@ spec:
           name: work-logs
         - mountPath: /tmp
           name: tmp-dir
+      - command:
+        - /bin/bash
+        - -c
+        - sleep infinity
+        image: cli
+        imagePullPolicy: IfNotPresent
+        name: kas-readiness-check
+        readinessProbe:
+          exec:
+            command:
+            - /bin/bash
+            - -c
+            - curl -kfs https://kube-apiserver:6443/livez > /dev/null
+          failureThreshold: 3
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 10m
+            memory: 10Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /tmp
+          name: tmp-dir
       - args:
         - run
         command:
