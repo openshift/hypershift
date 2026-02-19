@@ -14,6 +14,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	// ImageRegistryCAKey is the key in the service-serving-ca ConfigMap that
+	// contains the service CA certificate data.
+	ImageRegistryCAKey = "service-ca.crt"
+
+	// ImageRegistryCADataKey is the key in the machine-config-server ConfigMap
+	// used to store the image registry CA certificate data. This certificate
+	// is passed to the MCS bootstrap process via --bootstrap-certs so that
+	// worker nodes trust the internal image registry without the node-ca
+	// daemonset.
+	ImageRegistryCADataKey = "image-registry-ca.crt"
+)
+
 func ReconcileMachineConfigServerConfig(cm *corev1.ConfigMap, p *MCSParams) error {
 	p.OwnerRef.ApplyTo(cm)
 	cm.Data = map[string]string{}
@@ -52,6 +65,12 @@ func ReconcileMachineConfigServerConfig(cm *corev1.ConfigMap, p *MCSParams) erro
 			return err
 		}
 		cm.Data["user-ca-bundle-config.yaml"] = serializedUserCA
+	}
+
+	if p.ImageRegistryCA != nil {
+		if caData, ok := p.ImageRegistryCA.Data[ImageRegistryCAKey]; ok && caData != "" {
+			cm.Data[ImageRegistryCADataKey] = caData
+		}
 	}
 
 	cm.Data["root-ca.crt"] = string(p.RootCA.Data[certs.CASignerCertMapKey])

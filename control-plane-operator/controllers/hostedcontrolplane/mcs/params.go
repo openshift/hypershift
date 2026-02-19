@@ -18,6 +18,7 @@ type MCSParams struct {
 	RootCA            *corev1.Secret
 	KubeletClientCA   *corev1.ConfigMap
 	UserCA            *corev1.ConfigMap
+	ImageRegistryCA   *corev1.ConfigMap
 	PullSecret        *corev1.Secret
 	DNS               *configv1.DNS
 	Infrastructure    *configv1.Infrastructure
@@ -28,7 +29,7 @@ type MCSParams struct {
 	ConfigurationHash string
 }
 
-func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Secret, userCA, kubeletClientCA *corev1.ConfigMap) (*MCSParams, error) {
+func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Secret, userCA, kubeletClientCA, imageRegistryCA *corev1.ConfigMap) (*MCSParams, error) {
 	dns := globalconfig.DNSConfig()
 	globalconfig.ReconcileDNSConfig(dns, hcp)
 
@@ -58,6 +59,7 @@ func NewMCSParams(hcp *hyperv1.HostedControlPlane, rootCA, pullSecret *corev1.Se
 		RootCA:            rootCA,
 		KubeletClientCA:   kubeletClientCA,
 		UserCA:            userCA,
+		ImageRegistryCA:   imageRegistryCA,
 		PullSecret:        pullSecret,
 		DNS:               dns,
 		Infrastructure:    infra,

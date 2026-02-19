@@ -2407,7 +2407,22 @@ func (r *HostedControlPlaneReconciler) reconcileMachineConfigServerConfig(ctx co
 		return fmt.Errorf("failed to get root kubelet client CA: %w", err)
 	}
 
-	p, err := mcs.NewMCSParams(hcp, rootCA, pullSecret, trustedCABundle, kubeletClientCA)
+	// Fetch the service-serving-ca ConfigMap which contains the service CA used
+	// to sign the image registry's serving certificate. This CA is passed to the
+	// MCO ignition payload so worker nodes can trust the internal image registry
+	// without the node-ca daemonset.
+	imageRegistryCA := manifests.ServiceServingCA(hcp.Namespace)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(imageRegistryCA), imageRegistryCA); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get service-serving-ca: %w", err)
+		}
+		// The service-serving-ca ConfigMap may not exist yet if the service-ca
+		// operator hasn't synced the CA from the guest cluster. This is expected
+		// during initial cluster creation.
+		imageRegistryCA = nil
+	}
+
+	p, err := mcs.NewMCSParams(hcp, rootCA, pullSecret, trustedCABundle, kubeletClientCA, imageRegistryCA)
 	if err != nil {
 		return fmt.Errorf("failed to initialize machine config server parameters config: %w", err)
 	}
