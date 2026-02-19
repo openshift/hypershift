@@ -41,6 +41,14 @@ func TestCreateCluster(t *testing.T) {
 				"--pull-secret=" + pullSecretFile,
 			},
 		},
+		{
+			name: "render without api-server-address should not require cluster connectivity",
+			args: []string{
+				"--render-sensitive",
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)
