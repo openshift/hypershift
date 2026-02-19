@@ -89,6 +89,20 @@ const (
 	pullSecretName            = "pull-secret"
 	additionalTrustBundleName = "user-ca-bundle"
 	managedTrustBundleName    = "trusted-ca-bundle-managed"
+
+	// imageRegistryCADataKey is the key in the machine-config-server ConfigMap
+	// that contains the image registry CA certificate data. This must match the
+	// constant defined in the mcs package.
+	imageRegistryCADataKey = "image-registry-ca.crt"
+
+	// imageRegistryCAFileName is the filename used when writing the image
+	// registry CA to the MCS server base directory.
+	imageRegistryCAFileName = "image-registry-ca.crt"
+
+	// imageRegistryHostname is the internal hostname for the OpenShift image
+	// registry service, used as the key in the --bootstrap-certs flag to
+	// install the CA under /etc/docker/certs.d/{hostname}/ca.crt on nodes.
+	imageRegistryHostname = "image-registry.openshift-image-registry.svc:5000"
 )
 
 func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, customConfig, pullSecretHash, additionalTrustBundleHash, hcConfigurationHash string) ([]byte, error) {
@@ -641,6 +655,23 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 			args = append(args,
 				fmt.Sprintf("--payload-version=%s", imageProvider.Version()),
 			)
+		}
+
+		// For 4.15 onwards, pass the image registry CA via --bootstrap-certs so
+		// that the internal image registry's service CA is installed on worker
+		// nodes via the ignition payload. This replaces the functionality of the
+		// node-ca daemonset which is being removed upstream.
+		if payloadVersion.Minor >= 15 {
+			if caData, ok := mcsConfig.Data[imageRegistryCADataKey]; ok && caData != "" {
+				certFilePath := filepath.Join(mcsBaseDir, imageRegistryCAFileName)
+				if err := os.WriteFile(certFilePath, []byte(caData), 0644); err != nil {
+					return nil, fmt.Errorf("failed to write image registry CA cert: %w", err)
+				}
+				args = append(args,
+					fmt.Sprintf("--bootstrap-certs=%s=%s", imageRegistryHostname, imageRegistryCAFileName),
+				)
+				log.Info("added image registry CA to MCS bootstrap certs")
+			}
 		}
 
 		// Spin up the MCS process and ensure it's signaled to terminate when
