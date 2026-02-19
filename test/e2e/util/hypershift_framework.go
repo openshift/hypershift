@@ -230,6 +230,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		}
 
 		ValidateMetrics(t, context.Background(), h.client, hostedCluster, metricsToValidate, true)
+		ValidateCPOMetrics(t, context.Background(), h.client, hostedCluster)
 
 		// TestHAEtcdChaos runs as NonePlatform and it's broken.
 		// so skipping until we fix it.
