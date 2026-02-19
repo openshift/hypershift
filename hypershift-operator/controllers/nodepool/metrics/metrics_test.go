@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
@@ -469,3 +471,78 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 	}
 }
 
+// TestCollectConcurrency verifies that concurrent Collect calls do not race on
+// shared mutable state (ec2InstanceTypeToVCpusCount map and lastCollectTime).
+func TestCollectConcurrency(t *testing.T) {
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hc",
+			Namespace: "any",
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			ClusterID: "id",
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
+		},
+	}
+
+	nodePool := &hyperv1.NodePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "np-0",
+			Namespace: "any",
+		},
+		Spec: hyperv1.NodePoolSpec{
+			ClusterName: "hc",
+			Platform: hyperv1.NodePoolPlatform{
+				Type: hyperv1.AWSPlatform,
+				AWS: &hyperv1.AWSNodePoolPlatform{
+					InstanceType: "m5.xlarge",
+				},
+			},
+		},
+		Status: hyperv1.NodePoolStatus{
+			Replicas: 2,
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hcluster, nodePool).
+		Build()
+
+	ec2Mock := &Ec2ClientMock{
+		MockedDescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+			// Add a small delay to widen the race window
+			time.Sleep(time.Millisecond)
+			return initDescribeInstanceTypesOutput([]ec2typesv2.InstanceTypeInfo{
+				initInstanceTypeInfo("m5.xlarge", 4),
+			}), nil
+		},
+	}
+
+	pricingMock := &PricingClientMock{
+		MockedGetProductsFunc: func(ctx context.Context, input *pricingv2.GetProductsInput, optFns ...func(*pricingv2.Options)) (*pricingv2.GetProductsOutput, error) {
+			return &pricingv2.GetProductsOutput{}, nil
+		},
+	}
+
+	collector := createNodePoolsMetricsCollector(fakeClient, ec2Mock, pricingMock, clock.RealClock{})
+
+	const goroutines = 10
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			ch := make(chan prometheus.Metric, 100)
+			go func() {
+				for range ch {
+				}
+			}()
+			collector.(*nodePoolsMetricsCollector).Collect(ch)
+			close(ch)
+		}()
+	}
+	wg.Wait()
+}
