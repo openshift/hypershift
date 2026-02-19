@@ -32,6 +32,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
+	kasmetrics "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	azureutil "github.com/openshift/hypershift/support/azureutil"
 	supportforwarder "github.com/openshift/hypershift/support/forwarder"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
@@ -67,6 +68,7 @@ func RegisterHostedClusterMetricsTests(getTestCtx internal.TestContextGetter) {
 	EnsureMetricsForwarderWorkingTest(getTestCtx)
 	EnsureNodeTuningOperatorMetricsEndpointTest(getTestCtx)
 	EnsureKubeSchedulerMetricsEndpointTest(getTestCtx)
+	ValidateCPOMetricsTest(getTestCtx)
 }
 
 func ValidateMetricsTest(getTestCtx internal.TestContextGetter) {
@@ -378,6 +380,56 @@ func EnsureKubeSchedulerMetricsEndpointTest(getTestCtx internal.TestContextGette
 						"metrics response should contain Prometheus format data")
 				}, 3*time.Minute, 10*time.Second).Should(Succeed())
 			}
+		})
+	})
+}
+
+func ValidateCPOMetricsTest(getTestCtx internal.TestContextGetter) {
+	When("KAS health metrics are exposed", func() {
+		var tc *internal.TestContext
+
+		BeforeEach(func() {
+			tc = getTestCtx()
+			tc.SkipIfPlatform(hyperv1.NonePlatform)
+			tc.SkipIfVersionBelow(e2eutil.Version51)
+		})
+
+		It("should contain availability and latency data from CPO", func() {
+			kasMetricNames := []string{
+				kasmetrics.KASAvailableMetricName,
+				kasmetrics.KASRequestDurationMetricName,
+			}
+
+			mgmtRestConfig, err := e2eutil.GetConfig()
+			Expect(err).NotTo(HaveOccurred(), "should be able to load management cluster REST config")
+			clientset, err := kubernetes.NewForConfig(mgmtRestConfig)
+			Expect(err).NotTo(HaveOccurred(), "should be able to create kubernetes clientset")
+
+			Eventually(func(g Gomega) {
+				cpoPods := &corev1.PodList{}
+				g.Expect(tc.MgmtClient.List(tc.Context, cpoPods,
+					crclient.InNamespace(tc.ControlPlaneNamespace),
+					crclient.MatchingLabels{"app": "control-plane-operator"},
+				)).To(Succeed(), "should be able to list control-plane-operator pods")
+				g.Expect(cpoPods.Items).NotTo(BeEmpty(), "control-plane-operator pod should exist")
+
+				var runningPodName string
+				for _, p := range cpoPods.Items {
+					if p.Status.Phase == corev1.PodRunning {
+						runningPodName = p.Name
+						break
+					}
+				}
+				g.Expect(runningPodName).NotTo(BeEmpty(), "a running control-plane-operator pod should exist")
+
+				mf, err := v2util.GetMetricsFromPod(tc.Context, clientset, mgmtRestConfig, tc.ControlPlaneNamespace, runningPodName, "control-plane-operator", 8080)
+				g.Expect(err).NotTo(HaveOccurred(), "should be able to get CPO metrics")
+				for _, metricName := range kasMetricNames {
+					family, ok := mf[metricName]
+					g.Expect(ok).To(BeTrue(), "metric %s should be present in CPO metrics", metricName)
+					g.Expect(family.Metric).NotTo(BeEmpty(), "metric %s should have at least one data point", metricName)
+				}
+			}, 5*time.Minute, 10*time.Second).Should(Succeed())
 		})
 	})
 }
