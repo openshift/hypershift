@@ -3,6 +3,7 @@ package assets
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -441,5 +442,170 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(BeEquivalentTo(test.expectedVolumeMounts))
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElements(test.expectedEnvVars))
 		})
+	}
+}
+
+func TestExternalDNSDeployment_Build(t *testing.T) {
+	testNamespace := "hypershift"
+
+	tests := map[string]struct {
+		inputBuildParameters ExternalDNSDeployment
+		expectedArgs         []string
+	}{
+		"When no interval is specified it should use default 1m interval": {
+			inputBuildParameters: ExternalDNSDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				Image: "test-image",
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "external-dns",
+					},
+				},
+				Provider:     AWSExternalDNSProvider,
+				DomainFilter: "example.com",
+				TxtOwnerId:   "test-owner",
+			},
+			expectedArgs: []string{
+				"--interval=1m0s",
+			},
+		},
+		"When a custom interval is specified it should use the custom interval": {
+			inputBuildParameters: ExternalDNSDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				Image: "test-image",
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "external-dns",
+					},
+				},
+				Provider:     AWSExternalDNSProvider,
+				DomainFilter: "example.com",
+				TxtOwnerId:   "test-owner",
+				Interval:     10 * time.Minute,
+			},
+			expectedArgs: []string{
+				"--interval=10m0s",
+			},
+		},
+		"When no AWS batch change interval is specified it should use default 10s": {
+			inputBuildParameters: ExternalDNSDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				Image: "test-image",
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "external-dns",
+					},
+				},
+				Provider:     AWSExternalDNSProvider,
+				DomainFilter: "example.com",
+				TxtOwnerId:   "test-owner",
+			},
+			expectedArgs: []string{
+				"--aws-batch-change-interval=10s",
+			},
+		},
+		"When a custom AWS batch change interval is specified it should use the custom value": {
+			inputBuildParameters: ExternalDNSDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				Image: "test-image",
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "external-dns",
+					},
+				},
+				Provider:               AWSExternalDNSProvider,
+				DomainFilter:           "example.com",
+				TxtOwnerId:             "test-owner",
+				AWSBatchChangeInterval: 30 * time.Second,
+			},
+			expectedArgs: []string{
+				"--aws-batch-change-interval=30s",
+			},
+		},
+		"When Azure provider is used it should not include AWS batch change interval": {
+			inputBuildParameters: ExternalDNSDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				Image: "test-image",
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "external-dns",
+					},
+				},
+				Provider:     AzureExternalDNSProvider,
+				DomainFilter: "example.com",
+				TxtOwnerId:   "test-owner",
+				CredentialsSecret: &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "azure-creds",
+					},
+				},
+			},
+			expectedArgs: []string{
+				"--azure-config-file=/etc/provider/credentials",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			deployment := test.inputBuildParameters.Build()
+			args := deployment.Spec.Template.Spec.Containers[0].Args
+			for _, expectedArg := range test.expectedArgs {
+				g.Expect(args).To(ContainElement(expectedArg))
+			}
+		})
+	}
+}
+
+func TestExternalDNSDeployment_Build_AzureDoesNotContainAWSArgs(t *testing.T) {
+	g := NewGomegaWithT(t)
+	deployment := ExternalDNSDeployment{
+		Namespace: &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "hypershift",
+			},
+		},
+		Image: "test-image",
+		ServiceAccount: &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "external-dns",
+			},
+		},
+		Provider:     AzureExternalDNSProvider,
+		DomainFilter: "example.com",
+		TxtOwnerId:   "test-owner",
+		CredentialsSecret: &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "azure-creds",
+			},
+		},
+	}.Build()
+
+	args := deployment.Spec.Template.Spec.Containers[0].Args
+	for _, arg := range args {
+		g.Expect(arg).NotTo(ContainSubstring("--aws-batch-change-interval"))
+		g.Expect(arg).NotTo(ContainSubstring("--aws-zone-type"))
+		g.Expect(arg).NotTo(ContainSubstring("--aws-zones-cache-duration"))
 	}
 }

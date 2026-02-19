@@ -108,6 +108,8 @@ type Options struct {
 	ExternalDNSTxtOwnerId                     string
 	ExternalDNSImage                          string
 	ExternalDNSGoogleProject                  string
+	ExternalDNSInterval                       time.Duration
+	ExternalDNSAWSBatchChangeInterval         time.Duration
 	AdditionalOperatorEnvVars                 map[string]string
 	EnableAdminRBACGeneration                 bool
 	EnableUWMTelemetryRemoteWrite             bool
@@ -182,6 +184,12 @@ func (o *Options) Validate() error {
 		if len(o.ExternalDNSDomainFilter) == 0 {
 			errs = append(errs, fmt.Errorf("--external-dns-domain-filter is required with --external-dns-provider"))
 		}
+	}
+	if o.ExternalDNSInterval < 0 {
+		errs = append(errs, fmt.Errorf("--external-dns-interval must be >= 0"))
+	}
+	if o.ExternalDNSAWSBatchChangeInterval < 0 {
+		errs = append(errs, fmt.Errorf("--external-dns-aws-batch-change-interval must be >= 0"))
 	}
 	if o.HyperShiftImage != HyperShiftImage && len(o.ImageRefsFile) > 0 {
 		errs = append(errs, fmt.Errorf("only one of --hypershift-image or --image-refs-file should be specified"))
@@ -297,6 +305,8 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerId, "external-dns-txt-owner-id", "", "external-dns TXT registry owner ID.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSImage, "external-dns-image", opts.ExternalDNSImage, "Image to use for external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSGoogleProject, "external-dns-google-project", "", "Google Cloud project ID for DNS zone (optional for GCP provider; falls back to EXTERNAL_DNS_GOOGLE_PROJECT env var or GCP metadata server)")
+	cmd.PersistentFlags().DurationVar(&opts.ExternalDNSInterval, "external-dns-interval", 0, "How often external-dns performs a full sync to reconcile unmanaged DNS drift (default: 1m). Increase to reduce AWS API calls, e.g. 5m or 10m.")
+	cmd.PersistentFlags().DurationVar(&opts.ExternalDNSAWSBatchChangeInterval, "external-dns-aws-batch-change-interval", 0, "Minimum time between AWS Route53 batch changes (default: 10s). Increase to reduce AWS API calls.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", opts.EnableAdminRBACGeneration, "Generate RBAC manifests for hosted cluster admins")
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
@@ -986,15 +996,17 @@ func setupExternalDNS(opts Options, operatorNamespace *corev1.Namespace) ([]crcl
 	}
 
 	externalDNSDeployment := assets.ExternalDNSDeployment{
-		Namespace:         operatorNamespace,
-		Image:             opts.ExternalDNSImage,
-		ServiceAccount:    externalDNSServiceAccount,
-		Provider:          assets.ExternalDNSProvider(opts.ExternalDNSProvider),
-		DomainFilter:      opts.ExternalDNSDomainFilter,
-		CredentialsSecret: externalDNSSecret,
-		TxtOwnerId:        opts.ExternalDNSTxtOwnerId,
-		Proxy:             proxy,
-		GoogleProject:     opts.ExternalDNSGoogleProject,
+		Namespace:              operatorNamespace,
+		Image:                  opts.ExternalDNSImage,
+		ServiceAccount:         externalDNSServiceAccount,
+		Provider:               assets.ExternalDNSProvider(opts.ExternalDNSProvider),
+		DomainFilter:           opts.ExternalDNSDomainFilter,
+		CredentialsSecret:      externalDNSSecret,
+		TxtOwnerId:             opts.ExternalDNSTxtOwnerId,
+		Proxy:                  proxy,
+		GoogleProject:          opts.ExternalDNSGoogleProject,
+		Interval:               opts.ExternalDNSInterval,
+		AWSBatchChangeInterval: opts.ExternalDNSAWSBatchChangeInterval,
 	}.Build()
 	objects = append(objects, externalDNSDeployment)
 

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -188,6 +189,34 @@ func TestOptions_Validate(t *testing.T) {
 				ScaleFromZeroProvider:             "aws",
 				ScaleFromZeroCredentialsSecret:    "my-secret",
 				ScaleFromZeroCredentialsSecretKey: "credentials",
+			},
+			expectError: false,
+		},
+		"when external-dns-interval is negative it should error": {
+			inputOptions: Options{
+				PrivatePlatform:     string(hyperv1.NonePlatform),
+				ExternalDNSInterval: -1 * time.Second,
+			},
+			expectError: true,
+		},
+		"when external-dns-aws-batch-change-interval is negative it should error": {
+			inputOptions: Options{
+				PrivatePlatform:                   string(hyperv1.NonePlatform),
+				ExternalDNSAWSBatchChangeInterval: -5 * time.Second,
+			},
+			expectError: true,
+		},
+		"when external-dns-interval is zero it should not error": {
+			inputOptions: Options{
+				PrivatePlatform:     string(hyperv1.NonePlatform),
+				ExternalDNSInterval: 0,
+			},
+			expectError: false,
+		},
+		"when external-dns-interval is positive it should not error": {
+			inputOptions: Options{
+				PrivatePlatform:     string(hyperv1.NonePlatform),
+				ExternalDNSInterval: 5 * time.Minute,
 			},
 			expectError: false,
 		},

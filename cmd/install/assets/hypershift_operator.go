@@ -209,15 +209,17 @@ const (
 )
 
 type ExternalDNSDeployment struct {
-	Namespace         *corev1.Namespace
-	Image             string
-	ServiceAccount    *corev1.ServiceAccount
-	Provider          ExternalDNSProvider
-	DomainFilter      string
-	CredentialsSecret *corev1.Secret
-	TxtOwnerId        string
-	Proxy             *configv1.Proxy
-	GoogleProject     string
+	Namespace              *corev1.Namespace
+	Image                  string
+	ServiceAccount         *corev1.ServiceAccount
+	Provider               ExternalDNSProvider
+	DomainFilter           string
+	CredentialsSecret      *corev1.Secret
+	TxtOwnerId             string
+	Proxy                  *configv1.Proxy
+	GoogleProject          string
+	Interval               time.Duration
+	AWSBatchChangeInterval time.Duration
 }
 
 func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
@@ -226,6 +228,12 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 	if txtOwnerId == "" {
 		txtOwnerId = uuid.NewString()
 	}
+
+	interval := o.Interval
+	if interval == 0 {
+		interval = 1 * time.Minute
+	}
+
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Deployment",
@@ -268,7 +276,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 								"--txt-suffix=-external-dns",
 								fmt.Sprintf("--txt-owner-id=%s", txtOwnerId),
 								fmt.Sprintf("--label-filter=%s!=%s", hyperv1.RouteVisibilityLabel, hyperv1.RouteVisibilityPrivate),
-								"--interval=1m",
+								fmt.Sprintf("--interval=%s", interval),
 								"--txt-cache-interval=1h",
 							},
 							Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 7979}},
@@ -335,6 +343,10 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 	// Add platform specific settings
 	switch o.Provider {
 	case AWSExternalDNSProvider:
+		awsBatchChangeInterval := o.AWSBatchChangeInterval
+		if awsBatchChangeInterval == 0 {
+			awsBatchChangeInterval = 10 * time.Second
+		}
 		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env,
 			corev1.EnvVar{
 				Name:  "AWS_SHARED_CREDENTIALS_FILE",
@@ -348,7 +360,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 			})
 		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
 			"--aws-zone-type=public",
-			"--aws-batch-change-interval=10s",
+			fmt.Sprintf("--aws-batch-change-interval=%s", awsBatchChangeInterval),
 			"--aws-zones-cache-duration=1h",
 		)
 	case AzureExternalDNSProvider:
