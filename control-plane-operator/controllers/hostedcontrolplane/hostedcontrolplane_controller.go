@@ -52,6 +52,7 @@ import (
 	konnectivityv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/konnectivity_agent"
 	schedulerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kube_scheduler"
 	machineapproverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/machine_approver"
+	metricsproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/metrics_proxy"
 	ntov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/nto"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	oauthv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oauth"
@@ -264,6 +265,7 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		konnectivityv2.NewComponent(),
 		ignitionserverv2.NewComponent(r.ReleaseProvider, r.DefaultIngressDomain),
 		ignitionproxyv2.NewComponent(r.DefaultIngressDomain),
+		metricsproxyv2.NewComponent(r.DefaultIngressDomain),
 	)
 	r.components = append(r.components,
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
