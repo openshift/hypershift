@@ -12,6 +12,8 @@ import (
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
 	"github.com/spf13/pflag"
 )
 
@@ -54,6 +56,7 @@ func TestCreateCluster(t *testing.T) {
 
 			tempDir := t.TempDir()
 			manifestsFile := filepath.Join(tempDir, "manifests.yaml")
+			coreOpts.Client = fake.NewClientBuilder().Build()
 			coreOpts.Render = true
 			coreOpts.RenderInto = manifestsFile
 

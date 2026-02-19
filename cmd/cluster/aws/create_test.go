@@ -19,6 +19,8 @@ import (
 
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
 	"github.com/spf13/pflag"
 )
 
@@ -90,7 +92,6 @@ func TestCreateCluster(t *testing.T) {
 	certs.UnsafeSeed(1234567890)
 	ctx := framework.InterruptableContext(t.Context())
 	tempDir := t.TempDir()
-	t.Setenv("FAKE_CLIENT", "true")
 
 	rawCreds, err := json.Marshal(&awsutil.STSCreds{
 		Credentials: awsutil.Credentials{
@@ -230,6 +231,7 @@ func TestCreateCluster(t *testing.T) {
 
 			tempDir := t.TempDir()
 			manifestsFile := filepath.Join(tempDir, "manifests.yaml")
+			coreOpts.Client = fake.NewClientBuilder().Build()
 			coreOpts.Render = true
 			coreOpts.RenderInto = manifestsFile
 

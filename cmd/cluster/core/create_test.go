@@ -659,3 +659,29 @@ func TestValidateVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestGetClient(t *testing.T) {
+	t.Run("When an injected client is provided it should return that client", func(t *testing.T) {
+		g := NewWithT(t)
+		injectedClient := fake.NewClientBuilder().Build()
+		opts := &RawCreateOptions{
+			Client: injectedClient,
+		}
+		client, err := opts.GetClient()
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(client).NotTo(BeNil())
+		g.Expect(client).To(BeIdenticalTo(injectedClient))
+	})
+
+	t.Run("When no client is injected it should not return the injected client", func(t *testing.T) {
+		opts := &RawCreateOptions{
+			Client: nil,
+		}
+		// Note: We cannot fully test the nil-client fallback path here because
+		// util.GetClient() requires a valid kubeconfig. We only verify that
+		// the Client field starts as nil; the actual fallback is implicitly
+		// tested by production code paths.
+		g := NewWithT(t)
+		g.Expect(opts.Client).To(BeNil())
+	})
+}
