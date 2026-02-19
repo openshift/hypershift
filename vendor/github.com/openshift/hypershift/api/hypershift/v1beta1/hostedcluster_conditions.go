@@ -219,6 +219,12 @@ const (
 	// firewall rules, missing data plane nodes, or problems with infrastructure
 	// components like the konnectivity-agent workload.
 	DataPlaneConnectionAvailable ConditionType = "DataPlaneConnectionAvailable"
+
+	// ConfigOperatorReconciliationSucceeded indicates whether the HostedCluster Config Operator (HCCO)
+	// reconciliation succeeded. The HCCO reconciles resources inside the hosted cluster such as CRDs,
+	// global configuration, RBAC, and networking components.
+	// A failure here can indicate a software bug or a transient issue with the hosted cluster.
+	ConfigOperatorReconciliationSucceeded ConditionType = "ConfigOperatorReconciliationSucceeded"
 )
 
 // Reasons.
