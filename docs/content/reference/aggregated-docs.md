@@ -32924,6 +32924,12 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 <td><p>ClusterVersionUpgradeable indicates the Upgradeable condition in the
 underlying cluster&rsquo;s ClusterVersion.</p>
 </td>
+</tr><tr><td><p>&#34;ConfigOperatorReconciliationSucceeded&#34;</p></td>
+<td><p>ConfigOperatorReconciliationSucceeded indicates whether the HostedCluster Config Operator (HCCO)
+reconciliation succeeded. The HCCO reconciles resources inside the hosted cluster such as CRDs,
+global configuration, RBAC, and networking components.
+A failure here can indicate a software bug or a transient issue with the hosted cluster.</p>
+</td>
 </tr><tr><td><p>&#34;Available&#34;</p></td>
 <td><p>ControlPlaneComponentAvailable indicates whether the ControlPlaneComponent is available.</p>
 </td>
