@@ -186,9 +186,23 @@ type RawCreateOptions struct {
 	// This is intended primarily for e2e testing and should be used with care.
 	BeforeApply func(crclient.Object) `json:"-"`
 
+	// Client is an optional pre-configured Kubernetes client. When set, it is used instead of
+	// creating a new client via util.GetClient(). This enables unit testing CLI commands
+	// without requiring a live cluster connection.
+	Client crclient.Client `json:"-"`
+
 	// These fields are reverse-completed by the aws CLI since we support a flag that projects
 	// them back up here
 	PublicKey, PrivateKey, PullSecret []byte
+}
+
+// GetClient returns the injected client if available, otherwise creates a new one
+// via util.GetClient(). This supports dependency injection for testability.
+func (opts *RawCreateOptions) GetClient() (crclient.Client, error) {
+	if opts.Client != nil {
+		return opts.Client, nil
+	}
+	return util.GetClient()
 }
 
 type resources struct {
@@ -236,7 +250,7 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 	prototype := &resources{}
 	// allow client side defaulting when release image is empty but release stream is set.
 	if len(opts.ReleaseImage) == 0 && len(opts.ReleaseStream) != 0 {
-		client, err := util.GetClient()
+		client, err := opts.GetClient()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get client: %w", err)
 		}
@@ -559,11 +573,7 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 	return prototype, nil
 }
 
-func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, waitForRollout bool, mutate func(crclient.Object)) error {
-	client, err := util.GetClient()
-	if err != nil {
-		return err
-	}
+func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclient.Object, waitForRollout bool, mutate func(crclient.Object), client crclient.Client) error {
 	if mutate != nil {
 		for _, object := range objects {
 			mutate(object)
@@ -672,7 +682,7 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 
 	if opts.VersionCheck {
 		versionCLI := supportedversion.GetRevision()
-		client, err := util.GetClient()
+		client, err := opts.GetClient()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get client: %w", err)
 		}
@@ -693,7 +703,7 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 	}
 
 	if !opts.Render {
-		client, err := util.GetClient()
+		client, err := opts.GetClient()
 		if err != nil {
 			return nil, err
 		}
@@ -925,7 +935,11 @@ func CreateCluster(ctx context.Context, rawOpts *RawCreateOptions, rawPlatform P
 	}
 
 	// Otherwise, apply the objects
-	return apply(ctx, opts.Log, resources.Cluster.Spec.InfraID, resources.asObjects(), opts.Wait, opts.BeforeApply)
+	client, err := opts.GetClient()
+	if err != nil {
+		return err
+	}
+	return apply(ctx, opts.Log, resources.Cluster.Spec.InfraID, resources.asObjects(), opts.Wait, opts.BeforeApply, client)
 }
 
 type DefaultNodePoolConstructor func(platformType hyperv1.PlatformType, suffix string) *hyperv1.NodePool

@@ -44,6 +44,11 @@ type DestroyOptions struct {
 	Log                   logr.Logger
 	CredentialSecretName  string
 	RedactBaseDomain      bool
+
+	// Client is an optional pre-configured Kubernetes client. When set, it is used instead of
+	// creating a new client via util.GetClient(). This enables unit testing CLI commands
+	// without requiring a live cluster connection.
+	Client client.Client
 }
 
 type AWSPlatformDestroyOptions struct {
@@ -82,8 +87,17 @@ type PowerVSPlatformDestroyOptions struct {
 	TransitGateway         string
 }
 
+// getDestroyClient returns the injected client if available, otherwise creates a new one
+// via util.GetClient(). This supports dependency injection for testability.
+func getDestroyClient(o *DestroyOptions) (client.Client, error) {
+	if o.Client != nil {
+		return o.Client, nil
+	}
+	return util.GetClient()
+}
+
 func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster, error) {
-	c, err := util.GetClient()
+	c, err := getDestroyClient(o)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +118,7 @@ func GetCluster(ctx context.Context, o *DestroyOptions) (*hyperv1.HostedCluster,
 func DestroyCluster(ctx context.Context, hostedCluster *hyperv1.HostedCluster, o *DestroyOptions, destroyPlatformSpecifics DestroyPlatformSpecifics) error {
 	hostedClusterExists := hostedCluster != nil
 	shouldDestroyPlatformSpecifics := destroyPlatformSpecifics != nil
-	c, err := util.GetClient()
+	c, err := getDestroyClient(o)
 	if err != nil {
 		return err
 	}
