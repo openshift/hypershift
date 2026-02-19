@@ -56,9 +56,14 @@ type CreateOptions struct {
 }
 
 func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
-	var err error
 	if o.APIServerAddress == "" && !opts.Render {
-		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log)
+		var err error
+		if o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log); err != nil {
+			return nil, err
+		}
+	}
+	if o.APIServerAddress == "" && opts.Render {
+		opts.Log.Info("WARNING: rendering without --api-server-address; the generated manifests will require address patching before use")
 	}
 	if opts.DefaultDual {
 		// Using this AgentNamespace field because I cannot infer the Provider we are using at this point
@@ -73,7 +78,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		completedCreateOptions: &completedCreateOptions{
 			ValidatedCreateOptions: o,
 		},
-	}, err
+	}, nil
 }
 
 func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {

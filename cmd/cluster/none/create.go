@@ -46,15 +46,20 @@ type CreateOptions struct {
 }
 
 func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
-	var err error
-	if o.APIServerAddress == "" && !o.ExposeThroughLoadBalancer {
-		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log)
+	if o.APIServerAddress == "" && !o.ExposeThroughLoadBalancer && !opts.Render {
+		var err error
+		if o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log); err != nil {
+			return nil, err
+		}
+	}
+	if o.APIServerAddress == "" && opts.Render {
+		opts.Log.Info("WARNING: rendering without --external-api-server-address; the generated manifests will require address patching before use")
 	}
 	return &CreateOptions{
 		completedCreateOptions: &completedCreateOptions{
 			ValidatedCreateOptions: o,
 		},
-	}, err
+	}, nil
 }
 
 func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {

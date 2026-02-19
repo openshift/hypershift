@@ -49,6 +49,15 @@ func TestCreateCluster(t *testing.T) {
 				"--pull-secret=" + pullSecretFile,
 			},
 		},
+		{
+			name: "When rendering with explicit api-server-address it should preserve the address",
+			args: []string{
+				"--render-sensitive",
+				"--name=example",
+				"--api-server-address=192.168.1.100",
+				"--pull-secret=" + pullSecretFile,
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			flags := pflag.NewFlagSet(testCase.name, pflag.ContinueOnError)

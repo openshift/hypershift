@@ -1,0 +1,135 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: clusters
+spec: {}
+status: {}
+---
+apiVersion: v1
+data:
+  .dockerconfigjson: ZmFrZQ==
+kind: Secret
+metadata:
+  labels:
+    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
+  name: example-pull-secret
+  namespace: clusters
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: capi-provider-role
+rules:
+- apiGroups:
+  - agent-install.openshift.io
+  resources:
+  - agents
+  verbs:
+  - '*'
+---
+apiVersion: v1
+data:
+  key: P8a3Bz4jwHkAy5iAltw86/9a6wx/PWBFIsUtOt5jvQI=
+kind: Secret
+metadata:
+  labels:
+    hypershift.openshift.io/safe-to-delete-with-cluster: "true"
+  name: example-etcd-encryption-key
+  namespace: clusters
+type: Opaque
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: example
+  namespace: clusters
+spec:
+  autoscaling: {}
+  capabilities: {}
+  configuration: {}
+  controllerAvailabilityPolicy: SingleReplica
+  dns:
+    baseDomain: example.com
+  etcd:
+    managed:
+      storage:
+        persistentVolume:
+          size: 8Gi
+        type: PersistentVolume
+    managementType: Managed
+  fips: false
+  infraID: example-mbm2m
+  networking:
+    clusterNetwork:
+    - cidr: 10.132.0.0/14
+    networkType: OVNKubernetes
+    serviceNetwork:
+    - cidr: 172.31.0.0/16
+  olmCatalogPlacement: management
+  platform:
+    agent:
+      agentNamespace: ""
+    type: Agent
+  pullSecret:
+    name: example-pull-secret
+  release:
+    image: ""
+  secretEncryption:
+    aescbc:
+      activeKey:
+        name: example-etcd-encryption-key
+    type: aescbc
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      nodePort:
+        address: 192.168.1.100
+      type: NodePort
+  - service: Ignition
+    servicePublishingStrategy:
+      nodePort:
+        address: 192.168.1.100
+      type: NodePort
+  - service: Konnectivity
+    servicePublishingStrategy:
+      nodePort:
+        address: 192.168.1.100
+      type: NodePort
+  - service: OAuthServer
+    servicePublishingStrategy:
+      nodePort:
+        address: 192.168.1.100
+      type: NodePort
+  - service: OIDC
+    servicePublishingStrategy:
+      nodePort:
+        address: 192.168.1.100
+      type: NodePort
+  sshKey: {}
+status:
+  controlPlaneEndpoint:
+    host: ""
+    port: 0
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example
+  namespace: clusters
+spec:
+  arch: amd64
+  clusterName: example
+  management:
+    autoRepair: false
+    upgradeType: InPlace
+  nodeDrainTimeout: 0s
+  nodeVolumeDetachTimeout: 0s
+  platform:
+    agent: {}
+    type: Agent
+  release:
+    image: ""
+  replicas: 0
+status:
+  replicas: 0
+---
