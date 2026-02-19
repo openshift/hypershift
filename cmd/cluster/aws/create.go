@@ -125,7 +125,7 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		opts.EtcdStorageClass = "gp3-csi"
 	}
 
-	client, err := util.GetClient()
+	client, err := opts.GetClient()
 	if err != nil {
 		return nil, err
 	}
