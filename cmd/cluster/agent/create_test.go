@@ -42,7 +42,7 @@ func TestCreateCluster(t *testing.T) {
 			},
 		},
 		{
-			name: "render without api-server-address should not require cluster connectivity",
+			name: "When rendering without api-server-address, it should not require cluster connectivity",
 			args: []string{
 				"--render-sensitive",
 				"--name=example",

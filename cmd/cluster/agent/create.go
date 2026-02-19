@@ -65,6 +65,9 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 	if o.APIServerAddress == "" && opts.Render {
 		opts.Log.Info("WARNING: rendering without --api-server-address; the generated manifests will require address patching before use")
 	}
+	if o.APIServerAddress == "" && opts.Render {
+		opts.Log.Info("WARNING: rendering without --api-server-address, the rendered manifests will require the API server address to be set before applying")
+	}
 	if opts.DefaultDual {
 		// Using this AgentNamespace field because I cannot infer the Provider we are using at this point
 		// TODO (jparrill): Refactor this to use a 'forward' instead of a 'backward' logic flow
@@ -136,7 +139,7 @@ func (o *CreateOptions) GenerateResources() ([]crclient.Object, error) {
 var _ core.Platform = (*CreateOptions)(nil)
 
 func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
-	flags.StringVar(&opts.APIServerAddress, "api-server-address", opts.APIServerAddress, "The IP address to be used for the hosted cluster's Kubernetes API communication. Requires management cluster connectivity if left unset.")
+	flags.StringVar(&opts.APIServerAddress, "api-server-address", opts.APIServerAddress, "The IP address to be used for the hosted cluster's Kubernetes API communication. Requires management cluster connectivity if left unset. In render mode, this flag is optional and the rendered manifests will need the address set before applying.")
 	flags.StringVar(&opts.AgentNamespace, "agent-namespace", opts.AgentNamespace, "The namespace in which to search for Agents")
 	flags.StringVar(&opts.AgentLabelSelector, "agentLabelSelector", opts.AgentLabelSelector, "A LabelSelector for selecting Agents according to their labels, e.g., 'size=large,zone notin (az1,az2)'")
 }
