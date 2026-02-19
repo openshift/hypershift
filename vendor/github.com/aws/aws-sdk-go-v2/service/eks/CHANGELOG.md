@@ -1,3 +1,84 @@
+# v1.77.0 (2026-01-14)
+
+* **Feature**: Added support for BOTTLEROCKET NVIDIA FIPS AMIs to AMI types in US regions.
+
+# v1.76.4 (2026-01-09)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.76.3 (2025-12-09)
+
+* No change notes available for this release.
+
+# v1.76.2 (2025-12-08)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.76.1 (2025-12-02)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+* **Dependency Update**: Upgrade to smithy-go v1.24.0. Notably this version of the library reduces the allocation footprint of the middleware system. We observe a ~10% reduction in allocations per SDK call with this change.
+
+# v1.76.0 (2025-12-01)
+
+* **Feature**: This release adds support for EKS Capabilities
+
+# v1.75.1 (2025-11-25)
+
+* **Bug Fix**: Add error check for endpoint param binding during auth scheme resolution to fix panic reported in #3234
+
+# v1.75.0 (2025-11-21)
+
+* **Feature**: Adds support for controlPlaneScalingConfig on EKS Clusters.
+
+# v1.74.10 (2025-11-19.2)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.74.9 (2025-11-12)
+
+* **Bug Fix**: Further reduce allocation overhead when the metrics system isn't in-use.
+* **Bug Fix**: Reduce allocation overhead when the client doesn't have any HTTP interceptors configured.
+* **Bug Fix**: Remove blank trace spans towards the beginning of the request that added no additional information. This conveys a slight reduction in overall allocations.
+
+# v1.74.8 (2025-11-11)
+
+* **Bug Fix**: Return validation error if input region is not a valid host label.
+
+# v1.74.7 (2025-11-04)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+* **Dependency Update**: Upgrade to smithy-go v1.23.2 which should convey some passive reduction of overall allocations, especially when not using the metrics system.
+
+# v1.74.6 (2025-10-30)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.74.5 (2025-10-23)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.74.4 (2025-10-22)
+
+* No change notes available for this release.
+
+# v1.74.3 (2025-10-16)
+
+* **Dependency Update**: Bump minimum Go version to 1.23.
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.74.2 (2025-09-26)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.74.1 (2025-09-23)
+
+* **Dependency Update**: Updated to the latest SDK module versions
+
+# v1.74.0 (2025-09-22)
+
+* **Feature**: Adds support for RepairConfig overrides and configurations in EKS Managed Node Groups.
+
 # v1.73.3 (2025-09-10)
 
 * No change notes available for this release.
