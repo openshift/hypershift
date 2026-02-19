@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"sync"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -140,6 +141,7 @@ type nodePoolsMetricsCollector struct {
 	ec2Client     EC2API
 	pricingClient PricingAPI
 	clock         clock.Clock
+	mu            sync.Mutex
 
 	ec2InstanceTypeToVCpusCount            map[string]int32
 	ec2InstanceTypeToResolutionErrorReason map[string]errorReason
@@ -385,6 +387,8 @@ func (c *nodePoolsMetricsCollector) retrieveVCpusDetailsPerNode(nodePool *hyperv
 }
 
 func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	ctx := context.Background()
 	currentCollectTime := c.clock.Now()
 	log := ctrllog.Log
