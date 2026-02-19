@@ -136,7 +136,7 @@ func BindProductFlags(opts *RawCreateOptions, flags *pflag.FlagSet) {
 }
 
 // Validate validates the Azure create cluster command options
-func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (core.PlatformCompleter, error) {
+func (o *RawCreateOptions) Validate(ctx context.Context, _ *core.CreateOptions) (core.PlatformCompleter, error) {
 	var err error
 
 	// Check if the network security group is set and the resource group is not
@@ -180,9 +180,20 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 	}
 
 	// Validate the nodepool options
-	validOpts.ValidatedAzurePlatformCreateOptions, err = o.NodePoolOpts.Validate()
+	// Note: We pass nil for core.CreateNodePoolOptions since cluster create doesn't have NodePool options yet
+	completer, err := o.NodePoolOpts.Validate(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
 
-	return validOpts, err
+	// Type assert to get the validated options back
+	if validated, ok := completer.(*azurenodepool.ValidatedAzurePlatformCreateOptions); ok {
+		validOpts.ValidatedAzurePlatformCreateOptions = validated
+	} else {
+		return nil, fmt.Errorf("unexpected type returned from Validate")
+	}
+
+	return validOpts, nil
 }
 
 // Complete completes the Azure create cluster command options

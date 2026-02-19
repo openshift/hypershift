@@ -75,7 +75,7 @@ type ValidatedCreateOptions struct {
 type completedCreateOptions struct {
 	*ValidatedCreateOptions
 
-	CompletedNodePoolOpts *openstacknodepool.OpenStackPlatformCreateOptions
+	CompletedNodePoolOpts *openstacknodepool.CompletedOpenStackPlatformCreateOptions
 
 	externalDNSDomain string
 	name, namespace   string
@@ -96,9 +96,21 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 		},
 	}
 
-	completed, err := o.ValidatedOpenStackPlatformCreateOptions.Complete()
-	output.CompletedNodePoolOpts = completed
-	return output, err
+	// Complete the nodepool options
+	// Note: We pass nil for core.CreateNodePoolOptions since cluster create doesn't have NodePool options yet
+	platformOpts, err := o.ValidatedOpenStackPlatformCreateOptions.Complete(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Type assert to get the completed options back
+	if completed, ok := platformOpts.(*openstacknodepool.CompletedOpenStackPlatformCreateOptions); ok {
+		output.CompletedNodePoolOpts = completed
+	} else {
+		return nil, fmt.Errorf("unexpected type returned from Complete")
+	}
+
+	return output, nil
 }
 
 func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOptions) (core.PlatformCompleter, error) {
@@ -147,9 +159,21 @@ func (o *RawCreateOptions) Validate(ctx context.Context, opts *core.CreateOption
 		},
 	}
 
-	validOpts.ValidatedOpenStackPlatformCreateOptions, err = o.NodePoolOpts.Validate()
+	// Validate the nodepool options
+	// Note: We pass nil for core.CreateNodePoolOptions since cluster create doesn't have NodePool options yet
+	completer, err := o.NodePoolOpts.Validate(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
 
-	return validOpts, err
+	// Type assert to get the validated options back
+	if validated, ok := completer.(*openstacknodepool.ValidatedOpenStackPlatformCreateOptions); ok {
+		validOpts.ValidatedOpenStackPlatformCreateOptions = validated
+	} else {
+		return nil, fmt.Errorf("unexpected type returned from Validate")
+	}
+
+	return validOpts, nil
 }
 
 func (o *RawCreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) error {

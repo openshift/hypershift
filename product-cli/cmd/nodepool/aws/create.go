@@ -8,12 +8,7 @@ import (
 )
 
 func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
-	platformOpts := &hypershiftaws.AWSPlatformCreateOptions{
-		InstanceType:   "",
-		RootVolumeIOPS: 0,
-		RootVolumeSize: 120,
-		RootVolumeType: "gp3",
-	}
+	platformOpts := hypershiftaws.DefaultOptions()
 	cmd := &cobra.Command{
 		Use:          "aws",
 		Short:        "Creates basic functional NodePool resources for AWS platform",
@@ -29,7 +24,19 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	cmd.Flags().Int64Var(&platformOpts.RootVolumeSize, "root-volume-size", platformOpts.RootVolumeSize, "The size of the root volume for the NodePool machines.")
 	cmd.Flags().StringVar(&platformOpts.RootVolumeEncryptionKey, "root-volume-kms-key", platformOpts.RootVolumeEncryptionKey, "The KMS key ID or ARN to use for root volume encryption for the NodePool machines.")
 
-	cmd.RunE = coreOpts.CreateRunFunc(platformOpts)
+	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		validOpts, err := platformOpts.Validate(ctx, coreOpts)
+		if err != nil {
+			return err
+		}
+
+		opts, err := validOpts.Complete(ctx, coreOpts)
+		if err != nil {
+			return err
+		}
+		return coreOpts.CreateRunFunc(opts)(cmd, args)
+	}
 
 	return cmd
 }

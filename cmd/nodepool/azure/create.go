@@ -128,8 +128,9 @@ type CompletedAzurePlatformCreateOptions struct {
 	*completetedAzurePlatformCreateOptions
 }
 
-// TODO: HOSTEDCP-1974: Unify Validate/Complete Function Signatures Across Providers
-func (o *RawAzurePlatformCreateOptions) Validate() (*ValidatedAzurePlatformCreateOptions, error) {
+// Validate validates the Azure nodepool platform options.
+// This method uses the unified signature pattern defined in core.NodePoolPlatformValidator.
+func (o *RawAzurePlatformCreateOptions) Validate(_ context.Context, _ *core.CreateNodePoolOptions) (core.NodePoolPlatformCompleter, error) {
 	// Validate publisher, offer, sku, and version flags are provided if one of them is not empty
 	marketplaceImageInfo := map[string]*string{
 		"marketplace-publisher": &o.MarketplacePublisher,
@@ -164,7 +165,9 @@ func (o *RawAzurePlatformCreateOptions) Validate() (*ValidatedAzurePlatformCreat
 	}, nil
 }
 
-func (o *ValidatedAzurePlatformCreateOptions) Complete() (*CompletedAzurePlatformCreateOptions, error) {
+// Complete completes the Azure nodepool platform options.
+// This method uses the unified signature pattern defined in core.NodePoolPlatformCompleter.
+func (o *ValidatedAzurePlatformCreateOptions) Complete(_ context.Context, _ *core.CreateNodePoolOptions) (core.PlatformOptions, error) {
 	return &CompletedAzurePlatformCreateOptions{
 		completetedAzurePlatformCreateOptions: &completetedAzurePlatformCreateOptions{
 			AzurePlatformCreateOptions: o.AzurePlatformCreateOptions,
@@ -182,12 +185,13 @@ func NewCreateCommand(coreOpts *core.CreateNodePoolOptions) *cobra.Command {
 	}
 	BindDeveloperOptions(platformOpts, cmd.Flags())
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		validOpts, err := platformOpts.Validate()
+		ctx := cmd.Context()
+		validOpts, err := platformOpts.Validate(ctx, coreOpts)
 		if err != nil {
 			return err
 		}
 
-		opts, err := validOpts.Complete()
+		opts, err := validOpts.Complete(ctx, coreOpts)
 		if err != nil {
 			return err
 		}
