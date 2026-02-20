@@ -15,6 +15,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/gcpprivateserviceconnect"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/healthcheck"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/kas"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
@@ -476,6 +477,7 @@ func NewStartCommand() *cobra.Command {
 			OperateOnReleaseImage:                   os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 			DefaultIngressDomain:                    defaultIngressDomain,
 			MetricsSet:                              metricsSet,
+			KASHealthMetrics:                        kas.NewKASHealthMetrics(),
 			CertRotationScale:                       certRotationScale,
 			EnableCVOManagementClusterMetricsAccess: enableCVOManagementClusterMetricsAccess,
 			ImageMetadataProvider:                   imageMetaDataProvider,
