@@ -889,10 +889,12 @@ func setupMonitoring(opts Options, operatorNamespace *corev1.Namespace) []crclie
 // - Namespace hypershift-sharedingress (deleting it cascades to all namespaced resources)
 // - ClusterRole sharedingress-config-generator (cluster-scoped, needs explicit deletion)
 // - ClusterRoleBinding sharedingress-config-generator (cluster-scoped, needs explicit deletion)
-func setupSharedIngress() []crclient.Object {
-	const sharedIngressNamespace = "hypershift-sharedingress"
-	const sharedIngressRBACName = "sharedingress-config-generator"
+const (
+	sharedIngressNamespace = "hypershift-sharedingress"
+	sharedIngressRBACName  = "sharedingress-config-generator"
+)
 
+func setupSharedIngress() []crclient.Object {
 	namespace := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: sharedIngressNamespace,
@@ -908,6 +910,11 @@ func setupSharedIngress() []crclient.Object {
 	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: sharedIngressRBACName,
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     sharedIngressRBACName,
 		},
 	}
 

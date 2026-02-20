@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -330,7 +331,9 @@ func TestSetupCRDs(t *testing.T) {
 }
 
 func TestSetupSharedIngress(t *testing.T) {
+	t.Parallel()
 	t.Run("When setupSharedIngress is called it should return shared ingress namespace and cluster-scoped RBAC resources", func(t *testing.T) {
+		t.Parallel()
 		g := NewGomegaWithT(t)
 
 		objects := setupSharedIngress()
@@ -340,87 +343,99 @@ func TestSetupSharedIngress(t *testing.T) {
 		// Verify namespace
 		ns, ok := objects[0].(*corev1.Namespace)
 		g.Expect(ok).To(BeTrue(), "first object should be a Namespace")
-		g.Expect(ns.Name).To(Equal("hypershift-sharedingress"))
+		g.Expect(ns.Name).To(Equal(sharedIngressNamespace))
 
 		// Verify ClusterRole
 		cr, ok := objects[1].(*rbacv1.ClusterRole)
 		g.Expect(ok).To(BeTrue(), "second object should be a ClusterRole")
-		g.Expect(cr.Name).To(Equal("sharedingress-config-generator"))
+		g.Expect(cr.Name).To(Equal(sharedIngressRBACName))
 
 		// Verify ClusterRoleBinding
 		crb, ok := objects[2].(*rbacv1.ClusterRoleBinding)
 		g.Expect(ok).To(BeTrue(), "third object should be a ClusterRoleBinding")
-		g.Expect(crb.Name).To(Equal("sharedingress-config-generator"))
+		g.Expect(crb.Name).To(Equal(sharedIngressRBACName))
+		g.Expect(crb.RoleRef.APIGroup).To(Equal("rbac.authorization.k8s.io"))
+		g.Expect(crb.RoleRef.Kind).To(Equal("ClusterRole"))
+		g.Expect(crb.RoleRef.Name).To(Equal(sharedIngressRBACName))
 	})
 }
 
+func defaultSharedIngressTestOptions(managedService string) Options {
+	return Options{
+		Namespace:         "hypershift",
+		HyperShiftImage:   "test-image:latest",
+		ManagedService:    managedService,
+		PrivatePlatform:   string(hyperv1.NonePlatform),
+		RenderNamespace:   true,
+		ImagePullPolicy:   "IfNotPresent",
+		CertRotationScale: 24 * time.Hour,
+	}
+}
+
+func containsSharedIngressResources(objects []crclient.Object) (foundNamespace, foundClusterRole, foundClusterRoleBinding bool) {
+	for _, obj := range objects {
+		switch o := obj.(type) {
+		case *corev1.Namespace:
+			if o.Name == sharedIngressNamespace {
+				foundNamespace = true
+			}
+		case *rbacv1.ClusterRole:
+			if o.Name == sharedIngressRBACName {
+				foundClusterRole = true
+			}
+		case *rbacv1.ClusterRoleBinding:
+			if o.Name == sharedIngressRBACName {
+				foundClusterRoleBinding = true
+			}
+		}
+	}
+	return
+}
+
 func TestHyperShiftOperatorManifestsSharedIngress(t *testing.T) {
+	t.Parallel()
 	t.Run("When managed service is ARO-HCP it should include shared ingress resources in manifests", func(t *testing.T) {
+		t.Parallel()
 		g := NewGomegaWithT(t)
 
-		opts := Options{
-			Namespace:         "hypershift",
-			HyperShiftImage:   "test-image:latest",
-			ManagedService:    hyperv1.AroHCP,
-			PrivatePlatform:   string(hyperv1.NonePlatform),
-			RenderNamespace:   true,
-			ImagePullPolicy:   "IfNotPresent",
-			CertRotationScale: 24 * 3600000000000, // 24h in nanoseconds
-		}
+		opts := defaultSharedIngressTestOptions(hyperv1.AroHCP)
 
 		_, objects, err := hyperShiftOperatorManifests(t.Context(), nil, opts)
 		g.Expect(err).ToNot(HaveOccurred())
 
-		// Verify shared ingress namespace is present
-		var foundNamespace, foundClusterRole, foundClusterRoleBinding bool
-		for _, obj := range objects {
-			switch o := obj.(type) {
-			case *corev1.Namespace:
-				if o.Name == "hypershift-sharedingress" {
-					foundNamespace = true
-				}
-			case *rbacv1.ClusterRole:
-				if o.Name == "sharedingress-config-generator" {
-					foundClusterRole = true
-				}
-			case *rbacv1.ClusterRoleBinding:
-				if o.Name == "sharedingress-config-generator" {
-					foundClusterRoleBinding = true
-				}
-			}
-		}
-
+		foundNamespace, foundClusterRole, foundClusterRoleBinding := containsSharedIngressResources(objects)
 		g.Expect(foundNamespace).To(BeTrue(), "shared ingress namespace should be present")
 		g.Expect(foundClusterRole).To(BeTrue(), "shared ingress ClusterRole should be present")
 		g.Expect(foundClusterRoleBinding).To(BeTrue(), "shared ingress ClusterRoleBinding should be present")
 	})
 
-	t.Run("When managed service is not ARO-HCP it should not include shared ingress resources", func(t *testing.T) {
+	t.Run("When managed service is empty it should not include shared ingress resources", func(t *testing.T) {
+		t.Parallel()
 		g := NewGomegaWithT(t)
 
-		opts := Options{
-			Namespace:         "hypershift",
-			HyperShiftImage:   "test-image:latest",
-			ManagedService:    "",
-			PrivatePlatform:   string(hyperv1.NonePlatform),
-			RenderNamespace:   true,
-			ImagePullPolicy:   "IfNotPresent",
-			CertRotationScale: 24 * 3600000000000, // 24h in nanoseconds
-		}
+		opts := defaultSharedIngressTestOptions("")
 
 		_, objects, err := hyperShiftOperatorManifests(t.Context(), nil, opts)
 		g.Expect(err).ToNot(HaveOccurred())
 
-		// Verify shared ingress resources are NOT present
-		for _, obj := range objects {
-			switch o := obj.(type) {
-			case *corev1.Namespace:
-				g.Expect(o.Name).ToNot(Equal("hypershift-sharedingress"), "shared ingress namespace should not be present")
-			case *rbacv1.ClusterRole:
-				g.Expect(o.Name).ToNot(Equal("sharedingress-config-generator"), "shared ingress ClusterRole should not be present")
-			case *rbacv1.ClusterRoleBinding:
-				g.Expect(o.Name).ToNot(Equal("sharedingress-config-generator"), "shared ingress ClusterRoleBinding should not be present")
-			}
-		}
+		foundNamespace, foundClusterRole, foundClusterRoleBinding := containsSharedIngressResources(objects)
+		g.Expect(foundNamespace).To(BeFalse(), "shared ingress namespace should not be present")
+		g.Expect(foundClusterRole).To(BeFalse(), "shared ingress ClusterRole should not be present")
+		g.Expect(foundClusterRoleBinding).To(BeFalse(), "shared ingress ClusterRoleBinding should not be present")
+	})
+
+	t.Run("When managed service is a non-AroHCP value it should not include shared ingress resources", func(t *testing.T) {
+		t.Parallel()
+		g := NewGomegaWithT(t)
+
+		opts := defaultSharedIngressTestOptions("other-managed-service")
+
+		_, objects, err := hyperShiftOperatorManifests(t.Context(), nil, opts)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		foundNamespace, foundClusterRole, foundClusterRoleBinding := containsSharedIngressResources(objects)
+		g.Expect(foundNamespace).To(BeFalse(), "shared ingress namespace should not be present")
+		g.Expect(foundClusterRole).To(BeFalse(), "shared ingress ClusterRole should not be present")
+		g.Expect(foundClusterRoleBinding).To(BeFalse(), "shared ingress ClusterRoleBinding should not be present")
 	})
 }
