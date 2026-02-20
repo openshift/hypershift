@@ -65,9 +65,6 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 	if o.APIServerAddress == "" && opts.Render {
 		opts.Log.Info("WARNING: rendering without --api-server-address; the generated manifests will require address patching before use")
 	}
-	if o.APIServerAddress == "" && opts.Render {
-		opts.Log.Info("WARNING: rendering without --api-server-address, the rendered manifests will require the API server address to be set before applying")
-	}
 	if opts.DefaultDual {
 		// Using this AgentNamespace field because I cannot infer the Provider we are using at this point
 		// TODO (jparrill): Refactor this to use a 'forward' instead of a 'backward' logic flow
