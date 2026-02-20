@@ -4,6 +4,7 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -11,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	"github.com/blang/semver"
 	. "github.com/onsi/gomega"
@@ -21,6 +24,7 @@ import (
 	karpenteroperatorcpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	karpenterassets "github.com/openshift/hypershift/karpenter-operator/controllers/karpenter/assets"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	dto "github.com/prometheus/client_model/go"
@@ -52,6 +56,7 @@ func TestKarpenter(t *testing.T) {
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.AWSPlatform.AutoNode = true
 	clusterOpts.AWSPlatform.PublicOnly = false
+	clusterOpts.AWSPlatform.EndpointAccess = string(hyperv1.PublicAndPrivate)
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 	clusterOpts.ReleaseImage = globalOpts.PreviousReleaseImage
 
@@ -697,6 +702,140 @@ func TestKarpenter(t *testing.T) {
 				e2eutil.WithTimeout(2*time.Minute),
 			)
 			t.Logf("OpenshiftEC2NodeClass %q has SupportedVersionSkew=False for version %s (exceeds n-3 skew from CP %s)", nc.Name, skewVersion, cpVersion)
+		})
+
+		t.Run("Arbitrary subnet propagation", func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Get VPC ID and pick an AZ from existing subnets.
+			ec2client := ec2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+			vpcID := hostedCluster.Spec.Platform.AWS.CloudProviderConfig.VPC
+			subnetsOut, err := ec2client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
+				Filters: []ec2types.Filter{{Name: aws.String("vpc-id"), Values: []string{vpcID}}},
+			})
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(subnetsOut.Subnets).NotTo(BeEmpty())
+			az := aws.ToString(subnetsOut.Subnets[0].AvailabilityZone)
+
+			// Create a small test subnet in the VPC.
+			subnetID, cleanupSubnet := e2eutil.CreateTestSubnet(ctx, t, ec2client, vpcID, az, hostedCluster.Spec.InfraID)
+			t.Cleanup(cleanupSubnet)
+			t.Logf("Created test subnet %s in AZ %s", subnetID, az)
+
+			// Create an OpenshiftEC2NodeClass that selects the subnet by ID.
+			customNodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+				ObjectMeta: metav1.ObjectMeta{Name: "arbitrary-subnet-test"},
+				Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+					SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{{ID: subnetID}},
+					SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
+						{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
+					},
+				},
+			}
+			g.Expect(guestClient.Create(ctx, customNodeClass)).To(Succeed())
+			defer func() { _ = guestClient.Delete(ctx, customNodeClass) }()
+			t.Logf("Created OpenshiftEC2NodeClass %q selecting subnet %s", customNodeClass.Name, subnetID)
+
+			// Wait for OpenshiftEC2NodeClass.Status.Subnets to contain the subnet ID.
+			t.Logf("Waiting for OpenshiftEC2NodeClass status to reflect subnet %s", subnetID)
+			g.Eventually(func(g Gomega) {
+				nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+				g.Expect(guestClient.Get(ctx, crclient.ObjectKeyFromObject(customNodeClass), nc)).To(Succeed())
+				subnetIDs := make([]string, 0, len(nc.Status.Subnets))
+				for _, s := range nc.Status.Subnets {
+					subnetIDs = append(subnetIDs, s.ID)
+				}
+				g.Expect(subnetIDs).To(ContainElement(subnetID), "status.subnets should contain the test subnet")
+			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+			t.Logf("OpenshiftEC2NodeClass status.subnets contains %s", subnetID)
+
+			// Wait for the karpenter-subnets ConfigMap in the HCP namespace to contain the subnet ID.
+			hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+			t.Logf("Waiting for karpenter-subnets ConfigMap in %s to contain subnet %s", hcpNamespace, subnetID)
+			g.Eventually(func(g Gomega) {
+				cm := &corev1.ConfigMap{}
+				g.Expect(mgtClient.Get(ctx, crclient.ObjectKey{
+					Namespace: hcpNamespace,
+					Name:      karpenterutil.KarpenterSubnetsConfigMapName,
+				}, cm)).To(Succeed())
+				g.Expect(cm.Data).To(HaveKey("subnetIDs"))
+				var cmSubnetIDs []string
+				g.Expect(json.Unmarshal([]byte(cm.Data["subnetIDs"]), &cmSubnetIDs)).To(Succeed())
+				g.Expect(cmSubnetIDs).To(ContainElement(subnetID), "karpenter-subnets ConfigMap should contain the test subnet")
+			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+			t.Logf("karpenter-subnets ConfigMap contains subnet %s", subnetID)
+
+			// Wait for AWSEndpointService.Spec.SubnetIDs to include the subnet ID.
+			t.Logf("Waiting for AWSEndpointService kube-apiserver-private to include subnet %s", subnetID)
+			g.Eventually(func(g Gomega) {
+				endpointService := &hyperv1.AWSEndpointService{}
+				g.Expect(mgtClient.Get(ctx, crclient.ObjectKey{
+					Namespace: hcpNamespace,
+					Name:      "kube-apiserver-private",
+				}, endpointService)).To(Succeed())
+				g.Expect(endpointService.Spec.SubnetIDs).To(ContainElement(subnetID), "AWSEndpointService should include the test subnet")
+			}).WithTimeout(3 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+			t.Logf("AWSEndpointService kube-apiserver-private includes subnet %s", subnetID)
+
+			// Launch a node in the custom subnet to verify it's functional.
+			testNodePool := karpenterNodePool.DeepCopy()
+			testNodePool.SetResourceVersion("")
+			testNodePool.SetName("arbitrary-subnet-test")
+			spec := testNodePool.Object["spec"].(map[string]interface{})
+			template := spec["template"].(map[string]interface{})
+			templateSpec := template["spec"].(map[string]interface{})
+			templateSpec["nodeClassRef"] = map[string]interface{}{
+				"group": "karpenter.k8s.aws",
+				"kind":  "EC2NodeClass",
+				"name":  customNodeClass.Name,
+			}
+
+			testWorkLoads := workLoads.DeepCopy()
+			testWorkLoads.SetResourceVersion("")
+			testWorkLoads.SetName("arbitrary-subnet-web-app")
+			replicas := 1
+			testWorkLoads.Object["spec"].(map[string]interface{})["replicas"] = replicas
+
+			g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
+			t.Logf("Created Karpenter NodePool %q", testNodePool.GetName())
+			g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
+			t.Logf("Created workload %q with %d replica(s)", testWorkLoads.GetName(), replicas)
+			defer func() {
+				_ = guestClient.Delete(ctx, testWorkLoads)
+				_ = guestClient.Delete(ctx, testNodePool)
+			}()
+
+			testNodeLabels := map[string]string{
+				"karpenter.sh/nodepool": testNodePool.GetName(),
+			}
+			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), testNodeLabels)
+			t.Logf("Node launched in arbitrary subnet, verifying it used subnet %s", subnetID)
+
+			// Verify the launched node's EC2 instance is in the expected subnet.
+			for _, node := range nodes {
+				providerID := node.Spec.ProviderID
+				g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
+				parts := strings.Split(providerID, "/")
+				g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
+				instanceID := parts[4]
+
+				result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+					InstanceIds: []string{instanceID},
+				})
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(result.Reservations).NotTo(BeEmpty())
+				g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty())
+				instance := result.Reservations[0].Instances[0]
+				g.Expect(aws.ToString(instance.SubnetId)).To(Equal(subnetID),
+					"instance %s should be in subnet %s", instanceID, subnetID)
+				t.Logf("Instance %s confirmed in subnet %s", instanceID, subnetID)
+			}
+
+			// Clean up NodePool and workload; subnet cleanup is registered via t.Cleanup.
+			g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
+			g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
+			t.Logf("Waiting for arbitrary-subnet-test nodes to be removed")
+			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
 		})
 
 		// TODO(jkyros): This test doesn't clean up after itself (I think intentionally) so we can test general cluster
