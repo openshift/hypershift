@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/support/awsapi"
@@ -12,13 +13,12 @@ import (
 	"github.com/openshift/hypershift/support/util"
 
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/iam"
-	"github.com/aws/aws-sdk-go/service/iam/iamiface"
 	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/aws/aws-sdk-go/service/sqs"
 
@@ -73,10 +73,12 @@ func GetS3Client(ctx context.Context, awsCreds, awsRegion string) awsapi.S3API {
 	})
 }
 
-func GetIAMClient(awsCreds, awsRegion string) iamiface.IAMAPI {
-	awsSession := awsutil.NewSession("e2e-iam", awsCreds, "", "", awsRegion)
-	awsConfig := awsutil.NewConfig()
-	return iam.New(awsSession, awsConfig)
+func GetIAMClient(ctx context.Context, awsCreds, awsRegion string) awsapi.IAMAPI {
+	awsSession := awsutil.NewSessionV2(ctx, "e2e-iam", awsCreds, "", "", awsRegion)
+	awsConfig := awsutil.NewConfigV2()
+	return iam.NewFromConfig(*awsSession, func(o *iam.Options) {
+		o.Retryer = awsConfig()
+	})
 }
 
 func GetSQSClient(awsCreds, awsRegion string) *sqs.SQS {
@@ -85,35 +87,35 @@ func GetSQSClient(awsCreds, awsRegion string) *sqs.SQS {
 	return sqs.New(awsSession, awsConfig)
 }
 
-func PutRolePolicy(awsCreds, awsRegion, roleARN string, policy string) (func() error, error) {
-	iamClient := GetIAMClient(awsCreds, awsRegion)
+func PutRolePolicy(ctx context.Context, awsCreds, awsRegion, roleARN string, policy string) (func() error, error) {
+	iamClient := GetIAMClient(ctx, awsCreds, awsRegion)
 	roleName := roleARN[strings.LastIndex(roleARN, "/")+1:]
 	policyName := util.HashSimple(policy)
 
-	_, err := iamClient.PutRolePolicy(&iam.PutRolePolicyInput{
-		RoleName:       aws.String(roleName),
-		PolicyName:     aws.String(policyName),
-		PolicyDocument: aws.String(policy),
+	_, err := iamClient.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
+		RoleName:       awsv2.String(roleName),
+		PolicyName:     awsv2.String(policyName),
+		PolicyDocument: awsv2.String(policy),
 	})
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			if aerr.Code() == iam.ErrCodeNoSuchEntityException {
-				return nil, fmt.Errorf("role %s doesn't exist", roleARN)
-			}
+		var nse *iamtypes.NoSuchEntityException
+		if errors.As(err, &nse) {
+			return nil, fmt.Errorf("role %s doesn't exist", roleARN)
 		}
 		return nil, fmt.Errorf("failed to put role policy: %w", err)
 	}
 
 	cleanupFunc := func() error {
-		_, err := iamClient.DeleteRolePolicy(&iam.DeleteRolePolicyInput{
-			RoleName:   aws.String(roleName),
-			PolicyName: aws.String(policyName),
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		_, err := iamClient.DeleteRolePolicy(ctx, &iam.DeleteRolePolicyInput{
+			RoleName:   awsv2.String(roleName),
+			PolicyName: awsv2.String(policyName),
 		})
 		if err != nil {
-			if aerr, ok := err.(awserr.Error); ok {
-				if aerr.Code() == iam.ErrCodeNoSuchEntityException {
-					return nil
-				}
+			var nse *iamtypes.NoSuchEntityException
+			if errors.As(err, &nse) {
+				return nil
 			}
 			return fmt.Errorf("failed to delete role policy: %w", err)
 		}
@@ -123,8 +125,8 @@ func PutRolePolicy(awsCreds, awsRegion, roleARN string, policy string) (func() e
 	return cleanupFunc, nil
 }
 
-func DestroyOIDCProvider(log logr.Logger, iamClient iamiface.IAMAPI, issuerURL string) {
-	oidcProviderList, err := iamClient.ListOpenIDConnectProviders(&iam.ListOpenIDConnectProvidersInput{})
+func DestroyOIDCProvider(ctx context.Context, log logr.Logger, iamClient awsapi.IAMAPI, issuerURL string) {
+	oidcProviderList, err := iamClient.ListOpenIDConnectProviders(ctx, &iam.ListOpenIDConnectProvidersInput{})
 	if err != nil {
 		log.Error(err, "failed to list OIDC providers")
 		return
@@ -133,16 +135,12 @@ func DestroyOIDCProvider(log logr.Logger, iamClient iamiface.IAMAPI, issuerURL s
 	providerName := strings.TrimPrefix(issuerURL, "https://")
 	for _, provider := range oidcProviderList.OpenIDConnectProviderList {
 		if strings.Contains(*provider.Arn, providerName) {
-			_, err := iamClient.DeleteOpenIDConnectProvider(&iam.DeleteOpenIDConnectProviderInput{
+			_, err := iamClient.DeleteOpenIDConnectProvider(ctx, &iam.DeleteOpenIDConnectProviderInput{
 				OpenIDConnectProviderArn: provider.Arn,
 			})
 			if err != nil {
-				if aerr, ok := err.(awserr.Error); ok {
-					if aerr.Code() != iam.ErrCodeNoSuchEntityException {
-						log.Error(aerr, "Error deleting OIDC provider", "providerARN", provider.Arn)
-						return
-					}
-				} else {
+				var nse *iamtypes.NoSuchEntityException
+				if !errors.As(err, &nse) {
 					log.Error(err, "Error deleting OIDC provider", "providerARN", provider.Arn)
 					return
 				}
@@ -152,7 +150,6 @@ func DestroyOIDCProvider(log logr.Logger, iamClient iamiface.IAMAPI, issuerURL s
 			break
 		}
 	}
-
 }
 
 func CleanupOIDCBucketObjects(ctx context.Context, log logr.Logger, s3Client awsapi.S3API, bucketName, issuerURL string) {

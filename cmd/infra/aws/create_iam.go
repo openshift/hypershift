@@ -12,8 +12,9 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/iam"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,7 +45,7 @@ type CreateIAMOptions struct {
 
 	CredentialsSecretData *util.CredentialsSecretData
 
-	additionalIAMTags      []*iam.Tag
+	additionalIAMTags      []iamtypes.Tag
 	CreateKarpenterRoleARN bool
 	UseROSAManagedPolicies bool
 	SharedRole             bool
@@ -190,7 +191,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 		return nil, err
 	}
 
-	awsSession, err := o.AWSCredentialsOpts.GetSession("cli-create-iam", o.CredentialsSecretData, o.Region)
+	awsSession, err := o.AWSCredentialsOpts.GetSessionV2(ctx, "cli-create-iam", o.CredentialsSecretData, o.Region)
 	if err != nil {
 		return nil, err
 	}
@@ -200,8 +201,10 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 		sharedVPC = true
 	}
 
-	awsConfig := awsutil.NewConfig()
-	iamClient := iam.New(awsSession, awsConfig)
+	awsConfig := awsutil.NewConfigV2()
+	iamClient := iam.NewFromConfig(*awsSession, func(o *iam.Options) {
+		o.Retryer = awsConfig()
+	})
 
 	results, err := o.CreateOIDCResources(ctx, iamClient, logger, sharedVPC)
 	if err != nil {
@@ -209,11 +212,13 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	}
 
 	if sharedVPC {
-		vpcOwnerAWSSession, err := o.VPCOwnerCredentialsOpts.GetSession("cli-create-iam", nil, o.Region)
+		vpcOwnerAWSSession, err := o.VPCOwnerCredentialsOpts.GetSessionV2(ctx, "cli-create-iam", nil, o.Region)
 		if err != nil {
 			return nil, err
 		}
-		vpcOwnerIAMClient := iam.New(vpcOwnerAWSSession, awsConfig)
+		vpcOwnerIAMClient := iam.NewFromConfig(*vpcOwnerAWSSession, func(o *iam.Options) {
+			o.Retryer = awsConfig()
+		})
 
 		route53RoleClient := vpcOwnerIAMClient
 		if o.PrivateZonesInClusterAccount {
@@ -230,7 +235,7 @@ func (o *CreateIAMOptions) CreateIAM(ctx context.Context, client crclient.Client
 	profileName := DefaultProfileName(o.InfraID)
 	results.ProfileName = profileName
 	results.KMSKeyARN = o.KMSKeyARN
-	err = o.CreateWorkerInstanceProfile(iamClient, profileName, logger)
+	err = o.CreateWorkerInstanceProfile(ctx, iamClient, profileName, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +250,7 @@ func (o *CreateIAMOptions) ParseAdditionalTags() error {
 		return err
 	}
 	for k, v := range parsed {
-		o.additionalIAMTags = append(o.additionalIAMTags, &iam.Tag{
+		o.additionalIAMTags = append(o.additionalIAMTags, iamtypes.Tag{
 			Key:   aws.String(k),
 			Value: aws.String(v),
 		})
