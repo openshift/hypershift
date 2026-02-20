@@ -130,6 +130,7 @@ func (s *SpotTerminationHandlerTest) Run(t *testing.T, nodePool hyperv1.NodePool
 
 		t.Logf("Adding SQS policy to NodePool role %s", s.hostedCluster.Spec.Platform.AWS.RolesRef.NodePoolManagementARN)
 		cleanupSQSPolicy, err := e2eutil.PutRolePolicy(
+			s.ctx,
 			s.clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile,
 			s.clusterOpts.AWSPlatform.Region,
 			s.hostedCluster.Spec.Platform.AWS.RolesRef.NodePoolManagementARN,
