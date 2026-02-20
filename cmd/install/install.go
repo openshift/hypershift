@@ -37,6 +37,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -664,6 +665,12 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 	}.Build()
 	objects = append(objects, techPreviewCM)
 
+	// Setup Shared Ingress resources (for ARO-HCP managed service)
+	if opts.ManagedService == hyperv1.AroHCP {
+		sharedIngressObjs := setupSharedIngress()
+		objects = append(objects, sharedIngressObjs...)
+	}
+
 	// Setup Monitoring resources
 	monitoringObjs := setupMonitoring(opts, operatorNamespace)
 	objects = append(objects, monitoringObjs...)
@@ -869,6 +876,42 @@ func setupMonitoring(opts Options, operatorNamespace *corev1.Namespace) []crclie
 		objects = append(objects, monitoringDashboardTemplate)
 	}
 	return objects
+}
+
+// setupSharedIngress creates the shared ingress resources that need to be included
+// in the rendered manifests for proper cleanup during uninstallation.
+//
+// The shared ingress controller dynamically creates resources in the hypershift-sharedingress
+// namespace at runtime. Without including these resources in the rendered output, they remain
+// orphaned when the operator is uninstalled via `hypershift install render ... | oc delete -f -`.
+//
+// This includes:
+// - Namespace hypershift-sharedingress (deleting it cascades to all namespaced resources)
+// - ClusterRole sharedingress-config-generator (cluster-scoped, needs explicit deletion)
+// - ClusterRoleBinding sharedingress-config-generator (cluster-scoped, needs explicit deletion)
+func setupSharedIngress() []crclient.Object {
+	const sharedIngressNamespace = "hypershift-sharedingress"
+	const sharedIngressRBACName = "sharedingress-config-generator"
+
+	namespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: sharedIngressNamespace,
+		},
+	}
+
+	clusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: sharedIngressRBACName,
+		},
+	}
+
+	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: sharedIngressRBACName,
+		},
+	}
+
+	return []crclient.Object{namespace, clusterRole, clusterRoleBinding}
 }
 
 // setupOperatorResources creates the operator Deployment and Service resources.
