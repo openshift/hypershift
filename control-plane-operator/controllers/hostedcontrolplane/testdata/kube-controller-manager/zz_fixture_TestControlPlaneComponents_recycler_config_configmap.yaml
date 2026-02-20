@@ -34,6 +34,17 @@ data:
         - name: vol
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/last-applied-configuration: '{"apiVersion":"v1","data":{"recycler-pod.yaml":"apiVersion:
+      v1\nkind: Pod\nmetadata:\n  name: recycler-pod\n  namespace: openshift-infra\n  annotations:\n    target.workload.openshift.io/management:
+      ''{\"effect\": \"PreferredDuringScheduling\"}''\nspec:\n  activeDeadlineSeconds:
+      60\n  restartPolicy: Never\n  serviceAccountName: pv-recycler-controller\n  containers:\n    -
+      name: recycler-container\n      image: tools\n      command:\n      - \"/bin/bash\"\n      args:\n      -
+      \"-c\"\n      - \"test -e /scrub \u0026\u0026 rm -rf /scrub/..?* /scrub/.[!.]*
+      /scrub/*  \u0026\u0026 test -z \\\"$(ls -A /scrub)\\\" || exit 1\"\n      volumeMounts:\n        -
+      mountPath: /scrub\n          name: vol\n      securityContext:\n        runAsUser:
+      0\n      priorityClassName: openshift-user-critical\n      resources:\n        requests:\n          memory:
+      50Mi\n          cpu: 10m\n  volumes:\n    - name: vol\n"},"kind":"ConfigMap","metadata":{"name":"recycler-config","namespace":"hcp-namespace","ownerReferences":[{"apiVersion":"hypershift.openshift.io/v1beta1","blockOwnerDeletion":true,"controller":true,"kind":"HostedControlPlane","name":"hcp","uid":""}]}}'
   name: recycler-config
   namespace: hcp-namespace
   ownerReferences:

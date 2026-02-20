@@ -5,6 +5,9 @@ data:
       disabled: false
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/last-applied-configuration: '{"apiVersion":"v1","data":{"config.yaml":"nodeclientcert:\n  disabled:
+      false\n"},"kind":"ConfigMap","metadata":{"name":"machine-approver-config","namespace":"hcp-namespace","ownerReferences":[{"apiVersion":"hypershift.openshift.io/v1beta1","blockOwnerDeletion":true,"controller":true,"kind":"HostedControlPlane","name":"hcp","uid":""}]}}'
   name: machine-approver-config
   namespace: hcp-namespace
   ownerReferences:

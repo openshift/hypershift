@@ -14,6 +14,10 @@ data:
   profile: Default
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/last-applied-configuration: '{"apiVersion":"v1","data":{"policy.yaml":"apiVersion:
+      audit.k8s.io/v1\nkind: Policy\nrules:\n- level: None\n  nonResourceURLs:\n  -
+      \"/healthz*\"\n  - \"/logs\"\n  - \"/metrics\"\n  - \"/version\"\n- level: Metadata\n","profile":"Default"},"kind":"ConfigMap","metadata":{"name":"oauth-openshift-audit","namespace":"hcp-namespace","ownerReferences":[{"apiVersion":"hypershift.openshift.io/v1beta1","blockOwnerDeletion":true,"controller":true,"kind":"HostedControlPlane","name":"hcp","uid":""}]}}'
   name: oauth-openshift-audit
   namespace: hcp-namespace
   ownerReferences:

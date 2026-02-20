@@ -4,6 +4,10 @@ data:
     = Shared"
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/last-applied-configuration: '{"apiVersion":"v1","data":{"aws.conf":"[Global]\nZone
+      = \nVPC = \nKubernetesClusterID = \nSubnetID = \nClusterServiceLoadBalancerHealthProbeMode
+      = Shared"},"kind":"ConfigMap","metadata":{"name":"aws-cloud-config","namespace":"hcp-namespace","ownerReferences":[{"apiVersion":"hypershift.openshift.io/v1beta1","blockOwnerDeletion":true,"controller":true,"kind":"HostedControlPlane","name":"hcp","uid":""}]}}'
   name: aws-cloud-config
   namespace: hcp-namespace
   ownerReferences:

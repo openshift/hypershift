@@ -1,6 +1,85 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  annotations:
+    hypershift.openshift.io/last-applied-configuration: '{"apiVersion":"apps/v1","kind":"Deployment","metadata":{"labels":{"hypershift.openshift.io/managed-by":"control-plane-operator"},"name":"cluster-version-operator","namespace":"hcp-namespace","ownerReferences":[{"apiVersion":"hypershift.openshift.io/v1beta1","blockOwnerDeletion":true,"controller":true,"kind":"HostedControlPlane","name":"hcp","uid":""}]},"spec":{"replicas":1,"revisionHistoryLimit":2,"selector":{"matchLabels":{"app":"cluster-version-operator","k8s-app":"cluster-version-operator"}},"strategy":{"rollingUpdate":{"maxSurge":"25%","maxUnavailable":"25%"},"type":"RollingUpdate"},"template":{"metadata":{"annotations":{"cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes":"payload,update-payloads,tmp-dir","component.hypershift.openshift.io/config-hash":"","hypershift.openshift.io/release-image":"quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64"},"labels":{"app":"cluster-version-operator","hypershift.openshift.io/control-plane-component":"cluster-version-operator","hypershift.openshift.io/hosted-control-plane":"hcp-namespace","k8s-app":"cluster-version-operator"}},"spec":{"affinity":{"nodeAffinity":{"preferredDuringSchedulingIgnoredDuringExecution":[{"preference":{"matchExpressions":[{"key":"hypershift.openshift.io/control-plane","operator":"In","values":["true"]}]},"weight":50},{"preference":{"matchExpressions":[{"key":"hypershift.openshift.io/cluster","operator":"In","values":["hcp-namespace"]}]},"weight":100}]},"podAffinity":{"preferredDuringSchedulingIgnoredDuringExecution":[{"podAffinityTerm":{"labelSelector":{"matchLabels":{"hypershift.openshift.io/hosted-control-plane":"hcp-namespace"}},"topologyKey":"kubernetes.io/hostname"},"weight":100}]}},"automountServiceAccountToken":false,"containers":[{"args":["start","--release-image","$(RELEASE_IMAGE)","--enable-auto-update=false","--kubeconfig","/etc/openshift/kubeconfig/kubeconfig","--listen=0.0.0.0:8443","--serving-cert-file=/etc/kubernetes/certs/server/tls.crt","--serving-key-file=/etc/kubernetes/certs/server/tls.key","--hypershift=true","--v=4"],"command":["cluster-version-operator"],"env":[{"name":"PAYLOAD_OVERRIDE","value":"/var/payload"},{"name":"CLUSTER_PROFILE","value":"ibm-cloud-managed"},{"name":"RELEASE_IMAGE","value":"quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64"},{"name":"NODE_NAME","valueFrom":{"fieldRef":{"apiVersion":"v1","fieldPath":"spec.nodeName"}}}],"image":"cluster-version-operator","imagePullPolicy":"IfNotPresent","name":"cluster-version-operator","ports":[{"containerPort":8443,"name":"https","protocol":"TCP"}],"resources":{"requests":{"cpu":"20m","memory":"70Mi"}},"securityContext":{"readOnlyRootFilesystem":true},"terminationMessagePolicy":"FallbackToLogsOnError","volumeMounts":[{"mountPath":"/etc/openshift/kubeconfig","name":"kubeconfig"},{"mountPath":"/var/payload","name":"payload"},{"mountPath":"/etc/kubernetes/certs/server","name":"server-crt"},{"mountPath":"/etc/cvo/updatepayloads","name":"update-payloads"},{"mountPath":"/tmp","name":"tmp-dir"}]}],"initContainers":[{"command":["/usr/bin/control-plane-operator","availability-prober","--target","https://kube-apiserver:6443/readyz","--kubeconfig=/var/kubeconfig/kubeconfig"],"image":"availability-prober","imagePullPolicy":"IfNotPresent","name":"availability-prober","resources":{},"terminationMessagePolicy":"FallbackToLogsOnError","volumeMounts":[{"mountPath":"/var/kubeconfig","name":"kubeconfig"}]},{"args":["-c","cp
+      -R /manifests /var/payload/\nrm -f /var/payload/manifests/*_deployment.yaml\nrm
+      -f /var/payload/manifests/*_servicemonitor.yaml\ncp -R /release-manifests /var/payload/\nrm
+      -f /var/payload/manifests/*-Default*.yaml\nrm -f /var/payload/manifests/*-CustomNoUpgrade*.yaml\nrm
+      -f /var/payload/manifests/*-DevPreviewNoUpgrade*.yaml\nrm -f /var/payload/manifests/*-OKD*.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_olm_00-pprof-config.yaml\nrm -f /var/payload/release-manifests/0000_50_olm_00-pprof-rbac.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_olm_00-pprof-secret.yaml\nrm -f /var/payload/release-manifests/0000_50_olm_01-olm-operator.serviceaccount.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_olm_02-services.yaml\nrm -f /var/payload/release-manifests/0000_50_olm_06-psm-operator.deployment.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_olm_06-psm-operator.deployment.ibm-cloud-managed.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_olm_06-psm-operator.service.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_olm_06-psm-operator.servicemonitor.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_olm_07-olm-operator.deployment.ibm-cloud-managed.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_olm_07-olm-operator.deployment.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_olm_07-collect-profiles.cronjob.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_olm_08-catalog-operator.deployment.ibm-cloud-managed.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_olm_08-catalog-operator.deployment.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_olm_15-packageserver.clusterserviceversion.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_olm_99-operatorstatus.yaml\nrm -f
+      /var/payload/release-manifests/0000_90_olm_00-service-monitor.yaml\nrm -f /var/payload/release-manifests/0000_50_operator-marketplace_04_service_account.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_operator-marketplace_05_role.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_operator-marketplace_06_role_binding.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_operator-marketplace_07_configmap.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_operator-marketplace_08_service.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_operator-marketplace_09_operator-ibm-cloud-managed.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_operator-marketplace_09_operator.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_operator-marketplace_10_clusteroperator.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_operator-marketplace_11_service_monitor.yaml\nrm
+      -f /var/payload/release-manifests/0000_70_dns-operator_02-deployment-ibm-cloud-managed.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_cluster-ingress-operator_02-deployment-ibm-cloud-managed.yaml\nrm
+      -f /var/payload/release-manifests/0000_70_cluster-network-operator_03_deployment-ibm-cloud-managed.yaml\nrm
+      -f /var/payload/release-manifests/0000_80_machine-config_01_containerruntimeconfigs.crd.yaml\nrm
+      -f /var/payload/release-manifests/0000_80_machine-config_01_kubeletconfigs.crd.yaml\nrm
+      -f /var/payload/release-manifests/0000_80_machine-config_01_machineconfigs.crd.yaml\nrm
+      -f /var/payload/release-manifests/0000_80_machine-config_01_machineconfigpools-Default.crd.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_cluster-node-tuning-operator_20-performance-profile.crd.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_cluster-node-tuning-operator_50-operator-ibm-cloud-managed.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_cluster-image-registry-operator_07-operator-ibm-cloud-managed.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_cluster-image-registry-operator_07-operator-service.yaml\nrm
+      -f /var/payload/release-manifests/0000_90_cluster-image-registry-operator_02_operator-servicemonitor.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_cloud-credential-operator_01-operator-config.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_cluster-authentication-operator_02_config.cr.yaml\nrm
+      -f /var/payload/release-manifests/0000_90_etcd-operator_03_prometheusrule.yaml\nrm
+      -f /var/payload/release-manifests/0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml\nrm
+      -f /var/payload/release-manifests/0000_03_marketplace-operator_02_operatorhub.cr.yaml\ncat
+      \u003e /var/payload/release-manifests/0000_01_cleanup.yaml \u003c\u003cEOF\n---\napiVersion:
+      apiextensions.k8s.io/v1\nkind: CustomResourceDefinition\nmetadata:\n  name:
+      machineconfigs.machineconfiguration.openshift.io\n  annotations:\n    include.release.openshift.io/ibm-cloud-managed:
+      \"true\"\n    release.openshift.io/delete: \"true\"\n---\napiVersion: apiextensions.k8s.io/v1\nkind:
+      CustomResourceDefinition\nmetadata:\n  name: machineconfigpools.machineconfiguration.openshift.io\n  annotations:\n    include.release.openshift.io/ibm-cloud-managed:
+      \"true\"\n    release.openshift.io/delete: \"true\"\n---\napiVersion: apps/v1\nkind:
+      Deployment\nmetadata:\n  name: network-operator\n  namespace: openshift-network-operator\n  annotations:\n    include.release.openshift.io/ibm-cloud-managed:
+      \"true\"\n    release.openshift.io/delete: \"true\"\n---\napiVersion: rbac.authorization.k8s.io/v1\nkind:
+      ClusterRoleBinding\nmetadata:\n  name: default-account-cluster-network-operator\n  annotations:\n    include.release.openshift.io/ibm-cloud-managed:
+      \"true\"\n    release.openshift.io/delete: \"true\"\n---\napiVersion: apps/v1\nkind:
+      Deployment\nmetadata:\n  name: cluster-node-tuning-operator\n  namespace: openshift-cluster-node-tuning-operator\n  annotations:\n    include.release.openshift.io/ibm-cloud-managed:
+      \"true\"\n    release.openshift.io/delete: \"true\"\n---\napiVersion: apps/v1\nkind:
+      Deployment\nmetadata:\n  name: cluster-image-registry-operator\n  namespace:
+      openshift-image-registry\n  annotations:\n    include.release.openshift.io/ibm-cloud-managed:
+      \"true\"\n    release.openshift.io/delete: \"true\"\n---\napiVersion: apps/v1\nkind:
+      Deployment\nmetadata:\n  name: cluster-storage-operator\n  namespace: openshift-cluster-storage-operator\n  annotations:\n    include.release.openshift.io/ibm-cloud-managed:
+      \"true\"\n    release.openshift.io/delete: \"true\"\n---\napiVersion: apps/v1\nkind:
+      Deployment\nmetadata:\n  name: csi-snapshot-controller-operator\n  namespace:
+      openshift-cluster-storage-operator\n  annotations:\n    include.release.openshift.io/ibm-cloud-managed:
+      \"true\"\n    release.openshift.io/delete: \"true\"\n---\napiVersion: apps/v1\nkind:
+      Deployment\nmetadata:\n  name: aws-ebs-csi-driver-operator\n  namespace: openshift-cluster-csi-drivers\n  annotations:\n    include.release.openshift.io/ibm-cloud-managed:
+      \"true\"\n    release.openshift.io/delete: \"true\"\n---\napiVersion: apps/v1\nkind:
+      Deployment\nmetadata:\n  name: aws-ebs-csi-driver-controller\n  namespace: openshift-cluster-csi-drivers\n  annotations:\n    include.release.openshift.io/ibm-cloud-managed:
+      \"true\"\n    release.openshift.io/delete: \"true\"\n---\napiVersion: apps/v1\nkind:
+      Deployment\nmetadata:\n  name: csi-snapshot-controller\n  namespace: openshift-cluster-storage-operator\n  annotations:\n    include.release.openshift.io/ibm-cloud-managed:
+      \"true\"\n    release.openshift.io/delete: \"true\"\nEOF"],"command":["/bin/bash"],"image":"quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64","imagePullPolicy":"IfNotPresent","name":"prepare-payload","resources":{"requests":{"cpu":"10m","memory":"20Mi"}},"terminationMessagePolicy":"FallbackToLogsOnError","volumeMounts":[{"mountPath":"/var/payload","name":"payload"}]},{"args":["-c","#!/bin/bash\nset
+      -euo pipefail\ncat \u003e /tmp/clusterversion.json \u003c\u003cEOF\n${CLUSTER_VERSION_JSON}\nEOF\noc
+      get ns openshift-config \u0026\u003e /dev/null || oc create ns openshift-config\noc
+      get ns openshift-config-managed \u0026\u003e /dev/null || oc create ns openshift-config-managed\noc
+      apply -f /var/payload/manifests/0000_00_cluster-version-operator_01_clusterversions*\noc
+      apply -f /tmp/clusterversion.json\nwhile true; do\n  echo \"Applying CVO bootstrap
+      manifests...\"\n  if oc apply -f /var/payload/manifests; then\n    echo \"Bootstrap
+      manifests applied successfully.\"\n    break\n  fi\n  sleep 1\ndone\n"],"command":["/bin/bash"],"env":[{"name":"KUBECONFIG","value":"/etc/kubernetes/kubeconfig"},{"name":"CLUSTER_VERSION_JSON","value":"{\"kind\":\"ClusterVersion\",\"apiVersion\":\"config.openshift.io/v1\",\"metadata\":{\"name\":\"version\"},\"spec\":{\"clusterID\":\"\",\"capabilities\":{\"baselineCapabilitySet\":\"None\",\"additionalEnabledCapabilities\":[\"Build\",\"CSISnapshot\",\"CloudControllerManager\",\"CloudCredential\",\"Console\",\"DeploymentConfig\",\"ImageRegistry\",\"Ingress\",\"Insights\",\"MachineAPI\",\"NodeTuning\",\"OperatorLifecycleManager\",\"OperatorLifecycleManagerV1\",\"Storage\",\"marketplace\",\"openshift-samples\"]},\"signatureStores\":null},\"status\":{\"desired\":{\"version\":\"\",\"image\":\"\"},\"observedGeneration\":0,\"versionHash\":\"\",\"capabilities\":{},\"availableUpdates\":null}}"}],"image":"cli","imagePullPolicy":"IfNotPresent","name":"bootstrap","resources":{"requests":{"cpu":"10m","memory":"10Mi"}},"terminationMessagePolicy":"FallbackToLogsOnError","volumeMounts":[{"mountPath":"/etc/kubernetes","name":"kubeconfig"},{"mountPath":"/var/payload","name":"payload"}]}],"priorityClassName":"hypershift-control-plane","tolerations":[{"effect":"NoSchedule","key":"hypershift.openshift.io/control-plane","operator":"Equal","value":"true"},{"effect":"NoSchedule","key":"hypershift.openshift.io/cluster","operator":"Equal","value":"hcp-namespace"}],"volumes":[{"emptyDir":{},"name":"payload"},{"name":"kubeconfig","secret":{"defaultMode":416,"secretName":"service-network-admin-kubeconfig"}},{"emptyDir":{},"name":"update-payloads"},{"name":"server-crt","secret":{"defaultMode":416,"secretName":"cvo-server"}},{"emptyDir":{},"name":"tmp-dir"}]}}}}'
   labels:
     hypershift.openshift.io/managed-by: control-plane-operator
   name: cluster-version-operator

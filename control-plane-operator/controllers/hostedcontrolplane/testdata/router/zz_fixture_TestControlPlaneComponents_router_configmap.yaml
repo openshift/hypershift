@@ -29,6 +29,16 @@ data:
       monitor-uri /haproxy_ready
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/last-applied-configuration: '{"apiVersion":"v1","data":{"haproxy.cfg":"global\n  log
+      stdout local0\n  maxconn 20000\n\ndefaults\n  mode tcp\n  log global\n  log-format
+      \"%ci:%cp -\u003e %fi:%fp [%t] %ft %b/%s %Tw/%Tc/%Tt %B %ts %ac/%fc/%bc/%sc/%rc
+      %sq/%bq\"\n  option  dontlognull\n  retries 3\n  timeout http-request 30s\n  timeout
+      queue        1m\n  timeout connect      10s\n  timeout client       86400s\n  timeout
+      server       86400s\n  timeout tunnel       86400s\n\nfrontend main\n  bind
+      :::8443 v4v6\n  tcp-request inspect-delay 5s\n  tcp-request content accept if
+      { req_ssl_hello_type 1 }\n\nlisten health_check_http_url\n  bind :::9444 v4v6\n  mode
+      http\n  monitor-uri /haproxy_ready\n"},"kind":"ConfigMap","metadata":{"name":"router","namespace":"hcp-namespace","ownerReferences":[{"apiVersion":"hypershift.openshift.io/v1beta1","blockOwnerDeletion":true,"controller":true,"kind":"HostedControlPlane","name":"hcp","uid":""}]}}'
   name: router
   namespace: hcp-namespace
   ownerReferences:

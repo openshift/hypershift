@@ -49,6 +49,18 @@ data:
   profile: Default
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/last-applied-configuration: '{"apiVersion":"v1","data":{"policy.yaml":"apiVersion:
+      audit.k8s.io/v1\nkind: Policy\nmetadata:\n  name: policy\nomitManagedFields:
+      true\nomitStages:\n- RequestReceived\nrules:\n- level: None\n  nonResourceURLs:\n  -
+      /api*\n  - /version\n  - /healthz\n  - /readyz\n  - /livez\n  userGroups:\n  -
+      system:authenticated\n  - system:unauthenticated\n- level: None\n  namespaces:\n  -
+      \"\"\n  resources:\n  - group: apiserver.openshift.io\n    resources:\n    -
+      apirequestcounts\n    - apirequestcounts/*\n  users:\n  - system:apiserver\n-
+      level: RequestResponse\n  resources:\n  - group: user.openshift.io\n    resources:\n    -
+      identities\n  - group: oauth.openshift.io\n    resources:\n    - oauthaccesstokens\n    -
+      oauthauthorizetokens\n  verbs:\n  - create\n  - update\n  - patch\n  - delete\n-
+      level: Metadata\n  omitStages:\n  - RequestReceived\n","profile":"Default"},"kind":"ConfigMap","metadata":{"name":"openshift-apiserver-audit","namespace":"hcp-namespace","ownerReferences":[{"apiVersion":"hypershift.openshift.io/v1beta1","blockOwnerDeletion":true,"controller":true,"kind":"HostedControlPlane","name":"hcp","uid":""}]}}'
   name: openshift-apiserver-audit
   namespace: hcp-namespace
   ownerReferences:

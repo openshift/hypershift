@@ -30,6 +30,18 @@ data:
     }
 kind: ConfigMap
 metadata:
+  annotations:
+    hypershift.openshift.io/last-applied-configuration: '{"apiVersion":"v1","data":{"cloud.conf":"{\n  \"cloud\":
+      \"\",\n  \"tenantId\": \"\",\n  \"useManagedIdentityExtension\": true,\n  \"useFederatedWorkloadIdentityExtension\":
+      false,\n  \"subscriptionId\": \"\",\n  \"aadClientId\": \"\",\n  \"aadClientSecret\":
+      \"\",\n  \"aadClientCertPath\": \"\",\n  \"aadFederatedTokenFile\": \"\",\n  \"aadMSIDataPlaneIdentityPath\":
+      \"\",\n  \"resourceGroup\": \"\",\n  \"location\": \"\",\n  \"vnetName\": \"myVnetName\",\n  \"vnetResourceGroup\":
+      \"myResourceGroupName\",\n  \"subnetName\": \"mySubnetName\",\n  \"securityGroupName\":
+      \"myNSGName\",\n  \"securityGroupResourceGroup\": \"myResourceGroupName\",\n  \"routeTableName\":
+      \"\",\n  \"cloudProviderBackoff\": true,\n  \"cloudProviderBackoffDuration\":
+      6,\n  \"useInstanceMetadata\": true,\n  \"loadBalancerSku\": \"standard\",\n  \"disableOutboundSNAT\":
+      true,\n  \"loadBalancerName\": \"\",\n  \"clusterServiceLoadBalancerHealthProbeMode\":
+      \"shared\"\n}"},"kind":"ConfigMap","metadata":{"name":"azure-cloud-config","namespace":"hcp-namespace","ownerReferences":[{"apiVersion":"hypershift.openshift.io/v1beta1","blockOwnerDeletion":true,"controller":true,"kind":"HostedControlPlane","name":"hcp","uid":""}]}}'
   name: azure-cloud-config
   namespace: hcp-namespace
   ownerReferences:
