@@ -340,8 +340,6 @@ github.com/aws/aws-sdk-go/service/elb
 github.com/aws/aws-sdk-go/service/elb/elbiface
 github.com/aws/aws-sdk-go/service/elbv2
 github.com/aws/aws-sdk-go/service/elbv2/elbv2iface
-github.com/aws/aws-sdk-go/service/iam
-github.com/aws/aws-sdk-go/service/iam/iamiface
 github.com/aws/aws-sdk-go/service/kms
 github.com/aws/aws-sdk-go/service/ram
 github.com/aws/aws-sdk-go/service/ram/ramiface
@@ -430,6 +428,11 @@ github.com/aws/aws-sdk-go-v2/service/ec2/types
 github.com/aws/aws-sdk-go-v2/service/eks
 github.com/aws/aws-sdk-go-v2/service/eks/internal/endpoints
 github.com/aws/aws-sdk-go-v2/service/eks/types
+# github.com/aws/aws-sdk-go-v2/service/iam v1.53.2
+## explicit; go 1.23
+github.com/aws/aws-sdk-go-v2/service/iam
+github.com/aws/aws-sdk-go-v2/service/iam/internal/endpoints
+github.com/aws/aws-sdk-go-v2/service/iam/types
 # github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.4
 ## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding
