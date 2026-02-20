@@ -9,6 +9,7 @@ import (
 
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	configv2 "github.com/aws/aws-sdk-go-v2/config"
+	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
 	s3v2 "github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
@@ -19,8 +20,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/elb/elbiface"
 	"github.com/aws/aws-sdk-go/service/elbv2"
 	"github.com/aws/aws-sdk-go/service/elbv2/elbv2iface"
-	"github.com/aws/aws-sdk-go/service/route53"
-	"github.com/aws/aws-sdk-go/service/route53/route53iface"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
 	"github.com/aws/smithy-go/middleware"
@@ -81,9 +80,19 @@ func NewDelegatingClient(
 		Name: "openshift.io/hypershift",
 		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", "control-plane-operator"),
 	})
+	controlPlaneOperatorCfg, err := configv2.LoadDefaultConfig(ctx,
+		configv2.WithSharedConfigFiles([]string{controlPlaneOperatorCredentialsFile}),
+		configv2.WithAPIOptions([]func(*middleware.Stack) error{
+			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", "control-plane-operator"),
+		}))
+	if err != nil {
+		return nil, fmt.Errorf("error loading AWS config for controlPlaneOperator: %w", err)
+	}
 	controlPlaneOperator := &controlPlaneOperatorClientDelegate{
-		ec2Client:     ec2.New(controlPlaneOperatorSession, awsConfig),
-		route53Client: route53.New(controlPlaneOperatorSession, awsConfig),
+		ec2Client: ec2.New(controlPlaneOperatorSession, awsConfig),
+		route53Client: route53v2.NewFromConfig(controlPlaneOperatorCfg, func(o *route53v2.Options) {
+			o.Retryer = awsConfigv2()
+		}),
 	}
 	nodePoolSession, err := session.NewSessionWithOptions(session.Options{SharedConfigFiles: []string{nodePoolCredentialsFile}})
 	if err != nil {
@@ -127,11 +136,12 @@ func NewDelegatingClient(
 			ELBV2API:        nil,
 			cloudController: cloudController,
 		},
-		Route53API: &route53Client{
-			Route53API:           nil,
+		ROUTE53Client: &route53Client{
+			ROUTE53API:           nil,
 			controlPlaneOperator: controlPlaneOperator,
 		},
 		S3Client: &s3Client{
+			S3API:                  nil,
 			openshiftImageRegistry: openshiftImageRegistry,
 		},
 		SQSAPI: &sqsClient{
@@ -157,7 +167,7 @@ type cloudNetworkConfigControllerClientDelegate struct {
 
 type controlPlaneOperatorClientDelegate struct {
 	ec2Client     ec2iface.EC2API
-	route53Client route53iface.Route53API
+	route53Client awsapi.ROUTE53API
 }
 
 type nodePoolClientDelegate struct {
@@ -174,8 +184,8 @@ type DelegatingClient struct {
 	ec2iface.EC2API
 	elbiface.ELBAPI
 	elbv2iface.ELBV2API
-	route53iface.Route53API
-	S3Client awsapi.S3API
+	ROUTE53Client awsapi.ROUTE53API
+	S3Client      awsapi.S3API
 	sqsiface.SQSAPI
 }
 
@@ -541,23 +551,26 @@ func (c *elbv2Client) RegisterTargetsWithContext(ctx aws.Context, input *elbv2.R
 // route53Client delegates to individual component clients for API calls we know those components will have privileges to make.
 type route53Client struct {
 	// embedding this fulfills the interface and falls back to a panic for APIs we don't have privileges for
-	route53iface.Route53API
+	awsapi.ROUTE53API
 
 	controlPlaneOperator *controlPlaneOperatorClientDelegate
 }
 
-func (c *route53Client) ChangeResourceRecordSetsWithContext(ctx aws.Context, input *route53.ChangeResourceRecordSetsInput, opts ...request.Option) (*route53.ChangeResourceRecordSetsOutput, error) {
-	return c.controlPlaneOperator.route53Client.ChangeResourceRecordSetsWithContext(ctx, input, opts...)
+func (c *route53Client) ChangeResourceRecordSets(ctx context.Context, input *route53v2.ChangeResourceRecordSetsInput, optFns ...func(*route53v2.Options)) (*route53v2.ChangeResourceRecordSetsOutput, error) {
+	return c.controlPlaneOperator.route53Client.ChangeResourceRecordSets(ctx, input, optFns...)
 }
-func (c *route53Client) ListHostedZonesWithContext(ctx aws.Context, input *route53.ListHostedZonesInput, opts ...request.Option) (*route53.ListHostedZonesOutput, error) {
-	return c.controlPlaneOperator.route53Client.ListHostedZonesWithContext(ctx, input, opts...)
+func (c *route53Client) ListHostedZones(ctx context.Context, input *route53v2.ListHostedZonesInput, optFns ...func(*route53v2.Options)) (*route53v2.ListHostedZonesOutput, error) {
+	return c.controlPlaneOperator.route53Client.ListHostedZones(ctx, input, optFns...)
 }
-func (c *route53Client) ListResourceRecordSetsWithContext(ctx aws.Context, input *route53.ListResourceRecordSetsInput, opts ...request.Option) (*route53.ListResourceRecordSetsOutput, error) {
-	return c.controlPlaneOperator.route53Client.ListResourceRecordSetsWithContext(ctx, input, opts...)
+func (c *route53Client) ListResourceRecordSets(ctx context.Context, input *route53v2.ListResourceRecordSetsInput, optFns ...func(*route53v2.Options)) (*route53v2.ListResourceRecordSetsOutput, error) {
+	return c.controlPlaneOperator.route53Client.ListResourceRecordSets(ctx, input, optFns...)
 }
 
 // s3Client delegates to individual component clients for API calls we know those components will have privileges to make.
 type s3Client struct {
+	// embedding this fulfills the interface and falls back to a panic for APIs we don't have privileges for
+	awsapi.S3API
+
 	openshiftImageRegistry *openshiftImageRegistryClientDelegate
 }
 

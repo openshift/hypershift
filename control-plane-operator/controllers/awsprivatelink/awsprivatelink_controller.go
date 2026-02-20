@@ -10,11 +10,19 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/awsapi"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	configv2 "github.com/aws/aws-sdk-go-v2/config"
+	stscredsv2 "github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
+	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
+	stsv2 "github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
@@ -22,8 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/route53"
-	"github.com/aws/aws-sdk-go/service/route53/route53iface"
+	"github.com/aws/smithy-go/middleware"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -216,7 +223,7 @@ func (b *clientBuilder) awsSession() (*session.Session, error) {
 	return s, nil
 }
 
-func (b *clientBuilder) getClients() (ec2iface.EC2API, route53iface.Route53API, error) {
+func (b *clientBuilder) getClients(ctx context.Context) (ec2iface.EC2API, awsapi.ROUTE53API, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -229,7 +236,11 @@ func (b *clientBuilder) getClients() (ec2iface.EC2API, route53iface.Route53API, 
 	if err != nil {
 		return nil, nil, err
 	}
-	awsRoute53Session, err := b.awsSession()
+	route53Cfg, err := configv2.LoadDefaultConfig(ctx,
+		configv2.WithAPIOptions([]func(*middleware.Stack) error{
+			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", "control-plane-operator"),
+		}),
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -239,14 +250,16 @@ func (b *clientBuilder) getClients() (ec2iface.EC2API, route53iface.Route53API, 
 		awsEndpointSession.Config.WithCredentials(stscreds.NewCredentials(awsEndpointSession, b.assumeSharedVPCEndpointRoleARN))
 	}
 	if b.assumeSharedVPCRoute53RoleARN != "" {
-		awsRoute53Session.Config.WithCredentials(stscreds.NewCredentials(awsRoute53Session, b.assumeSharedVPCRoute53RoleARN))
+		stsClient := stsv2.NewFromConfig(route53Cfg)
+		route53Cfg.Credentials = awsv2.NewCredentialsCache(
+			stscredsv2.NewAssumeRoleProvider(stsClient, b.assumeSharedVPCRoute53RoleARN),
+		)
 	}
 
 	awsConfig := aws.NewConfig()
 	ec2Client := ec2.New(awsEndpointSession, awsConfig)
 
-	route53Config := aws.NewConfig()
-	route53Client := route53.New(awsRoute53Session, route53Config)
+	route53Client := route53v2.NewFromConfig(route53Cfg)
 
 	return ec2Client, route53Client, nil
 }
@@ -385,7 +398,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{}, nil
 		}
 
-		ec2Client, route53Client, err := r.awsClientBuilder.getClients()
+		ec2Client, route53Client, err := r.awsClientBuilder.getClients(ctx)
 		if err != nil {
 			log.Error(err, "failed to get AWS client, skipping aws endpoint service cleanup")
 		} else {
@@ -444,7 +457,7 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	r.awsClientBuilder.initializeWithHCP(log, hcp)
-	ec2Client, route53Client, err := r.awsClientBuilder.getClients()
+	ec2Client, route53Client, err := r.awsClientBuilder.getClients(ctx)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -519,7 +532,7 @@ func diffIDs(desired []string, existing []*string) (added, removed []*string) {
 	return
 }
 
-func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, ec2Client ec2iface.EC2API, route53Client route53iface.Route53API) error {
+func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hcp *hyperv1.HostedControlPlane, ec2Client ec2iface.EC2API, route53Client awsapi.ROUTE53API) error {
 	log, err := logr.FromContext(ctx)
 	if err != nil {
 		return fmt.Errorf("logger not found: %w", err)
@@ -712,7 +725,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 	for _, recordName := range recordNames {
 		fqdn := fmt.Sprintf("%s.%s", recordName, zoneName)
 		fqdns = append(fqdns, fqdn)
-		err = CreateRecord(ctx, route53Client, zoneID, fqdn, *(endpointDNSEntries[0].DnsName), "CNAME")
+		err = CreateRecord(ctx, route53Client, zoneID, fqdn, *(endpointDNSEntries[0].DnsName), route53types.RRTypeCname)
 		if err != nil {
 			return err
 		}
@@ -984,7 +997,7 @@ func apiTagToEC2Filter(name string, in []hyperv1.AWSResourceTag) []*ec2.Filter {
 	return result
 }
 
-func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, ec2Client ec2iface.EC2API, route53Client route53iface.Route53API) (bool, error) {
+func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, ec2Client ec2iface.EC2API, route53Client awsapi.ROUTE53API) (bool, error) {
 	log, err := logr.FromContext(ctx)
 	if err != nil {
 		return false, fmt.Errorf("logger not found: %w", err)
@@ -1032,13 +1045,12 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 
 	for _, fqdn := range awsEndpointService.Status.DNSNames {
 		if fqdn != "" && zoneID != "" {
-			record, err := FindRecord(ctx, route53Client, zoneID, fqdn, "CNAME")
+			record, err := FindRecord(ctx, route53Client, zoneID, fqdn, route53types.RRTypeCname)
 			if err != nil {
-				if awsErr, ok := err.(awserr.Error); ok {
-					if awsErr.Code() == route53.ErrCodeNoSuchHostedZone {
-						log.Info("Hosted Zone not found", "hostedzone", zoneID)
-						return true, nil
-					}
+				var noSuchZone *route53types.NoSuchHostedZone
+				if errors.As(err, &noSuchZone) {
+					log.Info("Hosted Zone not found", "hostedzone", zoneID)
+					return true, nil
 				}
 
 				return false, err

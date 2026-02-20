@@ -44,9 +44,10 @@ import (
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/library-go/test/library/metrics"
 
+	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
+	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/route53"
 
 	k8sadmissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -2762,10 +2763,12 @@ func createIngressRoute53Record(t *testing.T, ctx context.Context, client crclie
 	routerDefaultIP, err := getIngressRouterDefaultIP(t, ctx, client, hostedCluster)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to get router-default service IP")
 
-	awsSession, err := clusterOpts.AWSPlatform.Credentials.GetSession("e2e-openstack-dns-record-on-aws", nil, awsRegion)
+	awsSessionv2, err := clusterOpts.AWSPlatform.Credentials.GetSessionV2(ctx, "e2e-openstack-dns-record-on-aws", nil, awsRegion)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to create AWS session")
 
-	route53Client := route53.New(awsSession, awsutil.NewAWSRoute53Config())
+	route53Client := route53v2.NewFromConfig(*awsSessionv2, func(o *route53v2.Options) {
+		o.Retryer = awsutil.NewRoute53ConfigV2()()
+	})
 	g.Expect(route53Client).ToNot(BeNil(), "failed to create Route53 client")
 
 	clusterName := hostedCluster.Name
@@ -2775,7 +2778,7 @@ func createIngressRoute53Record(t *testing.T, ctx context.Context, client crclie
 		t.Fatalf("failed to lookup Route53 hosted zone (details elided)")
 	}
 
-	err = awsprivatelink.CreateRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, routerDefaultIP, "A")
+	err = awsprivatelink.CreateRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, routerDefaultIP, route53types.RRTypeA)
 	if err != nil {
 		t.Fatalf("failed to create Route53 record (details elided)")
 	}
@@ -2793,10 +2796,12 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 	// This is hardcoded too in aws CreateInfraOptions
 	awsRegion := "us-east-1"
 
-	awsSession, err := clusterOpts.AWSPlatform.Credentials.GetSession("e2e-openstack-dns-record-on-aws", nil, awsRegion)
+	awsSessionv2, err := clusterOpts.AWSPlatform.Credentials.GetSessionV2(ctx, "e2e-openstack-dns-record-on-aws", nil, awsRegion)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to create AWS session")
 
-	route53Client := route53.New(awsSession, awsutil.NewAWSRoute53Config())
+	route53Client := route53v2.NewFromConfig(*awsSessionv2, func(o *route53v2.Options) {
+		o.Retryer = awsutil.NewRoute53ConfigV2()()
+	})
 	g.Expect(route53Client).ToNot(BeNil(), "failed to create Route53 client")
 
 	clusterName := hostedCluster.Name
@@ -2806,7 +2811,7 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 		t.Fatalf("failed to lookup Route53 hosted zone (details elided)")
 	}
 
-	record, err := awsprivatelink.FindRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, "A")
+	record, err := awsprivatelink.FindRecord(ctx, route53Client, zoneID, "*.apps."+clusterName+"."+baseDomain, route53types.RRTypeA)
 	if err != nil {
 		t.Fatalf("failed to find Route53 record (details elided)")
 	}
