@@ -84,8 +84,12 @@ lint-fix: generate $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
 
+.PHONY: verify-crd-schema
+verify-crd-schema:
+	hack/verify-crd-schema-checker.sh
+
 .PHONY: verify
-verify: generate update staticcheck fmt vet verify-codespell lint cpo-container-sync run-gitlint
+verify: generate update staticcheck fmt vet verify-codespell lint verify-crd-schema cpo-container-sync run-gitlint
 	git diff-index --cached --quiet --ignore-submodules HEAD --
 	git diff-files --quiet --ignore-submodules
 	git diff --exit-code HEAD --
