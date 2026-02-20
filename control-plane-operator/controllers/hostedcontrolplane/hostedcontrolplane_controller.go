@@ -103,6 +103,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1108,6 +1109,10 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		if err := r.cleanupOldRouterResources(ctx, hcp); err != nil {
 			return fmt.Errorf("failed to cleanup old router resources: %w", err)
 		}
+	} else {
+		if err := r.removeHCPIngressFromRoutes(ctx, hcp); err != nil {
+			return fmt.Errorf("failed to remove HCP ingress from routes: %w", err)
+		}
 	}
 
 	if _, exists := hcp.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
@@ -2015,6 +2020,43 @@ func (r *HostedControlPlaneReconciler) cleanupOldRouterResources(ctx context.Con
 	for _, resource := range oldRouterResources {
 		if _, err := util.DeleteIfNeeded(ctx, r.Client, resource); err != nil {
 			return fmt.Errorf("failed to delete %T %s: %w", resource, resource.GetName(), err)
+		}
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) removeHCPIngressFromRoutes(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	routeList := &routev1.RouteList{}
+	if err := r.List(ctx, routeList, client.InNamespace(hcp.Namespace)); err != nil {
+		return fmt.Errorf("failed to list routes: %w", err)
+	}
+
+	for i := range routeList.Items {
+		route := &routeList.Items[i]
+		if _, hasHCPLabel := route.Labels[util.HCPRouteLabel]; hasHCPLabel {
+			// Skip routes that should be managed by the HCP router
+			continue
+		}
+		// Only clear ingress entries that correspond to router named "router".
+		// This matches the RouterName used by ReconcileRouteStatus in ingress/router.go
+		// when the HCP router admits routes. We filter by this specific name to ensure
+		// we only remove ingress entries from the HCP router, not from other routers
+		// (e.g., the default ingress controller router).
+		originalRoute := route.DeepCopy()
+		filteredIngress := make([]routev1.RouteIngress, 0, len(route.Status.Ingress))
+		for _, ingress := range route.Status.Ingress {
+			if ingress.RouterName != "router" {
+				filteredIngress = append(filteredIngress, ingress)
+			}
+		}
+		if len(filteredIngress) != len(route.Status.Ingress) {
+			route.Status.Ingress = filteredIngress
+			if !equality.Semantic.DeepEqual(originalRoute.Status, route.Status) {
+				if err := r.Status().Patch(ctx, route, client.MergeFrom(originalRoute)); err != nil {
+					return fmt.Errorf("failed to clear route %s ingress: %w", route.Name, err)
+				}
+			}
 		}
 	}
 

@@ -280,7 +280,7 @@ func TestReconcileInfrastructure(t *testing.T) {
 			expectError: false,
 			// For Route strategy:
 			// - APIHost comes from strategy.Route.Hostname (testKASHostname)
-			// - External router is needed when IsPublicWithDNS (public + route with hostname)
+			// - External router is needed when LabelHCPRoutes (public + KAS uses Route with hostname)
 			expectedStatus: &InfrastructureStatus{
 				APIHost:               testKASHostname,
 				APIPort:               443,
@@ -342,6 +342,8 @@ func TestReconcileInfrastructure(t *testing.T) {
 			},
 		},
 		{
+			// With LabelHCPRoutes logic: Public + KAS LoadBalancer = routes NOT labeled,
+			// so no external HCP router is needed.
 			name: "AWS_Public_KAS_LoadBalancer",
 			hcp: withServices(
 				withAWSEndpointAccess(baseAWSHCP(), hyperv1.Public),
@@ -350,18 +352,18 @@ func TestReconcileInfrastructure(t *testing.T) {
 			expectError: false,
 			// For LoadBalancer strategy:
 			// - APIHost comes from the LB service status
-			// - External router IS needed because Konnectivity/OAuth use Route with hostnames (IsPublicWithDNS=true)
+			// - External router is NOT needed: KAS uses LoadBalancer, not Route,
+			//   so LabelHCPRoutes returns false for Public clusters
 			expectedStatus: &InfrastructureStatus{
-				APIHost:               testKASLBHostname,
-				APIPort:               config.KASSVCPort,
-				OAuthEnabled:          true,
-				OAuthHost:             testOAuthHostname,
-				OAuthPort:             443,
-				KonnectivityHost:      testKonnectivityHost,
-				KonnectivityPort:      443,
-				NeedInternalRouter:    false,
-				NeedExternalRouter:    true,
-				ExternalHCPRouterHost: testRouterLBHostname,
+				APIHost:            testKASLBHostname,
+				APIPort:            config.KASSVCPort,
+				OAuthEnabled:       true,
+				OAuthHost:          testOAuthHostname,
+				OAuthPort:          443,
+				KonnectivityHost:   testKonnectivityHost,
+				KonnectivityPort:   443,
+				NeedInternalRouter: false,
+				NeedExternalRouter: false,
 			},
 		},
 		{
@@ -397,7 +399,8 @@ func TestReconcileInfrastructure(t *testing.T) {
 			// For PublicAndPrivate with LB:
 			// - APIHost from public KAS LB
 			// - Internal router needed for private access
-			// - External router IS needed because Konnectivity/OAuth use Route with hostnames
+			// - External router is NOT needed: KAS uses LoadBalancer, not Route,
+			//   so LabelHCPRoutes returns false for public-facing routes
 			expectedStatus: &InfrastructureStatus{
 				APIHost:               testKASLBHostname,
 				APIPort:               config.KASSVCPort,
@@ -408,8 +411,7 @@ func TestReconcileInfrastructure(t *testing.T) {
 				KonnectivityPort:      443,
 				NeedInternalRouter:    true,
 				InternalHCPRouterHost: testInternalRouterLBHost,
-				NeedExternalRouter:    true,
-				ExternalHCPRouterHost: testRouterLBHostname,
+				NeedExternalRouter:    false,
 			},
 		},
 		// ARO HCP test cases - use shared ingress
@@ -841,11 +843,8 @@ func TestReconcileOAuthService(t *testing.T) {
 	oauthExternalPublicRoute := func(m ...func(*routev1.Route)) routev1.Route {
 		route := routev1.Route{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: targetNamespace,
-				Name:      "oauth",
-				Labels: map[string]string{
-					"hypershift.openshift.io/hosted-control-plane": targetNamespace,
-				},
+				Namespace:       targetNamespace,
+				Name:            "oauth",
 				OwnerReferences: []metav1.OwnerReference{ownerRef},
 			},
 			Spec: routev1.RouteSpec{
@@ -1410,6 +1409,24 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 			endpointAccess:               hyperv1.Private,
 			exposeAPIServerThroughRouter: true,
 			existingObjects:              []client.Object{publicService(), privateService()},
+			expectedServices: []corev1.Service{
+				*privateService(withCrossZoneAnnotation),
+			},
+		},
+		{
+			name:                         "Private LB gets removed when switching to Public",
+			endpointAccess:               hyperv1.Public,
+			exposeAPIServerThroughRouter: true,
+			existingObjects:              []client.Object{privateService()},
+			expectedServices: []corev1.Service{
+				*publicService(),
+			},
+		},
+		{
+			name:                         "Public LB gets removed when PublicAndPrivate but not using Route",
+			endpointAccess:               hyperv1.PublicAndPrivate,
+			exposeAPIServerThroughRouter: false,
+			existingObjects:              []client.Object{publicService()},
 			expectedServices: []corev1.Service{
 				*privateService(withCrossZoneAnnotation),
 			},
