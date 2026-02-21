@@ -248,6 +248,9 @@ type PowerVSPlatformSpec struct {
 	//   - Reader (service role)
 	//   - Manager (service role)
 	//
+	// The secret must contain the keys "ibmcloud_api_key" and "ibm-credentials.env".
+	// See cmd/infra/powervs/service_id.go for the authoritative IAM policy definitions.
+	//
 	// +immutable
 	// +required
 	KubeCloudControllerCreds corev1.LocalObjectReference `json:"kubeCloudControllerCreds"`
@@ -262,26 +265,68 @@ type PowerVSPlatformSpec struct {
 	//   - Manager (service role)
 	//   - Editor (platform role)
 	//
+	// The secret must contain the keys "ibmcloud_api_key" and "ibm-credentials.env".
+	// See cmd/infra/powervs/service_id.go for the authoritative IAM policy definitions.
+	//
 	// +immutable
 	// +required
 	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
 
-	// ingressOperatorCloudCreds is a reference to a secret containing ibm cloud
-	// credentials for ingress operator to get authenticated with ibm cloud.
+	// ingressOperatorCloudCreds is a reference to a secret containing IBM Cloud
+	// credentials for ingress operator to get authenticated with IBM Cloud.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// The secret referenced by this field must contain an IBM Cloud IAM API key
+	// with the following IAM roles:
+	//
+	// Internet Services (internet-svcs):
+	//   - Manager (service role)
+	//   - Editor (platform role)
+	//
+	// The secret must contain the keys "ibmcloud_api_key" and "ibm-credentials.env".
+	// See cmd/infra/powervs/service_id.go for the authoritative IAM policy definitions.
 	//
 	// +immutable
 	// +required
 	IngressOperatorCloudCreds corev1.LocalObjectReference `json:"ingressOperatorCloudCreds"`
 
-	// storageOperatorCloudCreds is a reference to a secret containing ibm cloud
-	// credentials for storage operator to get authenticated with ibm cloud.
+	// storageOperatorCloudCreds is a reference to a secret containing IBM Cloud
+	// credentials for storage operator to get authenticated with IBM Cloud.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// The secret referenced by this field must contain an IBM Cloud IAM API key
+	// with the following IAM roles:
+	//
+	// Power Systems Virtual Server (power-iaas), scoped to the service instance:
+	//   - Manager (service role)
+	//   - Editor (platform role)
+	//
+	// Resource Group:
+	//   - Viewer (platform role)
+	//
+	// The secret must contain the keys "ibmcloud_api_key" and "ibm-credentials.env".
+	// See cmd/infra/powervs/service_id.go for the authoritative IAM policy definitions.
 	//
 	// +immutable
 	// +required
 	StorageOperatorCloudCreds corev1.LocalObjectReference `json:"storageOperatorCloudCreds"`
 
-	// imageRegistryOperatorCloudCreds is a reference to a secret containing ibm cloud
-	// credentials for image registry operator to get authenticated with ibm cloud.
+	// imageRegistryOperatorCloudCreds is a reference to a secret containing IBM Cloud
+	// credentials for image registry operator to get authenticated with IBM Cloud.
+	// This field is immutable. Once set, It can't be changed.
+	//
+	// The secret referenced by this field must contain an IBM Cloud IAM API key
+	// with the following IAM roles:
+	//
+	// Cloud Object Storage (cloud-object-storage):
+	//   - Administrator (platform role)
+	//   - Manager (service role)
+	//
+	// Resource Group:
+	//   - Viewer (platform role)
+	//
+	// The secret must contain the keys "ibmcloud_api_key" and "ibm-credentials.env".
+	// See cmd/infra/powervs/service_id.go for the authoritative IAM policy definitions.
 	//
 	// +immutable
 	// +required

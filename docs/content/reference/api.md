@@ -12178,6 +12178,8 @@ with the following IAM roles:</p>
 - Viewer (platform role)
 - Reader (service role)
 - Manager (service role)</p>
+<p>The secret must contain the keys &ldquo;ibmcloud_api_key&rdquo; and &ldquo;ibm-credentials.env&rdquo;.
+See cmd/infra/powervs/service_id.go for the authoritative IAM policy definitions.</p>
 </td>
 </tr>
 <tr>
@@ -12198,6 +12200,8 @@ with the following IAM roles on the Power Systems Virtual Server
 (power-iaas) service, scoped to the specific service instance:
 - Manager (service role)
 - Editor (platform role)</p>
+<p>The secret must contain the keys &ldquo;ibmcloud_api_key&rdquo; and &ldquo;ibm-credentials.env&rdquo;.
+See cmd/infra/powervs/service_id.go for the authoritative IAM policy definitions.</p>
 </td>
 </tr>
 <tr>
@@ -12210,8 +12214,16 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>ingressOperatorCloudCreds is a reference to a secret containing ibm cloud
-credentials for ingress operator to get authenticated with ibm cloud.</p>
+<p>ingressOperatorCloudCreds is a reference to a secret containing IBM Cloud
+credentials for ingress operator to get authenticated with IBM Cloud.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+<p>The secret referenced by this field must contain an IBM Cloud IAM API key
+with the following IAM roles:</p>
+<p>Internet Services (internet-svcs):
+- Manager (service role)
+- Editor (platform role)</p>
+<p>The secret must contain the keys &ldquo;ibmcloud_api_key&rdquo; and &ldquo;ibm-credentials.env&rdquo;.
+See cmd/infra/powervs/service_id.go for the authoritative IAM policy definitions.</p>
 </td>
 </tr>
 <tr>
@@ -12224,8 +12236,18 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>storageOperatorCloudCreds is a reference to a secret containing ibm cloud
-credentials for storage operator to get authenticated with ibm cloud.</p>
+<p>storageOperatorCloudCreds is a reference to a secret containing IBM Cloud
+credentials for storage operator to get authenticated with IBM Cloud.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+<p>The secret referenced by this field must contain an IBM Cloud IAM API key
+with the following IAM roles:</p>
+<p>Power Systems Virtual Server (power-iaas), scoped to the service instance:
+- Manager (service role)
+- Editor (platform role)</p>
+<p>Resource Group:
+- Viewer (platform role)</p>
+<p>The secret must contain the keys &ldquo;ibmcloud_api_key&rdquo; and &ldquo;ibm-credentials.env&rdquo;.
+See cmd/infra/powervs/service_id.go for the authoritative IAM policy definitions.</p>
 </td>
 </tr>
 <tr>
@@ -12238,8 +12260,18 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>imageRegistryOperatorCloudCreds is a reference to a secret containing ibm cloud
-credentials for image registry operator to get authenticated with ibm cloud.</p>
+<p>imageRegistryOperatorCloudCreds is a reference to a secret containing IBM Cloud
+credentials for image registry operator to get authenticated with IBM Cloud.
+This field is immutable. Once set, It can&rsquo;t be changed.</p>
+<p>The secret referenced by this field must contain an IBM Cloud IAM API key
+with the following IAM roles:</p>
+<p>Cloud Object Storage (cloud-object-storage):
+- Administrator (platform role)
+- Manager (service role)</p>
+<p>Resource Group:
+- Viewer (platform role)</p>
+<p>The secret must contain the keys &ldquo;ibmcloud_api_key&rdquo; and &ldquo;ibm-credentials.env&rdquo;.
+See cmd/infra/powervs/service_id.go for the authoritative IAM policy definitions.</p>
 </td>
 </tr>
 </tbody>
