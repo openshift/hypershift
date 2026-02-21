@@ -2897,7 +2897,7 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	switch globalOpts.Platform {
 	case hyperv1.AWSPlatform:
 		// find kms key ARN using alias
-		kmsKeyArn, err = e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.ConfigurableClusterOptions.AWSKmsKeyAlias)
+		kmsKeyArn, err = e2eutil.GetKMSKeyArn(ctx, clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.ConfigurableClusterOptions.AWSKmsKeyAlias)
 		if err != nil || kmsKeyArn == nil {
 			t.Fatal("failed to retrieve kms key arn: %w", err)
 		}

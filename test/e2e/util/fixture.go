@@ -20,9 +20,10 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/test/e2e/util/dump"
 
-	awssdk "github.com/aws/aws-sdk-go/aws"
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi"
+	resourcegroupstaggingapitypes "github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types"
 	"github.com/aws/aws-sdk-go/aws/arn"
-	"github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi"
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -284,25 +285,27 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 	}
 
 	return func() {
-		awsSession := awsutil.NewSession("cleanup-validation", awsCreds, "", "", awsRegion)
-		awsConfig := awsutil.NewConfig()
-		taggingClient := resourcegroupstaggingapi.New(awsSession, awsConfig)
+		awsSession := awsutil.NewSessionV2(ctx, "cleanup-validation", awsCreds, "", "", awsRegion)
+		awsConfig := awsutil.NewConfigV2()
+		taggingClient := resourcegroupstaggingapi.NewFromConfig(*awsSession, func(o *resourcegroupstaggingapi.Options) {
+			o.Retryer = awsConfig()
+		})
 		var output *resourcegroupstaggingapi.GetResourcesOutput
 
 		// Find load balancers, persistent volumes, or s3 buckets belonging to the guest cluster
 		err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 15*time.Minute, false, func(ctx context.Context) (bool, error) {
 			// Filter get cluster resources.
 			var err error
-			output, err = taggingClient.GetResourcesWithContext(ctx, &resourcegroupstaggingapi.GetResourcesInput{
-				ResourceTypeFilters: []*string{
-					awssdk.String("elasticloadbalancing:loadbalancer"),
-					awssdk.String("ec2:volume"),
-					awssdk.String("s3"),
+			output, err = taggingClient.GetResources(ctx, &resourcegroupstaggingapi.GetResourcesInput{
+				ResourceTypeFilters: []string{
+					"elasticloadbalancing:loadbalancer",
+					"ec2:volume",
+					"s3",
 				},
-				TagFilters: []*resourcegroupstaggingapi.TagFilter{
+				TagFilters: []resourcegroupstaggingapitypes.TagFilter{
 					{
-						Key:    awssdk.String(clusterTag(infraID)),
-						Values: []*string{awssdk.String("owned")},
+						Key:    awsv2.String(clusterTag(infraID)),
+						Values: []string{"owned"},
 					},
 				},
 			})
@@ -329,13 +332,13 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 		if hasGuestResources(t, output.ResourceTagMappingList) {
 			t.Logf("Failed to clean up %d remaining resources for guest cluster", len(output.ResourceTagMappingList))
 			for i := 0; i < len(output.ResourceTagMappingList); i++ {
-				resourceARN, err := arn.Parse(awssdk.StringValue(output.ResourceTagMappingList[i].ResourceARN))
+				resourceARN, err := arn.Parse(awsv2.ToString(output.ResourceTagMappingList[i].ResourceARN))
 				if err != nil {
 					// We are only decoding for additional information, proceed on error
 					continue
 				}
 				t.Logf("Resource: %s, tags: %s, service: %s",
-					awssdk.StringValue(output.ResourceTagMappingList[i].ResourceARN), resourceTags(output.ResourceTagMappingList[i].Tags), resourceARN.Service)
+					awsv2.ToString(output.ResourceTagMappingList[i].ResourceARN), resourceTags(output.ResourceTagMappingList[i].Tags), resourceARN.Service)
 			}
 		} else {
 			t.Log("SUCCESS: found no remaining guest resources")
@@ -343,24 +346,24 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 	}
 }
 
-func resourceTags(tags []*resourcegroupstaggingapi.Tag) string {
+func resourceTags(tags []resourcegroupstaggingapitypes.Tag) string {
 	tagStrings := make([]string, len(tags))
 	for i, tag := range tags {
-		tagStrings[i] = fmt.Sprintf("%s=%s", awssdk.StringValue(tag.Key), awssdk.StringValue(tag.Value))
+		tagStrings[i] = fmt.Sprintf("%s=%s", awsv2.ToString(tag.Key), awsv2.ToString(tag.Value))
 	}
 	return strings.Join(tagStrings, ",")
 }
 
-func hasGuestResources(t *testing.T, resourceTagMappings []*resourcegroupstaggingapi.ResourceTagMapping) bool {
+func hasGuestResources(t *testing.T, resourceTagMappings []resourcegroupstaggingapitypes.ResourceTagMapping) bool {
 	for _, mapping := range resourceTagMappings {
-		resourceARN, err := arn.Parse(awssdk.StringValue(mapping.ResourceARN))
+		resourceARN, err := arn.Parse(awsv2.ToString(mapping.ResourceARN))
 		if err != nil {
-			t.Logf("WARNING: failed to parse ARN %s", awssdk.StringValue(mapping.ResourceARN))
+			t.Logf("WARNING: failed to parse ARN %s", awsv2.ToString(mapping.ResourceARN))
 			continue
 		}
 		if resourceARN.Service == "ec2" { // Resource is a volume, check whether it's a PV volume by looking at tags
 			for _, tag := range mapping.Tags {
-				if awssdk.StringValue(tag.Key) == "kubernetes.io/created-for/pv/name" {
+				if awsv2.ToString(tag.Key) == "kubernetes.io/created-for/pv/name" {
 					return true
 				}
 			}
