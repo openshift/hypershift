@@ -41121,6 +41121,8 @@ Legend:
 - Yellow box: namespace
 - Rounded box: processes
 - Rectangle: CR instances
+- Solid arrows (`-->`) represent active relationships where a controller directly manages a resource (e.g. reconciles, creates, operates)
+- Dotted arrows (`-.->`) represent passive consumption where a process reads a resource without actively watching or reconciling it
 
 ```mermaid
 flowchart LR
@@ -41173,11 +41175,8 @@ flowchart LR
 
   capi-provider-->|reconciles|capi-machine
   capi-provider-->|creates|capi-provider-machine
+  capi-provider-.->|reads|capi-machine-template
 ```
-
-TODO:
-1. How do we (or should we) represent an input/output or "consumes" relationship (e.g. the hypershift operator creates and syncs machine templates, and the CAPI provider _reads_ the template, but nothing actively watches templates and does work in reaction to them directly)
-
 
 
 ## Major Components
