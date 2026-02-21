@@ -81,11 +81,8 @@ func TestComplete_BaseDomainFromEnvVar(t *testing.T) {
 			}
 			opts.ConfigurableClusterOptions.BaseDomain = tc.flagBaseDomain
 
-			// Complete() will try to look up the default OCP version if LatestReleaseImage
-			// is empty, but we've set it above to avoid that dependency.
-			// It may still fail on other operations, so we don't check the error here
-			// since we're only testing the BaseDomain logic.
-			_ = opts.Complete()
+			err := opts.Complete()
+			g.Expect(err).NotTo(HaveOccurred())
 
 			g.Expect(opts.ConfigurableClusterOptions.BaseDomain).To(Equal(tc.expectedBaseDomain))
 		})
