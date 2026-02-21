@@ -5219,10 +5219,26 @@ spec:
                         type: object
                         x-kubernetes-map-type: atomic
                       kubeCloudControllerCreds:
-                        description: |
+                        description: |-
                           kubeCloudControllerCreds is a reference to a secret containing cloud
                           credentials with permissions matching the cloud controller policy.
                           This field is immutable. Once set, It can't be changed.
+
+                          The secret referenced by this field must contain an IBM Cloud IAM API key
+                          with the following IAM roles:
+
+                          Resource Group:
+                            - Viewer (platform role)
+
+                          VPC Infrastructure Services (is):
+                            - Editor (platform role)
+                            - Operator (platform role)
+                            - Viewer (platform role)
+
+                          Power Systems Virtual Server (power-iaas), scoped to the service instance:
+                            - Viewer (platform role)
+                            - Reader (service role)
+                            - Manager (service role)
                         properties:
                           name:
                             default: ""
@@ -5236,10 +5252,16 @@ spec:
                         type: object
                         x-kubernetes-map-type: atomic
                       nodePoolManagementCreds:
-                        description: |
+                        description: |-
                           nodePoolManagementCreds is a reference to a secret containing cloud
                           credentials with permissions matching the node pool management policy.
                           This field is immutable. Once set, It can't be changed.
+
+                          The secret referenced by this field must contain an IBM Cloud IAM API key
+                          with the following IAM roles on the Power Systems Virtual Server
+                          (power-iaas) service, scoped to the specific service instance:
+                            - Manager (service role)
+                            - Editor (platform role)
                         properties:
                           name:
                             default: ""

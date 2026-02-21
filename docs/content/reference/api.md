@@ -12166,7 +12166,18 @@ Kubernetes core/v1.LocalObjectReference
 <p>kubeCloudControllerCreds is a reference to a secret containing cloud
 credentials with permissions matching the cloud controller policy.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
-<p>TODO(dan): document the &ldquo;cloud controller policy&rdquo;</p>
+<p>The secret referenced by this field must contain an IBM Cloud IAM API key
+with the following IAM roles:</p>
+<p>Resource Group:
+- Viewer (platform role)</p>
+<p>VPC Infrastructure Services (is):
+- Editor (platform role)
+- Operator (platform role)
+- Viewer (platform role)</p>
+<p>Power Systems Virtual Server (power-iaas), scoped to the service instance:
+- Viewer (platform role)
+- Reader (service role)
+- Manager (service role)</p>
 </td>
 </tr>
 <tr>
@@ -12182,7 +12193,11 @@ Kubernetes core/v1.LocalObjectReference
 <p>nodePoolManagementCreds is a reference to a secret containing cloud
 credentials with permissions matching the node pool management policy.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
-<p>TODO(dan): document the &ldquo;node pool management policy&rdquo;</p>
+<p>The secret referenced by this field must contain an IBM Cloud IAM API key
+with the following IAM roles on the Power Systems Virtual Server
+(power-iaas) service, scoped to the specific service instance:
+- Manager (service role)
+- Editor (platform role)</p>
 </td>
 </tr>
 <tr>

@@ -232,7 +232,21 @@ type PowerVSPlatformSpec struct {
 	// credentials with permissions matching the cloud controller policy.
 	// This field is immutable. Once set, It can't be changed.
 	//
-	// TODO(dan): document the "cloud controller policy"
+	// The secret referenced by this field must contain an IBM Cloud IAM API key
+	// with the following IAM roles:
+	//
+	// Resource Group:
+	//   - Viewer (platform role)
+	//
+	// VPC Infrastructure Services (is):
+	//   - Editor (platform role)
+	//   - Operator (platform role)
+	//   - Viewer (platform role)
+	//
+	// Power Systems Virtual Server (power-iaas), scoped to the service instance:
+	//   - Viewer (platform role)
+	//   - Reader (service role)
+	//   - Manager (service role)
 	//
 	// +immutable
 	// +required
@@ -242,7 +256,11 @@ type PowerVSPlatformSpec struct {
 	// credentials with permissions matching the node pool management policy.
 	// This field is immutable. Once set, It can't be changed.
 	//
-	// TODO(dan): document the "node pool management policy"
+	// The secret referenced by this field must contain an IBM Cloud IAM API key
+	// with the following IAM roles on the Power Systems Virtual Server
+	// (power-iaas) service, scoped to the specific service instance:
+	//   - Manager (service role)
+	//   - Editor (platform role)
 	//
 	// +immutable
 	// +required
