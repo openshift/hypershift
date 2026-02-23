@@ -108,6 +108,7 @@ func (o *RunLocalIgnitionProviderOptions) Run(ctx context.Context) error {
 		WorkDir:               o.WorkDir,
 		PreserveOutput:        true,
 		ImageFileCache:        imageFileCache,
+		MCSTLSCache:           controllers.NewMCSTLSCache(),
 		FeatureGateManifest:   o.FeatureGateManifest,
 	}
 

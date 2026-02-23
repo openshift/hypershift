@@ -3,8 +3,6 @@ package controllers
 import (
 	"bytes"
 	"context"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,7 +19,6 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
-	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/util"
@@ -79,6 +76,10 @@ type LocalIgnitionProvider struct {
 	ImageMetadataProvider *util.RegistryClientImageMetadataProvider
 
 	ImageFileCache *imageFileCache
+
+	// MCSTLSCache caches the MCS TLS certificate and key to avoid
+	// regenerating them on every ignition payload request.
+	MCSTLSCache *mcsTLSCache
 
 	lock sync.Mutex
 }
@@ -600,30 +601,18 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 	payload, err := func() ([]byte, error) {
 		start := time.Now()
 
-		// Generate certificates. The MCS is hard-coded to expose a TLS listener
-		// and requires both a certificate and a key.
-		// TODO: This could be generated once up-front and cached for all processes
-		err = func() error {
-			cfg := &certs.CertCfg{
-				Subject:   pkix.Name{CommonName: "machine-config-server", OrganizationalUnit: []string{"openshift"}},
-				KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-				Validity:  certs.ValidityOneDay,
-				IsCA:      true,
-			}
-			key, crt, err := certs.GenerateSelfSignedCertificate(cfg)
-			if err != nil {
-				return fmt.Errorf("failed to generate cert: %w", err)
-			}
-			if err := os.WriteFile(filepath.Join(mcsBaseDir, "tls.crt"), certs.CertToPem(crt), 0644); err != nil {
-				return fmt.Errorf("failed to write mcs cert: %w", err)
-			}
-			if err := os.WriteFile(filepath.Join(mcsBaseDir, "tls.key"), certs.PrivateKeyToPem(key), 0644); err != nil {
-				return fmt.Errorf("failed to write mcs cert: %w", err)
-			}
-			return nil
-		}()
+		// Retrieve or generate MCS TLS certificates. The MCS is hard-coded to
+		// expose a TLS listener and requires both a certificate and a key.
+		// Certificates are cached and reused across requests for performance.
+		certPEM, keyPEM, err := p.MCSTLSCache.getOrGenerate()
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate certificates: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(mcsBaseDir, "tls.crt"), certPEM, 0644); err != nil {
+			return nil, fmt.Errorf("failed to write mcs cert: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(mcsBaseDir, "tls.key"), keyPEM, 0644); err != nil {
+			return nil, fmt.Errorf("failed to write mcs key: %w", err)
 		}
 
 		args := []string{
