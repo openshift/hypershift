@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/featuregates"
@@ -94,10 +96,17 @@ func generateJWTForProvider(ctx context.Context, provider configv1.OIDCProvider,
 		return out, fmt.Errorf("generating claim validation rules: %v", err)
 	}
 
+	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) {
+		userValidationRules, err := generateUserValidationRules(provider.UserValidationRules...)
+		if err != nil {
+			return out, fmt.Errorf("generating userValidationRules for provider %q: %v", provider.Name, err)
+		}
+		out.UserValidationRules = userValidationRules
+	}
+
 	out.Issuer = issuer
 	out.ClaimMappings = claimMappings
 	out.ClaimValidationRules = claimValidationRules
-
 	return out, nil
 }
 
@@ -109,6 +118,35 @@ func generateIssuer(ctx context.Context, issuer configv1.TokenIssuer, client crc
 
 	for _, audience := range issuer.Audiences {
 		out.Audiences = append(out.Audiences, string(audience))
+	}
+
+	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) {
+		if len(issuer.DiscoveryURL) > 0 {
+			// Validate the URL scheme
+			u, err := url.Parse(issuer.DiscoveryURL)
+			if err != nil {
+				return out, fmt.Errorf("invalid discovery URL: %v", err)
+			}
+			if strings.TrimRight(issuer.DiscoveryURL, "/") == strings.TrimRight(issuer.URL, "/") {
+				return out, fmt.Errorf("discovery URL must not be identical to issuer URL")
+			}
+			if u.Scheme != "https" {
+				return out, fmt.Errorf("discovery URL must use https, got %q", u.Scheme)
+			}
+			if u.Host == "" {
+				return out, fmt.Errorf("discovery URL must include a host")
+			}
+			if u.User != nil {
+				return out, fmt.Errorf("discovery URL must not contain user info")
+			}
+			if len(u.RawQuery) > 0 {
+				return out, fmt.Errorf("discovery URL must not contain a query string")
+			}
+			if len(u.Fragment) > 0 {
+				return out, fmt.Errorf("discovery URL must not contain a fragment")
+			}
+			out.DiscoveryURL = issuer.DiscoveryURL
+		}
 	}
 
 	if len(issuer.CertificateAuthority.Name) > 0 {
@@ -293,11 +331,64 @@ func generateClaimValidationRule(claimValidationRule configv1.TokenClaimValidati
 
 		out.Claim = claimValidationRule.RequiredClaim.Claim
 		out.RequiredValue = claimValidationRule.RequiredClaim.RequiredValue
+	case configv1.TokenValidationRuleTypeCEL:
+		if len(claimValidationRule.CEL.Expression) == 0 {
+			return out, fmt.Errorf("claimValidationRule.type is %s and expression is not set", configv1.TokenValidationRuleTypeCEL)
+		}
+
+		// validate CEL expression
+		if err := validateCELExpression(&authenticationcel.ClaimValidationCondition{
+			Expression: claimValidationRule.CEL.Expression,
+		}); err != nil {
+			return out, fmt.Errorf("invalid CEL expression: %v", err)
+		}
+
+		out.Expression = claimValidationRule.CEL.Expression
+		out.Message = claimValidationRule.CEL.Message
+
 	default:
 		return out, fmt.Errorf("unknown claimValidationRule type %q", claimValidationRule.Type)
 	}
 
 	return out, nil
+}
+
+func generateUserValidationRules(rules ...configv1.TokenUserValidationRule) ([]UserValidationRule, error) {
+	out := []UserValidationRule{}
+	errs := []error{}
+
+	for _, r := range rules {
+		uvr, err := generateUserValidationRule(r)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("generating userValidationRule: %v", err))
+			continue
+		}
+		out = append(out, uvr)
+	}
+
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+
+	return out, nil
+}
+
+func generateUserValidationRule(rule configv1.TokenUserValidationRule) (UserValidationRule, error) {
+	out := UserValidationRule{}
+	if len(rule.Expression) == 0 {
+		return UserValidationRule{}, fmt.Errorf("userValidationRule expression must be non-empty")
+	}
+	// validate CEL expression
+	if err := validateUserCELExpression(&authenticationcel.UserValidationCondition{
+		Expression: rule.Expression,
+	}); err != nil {
+		return out, fmt.Errorf("invalid CEL expression: %v", err)
+	}
+
+	return UserValidationRule{
+		Expression: rule.Expression,
+		Message:    rule.Message,
+	}, nil
 }
 
 func validateAuthConfig(authConfig *AuthenticationConfiguration, disallowIssuers []string) error {
@@ -350,4 +441,19 @@ func HCPAuthConfigToAPIServerAuthConfig(authConfig *AuthenticationConfiguration)
 	}
 
 	return apiserverAuthConfig, nil
+}
+
+// validateCELExpression validates a CEL expression using the provided expression accessor.
+// It uses the default authentication CEL compiler that the KAS uses and thus defaults to
+// validating CEL expressions based on the version of the k8s dependencies used by the
+// cluster-authentication-operator.
+func validateCELExpression(expressionAccessor authenticationcel.ExpressionAccessor) error {
+	_, err := authenticationcel.NewDefaultCompiler().CompileClaimsExpression(expressionAccessor)
+	return err
+}
+
+// validateUserCELExpression validates a user CEL expression using the user.* scope.
+func validateUserCELExpression(expressionAccessor authenticationcel.ExpressionAccessor) error {
+	_, err := authenticationcel.NewDefaultCompiler().CompileUserExpression(expressionAccessor)
+	return err
 }
