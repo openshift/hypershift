@@ -980,6 +980,286 @@ func TestAdaptAuthConfig(t *testing.T) {
 			},
 			shouldError: true,
 		},
+		{
+			name:   "invalid discovery URL (http instead of https)",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							DiscoveryURL: "http://insecure-url.com",
+							Audiences: []configv1.TokenAudience{
+								"one",
+								"two",
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+		{
+			name:   "invalid discovery URL (identical to issuer URL)",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:          "https://issuer.example.com",
+							DiscoveryURL: "https://issuer.example.com",
+							Audiences: []configv1.TokenAudience{
+								"one",
+								"two",
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+		{
+			name:   "invalid discovery URL (identical to issuer URL except trailing slash)",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:          "https://issuer.example.com",
+							DiscoveryURL: "https://issuer.example.com/",
+							Audiences: []configv1.TokenAudience{
+								"one",
+								"two",
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+		{
+			name:   "invalid discovery URL (missing host)",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:          "https://issuer.example.com",
+							DiscoveryURL: "https://path", // missing host
+							Audiences: []configv1.TokenAudience{
+								"one",
+								"two",
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+		{
+			name:   "invalid discovery URL (contains user info)",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:          "https://issuer.example.com",
+							DiscoveryURL: "https://user@discovery.example.com/path", // contains user info
+							Audiences: []configv1.TokenAudience{
+								"one",
+								"two",
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+		{
+			name:   "invalid discovery URL (contains query string)",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:          "https://issuer.example.com",
+							DiscoveryURL: "https://discovery.example.com/path?q=1", // contains query string
+							Audiences: []configv1.TokenAudience{
+								"one",
+								"two",
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+		{
+			name:   "invalid discovery URL (contains fragment)",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:          "https://issuer.example.com",
+							DiscoveryURL: "https://discovery.example.com/path#fragment", // contains fragment
+							Audiences: []configv1.TokenAudience{
+								"one",
+								"two",
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+		{
+			name:   "invalid discovery URL (parse error)",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:          "https://issuer.example.com",
+							DiscoveryURL: "https://%zz", // parse error
+							Audiences: []configv1.TokenAudience{
+								"one",
+								"two",
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+		{
+			name:   "user validation rule invalid expression",
+			client: fake.NewClientBuilder().Build(),
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL: "https://issuer.example.com",
+							Audiences: []configv1.TokenAudience{
+								"one",
+								"two",
+							},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								PrefixPolicy: configv1.NoOpinion,
+								Claim:        "username",
+							},
+						},
+						UserValidationRules: []configv1.TokenUserValidationRule{
+							{
+								Expression: "", // invalid: empty expression
+								Message:    "must have a valid expression",
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
 	}
 
 	for _, tc := range testCases {
