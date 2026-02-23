@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -42,15 +43,20 @@ const namespaceEnvVariableName = "MY_NAMESPACE"
 
 var (
 	// We only match /ignition
-	ignPathPattern                       = regexp.MustCompile("^/ignition[^/ ]*$")
-	payloadStore                         = controllers.NewPayloadStore()
-	getRequestsPerNodePool               = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "ign_server_get_request"}, []string{"nodePool"})
+	ignPathPattern         = regexp.MustCompile("^/ignition[^/ ]*$")
+	payloadStore           = controllers.NewPayloadStore()
+	getRequestsPerNodePool = prometheus.NewCounterVec(prometheus.CounterOpts{Name: "ign_server_get_request"}, []string{"nodePool"})
+	certRotationRestarts   = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "ignition_server_cert_rotation_restart_total",
+		Help: "Total number of ignition server restarts triggered by TLS certificate rotation.",
+	})
 	TokenSecretIgnitionReachedAnnotation = "hypershift.openshift.io/ignition-reached"
 )
 
 func init() {
 	metrics.Registry.MustRegister(
 		getRequestsPerNodePool,
+		certRotationRestarts,
 	)
 }
 
@@ -106,11 +112,7 @@ func NewStartCommand() *cobra.Command {
 			cancel()
 		}()
 
-		if err := WatchSecretFiles(ctx, cancel, []string{opts.CertFile, opts.KeyFile}); err != nil {
-			log.Fatalf("Failed to set up secret file watcher: %v", err)
-		}
-
-		if err := run(ctx, opts); err != nil {
+		if err := run(ctx, cancel, opts); err != nil {
 			log.Fatal(err)
 		}
 	}
@@ -187,7 +189,7 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 	return mgr, nil
 }
 
-func run(ctx context.Context, opts Options) error {
+func run(ctx context.Context, cancel context.CancelFunc, opts Options) error {
 	logger := zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	}))
@@ -198,6 +200,21 @@ func run(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("failed to load serving cert: %w", err)
 	}
+
+	// Register a callback to cancel the context (and trigger a graceful
+	// shutdown) when the TLS certificate is rotated. While certwatcher
+	// reloads the certificate in memory for new connections, restarting
+	// ensures all active connections pick up the new cert.
+	var certCallbackReady atomic.Bool
+	certWatcher.RegisterCallback(func(_ tls.Certificate) {
+		if !certCallbackReady.Load() {
+			return // Skip the initial invocation during registration.
+		}
+		certRotationRestarts.Inc()
+		logger.Info("TLS certificate changed, canceling context to trigger restart")
+		cancel()
+	})
+	certCallbackReady.Store(true)
 
 	mgr, err := setUpPayloadStoreReconciler(ctx, opts.RegistryOverrides, hyperv1.PlatformType(opts.Platform), opts.WorkDir, opts.MetricsAddr, opts.FeatureGateManifest)
 	if err != nil {
@@ -312,8 +329,10 @@ func run(ctx context.Context, opts Options) error {
 
 	go func() {
 		<-ctx.Done()
-		if err := server.Shutdown(ctx); err != nil {
-			log.Printf("error shutting down server: %s", err)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			logger.Error(err, "Error shutting down server")
 		}
 	}()
 
