@@ -106,8 +106,10 @@ func NewStartCommand() *cobra.Command {
 			cancel()
 		}()
 
-		// TODO: Add an fsnotify watcher to cancel the context and trigger a restart
-		// if any of the secret data has changed.
+		if err := WatchSecretFiles(ctx, cancel, []string{opts.CertFile, opts.KeyFile}); err != nil {
+			log.Fatalf("Failed to set up secret file watcher: %v", err)
+		}
+
 		if err := run(ctx, opts); err != nil {
 			log.Fatal(err)
 		}
