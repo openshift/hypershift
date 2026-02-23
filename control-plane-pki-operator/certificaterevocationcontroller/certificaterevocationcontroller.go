@@ -21,6 +21,7 @@ import (
 	hcpmanifests "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
 	"github.com/openshift/hypershift/control-plane-pki-operator/manifests"
+	"github.com/openshift/hypershift/support/config"
 
 	"github.com/openshift/library-go/pkg/certs/cert-inspection/certgraphanalysis"
 	"github.com/openshift/library-go/pkg/certs/cert-inspection/certgraphapi"
@@ -556,6 +557,19 @@ func isPodReady(pod *corev1.Pod) bool {
 	return false
 }
 
+// containerPort returns the container port matching the given name from the pod spec.
+// If no matching port is found, it returns the provided default.
+func containerPort(pod *corev1.Pod, portName string, defaultPort int32) int32 {
+	for i := range pod.Spec.Containers {
+		for _, p := range pod.Spec.Containers[i].Ports {
+			if p.Name == portName {
+				return p.ContainerPort
+			}
+		}
+	}
+	return defaultPort
+}
+
 // verifyCertificateAgainstAllKASPods verifies a certificate against all kube-apiserver pods
 // and returns true if the verification passes for all pods, false otherwise.
 // The verifyFunc should return true if the verification passes, false if it should requeue.
@@ -595,13 +609,6 @@ func (c *CertificateRevocationController) verifyCertificateAgainstAllKASPods(
 		return false, nil
 	}
 
-	// Extract the port from the base config
-	_, port, err := net.SplitHostPort(strings.TrimPrefix(baseCfg.Host, "https://"))
-	if err != nil {
-		klog.Warningf("couldn't extract kube api-server port from base config: %v. Trying with 6443", err)
-		port = "6443" // fall-back to 6443 in case something went wrong
-	}
-
 	tested := false
 	// Test the certificate against each kube-apiserver pod
 	for _, pod := range pods {
@@ -615,10 +622,15 @@ func (c *CertificateRevocationController) verifyCertificateAgainstAllKASPods(
 			return false, nil
 		}
 
+		// When connecting directly to a pod IP we must use the container port,
+		// not the service port from the kubeconfig. The service port can differ
+		// from the container port (e.g. IBMCloud uses service port 2040 but the
+		// container always listens on 6443).
+		port := containerPort(pod, "client", config.KASPodDefaultPort)
+
 		// Create a client config that connects directly to this pod's IP
 		podCfg := rest.CopyConfig(baseCfg)
-		// Use the pod IP with the port from the base config
-		podCfg.Host = "https://" + net.JoinHostPort(pod.Status.PodIP, port)
+		podCfg.Host = "https://" + net.JoinHostPort(pod.Status.PodIP, strconv.Itoa(int(port)))
 		// Pod IPs are not in the KAS serving certificate SANs, so we must set
 		// ServerName to the KAS service name to pass TLS verification.
 		podCfg.TLSClientConfig.ServerName = hcpmanifests.KubeAPIServerServiceName
