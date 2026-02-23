@@ -66,7 +66,7 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 	// Apply LoadBalancerSourceRanges for external router services to restrict CIDR access
 	// Only apply for external (non-internal) services and when not running on ARO HCP
 	allowedCIDRBlocks := util.AllowedCIDRBlocks(hcp)
-	if !internal && len(allowedCIDRBlocks) > 0 && !azureutil.IsAroHCP() {
+	if !internal && !azureutil.IsAroHCP() {
 		svc.Spec.LoadBalancerSourceRanges = allowedCIDRBlocks
 	}
 
