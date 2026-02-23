@@ -463,11 +463,10 @@ const (
 // DedicatedHost represents the configuration for the usage of dedicated host.
 type DedicatedHost struct {
 	// id identifies the AWS Dedicated Host on which the instance must run.
-	// The value must start with "h-" followed by either 8 or 17 lowercase hexadecimal characters (0-9 and a-f).
-	// The use of 8 lowercase hexadecimal characters is for older legacy hosts that may not have been migrated to newer format.
-	// Must be either 10 or 19 characters in length.
-	// +kubebuilder:validation:XValidation:rule="self.matches('^h-([0-9a-f]{8}|[0-9a-f]{17})$')",message="hostID must start with 'h-' followed by either 8 or 17 lowercase hexadecimal characters (0-9 and a-f)"
-	// +kubebuilder:validation:MinLength=10
+	// The value must start with "h-" followed by 17 lowercase hexadecimal characters (0-9 and a-f).
+	// Must be exactly 19 characters in length.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^h-[0-9a-f]{17}$')",message="hostID must start with 'h-' followed by 17 lowercase hexadecimal characters (0-9 and a-f)"
+	// +kubebuilder:validation:MinLength=19
 	// +kubebuilder:validation:MaxLength=19
 	// +required
 	ID string `json:"id,omitempty"`

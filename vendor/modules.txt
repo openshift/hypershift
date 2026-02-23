@@ -1019,12 +1019,10 @@ github.com/opencontainers/image-spec/specs-go/v1
 ## explicit; go 1.19
 github.com/opencontainers/selinux/go-selinux
 github.com/opencontainers/selinux/pkg/pwalkdir
-# github.com/openshift/api v0.0.0-20260120150926-4c643a652d54
+# github.com/openshift/api v0.0.0-20260120150926-4c643a652d54 => github.com/ShazaAldawamneh/api v0.0.0-20260105154902-5470873fa1dc
 ## explicit; go 1.24.0
 github.com/openshift/api
 github.com/openshift/api/annotations
-github.com/openshift/api/apiextensions
-github.com/openshift/api/apiextensions/v1alpha1
 github.com/openshift/api/apiserver
 github.com/openshift/api/apiserver/v1
 github.com/openshift/api/apps
@@ -2884,6 +2882,7 @@ sigs.k8s.io/structured-merge-diff/v6/value
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 sigs.k8s.io/yaml/kyaml
+# github.com/openshift/api => github.com/ShazaAldawamneh/api v0.0.0-20260105154902-5470873fa1dc
 # github.com/openshift/hypershift/api => ./api
 # github.com/k-orc/openstack-resource-controller => sigs.k8s.io/cluster-api-provider-openstack/orc v0.0.0-20250113192833-e4f56a2b4f32
 # sigs.k8s.io/cluster-api => github.com/csrwng/cluster-api v1.10.3-0.20251126211330-81cd715cb87e
