@@ -244,6 +244,18 @@ type SizeCapacity struct {
 	// cpu is the amount of CPU available for a specific size
 	// +optional
 	CPU *resource.Quantity `json:"cpu,omitempty"`
+
+	// kubeAPIServerMemoryFraction is a number between 0 and 1 that overrides the global
+	// kubeAPIServerMemoryFraction for this specific size. If not specified, the global
+	// fraction (or its default) is used.
+	// +optional
+	KubeAPIServerMemoryFraction *resource.Quantity `json:"kubeAPIServerMemoryFraction,omitempty"`
+
+	// kubeAPIServerCPUFraction is a number between 0 and 1 that overrides the global
+	// kubeAPIServerCPUFraction for this specific size. If not specified, the global
+	// fraction (or its default) is used.
+	// +optional
+	KubeAPIServerCPUFraction *resource.Quantity `json:"kubeAPIServerCPUFraction,omitempty"`
 }
 
 // ResourceBasedAutoscalingConfiguration specifies configuration for the
@@ -255,6 +267,13 @@ type ResourceBasedAutoscalingConfiguration struct {
 	// If not specified, a default fraction of 0.65 is used.
 	// +optional
 	KubeAPIServerMemoryFraction *resource.Quantity `json:"kubeAPIServerMemoryFraction,omitempty"`
+
+	// kubeAPIServerCPUFraction is a number between 0 and 1 that determines how much
+	// of a machine's total CPU is available for the Kube API server container. This fraction
+	// is used to determine whether a Kube API server container can fit within a particular cluster size.
+	// If not specified, a default fraction of 0.65 is used.
+	// +optional
+	KubeAPIServerCPUFraction *resource.Quantity `json:"kubeAPIServerCPUFraction,omitempty"`
 }
 
 // ClusterSizingConfigurationStatus defines the observed state of ClusterSizingConfiguration
