@@ -94,10 +94,15 @@ func generateJWTForProvider(ctx context.Context, provider configv1.OIDCProvider,
 		return out, fmt.Errorf("generating claim validation rules: %v", err)
 	}
 
+	userValidationRules, err := generateUserValidationRules(provider.UserValidationRules...)
+	if err != nil {
+		return out, fmt.Errorf("generating userValidationRules for provider %q: %v", provider.Name, err)
+	}
+
 	out.Issuer = issuer
 	out.ClaimMappings = claimMappings
 	out.ClaimValidationRules = claimValidationRules
-
+	out.UserValidationRules = userValidationRules
 	return out, nil
 }
 
@@ -109,6 +114,9 @@ func generateIssuer(ctx context.Context, issuer configv1.TokenIssuer, client crc
 
 	for _, audience := range issuer.Audiences {
 		out.Audiences = append(out.Audiences, string(audience))
+	}
+	if len(issuer.DiscoveryURL) > 0 {
+		out.DiscoveryURL = issuer.DiscoveryURL
 	}
 
 	if len(issuer.CertificateAuthority.Name) > 0 {
@@ -298,6 +306,37 @@ func generateClaimValidationRule(claimValidationRule configv1.TokenClaimValidati
 	}
 
 	return out, nil
+}
+
+func generateUserValidationRules(rules ...configv1.TokenUserValidationRule) ([]UserValidationRule, error) {
+	out := []UserValidationRule{}
+	errs := []error{}
+
+	for _, r := range rules {
+		uvr, err := generateUserValidationRule(r)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("generating userValidationRule: %v", err))
+			continue
+		}
+		out = append(out, uvr)
+	}
+
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+
+	return out, nil
+}
+
+func generateUserValidationRule(rule configv1.TokenUserValidationRule) (UserValidationRule, error) {
+	if len(rule.Expression) == 0 {
+		return UserValidationRule{}, fmt.Errorf("userValidationRule expression must be non-empty")
+	}
+
+	return UserValidationRule{
+		Expression: rule.Expression,
+		Message:    rule.Message,
+	}, nil
 }
 
 func validateAuthConfig(authConfig *AuthenticationConfiguration, disallowIssuers []string) error {
