@@ -10,7 +10,7 @@ import (
 type AzureVMImageType string
 
 const (
-	// ImageID is the used to specify that an Azure resource ID of a VHD image is used to boot the Azure VMs from.
+	// ImageID is used to specify that an Azure resource ID of a managed image is used to boot the Azure VMs from.
 	ImageID AzureVMImageType = "ImageID"
 
 	// AzureMarketplace is used to specify the Azure Marketplace image info to use to boot the Azure VMs from.
@@ -86,19 +86,19 @@ type AzureNodePoolPlatform struct {
 	// HostedCluster.Spec.Platform.Azure.SubscriptionID.
 	// subnetID is immutable once set.
 	// The subnetID should be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`.
-	// The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+	// The subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
 	// The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
-	// The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
-	// The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.
+	// The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods, must start with an alphanumeric character, and must not end with either a period (.) or hyphen (-) character.
+	// The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens, underscores, and periods and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.
 	//
-	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) == 11 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Network/virtualNetworks/.*/subnets/.*$')",message="encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`"
-	// +kubebuilder:validation:XValidation:rule="self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12"
-	// +kubebuilder:validation:XValidation:rule=`self.split('/')[4].matches('[a-zA-Z0-9-_\\(\\)\\.]{1,90}')`,message="The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis"
-	// +kubebuilder:validation:XValidation:rule="!self.split('/')[4].endsWith('.')",message="the resourceGroupName in the subnetID must not end with a period (.) character"
-	// +kubebuilder:validation:XValidation:rule=`self.split('/')[8].matches('[a-zA-Z0-9-_\\.]{2,64}')`,message="The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods"
-	// +kubebuilder:validation:XValidation:rule="!self.split('/')[8].endsWith('.') && !self.split('/')[8].endsWith('-')",message="the vnetName in the subnetID must not end with either a period (.) or hyphen (-) character"
-	// +kubebuilder:validation:XValidation:rule=`self.split('/')[10].matches('[a-zA-Z0-9][a-zA-Z0-9-_\\.]{0,79}')`,message="The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character"
-	// +kubebuilder:validation:XValidation:rule="!self.split('/')[10].endsWith('.') && !self.split('/')[10].endsWith('-')",message="the subnetName in the subnetID must not end with a period (.) or hyphen (-) character"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) == 11 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft\\.Network/virtualNetworks/.*/subnets/.*$')",message="subnetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) != 11 || self.split('/')[2].matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')",message="the subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12"
+	// +kubebuilder:validation:XValidation:rule=`size(self.split('/')) != 11 || self.split('/')[4].matches('^[a-zA-Z0-9_().-]{1,90}$')`,message="The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) != 11 || !self.split('/')[4].endsWith('.')",message="the resourceGroupName in the subnetID must not end with a period (.) character"
+	// +kubebuilder:validation:XValidation:rule=`size(self.split('/')) != 11 || self.split('/')[8].matches('^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,63}$')`,message="The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must start with an alphanumeric character"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) != 11 || (!self.split('/')[8].endsWith('.') && !self.split('/')[8].endsWith('-'))",message="the vnetName in the subnetID must not end with either a period (.) or hyphen (-) character"
+	// +kubebuilder:validation:XValidation:rule=`size(self.split('/')) != 11 || self.split('/')[10].matches('^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$')`,message="The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens, underscores, and periods and must start with an alphanumeric character"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) != 11 || (!self.split('/')[10].endsWith('.') && !self.split('/')[10].endsWith('-'))",message="the subnetName in the subnetID must not end with a period (.) or hyphen (-) character"
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=355
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="SubnetID is immutable"
@@ -118,7 +118,7 @@ type AzureNodePoolPlatform struct {
 type AzureVMImage struct {
 	// type is the type of image data that will be provided to the Azure VM.
 	// Valid values are "ImageID" and "AzureMarketplace".
-	// ImageID means is used for legacy managed VM images. This is where the user uploads a VM image directly to their resource group.
+	// ImageID is used for legacy managed VM images. This is where the user uploads a VM image directly to their resource group.
 	// AzureMarketplace means the VM will boot from an Azure Marketplace image.
 	// Marketplace images are preconfigured and published by the OS vendors and may include preconfigured software for the VM.
 	// When Type is "AzureMarketplace", you can either:
@@ -130,12 +130,25 @@ type AzureVMImage struct {
 	// +unionDiscriminator
 	Type AzureVMImageType `json:"type"`
 
-	// imageID is the Azure resource ID of a VHD image to use to boot the Azure VMs from.
-	// TODO: What is the valid character set for this field? What about minimum and maximum lengths?
+	// imageID is the Azure resource ID of a managed image to use to boot the Azure VMs from.
+	// This must be a full Azure resource ID for a managed image.
+	// The imageID should be in the format
+	// `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/images/{imageName}`.
+	// The subscriptionId in the imageID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+	// The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
+	// The imageName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens, underscores and periods.
+	//
+	// Example: `/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-resource-group/providers/Microsoft.Compute/images/rhcos.x86_64.vhd`
 	//
 	// +optional
 	// +unionMember
-	// +kubebuilder:validation:MaxLength=255
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) == 9 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft\\.Compute/images/.*$')",message="imageID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/images/{imageName}`"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) != 9 || self.split('/')[2].matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')",message="the subscriptionId in the imageID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12"
+	// +kubebuilder:validation:XValidation:rule=`size(self.split('/')) != 9 || self.split('/')[4].matches('^[a-zA-Z0-9_().-]{1,90}$')`,message="The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) != 9 || !self.split('/')[4].endsWith('.')",message="the resourceGroupName in the imageID must not end with a period (.) character"
+	// +kubebuilder:validation:XValidation:rule=`size(self.split('/')) != 9 || self.split('/')[8].matches('^[a-zA-Z0-9_.-]{1,80}$')`,message="The imageName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens, underscores and periods"
+	// +kubebuilder:validation:MinLength=105
+	// +kubebuilder:validation:MaxLength=280
 	ImageID *string `json:"imageID,omitempty"`
 
 	// azureMarketplace contains the Azure Marketplace image info to use to boot the Azure VMs from.
@@ -415,19 +428,19 @@ type AzurePlatformSpec struct {
 	// HostedCluster.Spec.Platform.Azure.SubscriptionID.
 	// subnetID is immutable once set.
 	// The subnetID should be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`.
-	// The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+	// The subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
 	// The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
-	// The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
-	// The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.
+	// The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods, must start with an alphanumeric character, and must not end with either a period (.) or hyphen (-) character.
+	// The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens, underscores, and periods and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.
 	//
-	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) == 11 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Network/virtualNetworks/.*/subnets/.*$')",message="encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`"
-	// +kubeubilder:validation:XValidation:rule="self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12"
-	// +kubebuilder:validation:XValidation:rule=`self.split('/')[4].matches('[a-zA-Z0-9-_\\(\\)\\.]{1,90}')`,message="The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis"
-	// +kubebuilder:validation:XValidation:rule="!self.split('/')[4].endsWith('.')",message="the resourceGroupName in the subnetID must not end with a period (.) character"
-	// +kubebuilder:validation:XValidation:rule=`self.split('/')[8].matches('[a-zA-Z0-9-_\\.]{2,64}')`,message="The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods"
-	// +kubebuilder:validation:XValidation:rule="!self.split('/')[8].endsWith('.') && !self.split('/')[8].endsWith('-')",message="the vnetName in the subnetID must not end with either a period (.) or hyphen (-) character"
-	// +kubebuilder:validation:XValidation:rule=`self.split('/')[10].matches('[a-zA-Z0-9][a-zA-Z0-9-_\\.]{0,79}')`,message="The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character"
-	// +kubebuilder:validation:XValidation:rule="!self.split('/')[10].endsWith('.') && !self.split('/')[10].endsWith('-')",message="the subnetName in the subnetID must not end with a period (.) or hyphen (-) character"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) == 11 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft\\.Network/virtualNetworks/.*/subnets/.*$')",message="subnetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) != 11 || self.split('/')[2].matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')",message="the subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12"
+	// +kubebuilder:validation:XValidation:rule=`size(self.split('/')) != 11 || self.split('/')[4].matches('^[a-zA-Z0-9_().-]{1,90}$')`,message="The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) != 11 || !self.split('/')[4].endsWith('.')",message="the resourceGroupName in the subnetID must not end with a period (.) character"
+	// +kubebuilder:validation:XValidation:rule=`size(self.split('/')) != 11 || self.split('/')[8].matches('^[a-zA-Z0-9][a-zA-Z0-9_.-]{1,63}$')`,message="The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must start with an alphanumeric character"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) != 11 || (!self.split('/')[8].endsWith('.') && !self.split('/')[8].endsWith('-'))",message="the vnetName in the subnetID must not end with either a period (.) or hyphen (-) character"
+	// +kubebuilder:validation:XValidation:rule=`size(self.split('/')) != 11 || self.split('/')[10].matches('^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,79}$')`,message="The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens, underscores, and periods and must start with an alphanumeric character"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) != 11 || (!self.split('/')[10].endsWith('.') && !self.split('/')[10].endsWith('-'))",message="the subnetName in the subnetID must not end with a period (.) or hyphen (-) character"
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=355
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf", message="SubnetID is immutable"

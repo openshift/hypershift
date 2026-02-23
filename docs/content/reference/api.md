@@ -3494,10 +3494,10 @@ exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must ex
 HostedCluster.Spec.Platform.Azure.SubscriptionID.
 subnetID is immutable once set.
 The subnetID should be in the format <code>/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}</code>.
-The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+The subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
 The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
-The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
-The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.</p>
+The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods, must start with an alphanumeric character, and must not end with either a period (.) or hyphen (-) character.
+The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens, underscores, and periods and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.</p>
 </td>
 </tr>
 <tr>
@@ -3605,10 +3605,10 @@ exist in the same network, HostedCluster.Spec.Platform.Azure.VnetID, and must ex
 HostedCluster.Spec.Platform.Azure.SubscriptionID.
 subnetID is immutable once set.
 The subnetID should be in the format <code>/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}</code>.
-The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+The subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
 The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
-The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
-The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.</p>
+The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods, must start with an alphanumeric character, and must not end with either a period (.) or hyphen (-) character.
+The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens, underscores, and periods and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.</p>
 </td>
 </tr>
 <tr>
@@ -3737,7 +3737,7 @@ AzureVMImageType
 <td>
 <p>type is the type of image data that will be provided to the Azure VM.
 Valid values are &ldquo;ImageID&rdquo; and &ldquo;AzureMarketplace&rdquo;.
-ImageID means is used for legacy managed VM images. This is where the user uploads a VM image directly to their resource group.
+ImageID is used for legacy managed VM images. This is where the user uploads a VM image directly to their resource group.
 AzureMarketplace means the VM will boot from an Azure Marketplace image.
 Marketplace images are preconfigured and published by the OS vendors and may include preconfigured software for the VM.
 When Type is &ldquo;AzureMarketplace&rdquo;, you can either:
@@ -3755,8 +3755,14 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>imageID is the Azure resource ID of a VHD image to use to boot the Azure VMs from.
-TODO: What is the valid character set for this field? What about minimum and maximum lengths?</p>
+<p>imageID is the Azure resource ID of a managed image to use to boot the Azure VMs from.
+This must be a full Azure resource ID for a managed image.
+The imageID should be in the format
+<code>/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/images/{imageName}</code>.
+The subscriptionId in the imageID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
+The imageName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens, underscores and periods.</p>
+<p>Example: <code>/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/my-resource-group/providers/Microsoft.Compute/images/rhcos.x86_64.vhd</code></p>
 </td>
 </tr>
 <tr>
@@ -3818,7 +3824,7 @@ Valid values are ImageID and AzureMarketplace.</p>
 <td><p>AzureMarketplace is used to specify the Azure Marketplace image info to use to boot the Azure VMs from.</p>
 </td>
 </tr><tr><td><p>&#34;ImageID&#34;</p></td>
-<td><p>ImageID is the used to specify that an Azure resource ID of a VHD image is used to boot the Azure VMs from.</p>
+<td><p>ImageID is used to specify that an Azure resource ID of a managed image is used to boot the Azure VMs from.</p>
 </td>
 </tr></tbody>
 </table>

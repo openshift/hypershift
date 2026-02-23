@@ -347,11 +347,11 @@ type AzureNodePoolOSDisk struct {
 	// The resourceName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores.
 	// TODO: Are there other encryption related options we may want to expose, should this be in a struct as well?
 	//
-	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) == 9 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Compute/diskEncryptionSets/.*$')",message="encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/diskEncryptionSets/{resourceName}`"
-	// +kubebuilder:validation:XValidation:rule="self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')",message="the subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12"
-	// +kubebuilder:validation:XValidation:rule=`self.split('/')[4].matches('[a-zA-Z0-9-_\\(\\)\\.]{1,90}')`,message="The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis"
-	// +kubebuilder:validation:XValidation:rule="!self.split('/')[4].endsWith('.')",message="the resourceGroupName in the encryptionSetID must not end with a period (.) character"
-	// +kubebuilder:validation:XValidation:rule="self.split('/')[8].matches('[a-zA-Z0-9-_]{1,80}')",message="The resourceName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) == 9 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft\\.Compute/diskEncryptionSets/.*$')",message="encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/diskEncryptionSets/{resourceName}`"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) != 9 || self.split('/')[2].matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')",message="the subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12"
+	// +kubebuilder:validation:XValidation:rule=`size(self.split('/')) != 9 || self.split('/')[4].matches('^[a-zA-Z0-9_().-]{1,90}$')`,message="The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis"
+	// +kubebuilder:validation:XValidation:rule="size(self.split('/')) != 9 || !self.split('/')[4].endsWith('.')",message="the resourceGroupName in the encryptionSetID must not end with a period (.) character"
+	// +kubebuilder:validation:XValidation:rule=`size(self.split('/')) != 9 || self.split('/')[8].matches('^[a-zA-Z0-9_-]{1,80}$')`,message="The resourceName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores"
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=285
 	// +optional
