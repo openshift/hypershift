@@ -3,6 +3,7 @@ package controllers
 import (
 	"crypto/x509"
 	"encoding/pem"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,7 +14,6 @@ func TestMCSTLSCache(t *testing.T) {
 	testCases := []struct {
 		name        string
 		setupCache  func(c *mcsTLSCache)
-		nowFn       func() time.Time
 		expectReuse bool
 	}{
 		{
@@ -86,6 +86,9 @@ func TestMCSTLSCache(t *testing.T) {
 			g.Expect(cert.Subject.OrganizationalUnit).To(Equal([]string{"openshift"}))
 			g.Expect(cert.IsCA).To(BeTrue())
 
+			// Verify cache expiry is set to the certificate's NotAfter
+			g.Expect(cache.expiry).To(Equal(cert.NotAfter), "cache expiry should match certificate NotAfter")
+
 			if tc.expectReuse {
 				g.Expect(certPEM).To(Equal(existingCertPEM), "expected cached cert to be reused")
 			} else if existingCertPEM != nil {
@@ -95,7 +98,7 @@ func TestMCSTLSCache(t *testing.T) {
 	}
 }
 
-func TestMCSTLSCacheGetOrGenerate_WhenCalledMultipleTimes_ItShouldReturnSameCert(t *testing.T) {
+func TestMCSTLSCache_WhenCalledMultipleTimes_ItShouldReturnSameCert(t *testing.T) {
 	g := NewWithT(t)
 
 	cache := NewMCSTLSCache()
@@ -110,7 +113,7 @@ func TestMCSTLSCacheGetOrGenerate_WhenCalledMultipleTimes_ItShouldReturnSameCert
 	g.Expect(key1).To(Equal(key2), "consecutive calls should return the same cached key")
 }
 
-func TestMCSTLSCacheGetOrGenerate_WhenCertExpiryIsAfterSafetyMargin_ItShouldReuseCert(t *testing.T) {
+func TestMCSTLSCache_WhenCertExpiryIsAfterSafetyMargin_ItShouldReuseCert(t *testing.T) {
 	g := NewWithT(t)
 
 	cache := NewMCSTLSCache()
@@ -127,4 +130,22 @@ func TestMCSTLSCacheGetOrGenerate_WhenCertExpiryIsAfterSafetyMargin_ItShouldReus
 	g.Expect(err).NotTo(HaveOccurred())
 
 	g.Expect(cert1).To(Equal(cert2), "cert should be reused when still valid outside safety margin")
+}
+
+func TestMCSTLSCache_WhenCalledConcurrently_ItShouldNotRace(t *testing.T) {
+	cache := NewMCSTLSCache()
+
+	var wg sync.WaitGroup
+	const goroutines = 10
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func() {
+			defer wg.Done()
+			_, _, err := cache.getOrGenerate()
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
 }

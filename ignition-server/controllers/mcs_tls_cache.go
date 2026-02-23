@@ -66,5 +66,7 @@ func (c *mcsTLSCache) getOrGenerate() (certPEM []byte, keyPEM []byte, err error)
 	c.keyPEM = certs.PrivateKeyToPem(key)
 	c.expiry = crt.NotAfter
 
+	log.Info("regenerated MCS TLS certificate", "expiry", c.expiry)
+
 	return c.certPEM, c.keyPEM, nil
 }
