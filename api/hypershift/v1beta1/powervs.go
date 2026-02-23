@@ -152,7 +152,10 @@ type PowerVSNodePoolPlatform struct {
 	ImageDeletePolicy PowerVSNodePoolImageDeletePolicy `json:"imageDeletePolicy,omitempty"`
 }
 
-// PowerVSPlatformSpec defines IBMCloud PowerVS specific settings for components
+// PowerVSPlatformSpec defines IBMCloud PowerVS specific settings for components.
+//
+// The IAM policies documented on credential fields in this struct are derived
+// from the CredentialsRequest templates in cmd/infra/powervs/service_id.go.
 type PowerVSPlatformSpec struct {
 	// accountID is the IBMCloud account id.
 	// This field is immutable. Once set, It can't be changed.
@@ -232,7 +235,25 @@ type PowerVSPlatformSpec struct {
 	// credentials with permissions matching the cloud controller policy.
 	// This field is immutable. Once set, It can't be changed.
 	//
-	// TODO(dan): document the "cloud controller policy"
+	// The secret referenced by this field must contain the key `ibmcloud_api_key`
+	// with an IBM Cloud API key that has the following IAM policies:
+	//
+	// 1. Resource Group — Viewer:
+	//    - Resource type: resource-group
+	//    - Role: crn:v1:bluemix:public:iam::::role:Viewer
+	//
+	// 2. VPC Infrastructure Services (IS) — Editor, Operator, Viewer:
+	//    - Service name: is
+	//    - Roles: crn:v1:bluemix:public:iam::::role:Editor,
+	//      crn:v1:bluemix:public:iam::::role:Operator,
+	//      crn:v1:bluemix:public:iam::::role:Viewer
+	//
+	// 3. Power IaaS — Viewer, Reader, Manager (scoped to the service instance):
+	//    - Service name: power-iaas
+	//    - Service instance: <the PowerVS cloud instance ID>
+	//    - Roles: crn:v1:bluemix:public:iam::::role:Viewer,
+	//      crn:v1:bluemix:public:iam::::serviceRole:Reader,
+	//      crn:v1:bluemix:public:iam::::serviceRole:Manager
 	//
 	// +immutable
 	// +required
@@ -242,28 +263,68 @@ type PowerVSPlatformSpec struct {
 	// credentials with permissions matching the node pool management policy.
 	// This field is immutable. Once set, It can't be changed.
 	//
-	// TODO(dan): document the "node pool management policy"
+	// The secret referenced by this field must contain the key `ibmcloud_api_key`
+	// with an IBM Cloud API key that has the following IAM policies:
+	//
+	// 1. Power IaaS — Manager, Editor (scoped to the service instance):
+	//    - Service name: power-iaas
+	//    - Service instance: <the PowerVS cloud instance ID>
+	//    - Roles: crn:v1:bluemix:public:iam::::serviceRole:Manager,
+	//      crn:v1:bluemix:public:iam::::role:Editor
 	//
 	// +immutable
 	// +required
 	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
 
-	// ingressOperatorCloudCreds is a reference to a secret containing ibm cloud
-	// credentials for ingress operator to get authenticated with ibm cloud.
+	// ingressOperatorCloudCreds is a reference to a secret containing IBM Cloud
+	// credentials for ingress operator to get authenticated with IBM Cloud.
+	//
+	// The secret referenced by this field must contain the key `ibmcloud_api_key`
+	// with an IBM Cloud API key that has the following IAM policies:
+	//
+	// 1. Internet Services (CIS) — Manager, Editor:
+	//    - Service name: internet-svcs
+	//    - Roles: crn:v1:bluemix:public:iam::::serviceRole:Manager,
+	//      crn:v1:bluemix:public:iam::::role:Editor
 	//
 	// +immutable
 	// +required
 	IngressOperatorCloudCreds corev1.LocalObjectReference `json:"ingressOperatorCloudCreds"`
 
-	// storageOperatorCloudCreds is a reference to a secret containing ibm cloud
-	// credentials for storage operator to get authenticated with ibm cloud.
+	// storageOperatorCloudCreds is a reference to a secret containing IBM Cloud
+	// credentials for storage operator to get authenticated with IBM Cloud.
+	//
+	// The secret referenced by this field must contain the key `ibmcloud_api_key`
+	// with an IBM Cloud API key that has the following IAM policies:
+	//
+	// 1. Power IaaS — Manager, Editor (scoped to the service instance):
+	//    - Service name: power-iaas
+	//    - Service instance: <the PowerVS cloud instance ID>
+	//    - Roles: crn:v1:bluemix:public:iam::::serviceRole:Manager,
+	//      crn:v1:bluemix:public:iam::::role:Editor
+	//
+	// 2. Resource Group — Viewer:
+	//    - Resource type: resource-group
+	//    - Role: crn:v1:bluemix:public:iam::::role:Viewer
 	//
 	// +immutable
 	// +required
 	StorageOperatorCloudCreds corev1.LocalObjectReference `json:"storageOperatorCloudCreds"`
 
-	// imageRegistryOperatorCloudCreds is a reference to a secret containing ibm cloud
-	// credentials for image registry operator to get authenticated with ibm cloud.
+	// imageRegistryOperatorCloudCreds is a reference to a secret containing IBM Cloud
+	// credentials for image registry operator to get authenticated with IBM Cloud.
+	//
+	// The secret referenced by this field must contain the key `ibmcloud_api_key`
+	// with an IBM Cloud API key that has the following IAM policies:
+	//
+	// 1. Cloud Object Storage — Administrator, Manager:
+	//    - Service name: cloud-object-storage
+	//    - Roles: crn:v1:bluemix:public:iam::::role:Administrator,
+	//      crn:v1:bluemix:public:iam::::serviceRole:Manager
+	//
+	// 2. Resource Group — Viewer:
+	//    - Resource type: resource-group
+	//    - Role: crn:v1:bluemix:public:iam::::role:Viewer
 	//
 	// +immutable
 	// +required

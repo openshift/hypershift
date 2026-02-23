@@ -40455,7 +40455,9 @@ retain: delete the image from the openshift but retain in the infrastructure.</p
 <a href="#hypershift.openshift.io/v1beta1.PlatformSpec">PlatformSpec</a>)
 </p>
 <p>
-<p>PowerVSPlatformSpec defines IBMCloud PowerVS specific settings for components</p>
+<p>PowerVSPlatformSpec defines IBMCloud PowerVS specific settings for components.</p>
+<p>The IAM policies documented on credential fields in this struct are derived
+from the CredentialsRequest templates in cmd/infra/powervs/service_id.go.</p>
 </p>
 <table>
 <thead>
@@ -40587,7 +40589,30 @@ Kubernetes core/v1.LocalObjectReference
 <p>kubeCloudControllerCreds is a reference to a secret containing cloud
 credentials with permissions matching the cloud controller policy.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
-<p>TODO(dan): document the &ldquo;cloud controller policy&rdquo;</p>
+<p>The secret referenced by this field must contain the key <code>ibmcloud_api_key</code>
+with an IBM Cloud API key that has the following IAM policies:</p>
+<ol>
+<li><p>Resource Group — Viewer:</p>
+<ul>
+<li>Resource type: resource-group</li>
+<li>Role: crn:v1:bluemix:public:iam::::role:Viewer</li>
+</ul></li>
+<li><p>VPC Infrastructure Services (IS) — Editor, Operator, Viewer:</p>
+<ul>
+<li>Service name: is</li>
+<li>Roles: crn:v1:bluemix:public:iam::::role:Editor,
+crn:v1:bluemix:public:iam::::role:Operator,
+crn:v1:bluemix:public:iam::::role:Viewer</li>
+</ul></li>
+<li><p>Power IaaS — Viewer, Reader, Manager (scoped to the service instance):</p>
+<ul>
+<li>Service name: power-iaas</li>
+<li>Service instance: <the PowerVS cloud instance ID></li>
+<li>Roles: crn:v1:bluemix:public:iam::::role:Viewer,
+crn:v1:bluemix:public:iam::::serviceRole:Reader,
+crn:v1:bluemix:public:iam::::serviceRole:Manager</li>
+</ul></li>
+</ol>
 </td>
 </tr>
 <tr>
@@ -40603,7 +40628,17 @@ Kubernetes core/v1.LocalObjectReference
 <p>nodePoolManagementCreds is a reference to a secret containing cloud
 credentials with permissions matching the node pool management policy.
 This field is immutable. Once set, It can&rsquo;t be changed.</p>
-<p>TODO(dan): document the &ldquo;node pool management policy&rdquo;</p>
+<p>The secret referenced by this field must contain the key <code>ibmcloud_api_key</code>
+with an IBM Cloud API key that has the following IAM policies:</p>
+<ol>
+<li>Power IaaS — Manager, Editor (scoped to the service instance):
+<ul>
+<li>Service name: power-iaas</li>
+<li>Service instance: <the PowerVS cloud instance ID></li>
+<li>Roles: crn:v1:bluemix:public:iam::::serviceRole:Manager,
+crn:v1:bluemix:public:iam::::role:Editor</li>
+</ul></li>
+</ol>
 </td>
 </tr>
 <tr>
@@ -40616,8 +40651,18 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>ingressOperatorCloudCreds is a reference to a secret containing ibm cloud
-credentials for ingress operator to get authenticated with ibm cloud.</p>
+<p>ingressOperatorCloudCreds is a reference to a secret containing IBM Cloud
+credentials for ingress operator to get authenticated with IBM Cloud.</p>
+<p>The secret referenced by this field must contain the key <code>ibmcloud_api_key</code>
+with an IBM Cloud API key that has the following IAM policies:</p>
+<ol>
+<li>Internet Services (CIS) — Manager, Editor:
+<ul>
+<li>Service name: internet-svcs</li>
+<li>Roles: crn:v1:bluemix:public:iam::::serviceRole:Manager,
+crn:v1:bluemix:public:iam::::role:Editor</li>
+</ul></li>
+</ol>
 </td>
 </tr>
 <tr>
@@ -40630,8 +40675,24 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>storageOperatorCloudCreds is a reference to a secret containing ibm cloud
-credentials for storage operator to get authenticated with ibm cloud.</p>
+<p>storageOperatorCloudCreds is a reference to a secret containing IBM Cloud
+credentials for storage operator to get authenticated with IBM Cloud.</p>
+<p>The secret referenced by this field must contain the key <code>ibmcloud_api_key</code>
+with an IBM Cloud API key that has the following IAM policies:</p>
+<ol>
+<li><p>Power IaaS — Manager, Editor (scoped to the service instance):</p>
+<ul>
+<li>Service name: power-iaas</li>
+<li>Service instance: <the PowerVS cloud instance ID></li>
+<li>Roles: crn:v1:bluemix:public:iam::::serviceRole:Manager,
+crn:v1:bluemix:public:iam::::role:Editor</li>
+</ul></li>
+<li><p>Resource Group — Viewer:</p>
+<ul>
+<li>Resource type: resource-group</li>
+<li>Role: crn:v1:bluemix:public:iam::::role:Viewer</li>
+</ul></li>
+</ol>
 </td>
 </tr>
 <tr>
@@ -40644,8 +40705,23 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>imageRegistryOperatorCloudCreds is a reference to a secret containing ibm cloud
-credentials for image registry operator to get authenticated with ibm cloud.</p>
+<p>imageRegistryOperatorCloudCreds is a reference to a secret containing IBM Cloud
+credentials for image registry operator to get authenticated with IBM Cloud.</p>
+<p>The secret referenced by this field must contain the key <code>ibmcloud_api_key</code>
+with an IBM Cloud API key that has the following IAM policies:</p>
+<ol>
+<li><p>Cloud Object Storage — Administrator, Manager:</p>
+<ul>
+<li>Service name: cloud-object-storage</li>
+<li>Roles: crn:v1:bluemix:public:iam::::role:Administrator,
+crn:v1:bluemix:public:iam::::serviceRole:Manager</li>
+</ul></li>
+<li><p>Resource Group — Viewer:</p>
+<ul>
+<li>Resource type: resource-group</li>
+<li>Role: crn:v1:bluemix:public:iam::::role:Viewer</li>
+</ul></li>
+</ol>
 </td>
 </tr>
 </tbody>
