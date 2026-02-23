@@ -23,73 +23,46 @@ This document describes how to set up Azure Workload Identities and OIDC issuer 
 
 ## Create Azure Workload Identities
 
-Create managed identities for each OpenShift component that needs Azure access:
+!!! note "OIDC Issuer Required"
+
+    Before running this command, you need an OIDC issuer URL. If you haven't set this up yet, see [Configure OIDC Issuer](#configure-oidc-issuer) below first.
+
+You can create the required managed identities and federated credentials using the HyperShift CLI:
 
 ```bash
 # Set environment variables
 PERSISTENT_RG_NAME="os4-common"  # Use persistent resource group
 LOCATION="eastus"
 CLUSTER_NAME="my-self-managed-cluster"
-SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+INFRA_ID="${CLUSTER_NAME}-$(openssl rand -hex 4)"
+AZURE_CREDS="/path/to/azure-creds.json"
 
 # Create persistent resource group (if it doesn't exist)
 az group create --name $PERSISTENT_RG_NAME --location $LOCATION
 
-# Create managed identities for each component
-declare -A COMPONENTS=(
-    ["image-registry"]="cluster-image-registry-operator"
-    ["ingress"]="cluster-ingress-operator"  
-    ["file-csi"]="cluster-storage-operator-file"
-    ["disk-csi"]="cluster-storage-operator-disk"
-    ["nodepool-mgmt"]="cluster-api-provider-azure"
-    ["cloud-provider"]="azure-cloud-provider"
-    ["network"]="cluster-network-operator"
-)
-
-# Create managed identities and capture client IDs
-declare -A CLIENT_IDS
-for component in "${!COMPONENTS[@]}"; do
-    echo "Creating managed identity for $component..."
-    CLIENT_ID=$(az identity create \
-        --name "${CLUSTER_NAME}-${component}" \
-        --resource-group $PERSISTENT_RG_NAME \
-        --query clientId -o tsv)
-    CLIENT_IDS[$component]=$CLIENT_ID
-    echo "Created identity ${CLUSTER_NAME}-${component} with client ID: $CLIENT_ID"
-done
+# Create workload identities using the HyperShift CLI
+# (requires OIDC issuer URL - see next section if you haven't set this up yet)
+hypershift create iam azure \
+    --name $CLUSTER_NAME \
+    --infra-id $INFRA_ID \
+    --azure-creds $AZURE_CREDS \
+    --location $LOCATION \
+    --resource-group-name $PERSISTENT_RG_NAME \
+    --oidc-issuer-url $OIDC_ISSUER_URL \
+    --output-file workload-identities.json
 ```
 
-## Create Workload Identities Configuration File
+This creates 7 managed identities with federated credentials for:
 
-Create a JSON file with all the workload identity client IDs:
+- Disk CSI driver
+- File CSI driver
+- Image Registry
+- Ingress Operator
+- Cloud Provider
+- NodePool Management
+- Network Operator
 
-```bash
-cat <<EOF > workload-identities.json
-{
-  "imageRegistry": {
-    "clientID": "${CLIENT_IDS[image-registry]}"
-  },
-  "ingress": {
-    "clientID": "${CLIENT_IDS[ingress]}"
-  },
-  "file": {
-    "clientID": "${CLIENT_IDS[file-csi]}"
-  },
-  "disk": {
-    "clientID": "${CLIENT_IDS[disk-csi]}"
-  },
-  "nodePoolManagement": {
-    "clientID": "${CLIENT_IDS[nodepool-mgmt]}"
-  },
-  "cloudProvider": {
-    "clientID": "${CLIENT_IDS[cloud-provider]}"
-  },
-  "network": {
-    "clientID": "${CLIENT_IDS[network]}"
-  }
-}
-EOF
-```
+For complete documentation on the IAM commands, see [Create Azure IAM Resources Separately](create-iam-separately.md).
 
 ## Configure OIDC Issuer
 
@@ -118,129 +91,6 @@ ccoctl azure create-oidc-issuer \
 # Set OIDC issuer URL
 OIDC_ISSUER_URL="https://${OIDC_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${OIDC_STORAGE_ACCOUNT_NAME}"
 ```
-
-## Set Up Federated Identity Credentials
-
-Configure federated identity credentials for each workload identity. These establish trust between Azure Entra ID and the specific service accounts in your HostedCluster:
-
-```bash
-# Define workload identity names (matching those created earlier)
-# These should match the managed identities created in the previous section
-AZURE_DISK_MI_NAME="${CLUSTER_NAME}-disk-csi"
-AZURE_FILE_MI_NAME="${CLUSTER_NAME}-file-csi"
-IMAGE_REGISTRY_MI_NAME="${CLUSTER_NAME}-image-registry"
-INGRESS_MI_NAME="${CLUSTER_NAME}-ingress"
-CLOUD_PROVIDER_MI_NAME="${CLUSTER_NAME}-cloud-provider"
-NODE_POOL_MANAGEMENT_MI_NAME="${CLUSTER_NAME}-nodepool-mgmt"
-NETWORK_MI_NAME="${CLUSTER_NAME}-network"
-
-# Azure Disk CSI Driver federated credentials
-az identity federated-credential create \
-    --name "${AZURE_DISK_MI_NAME}-fed-id-node" \
-    --identity-name "${AZURE_DISK_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-disk-csi-driver-node-sa \
-    --audience openshift
-
-az identity federated-credential create \
-    --name "${AZURE_DISK_MI_NAME}-fed-id-operator" \
-    --identity-name "${AZURE_DISK_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-disk-csi-driver-operator \
-    --audience openshift
-
-az identity federated-credential create \
-    --name "${AZURE_DISK_MI_NAME}-fed-id-controller" \
-    --identity-name "${AZURE_DISK_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-disk-csi-driver-controller-sa \
-    --audience openshift
-
-# Azure File CSI Driver federated credentials
-az identity federated-credential create \
-    --name "${AZURE_FILE_MI_NAME}-fed-id-node" \
-    --identity-name "${AZURE_FILE_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-node-sa \
-    --audience openshift
-
-az identity federated-credential create \
-    --name "${AZURE_FILE_MI_NAME}-fed-id-operator" \
-    --identity-name "${AZURE_FILE_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-operator \
-    --audience openshift
-
-az identity federated-credential create \
-    --name "${AZURE_FILE_MI_NAME}-fed-id-controller" \
-    --identity-name "${AZURE_FILE_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-controller-sa \
-    --audience openshift
-
-# Image Registry federated credentials
-az identity federated-credential create \
-    --name "${IMAGE_REGISTRY_MI_NAME}-fed-id-registry" \
-    --identity-name "${IMAGE_REGISTRY_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-image-registry:registry \
-    --audience openshift
-
-az identity federated-credential create \
-    --name "${IMAGE_REGISTRY_MI_NAME}-fed-id-operator" \
-    --identity-name "${IMAGE_REGISTRY_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-image-registry:cluster-image-registry-operator \
-    --audience openshift
-
-# Ingress Operator federated credential
-az identity federated-credential create \
-    --name "${INGRESS_MI_NAME}-fed-id" \
-    --identity-name "${INGRESS_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-ingress-operator:ingress-operator \
-    --audience openshift
-
-# Cloud Provider federated credential
-az identity federated-credential create \
-    --name "${CLOUD_PROVIDER_MI_NAME}-fed-id" \
-    --identity-name "${CLOUD_PROVIDER_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:kube-system:azure-cloud-provider \
-    --audience openshift
-
-# Node Pool Management federated credential
-az identity federated-credential create \
-    --name "${NODE_POOL_MANAGEMENT_MI_NAME}-fed-id" \
-    --identity-name "${NODE_POOL_MANAGEMENT_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:kube-system:capi-provider \
-    --audience openshift
-
-# Network Operator federated credential
-az identity federated-credential create \
-    --name "${NETWORK_MI_NAME}-fed-id" \
-    --identity-name "${NETWORK_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cloud-network-config-controller:cloud-network-config-controller \
-    --audience openshift
-```
-
-!!! note "Service Account Mapping"
-    
-    Each federated identity credential maps a specific Azure managed identity to an OpenShift service account. The service accounts listed above are the default service accounts used by various OpenShift components for Azure integration.
 
 ## Verification
 

@@ -129,6 +129,8 @@ nav:
       - how-to/azure/azure-workload-identity-setup.md
       - how-to/azure/setup-management-cluster.md
       - how-to/azure/create-self-managed-azure-cluster.md
+      - how-to/azure/create-iam-separately.md
+      - how-to/azure/create-infra-separately.md
     - 'Global Pull Secret': how-to/azure/global-pull-secret.md
     - 'Troubleshooting':
         - how-to/azure/troubleshooting/index.md

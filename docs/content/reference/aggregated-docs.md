@@ -3,7 +3,7 @@
 This file contains all HyperShift documentation aggregated into a single file
 for use with AI tools like NotebookLM.
 
-Total documents: 258
+Total documents: 260
 
 ---
 
@@ -7443,73 +7443,46 @@ This document describes how to set up Azure Workload Identities and OIDC issuer 
 
 ## Create Azure Workload Identities
 
-Create managed identities for each OpenShift component that needs Azure access:
+!!! note "OIDC Issuer Required"
+
+    Before running this command, you need an OIDC issuer URL. If you haven't set this up yet, see Configure OIDC Issuer below first.
+
+You can create the required managed identities and federated credentials using the HyperShift CLI:
 
 ```bash
 # Set environment variables
 PERSISTENT_RG_NAME="os4-common"  # Use persistent resource group
 LOCATION="eastus"
 CLUSTER_NAME="my-self-managed-cluster"
-SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+INFRA_ID="${CLUSTER_NAME}-$(openssl rand -hex 4)"
+AZURE_CREDS="/path/to/azure-creds.json"
 
 # Create persistent resource group (if it doesn't exist)
 az group create --name $PERSISTENT_RG_NAME --location $LOCATION
 
-# Create managed identities for each component
-declare -A COMPONENTS=(
-    ["image-registry"]="cluster-image-registry-operator"
-    ["ingress"]="cluster-ingress-operator"  
-    ["file-csi"]="cluster-storage-operator-file"
-    ["disk-csi"]="cluster-storage-operator-disk"
-    ["nodepool-mgmt"]="cluster-api-provider-azure"
-    ["cloud-provider"]="azure-cloud-provider"
-    ["network"]="cluster-network-operator"
-)
-
-# Create managed identities and capture client IDs
-declare -A CLIENT_IDS
-for component in "${!COMPONENTS[@]}"; do
-    echo "Creating managed identity for $component..."
-    CLIENT_ID=$(az identity create \
-        --name "${CLUSTER_NAME}-${component}" \
-        --resource-group $PERSISTENT_RG_NAME \
-        --query clientId -o tsv)
-    CLIENT_IDS[$component]=$CLIENT_ID
-    echo "Created identity ${CLUSTER_NAME}-${component} with client ID: $CLIENT_ID"
-done
+# Create workload identities using the HyperShift CLI
+# (requires OIDC issuer URL - see next section if you haven't set this up yet)
+hypershift create iam azure \
+    --name $CLUSTER_NAME \
+    --infra-id $INFRA_ID \
+    --azure-creds $AZURE_CREDS \
+    --location $LOCATION \
+    --resource-group-name $PERSISTENT_RG_NAME \
+    --oidc-issuer-url $OIDC_ISSUER_URL \
+    --output-file workload-identities.json
 ```
 
-## Create Workload Identities Configuration File
+This creates 7 managed identities with federated credentials for:
 
-Create a JSON file with all the workload identity client IDs:
+- Disk CSI driver
+- File CSI driver
+- Image Registry
+- Ingress Operator
+- Cloud Provider
+- NodePool Management
+- Network Operator
 
-```bash
-cat <<EOF > workload-identities.json
-{
-  "imageRegistry": {
-    "clientID": "${CLIENT_IDS[image-registry]}"
-  },
-  "ingress": {
-    "clientID": "${CLIENT_IDS[ingress]}"
-  },
-  "file": {
-    "clientID": "${CLIENT_IDS[file-csi]}"
-  },
-  "disk": {
-    "clientID": "${CLIENT_IDS[disk-csi]}"
-  },
-  "nodePoolManagement": {
-    "clientID": "${CLIENT_IDS[nodepool-mgmt]}"
-  },
-  "cloudProvider": {
-    "clientID": "${CLIENT_IDS[cloud-provider]}"
-  },
-  "network": {
-    "clientID": "${CLIENT_IDS[network]}"
-  }
-}
-EOF
-```
+For complete documentation on the IAM commands, see Create Azure IAM Resources Separately.
 
 ## Configure OIDC Issuer
 
@@ -7538,129 +7511,6 @@ ccoctl azure create-oidc-issuer \
 # Set OIDC issuer URL
 OIDC_ISSUER_URL="https://${OIDC_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${OIDC_STORAGE_ACCOUNT_NAME}"
 ```
-
-## Set Up Federated Identity Credentials
-
-Configure federated identity credentials for each workload identity. These establish trust between Azure Entra ID and the specific service accounts in your HostedCluster:
-
-```bash
-# Define workload identity names (matching those created earlier)
-# These should match the managed identities created in the previous section
-AZURE_DISK_MI_NAME="${CLUSTER_NAME}-disk-csi"
-AZURE_FILE_MI_NAME="${CLUSTER_NAME}-file-csi"
-IMAGE_REGISTRY_MI_NAME="${CLUSTER_NAME}-image-registry"
-INGRESS_MI_NAME="${CLUSTER_NAME}-ingress"
-CLOUD_PROVIDER_MI_NAME="${CLUSTER_NAME}-cloud-provider"
-NODE_POOL_MANAGEMENT_MI_NAME="${CLUSTER_NAME}-nodepool-mgmt"
-NETWORK_MI_NAME="${CLUSTER_NAME}-network"
-
-# Azure Disk CSI Driver federated credentials
-az identity federated-credential create \
-    --name "${AZURE_DISK_MI_NAME}-fed-id-node" \
-    --identity-name "${AZURE_DISK_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-disk-csi-driver-node-sa \
-    --audience openshift
-
-az identity federated-credential create \
-    --name "${AZURE_DISK_MI_NAME}-fed-id-operator" \
-    --identity-name "${AZURE_DISK_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-disk-csi-driver-operator \
-    --audience openshift
-
-az identity federated-credential create \
-    --name "${AZURE_DISK_MI_NAME}-fed-id-controller" \
-    --identity-name "${AZURE_DISK_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-disk-csi-driver-controller-sa \
-    --audience openshift
-
-# Azure File CSI Driver federated credentials
-az identity federated-credential create \
-    --name "${AZURE_FILE_MI_NAME}-fed-id-node" \
-    --identity-name "${AZURE_FILE_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-node-sa \
-    --audience openshift
-
-az identity federated-credential create \
-    --name "${AZURE_FILE_MI_NAME}-fed-id-operator" \
-    --identity-name "${AZURE_FILE_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-operator \
-    --audience openshift
-
-az identity federated-credential create \
-    --name "${AZURE_FILE_MI_NAME}-fed-id-controller" \
-    --identity-name "${AZURE_FILE_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-controller-sa \
-    --audience openshift
-
-# Image Registry federated credentials
-az identity federated-credential create \
-    --name "${IMAGE_REGISTRY_MI_NAME}-fed-id-registry" \
-    --identity-name "${IMAGE_REGISTRY_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-image-registry:registry \
-    --audience openshift
-
-az identity federated-credential create \
-    --name "${IMAGE_REGISTRY_MI_NAME}-fed-id-operator" \
-    --identity-name "${IMAGE_REGISTRY_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-image-registry:cluster-image-registry-operator \
-    --audience openshift
-
-# Ingress Operator federated credential
-az identity federated-credential create \
-    --name "${INGRESS_MI_NAME}-fed-id" \
-    --identity-name "${INGRESS_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-ingress-operator:ingress-operator \
-    --audience openshift
-
-# Cloud Provider federated credential
-az identity federated-credential create \
-    --name "${CLOUD_PROVIDER_MI_NAME}-fed-id" \
-    --identity-name "${CLOUD_PROVIDER_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:kube-system:azure-cloud-provider \
-    --audience openshift
-
-# Node Pool Management federated credential
-az identity federated-credential create \
-    --name "${NODE_POOL_MANAGEMENT_MI_NAME}-fed-id" \
-    --identity-name "${NODE_POOL_MANAGEMENT_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:kube-system:capi-provider \
-    --audience openshift
-
-# Network Operator federated credential
-az identity federated-credential create \
-    --name "${NETWORK_MI_NAME}-fed-id" \
-    --identity-name "${NETWORK_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cloud-network-config-controller:cloud-network-config-controller \
-    --audience openshift
-```
-
-!!! note "Service Account Mapping"
-    
-    Each federated identity credential maps a specific Azure managed identity to an OpenShift service account. The service accounts listed above are the default service accounts used by various OpenShift components for Azure integration.
 
 ## Verification
 
@@ -8245,6 +8095,488 @@ version.azure.akv.io1"&
 algorithm.azure.akv.io
                       RSA-OAEP-256(
 ```
+
+
+---
+
+## Source: docs/content/how-to/azure/create-iam-separately.md
+
+---
+title: Create Azure IAM resources separately
+---
+
+# Create Azure IAM resources separately
+
+The `hypershift create iam azure` command creates Azure workload identities separately from infrastructure,
+following the same pattern as AWS and GCP. This enables you to manage IAM resources independently from
+your cluster infrastructure lifecycle.
+
+## Overview
+
+For self-managed Azure HyperShift clusters, workload identities authenticate cluster components to Azure
+services using OIDC federation. You must create identities separately using `create iam azure` and then
+consume them during infrastructure or cluster creation via the `--workload-identities-file` flag.
+
+This approach provides control over the IAM lifecycle and follows the same pattern as AWS and GCP platforms.
+
+## Prerequisites
+
+Before creating Azure IAM resources, ensure you have:
+
+- An Azure credentials file with the following format:
+    ```json
+    {
+      "subscriptionId": "your-subscription-id",
+      "tenantId": "your-tenant-id",
+      "clientId": "your-client-id",
+      "clientSecret": "your-client-secret"
+    }
+    ```
+- An existing resource group where the managed identities will be created
+- An OIDC issuer URL for workload identity federation
+
+## Creating Workload Identities
+
+Use the `hypershift create iam azure` command:
+
+```bash
+hypershift create iam azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --location LOCATION \
+    --resource-group-name RESOURCE_GROUP \
+    --oidc-issuer-url OIDC_ISSUER_URL \
+    --output-file workload-identities.json
+```
+
+where:
+
+* `CLUSTER_NAME` is the name of the hosted cluster you intend to create.
+* `INFRA_ID` is a unique identifier used to name Azure resources. Typically this is the cluster name
+    with a random suffix appended.
+* `AZURE_CREDENTIALS_FILE` points to an Azure credentials file with permission to create
+    managed identities and federated credentials.
+* `LOCATION` is the Azure region for the managed identities (e.g., `eastus`, `westus2`).
+* `RESOURCE_GROUP` is the name of an existing resource group where identities will be created.
+* `OIDC_ISSUER_URL` is the URL of the OIDC identity provider used for workload identity federation.
+
+Running this command creates:
+
+* 7 User-Assigned Managed Identities (one per cluster component):
+    - Disk CSI driver
+    - File CSI driver
+    - Image Registry
+    - Ingress Operator
+    - Cloud Provider
+    - NodePool Management
+    - Network Operator
+* Federated Identity Credentials for each identity, configured with the OIDC issuer
+
+## Output Format
+
+The output file contains the workload identities in JSON format, directly consumable by the
+`--workload-identities-file` flag in `create cluster azure` and `create infra azure` commands:
+
+```json
+{
+  "disk": {
+    "tenantID": "...",
+    "clientID": "...",
+    "resourceID": "/subscriptions/.../providers/Microsoft.ManagedIdentity/userAssignedIdentities/my-cluster-abc123-disk"
+  },
+  "file": {
+    "tenantID": "...",
+    "clientID": "...",
+    "resourceID": "..."
+  },
+  "imageRegistry": { ... },
+  "ingress": { ... },
+  "cloudProvider": { ... },
+  "nodePoolManagement": { ... },
+  "network": { ... }
+}
+```
+
+## Using Pre-created Identities
+
+### With Infrastructure Creation
+
+Pass the output file to `create infra azure`:
+
+```bash
+hypershift create infra azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --base-domain BASE_DOMAIN \
+    --location LOCATION \
+    --workload-identities-file workload-identities.json \
+    --output-file infra-output.yaml
+```
+
+### With Cluster Creation
+
+Or pass directly to `create cluster azure`:
+
+```bash
+hypershift create cluster azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --base-domain BASE_DOMAIN \
+    --location LOCATION \
+    --pull-secret PULL_SECRET_FILE \
+    --workload-identities-file workload-identities.json
+```
+
+## Destroying Workload Identities
+
+To destroy the workload identities that were created:
+
+```bash
+hypershift destroy iam azure \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --workload-identities-file workload-identities.json
+```
+
+The destroy command reads the output file from create to identify which identities to delete.
+Both the managed identities and their federated credentials are removed.
+
+!!! warning "Destroy Order"
+
+    If you created infrastructure using these identities, destroy the infrastructure first
+    before destroying the IAM resources.
+
+## Command Reference
+
+### Required Flags for `create iam azure`
+
+| Flag | Description |
+|------|-------------|
+| `--name` | Name of the HostedCluster |
+| `--infra-id` | Unique infrastructure identifier |
+| `--azure-creds` | Path to Azure credentials JSON file |
+| `--location` | Azure region for identities |
+| `--oidc-issuer-url` | OIDC issuer URL for federation |
+
+### Optional Flags for `create iam azure`
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--resource-group-name` | Resource group for identities | `{name}-{infra-id}` |
+| `--output-file` | Output file path | `{name}-iam-output.json` |
+| `--cloud` | Azure cloud environment | `AzurePublicCloud` |
+
+### Required Flags for `destroy iam azure`
+
+| Flag | Description |
+|------|-------------|
+| `--azure-creds` | Path to Azure credentials JSON file |
+| `--workload-identities-file` | Path to workload identities JSON file |
+
+### Optional Flags for `destroy iam azure`
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--cloud` | Azure cloud environment | `AzurePublicCloud` |
+
+## Workflow Example
+
+Here's a complete workflow for creating a self-managed Azure cluster with separate IAM management:
+
+```bash
+# 1. Set variables
+export NAME="my-cluster"
+export INFRA_ID="${NAME}-$(openssl rand -hex 4)"
+export LOCATION="eastus"
+export BASE_DOMAIN="example.com"
+export AZURE_CREDS="/path/to/azure-creds.json"
+export OIDC_ISSUER_URL="https://my-oidc-issuer.com"
+
+# 2. Create a resource group for identities
+az group create --name ${NAME}-rg --location ${LOCATION}
+
+# 3. Create workload identities
+hypershift create iam azure \
+    --name ${NAME} \
+    --infra-id ${INFRA_ID} \
+    --azure-creds ${AZURE_CREDS} \
+    --location ${LOCATION} \
+    --resource-group-name ${NAME}-rg \
+    --oidc-issuer-url ${OIDC_ISSUER_URL} \
+    --output-file workload-identities.json
+
+# 4. Create infrastructure using pre-created identities
+hypershift create infra azure \
+    --name ${NAME} \
+    --infra-id ${INFRA_ID} \
+    --azure-creds ${AZURE_CREDS} \
+    --base-domain ${BASE_DOMAIN} \
+    --location ${LOCATION} \
+    --workload-identities-file workload-identities.json \
+    --output-file infra-output.yaml
+
+# 5. Create the cluster
+hypershift create cluster azure \
+    --name ${NAME} \
+    --infra-id ${INFRA_ID} \
+    --azure-creds ${AZURE_CREDS} \
+    --base-domain ${BASE_DOMAIN} \
+    --location ${LOCATION} \
+    --pull-secret /path/to/pull-secret \
+    --infra-json infra-output.yaml
+
+# --- Cleanup ---
+
+# 6. Destroy the cluster
+hypershift destroy cluster azure --name ${NAME}
+
+# 7. Destroy infrastructure
+hypershift destroy infra azure \
+    --name ${NAME} \
+    --infra-id ${INFRA_ID} \
+    --azure-creds ${AZURE_CREDS}
+
+# 8. Destroy IAM resources
+hypershift destroy iam azure \
+    --azure-creds ${AZURE_CREDS} \
+    --workload-identities-file workload-identities.json
+```
+
+## See Also
+
+- Create Azure Infrastructure Separately
+- Azure Workload Identity Setup
+- Self-Managed Azure Overview
+
+
+---
+
+## Source: docs/content/how-to/azure/create-infra-separately.md
+
+---
+title: Create Azure infrastructure separately
+---
+
+# Create Azure infrastructure separately
+
+The default behavior of the `hypershift create cluster azure` command is to create cloud infrastructure
+along with the HostedCluster and apply it. It is possible to create the cloud infrastructure portion
+separately so that the `hypershift create cluster azure` command can be used to create the cluster
+with pre-existing infrastructure.
+
+In order to do this, you need to:
+
+1. Create the Azure infrastructure
+2. Create the cluster using the infrastructure output
+
+## Prerequisites
+
+Before creating Azure infrastructure, ensure you have:
+
+- An Azure credentials file with the following format:
+    ```json
+    {
+      "subscriptionId": "your-subscription-id",
+      "tenantId": "your-tenant-id",
+      "clientId": "your-client-id",
+      "clientSecret": "your-client-secret"
+    }
+    ```
+- An existing public DNS zone in your Azure subscription for your base domain
+- Workload identities created via `hypershift create iam azure` (for self-managed Azure with workload identity)
+
+## Creating the Azure Infrastructure
+
+Use the `hypershift create infra azure` command:
+
+```bash
+hypershift create infra azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --base-domain BASE_DOMAIN \
+    --location LOCATION \
+    --workload-identities-file WORKLOAD_IDENTITIES_FILE \
+    --output-file OUTPUT_INFRA_FILE
+```
+
+where:
+
+* `CLUSTER_NAME` is the name of the hosted cluster you intend to create.
+* `INFRA_ID` is a unique name that will be used to identify your infrastructure. It is used
+    to name and tag Azure resources. Typically this is the name of your cluster with a random
+    suffix appended to it.
+* `AZURE_CREDENTIALS_FILE` points to an Azure credentials file that has permission to create
+    infrastructure resources such as VNets, subnets, load balancers, etc.
+* `BASE_DOMAIN` is the base domain for your hosted cluster's ingress. It must correspond to
+    an existing public DNS zone in your Azure subscription.
+* `LOCATION` is the Azure region where you want to create the infrastructure (e.g., `eastus`, `westus2`).
+* `WORKLOAD_IDENTITIES_FILE` is the path to the JSON file containing workload identity configuration,
+    created via `hypershift create iam azure`.
+* `OUTPUT_INFRA_FILE` is the file where details of the infrastructure will be stored in YAML format.
+
+Running this command creates the following resources:
+
+* 1 Resource Group (main cluster resource group)
+* 1 Resource Group for VNet (if not using existing VNet)
+* 1 Resource Group for NSG (if not using existing NSG)
+* 1 Virtual Network with a default subnet
+* 1 Network Security Group
+* 1 Private DNS Zone
+* 1 Private DNS Zone Virtual Network Link
+* 1 Public IP Address for load balancer
+* 1 Load Balancer with outbound rule for egress
+
+All resources are tagged with the infrastructure ID for identification and cleanup.
+
+!!! note "Workload Identities"
+
+    Managed identities and federated credentials must be created separately using
+    `hypershift create iam azure`. See Create Azure IAM Resources Separately.
+
+## Using Existing Network Resources
+
+You can use existing VNet, subnet, and network security group instead of creating new ones:
+
+```bash
+hypershift create infra azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --base-domain BASE_DOMAIN \
+    --location LOCATION \
+    --workload-identities-file WORKLOAD_IDENTITIES_FILE \
+    --vnet-id /subscriptions/SUB_ID/resourceGroups/RG/providers/Microsoft.Network/virtualNetworks/VNET_NAME \
+    --subnet-id /subscriptions/SUB_ID/resourceGroups/RG/providers/Microsoft.Network/virtualNetworks/VNET_NAME/subnets/SUBNET_NAME \
+    --network-security-group-id /subscriptions/SUB_ID/resourceGroups/RG/providers/Microsoft.Network/networkSecurityGroups/NSG_NAME \
+    --output-file OUTPUT_INFRA_FILE
+```
+
+## Enabling RBAC Role Assignment
+
+To automatically assign required Azure RBAC roles to the workload identities:
+
+```bash
+hypershift create infra azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --base-domain BASE_DOMAIN \
+    --location LOCATION \
+    --workload-identities-file WORKLOAD_IDENTITIES_FILE \
+    --assign-identity-roles \
+    --dns-zone-rg-name DNS_ZONE_RG \
+    --output-file OUTPUT_INFRA_FILE
+```
+
+where:
+
+* `--assign-identity-roles` enables automatic RBAC role assignment for workload identities
+* `DNS_ZONE_RG` is the name of the resource group containing your public DNS zone
+
+## Create Workload Identities Separately
+
+If you want to create workload identities separately before creating infrastructure, use the
+dedicated IAM command:
+
+```bash
+hypershift create iam azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --location LOCATION \
+    --resource-group-name EXISTING_RG \
+    --oidc-issuer-url OIDC_ISSUER_URL \
+    --output-file WORKLOAD_IDENTITIES_FILE
+```
+
+This creates the managed identities and federated credentials, saving them to a JSON file.
+You can then use this file with `--workload-identities-file` during infrastructure or cluster creation.
+
+For complete documentation, see Create Azure IAM Resources Separately.
+
+## Creating the Cluster
+
+After the infrastructure is created, use the output file with the cluster creation command:
+
+```bash
+hypershift create cluster azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --location LOCATION \
+    --base-domain BASE_DOMAIN \
+    --pull-secret PULL_SECRET_FILE \
+    --node-pool-replicas 3 \
+    --infra-json OUTPUT_INFRA_FILE
+```
+
+The `--infra-json` flag points to the infrastructure output file generated by the
+`create infra azure` command.
+
+## Destroying the Infrastructure
+
+To destroy the infrastructure that was created:
+
+```bash
+hypershift destroy infra azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE
+```
+
+### Preserving the Resource Group
+
+If you want to preserve the main resource group but delete only cluster-specific resources:
+
+```bash
+hypershift destroy infra azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --preserve-resource-group
+```
+
+This is useful when you have other resources in the same resource group that should not be deleted.
+
+## Command Reference
+
+### Required Flags for `create infra azure`
+
+| Flag | Description |
+|------|-------------|
+| `--name` | Name of the HostedCluster |
+| `--infra-id` | Unique infrastructure identifier |
+| `--azure-creds` | Path to Azure credentials JSON file |
+| `--base-domain` | Base domain for cluster ingress |
+
+### Identity Configuration
+
+| Option | Flags Required |
+|--------|----------------|
+| Self-managed with workload identities | `--workload-identities-file` |
+
+Workload identities must be created separately using `hypershift create iam azure`.
+See Create Azure IAM Resources Separately.
+
+### Optional Flags
+
+| Flag | Description |
+|------|-------------|
+| `--location` | Azure region (default: `eastus`) |
+| `--cloud` | Azure cloud environment (default: `AzurePublicCloud`) |
+| `--resource-group-name` | Custom resource group name |
+| `--resource-group-tags` | Tags to apply to resource group |
+| `--vnet-id` | Use existing VNet |
+| `--subnet-id` | Use existing subnet |
+| `--network-security-group-id` | Use existing NSG |
+| `--assign-identity-roles` | Enable RBAC role assignment |
+| `--dns-zone-rg-name` | DNS zone resource group (for role assignment) |
+| `--assign-custom-hcp-roles` | Use custom HCP roles instead of Contributor |
+| `--disable-cluster-capabilities` | Disable specific cluster capabilities |
+| `--output-file` | Output file for infrastructure details |
 
 
 ---
@@ -8936,6 +9268,8 @@ Self-managed Azure uses an OpenShift cluster (running on any platform - AWS, Azu
 - Azure Workload Identity Setup - Set up managed identities and OIDC federation
 - Setup Azure Management Cluster - Install HyperShift operator
 - Create a Self-Managed Azure HostedCluster - Deploy your first hosted cluster
+- Create Azure IAM Resources Separately - Manage workload identities independently
+- Create Azure Infrastructure Separately - Create infrastructure before cluster
 
 ## Comparison
 
@@ -9206,11 +9540,19 @@ This phase creates the foundational security infrastructure required for your ho
 - **OIDC Issuer**: Configures an OIDC issuer in Azure Blob Storage for service account token validation
 - **Federated Credentials**: Establishes trust relationships between Azure Entra ID and OpenShift service accounts
 
+You can create workload identities using either:
+
+- **HyperShift CLI** (recommended): `hypershift create iam azure` - automates identity and federated credential creation
+- **Azure CLI**: Manual `az identity` and `az identity federated-credential` commands
+
 **Why This Matters**: Without these identities and federated credentials, your hosted cluster components cannot authenticate with Azure APIs to provision storage, manage load balancers, configure networking, or perform other essential cloud operations. Using workload identities instead of traditional service principals provides better security, automatic credential rotation, and follows Azure's modern authentication best practices.
 
 **When to Complete**: This is a one-time setup that can be reused across multiple hosted clusters. Complete this before proceeding to Phase 2.
 
-👉 **Guide**: Azure Workload Identity Setup
+👉 **Guides**:
+
+- Azure Workload Identity Setup - Overview with CLI and OIDC configuration
+- Create Azure IAM Resources Separately - Detailed IAM command reference
 
 ### Phase 2: Management Cluster Setup
 
@@ -9307,7 +9649,7 @@ Self-managed Azure HyperShift implements several security best practices:
 
 Begin your self-managed Azure HyperShift deployment by following the guides in order:
 
-1. **Azure Workload Identity Setup** - Set up managed identities and OIDC federation
+1. **Azure Workload Identity Setup** - Set up managed identities and OIDC federation (or use Create Azure IAM Resources Separately for CLI-based setup)
 2. **Setup Azure Management Cluster for HyperShift** - Install HyperShift operator (with or without External DNS)
 3. **Create a Self-Managed Azure HostedCluster** - Deploy your first hosted cluster
 
