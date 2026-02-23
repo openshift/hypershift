@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 
@@ -297,8 +298,10 @@ func (o *CompletedKubevirtPlatformCreateOptions) NodePoolPlatform() *hyperv1.Kub
 	}
 
 	if o.Memory != "" {
-		// TODO: add a debug trace for this error
-		memory, _ := apiresource.ParseQuantity(o.Memory)
+		memory, err := apiresource.ParseQuantity(o.Memory)
+		if err != nil {
+			log.Log.V(3).Info("failed to parse memory quantity, using default", "input", o.Memory, "error", err.Error())
+		}
 		platform.Compute.Memory = &memory
 	}
 	if o.Cores != 0 {
