@@ -1,8 +1,8 @@
-FROM registry.redhat.io/rhel9/go-toolset:1.24.6-1763548439 AS builder
+FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_golang_1.24 AS builder
 
 WORKDIR /hypershift
 
-COPY --chown=default . .
+COPY . .
 
 RUN make product-cli-release && \
     # Create tar.gz files for Linux architectures \
@@ -14,16 +14,18 @@ RUN make product-cli-release && \
       for ARCH in amd64 arm64; do \
         tar -czvf ./bin/${OS}/${ARCH}/hcp.tar.gz -C ./bin/${OS}/${ARCH} ./hcp || exit 1; \
       done; \
-    done
+    done && \
+    # Remove raw binaries, keep only tar.gz files \
+    find ./bin -type f ! -name "*.tar.gz" -delete
 
 FROM registry.redhat.io/ubi9/nginx-124:1-1767745334
 
-COPY --from=builder /hypershift/bin/    /opt/app-root/src/
-RUN find /opt/app-root/src/ -type f ! -name "*.tar.gz" -delete
+COPY --from=builder /hypershift/bin/ /opt/app-root/src/
 
 CMD ["nginx", "-g", "daemon off;"]
 
 LABEL name="multicluster-engine/hypershift-cli-rhel9" \
+      cpe="cpe:/a:redhat:multicluster_engine:2.10::el9" \
       description="HyperShift HCP CLI is to manage the lifecycle of Hosted Clusters in command lines" \
       summary="HyperShift HCP CLI" \
       url="https://catalog.redhat.com/software/containers/multicluster-engine/hypershift-cli-rhel9/" \
