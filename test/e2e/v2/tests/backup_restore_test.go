@@ -195,7 +195,7 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 
 	Context(ContextBreakControlPlane, func() {
 		It("should break hosted cluster", func() {
-			err := backuprestore.BreakHostedCluster(testCtx)
+			err := backuprestore.BreakHostedClusterPreservingMachines(testCtx)
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
