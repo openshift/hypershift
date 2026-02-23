@@ -336,9 +336,9 @@ spec:
                 x-kubernetes-list-type: map
               releaseImage:
                 description: |-
-                  ReleaseImage is the fully qualified release image resolved from spec.version,
-                  in the format "quay.io/openshift-release-dev/ocp-release@sha256:<digest>".
-                  Only set when spec.version is specified.
+                  ReleaseImage is the fully qualified release image resolved either from spec.version, or inherited from
+                  the HostedControlPlane's spec.ReleaseImage.
+                  Of the format "quay.io/openshift-release-dev/ocp-release@sha256:<digest>".
                 type: string
               securityGroups:
                 description: |-
@@ -380,6 +380,8 @@ spec:
                   - zone
                   type: object
                 type: array
+            required:
+            - releaseImage
             type: object
         type: object
     served: true

@@ -23,7 +23,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -492,7 +491,7 @@ kind: Config`),
 		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
 			ObjectMeta: metav1.ObjectMeta{Name: "version-test"},
 			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
-				Version: ptr.To("4.17.0"),
+				Version: "4.17.0",
 			},
 		}
 
@@ -565,11 +564,11 @@ kind: Config`),
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(resolver.calls).To(Equal(0), "resolver should not be called when version is not set")
 
-		// Verify status.releaseImage is empty when version is not set
+		// Verify status.releaseImage matches the HCP release image when version is not set
 		updatedNC := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
 		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: "no-version-test"}, updatedNC)
 		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(updatedNC.Status.ReleaseImage).To(BeEmpty())
+		g.Expect(updatedNC.Status.ReleaseImage).To(Equal(hcp.Spec.ReleaseImage))
 	})
 
 	t.Run("When version resolution fails it should return error", func(t *testing.T) {
@@ -583,7 +582,7 @@ kind: Config`),
 		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
 			ObjectMeta: metav1.ObjectMeta{Name: "fail-version-test"},
 			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
-				Version: ptr.To("4.17.0"),
+				Version: "4.17.0",
 			},
 		}
 
@@ -627,7 +626,7 @@ kind: Config`),
 		g.Expect(versionCondition.Reason).To(Equal("ResolutionFailed"))
 	})
 
-	t.Run("When channel is not set it should use HCP channel prefix", func(t *testing.T) {
+	t.Run("When channel is set it should pass HCP channel to resolver", func(t *testing.T) {
 		g := NewWithT(t)
 		mockCtrl := gomock.NewController(t)
 		mockedReleaseProvider := releaseinfo.NewMockProvider(mockCtrl)
@@ -642,7 +641,7 @@ kind: Config`),
 		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
 			ObjectMeta: metav1.ObjectMeta{Name: "hcp-channel-test"},
 			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
-				Version: ptr.To("4.17.0"),
+				Version: "4.17.0",
 			},
 		}
 
@@ -670,4 +669,274 @@ kind: Config`),
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(resolver.lastChannel).To(Equal("fast-4.17"), "resolver should receive HCP channel prefix combined with version")
 	})
+}
+
+func TestResolveVersion(t *testing.T) {
+	baseHCP := func() *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-hcp",
+				Namespace: testNamespace,
+			},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64",
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AWSPlatform,
+				},
+				Networking: hyperv1.ClusterNetworking{
+					ServiceNetwork: []hyperv1.ServiceNetworkEntry{
+						{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")},
+					},
+				},
+				Channel: "stable-4.17",
+			},
+			Status: hyperv1.HostedControlPlaneStatus{
+				Version: "4.17.0",
+			},
+		}
+	}
+
+	baseHostedCluster := func(hcp *hyperv1.HostedControlPlane) *hyperv1.HostedCluster {
+		return hostedClusterFromHCP(hcp, testIgnitionEndpoint)
+	}
+
+	t.Run("When version is empty it should return HCP release image", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := baseHCP()
+		hc := baseHostedCluster(hcp)
+		resolver := &fakeVersionResolver{image: "should-not-be-called"}
+
+		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+
+		image, err := r.resolveVersion(ctx, hcp, hc, "")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(image).To(Equal(hcp.Spec.ReleaseImage))
+		g.Expect(resolver.calls).To(Equal(0), "resolver should not be called when version is empty")
+	})
+
+	t.Run("When version is set it should resolve and return release image", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := baseHCP()
+		hc := baseHostedCluster(hcp)
+		resolvedImage := "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+		resolver := &fakeVersionResolver{image: resolvedImage}
+
+		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+
+		image, err := r.resolveVersion(ctx, hcp, hc, "4.17.0")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(image).To(Equal(resolvedImage))
+		g.Expect(resolver.calls).To(Equal(1))
+		g.Expect(resolver.lastChannel).To(Equal("stable-4.17"))
+	})
+
+	t.Run("When version is invalid semver it should return error", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := baseHCP()
+		hc := baseHostedCluster(hcp)
+		resolver := &fakeVersionResolver{}
+
+		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+
+		_, err := r.resolveVersion(ctx, hcp, hc, "not-a-version")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to parse OpenshiftEC2NodeClass version"))
+		g.Expect(resolver.calls).To(Equal(0))
+	})
+
+	t.Run("When version is below minimum supported it should return error", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := baseHCP()
+		hcp.Status.Version = "4.17.0"
+		hc := baseHostedCluster(hcp)
+		resolver := &fakeVersionResolver{}
+
+		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+
+		// 4.13.0 is below the minimum supported version (4.14.0)
+		_, err := r.resolveVersion(ctx, hcp, hc, "4.13.0")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("minimum version supported"))
+		g.Expect(resolver.calls).To(Equal(0))
+	})
+
+	t.Run("When version exceeds allowed skew it should return error", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := baseHCP()
+		hcp.Status.Version = "4.20.0"
+		hcp.Spec.ReleaseImage = "quay.io/openshift-release-dev/ocp-release:4.20.0-x86_64"
+		hc := baseHostedCluster(hcp)
+		resolver := &fakeVersionResolver{}
+
+		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+
+		// 4.16.0 is 4 minor versions behind 4.20.0, exceeding the n-3 skew policy
+		_, err := r.resolveVersion(ctx, hcp, hc, "4.16.0")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("version skew"))
+		g.Expect(resolver.calls).To(Equal(0))
+	})
+
+	t.Run("When resolver fails it should return error", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := baseHCP()
+		hc := baseHostedCluster(hcp)
+		resolver := &fakeVersionResolver{err: fmt.Errorf("Cincinnati API unavailable")}
+
+		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+
+		_, err := r.resolveVersion(ctx, hcp, hc, "4.17.0")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("Cincinnati API unavailable"))
+	})
+
+	t.Run("When HCP version cannot be parsed it should return error", func(t *testing.T) {
+		g := NewWithT(t)
+		hcp := baseHCP()
+		hcp.Status.Version = "invalid"
+		hc := baseHostedCluster(hcp)
+		resolver := &fakeVersionResolver{}
+
+		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+
+		_, err := r.resolveVersion(ctx, hcp, hc, "4.17.0")
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to parse HostedCluster version"))
+	})
+}
+
+func TestUpdateVersionStatus(t *testing.T) {
+	scheme := api.Scheme
+
+	newNodeClass := func(name string, version string) *hyperkarpenterv1.OpenshiftEC2NodeClass {
+		return &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{Name: name},
+			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				Version: version,
+			},
+		}
+	}
+
+	t.Run("When version is not set it should set VersionNotSpecified condition and releaseImage", func(t *testing.T) {
+		g := NewWithT(t)
+		nc := newNodeClass("no-version", "")
+		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(nc).
+			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+			Build()
+
+		r := &KarpenterIgnitionReconciler{GuestClient: fakeGuestClient}
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+
+		hcpImage := "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64"
+		err := r.updateVersionStatus(ctx, nc, hcpImage, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: "no-version"}, updated)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(updated.Status.ReleaseImage).To(Equal(hcpImage))
+
+		cond := findCondition(updated.Status.Conditions, hyperkarpenterv1.ConditionTypeVersionResolved)
+		g.Expect(cond).NotTo(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		g.Expect(cond.Reason).To(Equal("VersionNotSpecified"))
+	})
+
+	t.Run("When version is set and resolution succeeds it should set VersionResolved condition", func(t *testing.T) {
+		g := NewWithT(t)
+		nc := newNodeClass("with-version", "4.17.0")
+		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(nc).
+			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+			Build()
+
+		r := &KarpenterIgnitionReconciler{GuestClient: fakeGuestClient}
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+
+		resolvedImage := "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
+		err := r.updateVersionStatus(ctx, nc, resolvedImage, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: "with-version"}, updated)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(updated.Status.ReleaseImage).To(Equal(resolvedImage))
+
+		cond := findCondition(updated.Status.Conditions, hyperkarpenterv1.ConditionTypeVersionResolved)
+		g.Expect(cond).NotTo(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionTrue))
+		g.Expect(cond.Reason).To(Equal("VersionResolved"))
+		g.Expect(cond.Message).To(ContainSubstring("4.17.0"))
+		g.Expect(cond.Message).To(ContainSubstring(resolvedImage))
+	})
+
+	t.Run("When version is set and resolution fails it should set ResolutionFailed condition", func(t *testing.T) {
+		g := NewWithT(t)
+		nc := newNodeClass("fail-version", "4.17.0")
+		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(nc).
+			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+			Build()
+
+		r := &KarpenterIgnitionReconciler{GuestClient: fakeGuestClient}
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+
+		resolveErr := fmt.Errorf("Cincinnati API unavailable")
+		err := r.updateVersionStatus(ctx, nc, "", resolveErr)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: "fail-version"}, updated)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(updated.Status.ReleaseImage).To(BeEmpty())
+
+		cond := findCondition(updated.Status.Conditions, hyperkarpenterv1.ConditionTypeVersionResolved)
+		g.Expect(cond).NotTo(BeNil())
+		g.Expect(cond.Status).To(Equal(metav1.ConditionFalse))
+		g.Expect(cond.Reason).To(Equal("ResolutionFailed"))
+		g.Expect(cond.Message).To(ContainSubstring("Cincinnati API unavailable"))
+	})
+
+	t.Run("When condition has not changed it should not patch", func(t *testing.T) {
+		g := NewWithT(t)
+		nc := newNodeClass("no-change", "")
+		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(nc).
+			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+			Build()
+
+		r := &KarpenterIgnitionReconciler{GuestClient: fakeGuestClient}
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+
+		hcpImage := "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64"
+
+		// First call sets the condition
+		err := r.updateVersionStatus(ctx, nc, hcpImage, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Re-fetch to get the updated object with the condition already set
+		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: "no-change"}, nc)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Second call with same inputs should not error (no-op patch skipped)
+		err = r.updateVersionStatus(ctx, nc, hcpImage, nil)
+		g.Expect(err).NotTo(HaveOccurred())
+	})
+}
+
+func findCondition(conditions []metav1.Condition, condType string) *metav1.Condition {
+	for i, c := range conditions {
+		if c.Type == condType {
+			return &conditions[i]
+		}
+	}
+	return nil
 }
