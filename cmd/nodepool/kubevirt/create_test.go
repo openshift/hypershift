@@ -7,6 +7,7 @@ import (
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	"github.com/openshift/hypershift/support/testutil"
 
+	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
 
 	"github.com/google/go-cmp/cmp"
@@ -327,6 +328,58 @@ func TestValidatedKubevirtPlatformCreateOptions_Complete(t *testing.T) {
 			}
 			if diff := cmp.Diff(test.output, got); diff != "" {
 				t.Errorf("got incorrect output: %v", diff)
+			}
+		})
+	}
+}
+
+func TestNodePoolPlatform_Memory(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		memory         string
+		expectedMemory apiresource.Quantity
+	}{
+		{
+			name:           "When valid memory is provided it should parse correctly",
+			memory:         "8Gi",
+			expectedMemory: apiresource.MustParse("8Gi"),
+		},
+		{
+			name:           "When invalid memory is provided it should fall back to zero quantity",
+			memory:         "not-a-quantity",
+			expectedMemory: apiresource.Quantity{},
+		},
+		{
+			name:           "When empty memory is provided it should not set compute memory",
+			memory:         "",
+			expectedMemory: apiresource.Quantity{},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			opts := &CompletedKubevirtPlatformCreateOptions{
+				completedKubevirtPlatformCreateOptions: &completetedKubevirtPlatformCreateOptions{
+					KubevirtPlatformOptions: &KubevirtPlatformOptions{
+						Memory:               test.memory,
+						Cores:                2,
+						RootVolumeSize:       32,
+						AttachDefaultNetwork: ptr.To(true),
+					},
+				},
+			}
+
+			platform := opts.NodePoolPlatform()
+
+			if test.memory == "" {
+				if platform.Compute.Memory != nil {
+					t.Errorf("expected nil memory when input is empty, got %v", platform.Compute.Memory)
+				}
+			} else {
+				if platform.Compute.Memory == nil {
+					t.Fatal("expected non-nil memory")
+				}
+				if diff := cmp.Diff(test.expectedMemory.String(), platform.Compute.Memory.String()); diff != "" {
+					t.Errorf("unexpected memory value (-want +got):\n%s", diff)
+				}
 			}
 		})
 	}
