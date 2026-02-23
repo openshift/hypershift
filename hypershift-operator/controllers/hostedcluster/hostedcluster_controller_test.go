@@ -1489,6 +1489,7 @@ func TestHostedClusterWatchesEverythingItCreates(t *testing.T) {
 					Namespace: "test",
 					Annotations: map[string]string{
 						hyperv1.AllowUnsupportedKubeVirtRHCOSVariantsAnnotation: "true",
+						hyperv1.ClusterAPIKubeVirtProviderImage:                 "registry.ci.openshift.org/ocp/4.18:cluster-api-provider-kubevirt",
 					},
 				},
 				Spec: hyperv1.HostedClusterSpec{

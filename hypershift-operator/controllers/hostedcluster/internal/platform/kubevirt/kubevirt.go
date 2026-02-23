@@ -26,7 +26,6 @@ import (
 
 const (
 	hostedClusterAnnotation = "hypershift.openshift.io/cluster"
-	imageCAPK               = "registry.ci.openshift.org/ocp/4.18:cluster-api-provider-kubevirt"
 )
 
 type Kubevirt struct{}
@@ -70,12 +69,15 @@ func reconcileKubevirtCluster(kubevirtCluster *capikubevirt.KubevirtCluster, hcl
 }
 
 func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
-	providerImage := imageCAPK
+	providerImage := ""
 	if envImage := os.Getenv(images.KubevirtCAPIProviderEnvVar); len(envImage) > 0 {
 		providerImage = envImage
 	}
 	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIKubeVirtProviderImage]; ok {
 		providerImage = override
+	}
+	if providerImage == "" {
+		return nil, fmt.Errorf("kubevirt CAPI provider image not specified by environment variable %s or annotation %s", images.KubevirtCAPIProviderEnvVar, hyperv1.ClusterAPIKubeVirtProviderImage)
 	}
 	defaultMode := int32(0640)
 	return &appsv1.DeploymentSpec{
