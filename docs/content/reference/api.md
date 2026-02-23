@@ -3081,10 +3081,6 @@ access.</p>
 <td><p>DiskStorageAccountTypesStandardSSDLRS - Standard SSD locally redundant storage. Best for web servers, lightly used enterprise
 applications and dev/test.</p>
 </td>
-</tr><tr><td><p>&#34;UltraSSD_LRS&#34;</p></td>
-<td><p>DiskStorageAccountTypesUltraSSDLRS - Ultra SSD locally redundant storage. Best for IO-intensive workloads such as SAP HANA,
-top tier databases (for example, SQL, Oracle), and other transaction-heavy workloads.</p>
-</td>
 </tr></tbody>
 </table>
 ###AzureKMSKey { #hypershift.openshift.io/v1beta1.AzureKMSKey }
@@ -3321,7 +3317,7 @@ int32
 <td>
 <em>(Optional)</em>
 <p>sizeGiB is the size in GiB (1024^3 bytes) to assign to the OS disk.
-This should be between 16 and 65,536 when using the UltraSSD_LRS storage account type and between 16 and 32,767 when using any other storage account type.
+This should be between 16 and 32,767.
 When not set, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
 The current default is 30.</p>
 </td>
@@ -3338,8 +3334,9 @@ AzureDiskStorageAccountType
 <td>
 <em>(Optional)</em>
 <p>diskStorageAccountType is the disk storage account type to use.
-Valid values are Premium_LRS, PremiumV2_LRS, Standard_LRS, StandardSSD_LRS, UltraSSD_LRS.
+Valid values are Premium_LRS, PremiumV2_LRS, Standard_LRS, StandardSSD_LRS.
 Note that Standard means a HDD.
+UltraSSD_LRS is not supported for OS disks (see <a href="https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison">https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison</a>).
 The disk performance is tied to the disk type, please refer to the Azure documentation for further details
 <a href="https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison">https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison</a>.
 When omitted this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.

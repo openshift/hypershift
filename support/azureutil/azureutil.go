@@ -59,7 +59,7 @@ func NewARMClientOptions(cloudConfig cloud.Configuration) *arm.ClientOptions {
 // Returns an error if the cloud name is not recognized.
 func GetAzureCloudConfiguration(cloudName string) (cloud.Configuration, error) {
 	switch cloudName {
-	case "AzurePublicCloud", "":
+	case config.DefaultAzureCloud, "":
 		return cloud.AzurePublic, nil
 	case "AzureUSGovernmentCloud":
 		return cloud.AzureGovernment, nil

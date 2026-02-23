@@ -318,8 +318,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -342,8 +343,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -366,8 +368,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -404,8 +407,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -432,8 +436,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -460,8 +465,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -488,8 +494,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -517,8 +524,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -546,8 +554,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -575,8 +584,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -604,8 +614,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -633,8 +644,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 									PoolID:        "my-wif-pool",
 									ProviderID:    "my-wif-provider",
 									ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-										NodePool:     "nodepool@my-project-123.iam.gserviceaccount.com",
-										ControlPlane: "controlplane@my-project-123.iam.gserviceaccount.com",
+										NodePool:        "nodepool@my-project-123.iam.gserviceaccount.com",
+										ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
+										CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 									},
 								},
 							}
@@ -2804,6 +2816,28 @@ func TestCreateClusterRequestServingIsolation(t *testing.T) {
 		e2eutil.EnsureAllReqServingPodsLandOnReqServingNodes(t, ctx, guestClient)
 		e2eutil.EnsureOnlyRequestServingPodsOnRequestServingNodes(t, ctx, guestClient)
 		e2eutil.EnsureNoHCPPodsLandOnDefaultNode(t, ctx, guestClient, hostedCluster)
+
+		// Test certificate revocation with HA control plane
+		t.Logf("fetching mgmt kubeconfig")
+		mgmtCfg, err := e2eutil.GetConfig()
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't get mgmt kubeconfig")
+		mgmtCfg.QPS = -1
+		mgmtCfg.Burst = -1
+
+		mgmtClients, err := integrationframework.NewClients(mgmtCfg)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't create mgmt clients")
+
+		guestKubeConfigSecretData := e2eutil.WaitForGuestKubeConfig(t, ctx, mgtClient, hostedCluster)
+
+		guestConfig, err := clientcmd.RESTConfigFromKubeConfig(guestKubeConfigSecretData)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't load guest kubeconfig")
+		guestConfig.QPS = -1
+		guestConfig.Burst = -1
+
+		guestClients, err := integrationframework.NewClients(guestConfig)
+		g.Expect(err).NotTo(HaveOccurred(), "couldn't create guest clients")
+
+		integration.RunTestControlPlanePKIOperatorBreakGlassCredentials(t, testContext, hostedCluster, mgmtClients, guestClients)
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "request-serving-isolation", globalOpts.ServiceAccountSigningKey)
 }
 
@@ -2927,30 +2961,6 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 		// ensure CNO operator configuration changes are properly handled
 		e2eutil.EnsureCNOOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
 	}).WithAssetReader(content.ReadFile).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "custom-config", globalOpts.ServiceAccountSigningKey)
-}
-
-func TestNoneCreateCluster(t *testing.T) {
-	t.Parallel()
-
-	if globalOpts.Platform == hyperv1.AzurePlatform {
-		t.Skip("test not supported on platform Azure")
-	}
-
-	ctx, cancel := context.WithCancel(testContext)
-	defer cancel()
-
-	clusterOpts := globalOpts.DefaultClusterOptions(t)
-
-	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
-		// Wait for the rollout to be reported complete
-		// Since the None platform has no workers, CVO will not have expectations set,
-		// which in turn means that the ClusterVersion object will never be populated.
-		// Therefore only test if the control plane comes up (etc, apiserver, ...)
-		e2eutil.WaitForConditionsOnHostedControlPlane(t, ctx, mgtClient, hostedCluster, globalOpts.LatestReleaseImage)
-
-		// etcd restarts for me once always and apiserver two times before running stable
-		// e2eutil.EnsureNoCrashingPods(t, ctx, client, hostedCluster)
-	}).Execute(&clusterOpts, hyperv1.NonePlatform, globalOpts.ArtifactDir, "none", globalOpts.ServiceAccountSigningKey)
 }
 
 // TestCreateClusterProxy implements a test that creates a cluster behind a proxy with the code under test.

@@ -432,6 +432,12 @@ var (
 				"Effect": "Allow",
 				"Resource": "arn:*:iam::*:instance-profile/*",
 				"Action": "iam:GetInstanceProfile"
+			  },
+			  {
+				"Sid": "AllowUnscopedInstanceProfileListAction",
+				"Effect": "Allow",
+				"Resource": "*",
+				"Action": "iam:ListInstanceProfiles"
 			  }
 			]
 		  }`,

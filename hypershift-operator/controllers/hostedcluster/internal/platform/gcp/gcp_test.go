@@ -578,6 +578,30 @@ func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
 			expectError: true,
 			errorMsg:    "control plane service account email is required",
 		},
+		{
+			name: "missing cloud controller service account email",
+			hcluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.GCPPlatform,
+						GCP: &hyperv1.GCPPlatformSpec{
+							WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
+								ProjectNumber: "123456789012",
+								PoolID:        "test-pool",
+								ProviderID:    "test-provider",
+								ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
+									NodePool:        testNodePoolGSA,
+									ControlPlane:    testControlPlaneGSA,
+									CloudController: "",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    "cloud controller service account email is required",
+		},
 	}
 
 	for _, tt := range tests {

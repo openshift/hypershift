@@ -1,0 +1,11 @@
+apiVersion: v1
+data:
+  cloud.conf: |-
+    [Global]
+    project-id = %s
+    network-name = %s
+    node-tags = %s
+    token-url = "nil"
+kind: ConfigMap
+metadata:
+  name: gcp-cloud-config

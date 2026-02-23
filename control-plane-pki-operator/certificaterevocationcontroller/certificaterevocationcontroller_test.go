@@ -21,8 +21,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	corev1applyconfigurations "k8s.io/client-go/applyconfigurations/core/v1"
 	metav1applyconfigurations "k8s.io/client-go/applyconfigurations/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/cert"
 	testingclock "k8s.io/utils/clock/testing"
 	"k8s.io/utils/ptr"
@@ -1047,6 +1049,9 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 					}
 					return nil, apierrors.NewNotFound(corev1.SchemeGroupVersion.WithResource("configmaps").GroupResource(), name)
 				},
+				listPods: func(namespace string, selector labels.Selector) ([]*corev1.Pod, error) {
+					return nil, nil
+				},
 				skipKASConnections: true,
 			}
 			a, requeue, err := c.processCertificateRevocationRequest(t.Context(), testCase.crrNamespace, testCase.crrName, testCase.now)
@@ -1060,6 +1065,315 @@ func TestCertificateRevocationController_processCertificateRevocationRequest(t *
 			}
 			if diff := cmp.Diff(a, testCase.expected, compareActions()...); diff != "" {
 				t.Errorf("invalid actions: %v", diff)
+			}
+		})
+	}
+}
+
+func TestIsPodReady(t *testing.T) {
+	tests := []struct {
+		name     string
+		pod      *corev1.Pod
+		expected bool
+	}{
+		{
+			name:     "When pod is nil it should return false",
+			pod:      nil,
+			expected: false,
+		},
+		{
+			name: "When pod has Ready=True condition it should return true",
+			pod: &corev1.Pod{
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{
+						{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When pod has Ready=False condition it should return false",
+			pod: &corev1.Pod{
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{
+						{Type: corev1.PodReady, Status: corev1.ConditionFalse},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When pod has no Ready condition it should return false",
+			pod: &corev1.Pod{
+				Status: corev1.PodStatus{
+					Conditions: []corev1.PodCondition{
+						{Type: corev1.PodScheduled, Status: corev1.ConditionTrue},
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isPodReady(tc.pod); got != tc.expected {
+				t.Errorf("isPodReady() = %v, expected %v", got, tc.expected)
+			}
+		})
+	}
+}
+
+func kasPodSpec() corev1.PodSpec {
+	return corev1.PodSpec{
+		Containers: []corev1.Container{{
+			Name: "kube-apiserver",
+			Ports: []corev1.ContainerPort{{
+				Name:          "client",
+				ContainerPort: 6443,
+				Protocol:      corev1.ProtocolTCP,
+			}},
+		}},
+	}
+}
+
+func TestContainerPort(t *testing.T) {
+	tests := []struct {
+		name     string
+		pod      *corev1.Pod
+		portName string
+		fallback int32
+		expected int32
+	}{
+		{
+			name: "When named port exists it should return container port",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Ports: []corev1.ContainerPort{
+							{Name: "client", ContainerPort: 6443},
+						},
+					}},
+				},
+			},
+			portName: "client",
+			fallback: 9999,
+			expected: 6443,
+		},
+		{
+			name: "When named port is missing it should return fallback",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Ports: []corev1.ContainerPort{
+							{Name: "metrics", ContainerPort: 8080},
+						},
+					}},
+				},
+			},
+			portName: "client",
+			fallback: 6443,
+			expected: 6443,
+		},
+		{
+			name: "When pod has no ports it should return fallback",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{}},
+				},
+			},
+			portName: "client",
+			fallback: 6443,
+			expected: 6443,
+		},
+		{
+			name: "When named port is in a non-first container it should return container port",
+			pod: &corev1.Pod{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}}},
+						{Ports: []corev1.ContainerPort{{Name: "client", ContainerPort: 7443}}},
+					},
+				},
+			},
+			portName: "client",
+			fallback: 6443,
+			expected: 7443,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := containerPort(tc.pod, tc.portName, tc.fallback); got != tc.expected {
+				t.Errorf("containerPort() = %d, expected %d", got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestVerifyCertificateAgainstAllKASPods(t *testing.T) {
+	now := metav1.Now()
+	fakeKubeconfig := []byte(`apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://kube-apiserver:6443
+    insecure-skip-tls-verify: true
+  name: guest
+contexts:
+- context:
+    cluster: guest
+    user: admin
+  name: guest
+current-context: guest
+users:
+- name: admin
+  user: {}
+`)
+
+	tests := []struct {
+		name              string
+		pods              []*corev1.Pod
+		expected          bool
+		testFuncCalled    bool
+		expectedCallCount int
+	}{
+		{
+			name: "When all pods are terminating it should requeue without testing any",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "kube-apiserver-old-abc123",
+						DeletionTimestamp: &now,
+					},
+					Spec: kasPodSpec(),
+					Status: corev1.PodStatus{
+						PodIP: "10.0.0.1",
+						Conditions: []corev1.PodCondition{
+							{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+						},
+					},
+				},
+			},
+			expected:       false,
+			testFuncCalled: false,
+		},
+		{
+			name:           "When no pods exist it should requeue",
+			pods:           []*corev1.Pod{},
+			expected:       false,
+			testFuncCalled: false,
+		},
+		{
+			name: "When a non-terminating pod is not ready it should requeue",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-new-xyz789"},
+					Spec:       kasPodSpec(),
+					Status: corev1.PodStatus{
+						PodIP: "10.0.0.2",
+						Conditions: []corev1.PodCondition{
+							{Type: corev1.PodReady, Status: corev1.ConditionFalse},
+						},
+					},
+				},
+			},
+			expected:       false,
+			testFuncCalled: false,
+		},
+		{
+			name: "When a terminating pod is mixed with a not-ready pod it should skip the terminating pod and requeue for the not-ready one",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "kube-apiserver-old-abc123",
+						DeletionTimestamp: &now,
+					},
+					Spec: kasPodSpec(),
+					Status: corev1.PodStatus{
+						PodIP: "10.0.0.1",
+						Conditions: []corev1.PodCondition{
+							{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-new-xyz789"},
+					Spec:       kasPodSpec(),
+					Status: corev1.PodStatus{
+						PodIP: "10.0.0.2",
+						Conditions: []corev1.PodCondition{
+							{Type: corev1.PodReady, Status: corev1.ConditionFalse},
+						},
+					},
+				},
+			},
+			expected:       false,
+			testFuncCalled: false,
+		},
+		{
+			name: "When ready non-terminating pods exist it should call testFunc for each",
+			pods: []*corev1.Pod{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-abc123"},
+					Spec:       kasPodSpec(),
+					Status: corev1.PodStatus{
+						PodIP: "10.0.0.1",
+						Conditions: []corev1.PodCondition{
+							{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-def456"},
+					Spec:       kasPodSpec(),
+					Status: corev1.PodStatus{
+						PodIP: "10.0.0.2",
+						Conditions: []corev1.PodCondition{
+							{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+						},
+					},
+				},
+			},
+			expected:          true,
+			testFuncCalled:    true,
+			expectedCallCount: 2,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			callCount := 0
+			c := &CertificateRevocationController{
+				getSecret: func(namespace, name string) (*corev1.Secret, error) {
+					return &corev1.Secret{
+						Data: map[string][]byte{
+							"kubeconfig": fakeKubeconfig,
+						},
+					}, nil
+				},
+				listPods: func(namespace string, selector labels.Selector) ([]*corev1.Pod, error) {
+					return tc.pods, nil
+				},
+			}
+
+			result, err := c.verifyCertificateAgainstAllKASPods(t.Context(), "test-ns", nil, nil, func(client kubernetes.Interface) (bool, error) {
+				callCount++
+				return true, nil
+			})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result != tc.expected {
+				t.Errorf("verifyCertificateAgainstAllKASPods() = %v, expected %v", result, tc.expected)
+			}
+			called := callCount > 0
+			if called != tc.testFuncCalled {
+				t.Errorf("testFunc called = %v, expected %v", called, tc.testFuncCalled)
+			}
+			if tc.expectedCallCount > 0 && callCount != tc.expectedCallCount {
+				t.Errorf("testFunc call count = %d, expected %d", callCount, tc.expectedCallCount)
 			}
 		})
 	}

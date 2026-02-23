@@ -30,6 +30,7 @@ import (
 	awsnodeterminationhandlerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/awsnodeterminationhandler"
 	awsccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/aws"
 	azureccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/azure"
+	gcpccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/gcp"
 	kubevirtccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/kubevirt"
 	openstackccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/openstack"
 	powervsccmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/powervs"
@@ -102,6 +103,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -248,6 +250,7 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		kubevirtccmv2.NewComponent(),
 		openstackccmv2.NewComponent(),
 		powervsccmv2.NewComponent(),
+		gcpccmv2.NewComponent(),
 		ccov2.NewComponent(),
 		storagev2.NewComponent(),
 		kubevirtcsiv2.NewComponent(),
@@ -1106,6 +1109,10 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		if err := r.cleanupOldRouterResources(ctx, hcp); err != nil {
 			return fmt.Errorf("failed to cleanup old router resources: %w", err)
 		}
+	} else {
+		if err := r.removeHCPIngressFromRoutes(ctx, hcp); err != nil {
+			return fmt.Errorf("failed to remove HCP ingress from routes: %w", err)
+		}
 	}
 
 	if _, exists := hcp.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
@@ -1668,6 +1675,28 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile %s secret: %w", awsPodIdentityWebhookServingCert.Name, err)
 		}
+
+		awsEBSCsiDriverControllerMetricsService := manifests.AWSEBSCsiDriverControllerMetricsService(hcp.Namespace)
+		if err = r.Get(ctx, client.ObjectKeyFromObject(awsEBSCsiDriverControllerMetricsService), awsEBSCsiDriverControllerMetricsService); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return fmt.Errorf("failed to retrieve aws-ebs-csi-driver-controller-metrics service: %w", err)
+			}
+		}
+
+		if hasServiceCAAnnotation := doesServiceHaveServiceCAAnnotation(awsEBSCsiDriverControllerMetricsService); !hasServiceCAAnnotation {
+			awsEBSCsiDriverControllerMetricsServingCert := manifests.AWSEBSCsiDriverControllerMetricsServingCert(hcp.Namespace)
+
+			err = removeServiceCASecret(ctx, r.Client, awsEBSCsiDriverControllerMetricsServingCert)
+			if err != nil {
+				return err
+			}
+
+			if _, err = createOrUpdate(ctx, r, awsEBSCsiDriverControllerMetricsServingCert, func() error {
+				return pki.ReconcileAWSEBSCsiDriverControllerMetricsServingCertSecret(awsEBSCsiDriverControllerMetricsServingCert, rootCASecret, p.OwnerRef)
+			}); err != nil {
+				return fmt.Errorf("failed to reconcile aws ebs csi driver controller metrics serving cert: %w", err)
+			}
+		}
 	case hyperv1.AzurePlatform:
 		azureDiskCsiDriverControllerMetricsService := manifests.AzureDiskCsiDriverControllerMetricsService(hcp.Namespace)
 		if err = r.Get(ctx, client.ObjectKeyFromObject(azureDiskCsiDriverControllerMetricsService), azureDiskCsiDriverControllerMetricsService); err != nil {
@@ -1991,6 +2020,43 @@ func (r *HostedControlPlaneReconciler) cleanupOldRouterResources(ctx context.Con
 	for _, resource := range oldRouterResources {
 		if _, err := util.DeleteIfNeeded(ctx, r.Client, resource); err != nil {
 			return fmt.Errorf("failed to delete %T %s: %w", resource, resource.GetName(), err)
+		}
+	}
+
+	return nil
+}
+
+func (r *HostedControlPlaneReconciler) removeHCPIngressFromRoutes(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	routeList := &routev1.RouteList{}
+	if err := r.List(ctx, routeList, client.InNamespace(hcp.Namespace)); err != nil {
+		return fmt.Errorf("failed to list routes: %w", err)
+	}
+
+	for i := range routeList.Items {
+		route := &routeList.Items[i]
+		if _, hasHCPLabel := route.Labels[util.HCPRouteLabel]; hasHCPLabel {
+			// Skip routes that should be managed by the HCP router
+			continue
+		}
+		// Only clear ingress entries that correspond to router named "router".
+		// This matches the RouterName used by ReconcileRouteStatus in ingress/router.go
+		// when the HCP router admits routes. We filter by this specific name to ensure
+		// we only remove ingress entries from the HCP router, not from other routers
+		// (e.g., the default ingress controller router).
+		originalRoute := route.DeepCopy()
+		filteredIngress := make([]routev1.RouteIngress, 0, len(route.Status.Ingress))
+		for _, ingress := range route.Status.Ingress {
+			if ingress.RouterName != "router" {
+				filteredIngress = append(filteredIngress, ingress)
+			}
+		}
+		if len(filteredIngress) != len(route.Status.Ingress) {
+			route.Status.Ingress = filteredIngress
+			if !equality.Semantic.DeepEqual(originalRoute.Status, route.Status) {
+				if err := r.Status().Patch(ctx, route, client.MergeFrom(originalRoute)); err != nil {
+					return fmt.Errorf("failed to clear route %s ingress: %w", route.Name, err)
+				}
+			}
 		}
 	}
 

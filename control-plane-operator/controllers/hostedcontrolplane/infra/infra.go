@@ -328,7 +328,7 @@ func (r *Reconciler) reconcileKonnectivityServerService(ctx context.Context, hcp
 			if serviceStrategy.Route != nil {
 				hostname = serviceStrategy.Route.Hostname
 			}
-			return kas.ReconcileKonnectivityExternalRoute(konnectivityRoute, p.OwnerRef, hostname, r.DefaultIngressDomain, util.UseDedicatedDNSForKonnectivity(hcp))
+			return kas.ReconcileKonnectivityExternalRoute(konnectivityRoute, p.OwnerRef, hostname, r.DefaultIngressDomain, util.LabelHCPRoutes(hcp))
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile Konnectivity server external route: %w", err)
 		}
@@ -366,7 +366,7 @@ func (r *Reconciler) reconcileOAuthServerService(ctx context.Context, hcp *hyper
 			if serviceStrategy.Route != nil {
 				hostname = serviceStrategy.Route.Hostname
 			}
-			return oauth.ReconcileExternalPublicRoute(oauthExternalPublicRoute, p.OwnerRef, hostname, r.DefaultIngressDomain, util.UseDedicatedDNSForOAuth(hcp))
+			return oauth.ReconcileExternalPublicRoute(oauthExternalPublicRoute, p.OwnerRef, hostname, r.DefaultIngressDomain, util.LabelHCPRoutes(hcp))
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile OAuth external public route: %w", err)
 		}
@@ -380,7 +380,7 @@ func (r *Reconciler) reconcileOAuthServerService(ctx context.Context, hcp *hyper
 		// Reconcile the external private route if a hostname is specified
 		if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
 			if _, err := createOrUpdate(ctx, r.Client, oauthExternalPrivateRoute, func() error {
-				return oauth.ReconcileExternalPrivateRoute(oauthExternalPrivateRoute, p.OwnerRef, serviceStrategy.Route.Hostname, r.DefaultIngressDomain, util.UseDedicatedDNSForOAuth(hcp))
+				return oauth.ReconcileExternalPrivateRoute(oauthExternalPrivateRoute, p.OwnerRef, serviceStrategy.Route.Hostname, r.DefaultIngressDomain, util.LabelHCPRoutes(hcp))
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile OAuth external private route: %w", err)
 			}
@@ -438,40 +438,42 @@ func (r *Reconciler) reconcileOLMPackageServerService(ctx context.Context, hcp *
 }
 
 func (r *Reconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
-	if sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+	pubSvc := manifests.RouterPublicService(hcp.Namespace)
+	privSvc := manifests.PrivateRouterService(hcp.Namespace)
+	if sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform || (!util.IsPrivateHCP(hcp) && !util.LabelHCPRoutes(hcp)) {
+		if _, err := util.DeleteIfNeeded(ctx, r.Client, pubSvc); err != nil {
+			return fmt.Errorf("failed to delete public router service: %w", err)
+		}
+		if _, err := util.DeleteIfNeeded(ctx, r.Client, privSvc); err != nil {
+			return fmt.Errorf("failed to delete private router service: %w", err)
+		}
 		return nil
 	}
 
 	// Create the Service type LB internal for private endpoints.
-	pubSvc := manifests.RouterPublicService(hcp.Namespace)
 	if util.IsPrivateHCP(hcp) {
-		svc := manifests.PrivateRouterService(hcp.Namespace)
-		if _, err := createOrUpdate(ctx, r.Client, svc, func() error {
-			return ingress.ReconcileRouterService(svc, true, true, hcp)
+		if _, err := createOrUpdate(ctx, r.Client, privSvc, func() error {
+			return ingress.ReconcileRouterService(privSvc, true, true, hcp)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile private router service: %w", err)
 		}
-		if !util.IsPublicHCP(hcp) {
-			// Remove the public router Service if it exists
-			err := r.Client.Get(ctx, client.ObjectKeyFromObject(pubSvc), pubSvc)
-			if err != nil {
-				if !apierrors.IsNotFound(err) {
-					return fmt.Errorf("failed to check whether public router service exists: %w", err)
-				}
-			} else {
-				if err := r.Client.Delete(ctx, pubSvc); err != nil {
-					return fmt.Errorf("failed to delete public router service: %w", err)
-				}
-			}
+	} else {
+		if _, err := util.DeleteIfNeeded(ctx, r.Client, privSvc); err != nil {
+			return fmt.Errorf("failed to delete private router service: %w", err)
 		}
 	}
 
-	// When Public access endpoint we need to create a Service type LB external.
-	if util.IsPublicWithDNS(hcp) {
+	// When Public access endpoint AND routes use HCP router, create a Service type LB external.
+	// This ensures we only create public router infrastructure when routes are labeled for it.
+	if util.IsPublicHCP(hcp) && util.LabelHCPRoutes(hcp) {
 		if _, err := createOrUpdate(ctx, r.Client, pubSvc, func() error {
 			return ingress.ReconcileRouterService(pubSvc, false, util.IsPrivateHCP(hcp), hcp)
 		}); err != nil {
 			return fmt.Errorf("failed to reconcile router service: %w", err)
+		}
+	} else {
+		if _, err := util.DeleteIfNeeded(ctx, r.Client, pubSvc); err != nil {
+			return fmt.Errorf("failed to delete public router service: %w", err)
 		}
 	}
 	return nil
@@ -642,7 +644,7 @@ func (r *Reconciler) reconcileInternalRouterServiceStatus(ctx context.Context, h
 }
 
 func (r *Reconciler) reconcileExternalRouterServiceStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) (host string, needed bool, message string, err error) {
-	if !util.IsPublicWithDNS(hcp) || sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+	if !util.IsPublicHCP(hcp) || !util.LabelHCPRoutes(hcp) || sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		return
 	}
 	return r.reconcileRouterServiceStatus(ctx, manifests.RouterPublicService(hcp.Namespace), events.NewMessageCollector(ctx, r.Client))

@@ -3,7 +3,7 @@
 This file contains all HyperShift documentation aggregated into a single file
 for use with AI tools like NotebookLM.
 
-Total documents: 252
+Total documents: 260
 
 ---
 
@@ -7443,73 +7443,46 @@ This document describes how to set up Azure Workload Identities and OIDC issuer 
 
 ## Create Azure Workload Identities
 
-Create managed identities for each OpenShift component that needs Azure access:
+!!! note "OIDC Issuer Required"
+
+    Before running this command, you need an OIDC issuer URL. If you haven't set this up yet, see Configure OIDC Issuer below first.
+
+You can create the required managed identities and federated credentials using the HyperShift CLI:
 
 ```bash
 # Set environment variables
 PERSISTENT_RG_NAME="os4-common"  # Use persistent resource group
 LOCATION="eastus"
 CLUSTER_NAME="my-self-managed-cluster"
-SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+INFRA_ID="${CLUSTER_NAME}-$(openssl rand -hex 4)"
+AZURE_CREDS="/path/to/azure-creds.json"
 
 # Create persistent resource group (if it doesn't exist)
 az group create --name $PERSISTENT_RG_NAME --location $LOCATION
 
-# Create managed identities for each component
-declare -A COMPONENTS=(
-    ["image-registry"]="cluster-image-registry-operator"
-    ["ingress"]="cluster-ingress-operator"  
-    ["file-csi"]="cluster-storage-operator-file"
-    ["disk-csi"]="cluster-storage-operator-disk"
-    ["nodepool-mgmt"]="cluster-api-provider-azure"
-    ["cloud-provider"]="azure-cloud-provider"
-    ["network"]="cluster-network-operator"
-)
-
-# Create managed identities and capture client IDs
-declare -A CLIENT_IDS
-for component in "${!COMPONENTS[@]}"; do
-    echo "Creating managed identity for $component..."
-    CLIENT_ID=$(az identity create \
-        --name "${CLUSTER_NAME}-${component}" \
-        --resource-group $PERSISTENT_RG_NAME \
-        --query clientId -o tsv)
-    CLIENT_IDS[$component]=$CLIENT_ID
-    echo "Created identity ${CLUSTER_NAME}-${component} with client ID: $CLIENT_ID"
-done
+# Create workload identities using the HyperShift CLI
+# (requires OIDC issuer URL - see next section if you haven't set this up yet)
+hypershift create iam azure \
+    --name $CLUSTER_NAME \
+    --infra-id $INFRA_ID \
+    --azure-creds $AZURE_CREDS \
+    --location $LOCATION \
+    --resource-group-name $PERSISTENT_RG_NAME \
+    --oidc-issuer-url $OIDC_ISSUER_URL \
+    --output-file workload-identities.json
 ```
 
-## Create Workload Identities Configuration File
+This creates 7 managed identities with federated credentials for:
 
-Create a JSON file with all the workload identity client IDs:
+- Disk CSI driver
+- File CSI driver
+- Image Registry
+- Ingress Operator
+- Cloud Provider
+- NodePool Management
+- Network Operator
 
-```bash
-cat <<EOF > workload-identities.json
-{
-  "imageRegistry": {
-    "clientID": "${CLIENT_IDS[image-registry]}"
-  },
-  "ingress": {
-    "clientID": "${CLIENT_IDS[ingress]}"
-  },
-  "file": {
-    "clientID": "${CLIENT_IDS[file-csi]}"
-  },
-  "disk": {
-    "clientID": "${CLIENT_IDS[disk-csi]}"
-  },
-  "nodePoolManagement": {
-    "clientID": "${CLIENT_IDS[nodepool-mgmt]}"
-  },
-  "cloudProvider": {
-    "clientID": "${CLIENT_IDS[cloud-provider]}"
-  },
-  "network": {
-    "clientID": "${CLIENT_IDS[network]}"
-  }
-}
-EOF
-```
+For complete documentation on the IAM commands, see Create Azure IAM Resources Separately.
 
 ## Configure OIDC Issuer
 
@@ -7538,129 +7511,6 @@ ccoctl azure create-oidc-issuer \
 # Set OIDC issuer URL
 OIDC_ISSUER_URL="https://${OIDC_STORAGE_ACCOUNT_NAME}.blob.core.windows.net/${OIDC_STORAGE_ACCOUNT_NAME}"
 ```
-
-## Set Up Federated Identity Credentials
-
-Configure federated identity credentials for each workload identity. These establish trust between Azure Entra ID and the specific service accounts in your HostedCluster:
-
-```bash
-# Define workload identity names (matching those created earlier)
-# These should match the managed identities created in the previous section
-AZURE_DISK_MI_NAME="${CLUSTER_NAME}-disk-csi"
-AZURE_FILE_MI_NAME="${CLUSTER_NAME}-file-csi"
-IMAGE_REGISTRY_MI_NAME="${CLUSTER_NAME}-image-registry"
-INGRESS_MI_NAME="${CLUSTER_NAME}-ingress"
-CLOUD_PROVIDER_MI_NAME="${CLUSTER_NAME}-cloud-provider"
-NODE_POOL_MANAGEMENT_MI_NAME="${CLUSTER_NAME}-nodepool-mgmt"
-NETWORK_MI_NAME="${CLUSTER_NAME}-network"
-
-# Azure Disk CSI Driver federated credentials
-az identity federated-credential create \
-    --name "${AZURE_DISK_MI_NAME}-fed-id-node" \
-    --identity-name "${AZURE_DISK_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-disk-csi-driver-node-sa \
-    --audience openshift
-
-az identity federated-credential create \
-    --name "${AZURE_DISK_MI_NAME}-fed-id-operator" \
-    --identity-name "${AZURE_DISK_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-disk-csi-driver-operator \
-    --audience openshift
-
-az identity federated-credential create \
-    --name "${AZURE_DISK_MI_NAME}-fed-id-controller" \
-    --identity-name "${AZURE_DISK_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-disk-csi-driver-controller-sa \
-    --audience openshift
-
-# Azure File CSI Driver federated credentials
-az identity federated-credential create \
-    --name "${AZURE_FILE_MI_NAME}-fed-id-node" \
-    --identity-name "${AZURE_FILE_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-node-sa \
-    --audience openshift
-
-az identity federated-credential create \
-    --name "${AZURE_FILE_MI_NAME}-fed-id-operator" \
-    --identity-name "${AZURE_FILE_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-operator \
-    --audience openshift
-
-az identity federated-credential create \
-    --name "${AZURE_FILE_MI_NAME}-fed-id-controller" \
-    --identity-name "${AZURE_FILE_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cluster-csi-drivers:azure-file-csi-driver-controller-sa \
-    --audience openshift
-
-# Image Registry federated credentials
-az identity federated-credential create \
-    --name "${IMAGE_REGISTRY_MI_NAME}-fed-id-registry" \
-    --identity-name "${IMAGE_REGISTRY_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-image-registry:registry \
-    --audience openshift
-
-az identity federated-credential create \
-    --name "${IMAGE_REGISTRY_MI_NAME}-fed-id-operator" \
-    --identity-name "${IMAGE_REGISTRY_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-image-registry:cluster-image-registry-operator \
-    --audience openshift
-
-# Ingress Operator federated credential
-az identity federated-credential create \
-    --name "${INGRESS_MI_NAME}-fed-id" \
-    --identity-name "${INGRESS_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-ingress-operator:ingress-operator \
-    --audience openshift
-
-# Cloud Provider federated credential
-az identity federated-credential create \
-    --name "${CLOUD_PROVIDER_MI_NAME}-fed-id" \
-    --identity-name "${CLOUD_PROVIDER_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:kube-system:azure-cloud-provider \
-    --audience openshift
-
-# Node Pool Management federated credential
-az identity federated-credential create \
-    --name "${NODE_POOL_MANAGEMENT_MI_NAME}-fed-id" \
-    --identity-name "${NODE_POOL_MANAGEMENT_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:kube-system:capi-provider \
-    --audience openshift
-
-# Network Operator federated credential
-az identity federated-credential create \
-    --name "${NETWORK_MI_NAME}-fed-id" \
-    --identity-name "${NETWORK_MI_NAME}" \
-    --resource-group "${PERSISTENT_RG_NAME}" \
-    --issuer "${OIDC_ISSUER_URL}" \
-    --subject system:serviceaccount:openshift-cloud-network-config-controller:cloud-network-config-controller \
-    --audience openshift
-```
-
-!!! note "Service Account Mapping"
-    
-    Each federated identity credential maps a specific Azure managed identity to an OpenShift service account. The service accounts listed above are the default service accounts used by various OpenShift components for Azure integration.
 
 ## Verification
 
@@ -8245,6 +8095,488 @@ version.azure.akv.io1"&
 algorithm.azure.akv.io
                       RSA-OAEP-256(
 ```
+
+
+---
+
+## Source: docs/content/how-to/azure/create-iam-separately.md
+
+---
+title: Create Azure IAM resources separately
+---
+
+# Create Azure IAM resources separately
+
+The `hypershift create iam azure` command creates Azure workload identities separately from infrastructure,
+following the same pattern as AWS and GCP. This enables you to manage IAM resources independently from
+your cluster infrastructure lifecycle.
+
+## Overview
+
+For self-managed Azure HyperShift clusters, workload identities authenticate cluster components to Azure
+services using OIDC federation. You must create identities separately using `create iam azure` and then
+consume them during infrastructure or cluster creation via the `--workload-identities-file` flag.
+
+This approach provides control over the IAM lifecycle and follows the same pattern as AWS and GCP platforms.
+
+## Prerequisites
+
+Before creating Azure IAM resources, ensure you have:
+
+- An Azure credentials file with the following format:
+    ```json
+    {
+      "subscriptionId": "your-subscription-id",
+      "tenantId": "your-tenant-id",
+      "clientId": "your-client-id",
+      "clientSecret": "your-client-secret"
+    }
+    ```
+- An existing resource group where the managed identities will be created
+- An OIDC issuer URL for workload identity federation
+
+## Creating Workload Identities
+
+Use the `hypershift create iam azure` command:
+
+```bash
+hypershift create iam azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --location LOCATION \
+    --resource-group-name RESOURCE_GROUP \
+    --oidc-issuer-url OIDC_ISSUER_URL \
+    --output-file workload-identities.json
+```
+
+where:
+
+* `CLUSTER_NAME` is the name of the hosted cluster you intend to create.
+* `INFRA_ID` is a unique identifier used to name Azure resources. Typically this is the cluster name
+    with a random suffix appended.
+* `AZURE_CREDENTIALS_FILE` points to an Azure credentials file with permission to create
+    managed identities and federated credentials.
+* `LOCATION` is the Azure region for the managed identities (e.g., `eastus`, `westus2`).
+* `RESOURCE_GROUP` is the name of an existing resource group where identities will be created.
+* `OIDC_ISSUER_URL` is the URL of the OIDC identity provider used for workload identity federation.
+
+Running this command creates:
+
+* 7 User-Assigned Managed Identities (one per cluster component):
+    - Disk CSI driver
+    - File CSI driver
+    - Image Registry
+    - Ingress Operator
+    - Cloud Provider
+    - NodePool Management
+    - Network Operator
+* Federated Identity Credentials for each identity, configured with the OIDC issuer
+
+## Output Format
+
+The output file contains the workload identities in JSON format, directly consumable by the
+`--workload-identities-file` flag in `create cluster azure` and `create infra azure` commands:
+
+```json
+{
+  "disk": {
+    "tenantID": "...",
+    "clientID": "...",
+    "resourceID": "/subscriptions/.../providers/Microsoft.ManagedIdentity/userAssignedIdentities/my-cluster-abc123-disk"
+  },
+  "file": {
+    "tenantID": "...",
+    "clientID": "...",
+    "resourceID": "..."
+  },
+  "imageRegistry": { ... },
+  "ingress": { ... },
+  "cloudProvider": { ... },
+  "nodePoolManagement": { ... },
+  "network": { ... }
+}
+```
+
+## Using Pre-created Identities
+
+### With Infrastructure Creation
+
+Pass the output file to `create infra azure`:
+
+```bash
+hypershift create infra azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --base-domain BASE_DOMAIN \
+    --location LOCATION \
+    --workload-identities-file workload-identities.json \
+    --output-file infra-output.yaml
+```
+
+### With Cluster Creation
+
+Or pass directly to `create cluster azure`:
+
+```bash
+hypershift create cluster azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --base-domain BASE_DOMAIN \
+    --location LOCATION \
+    --pull-secret PULL_SECRET_FILE \
+    --workload-identities-file workload-identities.json
+```
+
+## Destroying Workload Identities
+
+To destroy the workload identities that were created:
+
+```bash
+hypershift destroy iam azure \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --workload-identities-file workload-identities.json
+```
+
+The destroy command reads the output file from create to identify which identities to delete.
+Both the managed identities and their federated credentials are removed.
+
+!!! warning "Destroy Order"
+
+    If you created infrastructure using these identities, destroy the infrastructure first
+    before destroying the IAM resources.
+
+## Command Reference
+
+### Required Flags for `create iam azure`
+
+| Flag | Description |
+|------|-------------|
+| `--name` | Name of the HostedCluster |
+| `--infra-id` | Unique infrastructure identifier |
+| `--azure-creds` | Path to Azure credentials JSON file |
+| `--location` | Azure region for identities |
+| `--oidc-issuer-url` | OIDC issuer URL for federation |
+
+### Optional Flags for `create iam azure`
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--resource-group-name` | Resource group for identities | `{name}-{infra-id}` |
+| `--output-file` | Output file path | `{name}-iam-output.json` |
+| `--cloud` | Azure cloud environment | `AzurePublicCloud` |
+
+### Required Flags for `destroy iam azure`
+
+| Flag | Description |
+|------|-------------|
+| `--azure-creds` | Path to Azure credentials JSON file |
+| `--workload-identities-file` | Path to workload identities JSON file |
+
+### Optional Flags for `destroy iam azure`
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--cloud` | Azure cloud environment | `AzurePublicCloud` |
+
+## Workflow Example
+
+Here's a complete workflow for creating a self-managed Azure cluster with separate IAM management:
+
+```bash
+# 1. Set variables
+export NAME="my-cluster"
+export INFRA_ID="${NAME}-$(openssl rand -hex 4)"
+export LOCATION="eastus"
+export BASE_DOMAIN="example.com"
+export AZURE_CREDS="/path/to/azure-creds.json"
+export OIDC_ISSUER_URL="https://my-oidc-issuer.com"
+
+# 2. Create a resource group for identities
+az group create --name ${NAME}-rg --location ${LOCATION}
+
+# 3. Create workload identities
+hypershift create iam azure \
+    --name ${NAME} \
+    --infra-id ${INFRA_ID} \
+    --azure-creds ${AZURE_CREDS} \
+    --location ${LOCATION} \
+    --resource-group-name ${NAME}-rg \
+    --oidc-issuer-url ${OIDC_ISSUER_URL} \
+    --output-file workload-identities.json
+
+# 4. Create infrastructure using pre-created identities
+hypershift create infra azure \
+    --name ${NAME} \
+    --infra-id ${INFRA_ID} \
+    --azure-creds ${AZURE_CREDS} \
+    --base-domain ${BASE_DOMAIN} \
+    --location ${LOCATION} \
+    --workload-identities-file workload-identities.json \
+    --output-file infra-output.yaml
+
+# 5. Create the cluster
+hypershift create cluster azure \
+    --name ${NAME} \
+    --infra-id ${INFRA_ID} \
+    --azure-creds ${AZURE_CREDS} \
+    --base-domain ${BASE_DOMAIN} \
+    --location ${LOCATION} \
+    --pull-secret /path/to/pull-secret \
+    --infra-json infra-output.yaml
+
+# --- Cleanup ---
+
+# 6. Destroy the cluster
+hypershift destroy cluster azure --name ${NAME}
+
+# 7. Destroy infrastructure
+hypershift destroy infra azure \
+    --name ${NAME} \
+    --infra-id ${INFRA_ID} \
+    --azure-creds ${AZURE_CREDS}
+
+# 8. Destroy IAM resources
+hypershift destroy iam azure \
+    --azure-creds ${AZURE_CREDS} \
+    --workload-identities-file workload-identities.json
+```
+
+## See Also
+
+- Create Azure Infrastructure Separately
+- Azure Workload Identity Setup
+- Self-Managed Azure Overview
+
+
+---
+
+## Source: docs/content/how-to/azure/create-infra-separately.md
+
+---
+title: Create Azure infrastructure separately
+---
+
+# Create Azure infrastructure separately
+
+The default behavior of the `hypershift create cluster azure` command is to create cloud infrastructure
+along with the HostedCluster and apply it. It is possible to create the cloud infrastructure portion
+separately so that the `hypershift create cluster azure` command can be used to create the cluster
+with pre-existing infrastructure.
+
+In order to do this, you need to:
+
+1. Create the Azure infrastructure
+2. Create the cluster using the infrastructure output
+
+## Prerequisites
+
+Before creating Azure infrastructure, ensure you have:
+
+- An Azure credentials file with the following format:
+    ```json
+    {
+      "subscriptionId": "your-subscription-id",
+      "tenantId": "your-tenant-id",
+      "clientId": "your-client-id",
+      "clientSecret": "your-client-secret"
+    }
+    ```
+- An existing public DNS zone in your Azure subscription for your base domain
+- Workload identities created via `hypershift create iam azure` (for self-managed Azure with workload identity)
+
+## Creating the Azure Infrastructure
+
+Use the `hypershift create infra azure` command:
+
+```bash
+hypershift create infra azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --base-domain BASE_DOMAIN \
+    --location LOCATION \
+    --workload-identities-file WORKLOAD_IDENTITIES_FILE \
+    --output-file OUTPUT_INFRA_FILE
+```
+
+where:
+
+* `CLUSTER_NAME` is the name of the hosted cluster you intend to create.
+* `INFRA_ID` is a unique name that will be used to identify your infrastructure. It is used
+    to name and tag Azure resources. Typically this is the name of your cluster with a random
+    suffix appended to it.
+* `AZURE_CREDENTIALS_FILE` points to an Azure credentials file that has permission to create
+    infrastructure resources such as VNets, subnets, load balancers, etc.
+* `BASE_DOMAIN` is the base domain for your hosted cluster's ingress. It must correspond to
+    an existing public DNS zone in your Azure subscription.
+* `LOCATION` is the Azure region where you want to create the infrastructure (e.g., `eastus`, `westus2`).
+* `WORKLOAD_IDENTITIES_FILE` is the path to the JSON file containing workload identity configuration,
+    created via `hypershift create iam azure`.
+* `OUTPUT_INFRA_FILE` is the file where details of the infrastructure will be stored in YAML format.
+
+Running this command creates the following resources:
+
+* 1 Resource Group (main cluster resource group)
+* 1 Resource Group for VNet (if not using existing VNet)
+* 1 Resource Group for NSG (if not using existing NSG)
+* 1 Virtual Network with a default subnet
+* 1 Network Security Group
+* 1 Private DNS Zone
+* 1 Private DNS Zone Virtual Network Link
+* 1 Public IP Address for load balancer
+* 1 Load Balancer with outbound rule for egress
+
+All resources are tagged with the infrastructure ID for identification and cleanup.
+
+!!! note "Workload Identities"
+
+    Managed identities and federated credentials must be created separately using
+    `hypershift create iam azure`. See Create Azure IAM Resources Separately.
+
+## Using Existing Network Resources
+
+You can use existing VNet, subnet, and network security group instead of creating new ones:
+
+```bash
+hypershift create infra azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --base-domain BASE_DOMAIN \
+    --location LOCATION \
+    --workload-identities-file WORKLOAD_IDENTITIES_FILE \
+    --vnet-id /subscriptions/SUB_ID/resourceGroups/RG/providers/Microsoft.Network/virtualNetworks/VNET_NAME \
+    --subnet-id /subscriptions/SUB_ID/resourceGroups/RG/providers/Microsoft.Network/virtualNetworks/VNET_NAME/subnets/SUBNET_NAME \
+    --network-security-group-id /subscriptions/SUB_ID/resourceGroups/RG/providers/Microsoft.Network/networkSecurityGroups/NSG_NAME \
+    --output-file OUTPUT_INFRA_FILE
+```
+
+## Enabling RBAC Role Assignment
+
+To automatically assign required Azure RBAC roles to the workload identities:
+
+```bash
+hypershift create infra azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --base-domain BASE_DOMAIN \
+    --location LOCATION \
+    --workload-identities-file WORKLOAD_IDENTITIES_FILE \
+    --assign-identity-roles \
+    --dns-zone-rg-name DNS_ZONE_RG \
+    --output-file OUTPUT_INFRA_FILE
+```
+
+where:
+
+* `--assign-identity-roles` enables automatic RBAC role assignment for workload identities
+* `DNS_ZONE_RG` is the name of the resource group containing your public DNS zone
+
+## Create Workload Identities Separately
+
+If you want to create workload identities separately before creating infrastructure, use the
+dedicated IAM command:
+
+```bash
+hypershift create iam azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --location LOCATION \
+    --resource-group-name EXISTING_RG \
+    --oidc-issuer-url OIDC_ISSUER_URL \
+    --output-file WORKLOAD_IDENTITIES_FILE
+```
+
+This creates the managed identities and federated credentials, saving them to a JSON file.
+You can then use this file with `--workload-identities-file` during infrastructure or cluster creation.
+
+For complete documentation, see Create Azure IAM Resources Separately.
+
+## Creating the Cluster
+
+After the infrastructure is created, use the output file with the cluster creation command:
+
+```bash
+hypershift create cluster azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --location LOCATION \
+    --base-domain BASE_DOMAIN \
+    --pull-secret PULL_SECRET_FILE \
+    --node-pool-replicas 3 \
+    --infra-json OUTPUT_INFRA_FILE
+```
+
+The `--infra-json` flag points to the infrastructure output file generated by the
+`create infra azure` command.
+
+## Destroying the Infrastructure
+
+To destroy the infrastructure that was created:
+
+```bash
+hypershift destroy infra azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE
+```
+
+### Preserving the Resource Group
+
+If you want to preserve the main resource group but delete only cluster-specific resources:
+
+```bash
+hypershift destroy infra azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --preserve-resource-group
+```
+
+This is useful when you have other resources in the same resource group that should not be deleted.
+
+## Command Reference
+
+### Required Flags for `create infra azure`
+
+| Flag | Description |
+|------|-------------|
+| `--name` | Name of the HostedCluster |
+| `--infra-id` | Unique infrastructure identifier |
+| `--azure-creds` | Path to Azure credentials JSON file |
+| `--base-domain` | Base domain for cluster ingress |
+
+### Identity Configuration
+
+| Option | Flags Required |
+|--------|----------------|
+| Self-managed with workload identities | `--workload-identities-file` |
+
+Workload identities must be created separately using `hypershift create iam azure`.
+See Create Azure IAM Resources Separately.
+
+### Optional Flags
+
+| Flag | Description |
+|------|-------------|
+| `--location` | Azure region (default: `eastus`) |
+| `--cloud` | Azure cloud environment (default: `AzurePublicCloud`) |
+| `--resource-group-name` | Custom resource group name |
+| `--resource-group-tags` | Tags to apply to resource group |
+| `--vnet-id` | Use existing VNet |
+| `--subnet-id` | Use existing subnet |
+| `--network-security-group-id` | Use existing NSG |
+| `--assign-identity-roles` | Enable RBAC role assignment |
+| `--dns-zone-rg-name` | DNS zone resource group (for role assignment) |
+| `--assign-custom-hcp-roles` | Use custom HCP roles instead of Contributor |
+| `--disable-cluster-capabilities` | Disable specific cluster capabilities |
+| `--output-file` | Output file for infrastructure details |
 
 
 ---
@@ -8936,6 +9268,8 @@ Self-managed Azure uses an OpenShift cluster (running on any platform - AWS, Azu
 - Azure Workload Identity Setup - Set up managed identities and OIDC federation
 - Setup Azure Management Cluster - Install HyperShift operator
 - Create a Self-Managed Azure HostedCluster - Deploy your first hosted cluster
+- Create Azure IAM Resources Separately - Manage workload identities independently
+- Create Azure Infrastructure Separately - Create infrastructure before cluster
 
 ## Comparison
 
@@ -9206,11 +9540,19 @@ This phase creates the foundational security infrastructure required for your ho
 - **OIDC Issuer**: Configures an OIDC issuer in Azure Blob Storage for service account token validation
 - **Federated Credentials**: Establishes trust relationships between Azure Entra ID and OpenShift service accounts
 
+You can create workload identities using either:
+
+- **HyperShift CLI** (recommended): `hypershift create iam azure` - automates identity and federated credential creation
+- **Azure CLI**: Manual `az identity` and `az identity federated-credential` commands
+
 **Why This Matters**: Without these identities and federated credentials, your hosted cluster components cannot authenticate with Azure APIs to provision storage, manage load balancers, configure networking, or perform other essential cloud operations. Using workload identities instead of traditional service principals provides better security, automatic credential rotation, and follows Azure's modern authentication best practices.
 
 **When to Complete**: This is a one-time setup that can be reused across multiple hosted clusters. Complete this before proceeding to Phase 2.
 
-👉 **Guide**: Azure Workload Identity Setup
+👉 **Guides**:
+
+- Azure Workload Identity Setup - Overview with CLI and OIDC configuration
+- Create Azure IAM Resources Separately - Detailed IAM command reference
 
 ### Phase 2: Management Cluster Setup
 
@@ -9307,7 +9649,7 @@ Self-managed Azure HyperShift implements several security best practices:
 
 Begin your self-managed Azure HyperShift deployment by following the guides in order:
 
-1. **Azure Workload Identity Setup** - Set up managed identities and OIDC federation
+1. **Azure Workload Identity Setup** - Set up managed identities and OIDC federation (or use Create Azure IAM Resources Separately for CLI-based setup)
 2. **Setup Azure Management Cluster for HyperShift** - Install HyperShift operator (with or without External DNS)
 3. **Create a Self-Managed Azure HostedCluster** - Deploy your first hosted cluster
 
@@ -31050,10 +31392,6 @@ access.</p>
 <td><p>DiskStorageAccountTypesStandardSSDLRS - Standard SSD locally redundant storage. Best for web servers, lightly used enterprise
 applications and dev/test.</p>
 </td>
-</tr><tr><td><p>&#34;UltraSSD_LRS&#34;</p></td>
-<td><p>DiskStorageAccountTypesUltraSSDLRS - Ultra SSD locally redundant storage. Best for IO-intensive workloads such as SAP HANA,
-top tier databases (for example, SQL, Oracle), and other transaction-heavy workloads.</p>
-</td>
 </tr></tbody>
 </table>
 ###AzureKMSKey { #hypershift.openshift.io/v1beta1.AzureKMSKey }
@@ -31290,7 +31628,7 @@ int32
 <td>
 <em>(Optional)</em>
 <p>sizeGiB is the size in GiB (1024^3 bytes) to assign to the OS disk.
-This should be between 16 and 65,536 when using the UltraSSD_LRS storage account type and between 16 and 32,767 when using any other storage account type.
+This should be between 16 and 32,767.
 When not set, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
 The current default is 30.</p>
 </td>
@@ -31307,8 +31645,9 @@ AzureDiskStorageAccountType
 <td>
 <em>(Optional)</em>
 <p>diskStorageAccountType is the disk storage account type to use.
-Valid values are Premium_LRS, PremiumV2_LRS, Standard_LRS, StandardSSD_LRS, UltraSSD_LRS.
+Valid values are Premium_LRS, PremiumV2_LRS, Standard_LRS, StandardSSD_LRS.
 Note that Standard means a HDD.
+UltraSSD_LRS is not supported for OS disks (see <a href="https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison">https://learn.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison</a>).
 The disk performance is tied to the disk type, please refer to the Azure documentation for further details
 <a href="https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison">https://docs.microsoft.com/en-us/azure/virtual-machines/disks-types#disk-type-comparison</a>.
 When omitted this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
@@ -42221,6 +42560,966 @@ title: Diagrams
 ---
 
 This section describes the architecture diagrams that is used by each platform.
+
+---
+
+## Source: docs/content/reference/architecture/managed-azure/azure-authentication-flow.md
+
+# Azure Authentication Flow
+
+This document explains the authentication flow from control plane pods to Azure APIs for managed Azure HostedClusters.
+
+For CSI-based credential mounting details, see Secrets CSI Usage.
+
+## Authentication Overview
+
+Managed Azure HostedClusters use certificate-based authentication with credentials stored in Azure Key Vault:
+
+| Aspect | Description |
+|--------|-------------|
+| **Credential Type** | X.509 Certificate |
+| **Credential Source** | Azure Key Vault |
+| **Credential Delivery** | Secrets Store CSI Driver |
+| **Azure SDK Library** | `msi-dataplane` |
+| **Credential Rotation** | Automatic via Key Vault |
+
+## Authentication Flow
+
+```
+Pod Startup → CSI Driver → Azure Key Vault → Credential File
+                                                    ↓
+Azure ARM API ← Access Token ← Azure AD ← Azure SDK reads file
+```
+
+1. **CSI Driver** mounts credential from Azure Key Vault (see Secrets CSI Usage)
+2. **Credential File** contains `UserAssignedIdentityCredentials` JSON with PEM certificate
+3. **Azure SDK** uses `msi-dataplane.NewUserAssignedIdentityCredential()` to load credentials
+4. **Azure AD** validates the client certificate and issues an access token
+5. **ARM API** accepts the Bearer token for resource operations
+
+## Credential Loading Code
+
+```go
+import "github.com/Azure/msi-dataplane/pkg/dataplane"
+
+certPath := "/mnt/certs/" + credentialsSecretName
+creds, err := dataplane.NewUserAssignedIdentityCredential(
+    ctx,
+    certPath,
+    dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}),
+)
+
+// Use with Azure SDK clients
+client, err := armresources.NewResourceGroupsClient(subscriptionID, creds, nil)
+```
+
+The credential automatically watches the file for changes and reloads when the CSI driver refreshes secrets.
+
+## Cloud Configuration File
+
+```json
+{
+  "cloud": "AzurePublicCloud",
+  "tenantId": "<tenant-id>",
+  "subscriptionId": "<subscription-id>",
+  "resourceGroup": "<resource-group>",
+  "useManagedIdentityExtension": true,
+  "aadMSIDataPlaneIdentityPath": "/mnt/certs/<credential-secret-name>"
+}
+```
+
+## Credential Refresh
+
+The `msi-dataplane` library handles credential refresh:
+
+1. File watcher monitors credential file for changes
+2. When CSI driver refreshes secrets, new credentials are loaded
+3. Backstop timer reloads every 6 hours
+4. Compares `notBefore` timestamps to detect newer credentials
+
+## Troubleshooting
+
+### Verify CSI Mount
+
+```bash
+kubectl exec -it <pod> -- ls -la /mnt/certs
+kubectl exec -it <pod> -- cat /mnt/certs/<secret-name>
+```
+
+### Check SecretProviderClass
+
+```bash
+kubectl get secretproviderclass -n <namespace>
+kubectl describe secretproviderclasspodstatus -n <namespace>
+```
+
+## Related Documentation
+
+- Secrets CSI Usage - CSI driver overview
+
+
+---
+
+## Source: docs/content/reference/architecture/managed-azure/hostedcluster-identity-configuration.md
+
+# HostedCluster CR Identity Configuration
+
+This document provides a comprehensive reference for configuring Azure identity authentication in the HostedCluster custom resource for managed Azure HostedClusters.
+
+## Overview
+
+The `azureAuthenticationConfig` field in `spec.platform.azure` is a discriminated union that determines how the hosted cluster authenticates with Azure APIs. The authentication type is selected via the `azureAuthenticationConfigType` discriminator field.
+
+## AzureAuthenticationConfiguration Union
+
+The `AzureAuthenticationConfiguration` type controls which authentication mechanism is used for Azure API access.
+
+### Type Reference
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `azureAuthenticationConfigType` | `string` | Yes | Discriminator that specifies the authentication type. Set to `ManagedIdentities` for managed Azure HostedClusters. |
+| `managedIdentities` | `AzureResourceManagedIdentities` | Yes | Contains managed identity configuration for managed Azure HostedClusters. |
+
+### Authentication Model
+
+Managed Azure HostedClusters use:
+
+- **Control Plane**: Certificate-based authentication with credentials stored in Azure Key Vault
+- **Data Plane**: Federated identity credentials with OIDC for worker node components
+
+Control plane components authenticate using certificates retrieved from Azure Key Vault via the Secrets Store CSI Driver.
+
+## ControlPlaneManagedIdentities
+
+The `ControlPlaneManagedIdentities` struct contains all managed identities required for control plane components in managed Azure HostedClusters. Each identity corresponds to a specific OpenShift operator or controller that needs Azure API access.
+
+### Type Reference
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `managedIdentitiesKeyVault` | `ManagedAzureKeyVault` | Yes | Configuration for the Azure Key Vault containing managed identity certificates. |
+| `cloudProvider` | `ManagedIdentity` | Yes | Identity for the Azure cloud controller manager (cloud provider). |
+| `nodePoolManagement` | `ManagedIdentity` | Yes | Identity for the Cluster API Provider Azure (CAPZ) operator managing NodePools. |
+| `controlPlaneOperator` | `ManagedIdentity` | Yes | Identity for the control plane operator. |
+| `imageRegistry` | `ManagedIdentity` | No | Identity for the cluster-image-registry-operator. |
+| `ingress` | `ManagedIdentity` | Yes | Identity for the cluster-ingress-operator. |
+| `network` | `ManagedIdentity` | Yes | Identity for the cluster-network-operator. |
+| `disk` | `ManagedIdentity` | Yes | Identity for the Azure Disk CSI driver controller. |
+| `file` | `ManagedIdentity` | Yes | Identity for the Azure File CSI driver controller. |
+
+### Component Identity Mapping
+
+| Control Plane Identity | OpenShift Component | Purpose |
+|------------------------|---------------------|---------|
+| `cloudProvider` | azure-cloud-provider | Manages Azure load balancers, routes, and cloud infrastructure |
+| `nodePoolManagement` | cluster-api-provider-azure | Creates and manages Azure VMs for worker nodes |
+| `controlPlaneOperator` | control-plane-operator | Manages control plane component lifecycle |
+| `imageRegistry` | cluster-image-registry-operator | Manages container image storage in Azure Blob |
+| `ingress` | cluster-ingress-operator | Manages Azure DNS records for ingress |
+| `network` | cluster-network-operator | Manages Azure network configuration |
+| `disk` | azure-disk-csi-driver-controller | Manages Azure Disk persistent volumes |
+| `file` | azure-file-csi-driver-controller | Manages Azure File persistent volumes |
+
+### ManagedAzureKeyVault Type
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | `string` | Yes | The name of the Azure Key Vault on the management cluster containing managed identity certificates. |
+| `tenantID` | `string` | Yes | The tenant ID of the Azure Key Vault. |
+
+## DataPlaneManagedIdentities
+
+The `DataPlaneManagedIdentities` struct contains client IDs for managed identities used by data plane (worker node) components. These identities use federated credentials with OIDC for authentication.
+
+### Type Reference
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `imageRegistryMSIClientID` | `string` | Yes | Client ID of the managed identity for the image registry controller on worker nodes. |
+| `diskMSIClientID` | `string` | Yes | Client ID of the managed identity for the Azure Disk CSI driver on worker nodes. |
+| `fileMSIClientID` | `string` | Yes | Client ID of the managed identity for the Azure File CSI driver on worker nodes. |
+
+### Data Plane vs Control Plane Identities
+
+Data plane identities differ from control plane identities in several ways:
+
+- **Location**: Data plane components run on worker nodes, not in the control plane namespace
+- **Authentication**: Use OIDC federation with projected ServiceAccount tokens
+- **Configuration**: Only require client IDs (no Key Vault secret references)
+- **Scope**: Limited to storage and registry operations on worker nodes
+
+## ManagedIdentity Type
+
+The `ManagedIdentity` type represents a single managed identity used by a control plane component.
+
+### Type Reference
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `clientID` | `string` | No | - | The client ID (UUID) of the managed identity. Optional, primarily used for CI purposes. Must be a valid UUID in the format `8-4-4-4-12` (e.g., `12345678-1234-5678-9012-123456789012`). |
+| `credentialsSecretName` | `string` | Yes | - | The name of the Azure Key Vault secret containing the managed identity credentials. Must be 1-127 characters using only alphanumeric characters and hyphens. |
+| `objectEncoding` | `string` | Yes | `utf-8` | The encoding format of the certificate in Key Vault. Valid values are `utf-8`, `hex`, or `base64`. Must match the encoding used when storing the certificate. |
+
+### Credentials Secret Format
+
+The `credentialsSecretName` references a secret in Azure Key Vault that contains JSON-formatted credentials with the following structure:
+
+```json
+{
+  "clientId": "<managed-identity-client-id>",
+  "clientSecret": "<certificate-or-token>",
+  "authenticationEndpoint": "<azure-auth-endpoint>",
+  "tenantId": "<azure-tenant-id>",
+  "notBefore": "<validity-start-time>",
+  "notAfter": "<validity-end-time>"
+}
+```
+
+The Secrets Store CSI Driver retrieves these secrets from Key Vault and mounts them into control plane pods.
+
+### Object Encoding
+
+The `objectEncoding` field specifies how the certificate is encoded in the Key Vault secret:
+
+| Value | Description |
+|-------|-------------|
+| `utf-8` | Default encoding. Certificate stored as UTF-8 text. |
+| `hex` | Certificate stored as hexadecimal string. |
+| `base64` | Certificate stored as base64-encoded string. |
+
+!!! warning "Encoding Mismatch"
+
+    If `objectEncoding` does not match the actual encoding of the stored certificate, the Secrets Store CSI Driver will fail to read the secret. Errors will appear on the SecretProviderClass custom resource.
+
+## AzureKMSSpec (Secret Encryption)
+
+The `AzureKMSSpec` type configures Azure Key Vault-based secret encryption for etcd. This is configured separately from the control plane identities under `spec.secretEncryption.kms.azure`.
+
+### Type Reference
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `activeKey` | `AzureKMSKey` | Yes | The active key used to encrypt new secrets. |
+| `backupKey` | `AzureKMSKey` | No | The previous key used during rotation so existing secrets can still be decrypted. |
+| `kms` | `ManagedIdentity` | Yes | The managed identity used to authenticate with Azure Key Vault for KMS operations. |
+
+### AzureKMSKey Type
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `keyVaultName` | `string` | Yes | The name of the Azure Key Vault containing the encryption key. |
+| `keyName` | `string` | Yes | The name of the key in the Key Vault. |
+| `keyVersion` | `string` | Yes | The version of the key to use. |
+
+### KMS Identity Mapping
+
+| Identity | OpenShift Component | Purpose |
+|----------|---------------------|---------|
+| `kms` | kube-apiserver | Encrypts/decrypts etcd secrets using Azure Key Vault keys |
+
+The KMS identity uses the same `ManagedIdentity` type as control plane identities and its credentials are mounted via the `managed-azure-kms` SecretProviderClass.
+
+## Example: Managed Azure HostedCluster
+
+```yaml
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: my-aro-hcp-cluster
+  namespace: clusters
+spec:
+  platform:
+    type: Azure
+    azure:
+      location: eastus
+      resourceGroup: my-managed-rg
+      subscriptionID: "12345678-1234-5678-9012-123456789012"
+      tenantID: "87654321-4321-8765-2109-876543210987"
+      vnetID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/my-network-rg/providers/Microsoft.Network/virtualNetworks/my-vnet
+      subnetID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/my-network-rg/providers/Microsoft.Network/virtualNetworks/my-vnet/subnets/my-subnet
+      securityGroupID: /subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/my-network-rg/providers/Microsoft.Network/networkSecurityGroups/my-nsg
+
+      # Identity configuration for managed Azure HostedClusters
+      azureAuthenticationConfig:
+        azureAuthenticationConfigType: ManagedIdentities
+        managedIdentities:
+          # Control plane managed identities (8 components)
+          controlPlane:
+            managedIdentitiesKeyVault:
+              name: my-keyvault
+              tenantID: "87654321-4321-8765-2109-876543210987"
+
+            cloudProvider:
+              clientID: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+              credentialsSecretName: cloud-provider-cert
+              objectEncoding: utf-8
+
+            nodePoolManagement:
+              clientID: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+              credentialsSecretName: nodepool-mgmt-cert
+              objectEncoding: utf-8
+
+            controlPlaneOperator:
+              clientID: "cccccccc-cccc-cccc-cccc-cccccccccccc"
+              credentialsSecretName: cpo-cert
+              objectEncoding: utf-8
+
+            imageRegistry:
+              clientID: "dddddddd-dddd-dddd-dddd-dddddddddddd"
+              credentialsSecretName: image-registry-cert
+              objectEncoding: utf-8
+
+            ingress:
+              clientID: "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+              credentialsSecretName: ingress-cert
+              objectEncoding: utf-8
+
+            network:
+              clientID: "ffffffff-ffff-ffff-ffff-ffffffffffff"
+              credentialsSecretName: network-cert
+              objectEncoding: utf-8
+
+            disk:
+              clientID: "11111111-1111-1111-1111-111111111111"
+              credentialsSecretName: disk-csi-cert
+              objectEncoding: utf-8
+
+            file:
+              clientID: "22222222-2222-2222-2222-222222222222"
+              credentialsSecretName: file-csi-cert
+              objectEncoding: utf-8
+
+          # Data plane managed identities (worker nodes)
+          dataPlane:
+            imageRegistryMSIClientID: "33333333-3333-3333-3333-333333333333"
+            diskMSIClientID: "44444444-4444-4444-4444-444444444444"
+            fileMSIClientID: "55555555-5555-5555-5555-555555555555"
+
+  # Secret encryption with Azure KMS
+  secretEncryption:
+    type: kms
+    kms:
+      provider: Azure
+      azure:
+        activeKey:
+          keyVaultName: my-kms-keyvault
+          keyName: my-encryption-key
+          keyVersion: "1234567890abcdef"
+        kms:
+          clientID: "66666666-6666-6666-6666-666666666666"
+          credentialsSecretName: kms-cert
+          objectEncoding: utf-8
+
+  # ... other HostedCluster configuration
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.19.0-multi
+```
+
+## Mapping to Azure Resources
+
+The identity configuration maps to these Azure resources:
+
+| Configuration Field | Azure Resource Type | Resource Location |
+|---------------------|---------------------|-------------------|
+| `managedIdentitiesKeyVault.name` | Azure Key Vault | Management cluster resource group |
+| `*.credentialsSecretName` | Key Vault Secret | Inside the configured Key Vault |
+| `*.clientID` | User Assigned Managed Identity | Customer subscription |
+| `dataPlane.*MSIClientID` | User Assigned Managed Identity | Customer subscription (federated) |
+
+## Validation Rules
+
+The API enforces the following validation rules:
+
+1. **Discriminator Validation**: The `azureAuthenticationConfigType` must be `ManagedIdentities` for managed Azure HostedClusters.
+
+2. **Client ID Format**: All `clientID` fields must be valid UUIDs in the format `8-4-4-4-12` (e.g., `12345678-1234-5678-9012-123456789012`).
+
+3. **Credentials Secret Name**: Must be 1-127 characters using only alphanumeric characters and hyphens (`^[a-zA-Z0-9-]+$`).
+
+4. **Object Encoding**: Must be one of `utf-8`, `hex`, or `base64`.
+
+
+---
+
+## Source: docs/content/reference/architecture/managed-azure/identity-flow.md
+
+# Managed Azure HostedClusters Identity Flow
+
+This document provides a high-level overview of how Azure identities flow through the managed Azure HostedClusters architecture, from HostedCluster configuration to Azure API authentication.
+
+The diagrams below show the key aspects of the identity flow. For detailed information on each component, see the linked documentation at the bottom of this page.
+
+## Sequence Diagram
+
+The following diagram shows the identity flow using the Control Plane Operator (CPO) as an example. Other control plane pods that need to authenticate with Azure follow a similar pattern, using their respective SecretProviderClass and credential file.
+
+!!! note "ARO_HCP_KEY_VAULT_USER_CLIENT_ID"
+    The `ARO_HCP_KEY_VAULT_USER_CLIENT_ID` environment variable contains the client ID of a user-assigned managed identity on the management cluster. This identity is authorized to pull secrets from the Azure Key Vault. It is set on the HyperShift Operator during installation and passed to the SecretProviderClass as `userAssignedIdentityID`.
+
+```mermaid
+sequenceDiagram
+    participant HC as HostedCluster CR
+    participant HO as HyperShift Operator
+    participant CPO as Control Plane Operator
+    participant SPC as SecretProviderClass
+    participant CSI as CSI Driver
+    participant KV as Azure Key Vault
+    participant SDK as Azure SDK
+    participant AAD as Azure AD
+    participant ARM as Azure ARM API
+
+    Note over HC,ARM: Setup Phase
+    HC->>HO: HostedCluster created with ManagedIdentities config
+    HO->>SPC: Creates SecretProviderClasses (managed-azure-cpo, etc.)
+    HO->>CPO: Deploys Control Plane Operator
+
+    Note over HC,ARM: Pod Startup Phase
+    CPO->>CSI: Pod starts with CSI volume mount
+    CSI->>SPC: Reads SecretProviderClass configuration
+    CSI->>KV: Authenticates with ARO_HCP_KEY_VAULT_USER_CLIENT_ID managed identity
+    KV-->>CSI: Returns UserAssignedIdentityCredentials JSON
+    CSI->>CPO: Mounts credential file at /mnt/certs
+
+    Note over HC,ARM: Runtime Authentication
+    CPO->>SDK: Loads credential file
+    SDK->>SDK: Parses JSON, decodes PEM certificate
+    SDK->>AAD: Client certificate authentication
+    AAD-->>SDK: Returns Azure Access Token
+    SDK->>ARM: API call with Bearer token
+    ARM-->>CPO: Azure resource operation result
+```
+
+## Component Identity Mapping
+
+```mermaid
+graph LR
+    subgraph HC_CR[HostedCluster CR]
+        CP[ControlPlaneManagedIdentities]
+    end
+
+    subgraph SPC_RESOURCES[SecretProviderClasses]
+        SPC1[managed-azure-cloud-provider]
+        SPC2[managed-azure-cpo]
+        SPC3[managed-azure-nodepool-management]
+        SPC4[managed-azure-ingress]
+        SPC5[managed-azure-network]
+        SPC6[managed-azure-disk-csi]
+        SPC7[managed-azure-file-csi]
+        SPC8[managed-azure-image-registry]
+        SPC9[managed-azure-kms]
+    end
+
+    subgraph CP_PODS[Control Plane Pods]
+        CCM[Cloud Controller Manager]
+        CPO2[Control Plane Operator]
+        CAPZ[CAPZ]
+        ING[Ingress Operator]
+        CNO[Network Operator]
+        DISK[Disk CSI Driver]
+        FILE[File CSI Driver]
+        REG[Image Registry]
+        KAS[Kube API Server]
+    end
+
+    CP -->|cloudProvider| SPC1 --> CCM
+    CP -->|controlPlaneOperator| SPC2 --> CPO2
+    CP -->|nodePoolManagement| SPC3 --> CAPZ
+    CP -->|ingress| SPC4 --> ING
+    CP -->|network| SPC5 --> CNO
+    CP -->|disk| SPC6 --> DISK
+    CP -->|file| SPC7 --> FILE
+    CP -->|imageRegistry| SPC8 --> REG
+    KMS_ID[secretEncryption.kms.azure.kms] -->|kms| SPC9 --> KAS
+```
+
+## Key Vault Secret Structure
+
+```mermaid
+graph TB
+    subgraph KV_VAULT[Azure Key Vault]
+        KV[(Key Vault)]
+    end
+
+    subgraph SECRET_JSON[Secret Content - JSON]
+        JSON[UserAssignedIdentityCredentials]
+        JSON --> F1[authentication_endpoint]
+        JSON --> F2[client_id]
+        JSON --> F3[client_secret]
+        JSON --> F4[tenant_id]
+        JSON --> F5[not_before / not_after]
+    end
+
+    subgraph PEM_BUNDLE[Decoded client_secret - PEM]
+        PEM[PEM Bundle]
+        PEM --> CERT[X.509 Certificate]
+        PEM --> KEY[Private Key]
+    end
+
+    KV --> JSON
+    F3 -->|base64 decode| PEM
+```
+
+## Detailed Documentation
+
+Each stage of the identity flow is documented in detail:
+
+| Stage | Documentation | Description |
+|-------|---------------|-------------|
+| 1. HostedCluster Configuration | HostedCluster Identity Configuration | API field reference for `AzureAuthenticationConfiguration`, `ControlPlaneManagedIdentities`, `DataPlaneManagedIdentities`, and `ManagedIdentity` types |
+| 2. Azure Key Vault | Key Vault Secret Structure | Secret naming conventions, `UserAssignedIdentityCredentials` JSON schema, PEM certificate format, and `objectEncoding` options |
+| 3-4. SecretProviderClass & CSI | Secrets CSI Usage | How `SecretProviderClass` CRs are created and how the Secrets Store CSI driver mounts credentials into pods |
+| 5. Pod Volume Mounts | Pod Volume Mounts | Helper functions, mount paths, environment variables, and example pod specs |
+| 6-8. Authentication Flow | Azure Authentication Flow | Complete authentication chain from credential loading through Azure AD to ARM API access |
+
+### Additional References
+
+- SecretProviderClass Configuration - Deep dive into `ReconcileManagedAzureSecretProviderClass` function and all SecretProviderClass resources created by HO/CPO
+
+
+---
+
+## Source: docs/content/reference/architecture/managed-azure/keyvault-secret-structure.md
+
+# Azure Key Vault Secret Structure
+
+This document describes the structure and format of secrets stored in Azure Key Vault for each managed identity used by managed Azure HostedClusters control plane components.
+
+## Overview
+
+Managed Azure HostedClusters use Azure Key Vault to store credentials for managed identities that authenticate control plane components with Azure APIs. These secrets are mounted into pods via the Secrets Store CSI driver and consumed by components to obtain Azure access tokens.
+
+## Key Vault Reference Configuration
+
+The Key Vault containing managed identity credentials is referenced in the HostedCluster specification under `managedIdentitiesKeyVault`:
+
+```yaml
+spec:
+  platform:
+    azure:
+      azureAuthenticationConfig:
+        azureAuthenticationConfigType: ManagedIdentities
+        managedIdentities:
+          controlPlane:
+            managedIdentitiesKeyVault:
+              name: "<key-vault-name>"
+              tenantID: "<tenant-id>"
+```
+
+| Field | Description |
+|-------|-------------|
+| `name` | The name of the Azure Key Vault on the management cluster |
+| `tenantID` | The Azure AD tenant ID where the Key Vault exists |
+
+## Secret Naming Convention
+
+Each managed identity has a corresponding secret in Azure Key Vault. The secret name is specified in the `credentialsSecretName` field of each managed identity configuration.
+
+### Naming Pattern
+
+Secret names follow a pattern based on the component name and typically end with `-json` suffix when stored by the setup scripts:
+
+| Component | Typical Secret Name Pattern | Example |
+|-----------|---------------------------|---------|
+| Cloud Provider | `cloud-provider-<prefix>-json` | `cloud-provider-mycluster-json` |
+| Control Plane Operator | `cpo-<prefix>-json` | `cpo-mycluster-json` |
+| Node Pool Management | `nodepool-mgmt-<prefix>-json` | `nodepool-mgmt-mycluster-json` |
+| Azure Disk CSI | `azure-disk-<prefix>-json` | `azure-disk-mycluster-json` |
+| Azure File CSI | `azure-file-<prefix>-json` | `azure-file-mycluster-json` |
+| Image Registry | `ciro-<prefix>-json` | `ciro-mycluster-json` |
+| Ingress | `ingress-<prefix>-json` | `ingress-mycluster-json` |
+| Network (CNCC) | `cncc-<prefix>-json` | `cncc-mycluster-json` |
+
+### Naming Requirements
+
+Secret names must adhere to Azure Key Vault naming requirements:
+
+- Between 1 and 127 characters
+- Only alphanumeric characters and hyphens (`[a-zA-Z0-9-]`)
+- Must be unique within the Key Vault
+
+## Secret Format and Encoding
+
+### Object Type and Encoding
+
+The secret is stored as an Azure Key Vault **secret** (not a certificate or key). When retrieved via the Secrets Store CSI driver, the following parameters are used:
+
+```yaml
+objectType: secret
+objectEncoding: utf-8
+```
+
+The `objectEncoding` field specifies how the secret content is encoded:
+
+| Encoding | Description |
+|----------|-------------|
+| `utf-8` | UTF-8 encoded text (default and most common) |
+| `hex` | Hexadecimal encoded |
+| `base64` | Base64 encoded |
+
+!!! warning "Encoding Mismatch"
+
+    The `objectEncoding` must match the actual encoding format used when the secret was stored in Azure Key Vault. If they don't match, the Secrets Store CSI driver will fail to correctly read the secret, and an error will be visible on the SecretProviderClass custom resource.
+
+## Secret Content Structure
+
+The secret content is a JSON object following the `UserAssignedIdentityCredentials` structure from the Azure MSI Dataplane library. This JSON is stored as UTF-8 encoded text.
+
+### JSON Schema
+
+```json
+{
+  "authentication_endpoint": "https://login.microsoftonline.com/",
+  "client_id": "<managed-identity-client-id>",
+  "client_secret": "<base64-encoded-pem-certificate>",
+  "tenant_id": "<azure-ad-tenant-id>",
+  "not_before": "<timestamp-rfc3339>",
+  "not_after": "<timestamp-rfc3339>",
+  "renew_after": "<timestamp-rfc3339>",
+  "cannot_renew_after": "<timestamp-rfc3339>"
+}
+```
+
+### Field Descriptions
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `authentication_endpoint` | string | Yes | The Azure AD authentication endpoint URL (e.g., `https://login.microsoftonline.com/`) |
+| `client_id` | string | Yes | The client ID (UUID) of the managed identity |
+| `client_secret` | string | Yes | Base64-encoded X.509 certificate with private key in PEM format |
+| `tenant_id` | string | Yes | The Azure AD tenant ID (UUID) |
+| `not_before` | string | Yes | RFC3339 timestamp when the credential becomes valid |
+| `not_after` | string | Yes | RFC3339 timestamp when the credential expires |
+| `renew_after` | string | Optional | RFC3339 timestamp after which the credential should be renewed |
+| `cannot_renew_after` | string | Optional | RFC3339 timestamp after which the credential cannot be renewed |
+
+### Example Secret Content
+
+```json
+{
+  "authentication_endpoint": "https://login.microsoftonline.com/",
+  "client_id": "12345678-1234-1234-1234-123456789abc",
+  "client_secret": "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURxRENDQX...",
+  "tenant_id": "87654321-4321-4321-4321-abcdef123456",
+  "not_before": "2024-01-15T10:00:00Z",
+  "not_after": "2025-01-15T10:00:00Z",
+  "renew_after": "2024-07-15T10:00:00Z",
+  "cannot_renew_after": "2024-12-15T10:00:00Z"
+}
+```
+
+## Certificate Content (client_secret Field)
+
+The `client_secret` field contains a **base64-encoded PEM certificate bundle** that includes both the X.509 certificate and private key.
+
+### PEM Structure
+
+When decoded from base64, the `client_secret` contains:
+
+```pem
+-----BEGIN CERTIFICATE-----
+MIIDqDCCApCgAwIBAgIQExample...
+(certificate data in base64)
+-----END CERTIFICATE-----
+-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASC...
+(private key data in base64)
+-----END PRIVATE KEY-----
+```
+
+The PEM bundle may include:
+
+1. **X.509 Certificate**: The public certificate used for authentication
+2. **Private Key**: The RSA or ECDSA private key (PKCS#8 format)
+3. **Certificate Chain** (optional): Intermediate certificates if applicable
+
+### How the Certificate is Used
+
+The msi-dataplane library processes this certificate as follows:
+
+1. Base64 decodes the `client_secret` value
+2. Parses the PEM-encoded certificate and private key using `azidentity.ParseCertificates()`
+3. Creates a `ClientCertificateCredential` for authenticating with Azure AD
+4. The credential sends the certificate chain in the x5c header (required for MSI authentication)
+
+!!! note "Certificate Format"
+
+    The Azure SDK's `ParseCertificates` function expects PEM format. PKCS#12 format is not currently supported by the msi-dataplane library.
+
+## Managed Identity Configuration in HostedCluster
+
+Each managed identity in the HostedCluster specification includes the following fields:
+
+```yaml
+cloudProvider:
+  clientID: "<uuid>"
+  credentialsSecretName: "<secret-name>"
+  objectEncoding: "utf-8"
+```
+
+| Field | Description |
+|-------|-------------|
+| `clientID` | The Azure AD client ID (UUID) of the managed identity |
+| `credentialsSecretName` | Name of the secret in Azure Key Vault containing the credentials |
+| `objectEncoding` | Encoding format of the secret content (utf-8, hex, or base64) |
+
+## Key Vault Secret Attributes
+
+When storing secrets in Key Vault, the following attributes are set:
+
+| Attribute | Description |
+|-----------|-------------|
+| `Enabled` | Set to `true` to allow retrieval |
+| `Expires` | Set to the `not_after` timestamp from the credential |
+| `NotBefore` | Set to the `not_before` timestamp from the credential |
+
+Additionally, the following tags are added:
+
+| Tag | Description |
+|-----|-------------|
+| `renew_after` | RFC3339 timestamp for credential renewal |
+| `cannot_renew_after` | RFC3339 timestamp after which renewal is not possible |
+
+## Related Documentation
+
+- Secrets CSI Usage - How the Secrets Store CSI driver mounts secrets
+- Azure MSI Dataplane Library - Library used for credential handling
+
+
+---
+
+## Source: docs/content/reference/architecture/managed-azure/pod-volume-mounts.md
+
+# Pod Volume Mount Implementation Details
+
+This document provides implementation details for how control plane pods mount Azure credentials. For a conceptual overview, see Secrets CSI Usage.
+
+## Helper Functions
+
+All helper functions are in `support/azureutil/azureutil.go`:
+
+### CreateVolumeForAzureSecretStoreProviderClass
+
+Creates a CSI volume referencing a SecretProviderClass:
+
+```go
+func CreateVolumeForAzureSecretStoreProviderClass(secretStoreVolumeName, secretProviderClassName string) corev1.Volume {
+    return corev1.Volume{
+        Name: secretStoreVolumeName,
+        VolumeSource: corev1.VolumeSource{
+            CSI: &corev1.CSIVolumeSource{
+                Driver:   "secrets-store.csi.k8s.io",
+                ReadOnly: ptr.To(true),
+                VolumeAttributes: map[string]string{
+                    "secretProviderClass": secretProviderClassName,
+                },
+            },
+        },
+    }
+}
+```
+
+### CreateVolumeMountForAzureSecretStoreProviderClass
+
+Creates a volume mount at `/mnt/certs`:
+
+```go
+func CreateVolumeMountForAzureSecretStoreProviderClass(secretStoreVolumeName string) corev1.VolumeMount {
+    return corev1.VolumeMount{
+        Name:      secretStoreVolumeName,
+        MountPath: "/mnt/certs",
+        ReadOnly:  true,
+    }
+}
+```
+
+### CreateVolumeMountForKMSAzureSecretStoreProviderClass
+
+Creates a volume mount at `/mnt/kms` (for KMS credentials):
+
+```go
+func CreateVolumeMountForKMSAzureSecretStoreProviderClass(secretStoreVolumeName string) corev1.VolumeMount {
+    return corev1.VolumeMount{
+        Name:      secretStoreVolumeName,
+        MountPath: "/mnt/kms",
+        ReadOnly:  true,
+    }
+}
+```
+
+### CreateEnvVarsForAzureManagedIdentity
+
+Creates environment variable pointing to the credential file:
+
+```go
+func CreateEnvVarsForAzureManagedIdentity(azureCredentialsName string) []corev1.EnvVar {
+    return []corev1.EnvVar{
+        {
+            Name:  "MANAGED_AZURE_HCP_CREDENTIALS_FILE_PATH",
+            Value: "/mnt/certs/" + azureCredentialsName,
+        },
+    }
+}
+```
+
+### IsAroHCP
+
+Checks if running in a managed Azure HostedClusters environment by checking the MANAGED_SERVICE environment variable:
+
+```go
+func IsAroHCP() bool {
+    return os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP
+}
+```
+
+## Constants
+
+Defined in `support/config/constants.go`:
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `ManagedAzureCredentialsFilePath` | `MANAGED_AZURE_HCP_CREDENTIALS_FILE_PATH` | Environment variable name |
+| `ManagedAzureCertificateMountPath` | `/mnt/certs` | Base mount path |
+| `ManagedAzureCertificatePath` | `/mnt/certs/` | Path prefix for building file paths |
+| `ManagedAzureCredentialsMountPathForKMS` | `/mnt/kms` | KMS-specific mount path |
+| `ManagedAzureCredentialsPathForKMS` | `/mnt/kms/` | KMS path prefix |
+| `ManagedAzureSecretsStoreCSIDriver` | `secrets-store.csi.k8s.io` | CSI driver name |
+| `ManagedAzureSecretProviderClass` | `secretProviderClass` | Volume attribute key |
+
+## Component Volume Names
+
+| Component | Volume Name | SecretProviderClass |
+|-----------|-------------|---------------------|
+| Control Plane Operator | `cpo-cert` | `managed-azure-cpo` |
+| Cloud Provider (CCM) | `cloud-provider-cert` | `managed-azure-cloud-provider` |
+| Ingress Operator | `ingress-cert` | `managed-azure-ingress` |
+| Image Registry | `image-registry-cert` | `managed-azure-image-registry` |
+| KMS | `kms-cert` | `managed-azure-kms` |
+| NodePool Management (CAPZ) | `nodepool-management-cert` | `managed-azure-nodepool-management` |
+
+## Credential File Usage
+
+Components read the mounted credential file using the `msi-dataplane` library:
+
+```go
+import "github.com/Azure/msi-dataplane/pkg/dataplane"
+
+// Build path from constant + secret name
+certPath := config.ManagedAzureCertificatePath + credentialsSecretName
+
+// Create credential with automatic file watching and reload
+creds, err := dataplane.NewUserAssignedIdentityCredential(
+    ctx,
+    certPath,
+    dataplane.WithClientOpts(azcore.ClientOptions{Cloud: cloud.AzurePublic}),
+)
+```
+
+The credential automatically reloads when the file is updated by the CSI driver.
+
+## Configuration File Usage
+
+Some components (CCM, Azure Disk/File CSI) use a cloud config file that references the credential path:
+
+```json
+{
+  "cloud": "AzurePublicCloud",
+  "tenantId": "<tenant-id>",
+  "subscriptionId": "<subscription-id>",
+  "resourceGroup": "<resource-group>",
+  "location": "<location>",
+  "useManagedIdentityExtension": true,
+  "aadMSIDataPlaneIdentityPath": "/mnt/certs/<credential-secret-name>"
+}
+```
+
+The `aadMSIDataPlaneIdentityPath` field tells the component where to find the mounted credential file.
+
+
+---
+
+## Source: docs/content/reference/architecture/managed-azure/secretproviderclass-configuration.md
+
+# SecretProviderClass Implementation Details
+
+This document provides implementation details for how HyperShift creates and manages SecretProviderClass resources. For a conceptual overview, see Secrets CSI Usage.
+
+## ReconcileManagedAzureSecretProviderClass Function
+
+The core function that populates SecretProviderClass resources is located in `support/secretproviderclass/secretproviderclass.go`:
+
+```go
+func ReconcileManagedAzureSecretProviderClass(
+    secretProviderClass *secretsstorev1.SecretProviderClass,
+    hcp *hyperv1.HostedControlPlane,
+    managedIdentity hyperv1.ManagedIdentity,
+) {
+    secretProviderClass.Spec = secretsstorev1.SecretProviderClassSpec{
+        Provider: "azure",
+        Parameters: map[string]string{
+            "usePodIdentity":         "false",
+            "useVMManagedIdentity":   "true",
+            "userAssignedIdentityID": azureutil.GetKeyVaultAuthorizedUser(),
+            "keyvaultName":           hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.Name,
+            "tenantId":               hcp.Spec.Platform.Azure.AzureAuthenticationConfig.ManagedIdentities.ControlPlane.ManagedIdentitiesKeyVault.TenantID,
+            "objects":                formatSecretProviderClassObject(managedIdentity.CredentialsSecretName, string(managedIdentity.ObjectEncoding)),
+        },
+    }
+}
+```
+
+### Parameter Sources
+
+| Parameter | Source | Description |
+|-----------|--------|-------------|
+| `userAssignedIdentityID` | `azureutil.GetKeyVaultAuthorizedUser()` | Reads from `ARO_HCP_KEY_VAULT_USER_CLIENT_ID` env var, set via `--aro-hcp-key-vault-users-client-id` flag during HO installation |
+| `keyvaultName` | `hcp.Spec.Platform.Azure...ManagedIdentitiesKeyVault.Name` | From HostedControlPlane spec |
+| `tenantId` | `hcp.Spec.Platform.Azure...ManagedIdentitiesKeyVault.TenantID` | From HostedControlPlane spec |
+| `objects` | `formatSecretProviderClassObject(...)` | Generated from `ManagedIdentity.CredentialsSecretName` and `ObjectEncoding` |
+
+## SecretProviderClass Names and Constants
+
+### Created by HyperShift Operator
+
+| Constant | Value | ManagedIdentity Field |
+|----------|-------|----------------------|
+| `ManagedAzureCPOSecretProviderClassName` | `managed-azure-cpo` | `ControlPlane.ControlPlaneOperator` |
+| `ManagedAzureNodePoolMgmtSecretProviderClassName` | `managed-azure-nodepool-management` | `ControlPlane.NodePoolManagement` |
+| `ManagedAzureKMSSecretProviderClassName` | `managed-azure-kms` | `SecretEncryption.KMS.Azure.KMS` |
+
+### Created by Control Plane Operator
+
+| Constant | Value | ManagedIdentity Field |
+|----------|-------|----------------------|
+| `ManagedAzureCloudProviderSecretProviderClassName` | `managed-azure-cloud-provider` | `ControlPlane.CloudProvider` |
+| `ManagedAzureIngressSecretStoreProviderClassName` | `managed-azure-ingress` | `ControlPlane.Ingress` |
+| `ManagedAzureNetworkSecretStoreProviderClassName` | `managed-azure-network` | `ControlPlane.Network` |
+| `ManagedAzureImageRegistrySecretStoreProviderClassName` | `managed-azure-image-registry` | `ControlPlane.ImageRegistry` |
+| `ManagedAzureDiskCSISecretStoreProviderClassName` | `managed-azure-disk-csi` | `ControlPlane.Disk` |
+| `ManagedAzureFileCSISecretStoreProviderClassName` | `managed-azure-file-csi` | `ControlPlane.File` |
+
+## Source Files
+
+| File | Purpose |
+|------|---------|
+| `support/secretproviderclass/secretproviderclass.go` | `ReconcileManagedAzureSecretProviderClass` function |
+| `support/config/constants.go` | SecretProviderClass name constants |
+| `support/azureutil/azureutil.go` | `GetKeyVaultAuthorizedUser()` and volume helpers |
+| `control-plane-operator/controllers/hostedcontrolplane/manifests/secretproviderclass.go` | Manifest factory |
+
+## Component Adapter Files
+
+Each component has an adapter that calls `ReconcileManagedAzureSecretProviderClass`:
+
+| Component | Adapter File |
+|-----------|--------------|
+| Cloud Controller Manager | `control-plane-operator/controllers/hostedcontrolplane/v2/cloud_controller_manager/azure/config.go` |
+| Cluster Network Operator | `control-plane-operator/controllers/hostedcontrolplane/v2/cno/azure.go` |
+| Ingress Operator | `control-plane-operator/controllers/hostedcontrolplane/v2/ingressoperator/azure.go` |
+| Image Registry Operator | `control-plane-operator/controllers/hostedcontrolplane/v2/registryoperator/azure.go` |
+| Storage Operator (Disk/File) | `control-plane-operator/controllers/hostedcontrolplane/v2/storage/azure.go` |
+| KMS Provider | `control-plane-operator/controllers/hostedcontrolplane/v2/kas/kms/azure.go` |
+
 
 ---
 
