@@ -1844,6 +1844,61 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 		})
 
 		Context("Azure VM image configuration validation", Label("Azure", "VMImage"), func() {
+			It("should reject when imageID is an empty string", func() {
+				err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
+					np.Spec.Platform.Type = hyperv1.AzurePlatform
+					np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+						VMSize: "Standard_D4s_v5",
+						Image: hyperv1.AzureVMImage{
+							Type:    hyperv1.ImageID,
+							ImageID: ptr.To(""),
+						},
+						OSDisk: hyperv1.AzureNodePoolOSDisk{
+							DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+						},
+						SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+					}
+				})
+				Expect(err).To(HaveOccurred())
+			})
+
+			It("should reject when imageID has an invalid format", func() {
+				err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
+					np.Spec.Platform.Type = hyperv1.AzurePlatform
+					np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+						VMSize: "Standard_D4s_v5",
+						Image: hyperv1.AzureVMImage{
+							Type:    hyperv1.ImageID,
+							ImageID: ptr.To("/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Compute/invalidType/test-image"),
+						},
+						OSDisk: hyperv1.AzureNodePoolOSDisk{
+							DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+						},
+						SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("imageID must be in the format"))
+			})
+
+			It("should accept when imageID is a valid Azure resource ID", func() {
+				err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
+					np.Spec.Platform.Type = hyperv1.AzurePlatform
+					np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+						VMSize: "Standard_D4s_v5",
+						Image: hyperv1.AzureVMImage{
+							Type:    hyperv1.ImageID,
+							ImageID: ptr.To("/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/my-resource-group/providers/Microsoft.Compute/images/rhcos.x86_64.vhd"),
+						},
+						OSDisk: hyperv1.AzureNodePoolOSDisk{
+							DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+						},
+						SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+					}
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
 			It("should accept when marketplace is fully populated with imageGeneration set", func() {
 				err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
 					np.Spec.Platform.Type = hyperv1.AzurePlatform
