@@ -1125,94 +1125,7 @@ func TestIsPodReady(t *testing.T) {
 	}
 }
 
-func kasPodSpec() corev1.PodSpec {
-	return corev1.PodSpec{
-		Containers: []corev1.Container{{
-			Name: "kube-apiserver",
-			Ports: []corev1.ContainerPort{{
-				Name:          "client",
-				ContainerPort: 6443,
-				Protocol:      corev1.ProtocolTCP,
-			}},
-		}},
-	}
-}
-
-func TestContainerPort(t *testing.T) {
-	tests := []struct {
-		name     string
-		pod      *corev1.Pod
-		portName string
-		fallback int32
-		expected int32
-	}{
-		{
-			name: "When named port exists it should return container port",
-			pod: &corev1.Pod{
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{{
-						Ports: []corev1.ContainerPort{
-							{Name: "client", ContainerPort: 6443},
-						},
-					}},
-				},
-			},
-			portName: "client",
-			fallback: 9999,
-			expected: 6443,
-		},
-		{
-			name: "When named port is missing it should return fallback",
-			pod: &corev1.Pod{
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{{
-						Ports: []corev1.ContainerPort{
-							{Name: "metrics", ContainerPort: 8080},
-						},
-					}},
-				},
-			},
-			portName: "client",
-			fallback: 6443,
-			expected: 6443,
-		},
-		{
-			name: "When pod has no ports it should return fallback",
-			pod: &corev1.Pod{
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{{}},
-				},
-			},
-			portName: "client",
-			fallback: 6443,
-			expected: 6443,
-		},
-		{
-			name: "When named port is in a non-first container it should return container port",
-			pod: &corev1.Pod{
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						{Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 8080}}},
-						{Ports: []corev1.ContainerPort{{Name: "client", ContainerPort: 7443}}},
-					},
-				},
-			},
-			portName: "client",
-			fallback: 6443,
-			expected: 7443,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := containerPort(tc.pod, tc.portName, tc.fallback); got != tc.expected {
-				t.Errorf("containerPort() = %d, expected %d", got, tc.expected)
-			}
-		})
-	}
-}
-
-func TestVerifyCertificateAgainstAllKASPods(t *testing.T) {
+func TestTestCertificateAgainstAllKASPods_SkipsTerminatingPods(t *testing.T) {
 	now := metav1.Now()
 	fakeKubeconfig := []byte(`apiVersion: v1
 kind: Config
@@ -1247,7 +1160,6 @@ users:
 						Name:              "kube-apiserver-old-abc123",
 						DeletionTimestamp: &now,
 					},
-					Spec: kasPodSpec(),
 					Status: corev1.PodStatus{
 						PodIP: "10.0.0.1",
 						Conditions: []corev1.PodCondition{
@@ -1270,7 +1182,6 @@ users:
 			pods: []*corev1.Pod{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-new-xyz789"},
-					Spec:       kasPodSpec(),
 					Status: corev1.PodStatus{
 						PodIP: "10.0.0.2",
 						Conditions: []corev1.PodCondition{
@@ -1290,7 +1201,6 @@ users:
 						Name:              "kube-apiserver-old-abc123",
 						DeletionTimestamp: &now,
 					},
-					Spec: kasPodSpec(),
 					Status: corev1.PodStatus{
 						PodIP: "10.0.0.1",
 						Conditions: []corev1.PodCondition{
@@ -1300,7 +1210,6 @@ users:
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-new-xyz789"},
-					Spec:       kasPodSpec(),
 					Status: corev1.PodStatus{
 						PodIP: "10.0.0.2",
 						Conditions: []corev1.PodCondition{
@@ -1317,7 +1226,6 @@ users:
 			pods: []*corev1.Pod{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-abc123"},
-					Spec:       kasPodSpec(),
 					Status: corev1.PodStatus{
 						PodIP: "10.0.0.1",
 						Conditions: []corev1.PodCondition{
@@ -1327,7 +1235,6 @@ users:
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "kube-apiserver-def456"},
-					Spec:       kasPodSpec(),
 					Status: corev1.PodStatus{
 						PodIP: "10.0.0.2",
 						Conditions: []corev1.PodCondition{
