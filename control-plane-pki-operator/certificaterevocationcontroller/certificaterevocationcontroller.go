@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"net"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,7 +54,6 @@ type CertificateRevocationController struct {
 	getSecret    func(namespace, name string) (*corev1.Secret, error)
 	listSecrets  func(namespace string) ([]*corev1.Secret, error)
 	getConfigMap func(namespace, name string) (*corev1.ConfigMap, error)
-	listPods     func(namespace string, selector labels.Selector) ([]*corev1.Pod, error)
 
 	// for unit testing only
 	skipKASConnections bool
@@ -87,17 +85,11 @@ func NewCertificateRevocationController(
 		getConfigMap: func(namespace, name string) (*corev1.ConfigMap, error) {
 			return kubeInformersForNamespaces.InformersFor(namespace).Core().V1().ConfigMaps().Lister().ConfigMaps(namespace).Get(name)
 		},
-		listPods: func(namespace string, selector labels.Selector) ([]*corev1.Pod, error) {
-			return kubeInformersForNamespaces.InformersFor(namespace).Core().V1().Pods().Lister().Pods(namespace).List(selector)
-		},
 	}
 
 	crrInformer := hypershiftInformers.Certificates().V1alpha1().CertificateRevocationRequests().Informer()
 	secretInformer := kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Secrets().Informer()
 	configMapInformer := kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().ConfigMaps().Informer()
-	// Ensure the Pod informer is registered with the factory before Start() is called,
-	// so the cache is populated when listPods is invoked during certificate revocation.
-	kubeInformersForNamespaces.InformersFor(hostedControlPlane.Namespace).Core().V1().Pods().Informer()
 	listCRRs := func(namespace string) ([]*certificatesv1alpha1.CertificateRevocationRequest, error) {
 		return hypershiftInformers.Certificates().V1alpha1().CertificateRevocationRequests().Lister().CertificateRevocationRequests(hostedControlPlane.Namespace).List(labels.Everything())
 	}
@@ -543,120 +535,6 @@ func (c *CertificateRevocationController) generateNewSignerCertificate(ctx conte
 	return false, nil, false, nil
 }
 
-func isPodReady(pod *corev1.Pod) bool {
-	if pod == nil {
-		return false
-	}
-
-	for _, condition := range pod.Status.Conditions {
-		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
-			return true
-		}
-	}
-	return false
-}
-
-// verifyCertificateAgainstAllKASPods verifies a certificate against all kube-apiserver pods
-// and returns true if the verification passes for all pods, false otherwise.
-// The verifyFunc should return true if the verification passes, false if it should requeue.
-func (c *CertificateRevocationController) verifyCertificateAgainstAllKASPods(
-	ctx context.Context,
-	namespace string,
-	certPEM, keyPEM []byte,
-	testFunc func(client kubernetes.Interface) (bool, error),
-) (bool, error) {
-	if c.skipKASConnections {
-		return true, nil
-	}
-
-	// Get the base kubeconfig for the guest cluster service network
-	kubeconfig := hcpmanifests.KASServiceKubeconfigSecret(namespace)
-	kubeconfigSecret, err := c.getSecret(kubeconfig.Namespace, kubeconfig.Name)
-	if err != nil {
-		return false, fmt.Errorf("couldn't fetch guest cluster service network kubeconfig: %w", err)
-	}
-	adminClientCfg, err := clientcmd.NewClientConfigFromBytes(kubeconfigSecret.Data["kubeconfig"])
-	if err != nil {
-		return false, fmt.Errorf("couldn't load guest cluster service network kubeconfig: %w", err)
-	}
-	baseCfg, err := adminClientCfg.ClientConfig()
-	if err != nil {
-		return false, fmt.Errorf("couldn't load guest cluster service network kubeconfig: %w", err)
-	}
-
-	// List all kube-apiserver pods
-	pods, err := c.listPods(namespace, labels.SelectorFromSet(labels.Set{"app": "kube-apiserver"}))
-	if err != nil {
-		return false, fmt.Errorf("couldn't list kube-apiserver pods: %w", err)
-	}
-	if len(pods) == 0 {
-		// No pods found, requeue
-		klog.Warningf("No kube-apiserver pods found")
-		return false, nil
-	}
-
-	// Extract the port from the base config
-	_, port, err := net.SplitHostPort(strings.TrimPrefix(baseCfg.Host, "https://"))
-	if err != nil {
-		klog.Warningf("couldn't extract kube api-server port from base config: %v. Trying with 6443", err)
-		port = "6443" // fall-back to 6443 in case something went wrong
-	}
-
-	tested := false
-	// Test the certificate against each kube-apiserver pod
-	for _, pod := range pods {
-		// Skip pods that are being terminated (e.g. during a rolling update)
-		if pod.DeletionTimestamp != nil {
-			continue
-		}
-		// Skip pods without an IP assigned yet or that are not ready
-		if !isPodReady(pod) || pod.Status.PodIP == "" {
-			// Pod not ready, requeue
-			return false, nil
-		}
-
-		// Create a client config that connects directly to this pod's IP
-		podCfg := rest.CopyConfig(baseCfg)
-		// Use the pod IP with the port from the base config
-		podCfg.Host = "https://" + net.JoinHostPort(pod.Status.PodIP, port)
-		// Pod IPs are not in the KAS serving certificate SANs, so we must set
-		// ServerName to the KAS service name to pass TLS verification.
-		podCfg.TLSClientConfig.ServerName = hcpmanifests.KubeAPIServerServiceName
-		// To prevent the entire revocation process from hanging if a pod is unresponsive.
-		// Set timeout to 5 seconds if not already configured.
-		if podCfg.Timeout == 0 {
-			podCfg.Timeout = 5 * time.Second
-		}
-
-		certCfg := rest.AnonymousClientConfig(podCfg)
-		certCfg.TLSClientConfig.CertData = certPEM
-		certCfg.TLSClientConfig.KeyData = keyPEM
-
-		testClient, err := kubernetes.NewForConfig(certCfg)
-		if err != nil {
-			return false, fmt.Errorf("couldn't create guest cluster client for pod %s/%s: %w", pod.Namespace, pod.Name, err)
-		}
-
-		tested = true
-		// Run the test function
-		passed, err := testFunc(testClient)
-		if err != nil {
-			return false, err
-		}
-		if !passed {
-			// Test failed for this pod, requeue
-			return false, nil
-		}
-	}
-
-	if !tested {
-		klog.Warningf("No non-terminating kube-apiserver pods ready for verification")
-		return false, nil
-	}
-	// All pods passed the test
-	return true, nil
-}
-
 func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(ctx context.Context, namespace string, name string, now func() time.Time, crr *certificatesv1alpha1.CertificateRevocationRequest) (bool, *actions, bool, error) {
 	signer, ok := secretForSignerClass(namespace, certificates.SignerClass(crr.Spec.SignerClass))
 	if !ok {
@@ -700,26 +578,38 @@ func (c *CertificateRevocationController) ensureNewSignerCertificatePropagated(c
 	}
 
 	// if the updated trust bundle has propagated as far as we can tell, let's go ahead and ask
-	// each KAS pod to detect when it trusts the new signer
-	allPodsTrust, err := c.verifyCertificateAgainstAllKASPods(ctx, namespace, currentCertPEM, currentKeyPEM, func(testClient kubernetes.Interface) (bool, error) {
-		_, err := testClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
+	// KAS to detect when it trusts the new signer
+	if !c.skipKASConnections {
+		kubeconfig := hcpmanifests.KASServiceKubeconfigSecret(namespace)
+		kubeconfigSecret, err := c.getSecret(kubeconfig.Namespace, kubeconfig.Name)
+		if err != nil {
+			return true, nil, false, fmt.Errorf("couldn't fetch guest cluster service network kubeconfig: %w", err)
+		}
+		adminClientCfg, err := clientcmd.NewClientConfigFromBytes(kubeconfigSecret.Data["kubeconfig"])
+		if err != nil {
+			return true, nil, false, fmt.Errorf("couldn't load guest cluster service network kubeconfig: %w", err)
+		}
+		adminCfg, err := adminClientCfg.ClientConfig()
+		if err != nil {
+			return true, nil, false, fmt.Errorf("couldn't load guest cluster service network kubeconfig: %w", err)
+		}
+		certCfg := rest.AnonymousClientConfig(adminCfg)
+		certCfg.TLSClientConfig.CertData = currentCertPEM
+		certCfg.TLSClientConfig.KeyData = currentKeyPEM
+
+		testClient, err := kubernetes.NewForConfig(certCfg)
+		if err != nil {
+			return true, nil, false, fmt.Errorf("couldn't create guest cluster client using old certificate: %w", err)
+		}
+
+		_, err = testClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
 		if apierrors.IsUnauthorized(err) {
-			// this pod hasn't loaded the new trust bundle yet, requeue
-			return false, nil
+			// this is OK, things are just propagating still
+			return true, nil, true, nil // we need to synthetically re-queue since nothing about KAS loading will trigger us
 		}
 		if err != nil {
-			return false, fmt.Errorf("couldn't send SSR to guest cluster: %w", err)
+			return true, nil, false, fmt.Errorf("couldn't send SSR to guest cluster: %w", err)
 		}
-		// this pod trusts the new certificate
-		return true, nil
-	})
-	if err != nil {
-		return true, nil, false, err
-	}
-	if !allPodsTrust {
-		// not all pods trust the new certificate yet, requeue
-		// we need to synthetically re-queue since nothing about KAS loading will trigger us
-		return true, nil, true, nil
 	}
 
 	var recorded bool
@@ -960,26 +850,38 @@ func (c *CertificateRevocationController) ensureOldSignerCertificateRevoked(ctx 
 	}
 
 	// if the updated trust bundle has propagated as far as we can tell, let's go ahead and ask
-	// each KAS pod to ensure it no longer trusts the old signer
-	allPodsRevoke, err := c.verifyCertificateAgainstAllKASPods(ctx, namespace, oldCertPEM, oldKeyPEM, func(testClient kubernetes.Interface) (bool, error) {
-		_, err := testClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
+	// KAS to ensure it no longer trusts the old signer
+	if !c.skipKASConnections {
+		kubeconfig := hcpmanifests.KASServiceKubeconfigSecret(namespace)
+		kubeconfigSecret, err := c.getSecret(kubeconfig.Namespace, kubeconfig.Name)
+		if err != nil {
+			return true, nil, false, fmt.Errorf("couldn't fetch guest cluster service network kubeconfig: %w", err)
+		}
+		adminClientCfg, err := clientcmd.NewClientConfigFromBytes(kubeconfigSecret.Data["kubeconfig"])
+		if err != nil {
+			return true, nil, false, fmt.Errorf("couldn't load guest cluster service network kubeconfig: %w", err)
+		}
+		adminCfg, err := adminClientCfg.ClientConfig()
+		if err != nil {
+			return true, nil, false, fmt.Errorf("couldn't load guest cluster service network kubeconfig: %w", err)
+		}
+		certCfg := rest.AnonymousClientConfig(adminCfg)
+		certCfg.TLSClientConfig.CertData = oldCertPEM
+		certCfg.TLSClientConfig.KeyData = oldKeyPEM
+
+		testClient, err := kubernetes.NewForConfig(certCfg)
+		if err != nil {
+			return true, nil, false, fmt.Errorf("couldn't create guest cluster client using old certificate: %w", err)
+		}
+
+		_, err = testClient.AuthenticationV1().SelfSubjectReviews().Create(ctx, &authenticationv1.SelfSubjectReview{}, metav1.CreateOptions{})
 		if err == nil {
-			// this pod still trusts the old certificate, requeue
-			return false, nil
+			// this is OK, things are just propagating still
+			return true, nil, true, nil // we need to synthetically re-queue since nothing about KAS loading will trigger us
 		}
 		if !apierrors.IsUnauthorized(err) {
-			return false, fmt.Errorf("couldn't send SSR to guest cluster: %w", err)
+			return true, nil, false, fmt.Errorf("couldn't send SSR to guest cluster: %w", err)
 		}
-		// this pod has revoked the old certificate (returns Unauthorized)
-		return true, nil
-	})
-	if err != nil {
-		return true, nil, false, err
-	}
-	if !allPodsRevoke {
-		// not all pods have revoked the old certificate yet, requeue
-		// we need to synthetically re-queue since nothing about KAS loading will trigger us
-		return true, nil, true, nil
 	}
 
 	var recorded bool
