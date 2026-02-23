@@ -156,7 +156,11 @@ func (o *Options) Validate() error {
 			errs = append(errs, fmt.Errorf("--aws-private-region and --aws-private-creds or --aws-private-secret are required with --private-platform=%s", hyperv1.AWSPlatform))
 		}
 	case hyperv1.GCPPlatform:
-		// GCP uses Workload Identity Federation, no credentials or region required
+		// GCP uses Workload Identity Federation, no credentials required.
+		// However, --gcp-project and --gcp-region must be set together.
+		if (o.GCPProject == "") != (o.GCPRegion == "") {
+			errs = append(errs, fmt.Errorf("--gcp-project and --gcp-region must be set together when --private-platform=%s", hyperv1.GCPPlatform))
+		}
 	case hyperv1.NonePlatform:
 	default:
 		errs = append(errs, fmt.Errorf("--private-platform must be either %s, %s, or %s", hyperv1.AWSPlatform, hyperv1.GCPPlatform, hyperv1.NonePlatform))
