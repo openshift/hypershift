@@ -43,6 +43,8 @@ filters:
     labels:
     - area/platform/openstack
   "^(api|cmd|control-plane-operator|docs|hypershift-operator|product-cli|test)/.*powervs.*":
+    reviewers:
+    - powervs-reviewers
     labels:
     - area/platform/powervs
   "^test/integration/.*":
