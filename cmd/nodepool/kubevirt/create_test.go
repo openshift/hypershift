@@ -1,6 +1,7 @@
 package kubevirt
 
 import (
+	"strings"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -31,14 +32,32 @@ func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 			},
 			expectedError: "",
 		},
+		{
+			name: "When invalid memory is provided it should return a validation error",
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
+					Memory:               "not-a-quantity",
+					Cores:                2,
+					RootVolumeSize:       32,
+					AttachDefaultNetwork: ptr.To(true),
+				},
+			},
+			expectedError: `invalid memory value "not-a-quantity"`,
+		},
 	} {
-		var errString string
-		if _, err := test.input.Validate(t.Context(), nil); err != nil {
-			errString = err.Error()
-		}
-		if diff := cmp.Diff(test.expectedError, errString); diff != "" {
-			t.Errorf("got incorrect error: %v", diff)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			var errString string
+			if _, err := test.input.Validate(t.Context(), nil); err != nil {
+				errString = err.Error()
+			}
+			if test.expectedError != "" {
+				if !strings.HasPrefix(errString, test.expectedError) {
+					t.Errorf("expected error prefix %q, got %q", test.expectedError, errString)
+				}
+			} else if errString != "" {
+				t.Errorf("unexpected error: %v", errString)
+			}
+		})
 	}
 }
 
@@ -334,6 +353,7 @@ func TestValidatedKubevirtPlatformCreateOptions_Complete(t *testing.T) {
 }
 
 func TestNodePoolPlatform_Memory(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		name           string
 		memory         string
@@ -345,9 +365,14 @@ func TestNodePoolPlatform_Memory(t *testing.T) {
 			expectedMemory: apiresource.MustParse("8Gi"),
 		},
 		{
-			name:           "When invalid memory is provided it should fall back to zero quantity",
-			memory:         "not-a-quantity",
-			expectedMemory: apiresource.Quantity{},
+			name:           "When memory is provided in Mi it should parse correctly",
+			memory:         "1024Mi",
+			expectedMemory: apiresource.MustParse("1024Mi"),
+		},
+		{
+			name:           "When memory is provided in decimal format it should parse correctly",
+			memory:         "2G",
+			expectedMemory: apiresource.MustParse("2G"),
 		},
 		{
 			name:           "When empty memory is provided it should not set compute memory",
@@ -356,8 +381,9 @@ func TestNodePoolPlatform_Memory(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			opts := &CompletedKubevirtPlatformCreateOptions{
-				completedKubevirtPlatformCreateOptions: &completetedKubevirtPlatformCreateOptions{
+				completedKubevirtPlatformCreateOptions: &completedKubevirtPlatformCreateOptions{
 					KubevirtPlatformOptions: &KubevirtPlatformOptions{
 						Memory:               test.memory,
 						Cores:                2,

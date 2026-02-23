@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/nodepool/core"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 
@@ -114,6 +113,12 @@ func (o *RawKubevirtPlatformCreateOptions) Validate(_ context.Context, _ *core.C
 
 	if o.RootVolumeSize < 16 {
 		return nil, fmt.Errorf("the root volume size [%d] must be greater than or equal to 16", o.RootVolumeSize)
+	}
+
+	if o.Memory != "" {
+		if _, err := apiresource.ParseQuantity(o.Memory); err != nil {
+			return nil, fmt.Errorf("invalid memory value %q: %w", o.Memory, err)
+		}
 	}
 
 	if len(o.AdditionalNetworks) == 0 && o.AttachDefaultNetwork != nil && !*o.AttachDefaultNetwork {
@@ -298,10 +303,7 @@ func (o *CompletedKubevirtPlatformCreateOptions) NodePoolPlatform() *hyperv1.Kub
 	}
 
 	if o.Memory != "" {
-		memory, err := apiresource.ParseQuantity(o.Memory)
-		if err != nil {
-			log.Log.V(3).Info("failed to parse memory quantity, using default", "input", o.Memory, "error", err.Error())
-		}
+		memory := apiresource.MustParse(o.Memory)
 		platform.Compute.Memory = &memory
 	}
 	if o.Cores != 0 {
