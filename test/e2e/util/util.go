@@ -996,32 +996,45 @@ func EnsureFeatureGateStatus(t *testing.T, ctx context.Context, guestClient crcl
 	t.Run("EnsureFeatureGateStatus", func(t *testing.T) {
 		AtLeast(t, Version419)
 
-		g := NewWithT(t)
+		// Use EventuallyObject to handle transient DNS/network errors when talking to the guest cluster API.
+		var currentVersion string
+		EventuallyObject(t, ctx, "ClusterVersion to have a completed history entry",
+			func(ctx context.Context) (*configv1.ClusterVersion, error) {
+				cv := &configv1.ClusterVersion{}
+				err := guestClient.Get(ctx, crclient.ObjectKey{Name: "version"}, cv)
+				return cv, err
+			},
+			[]Predicate[*configv1.ClusterVersion]{
+				func(cv *configv1.ClusterVersion) (done bool, reasons string, err error) {
+					if len(cv.Status.History) == 0 {
+						return false, "ClusterVersion history is empty", nil
+					}
+					if cv.Status.History[0].State != configv1.CompletedUpdate {
+						return false, fmt.Sprintf("most recent ClusterVersion history entry is %s, not Completed", cv.Status.History[0].State), nil
+					}
+					currentVersion = cv.Status.History[0].Version
+					return true, "", nil
+				},
+			},
+		)
 
-		clusterVersion := &configv1.ClusterVersion{}
-		err := guestClient.Get(ctx, crclient.ObjectKey{Name: "version"}, clusterVersion)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to get ClusterVersion resource")
-
-		featureGate := &configv1.FeatureGate{}
-		err = guestClient.Get(ctx, crclient.ObjectKey{Name: "cluster"}, featureGate)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to get FeatureGate resource")
-
-		// Expect at least one entry in ClusterVersion history
-		g.Expect(len(clusterVersion.Status.History)).To(BeNumerically(">", 0), "ClusterVersion history is empty")
-		currentVersion := clusterVersion.Status.History[0].Version
-
-		// Expect current version to be in Completed state
-		g.Expect(clusterVersion.Status.History[0].State).To(Equal(configv1.CompletedUpdate), "most recent ClusterVersion history entry is not in Completed state")
-
-		// Ensure that the current version in ClusterVersion is also present in FeatureGate status
-		versionFound := false
-		for _, details := range featureGate.Status.FeatureGates {
-			if details.Version == currentVersion {
-				versionFound = true
-				break
-			}
-		}
-		g.Expect(versionFound).To(BeTrue(), "current version %s from ClusterVersion not found in FeatureGate status", currentVersion)
+		EventuallyObject(t, ctx, fmt.Sprintf("FeatureGate to contain version %s", currentVersion),
+			func(ctx context.Context) (*configv1.FeatureGate, error) {
+				fg := &configv1.FeatureGate{}
+				err := guestClient.Get(ctx, crclient.ObjectKey{Name: "cluster"}, fg)
+				return fg, err
+			},
+			[]Predicate[*configv1.FeatureGate]{
+				func(fg *configv1.FeatureGate) (done bool, reasons string, err error) {
+					for _, details := range fg.Status.FeatureGates {
+						if details.Version == currentVersion {
+							return true, "", nil
+						}
+					}
+					return false, fmt.Sprintf("current version %s from ClusterVersion not found in FeatureGate status", currentVersion), nil
+				},
+			},
+		)
 	})
 }
 
