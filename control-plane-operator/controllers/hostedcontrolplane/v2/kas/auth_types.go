@@ -94,6 +94,17 @@ type Issuer struct {
 	//   example: claimValidationRule[].expression: 'sets.equivalent(claims.aud, ["bar", "foo", "baz"])' to require an exact match.
 	// +optional
 	AudienceMatchPolicy AudienceMatchPolicyType `json:"audienceMatchPolicy,omitempty"`
+
+	// discoveryURL is an optional field that, if specified, overrides the default discovery endpoint used to retrieve OIDC configuration metadata.
+	// By default, the discovery URL is derived from `issuerURL` as "{issuerURL}/.well-known/openid-configuration".
+	//
+	// The discoveryURL must be a valid absolute HTTPS URL.
+	// It must not contain query parameters, user information, or fragments.
+	// Additionally, it must differ from the value of `issuerURL` (ignoring trailing slashes).
+	// The discoveryURL value must be at least 1 character long and no longer than 2048 characters.
+	//
+	// +optional
+	DiscoveryURL string `json:"discoveryURL,omitempty"`
 }
 
 // AudienceMatchPolicyType is a set of valid values for Issuer.AudienceMatchPolicy
