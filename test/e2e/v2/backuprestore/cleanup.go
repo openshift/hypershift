@@ -5,15 +5,25 @@ package backuprestore
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/discovery"
+	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 const (
@@ -24,91 +34,65 @@ const (
 	PollInterval = 5 * time.Second
 )
 
-// BreakHostedCluster simulates a catastrophic failure by deleting HC, HCP, and related resources.
-// 1. Delete HostedCluster (initiate deletion, don't wait)
-// 2. Delete HCP namespace (without waiting)
-// 3. Delete HostedControlPlane (with waiting for deletion)
-// 4. Wait for HostedCluster deletion (with finalizer removal retry if needed)
-func BreakHostedCluster(testCtx *internal.TestContext) error {
-	hcName := testCtx.ClusterName
-	hcNamespace := testCtx.ClusterNamespace
+var (
+	loggerOnce sync.Once
+)
 
-	// Step 1: Delete the HostedCluster (initiate deletion only)
-	if err := DeleteHostedCluster(testCtx); err != nil {
-		return fmt.Errorf("failed to delete hosted cluster: %w", err)
-	}
-
-	// Step 2: Delete HCP namespace (without waiting for completion)
-	if err := DeleteControlPlaneNamespace(testCtx, false); err != nil {
+// BreakHostedClusterPreservingMachines simulates a catastrophic failure while preserving
+// machine resources. This preserves orphaned resources (like machines) by removing
+// the CAPI controller early. As a result, the cloud resources (like AWS instances)
+// will not be deleted.
+// 1. Force delete HCP namespace (removes CAPI controller early, orphaning machines)
+// 2. Remove finalizers from HostedControlPlane
+// 3. Remove finalizers from orphaned resources in HCP namespace
+// 4. Delete HostedCluster namespace
+// 5. Remove finalizers from orphaned resources in HostedCluster namespace
+// 6. Wait for control plane namespace to be fully deleted
+func BreakHostedClusterPreservingMachines(testCtx *internal.TestContext) error {
+	// Step 1: Force delete HCP namespace (without waiting for completion)
+	// This removes the CAPI controller early, leaving machine resources orphaned
+	if err := deleteControlPlaneNamespace(testCtx, false); err != nil {
 		return fmt.Errorf("failed to delete control plane namespace: %w", err)
 	}
 
-	// Step 3: Delete HostedControlPlane
-	if err := DeleteHostedControlPlane(testCtx); err != nil {
-		return fmt.Errorf("failed to delete hosted control plane: %w", err)
+	// Step 2: Remove finalizers from HostedControlPlane
+	if err := removeHCPFinalizers(testCtx, testCtx.ClusterName, testCtx.ControlPlaneNamespace); err != nil {
+		return fmt.Errorf("failed to remove HCP finalizers: %w", err)
 	}
 
-	// Step 4: Wait for HostedCluster deletion
-	err := waitForHCDeletion(testCtx, hcName, hcNamespace, DeletionTimeout)
-	if err != nil {
-		// If waiting timed out, attempt to remove HC finalizers and retry
-		if nukeErr := removeHCFinalizers(testCtx, hcName, hcNamespace); nukeErr != nil {
-			return fmt.Errorf("failed to wait for HC deletion (timeout: %v) and failed to remove finalizers: %w", err, nukeErr)
-		}
-
-		// Retry waiting for deletion after removing finalizers
-		retryErr := waitForHCDeletion(testCtx, hcName, hcNamespace, DeletionRetryTimeout)
-		if retryErr != nil {
-			return fmt.Errorf("failed to wait for HC deletion even after removing finalizers (original timeout: %v, retry error: %w)", err, retryErr)
-		}
+	// Step 3: Remove finalizers from orphaned resources in HCP namespace
+	// This allows the namespace to be fully cleaned up without waiting for controllers
+	if err := removeNamespaceObjectFinalizers(testCtx, testCtx.ControlPlaneNamespace); err != nil {
+		return fmt.Errorf("failed to remove orphaned resource finalizers: %w", err)
 	}
 
-	return nil
-}
-
-// DeleteHostedCluster deletes the HostedCluster without waiting for deletion to complete
-func DeleteHostedCluster(testCtx *internal.TestContext) error {
-	hcName := testCtx.ClusterName
-	hcNamespace := testCtx.ClusterNamespace
-
-	if hcName == "" || hcNamespace == "" {
-		return fmt.Errorf("cluster name or namespace is not set in test context")
+	// Step 4: Delete HostedCluster namespace
+	if err := deleteHostedClusterNamespace(testCtx, false); err != nil {
+		return fmt.Errorf("failed to delete hosted cluster namespace: %w", err)
 	}
 
-	hc := &hyperv1.HostedCluster{}
-	err := testCtx.MgmtClient.Get(testCtx.Context, types.NamespacedName{
-		Namespace: hcNamespace,
-		Name:      hcName,
-	}, hc)
-
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// Already deleted
-			return nil
-		}
-		return fmt.Errorf("failed to get HostedCluster %s/%s: %w", hcNamespace, hcName, err)
+	// Step 5: Remove finalizers from orphaned resources in HostedCluster namespace
+	if err := removeNamespaceObjectFinalizers(testCtx, testCtx.ClusterNamespace); err != nil {
+		return fmt.Errorf("failed to remove orphaned resource finalizers: %w", err)
 	}
 
-	// Delete the HostedCluster
-	if err := testCtx.MgmtClient.Delete(testCtx.Context, hc); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to delete HostedCluster %s/%s: %w", hcNamespace, hcName, err)
-		}
+	// Step 6: Wait for control plane namespace to be fully deleted
+	if err := deleteControlPlaneNamespace(testCtx, true); err != nil {
+		return fmt.Errorf("failed to delete control plane namespace: %w", err)
 	}
 
 	return nil
 }
 
-// removeHCFinalizers removes all finalizers from the HostedCluster to force deletion.
-// Uses retry logic to handle resource version conflicts.
-func removeHCFinalizers(testCtx *internal.TestContext, hcName, hcNamespace string) error {
+// removeHCPFinalizers removes all finalizers from the HostedControlPlane to force deletion.
+func removeHCPFinalizers(testCtx *internal.TestContext, hcpName, hcpNamespace string) error {
 	return wait.PollUntilContextTimeout(testCtx.Context, 1*time.Second, 30*time.Second, true,
 		func(ctx context.Context) (bool, error) {
-			hc := &hyperv1.HostedCluster{}
+			hcp := &hyperv1.HostedControlPlane{}
 			err := testCtx.MgmtClient.Get(ctx, types.NamespacedName{
-				Namespace: hcNamespace,
-				Name:      hcName,
-			}, hc)
+				Namespace: hcpNamespace,
+				Name:      hcpName,
+			}, hcp)
 
 			if err != nil {
 				if apierrors.IsNotFound(err) {
@@ -117,13 +101,13 @@ func removeHCFinalizers(testCtx *internal.TestContext, hcName, hcNamespace strin
 				return false, err
 			}
 
-			if len(hc.Finalizers) == 0 {
+			if len(hcp.Finalizers) == 0 {
 				return true, nil
 			}
 
 			// Remove all finalizers
-			hc.Finalizers = []string{}
-			if err := testCtx.MgmtClient.Update(ctx, hc); err != nil {
+			hcp.Finalizers = []string{}
+			if err := testCtx.MgmtClient.Update(ctx, hcp); err != nil {
 				if apierrors.IsConflict(err) {
 					return false, nil // Retry on conflict
 				}
@@ -134,102 +118,174 @@ func removeHCFinalizers(testCtx *internal.TestContext, hcName, hcNamespace strin
 		})
 }
 
-// DeleteHostedControlPlane deletes the HostedControlPlane and waits for its deletion.
-// It attempts to gracefully delete the HCP, and if it gets stuck, it can optionally
-// remove finalizers to force deletion.
-func DeleteHostedControlPlane(testCtx *internal.TestContext) error {
-	hcpName := testCtx.ClusterName
-	hcpNamespace := testCtx.ControlPlaneNamespace
+// removeNamespaceObjectFinalizers removes finalizers from all objects in the specified namespace.
+// This uses the discovery API to find all resource types and removes finalizers from each.
+func removeNamespaceObjectFinalizers(testCtx *internal.TestContext, namespace string) error {
+	// Initialize controller-runtime logger to avoid "log.SetLogger was never called" warnings
+	// Use sync.Once to ensure it's only initialized once
+	loggerOnce.Do(func() {
+		log := crzap.New(crzap.UseDevMode(true), crzap.JSONEncoder(func(o *zapcore.EncoderConfig) {
+			o.EncodeTime = zapcore.RFC3339TimeEncoder
+		}))
+		ctrl.SetLogger(log)
+	})
 
-	if hcpNamespace == "" {
-		return fmt.Errorf("control plane namespace is not set in test context")
-	}
+	ctx := testCtx.Context
 
-	// Get the HostedControlPlane
-	hcp := &hyperv1.HostedControlPlane{}
-	err := testCtx.MgmtClient.Get(testCtx.Context, types.NamespacedName{
-		Namespace: hcpNamespace,
-		Name:      hcpName,
-	}, hcp)
-
+	// Check if namespace still exists
+	nsObj := &corev1.Namespace{}
+	err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKey{Name: namespace}, nsObj)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			// Already deleted
+			// Namespace already deleted, nothing to do
 			return nil
 		}
-		return fmt.Errorf("failed to get HostedControlPlane %s/%s: %w", hcpNamespace, hcpName, err)
+		return fmt.Errorf("failed to get namespace %s: %w", namespace, err)
 	}
 
-	// Delete the HostedControlPlane
-	if err := testCtx.MgmtClient.Delete(testCtx.Context, hcp); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to delete HostedControlPlane %s/%s: %w", hcpNamespace, hcpName, err)
+	restConfig, err := util.GetConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get REST config: %w", err)
+	}
+
+	// Create discovery client
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(restConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create discovery client: %w", err)
+	}
+
+	// Get all API resources
+	apiResourceLists, err := discoveryClient.ServerPreferredNamespacedResources()
+	if err != nil && !discovery.IsGroupDiscoveryFailedError(err) {
+		return fmt.Errorf("failed to get API resources: %w", err)
+	}
+
+	// Iterate through all namespaced resource types
+	for _, apiResourceList := range apiResourceLists {
+		gv, err := schema.ParseGroupVersion(apiResourceList.GroupVersion)
+		if err != nil {
+			continue
+		}
+
+		for _, apiResource := range apiResourceList.APIResources {
+			// Skip non-namespaced resources and subresources
+			if !apiResource.Namespaced || strings.Contains(apiResource.Name, "/") {
+				continue
+			}
+
+			// Skip if the resource doesn't support list, update or get
+			if !supportsVerb(apiResource.Verbs, "list") ||
+				!supportsVerb(apiResource.Verbs, "update") ||
+				!supportsVerb(apiResource.Verbs, "get") {
+				continue
+			}
+
+			// Use GVK with the correct Kind from discovery API
+			gvk := schema.GroupVersionKind{
+				Group:   gv.Group,
+				Version: gv.Version,
+				Kind:    apiResource.Kind, // Use actual Kind from discovery (e.g., "AWSMachine" not "awsmachines")
+			}
+
+			// List and remove finalizers for this resource type
+			if err := removeFinalizersForResourceType(testCtx, namespace, gvk); err != nil {
+				// Log but don't fail on individual resource type errors
+				fmt.Printf("Warning: failed to remove finalizers for %s: %v\n", gvk.String(), err)
+			}
 		}
 	}
 
-	// Wait for HCP deletion
-	return waitForHCPDeletion(testCtx, hcpName, hcpNamespace, DeletionTimeout)
+	return nil
 }
 
-// waitForHCPDeletion polls until the HostedControlPlane is deleted or timeout occurs
-func waitForHCPDeletion(testCtx *internal.TestContext, hcpName, hcpNamespace string, timeout time.Duration) error {
-	return wait.PollUntilContextTimeout(testCtx.Context, PollInterval, timeout, true, func(ctx context.Context) (bool, error) {
-		hcp := &hyperv1.HostedControlPlane{}
-		err := testCtx.MgmtClient.Get(ctx, types.NamespacedName{
-			Namespace: hcpNamespace,
-			Name:      hcpName,
-		}, hcp)
+// removeFinalizersForResourceType removes finalizers from all resources of a specific type in the namespace
+func removeFinalizersForResourceType(testCtx *internal.TestContext, namespace string, gvk schema.GroupVersionKind) error {
+	ctx := testCtx.Context
 
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				// Resource successfully deleted
+	// Create an unstructured list for this resource type
+	list := &unstructured.UnstructuredList{}
+	list.SetGroupVersionKind(gvk)
+
+	// List all resources of this type in the namespace
+	if err := testCtx.MgmtClient.List(ctx, list, crclient.InNamespace(namespace)); err != nil {
+		if apierrors.IsNotFound(err) || apierrors.IsMethodNotSupported(err) {
+			// Resource type not found or not supported, skip
+			return nil
+		}
+		return err
+	}
+
+	// Remove finalizers from each object
+	for i := range list.Items {
+		if err := removeObjectFinalizers(testCtx, &list.Items[i]); err != nil {
+			// Continue on errors for individual objects
+			fmt.Printf("Warning: failed to remove finalizers from %s/%s: %v\n",
+				list.Items[i].GetKind(), list.Items[i].GetName(), err)
+		}
+	}
+
+	return nil
+}
+
+// supportsVerb checks if a resource supports a specific verb
+func supportsVerb(verbs metav1.Verbs, verb string) bool {
+	for _, v := range verbs {
+		if v == verb {
+			return true
+		}
+	}
+	return false
+}
+
+// removeObjectFinalizers removes all finalizers from a given object.
+// Uses retry logic to handle resource version conflicts.
+func removeObjectFinalizers(testCtx *internal.TestContext, obj crclient.Object) error {
+	// Skip if object has no finalizers
+	if len(obj.GetFinalizers()) == 0 {
+		return nil
+	}
+
+	return wait.PollUntilContextTimeout(testCtx.Context, 1*time.Second, 30*time.Second, true,
+		func(ctx context.Context) (bool, error) {
+			// Get the latest version of the object
+			key := crclient.ObjectKeyFromObject(obj)
+			if err := testCtx.MgmtClient.Get(ctx, key, obj); err != nil {
+				if apierrors.IsNotFound(err) {
+					// Object already deleted
+					return true, nil
+				}
+				return false, err
+			}
+
+			// Check if finalizers are already removed
+			if len(obj.GetFinalizers()) == 0 {
 				return true, nil
 			}
-			// Handle retryable errors
-			if apierrors.IsTooManyRequests(err) || apierrors.IsServerTimeout(err) || apierrors.IsTimeout(err) {
-				return false, nil
-			}
-			return false, fmt.Errorf("unexpected error checking HostedControlPlane deletion: %w", err)
-		}
 
-		// Resource still exists
-		return false, nil
-	})
+			// Remove all finalizers
+			obj.SetFinalizers([]string{})
+			if err := testCtx.MgmtClient.Update(ctx, obj); err != nil {
+				if apierrors.IsConflict(err) {
+					// Retry on conflict
+					return false, nil
+				}
+				if apierrors.IsNotFound(err) {
+					// Object was deleted during update
+					return true, nil
+				}
+				return false, err
+			}
+
+			return true, nil
+		})
 }
 
-// waitForHCDeletion polls until the HostedCluster is deleted or timeout occurs
-func waitForHCDeletion(testCtx *internal.TestContext, hcName, hcNamespace string, timeout time.Duration) error {
-	return wait.PollUntilContextTimeout(testCtx.Context, PollInterval, timeout, true, func(ctx context.Context) (bool, error) {
-		hc := &hyperv1.HostedCluster{}
-		err := testCtx.MgmtClient.Get(ctx, types.NamespacedName{
-			Namespace: hcNamespace,
-			Name:      hcName,
-		}, hc)
-
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				// Resource successfully deleted
-				return true, nil
-			}
-			// Handle retryable errors
-			if apierrors.IsTooManyRequests(err) || apierrors.IsServerTimeout(err) || apierrors.IsTimeout(err) {
-				return false, nil
-			}
-			return false, fmt.Errorf("unexpected error checking HostedCluster deletion: %w", err)
-		}
-
-		// Resource still exists
-		return false, nil
-	})
-}
-
-// DeleteControlPlaneNamespace deletes the HCP namespace.
+// deleteNamespace deletes a namespace with optional grace period and wait.
+// Set gracePeriodSeconds to 0 for immediate termination.
 // Set waitForDeletion to true if you want to wait for the namespace to be fully removed.
-func DeleteControlPlaneNamespace(testCtx *internal.TestContext, waitForDeletion bool) error {
-	namespace := testCtx.ControlPlaneNamespace
-
+func deleteNamespace(testCtx *internal.TestContext, namespace string, gracePeriodSeconds int64, waitForDeletion bool) error {
 	if namespace == "" {
-		return fmt.Errorf("control plane namespace is not set in test context")
+		return fmt.Errorf("namespace is not set")
 	}
 
 	// Get the namespace first
@@ -239,13 +295,18 @@ func DeleteControlPlaneNamespace(testCtx *internal.TestContext, waitForDeletion 
 		if apierrors.IsNotFound(err) {
 			return nil // Already deleted
 		}
-		return fmt.Errorf("failed to get control plane namespace %s: %w", namespace, err)
+		return fmt.Errorf("failed to get namespace %s: %w", namespace, err)
 	}
 
 	// Delete the namespace
-	err = testCtx.MgmtClient.Delete(testCtx.Context, nsObj)
+	deleteOpts := []crclient.DeleteOption{}
+	if gracePeriodSeconds >= 0 {
+		deleteOpts = append(deleteOpts, crclient.GracePeriodSeconds(gracePeriodSeconds))
+	}
+
+	err = testCtx.MgmtClient.Delete(testCtx.Context, nsObj, deleteOpts...)
 	if err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete control plane namespace %s: %w", namespace, err)
+		return fmt.Errorf("failed to delete namespace %s: %w", namespace, err)
 	}
 
 	if !waitForDeletion {
@@ -266,4 +327,24 @@ func DeleteControlPlaneNamespace(testCtx *internal.TestContext, waitForDeletion 
 		}
 		return false, nil
 	})
+}
+
+// deleteControlPlaneNamespace deletes the HCP namespace.
+// Set waitForDeletion to true if you want to wait for the namespace to be fully removed.
+func deleteControlPlaneNamespace(testCtx *internal.TestContext, waitForDeletion bool) error {
+	namespace := testCtx.ControlPlaneNamespace
+	if namespace == "" {
+		return fmt.Errorf("control plane namespace is not set in test context")
+	}
+	return deleteNamespace(testCtx, namespace, 0, waitForDeletion)
+}
+
+// deleteHostedClusterNamespace deletes the HostedCluster namespace.
+// Set waitForDeletion to true if you want to wait for the namespace to be fully removed.
+func deleteHostedClusterNamespace(testCtx *internal.TestContext, waitForDeletion bool) error {
+	namespace := testCtx.ClusterNamespace
+	if namespace == "" {
+		return fmt.Errorf("cluster namespace is not set in test context")
+	}
+	return deleteNamespace(testCtx, namespace, -1, waitForDeletion)
 }

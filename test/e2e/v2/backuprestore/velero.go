@@ -24,7 +24,7 @@ const (
 
 	// Velero backup phase constants
 	BackupPhaseNew                                       = "New"
-	BackupPhaseQueued                                    = ""
+	BackupPhaseQueued                                    = "Queued"
 	BackupPhaseReadyToStart                              = "ReadyToStart"
 	BackupPhaseInProgress                                = "InProgress"
 	BackupPhaseWaitingForPluginOperations                = "WaitingForPluginOperations"
@@ -48,7 +48,8 @@ const (
 	RestorePhasePartiallyFailed                           = "PartiallyFailed"
 )
 
-// EnsureVeleroPodRunning checks if the Velero pod is running in the specified namespace.
+// EnsureVeleroPodRunning checks if at least one Velero pod is running and ready in the specified namespace.
+// This function tolerates multiple Velero pods (e.g., during rollouts or restarts) as long as at least one is healthy.
 func EnsureVeleroPodRunning(testCtx *internal.TestContext) error {
 	client := testCtx.MgmtClient
 	podList := &corev1.PodList{}
@@ -65,16 +66,36 @@ func EnsureVeleroPodRunning(testCtx *internal.TestContext) error {
 		return fmt.Errorf("no Velero pod found in namespace %s", veleroNamespace)
 	}
 
-	if len(podList.Items) > 1 {
-		return fmt.Errorf("more than one Velero pod found in namespace %s", veleroNamespace)
+	// Check if at least one pod is running and ready
+	// Multiple pods can exist during rollouts or restarts, which is acceptable
+	for _, pod := range podList.Items {
+		if pod.Status.Phase == corev1.PodRunning && isPodReady(&pod) {
+			return nil
+		}
 	}
 
-	pod := &podList.Items[0]
-	if pod.Status.Phase != corev1.PodRunning {
-		return fmt.Errorf("Velero pod is not running, current phase: %s", pod.Status.Phase)
+	// No running and ready pod found - collect pod states for error message
+	var podStates []string
+	for _, pod := range podList.Items {
+		readyStatus := "not ready"
+		if isPodReady(&pod) {
+			readyStatus = "ready"
+		}
+		podStates = append(podStates, fmt.Sprintf("%s: phase=%s, %s", pod.Name, pod.Status.Phase, readyStatus))
 	}
 
-	return nil
+	return fmt.Errorf("no running and ready Velero pod found in namespace %s (found %d pod(s): %v)",
+		veleroNamespace, len(podList.Items), podStates)
+}
+
+// isPodReady checks if a pod has the Ready condition set to True.
+func isPodReady(pod *corev1.Pod) bool {
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
 }
 
 // WaitForBackupCompletion waits for a backup to complete.
