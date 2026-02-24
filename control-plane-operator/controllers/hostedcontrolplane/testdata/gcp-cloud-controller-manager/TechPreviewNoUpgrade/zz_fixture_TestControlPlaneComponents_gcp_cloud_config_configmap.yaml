@@ -5,6 +5,7 @@ data:
     project-id = my-project
     network-name = my-network
     node-tags = -worker
+    multizone = true
     token-url = "nil"
 kind: ConfigMap
 metadata:
