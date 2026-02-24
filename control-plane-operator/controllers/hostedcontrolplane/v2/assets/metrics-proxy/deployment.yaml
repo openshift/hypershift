@@ -24,6 +24,8 @@ spec:
         - /etc/metrics-proxy/serving-cert/tls.key
         - --kas-kubeconfig
         - /etc/metrics-proxy/kas-kubeconfig/kubeconfig
+        - --config-file
+        - /etc/metrics-proxy/config/config.yaml
         command:
         - /usr/bin/control-plane-operator
         - metrics-proxy
@@ -67,6 +69,10 @@ spec:
           name: serving-cert
         - mountPath: /etc/metrics-proxy/kas-kubeconfig
           name: kas-kubeconfig
+        - mountPath: /etc/metrics-proxy/config
+          name: scrape-config
+        - mountPath: /etc/metrics-proxy/certs/endpoint-resolver-ca
+          name: endpoint-resolver-ca
       serviceAccount: metrics-proxy
       serviceAccountName: metrics-proxy
       terminationGracePeriodSeconds: 10
@@ -79,3 +85,11 @@ spec:
         secret:
           defaultMode: 416
           secretName: service-network-admin-kubeconfig
+      - configMap:
+          name: metrics-proxy-config
+          optional: true
+        name: scrape-config
+      - name: endpoint-resolver-ca
+        secret:
+          optional: true
+          secretName: endpoint-resolver-ca

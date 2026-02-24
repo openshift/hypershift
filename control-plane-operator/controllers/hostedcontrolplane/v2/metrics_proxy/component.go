@@ -2,6 +2,7 @@ package metricsproxy
 
 import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	endpointresolverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/endpoint_resolver"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 )
@@ -18,7 +19,7 @@ type metricsProxy struct {
 
 // IsRequestServing implements controlplanecomponent.ComponentOptions.
 func (r *metricsProxy) IsRequestServing() bool {
-	return false
+	return true
 }
 
 // MultiZoneSpread implements controlplanecomponent.ComponentOptions.
@@ -28,7 +29,7 @@ func (r *metricsProxy) MultiZoneSpread() bool {
 
 // NeedsManagementKASAccess implements controlplanecomponent.ComponentOptions.
 func (r *metricsProxy) NeedsManagementKASAccess() bool {
-	return true
+	return false
 }
 
 func NewComponent(defaultIngressDomain string) component.ControlPlaneComponent {
@@ -41,6 +42,10 @@ func NewComponent(defaultIngressDomain string) component.ControlPlaneComponent {
 		WithPredicate(predicate).
 		WithManifestAdapter(
 			"service.yaml",
+		).
+		WithManifestAdapter(
+			"scrape-config.yaml",
+			component.WithAdaptFunction(adaptScrapeConfig),
 		).
 		WithManifestAdapter(
 			"route.yaml",
@@ -58,7 +63,7 @@ func NewComponent(defaultIngressDomain string) component.ControlPlaneComponent {
 			component.DisableIfAnnotationExist(hyperv1.DisablePKIReconciliationAnnotation),
 			component.ReconcileExisting(),
 		).
-		WithDependencies(kasv2.ComponentName).
+		WithDependencies(kasv2.ComponentName, endpointresolverv2.ComponentName).
 		Build()
 }
 

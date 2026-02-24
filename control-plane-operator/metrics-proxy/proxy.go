@@ -11,24 +11,24 @@ import (
 )
 
 type ProxyHandler struct {
-	log                 logr.Logger
-	authenticator       *TokenAuthenticator
-	componentDiscoverer *ComponentDiscoverer
-	endpointDiscoverer  *EndpointSliceDiscoverer
-	scraper             *Scraper
-	filter              *Filter
-	labeler             *Labeler
+	log               logr.Logger
+	authenticator     *TokenAuthenticator
+	componentProvider ComponentProvider
+	targetDiscoverer  TargetDiscoverer
+	scraper           *Scraper
+	filter            *Filter
+	labeler           *Labeler
 }
 
-func NewProxyHandler(log logr.Logger, authenticator *TokenAuthenticator, componentDiscoverer *ComponentDiscoverer, endpointDiscoverer *EndpointSliceDiscoverer, scraper *Scraper, filter *Filter, labeler *Labeler) *ProxyHandler {
+func NewProxyHandler(log logr.Logger, authenticator *TokenAuthenticator, componentProvider ComponentProvider, targetDiscoverer TargetDiscoverer, scraper *Scraper, filter *Filter, labeler *Labeler) *ProxyHandler {
 	return &ProxyHandler{
-		log:                 log,
-		authenticator:       authenticator,
-		componentDiscoverer: componentDiscoverer,
-		endpointDiscoverer:  endpointDiscoverer,
-		scraper:             scraper,
-		filter:              filter,
-		labeler:             labeler,
+		log:               log,
+		authenticator:     authenticator,
+		componentProvider: componentProvider,
+		targetDiscoverer:  targetDiscoverer,
+		scraper:           scraper,
+		filter:            filter,
+		labeler:           labeler,
 	}
 }
 
@@ -44,8 +44,8 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	componentName := path
 
-	// Look up the component from the runtime-discovered ServiceMonitors.
-	componentConfig, ok := h.componentDiscoverer.GetComponent(componentName)
+	// Look up the component configuration.
+	componentConfig, ok := h.componentProvider.GetComponent(componentName)
 	if !ok {
 		http.Error(w, fmt.Sprintf("unknown component: %s", componentName), http.StatusNotFound)
 		return
@@ -71,7 +71,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Discover pods
-	targets, err := h.endpointDiscoverer.Discover(ctx, componentConfig.ServiceName, componentConfig.MetricsPort)
+	targets, err := h.targetDiscoverer.Discover(ctx, componentConfig.ServiceName, componentConfig.MetricsPort)
 	if err != nil {
 		h.log.Error(err, "discovery error", "component", componentName)
 		http.Error(w, "failed to discover targets", http.StatusInternalServerError)
