@@ -1439,15 +1439,24 @@ func (r *reconciler) reconcileControlPlaneDataPlaneConnectivityConditions(ctx co
 	return patchHCPWithCondition(hcp, condition)
 }
 
-func (r *reconciler) reconcileOpenshiftAPIServerAPIServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	// Guard: verify the backing Service exists in the guest cluster with a valid ClusterIP
-	// before registering APIServices with the kube-apiserver aggregation layer.
-	backingSvc := manifests.OpenShiftAPIServerClusterService()
-	if err := r.client.Get(ctx, client.ObjectKeyFromObject(backingSvc), backingSvc); err != nil {
-		return fmt.Errorf("backing service %s not yet available: %w", client.ObjectKeyFromObject(backingSvc), err)
+// ensureBackingServiceReady verifies the backing Service exists in the guest cluster with a valid
+// ClusterIP before registering APIServices with the kube-apiserver aggregation layer.
+// This provides defense-in-depth: the Reconcile()-level ordering already ensures Services and
+// Endpoints are reconciled first, but this guard also protects against direct invocation of
+// the APIService reconciliation functions without the Reconcile()-level ordering.
+func (r *reconciler) ensureBackingServiceReady(ctx context.Context, svc *corev1.Service) error {
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {
+		return fmt.Errorf("backing service %s not yet available: %w", client.ObjectKeyFromObject(svc), err)
 	}
-	if len(backingSvc.Spec.ClusterIP) == 0 {
-		return fmt.Errorf("backing service %s does not yet have a cluster IP", client.ObjectKeyFromObject(backingSvc))
+	if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == corev1.ClusterIPNone {
+		return fmt.Errorf("backing service %s does not yet have a valid cluster IP", client.ObjectKeyFromObject(svc))
+	}
+	return nil
+}
+
+func (r *reconciler) reconcileOpenshiftAPIServerAPIServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	if err := r.ensureBackingServiceReady(ctx, manifests.OpenShiftAPIServerClusterService()); err != nil {
+		return err
 	}
 
 	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
@@ -1468,14 +1477,8 @@ func (r *reconciler) reconcileOpenshiftAPIServerAPIServices(ctx context.Context,
 }
 
 func (r *reconciler) reconcileOpenshiftOAuthAPIServerAPIServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
-	// Guard: verify the backing Service exists in the guest cluster with a valid ClusterIP
-	// before registering APIServices with the kube-apiserver aggregation layer.
-	backingSvc := manifests.OpenShiftOAuthAPIServerClusterService()
-	if err := r.client.Get(ctx, client.ObjectKeyFromObject(backingSvc), backingSvc); err != nil {
-		return fmt.Errorf("backing service %s not yet available: %w", client.ObjectKeyFromObject(backingSvc), err)
-	}
-	if len(backingSvc.Spec.ClusterIP) == 0 {
-		return fmt.Errorf("backing service %s does not yet have a cluster IP", client.ObjectKeyFromObject(backingSvc))
+	if err := r.ensureBackingServiceReady(ctx, manifests.OpenShiftOAuthAPIServerClusterService()); err != nil {
+		return err
 	}
 
 	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
@@ -1980,8 +1983,8 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpService), cpService); err != nil {
 		errs = append(errs, fmt.Errorf("failed to get packageserver service from control plane namespace: %w", err))
 	} else {
-		if len(cpService.Spec.ClusterIP) == 0 {
-			errs = append(errs, fmt.Errorf("packageserver service does not yet have a cluster IP"))
+		if cpService.Spec.ClusterIP == "" || cpService.Spec.ClusterIP == corev1.ClusterIPNone {
+			errs = append(errs, fmt.Errorf("packageserver service does not yet have a valid cluster IP"))
 		} else {
 			packageServerEndpoints := manifests.OLMPackageServerEndpoints()
 			if _, err := r.CreateOrUpdate(ctx, r.client, packageServerEndpoints, func() error {
@@ -1995,18 +1998,22 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 		}
 	}
 
-	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
-		errs = append(errs, fmt.Errorf("failed to get root ca cert from control plane namespace: %w", err))
-	} else if !packageServerEndpointsReady {
+	if !packageServerEndpointsReady {
 		// Endpoints not ready; skip APIService registration to avoid transient 503s
+		log := ctrl.LoggerFrom(ctx)
+		log.Info("skipping OLM packageserver apiservice: endpoints not yet available")
 	} else {
-		packageServerAPIService := manifests.OLMPackageServerAPIService()
-		if _, err := r.CreateOrUpdate(ctx, r.client, packageServerAPIService, func() error {
-			olm.ReconcilePackageServerAPIService(packageServerAPIService, rootCA)
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile OLM packageserver API service: %w", err))
+		rootCA := cpomanifests.RootCASecret(hcp.Namespace)
+		if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+			errs = append(errs, fmt.Errorf("failed to get root ca cert from control plane namespace: %w", err))
+		} else {
+			packageServerAPIService := manifests.OLMPackageServerAPIService()
+			if _, err := r.CreateOrUpdate(ctx, r.client, packageServerAPIService, func() error {
+				olm.ReconcilePackageServerAPIService(packageServerAPIService, rootCA)
+				return nil
+			}); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile OLM packageserver API service: %w", err))
+			}
 		}
 	}
 

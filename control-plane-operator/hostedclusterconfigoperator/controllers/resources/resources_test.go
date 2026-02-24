@@ -452,17 +452,29 @@ func fakeGuestOpenShiftOAuthAPIServerService() *corev1.Service {
 
 //nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 func fakeGuestOpenShiftAPIServerEndpoints() *corev1.Endpoints {
-	return manifests.OpenShiftAPIServerClusterEndpoints()
+	ep := manifests.OpenShiftAPIServerClusterEndpoints()
+	ep.Subsets = []corev1.EndpointSubset{{
+		Addresses: []corev1.EndpointAddress{{IP: "10.0.0.1"}},
+	}}
+	return ep
 }
 
 //nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 func fakeGuestOpenShiftOAuthAPIServerEndpoints() *corev1.Endpoints {
-	return manifests.OpenShiftOAuthAPIServerClusterEndpoints()
+	ep := manifests.OpenShiftOAuthAPIServerClusterEndpoints()
+	ep.Subsets = []corev1.EndpointSubset{{
+		Addresses: []corev1.EndpointAddress{{IP: "10.0.0.2"}},
+	}}
+	return ep
 }
 
 //nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
 func fakeGuestOLMPackageServerEndpoints() *corev1.Endpoints {
-	return manifests.OLMPackageServerEndpoints()
+	ep := manifests.OLMPackageServerEndpoints()
+	ep.Subsets = []corev1.EndpointSubset{{
+		Addresses: []corev1.EndpointAddress{{IP: "10.0.0.3"}},
+	}}
+	return ep
 }
 
 func fakeOperatorHub() *configv1.OperatorHub {
@@ -2647,7 +2659,7 @@ func TestReconcileImageRegistry(t *testing.T) {
 			errs := r.reconcileImageRegistry(ctx, tc.hcp)
 
 			if tc.expectErrors {
-				g.Expect(len(errs)).To(BeNumerically(">", 0), "expected errors but got none")
+				g.Expect(errs).ToNot(BeEmpty(), "expected errors but got none")
 			} else {
 				g.Expect(len(errs)).To(Equal(0), "expected no errors but got: %v", errs)
 			}
@@ -2867,6 +2879,7 @@ func TestReconcileOLMPackageServerOrdering(t *testing.T) {
 		cpObjects              []client.Object
 		expectErrors           bool
 		expectAPIServiceCreate bool
+		expectEndpointsCreate  bool
 	}{
 		{
 			name:         "When control plane service has no ClusterIP it should not create APIService",
@@ -2883,6 +2896,7 @@ func TestReconcileOLMPackageServerOrdering(t *testing.T) {
 			},
 			expectErrors:           true,
 			expectAPIServiceCreate: false,
+			expectEndpointsCreate:  false,
 		},
 		{
 			name:         "When control plane service does not exist it should not create APIService",
@@ -2893,6 +2907,7 @@ func TestReconcileOLMPackageServerOrdering(t *testing.T) {
 			},
 			expectErrors:           true,
 			expectAPIServiceCreate: false,
+			expectEndpointsCreate:  false,
 		},
 		{
 			name:         "When control plane service has ClusterIP it should create Service Endpoints and APIService",
@@ -2912,6 +2927,7 @@ func TestReconcileOLMPackageServerOrdering(t *testing.T) {
 			},
 			expectErrors:           false,
 			expectAPIServiceCreate: true,
+			expectEndpointsCreate:  true,
 		},
 	}
 
@@ -2937,7 +2953,7 @@ func TestReconcileOLMPackageServerOrdering(t *testing.T) {
 			errs := r.reconcileOLM(t.Context(), hcp, pullSecret)
 
 			if tc.expectErrors {
-				g.Expect(len(errs)).To(BeNumerically(">", 0), "expected errors but got none")
+				g.Expect(errs).ToNot(BeEmpty(), "expected errors but got none")
 			} else {
 				g.Expect(errs).To(BeEmpty(), "unexpected errors: %v", errs)
 			}
@@ -2954,6 +2970,15 @@ func TestReconcileOLMPackageServerOrdering(t *testing.T) {
 			svc := manifests.OLMPackageServerService()
 			err = guestClient.Get(t.Context(), client.ObjectKeyFromObject(svc), svc)
 			g.Expect(err).ToNot(HaveOccurred(), "expected OLM PackageServer Service to always be created")
+
+			//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+			endpoints := manifests.OLMPackageServerEndpoints()
+			endpointsErr := guestClient.Get(t.Context(), client.ObjectKeyFromObject(endpoints), endpoints)
+			if tc.expectEndpointsCreate {
+				g.Expect(endpointsErr).ToNot(HaveOccurred(), "expected OLM PackageServer Endpoints to exist")
+			} else {
+				g.Expect(apierrors.IsNotFound(endpointsErr)).To(BeTrue(), "expected OLM PackageServer Endpoints to not exist")
+			}
 		})
 	}
 }
