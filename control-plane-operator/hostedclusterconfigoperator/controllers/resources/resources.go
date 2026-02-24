@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kubeadminpassword"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/monitoring"
+	metricsproxy "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/namespaces"
 	networkoperator "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/network"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/oapi"
@@ -53,6 +55,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	imageregistryv1 "github.com/openshift/api/imageregistry/v1"
 	operatorv1 "github.com/openshift/api/operator/v1"
+	routev1 "github.com/openshift/api/route/v1"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -81,6 +84,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	"sigs.k8s.io/yaml"
 
 	"github.com/blang/semver"
 	"github.com/go-logr/logr"
@@ -297,6 +301,11 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	})
 	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &corev1.ConfigMap{}, eventHandler(), p)); err != nil {
 		return fmt.Errorf("failed to watch ConfigMap: %w", err)
+	}
+
+	// Watch metrics-proxy Route on the control plane cluster for hostname changes.
+	if err := c.Watch(source.Kind[client.Object](opts.CPCluster.GetCache(), &routev1.Route{}, eventHandler())); err != nil {
+		return fmt.Errorf("failed to watch Route: %w", err)
 	}
 
 	return nil
@@ -558,6 +567,11 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile the kube apiserver service monitor: %w", err))
 	}
 
+	log.Info("reconciling control plane metrics forwarder")
+	if err := r.reconcileMetricsForwarder(ctx, hcp, releaseImage); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile metrics forwarder: %w", err))
+	}
+
 	log.Info("reconciling network operator")
 	networkOperator := networkoperator.NetworkOperator()
 	var ovnConfig *hyperv1.OVNKubernetesConfig
@@ -791,6 +805,108 @@ func (r *reconciler) reconcileCSIDriver(ctx context.Context, hcp *hyperv1.Hosted
 		if err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+func (r *reconciler) reconcileMetricsForwarder(ctx context.Context, hcp *hyperv1.HostedControlPlane, releaseImage *releaseinfo.ReleaseImage) error {
+	if _, disabled := hcp.Annotations[hyperv1.DisableMonitoringServices]; disabled {
+		return nil
+	}
+
+	route := &routev1.Route{}
+	if err := r.cpClient.Get(ctx, types.NamespacedName{
+		Namespace: r.hcpNamespace,
+		Name:      "metrics-proxy",
+	}, route); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get metrics-proxy route: %w", err)
+	}
+	if len(route.Status.Ingress) == 0 || route.Status.Ingress[0].Host == "" {
+		return nil
+	}
+	routeHost := route.Status.Ingress[0].Host
+
+	caCertSecret := &corev1.Secret{}
+	if err := r.cpClient.Get(ctx, types.NamespacedName{
+		Namespace: r.hcpNamespace,
+		Name:      "metrics-proxy-ca-cert",
+	}, caCertSecret); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get metrics-proxy CA cert: %w", err)
+	}
+	caCert, ok := caCertSecret.Data[corev1.TLSCertKey]
+	if !ok || len(caCert) == 0 {
+		return nil
+	}
+
+	scrapeConfigCM := &corev1.ConfigMap{}
+	if err := r.cpClient.Get(ctx, types.NamespacedName{
+		Namespace: r.hcpNamespace,
+		Name:      "metrics-proxy-config",
+	}, scrapeConfigCM); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get metrics-proxy config: %w", err)
+	}
+
+	var cfg metricsproxy.FileConfig
+	if err := yaml.Unmarshal([]byte(scrapeConfigCM.Data["config.yaml"]), &cfg); err != nil {
+		return fmt.Errorf("failed to parse metrics-proxy config: %w", err)
+	}
+	if len(cfg.Components) == 0 {
+		return nil
+	}
+	componentNames := make([]string, 0, len(cfg.Components))
+	for name := range cfg.Components {
+		componentNames = append(componentNames, name)
+	}
+	sort.Strings(componentNames)
+
+	haproxyImage, ok := releaseImage.ComponentImages()["haproxy-router"]
+	if !ok {
+		return fmt.Errorf("haproxy-router image not found in release payload")
+	}
+
+	deployment := manifests.MetricsForwarderDeployment()
+	if _, err := r.CreateOrUpdate(ctx, r.client, deployment, func() error {
+		return monitoring.ReconcileMetricsForwarderDeployment(deployment, haproxyImage)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile metrics forwarder deployment: %w", err)
+	}
+
+	cm := manifests.MetricsForwarderConfigMap()
+	if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error {
+		return monitoring.ReconcileMetricsForwarderConfigMap(cm, routeHost)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile metrics forwarder config: %w", err)
+	}
+
+	caSecret := manifests.MetricsForwarderCASecret()
+	if _, err := r.CreateOrUpdate(ctx, r.client, caSecret, func() error {
+		return monitoring.ReconcileMetricsForwarderCASecret(caSecret, caCert)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile metrics forwarder CA secret: %w", err)
+	}
+
+	bearerTokenSecret := manifests.MetricsForwarderBearerTokenSecret()
+	if _, err := r.CreateOrUpdate(ctx, r.client, bearerTokenSecret, func() error {
+		return monitoring.ReconcileMetricsForwarderBearerTokenSecret(bearerTokenSecret)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile metrics forwarder bearer token secret: %w", err)
+	}
+
+	podMonitor := manifests.MetricsForwarderPodMonitor()
+	if _, err := r.CreateOrUpdate(ctx, r.client, podMonitor, func() error {
+		return monitoring.ReconcileMetricsForwarderPodMonitor(podMonitor, componentNames, bearerTokenSecret.Name)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile metrics forwarder pod monitor: %w", err)
 	}
 
 	return nil
