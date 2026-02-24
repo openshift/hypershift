@@ -39,6 +39,20 @@ import (
 	"github.com/blang/semver"
 )
 
+// mcsTLSCertCache holds cached MCS TLS certificate data to avoid regenerating
+// certificates on every ignition payload request. The cache is protected by the
+// LocalIgnitionProvider's lock mutex.
+type mcsTLSCertCache struct {
+	certPEM []byte
+	keyPEM  []byte
+	expiry  time.Time
+}
+
+// mcsTLSCertMinRemaining is the minimum remaining validity for a cached MCS TLS
+// certificate before it is regenerated. This provides a safety margin to ensure
+// the certificate does not expire during an active MCS process.
+const mcsTLSCertMinRemaining = 1 * time.Hour
+
 // LocalIgnitionProvider is an IgnitionProvider that executes MCO binaries
 // directly to build ignition payload contents out of a given release image and
 // a config string containing 0..N MachineConfig YAML definitions.
@@ -80,10 +94,44 @@ type LocalIgnitionProvider struct {
 
 	ImageFileCache *imageFileCache
 
-	lock sync.Mutex
+	lock         sync.Mutex
+	mcsTLSCache  *mcsTLSCertCache
+	now          func() time.Time // for testing; defaults to time.Now
 }
 
 var _ IgnitionProvider = (*LocalIgnitionProvider)(nil)
+
+// getOrGenerateMCSTLSCert returns cached MCS TLS certificate and key PEM bytes,
+// generating a new self-signed certificate if the cache is empty or the cached
+// certificate is near expiry. This method assumes the caller holds p.lock.
+func (p *LocalIgnitionProvider) getOrGenerateMCSTLSCert() (certPEM, keyPEM []byte, err error) {
+	nowFn := p.now
+	if nowFn == nil {
+		nowFn = time.Now
+	}
+
+	if p.mcsTLSCache != nil && nowFn().Add(mcsTLSCertMinRemaining).Before(p.mcsTLSCache.expiry) {
+		return p.mcsTLSCache.certPEM, p.mcsTLSCache.keyPEM, nil
+	}
+
+	cfg := &certs.CertCfg{
+		Subject:   pkix.Name{CommonName: "machine-config-server", OrganizationalUnit: []string{"openshift"}},
+		KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		Validity:  certs.ValidityOneDay,
+		IsCA:      true,
+	}
+	key, crt, err := certs.GenerateSelfSignedCertificate(cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate cert: %w", err)
+	}
+
+	p.mcsTLSCache = &mcsTLSCertCache{
+		certPEM: certs.CertToPem(crt),
+		keyPEM:  certs.PrivateKeyToPem(key),
+		expiry:  crt.NotAfter,
+	}
+	return p.mcsTLSCache.certPEM, p.mcsTLSCache.keyPEM, nil
+}
 
 const (
 	pullSecretName            = "pull-secret"
@@ -600,30 +648,16 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 	payload, err := func() ([]byte, error) {
 		start := time.Now()
 
-		// Generate certificates. The MCS is hard-coded to expose a TLS listener
-		// and requires both a certificate and a key.
-		// TODO: This could be generated once up-front and cached for all processes
-		err = func() error {
-			cfg := &certs.CertCfg{
-				Subject:   pkix.Name{CommonName: "machine-config-server", OrganizationalUnit: []string{"openshift"}},
-				KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-				Validity:  certs.ValidityOneDay,
-				IsCA:      true,
-			}
-			key, crt, err := certs.GenerateSelfSignedCertificate(cfg)
-			if err != nil {
-				return fmt.Errorf("failed to generate cert: %w", err)
-			}
-			if err := os.WriteFile(filepath.Join(mcsBaseDir, "tls.crt"), certs.CertToPem(crt), 0644); err != nil {
-				return fmt.Errorf("failed to write mcs cert: %w", err)
-			}
-			if err := os.WriteFile(filepath.Join(mcsBaseDir, "tls.key"), certs.PrivateKeyToPem(key), 0644); err != nil {
-				return fmt.Errorf("failed to write mcs cert: %w", err)
-			}
-			return nil
-		}()
+		// Use cached MCS TLS certificates to avoid regenerating on every request.
+		certPEM, keyPEM, err := p.getOrGenerateMCSTLSCert()
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate certificates: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(mcsBaseDir, "tls.crt"), certPEM, 0644); err != nil {
+			return nil, fmt.Errorf("failed to write mcs cert: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(mcsBaseDir, "tls.key"), keyPEM, 0644); err != nil {
+			return nil, fmt.Errorf("failed to write mcs key: %w", err)
 		}
 
 		args := []string{
