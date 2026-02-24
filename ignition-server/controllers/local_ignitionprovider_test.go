@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openshift/hypershift/support/certs"
-
 	. "github.com/onsi/gomega"
+
+	"github.com/openshift/hypershift/support/certs"
 )
 
 func TestExtractMCOBinaries(t *testing.T) {
@@ -134,8 +134,24 @@ func TestExtractMCOBinaries(t *testing.T) {
 	}
 }
 
+// verifyMCSCertPEM decodes and parses a PEM-encoded certificate and verifies
+// it has the expected MCS TLS certificate properties.
+func verifyMCSCertPEM(g Gomega, certPEM []byte) *x509.Certificate {
+	block, _ := pem.Decode(certPEM)
+	g.Expect(block).NotTo(BeNil())
+	cert, err := x509.ParseCertificate(block.Bytes)
+	g.Expect(err).NotTo(HaveOccurred())
+	g.Expect(cert.Subject.CommonName).To(Equal(mcsTLSCertCommonName))
+	g.Expect(cert.Subject.OrganizationalUnit).To(Equal([]string{"openshift"}))
+	g.Expect(cert.IsCA).To(BeTrue())
+	return cert
+}
+
 func TestGetOrGenerateMCSTLSCert(t *testing.T) {
+	t.Parallel()
+
 	t.Run("When no cached cert exists, it should generate a new certificate", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		provider := &LocalIgnitionProvider{}
 
@@ -144,14 +160,8 @@ func TestGetOrGenerateMCSTLSCert(t *testing.T) {
 		g.Expect(certPEM).NotTo(BeEmpty())
 		g.Expect(keyPEM).NotTo(BeEmpty())
 
-		// Verify the cert is valid PEM and has the expected subject
-		block, _ := pem.Decode(certPEM)
-		g.Expect(block).NotTo(BeNil())
-		cert, err := x509.ParseCertificate(block.Bytes)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(cert.Subject.CommonName).To(Equal("machine-config-server"))
-		g.Expect(cert.Subject.OrganizationalUnit).To(Equal([]string{"openshift"}))
-		g.Expect(cert.IsCA).To(BeTrue())
+		// Verify the cert is valid PEM and has the expected properties
+		verifyMCSCertPEM(g, certPEM)
 
 		// Verify the cache was populated
 		g.Expect(provider.mcsTLSCache).NotTo(BeNil())
@@ -160,6 +170,7 @@ func TestGetOrGenerateMCSTLSCert(t *testing.T) {
 	})
 
 	t.Run("When a valid cached cert exists, it should reuse the cached certificate", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 		provider := &LocalIgnitionProvider{}
 
@@ -176,14 +187,19 @@ func TestGetOrGenerateMCSTLSCert(t *testing.T) {
 	})
 
 	t.Run("When the cached cert is near expiry, it should generate a new certificate", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
+
+		// Use a controllable time function for deterministic testing
+		fixedNow := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
 
 		// Set up a provider with a cert that expires in 30 minutes (less than the 1h threshold)
 		provider := &LocalIgnitionProvider{
+			now: func() time.Time { return fixedNow },
 			mcsTLSCache: &mcsTLSCertCache{
 				certPEM: []byte("old-cert"),
 				keyPEM:  []byte("old-key"),
-				expiry:  time.Now().Add(30 * time.Minute),
+				expiry:  fixedNow.Add(30 * time.Minute),
 			},
 		}
 
@@ -194,22 +210,26 @@ func TestGetOrGenerateMCSTLSCert(t *testing.T) {
 		g.Expect(string(certPEM)).NotTo(Equal("old-cert"))
 		g.Expect(string(keyPEM)).NotTo(Equal("old-key"))
 
-		// Verify it's a valid cert
-		block, _ := pem.Decode(certPEM)
-		g.Expect(block).NotTo(BeNil())
-		cert, err := x509.ParseCertificate(block.Bytes)
-		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(cert.Subject.CommonName).To(Equal("machine-config-server"))
+		// Verify it's a valid MCS cert
+		verifyMCSCertPEM(g, certPEM)
+
+		// Verify the cache is updated with the new cert
+		g.Expect(provider.mcsTLSCache.expiry).To(BeTemporally(">", fixedNow))
 	})
 
 	t.Run("When the cached cert has expired, it should generate a new certificate", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 
+		// Use a controllable time function for deterministic testing
+		fixedNow := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
 		provider := &LocalIgnitionProvider{
+			now: func() time.Time { return fixedNow },
 			mcsTLSCache: &mcsTLSCertCache{
 				certPEM: []byte("expired-cert"),
 				keyPEM:  []byte("expired-key"),
-				expiry:  time.Now().Add(-1 * time.Hour),
+				expiry:  fixedNow.Add(-1 * time.Hour),
 			},
 		}
 
@@ -220,10 +240,41 @@ func TestGetOrGenerateMCSTLSCert(t *testing.T) {
 		g.Expect(string(keyPEM)).NotTo(Equal("expired-key"))
 
 		// Verify the cache is updated with the new cert
-		g.Expect(provider.mcsTLSCache.expiry).To(BeTemporally(">", time.Now()))
+		g.Expect(provider.mcsTLSCache.expiry).To(BeTemporally(">", fixedNow))
+	})
+
+	t.Run("When the cached cert has exactly the minimum remaining validity, it should regenerate", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		// Use a controllable time function for deterministic testing
+		fixedNow := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+
+		// Set expiry to exactly now + mcsTLSCertMinRemaining (1h).
+		// The condition is nowFn().Add(mcsTLSCertMinRemaining).Before(expiry),
+		// which is false when they're equal, so it should regenerate.
+		provider := &LocalIgnitionProvider{
+			now: func() time.Time { return fixedNow },
+			mcsTLSCache: &mcsTLSCertCache{
+				certPEM: []byte("boundary-cert"),
+				keyPEM:  []byte("boundary-key"),
+				expiry:  fixedNow.Add(mcsTLSCertMinRemaining),
+			},
+		}
+
+		certPEM, keyPEM, err := provider.getOrGenerateMCSTLSCert()
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Should have regenerated since exactly at the boundary
+		g.Expect(string(certPEM)).NotTo(Equal("boundary-cert"))
+		g.Expect(string(keyPEM)).NotTo(Equal("boundary-key"))
+
+		// Verify it's a valid MCS cert
+		verifyMCSCertPEM(g, certPEM)
 	})
 
 	t.Run("When the cert has ample remaining validity, it should not regenerate", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 
 		// Use a controllable time function

@@ -53,6 +53,9 @@ type mcsTLSCertCache struct {
 // the certificate does not expire during an active MCS process.
 const mcsTLSCertMinRemaining = 1 * time.Hour
 
+// mcsTLSCertCommonName is the common name used in the self-signed MCS TLS certificate.
+const mcsTLSCertCommonName = "machine-config-server"
+
 // LocalIgnitionProvider is an IgnitionProvider that executes MCO binaries
 // directly to build ignition payload contents out of a given release image and
 // a config string containing 0..N MachineConfig YAML definitions.
@@ -94,9 +97,9 @@ type LocalIgnitionProvider struct {
 
 	ImageFileCache *imageFileCache
 
-	lock         sync.Mutex
-	mcsTLSCache  *mcsTLSCertCache
-	now          func() time.Time // for testing; defaults to time.Now
+	lock        sync.Mutex
+	mcsTLSCache *mcsTLSCertCache
+	now         func() time.Time // for testing; defaults to time.Now
 }
 
 var _ IgnitionProvider = (*LocalIgnitionProvider)(nil)
@@ -105,17 +108,20 @@ var _ IgnitionProvider = (*LocalIgnitionProvider)(nil)
 // generating a new self-signed certificate if the cache is empty or the cached
 // certificate is near expiry. This method assumes the caller holds p.lock.
 func (p *LocalIgnitionProvider) getOrGenerateMCSTLSCert() (certPEM, keyPEM []byte, err error) {
+	log := ctrl.Log.WithName("mcs-tls-cert")
+
 	nowFn := p.now
 	if nowFn == nil {
 		nowFn = time.Now
 	}
 
 	if p.mcsTLSCache != nil && nowFn().Add(mcsTLSCertMinRemaining).Before(p.mcsTLSCache.expiry) {
+		log.V(1).Info("reusing cached MCS TLS certificate", "expiry", p.mcsTLSCache.expiry)
 		return p.mcsTLSCache.certPEM, p.mcsTLSCache.keyPEM, nil
 	}
 
 	cfg := &certs.CertCfg{
-		Subject:   pkix.Name{CommonName: "machine-config-server", OrganizationalUnit: []string{"openshift"}},
+		Subject:   pkix.Name{CommonName: mcsTLSCertCommonName, OrganizationalUnit: []string{"openshift"}},
 		KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
 		Validity:  certs.ValidityOneDay,
 		IsCA:      true,
@@ -124,6 +130,8 @@ func (p *LocalIgnitionProvider) getOrGenerateMCSTLSCert() (certPEM, keyPEM []byt
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to generate cert: %w", err)
 	}
+
+	log.V(1).Info("generated new MCS TLS certificate", "expiry", crt.NotAfter)
 
 	p.mcsTLSCache = &mcsTLSCertCache{
 		certPEM: certs.CertToPem(crt),
