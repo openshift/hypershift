@@ -2,13 +2,18 @@ package controllers
 
 import (
 	"context"
+	"crypto/rsa"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
+
+	"github.com/openshift/hypershift/support/certs"
 )
 
 func TestExtractMCOBinaries(t *testing.T) {
@@ -127,4 +132,142 @@ func TestExtractMCOBinaries(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMCSTLSCertCache(t *testing.T) {
+	t.Run("When GetCertAndKey is called for the first time, it should generate a new certificate", func(t *testing.T) {
+		g := NewWithT(t)
+
+		generateCount := 0
+		cache := &MCSTLSCertCache{
+			generateCert: func(cfg *certs.CertCfg) (*rsa.PrivateKey, *x509.Certificate, error) {
+				generateCount++
+				return certs.GenerateSelfSignedCertificate(cfg)
+			},
+			nowFn: time.Now,
+		}
+
+		certPEM, keyPEM, err := cache.GetCertAndKey()
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(certPEM).NotTo(BeEmpty())
+		g.Expect(keyPEM).NotTo(BeEmpty())
+		g.Expect(generateCount).To(Equal(1))
+	})
+
+	t.Run("When GetCertAndKey is called multiple times with a valid cached cert, it should reuse the cached certificate", func(t *testing.T) {
+		g := NewWithT(t)
+
+		generateCount := 0
+		cache := &MCSTLSCertCache{
+			generateCert: func(cfg *certs.CertCfg) (*rsa.PrivateKey, *x509.Certificate, error) {
+				generateCount++
+				return certs.GenerateSelfSignedCertificate(cfg)
+			},
+			nowFn: time.Now,
+		}
+
+		certPEM1, keyPEM1, err := cache.GetCertAndKey()
+		g.Expect(err).NotTo(HaveOccurred())
+
+		certPEM2, keyPEM2, err := cache.GetCertAndKey()
+		g.Expect(err).NotTo(HaveOccurred())
+
+		certPEM3, keyPEM3, err := cache.GetCertAndKey()
+		g.Expect(err).NotTo(HaveOccurred())
+
+		g.Expect(generateCount).To(Equal(1))
+		g.Expect(certPEM2).To(Equal(certPEM1))
+		g.Expect(keyPEM2).To(Equal(keyPEM1))
+		g.Expect(certPEM3).To(Equal(certPEM1))
+		g.Expect(keyPEM3).To(Equal(keyPEM1))
+	})
+
+	t.Run("When the cached certificate has expired, it should generate a new certificate", func(t *testing.T) {
+		g := NewWithT(t)
+
+		generateCount := 0
+		now := time.Now()
+		cache := &MCSTLSCertCache{
+			generateCert: func(cfg *certs.CertCfg) (*rsa.PrivateKey, *x509.Certificate, error) {
+				generateCount++
+				return certs.GenerateSelfSignedCertificate(cfg)
+			},
+			nowFn: func() time.Time { return now },
+		}
+
+		certPEM1, _, err := cache.GetCertAndKey()
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(generateCount).To(Equal(1))
+
+		// Advance time past the certificate's validity (1 day + margin)
+		now = now.Add(25 * time.Hour)
+
+		certPEM2, _, err := cache.GetCertAndKey()
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(generateCount).To(Equal(2))
+		g.Expect(certPEM2).NotTo(Equal(certPEM1))
+	})
+
+	t.Run("When the cached certificate is within expiry margin, it should regenerate", func(t *testing.T) {
+		g := NewWithT(t)
+
+		generateCount := 0
+		now := time.Now()
+		cache := &MCSTLSCertCache{
+			generateCert: func(cfg *certs.CertCfg) (*rsa.PrivateKey, *x509.Certificate, error) {
+				generateCount++
+				return certs.GenerateSelfSignedCertificate(cfg)
+			},
+			nowFn: func() time.Time { return now },
+		}
+
+		_, _, err := cache.GetCertAndKey()
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(generateCount).To(Equal(1))
+
+		// Advance time to within the expiry margin (less than 1 hour before expiry)
+		// Certificate validity is 24 hours, so 23h30m puts us 30 min before expiry,
+		// which is within the 1 hour margin.
+		now = now.Add(23*time.Hour + 30*time.Minute)
+
+		_, _, err = cache.GetCertAndKey()
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(generateCount).To(Equal(2))
+	})
+
+	t.Run("When the certificate generator returns an error, it should propagate the error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		cache := &MCSTLSCertCache{
+			generateCert: func(cfg *certs.CertCfg) (*rsa.PrivateKey, *x509.Certificate, error) {
+				return nil, nil, fmt.Errorf("simulated generation failure")
+			},
+			nowFn: time.Now,
+		}
+
+		certPEM, keyPEM, err := cache.GetCertAndKey()
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("simulated generation failure"))
+		g.Expect(certPEM).To(BeNil())
+		g.Expect(keyPEM).To(BeNil())
+	})
+
+	t.Run("When using NewMCSTLSCertCache constructor, it should generate valid certificates", func(t *testing.T) {
+		g := NewWithT(t)
+
+		cache := NewMCSTLSCertCache()
+		certPEM, keyPEM, err := cache.GetCertAndKey()
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(certPEM).NotTo(BeEmpty())
+		g.Expect(keyPEM).NotTo(BeEmpty())
+
+		// Verify the PEM data is valid
+		cert, err := certs.PemToCertificate(certPEM)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(cert.Subject.CommonName).To(Equal("machine-config-server"))
+		g.Expect(cert.IsCA).To(BeTrue())
+
+		_, err = certs.PemToPrivateKey(keyPEM)
+		g.Expect(err).NotTo(HaveOccurred())
+	})
 }
