@@ -1308,7 +1308,7 @@ type PlatformSpec struct {
 	Azure *AzurePlatformSpec `json:"azure,omitempty"`
 
 	// powervs specifies configuration for clusters running on IBMCloud Power VS Service.
-	// This field is immutable. Once set, It can't be changed.
+	// This field is immutable. Once set, it cannot be changed.
 	//
 	// +optional
 	// +immutable
