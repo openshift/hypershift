@@ -128,7 +128,16 @@ func (c *MCSTLSCertCache) GetCertAndKey() (certPEM []byte, keyPEM []byte, err er
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	now := c.nowFn()
+	nowFn := c.nowFn
+	if nowFn == nil {
+		nowFn = time.Now
+	}
+	genCert := c.generateCert
+	if genCert == nil {
+		genCert = certs.GenerateSelfSignedCertificate
+	}
+
+	now := nowFn()
 	if len(c.certPEM) > 0 && now.Add(expiryMargin).Before(c.notAfter) {
 		return c.certPEM, c.keyPEM, nil
 	}
@@ -139,7 +148,7 @@ func (c *MCSTLSCertCache) GetCertAndKey() (certPEM []byte, keyPEM []byte, err er
 		Validity:  certs.ValidityOneDay,
 		IsCA:      true,
 	}
-	key, crt, err := c.generateCert(cfg)
+	key, crt, err := genCert(cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to generate MCS TLS cert: %w", err)
 	}

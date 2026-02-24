@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -135,7 +136,9 @@ func TestExtractMCOBinaries(t *testing.T) {
 }
 
 func TestMCSTLSCertCache(t *testing.T) {
+	t.Parallel()
 	t.Run("When GetCertAndKey is called for the first time, it should generate a new certificate", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 
 		generateCount := 0
@@ -155,6 +158,7 @@ func TestMCSTLSCertCache(t *testing.T) {
 	})
 
 	t.Run("When GetCertAndKey is called multiple times with a valid cached cert, it should reuse the cached certificate", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 
 		generateCount := 0
@@ -183,6 +187,7 @@ func TestMCSTLSCertCache(t *testing.T) {
 	})
 
 	t.Run("When the cached certificate has expired, it should generate a new certificate", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 
 		generateCount := 0
@@ -209,6 +214,7 @@ func TestMCSTLSCertCache(t *testing.T) {
 	})
 
 	t.Run("When the cached certificate is within expiry margin, it should regenerate", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 
 		generateCount := 0
@@ -236,6 +242,7 @@ func TestMCSTLSCertCache(t *testing.T) {
 	})
 
 	t.Run("When the certificate generator returns an error, it should propagate the error", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 
 		cache := &MCSTLSCertCache{
@@ -253,6 +260,7 @@ func TestMCSTLSCertCache(t *testing.T) {
 	})
 
 	t.Run("When using NewMCSTLSCertCache constructor, it should generate valid certificates", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 
 		cache := NewMCSTLSCertCache()
@@ -269,5 +277,79 @@ func TestMCSTLSCertCache(t *testing.T) {
 
 		_, err = certs.PemToPrivateKey(keyPEM)
 		g.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("When GetCertAndKey is called concurrently, it should be safe for concurrent access", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		var generateCount int
+		var generateMu sync.Mutex
+		cache := &MCSTLSCertCache{
+			generateCert: func(cfg *certs.CertCfg) (*rsa.PrivateKey, *x509.Certificate, error) {
+				generateMu.Lock()
+				generateCount++
+				generateMu.Unlock()
+				return certs.GenerateSelfSignedCertificate(cfg)
+			},
+			nowFn: time.Now,
+		}
+
+		const goroutines = 10
+		var wg sync.WaitGroup
+		wg.Add(goroutines)
+		results := make([][]byte, goroutines)
+		errs := make([]error, goroutines)
+
+		for i := 0; i < goroutines; i++ {
+			go func(idx int) {
+				defer wg.Done()
+				certPEM, _, err := cache.GetCertAndKey()
+				results[idx] = certPEM
+				errs[idx] = err
+			}(i)
+		}
+		wg.Wait()
+
+		for i := 0; i < goroutines; i++ {
+			g.Expect(errs[i]).NotTo(HaveOccurred())
+			g.Expect(results[i]).NotTo(BeEmpty())
+		}
+		// All goroutines should get the same cached cert
+		for i := 1; i < goroutines; i++ {
+			g.Expect(results[i]).To(Equal(results[0]))
+		}
+		g.Expect(generateCount).To(Equal(1))
+	})
+
+	t.Run("When the certificate generator fails then succeeds, it should not retain stale state", func(t *testing.T) {
+		t.Parallel()
+		g := NewWithT(t)
+
+		callCount := 0
+		cache := &MCSTLSCertCache{
+			generateCert: func(cfg *certs.CertCfg) (*rsa.PrivateKey, *x509.Certificate, error) {
+				callCount++
+				if callCount == 1 {
+					return nil, nil, fmt.Errorf("transient failure")
+				}
+				return certs.GenerateSelfSignedCertificate(cfg)
+			},
+			nowFn: time.Now,
+		}
+
+		// First call should fail
+		certPEM, keyPEM, err := cache.GetCertAndKey()
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("transient failure"))
+		g.Expect(certPEM).To(BeNil())
+		g.Expect(keyPEM).To(BeNil())
+
+		// Second call should succeed since no stale state is cached from the failure
+		certPEM, keyPEM, err = cache.GetCertAndKey()
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(certPEM).NotTo(BeEmpty())
+		g.Expect(keyPEM).NotTo(BeEmpty())
+		g.Expect(callCount).To(Equal(2))
 	})
 }
