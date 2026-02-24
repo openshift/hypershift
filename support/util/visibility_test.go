@@ -419,6 +419,49 @@ func TestLabelHCPRoutes(t *testing.T) {
 			want: true,
 		},
 
+		// Azure Platform Tests (Self-Managed)
+		{
+			name: "When Azure self-managed cluster has KAS Route with hostname, it should label routes for HCP router",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{
+									Hostname: "api.azure.example.com",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When Azure self-managed cluster has KAS Route but no hostname, it should not label routes for HCP router",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+
 		// Agent Platform Tests (Bare Metal) - Critical for OCPBUGS-70152
 		{
 			name: "When Agent cluster has KAS LoadBalancer, it should not label routes for HCP router",
