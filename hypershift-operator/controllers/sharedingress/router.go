@@ -267,6 +267,7 @@ func ReconcileRouterPodDisruptionBudget(pdb *policyv1.PodDisruptionBudget, owner
 	}
 	ownerRef.ApplyTo(pdb)
 	pdb.Spec.MinAvailable = ptr.To(intstr.FromInt32(1))
+	pdb.Spec.UnhealthyPodEvictionPolicy = ptr.To(policyv1.AlwaysAllow)
 }
 
 func ReconcileRouterNetworkPolicy(policy *networkingv1.NetworkPolicy, isOpenShiftDNS bool, managementClusterNetwork *configv1.Network) {
