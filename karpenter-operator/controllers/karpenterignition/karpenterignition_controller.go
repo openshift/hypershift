@@ -123,6 +123,13 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	if err := r.reconcileNodeClassToken(ctx, hcp, hostedCluster, openshiftEC2NodeClass, releaseImage); err != nil {
 		log.Error(err, "failed to reconcile token for OpenshiftEC2NodeClass", "name", openshiftEC2NodeClass.Name)
+		// Still update version status so conditions are set even when token reconciliation fails.
+		// Re-fetch the object to get the latest resourceVersion since reconcileNodeClassToken may have patched it.
+		if getErr := r.GuestClient.Get(ctx, client.ObjectKeyFromObject(openshiftEC2NodeClass), openshiftEC2NodeClass); getErr != nil {
+			log.Error(getErr, "failed to re-fetch OpenshiftEC2NodeClass after token reconciliation error")
+		} else if updateErr := r.updateVersionStatus(ctx, openshiftEC2NodeClass, releaseImage, nil); updateErr != nil {
+			log.Error(updateErr, "failed to update version status after token reconciliation error")
+		}
 		return ctrl.Result{}, err
 	}
 

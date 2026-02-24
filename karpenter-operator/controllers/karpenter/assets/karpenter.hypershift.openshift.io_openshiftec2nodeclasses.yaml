@@ -380,8 +380,6 @@ spec:
                   - zone
                   type: object
                 type: array
-            required:
-            - releaseImage
             type: object
         type: object
     served: true

@@ -256,8 +256,8 @@ type OpenshiftEC2NodeClassStatus struct {
 	// ReleaseImage is the fully qualified release image resolved either from spec.version, or inherited from
 	// the HostedControlPlane's spec.ReleaseImage.
 	// Of the format "quay.io/openshift-release-dev/ocp-release@sha256:<digest>".
-	// +required
-	ReleaseImage string `json:"releaseImage"`
+	// +optional
+	ReleaseImage string `json:"releaseImage,omitempty"`
 
 	// +optional
 	// +listType=map
