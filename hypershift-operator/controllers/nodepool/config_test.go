@@ -1812,3 +1812,316 @@ func TestGlobalConfigString(t *testing.T) {
 		})
 	}
 }
+
+func TestGetACRCredentialProviderConfig(t *testing.T) {
+	testCases := []struct {
+		name          string
+		nodePool      *hyperv1.NodePool
+		hostedCluster *hyperv1.HostedCluster
+		expectNil     bool
+		expectErr     bool
+		expectErrMsg  string
+		validate      func(g Gomega, cm *corev1.ConfigMap)
+	}{
+		{
+			name: "When platform is not Azure it should return nil",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{},
+			expectNil:     true,
+		},
+		{
+			name: "When platform is Azure but ImageRegistryCredentials is nil it should return nil",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							VMSize: "Standard_D4s_v3",
+						},
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{},
+			expectNil:     true,
+		},
+		{
+			name: "When platform is Azure but Azure spec is nil it should return nil",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{},
+			expectNil:     true,
+		},
+		{
+			name: "When ImageRegistryCredentials is configured but HostedCluster Azure spec is nil it should return an error",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							VMSize: "Standard_D4s_v3",
+							ImageRegistryCredentials: &hyperv1.AzureImageRegistryCredentials{
+								ManagedIdentity: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id",
+								Registries:      []string{"myregistry.azurecr.io"},
+							},
+						},
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{},
+			expectErr:     true,
+			expectErrMsg:  "hostedCluster.Spec.Platform.Azure must not be nil",
+		},
+		{
+			name: "When ImageRegistryCredentials is configured it should return a ConfigMap with ACR MachineConfig YAML",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							VMSize: "Standard_D4s_v3",
+							ImageRegistryCredentials: &hyperv1.AzureImageRegistryCredentials{
+								ManagedIdentity: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/acr-pull",
+								Registries:      []string{"myacr.azurecr.io"},
+							},
+						},
+					},
+				},
+			},
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							TenantID:       "test-tenant-id",
+							SubscriptionID: "test-subscription-id",
+						},
+					},
+				},
+			},
+			expectNil: false,
+			validate: func(g Gomega, cm *corev1.ConfigMap) {
+				g.Expect(cm.Name).To(Equal("acr-credential-provider-config"))
+				g.Expect(cm.Data).To(HaveKey(TokenSecretConfigKey))
+
+				yamlContent := cm.Data[TokenSecretConfigKey]
+				g.Expect(yamlContent).To(ContainSubstring("kind: MachineConfig"))
+				g.Expect(yamlContent).To(ContainSubstring("name: 50-acr-credential-provider"))
+				g.Expect(yamlContent).To(ContainSubstring("machineconfiguration.openshift.io/role: worker"))
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			cg := &ConfigGenerator{
+				hostedCluster: tc.hostedCluster,
+				nodePool:      tc.nodePool,
+			}
+
+			cm, err := cg.getACRCredentialProviderConfig()
+			if tc.expectErr {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.expectErrMsg))
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectNil {
+				g.Expect(cm).To(BeNil())
+				return
+			}
+
+			g.Expect(cm).ToNot(BeNil())
+			if tc.validate != nil {
+				tc.validate(g, cm)
+			}
+		})
+	}
+}
+
+func TestACRCredentialProviderConfigInMCORawConfig(t *testing.T) {
+	t.Run("When ImageRegistryCredentials is configured it should include ACR MachineConfig in the generated config", func(t *testing.T) {
+		g := NewWithT(t)
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "test",
+			},
+			Spec: hyperv1.NodePoolSpec{
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzureNodePoolPlatform{
+						VMSize: "Standard_D4s_v3",
+						ImageRegistryCredentials: &hyperv1.AzureImageRegistryCredentials{
+							ManagedIdentity: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/acr-pull",
+							Registries:      []string{"myacr.azurecr.io"},
+						},
+					},
+				},
+			},
+		}
+
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "test",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzurePlatformSpec{
+						TenantID:       "test-tenant-id",
+						SubscriptionID: "test-subscription-id",
+					},
+				},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(coreConfigMaps...).Build()
+		cg := &ConfigGenerator{
+			Client:                fakeClient,
+			hostedCluster:         hc,
+			nodePool:              nodePool,
+			controlplaneNamespace: "test-test",
+			rolloutConfig: &rolloutConfig{
+				haproxyRawConfig: "",
+			},
+		}
+
+		rawConfig, err := cg.generateMCORawConfig(t.Context(), nil)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(rawConfig).ToNot(BeEmpty())
+
+		// Verify the ACR MachineConfig is included in the raw config
+		g.Expect(rawConfig).To(ContainSubstring("50-acr-credential-provider"))
+		g.Expect(rawConfig).To(ContainSubstring("machineconfiguration.openshift.io/role: worker"))
+	})
+
+	t.Run("When ImageRegistryCredentials changes it should produce a different config hash", func(t *testing.T) {
+		g := NewWithT(t)
+
+		baseNodePool := func(registries []string) *hyperv1.NodePool {
+			return &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "test",
+				},
+				Spec: hyperv1.NodePoolSpec{
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzureNodePoolPlatform{
+							VMSize: "Standard_D4s_v3",
+							ImageRegistryCredentials: &hyperv1.AzureImageRegistryCredentials{
+								ManagedIdentity: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/acr-pull",
+								Registries:      registries,
+							},
+						},
+					},
+				},
+			}
+		}
+
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "test",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				PullSecret: corev1.LocalObjectReference{Name: "pull-secret"},
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzurePlatformSpec{
+						TenantID:       "test-tenant-id",
+						SubscriptionID: "test-subscription-id",
+					},
+				},
+			},
+		}
+
+		releaseImage := &releaseinfo.ReleaseImage{
+			ImageStream: &imageapi.ImageStream{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "4.17.0",
+				},
+			},
+		}
+
+		// Generate config with one set of registries
+		fakeClient1 := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(coreConfigMaps...).Build()
+		cg1, err := NewConfigGenerator(t.Context(), fakeClient1, hc, baseNodePool([]string{"registry1.azurecr.io"}), releaseImage, "", "test-test")
+		g.Expect(err).ToNot(HaveOccurred())
+		hash1 := cg1.Hash()
+
+		// Generate config with a different set of registries
+		fakeClient2 := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(coreConfigMaps...).Build()
+		cg2, err := NewConfigGenerator(t.Context(), fakeClient2, hc, baseNodePool([]string{"registry2.azurecr.io"}), releaseImage, "", "test-test")
+		g.Expect(err).ToNot(HaveOccurred())
+		hash2 := cg2.Hash()
+
+		// The hashes should differ because the registries are different
+		g.Expect(hash1).ToNot(Equal(hash2))
+	})
+
+	t.Run("When ImageRegistryCredentials is not configured it should not include ACR MachineConfig", func(t *testing.T) {
+		g := NewWithT(t)
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "test",
+			},
+			Spec: hyperv1.NodePoolSpec{
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzureNodePoolPlatform{
+						VMSize: "Standard_D4s_v3",
+					},
+				},
+			},
+		}
+
+		hc := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test",
+				Namespace: "test",
+			},
+			Spec: hyperv1.HostedClusterSpec{
+				Platform: hyperv1.PlatformSpec{
+					Type: hyperv1.AzurePlatform,
+					Azure: &hyperv1.AzurePlatformSpec{
+						TenantID:       "test-tenant-id",
+						SubscriptionID: "test-subscription-id",
+					},
+				},
+			},
+		}
+
+		fakeClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(coreConfigMaps...).Build()
+		cg := &ConfigGenerator{
+			Client:                fakeClient,
+			hostedCluster:         hc,
+			nodePool:              nodePool,
+			controlplaneNamespace: "test-test",
+			rolloutConfig: &rolloutConfig{
+				haproxyRawConfig: "",
+			},
+		}
+
+		rawConfig, err := cg.generateMCORawConfig(t.Context(), nil)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// The ACR MachineConfig should NOT be present
+		g.Expect(rawConfig).ToNot(ContainSubstring("50-acr-credential-provider"))
+	})
+}
