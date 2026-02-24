@@ -61,6 +61,11 @@ aliases:
     - cristianoveiga
     - jimdaga
     - patjlm
+  powervs-reviewers:
+    - alishaIBM
+    - bkhadars
+    - mkumatag
+    - prb112
   openstack-approvers:
     - mandre
     - stephenfin
