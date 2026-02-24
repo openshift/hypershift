@@ -61,6 +61,16 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 		}
 	)
 
+	AfterAll(func() {
+		// Safety net for Prober
+		if prober != nil {
+			err := prober.Stop()
+			if err != nil {
+				GinkgoLogr.Error(err, "Failed to stop prober")
+			}
+		}
+	})
+
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
 		if err := testCtx.ValidateControlPlaneNamespace(); err != nil {
@@ -195,7 +205,7 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 
 	Context(ContextBreakControlPlane, func() {
 		It("should break hosted cluster", func() {
-			err := backuprestore.BreakHostedClusterPreservingMachines(testCtx)
+			err := backuprestore.BreakHostedClusterPreservingMachines(testCtx, GinkgoLogr.WithName("cleanup"))
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})

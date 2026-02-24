@@ -6,13 +6,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/go-logr/logr"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
-	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,9 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
-	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
-	crzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 const (
@@ -32,10 +29,6 @@ const (
 	DeletionRetryTimeout = 5 * time.Minute
 	// PollInterval is the interval for polling deletion status
 	PollInterval = 5 * time.Second
-)
-
-var (
-	loggerOnce sync.Once
 )
 
 // BreakHostedClusterPreservingMachines simulates a catastrophic failure while preserving
@@ -48,7 +41,7 @@ var (
 // 4. Delete HostedCluster namespace
 // 5. Remove finalizers from orphaned resources in HostedCluster namespace
 // 6. Wait for control plane namespace to be fully deleted
-func BreakHostedClusterPreservingMachines(testCtx *internal.TestContext) error {
+func BreakHostedClusterPreservingMachines(testCtx *internal.TestContext, logger logr.Logger) error {
 	// Step 1: Force delete HCP namespace (without waiting for completion)
 	// This removes the CAPI controller early, leaving machine resources orphaned
 	if err := deleteControlPlaneNamespace(testCtx, false); err != nil {
@@ -62,7 +55,7 @@ func BreakHostedClusterPreservingMachines(testCtx *internal.TestContext) error {
 
 	// Step 3: Remove finalizers from orphaned resources in HCP namespace
 	// This allows the namespace to be fully cleaned up without waiting for controllers
-	if err := removeNamespaceObjectFinalizers(testCtx, testCtx.ControlPlaneNamespace); err != nil {
+	if err := removeNamespaceObjectFinalizers(testCtx, testCtx.ControlPlaneNamespace, logger); err != nil {
 		return fmt.Errorf("failed to remove orphaned resource finalizers: %w", err)
 	}
 
@@ -72,7 +65,7 @@ func BreakHostedClusterPreservingMachines(testCtx *internal.TestContext) error {
 	}
 
 	// Step 5: Remove finalizers from orphaned resources in HostedCluster namespace
-	if err := removeNamespaceObjectFinalizers(testCtx, testCtx.ClusterNamespace); err != nil {
+	if err := removeNamespaceObjectFinalizers(testCtx, testCtx.ClusterNamespace, logger); err != nil {
 		return fmt.Errorf("failed to remove orphaned resource finalizers: %w", err)
 	}
 
@@ -120,16 +113,7 @@ func removeHCPFinalizers(testCtx *internal.TestContext, hcpName, hcpNamespace st
 
 // removeNamespaceObjectFinalizers removes finalizers from all objects in the specified namespace.
 // This uses the discovery API to find all resource types and removes finalizers from each.
-func removeNamespaceObjectFinalizers(testCtx *internal.TestContext, namespace string) error {
-	// Initialize controller-runtime logger to avoid "log.SetLogger was never called" warnings
-	// Use sync.Once to ensure it's only initialized once
-	loggerOnce.Do(func() {
-		log := crzap.New(crzap.UseDevMode(true), crzap.JSONEncoder(func(o *zapcore.EncoderConfig) {
-			o.EncodeTime = zapcore.RFC3339TimeEncoder
-		}))
-		ctrl.SetLogger(log)
-	})
-
+func removeNamespaceObjectFinalizers(testCtx *internal.TestContext, namespace string, logger logr.Logger) error {
 	ctx := testCtx.Context
 
 	// Check if namespace still exists
@@ -188,9 +172,9 @@ func removeNamespaceObjectFinalizers(testCtx *internal.TestContext, namespace st
 			}
 
 			// List and remove finalizers for this resource type
-			if err := removeFinalizersForResourceType(testCtx, namespace, gvk); err != nil {
+			if err := removeFinalizersForResourceType(testCtx, namespace, gvk, logger); err != nil {
 				// Log but don't fail on individual resource type errors
-				fmt.Printf("Warning: failed to remove finalizers for %s: %v\n", gvk.String(), err)
+				logger.Info("Warning: failed to remove finalizers for resource type", "gvk", gvk.String(), "error", err)
 			}
 		}
 	}
@@ -199,12 +183,18 @@ func removeNamespaceObjectFinalizers(testCtx *internal.TestContext, namespace st
 }
 
 // removeFinalizersForResourceType removes finalizers from all resources of a specific type in the namespace
-func removeFinalizersForResourceType(testCtx *internal.TestContext, namespace string, gvk schema.GroupVersionKind) error {
+func removeFinalizersForResourceType(testCtx *internal.TestContext, namespace string, gvk schema.GroupVersionKind, logger logr.Logger) error {
 	ctx := testCtx.Context
 
 	// Create an unstructured list for this resource type
 	list := &unstructured.UnstructuredList{}
-	list.SetGroupVersionKind(gvk)
+	// Use the list kind (singular kind + "List") for listing resources
+	listGVK := schema.GroupVersionKind{
+		Group:   gvk.Group,
+		Version: gvk.Version,
+		Kind:    gvk.Kind + "List",
+	}
+	list.SetGroupVersionKind(listGVK)
 
 	// List all resources of this type in the namespace
 	if err := testCtx.MgmtClient.List(ctx, list, crclient.InNamespace(namespace)); err != nil {
@@ -219,18 +209,23 @@ func removeFinalizersForResourceType(testCtx *internal.TestContext, namespace st
 	for i := range list.Items {
 		if err := removeObjectFinalizers(testCtx, &list.Items[i]); err != nil {
 			// Continue on errors for individual objects
-			fmt.Printf("Warning: failed to remove finalizers from %s/%s: %v\n",
-				list.Items[i].GetKind(), list.Items[i].GetName(), err)
+			logger.Info("Warning: failed to remove finalizers from object",
+				"kind", list.Items[i].GetKind(),
+				"name", list.Items[i].GetName(),
+				"error", err)
 		}
 	}
 
 	return nil
 }
 
-// supportsVerb checks if a resource supports a specific verb
+// supportsVerb checks if a resource supports a specific verb.
 func supportsVerb(verbs metav1.Verbs, verb string) bool {
 	for _, v := range verbs {
 		if v == verb {
+			return true
+		}
+		if v == "*" {
 			return true
 		}
 	}
