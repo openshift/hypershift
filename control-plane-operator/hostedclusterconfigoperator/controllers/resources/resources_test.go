@@ -92,6 +92,16 @@ var initialObjects = []client.Object{
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameInfra)),
 
 	fakeOperatorHub(),
+	// Guest cluster backing Services and Endpoints for APIService guards: the
+	// reconciler verifies these Services exist with a ClusterIP and Endpoints
+	// are ready before creating APIServices. Including them here prevents
+	// random error injection from breaking the 1:1 Get-to-Create assumption
+	// in TestReconcileErrorHandling.
+	fakeGuestOpenShiftAPIServerService(),
+	fakeGuestOpenShiftOAuthAPIServerService(),
+	fakeGuestOpenShiftAPIServerEndpoints(),
+	fakeGuestOpenShiftOAuthAPIServerEndpoints(),
+	fakeGuestOLMPackageServerEndpoints(),
 }
 
 func shouldNotError(key client.ObjectKey) bool {
@@ -420,6 +430,39 @@ func fakePackageServerService() *corev1.Service {
 	s := manifests.OLMPackageServerControlPlaneService("bar")
 	s.Spec.ClusterIP = "1.1.1.1"
 	return s
+}
+
+// fakeGuestOpenShiftAPIServerService returns a Service in the guest cluster's
+// default namespace with a ClusterIP, simulating the state after the Service
+// has been created and assigned an IP.
+func fakeGuestOpenShiftAPIServerService() *corev1.Service {
+	s := manifests.OpenShiftAPIServerClusterService()
+	s.Spec.ClusterIP = "10.0.0.1"
+	return s
+}
+
+// fakeGuestOpenShiftOAuthAPIServerService returns a Service in the guest cluster's
+// default namespace with a ClusterIP, simulating the state after the Service
+// has been created and assigned an IP.
+func fakeGuestOpenShiftOAuthAPIServerService() *corev1.Service {
+	s := manifests.OpenShiftOAuthAPIServerClusterService()
+	s.Spec.ClusterIP = "10.0.0.2"
+	return s
+}
+
+//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+func fakeGuestOpenShiftAPIServerEndpoints() *corev1.Endpoints {
+	return manifests.OpenShiftAPIServerClusterEndpoints()
+}
+
+//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+func fakeGuestOpenShiftOAuthAPIServerEndpoints() *corev1.Endpoints {
+	return manifests.OpenShiftOAuthAPIServerClusterEndpoints()
+}
+
+//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+func fakeGuestOLMPackageServerEndpoints() *corev1.Endpoints {
+	return manifests.OLMPackageServerEndpoints()
 }
 
 func fakeOperatorHub() *configv1.OperatorHub {
@@ -2623,6 +2666,294 @@ func TestReconcileImageRegistry(t *testing.T) {
 				err := guestClient.Get(t.Context(), client.ObjectKeyFromObject(vap), vap)
 				g.Expect(err).ToNot(HaveOccurred(), "expected ValidatingAdmissionPolicy to exist for Azure platform")
 			}
+		})
+	}
+}
+
+func TestReconcileOpenshiftAPIServerAPIServicesOrdering(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		guestObjects           []client.Object
+		cpObjects              []client.Object
+		expectError            bool
+		expectAPIServiceCreate bool
+	}{
+		{
+			name: "When backing service has no ClusterIP it should return an error and not create APIServices",
+			guestObjects: []client.Object{
+				&corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "openshift-apiserver",
+						Namespace: "default",
+					},
+				},
+			},
+			cpObjects: []client.Object{
+				fakeRootCASecret(),
+			},
+			expectError:            true,
+			expectAPIServiceCreate: false,
+		},
+		{
+			name:         "When backing service does not exist it should return an error and not create APIServices",
+			guestObjects: []client.Object{},
+			cpObjects: []client.Object{
+				fakeRootCASecret(),
+			},
+			expectError:            true,
+			expectAPIServiceCreate: false,
+		},
+		{
+			name: "When backing service exists with ClusterIP it should create APIServices",
+			guestObjects: []client.Object{
+				&corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "openshift-apiserver",
+						Namespace: "default",
+					},
+					Spec: corev1.ServiceSpec{
+						ClusterIP: "10.0.0.1",
+					},
+				},
+			},
+			cpObjects: []client.Object{
+				fakeRootCASecret(),
+			},
+			expectError:            false,
+			expectAPIServiceCreate: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.guestObjects...).Build()
+			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.cpObjects...).Build()
+
+			r := &reconciler{
+				client:                 guestClient,
+				cpClient:               cpClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				hcpName:                "foo",
+				hcpNamespace:           "bar",
+			}
+
+			hcp := fakeHCP()
+			err := r.reconcileOpenshiftAPIServerAPIServices(t.Context(), hcp)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred(), "expected error but got none")
+			} else {
+				g.Expect(err).ToNot(HaveOccurred(), "unexpected error: %v", err)
+			}
+
+			if tc.expectAPIServiceCreate {
+				for _, group := range manifests.OpenShiftAPIServerAPIServiceGroups() {
+					apiSvc := manifests.OpenShiftAPIServerAPIService(group)
+					err := guestClient.Get(t.Context(), client.ObjectKeyFromObject(apiSvc), apiSvc)
+					g.Expect(err).ToNot(HaveOccurred(), "expected APIService %s to exist", apiSvc.Name)
+				}
+			} else {
+				for _, group := range manifests.OpenShiftAPIServerAPIServiceGroups() {
+					apiSvc := manifests.OpenShiftAPIServerAPIService(group)
+					err := guestClient.Get(t.Context(), client.ObjectKeyFromObject(apiSvc), apiSvc)
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected APIService %s to not exist", apiSvc.Name)
+				}
+			}
+		})
+	}
+}
+
+func TestReconcileOpenshiftOAuthAPIServerAPIServicesOrdering(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		guestObjects           []client.Object
+		cpObjects              []client.Object
+		expectError            bool
+		expectAPIServiceCreate bool
+	}{
+		{
+			name: "When backing service has no ClusterIP it should return an error and not create APIServices",
+			guestObjects: []client.Object{
+				&corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "openshift-oauth-apiserver",
+						Namespace: "default",
+					},
+				},
+			},
+			cpObjects: []client.Object{
+				fakeRootCASecret(),
+			},
+			expectError:            true,
+			expectAPIServiceCreate: false,
+		},
+		{
+			name:         "When backing service does not exist it should return an error and not create APIServices",
+			guestObjects: []client.Object{},
+			cpObjects: []client.Object{
+				fakeRootCASecret(),
+			},
+			expectError:            true,
+			expectAPIServiceCreate: false,
+		},
+		{
+			name: "When backing service exists with ClusterIP it should create APIServices",
+			guestObjects: []client.Object{
+				&corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "openshift-oauth-apiserver",
+						Namespace: "default",
+					},
+					Spec: corev1.ServiceSpec{
+						ClusterIP: "10.0.0.2",
+					},
+				},
+			},
+			cpObjects: []client.Object{
+				fakeRootCASecret(),
+			},
+			expectError:            false,
+			expectAPIServiceCreate: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.guestObjects...).Build()
+			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.cpObjects...).Build()
+
+			r := &reconciler{
+				client:                 guestClient,
+				cpClient:               cpClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				hcpName:                "foo",
+				hcpNamespace:           "bar",
+			}
+
+			hcp := fakeHCP()
+			err := r.reconcileOpenshiftOAuthAPIServerAPIServices(t.Context(), hcp)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred(), "expected error but got none")
+			} else {
+				g.Expect(err).ToNot(HaveOccurred(), "unexpected error: %v", err)
+			}
+
+			if tc.expectAPIServiceCreate {
+				for _, group := range manifests.OpenShiftOAuthAPIServerAPIServiceGroups() {
+					apiSvc := manifests.OpenShiftOAuthAPIServerAPIService(group)
+					err := guestClient.Get(t.Context(), client.ObjectKeyFromObject(apiSvc), apiSvc)
+					g.Expect(err).ToNot(HaveOccurred(), "expected APIService %s to exist", apiSvc.Name)
+				}
+			} else {
+				for _, group := range manifests.OpenShiftOAuthAPIServerAPIServiceGroups() {
+					apiSvc := manifests.OpenShiftOAuthAPIServerAPIService(group)
+					err := guestClient.Get(t.Context(), client.ObjectKeyFromObject(apiSvc), apiSvc)
+					g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected APIService %s to not exist", apiSvc.Name)
+				}
+			}
+		})
+	}
+}
+
+func TestReconcileOLMPackageServerOrdering(t *testing.T) {
+	testCases := []struct {
+		name                   string
+		guestObjects           []client.Object
+		cpObjects              []client.Object
+		expectErrors           bool
+		expectAPIServiceCreate bool
+	}{
+		{
+			name:         "When control plane service has no ClusterIP it should not create APIService",
+			guestObjects: []client.Object{},
+			cpObjects: []client.Object{
+				fakeHCP(),
+				&corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "packageserver",
+						Namespace: "bar",
+					},
+				},
+				fakeRootCASecret(),
+			},
+			expectErrors:           true,
+			expectAPIServiceCreate: false,
+		},
+		{
+			name:         "When control plane service does not exist it should not create APIService",
+			guestObjects: []client.Object{},
+			cpObjects: []client.Object{
+				fakeHCP(),
+				fakeRootCASecret(),
+			},
+			expectErrors:           true,
+			expectAPIServiceCreate: false,
+		},
+		{
+			name:         "When control plane service has ClusterIP it should create Service Endpoints and APIService",
+			guestObjects: []client.Object{},
+			cpObjects: []client.Object{
+				fakeHCP(),
+				&corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "packageserver",
+						Namespace: "bar",
+					},
+					Spec: corev1.ServiceSpec{
+						ClusterIP: "10.0.0.3",
+					},
+				},
+				fakeRootCASecret(),
+			},
+			expectErrors:           false,
+			expectAPIServiceCreate: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			guestClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.guestObjects...).Build()
+			cpClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tc.cpObjects...).Build()
+
+			imageMetaDataProvider := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{}
+			r := &reconciler{
+				client:                 guestClient,
+				cpClient:               cpClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+				hcpName:                "foo",
+				hcpNamespace:           "bar",
+				ImageMetaDataProvider:  &imageMetaDataProvider,
+			}
+
+			hcp := fakeHCP()
+			pullSecret := fakePullSecret()
+			errs := r.reconcileOLM(t.Context(), hcp, pullSecret)
+
+			if tc.expectErrors {
+				g.Expect(len(errs)).To(BeNumerically(">", 0), "expected errors but got none")
+			} else {
+				g.Expect(errs).To(BeEmpty(), "unexpected errors: %v", errs)
+			}
+
+			apiSvc := manifests.OLMPackageServerAPIService()
+			err := guestClient.Get(t.Context(), client.ObjectKeyFromObject(apiSvc), apiSvc)
+			if tc.expectAPIServiceCreate {
+				g.Expect(err).ToNot(HaveOccurred(), "expected OLM PackageServer APIService to exist")
+			} else {
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected OLM PackageServer APIService to not exist")
+			}
+
+			// Service should always be created regardless of endpoint readiness
+			svc := manifests.OLMPackageServerService()
+			err = guestClient.Get(t.Context(), client.ObjectKeyFromObject(svc), svc)
+			g.Expect(err).ToNot(HaveOccurred(), "expected OLM PackageServer Service to always be created")
 		})
 	}
 }
