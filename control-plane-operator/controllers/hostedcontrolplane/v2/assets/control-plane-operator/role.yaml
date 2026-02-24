@@ -57,15 +57,6 @@ rules:
   verbs:
   - '*'
 - apiGroups:
-  - externaldns.k8s.io
-  resources:
-  - dnsendpoints
-  verbs:
-  - create
-  - get
-  - update
-  - delete
-- apiGroups:
   - ""
   resources:
   - events

@@ -3,6 +3,7 @@ package controlplaneoperator
 import (
 	"os"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
@@ -27,6 +28,14 @@ func adaptRole(cpContext component.WorkloadContext, role *rbacv1.Role) error {
 			APIGroups: []string{"metrics.k8s.io"},
 			Resources: []string{"pods"},
 			Verbs:     []string{"get"},
+		})
+	}
+
+	if cpContext.HCP.Spec.Platform.Type == hyperv1.GCPPlatform {
+		role.Rules = append(role.Rules, rbacv1.PolicyRule{
+			APIGroups: []string{"externaldns.k8s.io"},
+			Resources: []string{"dnsendpoints"},
+			Verbs:     []string{"create", "get", "update", "delete"},
 		})
 	}
 
