@@ -3,6 +3,7 @@ package controllers
 import (
 	"bytes"
 	"context"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
@@ -80,10 +81,75 @@ type LocalIgnitionProvider struct {
 
 	ImageFileCache *imageFileCache
 
+	MCSTLSCertCache *MCSTLSCertCache
+
 	lock sync.Mutex
 }
 
 var _ IgnitionProvider = (*LocalIgnitionProvider)(nil)
+
+// expiryMargin is the safety margin before certificate expiration at which
+// a new certificate will be generated. This avoids using a certificate that
+// is about to expire during a payload generation cycle.
+const expiryMargin = 1 * time.Hour
+
+// certGeneratorFunc is a function type for generating self-signed certificates.
+// It exists to allow injection of test doubles.
+type certGeneratorFunc func(cfg *certs.CertCfg) (*rsa.PrivateKey, *x509.Certificate, error)
+
+// MCSTLSCertCache caches the MCS TLS certificate and key so they are generated
+// once and reused across subsequent ignition payload requests instead of being
+// regenerated every time.
+type MCSTLSCertCache struct {
+	certPEM  []byte
+	keyPEM   []byte
+	notAfter time.Time
+	mu       sync.Mutex
+
+	// generateCert is the function used to generate certificates.
+	// Defaults to certs.GenerateSelfSignedCertificate but can be overridden for testing.
+	generateCert certGeneratorFunc
+	// nowFn returns the current time. Defaults to time.Now but can be overridden for testing.
+	nowFn func() time.Time
+}
+
+// NewMCSTLSCertCache creates a new MCSTLSCertCache with default certificate generation.
+func NewMCSTLSCertCache() *MCSTLSCertCache {
+	return &MCSTLSCertCache{
+		generateCert: certs.GenerateSelfSignedCertificate,
+		nowFn:        time.Now,
+	}
+}
+
+// GetCertAndKey returns the cached MCS TLS certificate and key PEM bytes.
+// If the cache is empty or the cached certificate has expired (or is within
+// the expiry margin), a new certificate is generated and cached before returning.
+func (c *MCSTLSCertCache) GetCertAndKey() (certPEM []byte, keyPEM []byte, err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := c.nowFn()
+	if len(c.certPEM) > 0 && now.Add(expiryMargin).Before(c.notAfter) {
+		return c.certPEM, c.keyPEM, nil
+	}
+
+	cfg := &certs.CertCfg{
+		Subject:   pkix.Name{CommonName: "machine-config-server", OrganizationalUnit: []string{"openshift"}},
+		KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		Validity:  certs.ValidityOneDay,
+		IsCA:      true,
+	}
+	key, crt, err := c.generateCert(cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate MCS TLS cert: %w", err)
+	}
+
+	c.certPEM = certs.CertToPem(crt)
+	c.keyPEM = certs.PrivateKeyToPem(key)
+	c.notAfter = crt.NotAfter
+
+	return c.certPEM, c.keyPEM, nil
+}
 
 const (
 	pullSecretName            = "pull-secret"
@@ -600,30 +666,18 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 	payload, err := func() ([]byte, error) {
 		start := time.Now()
 
-		// Generate certificates. The MCS is hard-coded to expose a TLS listener
-		// and requires both a certificate and a key.
-		// TODO: This could be generated once up-front and cached for all processes
-		err = func() error {
-			cfg := &certs.CertCfg{
-				Subject:   pkix.Name{CommonName: "machine-config-server", OrganizationalUnit: []string{"openshift"}},
-				KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-				Validity:  certs.ValidityOneDay,
-				IsCA:      true,
-			}
-			key, crt, err := certs.GenerateSelfSignedCertificate(cfg)
-			if err != nil {
-				return fmt.Errorf("failed to generate cert: %w", err)
-			}
-			if err := os.WriteFile(filepath.Join(mcsBaseDir, "tls.crt"), certs.CertToPem(crt), 0644); err != nil {
-				return fmt.Errorf("failed to write mcs cert: %w", err)
-			}
-			if err := os.WriteFile(filepath.Join(mcsBaseDir, "tls.key"), certs.PrivateKeyToPem(key), 0644); err != nil {
-				return fmt.Errorf("failed to write mcs cert: %w", err)
-			}
-			return nil
-		}()
+		// Get cached MCS TLS certificates. The MCS is hard-coded to expose a TLS
+		// listener and requires both a certificate and a key. Certificates are
+		// generated once and cached for reuse across payload requests.
+		certPEM, keyPEM, err := p.MCSTLSCertCache.GetCertAndKey()
 		if err != nil {
-			return nil, fmt.Errorf("failed to generate certificates: %w", err)
+			return nil, fmt.Errorf("failed to get MCS TLS certificates: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(mcsBaseDir, "tls.crt"), certPEM, 0644); err != nil {
+			return nil, fmt.Errorf("failed to write mcs cert: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(mcsBaseDir, "tls.key"), keyPEM, 0644); err != nil {
+			return nil, fmt.Errorf("failed to write mcs key: %w", err)
 		}
 
 		args := []string{

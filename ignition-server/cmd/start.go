@@ -175,6 +175,7 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 			CloudProvider:         cloudProvider,
 			WorkDir:               cacheDir,
 			ImageFileCache:        imageFileCache,
+			MCSTLSCertCache:       controllers.NewMCSTLSCertCache(),
 			FeatureGateManifest:   featureGateManifest,
 			ImageMetadataProvider: imageMetaDataProvider,
 		},
