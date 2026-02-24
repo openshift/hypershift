@@ -109,6 +109,43 @@ type AzureNodePoolPlatform struct {
 	// If not specified, then Boot diagnostics will be disabled.
 	// +optional
 	Diagnostics *Diagnostics `json:"diagnostics,omitempty"`
+
+	// imageRegistryCredentials specifies configuration for enabling kubelet's image credential
+	// provider to authenticate to Azure Container Registry (ACR) using a managed identity.
+	// When configured, worker nodes will use the acr-credential-provider plugin to obtain
+	// short-lived tokens for ACR image pulls instead of relying on static pull secrets.
+	// Changing this field will trigger a node rollout.
+	// +optional
+	ImageRegistryCredentials *AzureImageRegistryCredentials `json:"imageRegistryCredentials,omitempty"`
+}
+
+// AzureImageRegistryCredentials configures the kubelet credential provider for ACR
+// authentication using a managed identity assigned to worker node VMs.
+type AzureImageRegistryCredentials struct {
+	// managedIdentity is the ARM resource ID of a user-assigned managed identity that will be
+	// assigned to worker node VMs/VMSS. The credential provider plugin running on each node
+	// will use this identity to authenticate to ACR via the Azure Instance Metadata Service (IMDS).
+	//
+	// The identity must have the AcrPull role granted on the target ACR registry(ies).
+	//
+	// Format: /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}
+	//
+	// +required
+	// +kubebuilder:validation:Pattern=`^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.ManagedIdentity/userAssignedIdentities/[^/]+$`
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=512
+	ManagedIdentity string `json:"managedIdentity"`
+
+	// registries is the list of ACR registries that the credential provider should authenticate
+	// to. Each entry should be a fully qualified ACR hostname (e.g., "myregistry.azurecr.io").
+	// The credential provider will use the managed identity to obtain short-lived tokens for
+	// pulling images from these registries.
+	//
+	// +required
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=20
+	// +listType=set
+	Registries []string `json:"registries"`
 }
 
 // AzureVMImage represents the different types of boot image sources that can be provided for an Azure VM.
