@@ -110,15 +110,27 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 
 	hostedCluster := hostedClusterFromHCP(hcp, r.IgnitionEndpoint)
 
-	releaseImage, err := r.resolveVersion(ctx, hcp, hostedCluster, openshiftEC2NodeClass.Spec.Version)
+	releaseImage, skewErr, err := r.resolveVersion(ctx, hcp, hostedCluster, openshiftEC2NodeClass.Spec.Version, openshiftEC2NodeClass.Status.Version)
 	if err != nil {
-		if updateErr := r.updateVersionStatus(ctx, openshiftEC2NodeClass, "", err); updateErr != nil {
+		if updateErr := r.updateVersionStatus(ctx, openshiftEC2NodeClass, "", "", err); updateErr != nil {
 			log.Error(updateErr, "failed to update version status after resolve error")
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to resolve version for OpenshiftEC2NodeClass %q: %w", openshiftEC2NodeClass.Name, err)
 	}
+
+	// Determine the resolved version string for status.version.
+	// When spec.version is set, it is the version. When not set, use the HCP's version.
+	resolvedVersion := openshiftEC2NodeClass.Spec.Version
+	if resolvedVersion == "" {
+		resolvedVersion = hostedCluster.Status.Version.Desired.Version
+	}
+
 	if openshiftEC2NodeClass.Spec.Version != "" {
 		log.Info("Resolved version to release image", "version", openshiftEC2NodeClass.Spec.Version, "channel", hcp.Spec.Channel, "releaseImage", releaseImage)
+	}
+
+	if err := r.updateVersionSkewStatus(ctx, openshiftEC2NodeClass, skewErr); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update version skew status: %w", err)
 	}
 
 	if err := r.reconcileNodeClassToken(ctx, hcp, hostedCluster, openshiftEC2NodeClass, releaseImage); err != nil {
@@ -127,13 +139,13 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		// Re-fetch the object to get the latest resourceVersion since reconcileNodeClassToken may have patched it.
 		if getErr := r.GuestClient.Get(ctx, client.ObjectKeyFromObject(openshiftEC2NodeClass), openshiftEC2NodeClass); getErr != nil {
 			log.Error(getErr, "failed to re-fetch OpenshiftEC2NodeClass after token reconciliation error")
-		} else if updateErr := r.updateVersionStatus(ctx, openshiftEC2NodeClass, releaseImage, nil); updateErr != nil {
+		} else if updateErr := r.updateVersionStatus(ctx, openshiftEC2NodeClass, releaseImage, resolvedVersion, nil); updateErr != nil {
 			log.Error(updateErr, "failed to update version status after token reconciliation error")
 		}
 		return ctrl.Result{}, err
 	}
 
-	if err := r.updateVersionStatus(ctx, openshiftEC2NodeClass, releaseImage, nil); err != nil {
+	if err := r.updateVersionStatus(ctx, openshiftEC2NodeClass, releaseImage, resolvedVersion, nil); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update version status: %w", err)
 	}
 
@@ -221,52 +233,64 @@ func (r *KarpenterIgnitionReconciler) createInMemoryNodePool(
 // resolveVersion determines the release image to use for the given NodeClass.
 // When version is set, it validates the version and resolves it to a release image via Cincinnati.
 // When version is not set, it returns the control plane's release image.
+// The returned skewErr is non-nil when the version falls outside the supported skew policy;
+// this is reported as a status condition but does not block reconciliation.
+// currentStatusVersion is the NodeClass's current status.version, used to detect y-stream downgrades.
 func (r *KarpenterIgnitionReconciler) resolveVersion(
 	ctx context.Context,
 	hcp *hyperv1.HostedControlPlane,
 	hostedCluster *hyperv1.HostedCluster,
 	version string,
-) (string, error) {
+	currentStatusVersion string,
+) (releaseImage string, skewErr error, err error) {
 	if version == "" {
-		return hcp.Spec.ReleaseImage, nil
+		return hcp.Spec.ReleaseImage, nil, nil
 	}
 
 	nodeClassVersion, err := semver.Parse(version)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse OpenshiftEC2NodeClass version %q: %w", version, err)
+		return "", nil, fmt.Errorf("failed to parse OpenshiftEC2NodeClass version %q: %w", version, err)
 	}
 
 	hostedClusterVersion, err := semver.Parse(hostedCluster.Status.Version.Desired.Version)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse HostedCluster version %q: %w", hostedCluster.Status.Version.Desired.Version, err)
+		return "", nil, fmt.Errorf("failed to parse HostedCluster version %q: %w", hostedCluster.Status.Version.Desired.Version, err)
 	}
 
 	// maxSupportedVersion is the current control plane version, as nodes can't use a version greater than the control plane.
-	// currentVersion is nil because we're validating an absolute version, not a transition from an existing version;
-	// the n-3 skew policy is enforced separately by ValidateVersionSkew below.
+	// The n-3 skew policy is enforced separately by ValidateVersionSkew below.
 	maxSupportedVersion := hostedClusterVersion
 	minSupportedVersion := supportedversion.GetMinSupportedVersion(hostedCluster)
+
+	// If the NodeClass has a previously resolved version, use it as currentVersion so that
+	// IsValidReleaseVersion can detect y-stream downgrades.
+	var currentVersion *semver.Version
+	if currentStatusVersion != "" {
+		parsed, parseErr := semver.Parse(currentStatusVersion)
+		if parseErr == nil {
+			currentVersion = &parsed
+		}
+	}
+
 	if err = supportedversion.IsValidReleaseVersion(
-		&nodeClassVersion, // The proposed version for the OpenshiftEC2NodeClass
-		nil,               // No current version — NodeClass sets a version, not an upgrade transition
+		&nodeClassVersion,
+		currentVersion,
 		&maxSupportedVersion,
 		&minSupportedVersion,
 		hostedCluster.Spec.Networking.NetworkType,
 		hostedCluster.Spec.Platform.Type,
 	); err != nil {
-		return "", fmt.Errorf("failed to validate if version %q is valid: %w", version, err)
+		return "", nil, fmt.Errorf("failed to validate if version %q is valid: %w", version, err)
 	}
 
-	if err = supportedversion.ValidateVersionSkew(&hostedClusterVersion, &nodeClassVersion); err != nil {
-		return "", fmt.Errorf("version skew validation failed: %w", err)
-	}
+	skewErr = supportedversion.ValidateVersionSkew(&hostedClusterVersion, &nodeClassVersion)
 
 	resolved, err := r.VersionResolver.Resolve(ctx, version, hcp.Spec.Channel)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve version %q: %w", version, err)
+		return "", skewErr, fmt.Errorf("failed to resolve version %q: %w", version, err)
 	}
 
-	return resolved, nil
+	return resolved, skewErr, nil
 }
 
 // buildConfigGenerator creates a ConfigGenerator for the in-memory NodePool
@@ -345,7 +369,7 @@ func hostedClusterFromHCP(hcp *hyperv1.HostedControlPlane, ignitionEndpoint stri
 			IgnitionEndpoint: ignitionEndpoint,
 			Version: &hyperv1.ClusterVersionStatus{
 				Desired: configv1.Release{
-					Version: hcp.Status.Version,
+					Version: hcp.Status.VersionStatus.Desired.Version,
 				},
 			},
 		},
@@ -378,11 +402,13 @@ func (r *KarpenterIgnitionReconciler) updateConfigVersionAnnotation(ctx context.
 	return nil
 }
 
-// updateVersionStatus updates the OpenshiftEC2NodeClass status with the resolved release image
-// and sets the VersionResolved condition based on whether resolution succeeded.
-func (r *KarpenterIgnitionReconciler) updateVersionStatus(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, resolvedImage string, resolveErr error) error {
+// updateVersionStatus updates the OpenshiftEC2NodeClass status with the resolved release image,
+// resolved version, and sets the VersionResolved condition based on whether resolution succeeded.
+// resolvedVersion is the OpenShift version string (e.g. "4.17.0") corresponding to resolvedImage.
+func (r *KarpenterIgnitionReconciler) updateVersionStatus(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, resolvedImage string, resolvedVersion string, resolveErr error) error {
 	original := openshiftEC2NodeClass.DeepCopy()
 	openshiftEC2NodeClass.Status.ReleaseImage = resolvedImage
+	openshiftEC2NodeClass.Status.Version = resolvedVersion
 
 	condition := metav1.Condition{
 		Type:               hyperkarpenterv1.ConditionTypeVersionResolved,
@@ -406,9 +432,44 @@ func (r *KarpenterIgnitionReconciler) updateVersionStatus(ctx context.Context, o
 
 	conditionChanged := meta.SetStatusCondition(&openshiftEC2NodeClass.Status.Conditions, condition)
 	releaseImageChanged := original.Status.ReleaseImage != resolvedImage
-	if conditionChanged || releaseImageChanged {
+	versionChanged := original.Status.Version != resolvedVersion
+	if conditionChanged || releaseImageChanged || versionChanged {
 		if err := r.GuestClient.Status().Patch(ctx, openshiftEC2NodeClass, client.MergeFrom(original)); err != nil {
 			return fmt.Errorf("failed to update version status on OpenshiftEC2NodeClass: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// updateVersionSkewStatus sets the SupportedVersionSkew condition on the OpenshiftEC2NodeClass.
+// When spec.version is not set, the condition is not applicable because nodes use the control plane image.
+func (r *KarpenterIgnitionReconciler) updateVersionSkewStatus(ctx context.Context, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, skewErr error) error {
+	original := openshiftEC2NodeClass.DeepCopy()
+
+	condition := metav1.Condition{
+		Type:               hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
+		ObservedGeneration: openshiftEC2NodeClass.Generation,
+		LastTransitionTime: metav1.Now(),
+	}
+
+	if openshiftEC2NodeClass.Spec.Version == "" {
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = "VersionNotSpecified"
+		condition.Message = "No version specified, nodes use the control plane release image"
+	} else if skewErr != nil {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = "UnsupportedSkew"
+		condition.Message = skewErr.Error()
+	} else {
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = "AsExpected"
+		condition.Message = fmt.Sprintf("Version %q is within supported skew", openshiftEC2NodeClass.Spec.Version)
+	}
+
+	if meta.SetStatusCondition(&openshiftEC2NodeClass.Status.Conditions, condition) {
+		if err := r.GuestClient.Status().Patch(ctx, openshiftEC2NodeClass, client.MergeFrom(original)); err != nil {
+			return fmt.Errorf("failed to update SupportedVersionSkew condition on OpenshiftEC2NodeClass: %w", err)
 		}
 	}
 

@@ -384,8 +384,8 @@ func TestKarpenter(t *testing.T) {
 			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 			g.Expect(err).NotTo(HaveOccurred())
 
-			t.Log("Waiting for default OpenshiftEC2NodeClass to have VersionResolved condition")
-			e2eutil.EventuallyObject(t, ctx, "default OpenshiftEC2NodeClass to have VersionResolved=True",
+			t.Log("Waiting for default OpenshiftEC2NodeClass to have VersionResolved and SupportedVersionSkew conditions")
+			e2eutil.EventuallyObject(t, ctx, "default OpenshiftEC2NodeClass to have VersionResolved=True and SupportedVersionSkew=True",
 				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
 					nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
 					err := guestClient.Get(ctx, crclient.ObjectKey{Name: "default"}, nc)
@@ -394,6 +394,11 @@ func TestKarpenter(t *testing.T) {
 				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
 					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
 						Type:   hyperkarpenterv1.ConditionTypeVersionResolved,
+						Status: metav1.ConditionTrue,
+						Reason: "VersionNotSpecified",
+					}),
+					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+						Type:   hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
 						Status: metav1.ConditionTrue,
 						Reason: "VersionNotSpecified",
 					}),
@@ -407,7 +412,7 @@ func TestKarpenter(t *testing.T) {
 						return true, fmt.Sprintf("status.releaseImage matches control plane: %s", nc.Status.ReleaseImage), nil
 					}),
 				},
-				e2eutil.WithTimeout(2*time.Minute),
+				e2eutil.WithTimeout(5*time.Minute),
 			)
 			t.Log("Default OpenshiftEC2NodeClass has correct version status")
 		})
@@ -452,8 +457,8 @@ func TestKarpenter(t *testing.T) {
 			}()
 
 			// Wait for version resolution to succeed
-			t.Log("Waiting for OpenshiftEC2NodeClass to have VersionResolved=True")
-			e2eutil.EventuallyObject(t, ctx, "OpenshiftEC2NodeClass version-test to have VersionResolved=True",
+			t.Log("Waiting for OpenshiftEC2NodeClass to have VersionResolved=True and SupportedVersionSkew=True")
+			e2eutil.EventuallyObject(t, ctx, "OpenshiftEC2NodeClass version-test to have VersionResolved=True and SupportedVersionSkew=True",
 				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
 					result := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
 					err := guestClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, result)
@@ -464,6 +469,11 @@ func TestKarpenter(t *testing.T) {
 						Type:   hyperkarpenterv1.ConditionTypeVersionResolved,
 						Status: metav1.ConditionTrue,
 						Reason: "VersionResolved",
+					}),
+					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+						Type:   hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
+						Status: metav1.ConditionTrue,
+						Reason: "AsExpected",
 					}),
 					e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (done bool, reasons string, err error) {
 						if nc.Status.ReleaseImage == "" {
@@ -525,7 +535,7 @@ func TestKarpenter(t *testing.T) {
 			t.Log("Nodes drained successfully")
 		})
 
-		t.Run("OpenshiftEC2NodeClass with version exceeding allowed skew fails validation", func(t *testing.T) {
+		t.Run("OpenshiftEC2NodeClass with version exceeding allowed skew sets SupportedVersionSkew condition", func(t *testing.T) {
 			g := NewWithT(t)
 
 			// Re-fetch the hosted cluster to get the latest version status
@@ -565,8 +575,9 @@ func TestKarpenter(t *testing.T) {
 				t.Logf("Cleaned up OpenshiftEC2NodeClass %q", nc.Name)
 			}()
 
-			t.Log("Waiting for VersionResolved condition to be False")
-			e2eutil.EventuallyObject(t, ctx, "OpenshiftEC2NodeClass version-skew-test to have VersionResolved=False",
+			// Version should still resolve successfully despite the skew
+			t.Log("Waiting for VersionResolved=True and SupportedVersionSkew=False")
+			e2eutil.EventuallyObject(t, ctx, "OpenshiftEC2NodeClass version-skew-test to have SupportedVersionSkew=False",
 				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
 					result := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
 					err := guestClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, result)
@@ -575,24 +586,29 @@ func TestKarpenter(t *testing.T) {
 				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
 					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
 						Type:   hyperkarpenterv1.ConditionTypeVersionResolved,
+						Status: metav1.ConditionTrue,
+						Reason: "VersionResolved",
+					}),
+					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+						Type:   hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
 						Status: metav1.ConditionFalse,
-						Reason: "ResolutionFailed",
+						Reason: "UnsupportedSkew",
 					}),
 					e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (done bool, reasons string, err error) {
 						for _, c := range nc.Status.Conditions {
-							if c.Type == hyperkarpenterv1.ConditionTypeVersionResolved {
-								if strings.Contains(c.Message, skewVersion) {
-									return true, fmt.Sprintf("condition message references version %s", skewVersion), nil
+							if c.Type == hyperkarpenterv1.ConditionTypeSupportedVersionSkew && c.Status == metav1.ConditionFalse {
+								if strings.Contains(c.Message, "minor version") {
+									return true, fmt.Sprintf("SupportedVersionSkew condition message describes skew issue: %s", c.Message), nil
 								}
-								return false, fmt.Sprintf("expected condition message to contain %q, got %q", skewVersion, c.Message), nil
+								return false, fmt.Sprintf("expected SupportedVersionSkew message to mention version skew, got %q", c.Message), nil
 							}
 						}
-						return false, "VersionResolved condition not found", nil
+						return false, "SupportedVersionSkew=False condition not found", nil
 					}),
 				},
 				e2eutil.WithTimeout(2*time.Minute),
 			)
-			t.Logf("OpenshiftEC2NodeClass %q correctly rejected version %s (exceeds n-3 skew from CP %s)", nc.Name, skewVersion, cpVersion)
+			t.Logf("OpenshiftEC2NodeClass %q has SupportedVersionSkew=False for version %s (exceeds n-3 skew from CP %s)", nc.Name, skewVersion, cpVersion)
 		})
 
 		// TODO(jkyros): This test doesn't clean up after itself (I think intentionally) so we can test general cluster

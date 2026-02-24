@@ -22,6 +22,13 @@ const (
 
 	// ConditionTypeVersionResolved indicates whether the spec.version was successfully resolved to a release image.
 	ConditionTypeVersionResolved = "VersionResolved"
+
+	// ConditionTypeSupportedVersionSkew signals whether the NodeClass spec.version falls within the
+	// supported skew policy relative to the HostedControlPlane version.
+	// NodeClass version cannot be higher than the HostedControlPlane version.
+	// For 4.y versions, all versions support up to 3 minor version differences (n-3).
+	// When false, the NodeClass will continue operating but there are no compatibility guarantees.
+	ConditionTypeSupportedVersionSkew = "SupportedVersionSkew"
 )
 
 // Subnet contains resolved Subnet selector values utilized for node launch
@@ -258,6 +265,12 @@ type OpenshiftEC2NodeClassStatus struct {
 	// Of the format "quay.io/openshift-release-dev/ocp-release@sha256:<digest>".
 	// +optional
 	ReleaseImage string `json:"releaseImage,omitempty"`
+
+	// Version is the resolved OpenShift version corresponding to the status.releaseImage.
+	// When spec.version is set, this matches spec.version. When spec.version is not set,
+	// this reflects the version of the control plane's release image.
+	// +optional
+	Version string `json:"version,omitempty"`
 
 	// +optional
 	// +listType=map

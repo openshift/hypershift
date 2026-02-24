@@ -380,6 +380,10 @@ spec:
                   - zone
                   type: object
                 type: array
+              version:
+                description: Version is the resolved OpenShift version corresponding
+                  to the status.releaseImage.
+                type: string
             type: object
         type: object
     served: true
