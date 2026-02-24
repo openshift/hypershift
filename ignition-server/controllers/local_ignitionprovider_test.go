@@ -2,11 +2,16 @@ package controllers
 
 import (
 	"context"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
+
+	"github.com/openshift/hypershift/support/certs"
 
 	. "github.com/onsi/gomega"
 )
@@ -127,4 +132,118 @@ func TestExtractMCOBinaries(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetOrGenerateMCSTLSCert(t *testing.T) {
+	t.Run("When no cached cert exists, it should generate a new certificate", func(t *testing.T) {
+		g := NewWithT(t)
+		provider := &LocalIgnitionProvider{}
+
+		certPEM, keyPEM, err := provider.getOrGenerateMCSTLSCert()
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(certPEM).NotTo(BeEmpty())
+		g.Expect(keyPEM).NotTo(BeEmpty())
+
+		// Verify the cert is valid PEM and has the expected subject
+		block, _ := pem.Decode(certPEM)
+		g.Expect(block).NotTo(BeNil())
+		cert, err := x509.ParseCertificate(block.Bytes)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(cert.Subject.CommonName).To(Equal("machine-config-server"))
+		g.Expect(cert.Subject.OrganizationalUnit).To(Equal([]string{"openshift"}))
+		g.Expect(cert.IsCA).To(BeTrue())
+
+		// Verify the cache was populated
+		g.Expect(provider.mcsTLSCache).NotTo(BeNil())
+		g.Expect(provider.mcsTLSCache.certPEM).To(Equal(certPEM))
+		g.Expect(provider.mcsTLSCache.keyPEM).To(Equal(keyPEM))
+	})
+
+	t.Run("When a valid cached cert exists, it should reuse the cached certificate", func(t *testing.T) {
+		g := NewWithT(t)
+		provider := &LocalIgnitionProvider{}
+
+		// Generate initial cert
+		certPEM1, keyPEM1, err := provider.getOrGenerateMCSTLSCert()
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Call again - should return the same cached cert
+		certPEM2, keyPEM2, err := provider.getOrGenerateMCSTLSCert()
+		g.Expect(err).NotTo(HaveOccurred())
+
+		g.Expect(certPEM2).To(Equal(certPEM1))
+		g.Expect(keyPEM2).To(Equal(keyPEM1))
+	})
+
+	t.Run("When the cached cert is near expiry, it should generate a new certificate", func(t *testing.T) {
+		g := NewWithT(t)
+
+		// Set up a provider with a cert that expires in 30 minutes (less than the 1h threshold)
+		provider := &LocalIgnitionProvider{
+			mcsTLSCache: &mcsTLSCertCache{
+				certPEM: []byte("old-cert"),
+				keyPEM:  []byte("old-key"),
+				expiry:  time.Now().Add(30 * time.Minute),
+			},
+		}
+
+		certPEM, keyPEM, err := provider.getOrGenerateMCSTLSCert()
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Should have generated a new cert, not returned the old one
+		g.Expect(string(certPEM)).NotTo(Equal("old-cert"))
+		g.Expect(string(keyPEM)).NotTo(Equal("old-key"))
+
+		// Verify it's a valid cert
+		block, _ := pem.Decode(certPEM)
+		g.Expect(block).NotTo(BeNil())
+		cert, err := x509.ParseCertificate(block.Bytes)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(cert.Subject.CommonName).To(Equal("machine-config-server"))
+	})
+
+	t.Run("When the cached cert has expired, it should generate a new certificate", func(t *testing.T) {
+		g := NewWithT(t)
+
+		provider := &LocalIgnitionProvider{
+			mcsTLSCache: &mcsTLSCertCache{
+				certPEM: []byte("expired-cert"),
+				keyPEM:  []byte("expired-key"),
+				expiry:  time.Now().Add(-1 * time.Hour),
+			},
+		}
+
+		certPEM, keyPEM, err := provider.getOrGenerateMCSTLSCert()
+		g.Expect(err).NotTo(HaveOccurred())
+
+		g.Expect(string(certPEM)).NotTo(Equal("expired-cert"))
+		g.Expect(string(keyPEM)).NotTo(Equal("expired-key"))
+
+		// Verify the cache is updated with the new cert
+		g.Expect(provider.mcsTLSCache.expiry).To(BeTemporally(">", time.Now()))
+	})
+
+	t.Run("When the cert has ample remaining validity, it should not regenerate", func(t *testing.T) {
+		g := NewWithT(t)
+
+		// Use a controllable time function
+		fixedNow := time.Date(2025, 1, 1, 12, 0, 0, 0, time.UTC)
+		expiry := fixedNow.Add(certs.ValidityOneDay)
+
+		provider := &LocalIgnitionProvider{
+			now: func() time.Time { return fixedNow },
+			mcsTLSCache: &mcsTLSCertCache{
+				certPEM: []byte("valid-cert"),
+				keyPEM:  []byte("valid-key"),
+				expiry:  expiry,
+			},
+		}
+
+		certPEM, keyPEM, err := provider.getOrGenerateMCSTLSCert()
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Should return the cached cert since it has ~24h of validity
+		g.Expect(string(certPEM)).To(Equal("valid-cert"))
+		g.Expect(string(keyPEM)).To(Equal("valid-key"))
+	})
 }
