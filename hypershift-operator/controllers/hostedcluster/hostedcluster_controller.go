@@ -3939,6 +3939,7 @@ func (r *HostedClusterReconciler) validateNetworks(hc *hyperv1.HostedCluster) er
 	errs = append(errs, validateSliceNetworkCIDRs(hc)...)
 	errs = append(errs, checkAdvertiseAddressOverlapping(hc)...)
 	errs = append(errs, validateNodePortVsServiceNetwork(hc)...)
+	errs = append(errs, validateNodePortPortRange(hc)...)
 
 	return errs.ToAggregate()
 }
@@ -4122,6 +4123,87 @@ func validateNodePortVsServiceNetwork(hc *hyperv1.HostedCluster) field.ErrorList
 			netCIDR := (net.IPNet)(cidr.CIDR)
 			if netCIDR.Contains(ip) {
 				errs = append(errs, field.Invalid(field.NewPath("spec.networking.ServiceNetwork"), cidr.CIDR.String(), fmt.Sprintf("Nodeport IP is within the service network range: %s is within %s", ip, cidr.CIDR.String())))
+			}
+		}
+	}
+	return errs
+}
+
+// parseNodePortRange parses a ServiceNodePortRange string like "30000-32767" into min/max values.
+// This range defines which ports on worker nodes are available for NodePort services.
+// The range is configurable per cluster via spec.configuration.network.serviceNodePortRange,
+// with a default of 30000-32767 (following Kubernetes standard).
+func parseNodePortRange(rangeStr string) (min, max int32, err error) {
+	if rangeStr == "" {
+		return 30000, 32767, nil // Default range
+	}
+
+	parts := strings.Split(rangeStr, "-")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid range format: %s", rangeStr)
+	}
+
+	minVal, err := strconv.ParseInt(parts[0], 10, 32)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid minimum port: %s", parts[0])
+	}
+
+	maxVal, err := strconv.ParseInt(parts[1], 10, 32)
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid maximum port: %s", parts[1])
+	}
+
+	minPort, maxPort := int32(minVal), int32(maxVal)
+	if minPort > maxPort {
+		return 0, 0, fmt.Errorf("invalid range: minimum port %d must be less than or equal to maximum port %d", minPort, maxPort)
+	}
+	return minPort, maxPort, nil
+}
+
+// validateNodePortPortRange validates that NodePort.Port is within the configured ServiceNodePortRange.
+//
+// NodePort services expose applications on worker nodes using a specific port. The available port range
+// is controlled by the kube-apiserver's --service-node-port-range flag, which prevents conflicts with
+// system services and other applications running on nodes.
+//
+// This validation ensures:
+// 1. Specified ports fall within the cluster's configured range (preventing kube-apiserver rejection)
+// 2. Port 0 (dynamic assignment) is always allowed (kube-apiserver will auto-assign from valid range)
+// 3. Early feedback to users instead of late failure during cluster provisioning
+//
+// The range is configurable via spec.configuration.network.serviceNodePortRange, defaulting to
+// the Kubernetes standard of 30000-32767.
+func validateNodePortPortRange(hc *hyperv1.HostedCluster) field.ErrorList {
+	var errs field.ErrorList
+
+	// Get the configured NodePort range for this cluster
+	nodePortRange := ""
+	if hc.Spec.Configuration != nil && hc.Spec.Configuration.Network != nil {
+		nodePortRange = hc.Spec.Configuration.Network.ServiceNodePortRange
+	}
+	if nodePortRange == "" {
+		nodePortRange = config.DefaultServiceNodePortRange
+	}
+
+	// Parse the range
+	minPort, maxPort, err := parseNodePortRange(nodePortRange)
+	if err != nil {
+		errs = append(errs, field.Invalid(
+			field.NewPath("spec.configuration.network.serviceNodePortRange"),
+			nodePortRange,
+			fmt.Sprintf("invalid ServiceNodePortRange format: %v", err)))
+		return errs
+	}
+
+	// Validate NodePort.Port against the configured range
+	for idx, svc := range hc.Spec.Services {
+		if svc.Service == hyperv1.APIServer && svc.Type == hyperv1.NodePort && svc.NodePort != nil {
+			port := svc.NodePort.Port
+			if port > 0 && (port < minPort || port > maxPort) {
+				errs = append(errs, field.Invalid(
+					field.NewPath(fmt.Sprintf("spec.services[%d].nodePort.port", idx)),
+					port,
+					fmt.Sprintf("port must be within the configured range %d-%d or 0 for dynamic assignment", minPort, maxPort)))
 			}
 		}
 	}

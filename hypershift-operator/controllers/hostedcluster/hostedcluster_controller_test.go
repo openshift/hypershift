@@ -2136,7 +2136,7 @@ func TestValidateConfigAndClusterCapabilities(t *testing.T) {
 								Type: hyperv1.NodePort,
 								NodePort: &hyperv1.NodePortPublishingStrategy{
 									Address: "172.16.3.3",
-									Port:    4433,
+									Port:    30443,
 								},
 							},
 						},
@@ -5071,6 +5071,330 @@ func TestValidateNodePortVsServiceNetwork(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			actual := validateNodePortVsServiceNetwork(tc.hostedCluster)
+			if diff := cmp.Diff(actual, tc.expectedErrorList, equateErrorMessage); diff != "" {
+				t.Errorf("actual validation result differs from expected: %s", diff)
+			}
+		})
+	}
+}
+
+func TestParseNodePortRange(t *testing.T) {
+	testCases := []struct {
+		name        string
+		rangeStr    string
+		expectedMin int32
+		expectedMax int32
+		expectError bool
+	}{
+		{
+			name:        "empty range uses default",
+			rangeStr:    "",
+			expectedMin: 30000,
+			expectedMax: 32767,
+			expectError: false,
+		},
+		{
+			name:        "valid default range",
+			rangeStr:    "30000-32767",
+			expectedMin: 30000,
+			expectedMax: 32767,
+			expectError: false,
+		},
+		{
+			name:        "valid custom range",
+			rangeStr:    "25000-35000",
+			expectedMin: 25000,
+			expectedMax: 35000,
+			expectError: false,
+		},
+		{
+			name:        "valid small range",
+			rangeStr:    "31000-31010",
+			expectedMin: 31000,
+			expectedMax: 31010,
+			expectError: false,
+		},
+		{
+			name:        "invalid format - no dash",
+			rangeStr:    "30000",
+			expectError: true,
+		},
+		{
+			name:        "invalid format - multiple dashes",
+			rangeStr:    "30000-31000-32000",
+			expectError: true,
+		},
+		{
+			name:        "invalid minimum port",
+			rangeStr:    "abc-32767",
+			expectError: true,
+		},
+		{
+			name:        "invalid maximum port",
+			rangeStr:    "30000-xyz",
+			expectError: true,
+		},
+		{
+			name:        "negative port",
+			rangeStr:    "-1-32767",
+			expectError: true,
+		},
+		{
+			name:        "port too large",
+			rangeStr:    "30000-99999",
+			expectedMin: 30000,
+			expectedMax: 99999,
+			expectError: false, // parseNodePortRange doesn't validate port limits
+		},
+		{
+			name:        "min greater than max - invalid range",
+			rangeStr:    "32767-30000",
+			expectError: true,
+		},
+		{
+			name:        "min equals max - valid single port range",
+			rangeStr:    "31000-31000",
+			expectedMin: 31000,
+			expectedMax: 31000,
+			expectError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			min, max, err := parseNodePortRange(tc.rangeStr)
+			if tc.expectError {
+				if err == nil {
+					t.Errorf("expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if min != tc.expectedMin {
+					t.Errorf("expected min %d, got %d", tc.expectedMin, min)
+				}
+				if max != tc.expectedMax {
+					t.Errorf("expected max %d, got %d", tc.expectedMax, max)
+				}
+			}
+		})
+	}
+}
+
+func TestValidateNodePortPortRange(t *testing.T) {
+	testCases := []struct {
+		name              string
+		hostedCluster     *hyperv1.HostedCluster
+		expectedErrorList field.ErrorList
+	}{
+		{
+			name: "valid port in default range",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+								NodePort: &hyperv1.NodePortPublishingStrategy{
+									Address: "1.1.1.1",
+									Port:    31000,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "port 0 for dynamic assignment - always valid",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+								NodePort: &hyperv1.NodePortPublishingStrategy{
+									Address: "1.1.1.1",
+									Port:    0,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "port below default range",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+								NodePort: &hyperv1.NodePortPublishingStrategy{
+									Address: "1.1.1.1",
+									Port:    10000,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErrorList: field.ErrorList{
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(10000), "port must be within the configured range 30000-32767 or 0 for dynamic assignment"),
+			},
+		},
+		{
+			name: "port above default range",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+								NodePort: &hyperv1.NodePortPublishingStrategy{
+									Address: "1.1.1.1",
+									Port:    65000,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErrorList: field.ErrorList{
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(65000), "port must be within the configured range 30000-32767 or 0 for dynamic assignment"),
+			},
+		},
+		{
+			name: "valid port in custom range",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Network: &configv1.NetworkSpec{
+							ServiceNodePortRange: "25000-35000",
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+								NodePort: &hyperv1.NodePortPublishingStrategy{
+									Address: "1.1.1.1",
+									Port:    28000,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "port outside custom range",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Network: &configv1.NetworkSpec{
+							ServiceNodePortRange: "25000-35000",
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+								NodePort: &hyperv1.NodePortPublishingStrategy{
+									Address: "1.1.1.1",
+									Port:    40000,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErrorList: field.ErrorList{
+				field.Invalid(field.NewPath("spec.services[0].nodePort.port"), int32(40000), "port must be within the configured range 25000-35000 or 0 for dynamic assignment"),
+			},
+		},
+		{
+			name: "invalid range format",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Network: &configv1.NetworkSpec{
+							ServiceNodePortRange: "invalid-range",
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+								NodePort: &hyperv1.NodePortPublishingStrategy{
+									Address: "1.1.1.1",
+									Port:    31000,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErrorList: field.ErrorList{
+				field.Invalid(field.NewPath("spec.configuration.network.serviceNodePortRange"), "invalid-range", "invalid ServiceNodePortRange format: invalid minimum port: invalid"),
+			},
+		},
+		{
+			name: "reversed range - min greater than max",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Configuration: &hyperv1.ClusterConfiguration{
+						Network: &configv1.NetworkSpec{
+							ServiceNodePortRange: "35000-25000",
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+								NodePort: &hyperv1.NodePortPublishingStrategy{
+									Address: "1.1.1.1",
+									Port:    31000,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErrorList: field.ErrorList{
+				field.Invalid(field.NewPath("spec.configuration.network.serviceNodePortRange"), "35000-25000", "invalid ServiceNodePortRange format: invalid range: minimum port 35000 must be less than or equal to maximum port 25000"),
+			},
+		},
+		{
+			name: "no nodeport service - no validation",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := validateNodePortPortRange(tc.hostedCluster)
 			if diff := cmp.Diff(actual, tc.expectedErrorList, equateErrorMessage); diff != "" {
 				t.Errorf("actual validation result differs from expected: %s", diff)
 			}
