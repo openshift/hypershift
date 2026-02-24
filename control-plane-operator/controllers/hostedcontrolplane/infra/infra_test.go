@@ -414,6 +414,30 @@ func TestReconcileInfrastructure(t *testing.T) {
 				NeedExternalRouter:    false,
 			},
 		},
+		// Azure self-managed test cases
+		{
+			name: "When Azure self-managed cluster has KAS Route with hostname, it should need an external router",
+			hcp: withServices(
+				baseAzureHCP(),
+				allServicesRouteWithHostnames(),
+			),
+			expectError: false,
+			// For Azure self-managed with Route:
+			// - LabelHCPRoutes returns true (KAS uses Route with hostname)
+			// - External router is needed to admit labeled routes
+			expectedStatus: &InfrastructureStatus{
+				APIHost:               testKASHostname,
+				APIPort:               443,
+				OAuthEnabled:          true,
+				OAuthHost:             testOAuthHostname,
+				OAuthPort:             443,
+				KonnectivityHost:      testKonnectivityHost,
+				KonnectivityPort:      443,
+				NeedInternalRouter:    false,
+				NeedExternalRouter:    true,
+				ExternalHCPRouterHost: testRouterLBHostname,
+			},
+		},
 		// ARO HCP test cases - use shared ingress
 		{
 			name: "ARO_Route_SharedIngress",

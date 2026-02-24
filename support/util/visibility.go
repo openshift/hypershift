@@ -148,7 +148,7 @@ func LabelHCPRoutes(hcp *hyperv1.HostedControlPlane) bool {
 		// This avoids creating an unnecessary public LoadBalancer service.
 		return !IsPublicHCP(hcp) || UseDedicatedDNSForKAS(hcp)
 
-	case hyperv1.AgentPlatform, hyperv1.KubevirtPlatform, hyperv1.OpenStackPlatform, hyperv1.NonePlatform:
+	case hyperv1.AzurePlatform, hyperv1.AgentPlatform, hyperv1.KubevirtPlatform, hyperv1.OpenStackPlatform, hyperv1.NonePlatform:
 		// These platforms do not have endpoint access mode concepts (no Private/PublicAndPrivate).
 		// Label routes for HCP router ONLY when KAS explicitly uses Route with a hostname.
 		//
