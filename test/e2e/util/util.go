@@ -3392,7 +3392,7 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 			]
 		}`, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
 
-		cleanup, err := PutRolePolicy(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, tagsPolicy)
+		cleanup, err := PutRolePolicy(ctx, clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, tagsPolicy)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to put role policy for tagging default security group")
 		defer func() {
 			err := cleanup()
