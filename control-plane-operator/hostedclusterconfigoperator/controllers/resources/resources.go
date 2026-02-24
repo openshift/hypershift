@@ -505,11 +505,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to update ControlPlaneToDataPlaneConnectivity condition: %w", err))
 	}
 
-	log.Info("reconciling openshift apiserver apiservices")
-	if err := r.reconcileOpenshiftAPIServerAPIServices(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver service: %w", err))
-	}
-
+	// Reconcile Service and Endpoints before APIServices to ensure the backing
+	// infrastructure is in place before registering with the kube-apiserver
+	// aggregation layer. This prevents transient 503 errors during bootstrap.
 	log.Info("reconciling openshift apiserver service")
 	openshiftAPIServerService := manifests.OpenShiftAPIServerClusterService()
 	if _, err := r.CreateOrUpdate(ctx, r.client, openshiftAPIServerService, func() error {
@@ -520,16 +518,20 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	}
 
 	log.Info("reconciling openshift apiserver endpoints")
-	if err := r.reconcileOpenshiftAPIServerEndpoints(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver endpoints: %w", err))
+	openshiftAPIServerEndpointsErr := r.reconcileOpenshiftAPIServerEndpoints(ctx, hcp)
+	if openshiftAPIServerEndpointsErr != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver endpoints: %w", openshiftAPIServerEndpointsErr))
+	}
+
+	log.Info("reconciling openshift apiserver apiservices")
+	if openshiftAPIServerEndpointsErr != nil {
+		// Endpoints not ready; skip APIService registration to avoid transient 503s
+		log.Info("skipping openshift apiserver apiservices: endpoints not yet available")
+	} else if err := r.reconcileOpenshiftAPIServerAPIServices(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver apiservices: %w", err))
 	}
 
 	if util.HCPOAuthEnabled(hcp) {
-		log.Info("reconciling openshift oauth apiserver apiservices")
-		if err := r.reconcileOpenshiftOAuthAPIServerAPIServices(ctx, hcp); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver service: %w", err))
-		}
-
 		log.Info("reconciling openshift oauth apiserver service")
 		openshiftOAuthAPIServerService := manifests.OpenShiftOAuthAPIServerClusterService()
 		if _, err := r.CreateOrUpdate(ctx, r.client, openshiftOAuthAPIServerService, func() error {
@@ -540,8 +542,17 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		}
 
 		log.Info("reconciling openshift oauth apiserver endpoints")
-		if err := r.reconcileOpenshiftOAuthAPIServerEndpoints(ctx, hcp); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver endpoints: %w", err))
+		openshiftOAuthAPIServerEndpointsErr := r.reconcileOpenshiftOAuthAPIServerEndpoints(ctx, hcp)
+		if openshiftOAuthAPIServerEndpointsErr != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver endpoints: %w", openshiftOAuthAPIServerEndpointsErr))
+		}
+
+		log.Info("reconciling openshift oauth apiserver apiservices")
+		if openshiftOAuthAPIServerEndpointsErr != nil {
+			// Endpoints not ready; skip APIService registration to avoid transient 503s
+			log.Info("skipping openshift oauth apiserver apiservices: endpoints not yet available")
+		} else if err := r.reconcileOpenshiftOAuthAPIServerAPIServices(ctx, hcp); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver apiservices: %w", err))
 		}
 
 		log.Info("reconciling kubeadmin password hash secret")
@@ -1429,6 +1440,16 @@ func (r *reconciler) reconcileControlPlaneDataPlaneConnectivityConditions(ctx co
 }
 
 func (r *reconciler) reconcileOpenshiftAPIServerAPIServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	// Guard: verify the backing Service exists in the guest cluster with a valid ClusterIP
+	// before registering APIServices with the kube-apiserver aggregation layer.
+	backingSvc := manifests.OpenShiftAPIServerClusterService()
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(backingSvc), backingSvc); err != nil {
+		return fmt.Errorf("backing service %s not yet available: %w", client.ObjectKeyFromObject(backingSvc), err)
+	}
+	if len(backingSvc.Spec.ClusterIP) == 0 {
+		return fmt.Errorf("backing service %s does not yet have a cluster IP", client.ObjectKeyFromObject(backingSvc))
+	}
+
 	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		return fmt.Errorf("failed to get root ca from control plane: %w", err)
@@ -1447,6 +1468,16 @@ func (r *reconciler) reconcileOpenshiftAPIServerAPIServices(ctx context.Context,
 }
 
 func (r *reconciler) reconcileOpenshiftOAuthAPIServerAPIServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	// Guard: verify the backing Service exists in the guest cluster with a valid ClusterIP
+	// before registering APIServices with the kube-apiserver aggregation layer.
+	backingSvc := manifests.OpenShiftOAuthAPIServerClusterService()
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(backingSvc), backingSvc); err != nil {
+		return fmt.Errorf("backing service %s not yet available: %w", client.ObjectKeyFromObject(backingSvc), err)
+	}
+	if len(backingSvc.Spec.ClusterIP) == 0 {
+		return fmt.Errorf("backing service %s does not yet have a cluster IP", client.ObjectKeyFromObject(backingSvc))
+	}
+
 	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
 		return fmt.Errorf("failed to get root ca from control plane: %w", err)
@@ -1933,19 +1964,9 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 		}
 	}
 
-	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
-		errs = append(errs, fmt.Errorf("failed to get root ca cert from control plane namespace: %w", err))
-	} else {
-		packageServerAPIService := manifests.OLMPackageServerAPIService()
-		if _, err := r.CreateOrUpdate(ctx, r.client, packageServerAPIService, func() error {
-			olm.ReconcilePackageServerAPIService(packageServerAPIService, rootCA)
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile OLM packageserver API service: %w", err))
-		}
-	}
-
+	// Reconcile Service and Endpoints before APIService to ensure the backing
+	// infrastructure is in place before registering with the kube-apiserver
+	// aggregation layer. This prevents transient 503 errors during bootstrap.
 	packageServerService := manifests.OLMPackageServerService()
 	if _, err := r.CreateOrUpdate(ctx, r.client, packageServerService, func() error {
 		olm.ReconcilePackageServerService(packageServerService)
@@ -1954,6 +1975,7 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 		errs = append(errs, fmt.Errorf("failed to reconcile OLM packageserver service: %w", err))
 	}
 
+	var packageServerEndpointsReady bool
 	cpService := manifests.OLMPackageServerControlPlaneService(hcp.Namespace)
 	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(cpService), cpService); err != nil {
 		errs = append(errs, fmt.Errorf("failed to get packageserver service from control plane namespace: %w", err))
@@ -1966,8 +1988,25 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 				olm.ReconcilePackageServerEndpoints(packageServerEndpoints, cpService.Spec.ClusterIP)
 				return nil
 			}); err != nil {
-				errs = append(errs, fmt.Errorf("failed to reconcile OLM packageserver service: %w", err))
+				errs = append(errs, fmt.Errorf("failed to reconcile OLM packageserver endpoints: %w", err))
+			} else {
+				packageServerEndpointsReady = true
 			}
+		}
+	}
+
+	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
+	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+		errs = append(errs, fmt.Errorf("failed to get root ca cert from control plane namespace: %w", err))
+	} else if !packageServerEndpointsReady {
+		// Endpoints not ready; skip APIService registration to avoid transient 503s
+	} else {
+		packageServerAPIService := manifests.OLMPackageServerAPIService()
+		if _, err := r.CreateOrUpdate(ctx, r.client, packageServerAPIService, func() error {
+			olm.ReconcilePackageServerAPIService(packageServerAPIService, rootCA)
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile OLM packageserver API service: %w", err))
 		}
 	}
 
