@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -156,5 +157,40 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		return fmt.Errorf("failed to watch nodes: %w", err)
 	}
 
+	// Watch for Machine updates on the management cluster.
+	// When CAPI sets Machine.Status.NodeRef (linking a Machine to a Node),
+	// we need to reconcile so that labelNodesForGlobalPullSecret can label
+	// the newly linked node. This closes a race where the Node CREATE event
+	// fires before NodeRef is set, causing the node to be skipped.
+	if err := c.Watch(source.Kind(opts.CPCluster.GetCache(), &capiv1.Machine{},
+		// The reconciler does not use the request key; it always runs a full reconciliation.
+		// We enqueue the Machine's name/namespace for logging and observability only.
+		handler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, o *capiv1.Machine) []crreconcile.Request {
+			return []crreconcile.Request{{NamespacedName: types.NamespacedName{Name: o.GetName(), Namespace: o.GetNamespace()}}}
+		}),
+		machineNodeRefPredicate(),
+	)); err != nil {
+		return fmt.Errorf("failed to watch Machines: %w", err)
+	}
+
 	return nil
+}
+
+// machineNodeRefPredicate returns a predicate that only triggers on Machine
+// updates where Status.NodeRef transitions from nil to non-nil.
+func machineNodeRefPredicate() predicate.TypedPredicate[*capiv1.Machine] {
+	return predicate.TypedFuncs[*capiv1.Machine]{
+		CreateFunc: func(e event.TypedCreateEvent[*capiv1.Machine]) bool {
+			return false
+		},
+		UpdateFunc: func(e event.TypedUpdateEvent[*capiv1.Machine]) bool {
+			return e.ObjectOld.Status.NodeRef == nil && e.ObjectNew.Status.NodeRef != nil
+		},
+		DeleteFunc: func(e event.TypedDeleteEvent[*capiv1.Machine]) bool {
+			return false
+		},
+		GenericFunc: func(e event.TypedGenericEvent[*capiv1.Machine]) bool {
+			return false
+		},
+	}
 }
