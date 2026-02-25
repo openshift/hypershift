@@ -6,15 +6,18 @@ import (
 	"strings"
 	"testing"
 
-	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
 	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
 )
 
 func TestGenerateACRCredentialProviderMachineConfig(t *testing.T) {
 	testCases := []struct {
 		name           string
 		credentials    *hyperv1.AzureImageRegistryCredentials
+		cloud          string
 		tenantID       string
 		subscriptionID string
 		expectErr      bool
@@ -24,10 +27,23 @@ func TestGenerateACRCredentialProviderMachineConfig(t *testing.T) {
 		{
 			name:           "When credentials are nil it should return an error",
 			credentials:    nil,
+			cloud:          "AzurePublicCloud",
 			tenantID:       "test-tenant",
 			subscriptionID: "test-sub",
 			expectErr:      true,
 			expectErrMsg:   "credentials must not be nil",
+		},
+		{
+			name: "When ManagedIdentity is empty it should return an error",
+			credentials: &hyperv1.AzureImageRegistryCredentials{
+				ManagedIdentity: "",
+				Registries:      []string{"myregistry.azurecr.io"},
+			},
+			cloud:          "AzurePublicCloud",
+			tenantID:       "test-tenant",
+			subscriptionID: "test-sub",
+			expectErr:      true,
+			expectErrMsg:   "credentials.ManagedIdentity must not be empty",
 		},
 		{
 			name: "When tenantID is empty it should return an error",
@@ -35,6 +51,7 @@ func TestGenerateACRCredentialProviderMachineConfig(t *testing.T) {
 				ManagedIdentity: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id",
 				Registries:      []string{"myregistry.azurecr.io"},
 			},
+			cloud:          "AzurePublicCloud",
 			tenantID:       "",
 			subscriptionID: "test-sub",
 			expectErr:      true,
@@ -46,10 +63,23 @@ func TestGenerateACRCredentialProviderMachineConfig(t *testing.T) {
 				ManagedIdentity: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id",
 				Registries:      []string{"myregistry.azurecr.io"},
 			},
+			cloud:          "AzurePublicCloud",
 			tenantID:       "test-tenant",
 			subscriptionID: "",
 			expectErr:      true,
 			expectErrMsg:   "subscriptionID must not be empty",
+		},
+		{
+			name: "When cloud is empty it should return an error",
+			credentials: &hyperv1.AzureImageRegistryCredentials{
+				ManagedIdentity: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id",
+				Registries:      []string{"myregistry.azurecr.io"},
+			},
+			cloud:          "",
+			tenantID:       "test-tenant",
+			subscriptionID: "test-sub",
+			expectErr:      true,
+			expectErrMsg:   "cloud must not be empty",
 		},
 		{
 			name: "When credentials have single registry it should generate valid credential provider config",
@@ -57,6 +87,7 @@ func TestGenerateACRCredentialProviderMachineConfig(t *testing.T) {
 				ManagedIdentity: "/subscriptions/sub-123/resourceGroups/rg-test/providers/Microsoft.ManagedIdentity/userAssignedIdentities/acr-pull-identity",
 				Registries:      []string{"myregistry.azurecr.io"},
 			},
+			cloud:          "AzurePublicCloud",
 			tenantID:       "tenant-abc",
 			subscriptionID: "sub-123",
 			expectErr:      false,
@@ -98,6 +129,7 @@ func TestGenerateACRCredentialProviderMachineConfig(t *testing.T) {
 					"registry3.azurecr.io",
 				},
 			},
+			cloud:          "AzurePublicCloud",
 			tenantID:       "tenant-prod",
 			subscriptionID: "sub-456",
 			expectErr:      false,
@@ -128,6 +160,7 @@ func TestGenerateACRCredentialProviderMachineConfig(t *testing.T) {
 				ManagedIdentity: "/subscriptions/sub-789/resourceGroups/rg-dev/providers/Microsoft.ManagedIdentity/userAssignedIdentities/dev-identity",
 				Registries:      []string{"dev.azurecr.io"},
 			},
+			cloud:          "AzurePublicCloud",
 			tenantID:       "tenant-dev",
 			subscriptionID: "sub-789",
 			expectErr:      false,
@@ -161,6 +194,7 @@ func TestGenerateACRCredentialProviderMachineConfig(t *testing.T) {
 				ManagedIdentity: "/subscriptions/sub-aaa/resourceGroups/rg-aaa/providers/Microsoft.ManagedIdentity/userAssignedIdentities/my-identity",
 				Registries:      []string{"testacr.azurecr.io"},
 			},
+			cloud:          "AzurePublicCloud",
 			tenantID:       "my-tenant-id-12345",
 			subscriptionID: "my-subscription-id-67890",
 			expectErr:      false,
@@ -190,7 +224,7 @@ func TestGenerateACRCredentialProviderMachineConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			mc, err := generateACRCredentialProviderMachineConfig(tc.credentials, tc.tenantID, tc.subscriptionID)
+			mc, err := generateACRCredentialProviderMachineConfig(tc.credentials, tc.cloud, tc.tenantID, tc.subscriptionID)
 			if tc.expectErr {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.expectErrMsg))
@@ -287,6 +321,7 @@ func TestGenerateACRAzureJSON(t *testing.T) {
 	testCases := []struct {
 		name            string
 		managedIdentity string
+		cloud           string
 		tenantID        string
 		subscriptionID  string
 		validate        func(g Gomega, content string)
@@ -294,6 +329,7 @@ func TestGenerateACRAzureJSON(t *testing.T) {
 		{
 			name:            "When generating azure.json it should produce valid JSON with all fields",
 			managedIdentity: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/my-id",
+			cloud:           "AzurePublicCloud",
 			tenantID:        "test-tenant",
 			subscriptionID:  "test-subscription",
 			validate: func(g Gomega, content string) {
@@ -309,13 +345,32 @@ func TestGenerateACRAzureJSON(t *testing.T) {
 				))
 			},
 		},
+		{
+			name:            "When cloud is AzureUSGovernmentCloud it should use that cloud value",
+			managedIdentity: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/gov-id",
+			cloud:           "AzureUSGovernmentCloud",
+			tenantID:        "gov-tenant",
+			subscriptionID:  "gov-subscription",
+			validate: func(g Gomega, content string) {
+				var cfg acrAzureConfig
+				err := json.Unmarshal([]byte(content), &cfg)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(cfg.Cloud).To(Equal("AzureUSGovernmentCloud"))
+				g.Expect(cfg.TenantID).To(Equal("gov-tenant"))
+				g.Expect(cfg.SubscriptionID).To(Equal("gov-subscription"))
+				g.Expect(cfg.UseManagedIdentityExtension).To(BeTrue())
+				g.Expect(cfg.UserAssignedIdentityID).To(Equal(
+					"/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/gov-id",
+				))
+			},
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			result, err := generateACRAzureJSON(tc.managedIdentity, tc.tenantID, tc.subscriptionID)
+			result, err := generateACRAzureJSON(tc.managedIdentity, tc.cloud, tc.tenantID, tc.subscriptionID)
 			g.Expect(err).ToNot(HaveOccurred())
 			if tc.validate != nil {
 				tc.validate(g, string(result))

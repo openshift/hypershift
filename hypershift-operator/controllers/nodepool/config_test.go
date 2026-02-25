@@ -1903,6 +1903,7 @@ func TestGetACRCredentialProviderConfig(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud:          "AzurePublicCloud",
 							TenantID:       "test-tenant-id",
 							SubscriptionID: "test-subscription-id",
 						},
@@ -1983,6 +1984,7 @@ func TestACRCredentialProviderConfigInMCORawConfig(t *testing.T) {
 				Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.AzurePlatform,
 					Azure: &hyperv1.AzurePlatformSpec{
+						Cloud:          "AzurePublicCloud",
 						TenantID:       "test-tenant-id",
 						SubscriptionID: "test-subscription-id",
 					},
@@ -2043,6 +2045,7 @@ func TestACRCredentialProviderConfigInMCORawConfig(t *testing.T) {
 				Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.AzurePlatform,
 					Azure: &hyperv1.AzurePlatformSpec{
+						Cloud:          "AzurePublicCloud",
 						TenantID:       "test-tenant-id",
 						SubscriptionID: "test-subscription-id",
 					},
@@ -2100,6 +2103,7 @@ func TestACRCredentialProviderConfigInMCORawConfig(t *testing.T) {
 				Platform: hyperv1.PlatformSpec{
 					Type: hyperv1.AzurePlatform,
 					Azure: &hyperv1.AzurePlatformSpec{
+						Cloud:          "AzurePublicCloud",
 						TenantID:       "test-tenant-id",
 						SubscriptionID: "test-subscription-id",
 					},

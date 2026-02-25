@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"strings"
 
-	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
-	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
+
+	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
 )
 
 const (
@@ -54,11 +57,15 @@ type acrAzureConfig struct {
 // are already set by MCO and do not need to be configured here.
 func generateACRCredentialProviderMachineConfig(
 	credentials *hyperv1.AzureImageRegistryCredentials,
+	cloud string,
 	tenantID string,
 	subscriptionID string,
 ) (*mcfgv1.MachineConfig, error) {
 	if credentials == nil {
 		return nil, fmt.Errorf("credentials must not be nil")
+	}
+	if credentials.ManagedIdentity == "" {
+		return nil, fmt.Errorf("credentials.ManagedIdentity must not be empty")
 	}
 	if tenantID == "" {
 		return nil, fmt.Errorf("tenantID must not be empty")
@@ -66,13 +73,16 @@ func generateACRCredentialProviderMachineConfig(
 	if subscriptionID == "" {
 		return nil, fmt.Errorf("subscriptionID must not be empty")
 	}
+	if cloud == "" {
+		return nil, fmt.Errorf("cloud must not be empty")
+	}
 
 	credentialProviderConfig, err := generateCredentialProviderConfig(credentials.Registries)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate credential provider config: %w", err)
 	}
 
-	azureJSON, err := generateACRAzureJSON(credentials.ManagedIdentity, tenantID, subscriptionID)
+	azureJSON, err := generateACRAzureJSON(credentials.ManagedIdentity, cloud, tenantID, subscriptionID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate azure.json: %w", err)
 	}
@@ -138,9 +148,9 @@ providers:
 
 // generateACRAzureJSON produces the JSON content for the Azure authentication config
 // consumed by the acr-credential-provider binary.
-func generateACRAzureJSON(managedIdentity, tenantID, subscriptionID string) ([]byte, error) {
+func generateACRAzureJSON(managedIdentity, cloud, tenantID, subscriptionID string) ([]byte, error) {
 	cfg := acrAzureConfig{
-		Cloud:                       "AzurePublicCloud",
+		Cloud:                       cloud,
 		TenantID:                    tenantID,
 		SubscriptionID:              subscriptionID,
 		UseManagedIdentityExtension: true,

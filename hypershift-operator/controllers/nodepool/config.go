@@ -188,6 +188,7 @@ func (cg *ConfigGenerator) getACRCredentialProviderConfig() (*corev1.ConfigMap, 
 
 	mc, err := generateACRCredentialProviderMachineConfig(
 		cg.nodePool.Spec.Platform.Azure.ImageRegistryCredentials,
+		cg.hostedCluster.Spec.Platform.Azure.Cloud,
 		cg.hostedCluster.Spec.Platform.Azure.TenantID,
 		cg.hostedCluster.Spec.Platform.Azure.SubscriptionID,
 	)

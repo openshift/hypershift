@@ -144,6 +144,8 @@ type AzureImageRegistryCredentials struct {
 	// +required
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=20
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=256
 	// +listType=set
 	Registries []string `json:"registries"`
 }

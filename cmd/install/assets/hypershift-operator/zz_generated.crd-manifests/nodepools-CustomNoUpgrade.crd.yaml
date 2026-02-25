@@ -891,6 +891,8 @@ spec:
                               The credential provider will use the managed identity to obtain short-lived tokens for
                               pulling images from these registries.
                             items:
+                              maxLength: 256
+                              minLength: 1
                               type: string
                             maxItems: 20
                             minItems: 1
