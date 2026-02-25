@@ -123,6 +123,22 @@ func TestKarpenter(t *testing.T) {
 			ec2NodeClass := ec2NodeClassList.Items[0]
 			g.Expect(guestClient.Delete(ctx, &ec2NodeClass)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
 
+			t.Log("Validating AutoNodeEnabled condition is set on HostedCluster")
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNodeEnabled condition", hostedCluster.Namespace, hostedCluster.Name),
+				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+					hc := &hyperv1.HostedCluster{}
+					err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+					return hc, err
+				},
+				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+					e2eutil.ConditionPredicate[*hyperv1.HostedCluster](e2eutil.Condition{
+						Type:   string(hyperv1.AutoNodeEnabled),
+						Status: metav1.ConditionTrue,
+					}),
+				},
+				e2eutil.WithTimeout(2*time.Minute),
+			)
+
 			// TODO(alberto): increase coverage:
 			// - Karpenter operator plumbing, e.g:
 			// -- validate the CRDs are installed
@@ -168,6 +184,31 @@ func TestKarpenter(t *testing.T) {
 			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), nodeLabels)
 			nodeClaims := waitForReadyNodeClaims(t, ctx, guestClient, len(nodes))
 			waitForReadyKarpenterPods(t, ctx, guestClient, nodes, replicas)
+
+			t.Log("Validating AutoNode status counts are populated on HostedCluster")
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNode status counts", hostedCluster.Namespace, hostedCluster.Name),
+				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+					hc := &hyperv1.HostedCluster{}
+					err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+					return hc, err
+				},
+				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+					func(hc *hyperv1.HostedCluster) (done bool, reasons string, err error) {
+						if hc.Status.AutoNode == nil {
+							return false, "Status.AutoNode is nil", nil
+						}
+						if hc.Status.AutoNode.NodeCount == nil || *hc.Status.AutoNode.NodeCount < 1 {
+							return false, fmt.Sprintf("expected NodeCount >= 1, got %v", hc.Status.AutoNode.NodeCount), nil
+						}
+						if hc.Status.AutoNode.NodeClaimCount == nil || *hc.Status.AutoNode.NodeClaimCount < 1 {
+							return false, fmt.Sprintf("expected NodeClaimCount >= 1, got %v", hc.Status.AutoNode.NodeClaimCount), nil
+						}
+						return true, fmt.Sprintf("AutoNode status: NodeCount=%d, NodeClaimCount=%d",
+							*hc.Status.AutoNode.NodeCount, *hc.Status.AutoNode.NodeClaimCount), nil
+					},
+				},
+				e2eutil.WithTimeout(2*time.Minute),
+			)
 
 			// Update hosted control plane to induce Drift
 			t.Logf("Updating cluster image. Image: %s", globalOpts.LatestReleaseImage)
