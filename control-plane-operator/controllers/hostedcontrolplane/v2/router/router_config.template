@@ -14,7 +14,7 @@ defaults
   timeout client       86400s
   timeout server       86400s
   timeout tunnel       86400s
-{{- if .IsAroHCP }}
+{{- if .HasPrivateKeyVault }}
 
 resolvers azure_dns
   nameserver azure 168.63.129.16:53
@@ -27,13 +27,13 @@ frontend main
   {{- range .Backends }}
   acl is_{{ .Name }} req_ssl_sni -i {{ .HostName }}
   {{- end }}
-  {{- if .IsAroHCP }}
+  {{- if .HasPrivateKeyVault }}
   acl is_keyvault req_ssl_sni -i {{ .KeyVaultFQDN }}
   {{- end }}
   {{- range .Backends }}
   use_backend {{ .Name }} if is_{{ .Name }}
   {{- end }}
-  {{- if .IsAroHCP }}
+  {{- if .HasPrivateKeyVault }}
   use_backend keyvault if is_keyvault
   {{- end }}
   {{- if .HasKubeAPI }}
@@ -51,7 +51,7 @@ backend {{ .Name }}
 backend kube_api
   server kube_api {{ .KASDestinationServiceIP }}:{{ .KASSVCPort }}
 {{ end -}}
-{{- if .IsAroHCP }}
+{{- if .HasPrivateKeyVault }}
 backend keyvault
   mode tcp
   server kv {{ .KeyVaultFQDN }}:443 resolvers azure_dns

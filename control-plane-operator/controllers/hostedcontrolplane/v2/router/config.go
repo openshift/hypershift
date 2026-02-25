@@ -62,7 +62,7 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 	}
 
 	var keyVaultFQDN string
-	if azureutil.IsAroHCP() {
+	if azureutil.IsAroHCP() && azureutil.IsPrivateKeyVault(cpContext.HCP) {
 		kvFQDN, err := azureutil.GetKeyVaultFQDN(cpContext.HCP)
 		if err != nil {
 			return fmt.Errorf("failed to get Key Vault FQDN: %w", err)
@@ -96,12 +96,12 @@ func generateRouterConfig(routeList *routev1.RouteList, svcsNameToIP map[string]
 		KASSVCPort              int32
 		KASDestinationServiceIP string
 		Backends                []backendDesc
-		IsAroHCP                bool
+		HasPrivateKeyVault      bool
 		KeyVaultFQDN            string
 	}
 	p := templateParams{}
 	if keyVaultFQDN != "" {
-		p.IsAroHCP = true
+		p.HasPrivateKeyVault = true
 		p.KeyVaultFQDN = keyVaultFQDN
 	}
 	sort.Sort(byRouteName(routeList.Items))
