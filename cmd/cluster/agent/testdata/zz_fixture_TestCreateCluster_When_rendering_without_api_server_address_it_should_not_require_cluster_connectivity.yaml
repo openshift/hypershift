@@ -82,29 +82,16 @@ spec:
   services:
   - service: APIServer
     servicePublishingStrategy:
-      nodePort:
-        address: ""
-      type: NodePort
+      type: LoadBalancer
   - service: Ignition
     servicePublishingStrategy:
-      nodePort:
-        address: ""
-      type: NodePort
+      type: Route
   - service: Konnectivity
     servicePublishingStrategy:
-      nodePort:
-        address: ""
-      type: NodePort
+      type: Route
   - service: OAuthServer
     servicePublishingStrategy:
-      nodePort:
-        address: ""
-      type: NodePort
-  - service: OIDC
-    servicePublishingStrategy:
-      nodePort:
-        address: ""
-      type: NodePort
+      type: Route
   sshKey: {}
 status:
   controlPlaneEndpoint:

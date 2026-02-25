@@ -47,8 +47,8 @@ type CreateOptions struct {
 
 func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
 	var err error
-	if o.APIServerAddress == "" && !o.ExposeThroughLoadBalancer && !opts.Render {
-		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log)
+	if !o.ExposeThroughLoadBalancer {
+		o.APIServerAddress, err = core.GetAPIServerAddressOrDefault(ctx, opts.Log, o.APIServerAddress, opts.Render)
 	}
 	return &CreateOptions{
 		completedCreateOptions: &completedCreateOptions{

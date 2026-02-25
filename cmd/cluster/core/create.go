@@ -611,6 +611,16 @@ func apply(ctx context.Context, l logr.Logger, infraID string, objects []crclien
 	return nil
 }
 
+// GetAPIServerAddressOrDefault returns the provided address if non-empty. In render mode,
+// it skips cluster connectivity and returns an empty string. Otherwise, it resolves the
+// address from a management cluster node.
+func GetAPIServerAddressOrDefault(ctx context.Context, l logr.Logger, currentAddress string, render bool) (string, error) {
+	if currentAddress != "" || render {
+		return currentAddress, nil
+	}
+	return GetAPIServerAddressByNode(ctx, l)
+}
+
 func GetAPIServerAddressByNode(ctx context.Context, l logr.Logger) (string, error) {
 	// Fetch a single node and determine possible DNS or IP entries to use
 	// for external node-port communication.

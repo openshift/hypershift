@@ -57,9 +57,7 @@ type CreateOptions struct {
 
 func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.CreateOptions) (core.Platform, error) {
 	var err error
-	if o.APIServerAddress == "" && !opts.Render {
-		o.APIServerAddress, err = core.GetAPIServerAddressByNode(ctx, opts.Log)
-	}
+	o.APIServerAddress, err = core.GetAPIServerAddressOrDefault(ctx, opts.Log, o.APIServerAddress, opts.Render)
 	if opts.DefaultDual {
 		// Using this AgentNamespace field because I cannot infer the Provider we are using at this point
 		// TODO (jparrill): Refactor this to use a 'forward' instead of a 'backward' logic flow
@@ -86,7 +84,11 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			AgentNamespace: o.AgentNamespace,
 		},
 	}
-	cluster.Spec.Services = core.GetServicePublishingStrategyMappingByAPIServerAddress(o.APIServerAddress, cluster.Spec.Networking.NetworkType)
+	if o.APIServerAddress != "" {
+		cluster.Spec.Services = core.GetServicePublishingStrategyMappingByAPIServerAddress(o.APIServerAddress, cluster.Spec.Networking.NetworkType)
+	} else {
+		cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, false)
+	}
 	return nil
 }
 
