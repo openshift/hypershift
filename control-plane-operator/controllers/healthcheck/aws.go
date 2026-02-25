@@ -31,7 +31,7 @@ func awsHealthCheckIdentityProvider(ctx context.Context, hcp *hyperv1.HostedCont
 		return nil
 	}
 
-	ec2Client, _, _ := hostedcontrolplane.GetEC2Client(ctx)
+	ec2Client, _ := hostedcontrolplane.GetEC2Client(ctx)
 	if ec2Client == nil {
 		// EC2 client is not available (token minting may have failed)
 		condition := metav1.Condition{

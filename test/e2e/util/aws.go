@@ -15,29 +15,31 @@ import (
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/kms"
 	"github.com/aws/aws-sdk-go/service/sqs"
 
 	"github.com/go-logr/logr"
 )
 
-func GetKMSKeyArn(awsCreds, awsRegion, alias string) (*string, error) {
+func GetKMSKeyArn(ctx context.Context, awsCreds, awsRegion, alias string) (*string, error) {
 	if alias == "" {
-		return aws.String(""), nil
+		return awsv2.String(""), nil
 	}
 
-	awsSession := awsutil.NewSession("e2e-kms", awsCreds, "", "", awsRegion)
-	awsConfig := awsutil.NewConfig()
-	kmsClient := kms.New(awsSession, awsConfig)
+	awsSession := awsutil.NewSessionV2(ctx, "e2e-kms", awsCreds, "", "", awsRegion)
+	awsConfig := awsutil.NewConfigV2()
+	kmsClient := kms.NewFromConfig(*awsSession, func(o *kms.Options) {
+		o.Retryer = awsConfig()
+	})
 
 	input := &kms.DescribeKeyInput{
-		KeyId: aws.String(alias),
+		KeyId: awsv2.String(alias),
 	}
-	out, err := kmsClient.DescribeKey(input)
+	out, err := kmsClient.DescribeKey(ctx, input)
 	if err != nil {
 		return nil, err
 	}
