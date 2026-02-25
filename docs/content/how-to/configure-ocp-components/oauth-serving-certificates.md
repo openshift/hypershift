@@ -158,7 +158,7 @@ spec:
 `spec.configuration.apiServer.servingCerts.namedCertificates`
 must exist in the HostedCluster namespace. Creating the secret in the hosted control plane namespace will not apply the certificate.
 
-Save and apply the changes. The Hosted Cluster Operator will reconcile the changes. The configuration will propagate to the control plane, and the OAuth server will begin serving the new certificate.
+Save and apply the changes. The Control Plane Operator will reconcile the changes. The configuration will propagate to the control plane, and the OAuth server will begin serving the new certificate.
 
 There is no separate OAuth certificate configuration field in a HostedCluster.
 
@@ -182,6 +182,6 @@ X509v3 Subject Alternative Name:
 ```
 
 This proves:
-* The OAuth route is serving
-* The cert comes from your `my-oauth-cert-secret` secret
-* The change is externally observable
+- The OAuth route is serving the custom certificate
+- The cert comes from your `my-oauth-cert-secret` secret
+- The change is externally observable
