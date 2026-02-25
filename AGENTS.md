@@ -117,20 +117,32 @@ Please see /hypershift/.cursor/rules/code-formatting.mdc
 
 ## Dependencies and Modules
 
-This is a Go 1.24+ project using:
-- Kubernetes 0.32.x APIs
-- Controller-runtime 0.20.x
+This is a Go 1.25+ project using:
+- Kubernetes 0.34.x APIs
+- Controller-runtime 0.22.x
 - Various cloud provider SDKs (AWS, Azure, IBM)
 - OpenShift API dependencies
 
 The project uses vendoring (`go mod vendor`) and includes workspace configuration in `hack/workspace/`.
 
+### Multi-Module Structure
+
+This repository contains **multiple Go modules**. The `api/` directory is a **separate Go module** with its own `api/go.mod` (module path: `github.com/openshift/hypershift/api`). The main module at the repository root consumes the `api/` module through vendoring.
+
+This means:
+- Edits to files under `api/` (e.g. `api/hypershift/v1beta1/`) are **not visible** to the main module until the vendored copy is updated.
+- After modifying any types, constants, or functions in `api/`, you **must** run `make update` to regenerate CRDs, revendor dependencies, and sync everything. `make update` runs the full sequence: `api-deps` → `workspace-sync` → `deps` → `api` → `api-docs` → `clients` → `docs-aggregate`. Without this, the main module build will fail with `undefined` errors for any new symbols added in `api/`.
+- **Do not modify `vendor/` directories directly.** The `vendor/` directories are managed by `go mod vendor` (via `make deps` and `make api-deps`). Always use `make update` to keep them in sync.
+- Running `go build ./...` or `go vet ./...` from the repository root will **not** compile the `api/` module — it is a separate module. To build/vet the API module, run commands from within the `api/` directory.
+- The `hack/workspace/` directory contains a Go workspace configuration (`go.work`) that can be used for local development across both modules.
+
 ## Common Gotchas
 
-- Always run `make api` after modifying types in the `api/` package
-- Use `make verify` before submitting PRs to catch formatting/generation issues
-- Platform-specific controllers require their respective cloud credentials for testing
-- E2E tests need proper cloud infrastructure setup (S3 buckets, DNS zones, etc.)
+- **`api/` is a separate Go module**: Always run `make update` after modifying types in the `api/` package. See [Multi-Module Structure](#multi-module-structure) above for details.
+- **Do not modify `vendor/` directories directly**: They are managed by `go mod vendor` via `make update`.
+- Use `make verify` before submitting PRs to catch formatting/generation issues.
+- Platform-specific controllers require their respective cloud credentials for testing.
+- E2E tests need proper cloud infrastructure setup (S3 buckets, DNS zones, etc.).
 
 ## Commit Messages
 Please see /hypershift/.cursor/rules/git-commit-format.mdc for information on how commit messages should be generated or formatted
