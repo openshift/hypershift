@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -154,6 +155,38 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		},
 	}); err != nil {
 		return fmt.Errorf("failed to watch nodes: %w", err)
+	}
+
+	// Watch for Machine updates on the management cluster.
+	// When CAPI sets Machine.Status.NodeRef (linking a Machine to a Node),
+	// we need to reconcile so that labelNodesForGlobalPullSecret can label
+	// the newly linked node. This closes a race where the Node CREATE event
+	// fires before NodeRef is set, causing the node to be skipped.
+	if err := c.Watch(source.Kind[crclient.Object](opts.CPCluster.GetCache(), &capiv1.Machine{},
+		handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, o crclient.Object) []crreconcile.Request {
+			return []crreconcile.Request{{NamespacedName: types.NamespacedName{Name: o.GetName(), Namespace: o.GetNamespace()}}}
+		}),
+		predicate.Funcs{
+			CreateFunc: func(e event.CreateEvent) bool {
+				return false
+			},
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				oldMachine, ok := e.ObjectOld.(*capiv1.Machine)
+				if !ok {
+					return false
+				}
+				newMachine, ok := e.ObjectNew.(*capiv1.Machine)
+				if !ok {
+					return false
+				}
+				return oldMachine.Status.NodeRef == nil && newMachine.Status.NodeRef != nil
+			},
+			DeleteFunc: func(e event.DeleteEvent) bool {
+				return false
+			},
+		},
+	)); err != nil {
+		return fmt.Errorf("failed to watch Machines: %w", err)
 	}
 
 	return nil
