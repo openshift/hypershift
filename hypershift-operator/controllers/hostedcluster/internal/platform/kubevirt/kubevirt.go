@@ -3,10 +3,8 @@ package kubevirt
 import (
 	"context"
 	"fmt"
-	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -69,16 +67,16 @@ func reconcileKubevirtCluster(kubevirtCluster *capikubevirt.KubevirtCluster, hcl
 }
 
 func (p Kubevirt) CAPIProviderDeploymentSpec(hcluster *hyperv1.HostedCluster, _ *hyperv1.HostedControlPlane) (*appsv1.DeploymentSpec, error) {
-	providerImage := ""
-	if envImage := os.Getenv(images.KubevirtCAPIProviderEnvVar); len(envImage) > 0 {
-		providerImage = envImage
-	}
-	if override, ok := hcluster.Annotations[hyperv1.ClusterAPIKubeVirtProviderImage]; ok {
-		providerImage = override
-	}
-	if providerImage == "" {
-		return nil, fmt.Errorf("kubevirt CAPI provider image not specified by environment variable %s or annotation %s", images.KubevirtCAPIProviderEnvVar, hyperv1.ClusterAPIKubeVirtProviderImage)
-	}
+	const providerImage = "registry.ci.openshift.org/ocp/4.18:cluster-api-provider-kubevirt"
+	//if envImage := os.Getenv(images.KubevirtCAPIProviderEnvVar); len(envImage) > 0 {
+	//	providerImage = envImage
+	//}
+	//if override, ok := hcluster.Annotations[hyperv1.ClusterAPIKubeVirtProviderImage]; ok {
+	//	providerImage = override
+	//}
+	//if providerImage == "" {
+	//	providerImage = "registry.ci.openshift.org/ocp/4.18:cluster-api-provider-kubevirt"
+	//}
 	defaultMode := int32(0640)
 	return &appsv1.DeploymentSpec{
 		Replicas: ptr.To[int32](1),
