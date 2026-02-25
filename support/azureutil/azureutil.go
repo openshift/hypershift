@@ -252,6 +252,14 @@ func GetResourceGroupInfo(ctx context.Context, rgName string, subscriptionID str
 	return rg, nil
 }
 
+// IsPrivateKeyVault returns true if the HCP is configured with private Key Vault access
+func IsPrivateKeyVault(hcp *hyperv1.HostedControlPlane) bool {
+	if hcp.Spec.SecretEncryption == nil || hcp.Spec.SecretEncryption.KMS == nil || hcp.Spec.SecretEncryption.KMS.Azure == nil {
+		return false
+	}
+	return hcp.Spec.SecretEncryption.KMS.Azure.KeyVaultAccess == hyperv1.AzureKeyVaultPrivate
+}
+
 // IsAroHCP returns true if the managed service environment variable is set to ARO-HCP
 func IsAroHCP() bool {
 	return os.Getenv("MANAGED_SERVICE") == hyperv1.AroHCP

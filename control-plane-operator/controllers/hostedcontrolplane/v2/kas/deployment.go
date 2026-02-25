@@ -115,7 +115,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	// sidecar resolves the Key Vault FQDN to the private-router Service ClusterIP.
 	// The private router has access to the customer VNet (via Swift) and can reach the
 	// Key Vault's private endpoint, acting as a TCP passthrough relay.
-	if azureutil.IsAroHCP() {
+	if azureutil.IsAroHCP() && azureutil.IsPrivateKeyVault(hcp) {
 		kvFQDN, err := azureutil.GetKeyVaultFQDN(hcp)
 		if err != nil {
 			return fmt.Errorf("failed to get Key Vault FQDN for hostAlias: %w", err)

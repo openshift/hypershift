@@ -1056,6 +1056,7 @@ func TestControlPlaneComponents(t *testing.T) {
 								KeyName:      "test-key",
 								KeyVersion:   "1",
 							},
+							KeyVaultAccess: hyperv1.AzureKeyVaultPrivate,
 						},
 					},
 				}

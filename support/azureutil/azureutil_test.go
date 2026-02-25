@@ -188,6 +188,91 @@ func TestIsAroHCP(t *testing.T) {
 	}
 }
 
+func TestIsPrivateKeyVault(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected bool
+	}{
+		{
+			name: "When KeyVaultAccess is Private it should return true",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								KeyVaultAccess: hyperv1.AzureKeyVaultPrivate,
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When KeyVaultAccess is Public it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								KeyVaultAccess: hyperv1.AzureKeyVaultPublic,
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When KeyVaultAccess is empty it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When SecretEncryption is nil it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			},
+			expected: false,
+		},
+		{
+			name: "When KMS is nil it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When Azure KMS is nil it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{},
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(IsPrivateKeyVault(tc.hcp)).To(Equal(tc.expected))
+		})
+	}
+}
+
 func TestCreateEnvVarsForAzureManagedIdentity(t *testing.T) {
 	type args struct {
 		azureCredentialsFilepath string

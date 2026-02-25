@@ -3192,7 +3192,49 @@ ManagedIdentity
 <p>kms is a pre-existing managed identity used to authenticate with Azure KMS.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>keyVaultAccess</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKeyVaultAccessType">
+AzureKeyVaultAccessType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>keyVaultAccess specifies how the Key Vault should be accessed.
+When set to &ldquo;Private&rdquo;, the control plane routes Key Vault traffic through
+the private router to reach the Key Vault&rsquo;s private endpoint in the customer VNet.
+When set to &ldquo;Public&rdquo; or omitted (empty), the Key Vault is accessed via its public endpoint.
+Controllers treat an empty value the same as &ldquo;Public&rdquo;.</p>
+</td>
+</tr>
 </tbody>
+</table>
+###AzureKeyVaultAccessType { #hypershift.openshift.io/v1beta1.AzureKeyVaultAccessType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>)
+</p>
+<p>
+<p>AzureKeyVaultAccessType specifies the access method for the Azure Key Vault.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Private&#34;</p></td>
+<td><p>AzureKeyVaultPrivate indicates the Key Vault is behind a private endpoint
+and traffic must be routed through the private router (Swift).</p>
+</td>
+</tr><tr><td><p>&#34;Public&#34;</p></td>
+<td><p>AzureKeyVaultPublic indicates the Key Vault is accessible via its public endpoint.</p>
+</td>
+</tr></tbody>
 </table>
 ###AzureMarketplaceImage { #hypershift.openshift.io/v1beta1.AzureMarketplaceImage }
 <p>
