@@ -699,10 +699,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Reconcile hostedcontrolplane availability and Ready flag
 	{
-		infrastructureCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.InfrastructureReady))
-		kubeConfigAvailable := hostedControlPlane.Status.KubeConfig != nil
-		etcdCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdAvailable))
-		kubeAPIServerCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.KubeAPIServerAvailable))
 		healthCheckErr := r.healthCheckKASLoadBalancers(ctx, hostedControlPlane)
 
 		// Check control plane components availability only if the HCP is not already marked as available
@@ -714,46 +710,15 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			componentsNotAvailableMsg, componentsErr = r.controlPlaneComponentsAvailable(ctx, hostedControlPlane)
 		}
 
-		status := metav1.ConditionFalse
-		var reason, message string
-		switch {
-		case infrastructureCondition == nil && etcdCondition == nil && kubeAPIServerCondition == nil:
-			reason = hyperv1.StatusUnknownReason
-			message = ""
-		case infrastructureCondition != nil && infrastructureCondition.Status == metav1.ConditionFalse:
-			reason = infrastructureCondition.Reason
-			message = infrastructureCondition.Message
-		case !kubeConfigAvailable:
-			reason = hyperv1.KubeconfigWaitingForCreateReason
-			message = "Waiting for hosted control plane kubeconfig to be created"
-		case etcdCondition != nil && etcdCondition.Status == metav1.ConditionFalse:
-			reason = etcdCondition.Reason
-			message = etcdCondition.Message
-		case kubeAPIServerCondition != nil && kubeAPIServerCondition.Status == metav1.ConditionFalse:
-			reason = kubeAPIServerCondition.Reason
-			message = kubeAPIServerCondition.Message
-		case healthCheckErr != nil:
-			reason = hyperv1.KASLoadBalancerNotReachableReason
-			message = healthCheckErr.Error()
-		case componentsErr != nil:
-			reason = hyperv1.ControlPlaneComponentsNotAvailable
-			message = fmt.Sprintf("Failed to check control plane component availability: %v", componentsErr)
-		case componentsNotAvailableMsg != "":
-			reason = hyperv1.ControlPlaneComponentsNotAvailable
-			message = componentsNotAvailableMsg
-		default:
-			reason = hyperv1.AsExpectedReason
-			message = ""
-			status = metav1.ConditionTrue
-		}
-		hostedControlPlane.Status.Ready = status == metav1.ConditionTrue
-		condition := metav1.Condition{
-			Type:               string(hyperv1.HostedControlPlaneAvailable),
-			Status:             status,
-			Reason:             reason,
-			Message:            message,
-			ObservedGeneration: hostedControlPlane.Generation,
-		}
+		ready, condition := reconcileAvailabilityStatus(
+			hostedControlPlane.Status.Conditions,
+			hostedControlPlane.Status.KubeConfig != nil,
+			healthCheckErr,
+			componentsNotAvailableMsg,
+			componentsErr,
+			hostedControlPlane.Generation,
+		)
+		hostedControlPlane.Status.Ready = ready
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, condition)
 	}
 
@@ -840,6 +805,64 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	return ctrl.Result{RequeueAfter: hcpReadyRequeueInterval}, nil
+}
+
+// reconcileAvailabilityStatus determines the HostedControlPlane availability condition
+// and Ready flag based on the current state of all prerequisite conditions.
+// It evaluates conditions in priority order: infrastructure, kubeconfig, etcd, KAS,
+// health check, and control plane components.
+func reconcileAvailabilityStatus(
+	conditions []metav1.Condition,
+	kubeConfigAvailable bool,
+	healthCheckErr error,
+	componentsNotAvailableMsg string,
+	componentsErr error,
+	generation int64,
+) (bool, metav1.Condition) {
+	infrastructureCondition := meta.FindStatusCondition(conditions, string(hyperv1.InfrastructureReady))
+	etcdCondition := meta.FindStatusCondition(conditions, string(hyperv1.EtcdAvailable))
+	kubeAPIServerCondition := meta.FindStatusCondition(conditions, string(hyperv1.KubeAPIServerAvailable))
+
+	status := metav1.ConditionFalse
+	var reason, message string
+	switch {
+	case infrastructureCondition == nil && etcdCondition == nil && kubeAPIServerCondition == nil:
+		reason = hyperv1.StatusUnknownReason
+		message = ""
+	case infrastructureCondition != nil && infrastructureCondition.Status == metav1.ConditionFalse:
+		reason = infrastructureCondition.Reason
+		message = infrastructureCondition.Message
+	case !kubeConfigAvailable:
+		reason = hyperv1.KubeconfigWaitingForCreateReason
+		message = "Waiting for hosted control plane kubeconfig to be created"
+	case etcdCondition != nil && etcdCondition.Status == metav1.ConditionFalse:
+		reason = etcdCondition.Reason
+		message = etcdCondition.Message
+	case kubeAPIServerCondition != nil && kubeAPIServerCondition.Status == metav1.ConditionFalse:
+		reason = kubeAPIServerCondition.Reason
+		message = kubeAPIServerCondition.Message
+	case healthCheckErr != nil:
+		reason = hyperv1.KASLoadBalancerNotReachableReason
+		message = healthCheckErr.Error()
+	case componentsErr != nil:
+		reason = hyperv1.ControlPlaneComponentsNotAvailable
+		message = fmt.Sprintf("Failed to check control plane component availability: %v", componentsErr)
+	case componentsNotAvailableMsg != "":
+		reason = hyperv1.ControlPlaneComponentsNotAvailable
+		message = componentsNotAvailableMsg
+	default:
+		reason = hyperv1.AsExpectedReason
+		message = ""
+		status = metav1.ConditionTrue
+	}
+
+	return status == metav1.ConditionTrue, metav1.Condition{
+		Type:               string(hyperv1.HostedControlPlaneAvailable),
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: generation,
+	}
 }
 
 // healthCheckKASLoadBalancers performs a health check on the KubeAPI server /healthz endpoint using the public and private load balancers hostnames directly
