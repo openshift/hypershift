@@ -2028,6 +2028,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Reconcile machine-approver cluster-scoped RBAC - the CPO does not have rights to do this itself.
+	// Skip if machine management is disabled, matching the CPO's machine-approver component predicate.
+	if _, disabled := hcluster.Annotations[hyperv1.DisableMachineManagement]; !disabled {
+		if err = r.reconcileMachineApproverClusterRBAC(ctx, createOrUpdate, hcluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to reconcile machine-approver cluster RBAC: %w", err)
+		}
+	}
+
 	// Reconcile the network policies
 	if err = r.reconcileNetworkPolicies(ctx, log, createOrUpdate, hcluster, hcp, releaseImageVersion, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile network policies: %w", err)
@@ -2665,6 +2673,71 @@ func (r *HostedClusterReconciler) reconcileControlPlanePKIOperatorRBAC(ctx conte
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane PKI operator CSR signer cluster role binding: %w", err)
+	}
+
+	return nil
+}
+
+func (r *HostedClusterReconciler) reconcileMachineApproverClusterRBAC(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster) error {
+	// We don't create this ServiceAccount, the CPO does via the machine-approver v2 component assets,
+	// but we can reference it in RBAC before it's created as the system is eventually consistent.
+	hcpns := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+	serviceAccount := cpomanifests.MachineApproverServiceAccount(hcpns)
+
+	// Reconcile machine-approver ClusterRole for reading APIServer TLS profile.
+	// The machine-approver binary calls FetchAPIServerTLSProfile() using its in-cluster
+	// (management cluster) client, which requires get access to the cluster-scoped
+	// apiservers.config.openshift.io resource.
+	machineApproverClusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("%s-machine-approver", hcpns),
+			Labels: map[string]string{
+				controlplanepkioperatormanifests.OwningHostedClusterNamespaceLabel: hcluster.Namespace,
+				controlplanepkioperatormanifests.OwningHostedClusterNameLabel:      hcluster.Name,
+			},
+		},
+	}
+	_, err := createOrUpdate(ctx, r.Client, machineApproverClusterRole, func() error {
+		machineApproverClusterRole.Rules = []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"config.openshift.io"},
+				Resources: []string{"apiservers"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile machine-approver cluster role: %w", err)
+	}
+
+	// Reconcile machine-approver ClusterRoleBinding
+	machineApproverClusterRoleBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: machineApproverClusterRole.Name,
+			Labels: map[string]string{
+				controlplanepkioperatormanifests.OwningHostedClusterNamespaceLabel: hcluster.Namespace,
+				controlplanepkioperatormanifests.OwningHostedClusterNameLabel:      hcluster.Name,
+			},
+		},
+	}
+	_, err = createOrUpdate(ctx, r.Client, machineApproverClusterRoleBinding, func() error {
+		machineApproverClusterRoleBinding.RoleRef = rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     machineApproverClusterRole.Name,
+		}
+		machineApproverClusterRoleBinding.Subjects = []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      serviceAccount.Name,
+				Namespace: serviceAccount.Namespace,
+			},
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to reconcile machine-approver cluster role binding: %w", err)
 	}
 
 	return nil
