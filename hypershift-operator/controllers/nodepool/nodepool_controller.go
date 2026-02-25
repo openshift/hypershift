@@ -726,6 +726,9 @@ func isAutoscalingEnabled(nodePool *hyperv1.NodePool) bool {
 }
 
 func defaultNodePoolAMI(region string, specifiedArch string, releaseImage *releaseinfo.ReleaseImage) (string, error) {
+	if releaseImage.StreamMetadata == nil {
+		return "", fmt.Errorf("release image stream metadata is nil")
+	}
 	arch, foundArch := releaseImage.StreamMetadata.Architectures[hyperv1.ArchAliases[specifiedArch]]
 	if !foundArch {
 		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
