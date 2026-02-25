@@ -232,6 +232,12 @@ const (
 	// **Unknown** means the status cannot be determined due to true inability to inspect (e.g., no worker nodes exist or inspection cannot be performed),
 	// not due to missing required components.
 	ControlPlaneConnectionAvailable ConditionType = "ControlPlaneConnectionAvailable"
+
+	// AutoNodeEnabled indicates whether AutoNode is configured and operational for this HostedCluster.
+	// **True** means AutoNode is configured in the HostedCluster spec and the Karpenter components are fully rolled out and ready.
+	// **False / AutoNodeProgressing** means AutoNode is being enabled or disabled — the operation is in progress.
+	// **False / AutoNodeNotConfigured** means AutoNode is not configured in the spec and all Karpenter components have been removed.
+	AutoNodeEnabled ConditionType = "AutoNodeEnabled"
 )
 
 // Reasons.
@@ -307,6 +313,10 @@ const (
 	ControlPlaneConnectionNoWorkerNodesAvailableReason = "NoWorkerNodesAvailable"
 
 	ControlPlaneComponentsNotAvailable = "ComponentsNotAvailable"
+
+	AutoNodeNotConfiguredReason    = "AutoNodeNotConfigured"
+	AutoNodeProgressingReason      = "AutoNodeProgressing"
+	AutoNodeEvaluationFailedReason = "AutoNodeEvaluationFailed"
 )
 
 // Messages.

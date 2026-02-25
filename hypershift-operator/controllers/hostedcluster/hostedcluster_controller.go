@@ -856,7 +856,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Copy the platform status from the hostedcontrolplane
 	if hcp != nil {
 		hcluster.Status.Platform = hcp.Status.Platform
+		hcluster.Status.AutoNode = hcp.Status.AutoNode
 	}
+
+	// Set the AutoNodeEnabled condition reflecting both spec intent and actual component rollout progress.
+	meta.SetStatusCondition(&hcluster.Status.Conditions,
+		r.reconcileAutoNodeEnabledCondition(ctx, hcluster, controlPlaneNamespace.Name))
 
 	// Copy the AWSDefaultSecurityGroupCreated condition from the hostedcontrolplane
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {

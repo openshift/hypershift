@@ -171,6 +171,23 @@ func TestKarpenter(t *testing.T) {
 			ec2NodeClass := ec2NodeClassList.Items[0]
 			g.Expect(guestClient.Delete(ctx, &ec2NodeClass)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
 
+			t.Log("Validating AutoNodeEnabled condition is set on HostedCluster")
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNodeEnabled condition", hostedCluster.Namespace, hostedCluster.Name),
+				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+					hc := &hyperv1.HostedCluster{}
+					err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+					return hc, err
+				},
+				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+					e2eutil.ConditionPredicate[*hyperv1.HostedCluster](e2eutil.Condition{
+						Type:   string(hyperv1.AutoNodeEnabled),
+						Status: metav1.ConditionTrue,
+						Reason: hyperv1.AsExpectedReason,
+					}),
+				},
+				e2eutil.WithTimeout(2*time.Minute),
+			)
+
 			// TODO(alberto): increase coverage:
 			// - Karpenter operator plumbing, e.g:
 			// -- validate the CRDs are installed
@@ -272,6 +289,35 @@ func TestKarpenter(t *testing.T) {
 
 			t.Logf("Waiting for Karpenter pods to schedule on the new node")
 			waitForReadyKarpenterPods(t, ctx, guestClient, nodes, replicas)
+
+			// Re-list NodeClaims after upgrade to get the current count for validation.
+			// The pre-upgrade nodeClaims are stale — old NodeClaims were replaced during drift.
+			nodeClaims = waitForReadyNodeClaims(t, ctx, guestClient, len(nodes))
+
+			t.Log("Validating AutoNode status counts are populated after upgrade")
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNode status counts", hostedCluster.Namespace, hostedCluster.Name),
+				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+					hc := &hyperv1.HostedCluster{}
+					err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+					return hc, err
+				},
+				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+					func(hc *hyperv1.HostedCluster) (done bool, reasons string, err error) {
+						if hc.Status.AutoNode == nil {
+							return false, "Status.AutoNode is nil", nil
+						}
+						if hc.Status.AutoNode.NodeCount == nil || *hc.Status.AutoNode.NodeCount < len(nodes) {
+							return false, fmt.Sprintf("expected NodeCount >= %d, got %v", len(nodes), hc.Status.AutoNode.NodeCount), nil
+						}
+						if hc.Status.AutoNode.NodeClaimCount == nil || *hc.Status.AutoNode.NodeClaimCount < len(nodeClaims.Items) {
+							return false, fmt.Sprintf("expected NodeClaimCount >= %d, got %v", len(nodeClaims.Items), hc.Status.AutoNode.NodeClaimCount), nil
+						}
+						return true, fmt.Sprintf("AutoNode status: NodeCount=%d, NodeClaimCount=%d",
+							*hc.Status.AutoNode.NodeCount, *hc.Status.AutoNode.NodeClaimCount), nil
+					},
+				},
+				e2eutil.WithTimeout(5*time.Minute),
+			)
 
 			// Test we can delete both Karpenter NodePool and workloads.
 			g.Expect(guestClient.Delete(ctx, karpenterNodePool)).To(Succeed())

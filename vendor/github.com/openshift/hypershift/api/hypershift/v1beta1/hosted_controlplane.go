@@ -407,9 +407,29 @@ type HostedControlPlaneStatus struct {
 	// +optional
 	NodeCount *int `json:"nodeCount,omitempty"`
 
+	// autoNode contains the observed state of the autoNode (Karpenter) provisioner.
+	// +openshift:enable:FeatureGate=AutoNodeKarpenter
+	// +optional
+	AutoNode *AutoNodeStatus `json:"autoNode,omitempty"`
+
 	// configuration contains the cluster configuration status of the HostedCluster
 	// +optional
 	Configuration *ConfigurationStatus `json:"configuration,omitempty"`
+}
+
+// AutoNodeStatus contains the observed state of the AutoNode provisioner.
+type AutoNodeStatus struct {
+	// nodeCount is the number of nodes fully provisioned by Karpenter.
+	// These are node objects that exist in the cluster and carry the karpenter.sh/nodepool label.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	NodeCount *int `json:"nodeCount,omitempty"`
+
+	// nodeClaimCount is the total number of NodeClaims managed by Karpenter.
+	// This represents what Karpenter intends to provision, whether or not the node object exists yet.
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	NodeClaimCount *int `json:"nodeClaimCount,omitempty"`
 }
 
 // APIEndpoint represents a reachable Kubernetes API endpoint.
