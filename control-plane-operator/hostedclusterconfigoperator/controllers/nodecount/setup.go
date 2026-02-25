@@ -11,8 +11,11 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 )
 
 const ControllerName = "nodecount"
@@ -25,6 +28,11 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 	return ctrl.NewControllerManagedBy(opts.Manager).
 		Named(ControllerName).
 		For(&corev1.Node{}).
+		Watches(&karpenterv1.NodeClaim{}, handler.EnqueueRequestsFromMapFunc(
+			func(_ context.Context, _ client.Object) []reconcile.Request {
+				return []reconcile.Request{{}}
+			},
+		)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](1*time.Second, 10*time.Second),
 		}).Complete(&reconciler{

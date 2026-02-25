@@ -6431,6 +6431,21 @@ spec:
           status:
             description: status is the latest observed status of the HostedCluster.
             properties:
+              autoNode:
+                description: autoNode contains the observed state of the AutoNode
+                  (Karpenter) provisioner.
+                properties:
+                  nodeClaimCount:
+                    description: |-
+                      nodeClaimCount is the total number of NodeClaims managed by Karpenter.
+                      This represents what Karpenter intends to provision, whether or not the node object exists yet.
+                    type: integer
+                  nodeCount:
+                    description: |-
+                      nodeCount is the number of nodes fully provisioned by Karpenter.
+                      These are node objects that exist in the cluster and carry the karpenter.sh/nodepool label.
+                    type: integer
+                type: object
               conditions:
                 description: |-
                   conditions represents the latest available observations of a control

@@ -219,6 +219,9 @@ const (
 	// firewall rules, missing data plane nodes, or problems with infrastructure
 	// components like the konnectivity-agent workload.
 	DataPlaneConnectionAvailable ConditionType = "DataPlaneConnectionAvailable"
+
+	// AutoNodeEnabled indicates that AutoNode (Karpenter) is configured for this HostedCluster.
+	AutoNodeEnabled ConditionType = "AutoNodeEnabled"
 )
 
 // Reasons.

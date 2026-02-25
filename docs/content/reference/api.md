@@ -2872,6 +2872,51 @@ ProvisionerConfig
 </tr>
 </tbody>
 </table>
+###AutoNodeStatus { #hypershift.openshift.io/v1beta1.AutoNodeStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>AutoNodeStatus contains the observed state of the AutoNode (Karpenter) provisioner.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nodeCount</code></br>
+<em>
+int
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nodeCount is the number of nodes fully provisioned by Karpenter.
+These are node objects that exist in the cluster and carry the karpenter.sh/nodepool label.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodeClaimCount</code></br>
+<em>
+int
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nodeClaimCount is the total number of NodeClaims managed by Karpenter.
+This represents what Karpenter intends to provision, whether or not the node object exists yet.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AvailabilityPolicy { #hypershift.openshift.io/v1beta1.AvailabilityPolicy }
 <p>
 (<em>Appears on:</em>
@@ -4919,6 +4964,9 @@ created in the guest VPC</p>
 </tr><tr><td><p>&#34;AWSEndpointServiceAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 has been created for the specified NLB in the management VPC</p>
+</td>
+</tr><tr><td><p>&#34;AutoNodeEnabled&#34;</p></td>
+<td><p>AutoNodeEnabled indicates that AutoNode (Karpenter) is configured for this HostedCluster.</p>
 </td>
 </tr><tr><td><p>&#34;CVOScaledDown&#34;</p></td>
 <td></td>
@@ -7668,6 +7716,20 @@ PlatformStatus
 </tr>
 <tr>
 <td>
+<code>autoNode</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AutoNodeStatus">
+AutoNodeStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>autoNode contains the observed state of the AutoNode (Karpenter) provisioner.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>configuration</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ConfigurationStatus">
@@ -8419,6 +8481,20 @@ int
 <td>
 <em>(Optional)</em>
 <p>nodeCount tracks the number of nodes in the HostedControlPlane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>autoNode</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AutoNodeStatus">
+AutoNodeStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>autoNode contains the observed state of the AutoNode (Karpenter) provisioner.</p>
 </td>
 </tr>
 <tr>
