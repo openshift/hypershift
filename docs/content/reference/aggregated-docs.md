@@ -35272,6 +35272,28 @@ Typically obtained from the output of <code>hypershift infra create gcp</code> w
 the required service accounts with appropriate IAM roles and WIF bindings.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>storage</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>storage is the Google Service Account email for the GCP PD CSI Driver
+that manages Persistent Disk storage operations (create, attach, delete volumes).
+This GSA requires the following IAM roles:
+- roles/compute.storageAdmin (Compute Storage Admin - for managing persistent disks)
+- roles/compute.instanceAdmin.v1 (Compute Instance Admin - for attaching disks to VMs)
+- roles/iam.serviceAccountUser (Service Account User - for impersonation)
+- roles/resourcemanager.tagUser (Tag User - for applying resource tags to disks)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###GCPWorkloadIdentityConfig { #hypershift.openshift.io/v1beta1.GCPWorkloadIdentityConfig }

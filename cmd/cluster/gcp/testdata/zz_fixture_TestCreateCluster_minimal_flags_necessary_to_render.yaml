@@ -50,6 +50,7 @@ spec:
           cloudController: cloudcontroller@test-project-123.iam.gserviceaccount.com
           controlPlane: controlplane@test-project-123.iam.gserviceaccount.com
           nodePool: nodepool@test-project-123.iam.gserviceaccount.com
+          storage: storage@test-project-123.iam.gserviceaccount.com
     type: GCP
   pullSecret:
     name: example-pull-secret
