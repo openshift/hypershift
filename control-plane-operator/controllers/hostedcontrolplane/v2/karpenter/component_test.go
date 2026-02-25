@@ -27,6 +27,14 @@ func TestPredicate(t *testing.T) {
 		},
 		Spec: hyperv1.HostedControlPlaneSpec{
 			InfraID: "test-infra-id",
+			AutoNode: &hyperv1.AutoNode{
+				Provisioner: &hyperv1.ProvisionerConfig{
+					Name: hyperv1.ProvisionerKarpenter,
+					Karpenter: &hyperv1.KarpenterConfig{
+						Platform: hyperv1.AWSPlatform,
+					},
+				},
+			},
 		},
 	}
 

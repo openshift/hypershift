@@ -219,6 +219,12 @@ const (
 	// firewall rules, missing data plane nodes, or problems with infrastructure
 	// components like the konnectivity-agent workload.
 	DataPlaneConnectionAvailable ConditionType = "DataPlaneConnectionAvailable"
+
+	// AutoNodeEnabled indicates whether AutoNode (Karpenter) is configured and operational for this HostedCluster.
+	// **True** means AutoNode (Karpenter) is configured in the HostedCluster spec and the Karpenter components are fully rolled out and ready.
+	// **False / AutoNodeProgressing** means AutoNode is being enabled or disabled — the operation is in progress.
+	// **False / AutoNodeNotConfigured** means AutoNode is not configured in the spec and all Karpenter components have been removed.
+	AutoNodeEnabled ConditionType = "AutoNodeEnabled"
 )
 
 // Reasons.
@@ -286,6 +292,9 @@ const (
 	DataPlaneConnectionNoWorkerNodesAvailableReason = "NoWorkerNodesAvailable"
 
 	ControlPlaneComponentsNotAvailable = "ComponentsNotAvailable"
+
+	AutoNodeNotConfiguredReason = "AutoNodeNotConfigured"
+	AutoNodeProgressingReason   = "AutoNodeProgressing"
 )
 
 // Messages.
