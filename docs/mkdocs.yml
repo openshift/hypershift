@@ -290,6 +290,7 @@ nav:
   - 'Common':
     - 'Expose Data Plane Ingress via MetalLB': recipes/common/exposing-dataplane-with-metallb.md
     - 'Replace the default CRI-O runtime': recipes/common/replace-crio-runtime.md
+    - 'Router Sharding for BareMetal at Scale': recipes/common/router-sharding-baremetal.md
 - 'Reference':
   - 'Architecture':
     - reference/architecture/index.md
