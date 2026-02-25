@@ -83,6 +83,34 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
+		"when GCP private platform with only gcp-project it errors": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.GCPPlatform),
+				GCPProject:      "my-project",
+			},
+			expectError: true,
+		},
+		"when GCP private platform with only gcp-region it errors": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.GCPPlatform),
+				GCPRegion:       "us-central1",
+			},
+			expectError: true,
+		},
+		"when GCP private platform with both gcp-project and gcp-region it succeeds": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.GCPPlatform),
+				GCPProject:      "my-project",
+				GCPRegion:       "us-central1",
+			},
+			expectError: false,
+		},
+		"when GCP private platform without gcp-project and gcp-region it succeeds": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.GCPPlatform),
+			},
+			expectError: false,
+		},
 		"when external-dns GCP provider is set without credentials it succeeds (Workload Identity)": {
 			inputOptions: Options{
 				PrivatePlatform:          string(hyperv1.GCPPlatform),
