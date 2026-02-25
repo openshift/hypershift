@@ -56,6 +56,7 @@ type JWTAuthenticator struct {
 }
 
 // Issuer provides the configuration for a external provider specific settings.
+// +openshift:validation:FeatureGateAwareXValidation:featureGate=ExternalOIDCWithUpstreamParity,rule="self.?discoveryURL.orValue(\"\").size() > 0 ? (self.issuerURL.size() == 0 || self.discoveryURL.find('^.+[^/]') != self.issuerURL.find('^.+[^/]')) : true",message="discoveryURL must be different from issuerURL"
 type Issuer struct {
 	// url points to the issuer URL in a format https://url or https://url/path.
 	// This must match the "iss" claim in the presented JWT, and the issuer returned from discovery.
@@ -94,6 +95,25 @@ type Issuer struct {
 	//   example: claimValidationRule[].expression: 'sets.equivalent(claims.aud, ["bar", "foo", "baz"])' to require an exact match.
 	// +optional
 	AudienceMatchPolicy AudienceMatchPolicyType `json:"audienceMatchPolicy,omitempty"`
+
+	// discoveryURL is an optional field that, if specified, overrides the default discovery endpoint used to retrieve OIDC configuration metadata.
+	// By default, the discovery URL is derived from `issuerURL` as "{issuerURL}/.well-known/openid-configuration".
+	//
+	// The discoveryURL must be a valid absolute HTTPS URL.
+	// It must not contain query parameters, user information, or fragments.
+	// Additionally, it must differ from the value of `issuerURL` (ignoring trailing slashes).
+	// The discoveryURL value must be at least 1 character long and no longer than 2048 characters.
+	//
+	// +optional
+	// +openshift:enable:FeatureGate=ExternalOIDCWithUpstreamParity
+	// +kubebuilder:validation:XValidation:rule="isURL(self)",message="discoveryURL must be a valid URL"
+	// +kubebuilder:validation:XValidation:rule="url(self).getScheme() == 'https'",message="discoveryURL must be a valid https URL"
+	// +kubebuilder:validation:XValidation:rule="url(self).getQuery().size() == 0",message="discoveryURL must not contain query parameters"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[^#]*$')",message="discoveryURL must not contain fragments"
+	// +kubebuilder:validation:XValidation:rule="!self.matches('^https://.+:.+@.+/.*$')",message="discoveryURL must not contain user info"
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	DiscoveryURL string `json:"discoveryURL,omitempty"`
 }
 
 // AudienceMatchPolicyType is a set of valid values for Issuer.AudienceMatchPolicy

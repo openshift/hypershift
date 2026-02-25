@@ -94,15 +94,17 @@ func generateJWTForProvider(ctx context.Context, provider configv1.OIDCProvider,
 		return out, fmt.Errorf("generating claim validation rules: %v", err)
 	}
 
-	userValidationRules, err := generateUserValidationRules(provider.UserValidationRules...)
-	if err != nil {
-		return out, fmt.Errorf("generating userValidationRules for provider %q: %v", provider.Name, err)
+	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) {
+		userValidationRules, err := generateUserValidationRules(provider.UserValidationRules...)
+		if err != nil {
+			return out, fmt.Errorf("generating userValidationRules for provider %q: %v", provider.Name, err)
+		}
+		out.UserValidationRules = userValidationRules
 	}
 
 	out.Issuer = issuer
 	out.ClaimMappings = claimMappings
 	out.ClaimValidationRules = claimValidationRules
-	out.UserValidationRules = userValidationRules
 	return out, nil
 }
 
@@ -115,8 +117,11 @@ func generateIssuer(ctx context.Context, issuer configv1.TokenIssuer, client crc
 	for _, audience := range issuer.Audiences {
 		out.Audiences = append(out.Audiences, string(audience))
 	}
-	if len(issuer.DiscoveryURL) > 0 {
-		out.DiscoveryURL = issuer.DiscoveryURL
+
+	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) {
+		if len(issuer.DiscoveryURL) > 0 {
+			out.DiscoveryURL = issuer.DiscoveryURL
+		}
 	}
 
 	if len(issuer.CertificateAuthority.Name) > 0 {
