@@ -2109,3 +2109,432 @@ func TestRemoveHCPIngressFromRoutes(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileAvailabilityStatus(t *testing.T) {
+	testCases := []struct {
+		name                      string
+		conditions                []metav1.Condition
+		kubeConfigAvailable       bool
+		healthCheckErr            error
+		componentsNotAvailableMsg string
+		componentsErr             error
+		generation                int64
+		expectedReady             bool
+		expectedReason            string
+		expectedMessage           string
+	}{
+		{
+			name:                "When no conditions exist, it should report status unknown",
+			conditions:          []metav1.Condition{},
+			kubeConfigAvailable: true,
+			expectedReady:       false,
+			expectedReason:      hyperv1.StatusUnknownReason,
+			expectedMessage:     "",
+		},
+		{
+			name: "When infrastructure is not ready, it should report infrastructure reason",
+			conditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.InfrastructureReady),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.WaitingOnInfrastructureReadyReason,
+					Message: "Load balancer not provisioned",
+				},
+				{
+					Type:   string(hyperv1.EtcdAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.EtcdQuorumAvailableReason,
+				},
+				{
+					Type:   string(hyperv1.KubeAPIServerAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+			},
+			kubeConfigAvailable: true,
+			expectedReady:       false,
+			expectedReason:      hyperv1.WaitingOnInfrastructureReadyReason,
+			expectedMessage:     "Load balancer not provisioned",
+		},
+		{
+			name: "When kubeconfig is not available, it should report waiting for kubeconfig",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.InfrastructureReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:   string(hyperv1.EtcdAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.EtcdQuorumAvailableReason,
+				},
+				{
+					Type:   string(hyperv1.KubeAPIServerAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+			},
+			kubeConfigAvailable: false,
+			expectedReady:       false,
+			expectedReason:      hyperv1.KubeconfigWaitingForCreateReason,
+			expectedMessage:     "Waiting for hosted control plane kubeconfig to be created",
+		},
+		{
+			name: "When etcd is not available, it should report etcd reason",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.InfrastructureReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:    string(hyperv1.EtcdAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.EtcdWaitingForQuorumReason,
+					Message: "Waiting for etcd to reach quorum",
+				},
+				{
+					Type:   string(hyperv1.KubeAPIServerAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+			},
+			kubeConfigAvailable: true,
+			expectedReady:       false,
+			expectedReason:      hyperv1.EtcdWaitingForQuorumReason,
+			expectedMessage:     "Waiting for etcd to reach quorum",
+		},
+		{
+			name: "When KAS is not available, it should report KAS reason",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.InfrastructureReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:   string(hyperv1.EtcdAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.EtcdQuorumAvailableReason,
+				},
+				{
+					Type:    string(hyperv1.KubeAPIServerAvailable),
+					Status:  metav1.ConditionFalse,
+					Reason:  "DeploymentNotReady",
+					Message: "KAS deployment has 0/1 ready replicas",
+				},
+			},
+			kubeConfigAvailable: true,
+			expectedReady:       false,
+			expectedReason:      "DeploymentNotReady",
+			expectedMessage:     "KAS deployment has 0/1 ready replicas",
+		},
+		{
+			name: "When health check fails, it should report KAS load balancer not reachable",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.InfrastructureReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:   string(hyperv1.EtcdAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.EtcdQuorumAvailableReason,
+				},
+				{
+					Type:   string(hyperv1.KubeAPIServerAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+			},
+			kubeConfigAvailable: true,
+			healthCheckErr:      fmt.Errorf("connection refused"),
+			expectedReady:       false,
+			expectedReason:      hyperv1.KASLoadBalancerNotReachableReason,
+			expectedMessage:     "connection refused",
+		},
+		{
+			name: "When components check returns error, it should report components not available with error",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.InfrastructureReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:   string(hyperv1.EtcdAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.EtcdQuorumAvailableReason,
+				},
+				{
+					Type:   string(hyperv1.KubeAPIServerAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+			},
+			kubeConfigAvailable: true,
+			componentsErr:       fmt.Errorf("failed to list components"),
+			expectedReady:       false,
+			expectedReason:      hyperv1.ControlPlaneComponentsNotAvailable,
+			expectedMessage:     "Failed to check control plane component availability: failed to list components",
+		},
+		{
+			name: "When components are not available, it should report components not available with message",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.InfrastructureReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:   string(hyperv1.EtcdAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.EtcdQuorumAvailableReason,
+				},
+				{
+					Type:   string(hyperv1.KubeAPIServerAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+			},
+			kubeConfigAvailable:       true,
+			componentsNotAvailableMsg: "Waiting for components to be available: kube-scheduler",
+			expectedReady:             false,
+			expectedReason:            hyperv1.ControlPlaneComponentsNotAvailable,
+			expectedMessage:           "Waiting for components to be available: kube-scheduler",
+		},
+		{
+			name: "When all conditions are met, it should report available and ready",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.InfrastructureReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+				{
+					Type:   string(hyperv1.EtcdAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.EtcdQuorumAvailableReason,
+				},
+				{
+					Type:   string(hyperv1.KubeAPIServerAvailable),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+			},
+			kubeConfigAvailable: true,
+			expectedReady:       true,
+			expectedReason:      hyperv1.AsExpectedReason,
+			expectedMessage:     "",
+		},
+		{
+			name: "When infrastructure is true but etcd and KAS conditions are nil, it should report available",
+			conditions: []metav1.Condition{
+				{
+					Type:   string(hyperv1.InfrastructureReady),
+					Status: metav1.ConditionTrue,
+					Reason: hyperv1.AsExpectedReason,
+				},
+			},
+			kubeConfigAvailable: true,
+			expectedReady:       true,
+			expectedReason:      hyperv1.AsExpectedReason,
+			expectedMessage:     "",
+		},
+		{
+			name:            "When generation is set, it should propagate to ObservedGeneration",
+			conditions:      []metav1.Condition{},
+			generation:      42,
+			expectedReady:   false,
+			expectedReason:  hyperv1.StatusUnknownReason,
+			expectedMessage: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			ready, condition := reconcileAvailabilityStatus(
+				tc.conditions,
+				tc.kubeConfigAvailable,
+				tc.healthCheckErr,
+				tc.componentsNotAvailableMsg,
+				tc.componentsErr,
+				tc.generation,
+			)
+
+			g.Expect(ready).To(Equal(tc.expectedReady))
+			g.Expect(condition.Type).To(Equal(string(hyperv1.HostedControlPlaneAvailable)))
+			g.Expect(condition.Reason).To(Equal(tc.expectedReason))
+			g.Expect(condition.Message).To(Equal(tc.expectedMessage))
+			if tc.expectedReady {
+				g.Expect(condition.Status).To(Equal(metav1.ConditionTrue))
+			} else {
+				g.Expect(condition.Status).To(Equal(metav1.ConditionFalse))
+			}
+			g.Expect(condition.ObservedGeneration).To(Equal(tc.generation))
+		})
+	}
+}
+
+func TestEtcdStatefulSetCondition(t *testing.T) {
+	testNamespace := "test-namespace"
+
+	testCases := []struct {
+		name              string
+		sts               *appsv1.StatefulSet
+		pvcs              []corev1.PersistentVolumeClaim
+		expectedCondition metav1.Condition
+		expectError       bool
+	}{
+		{
+			name: "When all replicas are ready, it should report quorum available",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: testNamespace,
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: appsv1.StatefulSetStatus{
+					ReadyReplicas: 3,
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.EtcdAvailable),
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.EtcdQuorumAvailableReason,
+			},
+		},
+		{
+			name: "When majority of replicas are ready, it should report quorum available",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: testNamespace,
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: appsv1.StatefulSetStatus{
+					ReadyReplicas: 2,
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.EtcdAvailable),
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.EtcdQuorumAvailableReason,
+			},
+		},
+		{
+			name: "When single replica is ready out of one, it should report quorum available",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: testNamespace,
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: ptr.To[int32](1),
+				},
+				Status: appsv1.StatefulSetStatus{
+					ReadyReplicas: 1,
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:   string(hyperv1.EtcdAvailable),
+				Status: metav1.ConditionTrue,
+				Reason: hyperv1.EtcdQuorumAvailableReason,
+			},
+		},
+		{
+			name: "When no replicas are ready and PVCs are bound, it should report waiting for quorum",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: testNamespace,
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: appsv1.StatefulSetStatus{
+					ReadyReplicas: 0,
+				},
+			},
+			pvcs: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "data-etcd-0",
+						Namespace: testNamespace,
+						Labels:    map[string]string{"app": "etcd"},
+					},
+					Status: corev1.PersistentVolumeClaimStatus{
+						Phase: corev1.ClaimBound,
+					},
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:    string(hyperv1.EtcdAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.EtcdWaitingForQuorumReason,
+				Message: "Waiting for etcd to reach quorum",
+			},
+		},
+		{
+			name: "When no replicas are ready and no PVCs exist, it should report waiting for quorum",
+			sts: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "etcd",
+					Namespace: testNamespace,
+				},
+				Spec: appsv1.StatefulSetSpec{
+					Replicas: ptr.To[int32](3),
+				},
+				Status: appsv1.StatefulSetStatus{
+					ReadyReplicas: 0,
+				},
+			},
+			expectedCondition: metav1.Condition{
+				Type:    string(hyperv1.EtcdAvailable),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.EtcdWaitingForQuorumReason,
+				Message: "Waiting for etcd to reach quorum",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			clientBuilder := fake.NewClientBuilder()
+			if len(tc.pvcs) > 0 {
+				pvcList := &corev1.PersistentVolumeClaimList{Items: tc.pvcs}
+				clientBuilder = clientBuilder.WithLists(pvcList)
+			}
+			fakeClient := clientBuilder.Build()
+
+			r := &HostedControlPlaneReconciler{
+				Client: fakeClient,
+				Log:    ctrl.LoggerFrom(t.Context()),
+			}
+
+			condition, err := r.etcdStatefulSetCondition(t.Context(), tc.sts)
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(condition).ToNot(BeNil())
+			g.Expect(condition.Type).To(Equal(tc.expectedCondition.Type))
+			g.Expect(condition.Status).To(Equal(tc.expectedCondition.Status))
+			g.Expect(condition.Reason).To(Equal(tc.expectedCondition.Reason))
+			if tc.expectedCondition.Message != "" {
+				g.Expect(condition.Message).To(Equal(tc.expectedCondition.Message))
+			}
+		})
+	}
+}
