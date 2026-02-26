@@ -26,6 +26,8 @@ import (
 type OpenshiftEC2NodeClassStatusApplyConfiguration struct {
 	Subnets        []SubnetApplyConfiguration        `json:"subnets,omitempty"`
 	SecurityGroups []SecurityGroupApplyConfiguration `json:"securityGroups,omitempty"`
+	ReleaseImage   *string                           `json:"releaseImage,omitempty"`
+	Version        *string                           `json:"version,omitempty"`
 	Conditions     []v1.ConditionApplyConfiguration  `json:"conditions,omitempty"`
 }
 
@@ -58,6 +60,22 @@ func (b *OpenshiftEC2NodeClassStatusApplyConfiguration) WithSecurityGroups(value
 		}
 		b.SecurityGroups = append(b.SecurityGroups, *values[i])
 	}
+	return b
+}
+
+// WithReleaseImage sets the ReleaseImage field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ReleaseImage field is set to the value of the last call.
+func (b *OpenshiftEC2NodeClassStatusApplyConfiguration) WithReleaseImage(value string) *OpenshiftEC2NodeClassStatusApplyConfiguration {
+	b.ReleaseImage = &value
+	return b
+}
+
+// WithVersion sets the Version field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Version field is set to the value of the last call.
+func (b *OpenshiftEC2NodeClassStatusApplyConfiguration) WithVersion(value string) *OpenshiftEC2NodeClassStatusApplyConfiguration {
+	b.Version = &value
 	return b
 }
 

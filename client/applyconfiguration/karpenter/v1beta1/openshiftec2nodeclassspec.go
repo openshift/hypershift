@@ -31,6 +31,7 @@ type OpenshiftEC2NodeClassSpecApplyConfiguration struct {
 	BlockDeviceMappings        []*karpenterv1beta1.BlockDeviceMapping        `json:"blockDeviceMappings,omitempty"`
 	InstanceStorePolicy        *karpenterv1beta1.InstanceStorePolicy         `json:"instanceStorePolicy,omitempty"`
 	DetailedMonitoring         *bool                                         `json:"detailedMonitoring,omitempty"`
+	Version                    *string                                       `json:"version,omitempty"`
 }
 
 // OpenshiftEC2NodeClassSpecApplyConfiguration constructs a declarative configuration of the OpenshiftEC2NodeClassSpec type for use with
@@ -113,5 +114,13 @@ func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithInstanceStorePolicy(va
 // If called multiple times, the DetailedMonitoring field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithDetailedMonitoring(value bool) *OpenshiftEC2NodeClassSpecApplyConfiguration {
 	b.DetailedMonitoring = &value
+	return b
+}
+
+// WithVersion sets the Version field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Version field is set to the value of the last call.
+func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithVersion(value string) *OpenshiftEC2NodeClassSpecApplyConfiguration {
+	b.Version = &value
 	return b
 }

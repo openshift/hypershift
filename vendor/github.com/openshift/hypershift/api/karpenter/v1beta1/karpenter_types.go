@@ -267,8 +267,6 @@ type OpenshiftEC2NodeClassStatus struct {
 	ReleaseImage string `json:"releaseImage,omitempty"`
 
 	// Version is the resolved OpenShift version corresponding to the status.releaseImage.
-	// When spec.version is set, this matches spec.version. When spec.version is not set,
-	// this reflects the version of the control plane's release image.
 	// +optional
 	Version string `json:"version,omitempty"`
 
