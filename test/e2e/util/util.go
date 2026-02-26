@@ -2080,6 +2080,162 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 	})
 }
 
+// EnsurePreserveRegistries tests that registries listed in the globalps-preserve-registries ConfigMap
+// are preserved in config.json when the additional-pull-secret is synced.
+// This test verifies that:
+// 1. A registry already present in config.json is preserved when listed in the ConfigMap
+// 2. The preserved registry credentials are not overwritten by additional-pull-secret
+func EnsurePreserveRegistries(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster) {
+	AtLeast(t, Version419)
+
+	if entryHostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform && entryHostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
+		t.Skip("test only supported on platform ARO or AWS")
+	}
+
+	if entryHostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform && releaseVersion.LE(Version420) {
+		t.Skip("AWS platform not supported on version 4.20 or less")
+	}
+
+	if strings.Contains(t.Name(), "TestAutoscaling") || strings.Contains(t.Name(), "TestAutoscalingBalancing") || strings.Contains(t.Name(), "TestNodePool") {
+		t.Skip("Skip PreserveRegistries test for NodePool and Autoscaling tests to avoid issues with the daemon set")
+	}
+
+	if strings.Contains(t.Name(), "TestCreateClusterCustomConfig") {
+		t.Skip("Skip PreserveRegistries test for TestCreateClusterCustomConfig to avoid issues with OVN")
+	}
+
+	if !hyperutil.IsPublicHC(entryHostedCluster) {
+		t.Skip("test only supported on public clusters")
+	}
+
+	var (
+		// The registry that we want to preserve from existing config.json
+		// This is typically a registry that exists in the original HCP pull secret
+		preservedRegistry = "12345678.dkr.ecr.eu-west-2.amazonaws.com"
+
+		// Additional Pull Secret with a different registry that should NOT override preserved
+		additionalPullSecretName      = "additional-pull-secret"
+		additionalPullSecretNamespace = "kube-system"
+		// This contains a quay.io entry that should be overridden by the original HCP's quay.io
+		additionalPullSecretData = []byte(`{"auths": {"quay.io": {"auth": "ZHVtbXk6ZHVtbXk="}, "test-registry.example.com": {"auth": "dGVzdDp0ZXN0"}}}`)
+		dsImage                  string
+		g                        = NewWithT(t)
+	)
+
+	guestClient := WaitForGuestClient(t, ctx, mgmtClient, entryHostedCluster)
+
+	// Get NodePool List
+	npList := &hyperv1.NodePoolList{}
+	err := mgmtClient.List(ctx, npList, crclient.InNamespace(entryHostedCluster.Namespace))
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			t.Skip("NodePool is not found, skipping EnsurePreserveRegistries test")
+		}
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePoolList")
+	}
+
+	// Get the first NodePool
+	np := &hyperv1.NodePool{}
+	err = mgmtClient.Get(ctx, crclient.ObjectKey{Name: npList.Items[0].Name, Namespace: npList.Items[0].Namespace}, np)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
+	g.Expect(np.Spec.Replicas).NotTo(BeNil(), "NodePool replicas are not set")
+
+	if np.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
+		t.Skip("InPlace upgrade type is not supported for PreserveRegistries")
+	}
+
+	nodeCount, err := hyperutil.CountAvailableNodes(ctx, guestClient)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to count available nodes")
+	t.Logf("NodePool replicas: %d, Available nodes: %d", *np.Spec.Replicas, nodeCount)
+
+	// Step 1: Create the preserve-registries ConfigMap listing an ECR registry to preserve
+	t.Run("Create preserve-registries ConfigMap", func(t *testing.T) {
+		err := CreatePreserveRegistriesConfigMap(ctx, guestClient, []string{preservedRegistry})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create preserve-registries ConfigMap")
+		t.Logf("Created preserve-registries ConfigMap with registry: %s", preservedRegistry)
+	})
+
+	// Step 2: Get the DaemonSet image for verification DaemonSets
+	t.Run("Get GlobalPullSecret DaemonSet image", func(t *testing.T) {
+		g.Eventually(func() error {
+			daemonSet := hccomanifests.GlobalPullSecretDaemonSet()
+			if err := guestClient.Get(ctx, crclient.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet); err != nil {
+				return err
+			}
+			dsImage = daemonSet.Spec.Template.Spec.Containers[0].Image
+			return nil
+		}, 30*time.Second, 5*time.Second).Should(Succeed(), "DaemonSet is not present")
+	})
+
+	// Step 3: Wait for GlobalPullSecret DaemonSet to be ready (picks up the ConfigMap)
+	t.Run("Wait for GlobalPullSecret DaemonSet to restart with preserve-registries mount", func(t *testing.T) {
+		daemonSetsToCheck := []DaemonSetManifest{
+			{GetFunc: hccomanifests.GlobalPullSecretDaemonSet, AllowPartialNodes: false},
+		}
+		err := waitForDaemonSetsReady(t, ctx, guestClient, daemonSetsToCheck, nodeCount)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to wait for DaemonSets to be ready")
+	})
+
+	// Step 4: Verify the preserved registry (quay.io) is in config.json before adding additional-pull-secret
+	t.Run("Verify preserved registry exists in config.json before additional-pull-secret", func(t *testing.T) {
+		VerifyPreservedRegistries(t, ctx, guestClient, dsImage, preservedRegistry)
+	})
+
+	// Step 5: Create additional-pull-secret with a quay.io entry (should not override the preserved one)
+	t.Run("Create additional-pull-secret with conflicting registry", func(t *testing.T) {
+		err := createAdditionalPullSecret(ctx, guestClient, additionalPullSecretData, additionalPullSecretName, additionalPullSecretNamespace)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create additional-pull-secret")
+		t.Log("Created additional-pull-secret with quay.io and test-registry.example.com")
+	})
+
+	// Step 6: Wait for GlobalPullSecret to be updated
+	t.Run("Wait for GlobalPullSecret secret to be created", func(t *testing.T) {
+		globalPullSecret := hccomanifests.GlobalPullSecret()
+		g.Eventually(func() error {
+			if err := guestClient.Get(ctx, crclient.ObjectKey{Name: globalPullSecret.Name, Namespace: globalPullSecret.Namespace}, globalPullSecret); err != nil {
+				return err
+			}
+			g.Expect(globalPullSecret.Data).NotTo(BeEmpty(), "global-pull-secret secret is empty")
+			return nil
+		}, 30*time.Second, 5*time.Second).Should(Succeed(), "global-pull-secret secret is not present")
+	})
+
+	// Step 7: Wait for DaemonSets to stabilize
+	t.Run("Wait for DaemonSets to be ready after additional-pull-secret", func(t *testing.T) {
+		daemonSetsToCheck := []DaemonSetManifest{
+			{GetFunc: OpenshiftOVNKubeDaemonSet, AllowPartialNodes: false},
+			{GetFunc: hccomanifests.GlobalPullSecretDaemonSet, AllowPartialNodes: false},
+			{GetFunc: hccomanifests.KonnectivityAgentDaemonSet, AllowPartialNodes: false},
+		}
+		err := waitForDaemonSetsReady(t, ctx, guestClient, daemonSetsToCheck, nodeCount)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to wait for DaemonSets to be ready")
+	})
+
+	// Step 8: Verify the preserved registry is still in config.json after additional-pull-secret was added
+	t.Run("Verify preserved registry still exists after additional-pull-secret sync", func(t *testing.T) {
+		VerifyPreservedRegistries(t, ctx, guestClient, dsImage, preservedRegistry)
+	})
+
+	// Cleanup: Delete additional-pull-secret
+	t.Log("Deleting the additional-pull-secret secret")
+	err = guestClient.Delete(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: additionalPullSecretName, Namespace: additionalPullSecretNamespace}})
+	g.Expect(err).NotTo(HaveOccurred(), "failed to delete additional-pull-secret")
+
+	// Cleanup: Delete preserve-registries ConfigMap
+	t.Log("Deleting the preserve-registries ConfigMap")
+	err = DeletePreserveRegistriesConfigMap(ctx, guestClient)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to delete preserve-registries ConfigMap")
+
+	// Wait for cleanup to stabilize
+	t.Run("Wait for cleanup to stabilize", func(t *testing.T) {
+		daemonSetsToCheck := []DaemonSetManifest{
+			{GetFunc: hccomanifests.GlobalPullSecretDaemonSet, AllowPartialNodes: true},
+		}
+		err := waitForDaemonSetsReady(t, ctx, guestClient, daemonSetsToCheck, nodeCount)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to wait for DaemonSets to stabilize after cleanup")
+	})
+}
+
 func createAdditionalPullSecret(ctx context.Context, guestClient crclient.Client, pullSecretData []byte, registrySecretName, registryNamespace string) error {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

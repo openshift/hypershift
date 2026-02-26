@@ -128,9 +128,20 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 			return fmt.Errorf("failed to label nodes for GlobalPullSecret: %w", err)
 		}
 
+		// Check if preserve-registries ConfigMap exists
+		preserveRegistriesName := ""
+		preserveExists, err := preserveRegistriesConfigMapExists(ctx, r.kubeSystemSecretClient)
+		if err != nil {
+			log.Error(err, "failed to check if preserve-registries ConfigMap exists")
+		}
+		if preserveExists {
+			preserveRegistriesName = manifests.PreserveRegistriesConfigMapName
+			log.Info("preserve-registries ConfigMap found, mounting to DaemonSet")
+		}
+
 		// Reconcile DaemonSet with only original pull secret (global-pull-secret will be optional and empty)
 		daemonSet := manifests.GlobalPullSecretDaemonSet()
-		if err := reconcileDaemonSet(ctx, daemonSet, "", originalSecret.Name, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
+		if err := reconcileDaemonSet(ctx, daemonSet, "", originalSecret.Name, preserveRegistriesName, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
 			return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
 		}
 
@@ -177,10 +188,21 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 		return fmt.Errorf("failed to create global pull secret: %w", err)
 	}
 
+	// Check if preserve-registries ConfigMap exists
+	preserveRegistriesName := ""
+	preserveExists, err := preserveRegistriesConfigMapExists(ctx, r.kubeSystemSecretClient)
+	if err != nil {
+		log.Error(err, "failed to check if preserve-registries ConfigMap exists")
+	}
+	if preserveExists {
+		preserveRegistriesName = manifests.PreserveRegistriesConfigMapName
+		log.Info("preserve-registries ConfigMap found, mounting to DaemonSet")
+	}
+
 	// Generate a hash of the global pull secret content to trigger pod recreation when content changes
 	configSeed := util.HashSimple(globalPullSecretBytes)
 	daemonSet := manifests.GlobalPullSecretDaemonSet()
-	if err := reconcileDaemonSet(ctx, daemonSet, secret.Name, originalSecret.Name, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
+	if err := reconcileDaemonSet(ctx, daemonSet, secret.Name, originalSecret.Name, preserveRegistriesName, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
 		return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
 	}
 
@@ -265,7 +287,7 @@ func (r *Reconciler) labelNodesForGlobalPullSecret(ctx context.Context) error {
 	return nil
 }
 
-func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, globalPullSecretName string, originalPullSecretName string, configSeed string, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, hccoImage string) error {
+func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, globalPullSecretName string, originalPullSecretName string, preserveRegistriesConfigMapName string, configSeed string, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, hccoImage string) error {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling global pull secret daemon set")
 
@@ -313,7 +335,7 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 								// the combination of file system access and systemd service management.
 								Privileged: ptr.To(true),
 							},
-							VolumeMounts:             buildGlobalPSVolumeMounts(globalPullSecretName),
+							VolumeMounts:             buildGlobalPSVolumeMounts(globalPullSecretName, preserveRegistriesConfigMapName),
 							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
@@ -323,7 +345,7 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 							},
 						},
 					},
-					Volumes: buildGlobalPSVolumes(globalPullSecretName, originalPullSecretName),
+					Volumes: buildGlobalPSVolumes(globalPullSecretName, originalPullSecretName, preserveRegistriesConfigMapName),
 				},
 			},
 		}
@@ -421,9 +443,20 @@ func additionalPullSecretExists(ctx context.Context, c crclient.Client) (bool, *
 	return true, additionalPullSecret, nil
 }
 
+func preserveRegistriesConfigMapExists(ctx context.Context, c crclient.Client) (bool, error) {
+	cm := manifests.PreserveRegistriesConfigMap()
+	if err := c.Get(ctx, crclient.ObjectKeyFromObject(cm), cm); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
 // Volume build functions for GlobalPullSecret DaemonSet
 // buildGlobalPSVolumeMounts builds the volume mounts for the GlobalPullSecret DaemonSet
-func buildGlobalPSVolumeMounts(globalPullSecretName string) []corev1.VolumeMount {
+func buildGlobalPSVolumeMounts(globalPullSecretName string, preserveRegistriesConfigMapName string) []corev1.VolumeMount {
 	var volumeMounts []corev1.VolumeMount
 
 	volumeMounts = append(volumeMounts, globalPSVolumeMountKubeletConfig())
@@ -434,11 +467,15 @@ func buildGlobalPSVolumeMounts(globalPullSecretName string) []corev1.VolumeMount
 		volumeMounts = append(volumeMounts, globalPSVolumeMountGlobalPullSecret())
 	}
 
+	if preserveRegistriesConfigMapName != "" {
+		volumeMounts = append(volumeMounts, globalPSVolumeMountPreserveRegistries())
+	}
+
 	return volumeMounts
 }
 
 // buildGlobalPSVolumes creates volumes for the GlobalPullSecret DaemonSet using util.BuildVolume pattern
-func buildGlobalPSVolumes(globalPullSecretName string, originalPullSecretName string) []corev1.Volume {
+func buildGlobalPSVolumes(globalPullSecretName string, originalPullSecretName string, preserveRegistriesConfigMapName string) []corev1.Volume {
 	var volumes []corev1.Volume
 
 	volumes = append(volumes, util.BuildVolume(globalPSVolumeKubeletConfig(), buildGlobalPSVolumeKubeletConfig))
@@ -447,6 +484,10 @@ func buildGlobalPSVolumes(globalPullSecretName string, originalPullSecretName st
 
 	if globalPullSecretName != "" {
 		volumes = append(volumes, util.BuildVolume(globalPSVolumeGlobalPullSecret(), buildGlobalPSVolumeGlobalPullSecret(globalPullSecretName)))
+	}
+
+	if preserveRegistriesConfigMapName != "" {
+		volumes = append(volumes, util.BuildVolume(globalPSVolumePreserveRegistries(), buildGlobalPSVolumePreserveRegistries(preserveRegistriesConfigMapName)))
 	}
 
 	return volumes
@@ -535,6 +576,31 @@ func globalPSVolumeMountGlobalPullSecret() corev1.VolumeMount {
 	return corev1.VolumeMount{
 		Name:      globalPSVolumeGlobalPullSecret().Name,
 		MountPath: "/etc/global-pull-secret",
+		ReadOnly:  true,
+	}
+}
+
+func globalPSVolumePreserveRegistries() *corev1.Volume {
+	return &corev1.Volume{
+		Name: "preserve-registries",
+	}
+}
+
+func buildGlobalPSVolumePreserveRegistries(configMapName string) func(v *corev1.Volume) {
+	return func(v *corev1.Volume) {
+		v.ConfigMap = &corev1.ConfigMapVolumeSource{
+			LocalObjectReference: corev1.LocalObjectReference{
+				Name: configMapName,
+			},
+			Optional: ptr.To(true),
+		}
+	}
+}
+
+func globalPSVolumeMountPreserveRegistries() corev1.VolumeMount {
+	return corev1.VolumeMount{
+		Name:      globalPSVolumePreserveRegistries().Name,
+		MountPath: "/etc/preserve-registries",
 		ReadOnly:  true,
 	}
 }

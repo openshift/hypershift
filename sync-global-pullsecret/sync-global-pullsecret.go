@@ -3,12 +3,14 @@ package syncglobalpullsecret
 // sync-global-pullsecret syncs the pull secret from the user provided pull secret in DataPlane and appends it to the HostedCluster PullSecret to be deployed in the nodes of the HostedCluster.
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -45,6 +47,9 @@ const (
 	// Mounted secret file paths
 	originalPullSecretFilePath = "/etc/original-pull-secret/.dockerconfigjson"
 	globalPullSecretFilePath   = "/etc/global-pull-secret/.dockerconfigjson"
+
+	// Mounted preserve-registries ConfigMap file path
+	preserveRegistriesFilePath = "/etc/preserve-registries/registries"
 
 	tickerPace = 30 * time.Second
 
@@ -147,6 +152,12 @@ func (s *GlobalPullSecretSyncer) runSyncLoop(ctx context.Context) error {
 func (s *GlobalPullSecretSyncer) syncPullSecret() error {
 	s.log.Info("Syncing global pull secret")
 
+	// Read the original pull secret (always needed for priority determination)
+	originalPullSecretBytes, err := readPullSecretFromFile(originalPullSecretFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read original pull secret from file: %w", err)
+	}
+
 	// Try to read the global pull secret from mounted file first
 	globalPullSecretBytes, err := readPullSecretFromFile(globalPullSecretFilePath)
 	if err != nil {
@@ -155,21 +166,44 @@ func (s *GlobalPullSecretSyncer) syncPullSecret() error {
 		}
 		// If global pull secret file doesn't exist, fall back to original pull secret
 		s.log.Info("Global pull secret file not found, using original pull secret")
-		originalPullSecretBytes, err := readPullSecretFromFile(originalPullSecretFilePath)
-		if err != nil {
-			return fmt.Errorf("failed to read original pull secret from file: %w", err)
-		}
 		globalPullSecretBytes = originalPullSecretBytes
 	} else {
 		if len(globalPullSecretBytes) == 0 {
 			s.log.Info("Global pull secret file is empty, using original pull secret")
-			originalPullSecretBytes, err := readPullSecretFromFile(originalPullSecretFilePath)
-			if err != nil {
-				return fmt.Errorf("failed to read original pull secret from file: %w", err)
-			}
 			globalPullSecretBytes = originalPullSecretBytes
 		} else {
 			s.log.Info("Global pull secret content found, using it")
+		}
+	}
+
+	// Check for preserve-registries ConfigMap and merge preserved auths if present
+	preserveRegistries, err := readPreserveRegistriesList()
+	if err != nil {
+		s.log.Error(err, "Failed to read preserve-registries list, continuing without preservation")
+	}
+
+	if len(preserveRegistries) > 0 {
+		s.log.Info("Found preserve-registries list", "registries", preserveRegistries)
+
+		// Read existing config.json to extract preserved auths
+		existingContent, err := readFileFunc(s.kubeletConfigJsonPath)
+		if err != nil && !os.IsNotExist(err) {
+			s.log.Error(err, "Failed to read existing config.json for preservation")
+		}
+
+		if len(existingContent) > 0 {
+			preservedAuths, err := extractPreservedAuths(existingContent, preserveRegistries)
+			if err != nil {
+				s.log.Error(err, "Failed to extract preserved auths")
+			} else if len(preservedAuths) > 0 {
+				s.log.Info("Extracted preserved auths", "count", len(preservedAuths))
+
+				// Merge preserved auths with the global pull secret
+				globalPullSecretBytes, err = mergeWithPreservedAuths(globalPullSecretBytes, preservedAuths, originalPullSecretBytes)
+				if err != nil {
+					s.log.Error(err, "Failed to merge preserved auths")
+				}
+			}
 		}
 	}
 
@@ -314,4 +348,117 @@ func writeAtomic(path string, data []byte, perm os.FileMode) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// readPreserveRegistriesList reads the list of registries to preserve from the mounted ConfigMap file.
+// Returns an empty list if the file doesn't exist.
+func readPreserveRegistriesList() ([]string, error) {
+	content, err := readFileFunc(preserveRegistriesFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read preserve-registries file: %w", err)
+	}
+
+	var registries []string
+	scanner := bufio.NewScanner(strings.NewReader(string(content)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		registries = append(registries, line)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to parse preserve-registries file: %w", err)
+	}
+
+	return registries, nil
+}
+
+// extractPreservedAuths extracts auths from existing config.json for the specified registries.
+// Returns a map of registry -> auth entry that should be preserved.
+func extractPreservedAuths(existingContent []byte, registries []string) (map[string]any, error) {
+	if len(existingContent) == 0 || len(registries) == 0 {
+		return nil, nil
+	}
+
+	var existingJSON map[string]any
+	if err := json.Unmarshal(existingContent, &existingJSON); err != nil {
+		return nil, fmt.Errorf("failed to parse existing config.json: %w", err)
+	}
+
+	existingAuths, ok := existingJSON["auths"].(map[string]any)
+	if !ok {
+		return nil, nil
+	}
+
+	// Build a set of registries to preserve for fast lookup
+	registrySet := make(map[string]bool)
+	for _, r := range registries {
+		registrySet[r] = true
+	}
+
+	// Extract auths for registries in the preserve list
+	preservedAuths := make(map[string]any)
+	for registry, auth := range existingAuths {
+		if registrySet[registry] {
+			preservedAuths[registry] = auth
+		}
+	}
+
+	return preservedAuths, nil
+}
+
+// mergeWithPreservedAuths merges preserved auths with the new pull secret content.
+// Priority (lowest to highest):
+// 1. User-provided additional-pull-secret (in globalPullSecretBytes, already merged by controller)
+// 2. Preserved registries (from existing config.json)
+// 3. Original HCP pull secret (always wins - already merged by controller into globalPullSecretBytes)
+//
+// Since the controller already merges additional-pull-secret with original HCP pull secret
+// (with original winning), we need to insert preserved registries in between:
+// - Preserved registries should override additional-pull-secret entries
+// - But original HCP pull secret entries should still win
+//
+// This is handled by the caller: originalPullSecretBytes is provided separately
+// so we can apply the correct priority.
+func mergeWithPreservedAuths(pullSecretBytes []byte, preservedAuths map[string]any, originalPullSecretBytes []byte) ([]byte, error) {
+	if len(preservedAuths) == 0 {
+		return pullSecretBytes, nil
+	}
+
+	var pullSecretJSON map[string]any
+	if err := json.Unmarshal(pullSecretBytes, &pullSecretJSON); err != nil {
+		return nil, fmt.Errorf("failed to parse pull secret: %w", err)
+	}
+
+	auths, ok := pullSecretJSON["auths"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("pull secret does not contain valid auths")
+	}
+
+	// Parse original pull secret to know which registries are from HCP (should always win)
+	var originalJSON map[string]any
+	originalAuths := make(map[string]any)
+	if len(originalPullSecretBytes) > 0 {
+		if err := json.Unmarshal(originalPullSecretBytes, &originalJSON); err == nil {
+			if oa, ok := originalJSON["auths"].(map[string]any); ok {
+				originalAuths = oa
+			}
+		}
+	}
+
+	// Merge preserved auths - they override additional-pull-secret but not original HCP
+	for registry, auth := range preservedAuths {
+		// Only add preserved auth if this registry is NOT from the original HCP pull secret
+		if _, isOriginal := originalAuths[registry]; !isOriginal {
+			auths[registry] = auth
+		}
+	}
+
+	pullSecretJSON["auths"] = auths
+	return json.Marshal(pullSecretJSON)
 }
