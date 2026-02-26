@@ -235,18 +235,24 @@ func LookupLatestSupportedRelease(ctx context.Context, hc *hyperv1.HostedCluster
 	return version.PullSpec, nil
 }
 
+// commitHash is set via -ldflags at build time as a fallback when
+// Go's VCS stamping is unavailable (e.g. git worktrees, vendored builds).
+var commitHash string
+
 // GetRevision returns the overall codebase version. It's for detecting
 // what code a binary was built from.
 func GetRevision() string {
 	bi, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "<unknown>"
+	if ok {
+		for _, setting := range bi.Settings {
+			if setting.Key == "vcs.revision" {
+				return setting.Value
+			}
+		}
 	}
 
-	for _, setting := range bi.Settings {
-		if setting.Key == "vcs.revision" {
-			return setting.Value
-		}
+	if commitHash != "" {
+		return commitHash
 	}
 	return "<unknown>"
 }
