@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -34,6 +35,7 @@ import (
 	awsinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/aws"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
+	azureplatform "github.com/openshift/hypershift/hypershift-operator/controllers/platform/azure"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/gcp"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/resourcebasedcpautoscaler"
@@ -60,6 +62,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -159,7 +165,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
-	cmd.Flags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\", \"GCP\", or \"None\")")
+	cmd.Flags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\", \"Azure\", \"GCP\", or \"None\")")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", opts.OIDCStorageProviderS3Region, "Region in which the OIDC bucket is located. Required for AWS guest clusters")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Location of the credentials file for the OIDC bucket. Required for AWS guest clusters.")
@@ -186,7 +192,7 @@ func NewStartCommand() *cobra.Command {
 		defer cancel()
 
 		switch hyperv1.PlatformType(opts.PrivatePlatform) {
-		case hyperv1.AWSPlatform, hyperv1.GCPPlatform, hyperv1.NonePlatform:
+		case hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.GCPPlatform, hyperv1.NonePlatform:
 		default:
 			fmt.Printf("Unsupported private platform: %q\n", opts.PrivatePlatform)
 			os.Exit(1)
@@ -482,6 +488,70 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			Log:                    ctrl.Log.WithName("controllers").WithName("GCPPrivateServiceConnect"),
 		}).SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to create GCPPrivateServiceConnect controller: %w", err)
+		}
+	case hyperv1.AzurePlatform:
+		// ARO HCP uses Swift networking, not Private Link Services
+		if !azureutil.IsAroHCP() {
+			// If a credentials file is mounted (via hypershift install --azure-private-creds),
+			// parse it and set the env vars that DefaultAzureCredential and the controller expect.
+			if credFile := os.Getenv("AZURE_CREDENTIALS_FILE"); credFile != "" {
+				raw, err := os.ReadFile(credFile)
+				if err != nil {
+					return fmt.Errorf("failed to read Azure credentials file %q: %w", credFile, err)
+				}
+				var creds struct {
+					SubscriptionID string `json:"subscriptionId"`
+					ClientID       string `json:"clientId"`
+					ClientSecret   string `json:"clientSecret"`
+					TenantID       string `json:"tenantId"`
+				}
+				if err := json.Unmarshal(raw, &creds); err != nil {
+					return fmt.Errorf("failed to parse Azure credentials file %q: %w", credFile, err)
+				}
+				_ = os.Setenv("AZURE_TENANT_ID", creds.TenantID)
+				_ = os.Setenv("AZURE_CLIENT_ID", creds.ClientID)
+				_ = os.Setenv("AZURE_CLIENT_SECRET", creds.ClientSecret)
+				if os.Getenv("AZURE_SUBSCRIPTION_ID") == "" {
+					_ = os.Setenv("AZURE_SUBSCRIPTION_ID", creds.SubscriptionID)
+				}
+			}
+
+			azureCloudName := os.Getenv("AZURE_CLOUD_NAME")
+			if azureCloudName == "" {
+				azureCloudName = config.DefaultAzureCloud
+			}
+			cloudConfig, err := azureutil.GetAzureCloudConfiguration(azureCloudName)
+			if err != nil {
+				return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+			}
+			azureCreds, err := azidentity.NewDefaultAzureCredential(
+				&azidentity.DefaultAzureCredentialOptions{
+					ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+				},
+			)
+			if err != nil {
+				return fmt.Errorf("failed to create Azure credentials: %w", err)
+			}
+			azureSubscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
+			if azureSubscriptionID == "" {
+				return fmt.Errorf("AZURE_SUBSCRIPTION_ID environment variable is required for Azure platform")
+			}
+			armClientOpts := azureutil.NewARMClientOptions(cloudConfig)
+			plsClient, err := armnetwork.NewPrivateLinkServicesClient(azureSubscriptionID, azureCreds, armClientOpts)
+			if err != nil {
+				return fmt.Errorf("failed to create Azure Private Link Services client: %w", err)
+			}
+			lbClient, err := armnetwork.NewLoadBalancersClient(azureSubscriptionID, azureCreds, armClientOpts)
+			if err != nil {
+				return fmt.Errorf("failed to create Azure Load Balancers client: %w", err)
+			}
+			if err := (&azureplatform.AzurePrivateLinkServiceController{
+				Client:              mgr.GetClient(),
+				PrivateLinkServices: plsClient,
+				LoadBalancers:       lbClient,
+			}).SetupWithManager(mgr); err != nil {
+				return fmt.Errorf("unable to create AzurePrivateLinkService controller: %w", err)
+			}
 		}
 	}
 

@@ -35,6 +35,36 @@ func TestConnectsThroughInternetToControlplane(t *testing.T) {
 				AWS: &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Private},
 			},
 		},
+		{
+			name: "When Azure endpoint access is Public it should use internet",
+			platform: hyperv1.PlatformSpec{
+				Azure: &hyperv1.AzurePlatformSpec{EndpointAccess: hyperv1.AzureEndpointAccessPublic},
+			},
+			expected: true,
+		},
+		{
+			name: "When Azure endpoint access is PublicAndPrivate it should not use internet",
+			platform: hyperv1.PlatformSpec{
+				Azure: &hyperv1.AzurePlatformSpec{EndpointAccess: hyperv1.AzureEndpointAccessPublicAndPrivate},
+			},
+		},
+		{
+			name: "When Azure endpoint access is Private it should not use internet",
+			platform: hyperv1.PlatformSpec{
+				Azure: &hyperv1.AzurePlatformSpec{EndpointAccess: hyperv1.AzureEndpointAccessPrivate},
+			},
+		},
+		{
+			name: "When Azure endpoint access is empty it should use internet",
+			platform: hyperv1.PlatformSpec{
+				Azure: &hyperv1.AzurePlatformSpec{},
+			},
+			expected: true,
+		},
+		{
+			name:     "When Azure spec is nil it should use internet",
+			expected: true,
+		},
 	}
 
 	for _, tc := range testCases {
