@@ -522,6 +522,29 @@ func TestKarpenter(t *testing.T) {
 				"karpenter.sh/nodepool":            testNodePool.GetName(),
 			}
 
+			// Log diagnostic info about the version-test NodeClass infrastructure.
+			// This helps debug failures where nodes never join.
+			hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+			secretList := &corev1.SecretList{}
+			if err := mgtClient.List(ctx, secretList,
+				crclient.InNamespace(hcpNamespace),
+				crclient.MatchingLabels{"hypershift.openshift.io/managed-by-karpenter": "true"},
+			); err != nil {
+				t.Logf("WARNING: failed to list karpenter secrets in %s: %v", hcpNamespace, err)
+			} else {
+				foundUserData := false
+				for _, s := range secretList.Items {
+					npAnnotation := s.Annotations["hypershift.openshift.io/nodePool"]
+					if strings.Contains(npAnnotation, "version-test") {
+						t.Logf("Found karpenter secret %q for nodepool %q (labels: %v)", s.Name, npAnnotation, s.Labels)
+						foundUserData = true
+					}
+				}
+				if !foundUserData {
+					t.Log("WARNING: no user-data secret found for version-test NodeClass. Token creation may be failing - check karpenter-operator logs.")
+				}
+			}
+
 			// Wait for node to be provisioned
 			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), testNodeLabels)
 			t.Log("Node provisioned successfully with custom version NodeClass")
@@ -552,7 +575,8 @@ func TestKarpenter(t *testing.T) {
 			if skewMinor <= 14 {
 				t.Skipf("Skipping: computed skew version 4.%d.0 would be at or below MinSupportedVersion (4.14.0), which would be caught by minimum version check instead", skewMinor)
 			}
-			skewVersion := fmt.Sprintf("%d.%d.0", cpVersion.Major, skewMinor)
+			skewPatch := 1 // There are cases where x.y.0 doesn't exist, so arbitrarily stick with x.y.1 for test consistency
+			skewVersion := fmt.Sprintf("%d.%d.%d", cpVersion.Major, skewMinor, skewPatch)
 
 			nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{
 				ObjectMeta: metav1.ObjectMeta{

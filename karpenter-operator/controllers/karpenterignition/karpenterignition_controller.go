@@ -285,7 +285,13 @@ func (r *KarpenterIgnitionReconciler) resolveVersion(
 
 	skewErr = supportedversion.ValidateVersionSkew(&hostedClusterVersion, &nodeClassVersion)
 
-	resolved, err := r.VersionResolver.Resolve(ctx, version, hcp.Spec.Channel)
+	// Derive the Cincinnati channel. Use the HCP channel if set, otherwise default to "stable-4.<minor>".
+	channel := hcp.Spec.Channel
+	if channel == "" {
+		channel = fmt.Sprintf("stable-%d.%d", nodeClassVersion.Major, nodeClassVersion.Minor)
+	}
+
+	resolved, err := r.VersionResolver.Resolve(ctx, version, channel)
 	if err != nil {
 		return "", skewErr, fmt.Errorf("failed to resolve version %q: %w", version, err)
 	}

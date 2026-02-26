@@ -323,15 +323,17 @@ func (r *EC2NodeClassReconciler) reconcileStatus(ctx context.Context, ec2NodeCla
 
 	// Preserve fields managed by the ignition controller before resetting status
 	resolvedReleaseImage := openshiftNodeClass.Status.ReleaseImage
+	resolvedVersion := openshiftNodeClass.Status.Version
 	preservedConditions := make([]metav1.Condition, 0)
 	for _, c := range openshiftNodeClass.Status.Conditions {
-		if c.Type == hyperkarpenterv1.ConditionTypeVersionResolved {
+		if c.Type == hyperkarpenterv1.ConditionTypeVersionResolved || c.Type == hyperkarpenterv1.ConditionTypeSupportedVersionSkew {
 			preservedConditions = append(preservedConditions, c)
 		}
 	}
 
 	openshiftNodeClass.Status = hyperkarpenterv1.OpenshiftEC2NodeClassStatus{}
 	openshiftNodeClass.Status.ReleaseImage = resolvedReleaseImage
+	openshiftNodeClass.Status.Version = resolvedVersion
 	for _, securityGroup := range ec2NodeClass.Status.SecurityGroups {
 		openshiftNodeClass.Status.SecurityGroups = append(openshiftNodeClass.Status.SecurityGroups, hyperkarpenterv1.SecurityGroup{
 			ID:   securityGroup.ID,
