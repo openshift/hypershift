@@ -83,6 +83,7 @@ spec:
         - --balancing-ignore-label=topology.disk.csi.azure.com/zone
         - --balancing-ignore-label=ibm-cloud.kubernetes.io/worker-id
         - --balancing-ignore-label=vpc-block-csi-driver-labels
+        - --balancing-ignore-label=hypershift.openshift.io/nodepool-globalps-enabled
         command:
         - /usr/bin/cluster-autoscaler
         env:
