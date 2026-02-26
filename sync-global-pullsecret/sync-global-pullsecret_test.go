@@ -18,17 +18,33 @@ func TestCheckAndFixFile(t *testing.T) {
 		initialContent        string
 		secretContent         string
 		rollbackShouldFail    bool
+		setupKubeletMock      func(*MockKubeletRestarter)
 		expectedErrorContains []string
 		expectedFinalContent  string
 		expectError           bool
 		description           string
 	}{
 		{
-			name:               "file does not exist",
+			name:           "When file does not exist and kubelet restart succeeds it should create file with new content",
+			description:    "file does not exist, kubelet restart succeeds, file is created",
+			initialContent: "",
+			secretContent:  `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			setupKubeletMock: func(m *MockKubeletRestarter) {
+				m.EXPECT().Restart().Return(nil)
+			},
+			expectedErrorContains: []string{},
+			expectedFinalContent:  `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			expectError:           false,
+		},
+		{
+			name:               "When file does not exist and kubelet restart fails it should rollback",
 			description:        "file does not exist, kubelet restart fails, rollback succeeds",
 			initialContent:     "",
 			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
 			rollbackShouldFail: false,
+			setupKubeletMock: func(m *MockKubeletRestarter) {
+				m.EXPECT().Restart().Return(fmt.Errorf("dbus error")).Times(3)
+			},
 			expectedErrorContains: []string{
 				"failed to restart kubelet after 3 attempts",
 				"rolled back changes",
@@ -37,34 +53,26 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:          true,
 		},
 		{
-			name:               "file exists with different content",
-			description:        "file exists with different content, kubelet restart fails, rollback succeeds",
-			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
-			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
-			rollbackShouldFail: false,
-			expectedErrorContains: []string{
-				"failed to restart kubelet after 3 attempts",
-				"rolled back changes",
+			name:           "When file exists with different content and kubelet restart succeeds it should update file",
+			description:    "file exists with different content, kubelet restart succeeds",
+			initialContent: `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
+			secretContent:  `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			setupKubeletMock: func(m *MockKubeletRestarter) {
+				m.EXPECT().Restart().Return(nil)
 			},
-			expectedFinalContent: `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
-			expectError:          true,
-		},
-		{
-			name:                  "file exists with same content",
-			description:           "file exists with same content, no changes needed",
-			initialContent:        `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
-			secretContent:         `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
-			rollbackShouldFail:    false,
 			expectedErrorContains: []string{},
 			expectedFinalContent:  `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
 			expectError:           false,
 		},
 		{
-			name:               "rollback succeeds",
-			description:        "kubelet restart fails but rollback succeeds, file should be restored to original content",
+			name:               "When file exists with different content and kubelet restart fails it should rollback",
+			description:        "file exists with different content, kubelet restart fails, rollback succeeds",
 			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
 			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
 			rollbackShouldFail: false,
+			setupKubeletMock: func(m *MockKubeletRestarter) {
+				m.EXPECT().Restart().Return(fmt.Errorf("dbus error")).Times(3)
+			},
 			expectedErrorContains: []string{
 				"failed to restart kubelet after 3 attempts",
 				"rolled back changes",
@@ -73,11 +81,41 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:          true,
 		},
 		{
-			name:               "rollback fails",
+			name:                  "When file exists with same content it should not restart kubelet",
+			description:           "file exists with same content, no changes needed",
+			initialContent:        `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			secretContent:         `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			rollbackShouldFail:    false,
+			setupKubeletMock:      nil, // No restart expected
+			expectedErrorContains: []string{},
+			expectedFinalContent:  `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			expectError:           false,
+		},
+		{
+			name:               "When kubelet restart fails it should rollback to original content",
+			description:        "kubelet restart fails but rollback succeeds, file should be restored to original content",
+			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
+			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			rollbackShouldFail: false,
+			setupKubeletMock: func(m *MockKubeletRestarter) {
+				m.EXPECT().Restart().Return(fmt.Errorf("dbus error")).Times(3)
+			},
+			expectedErrorContains: []string{
+				"failed to restart kubelet after 3 attempts",
+				"rolled back changes",
+			},
+			expectedFinalContent: `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
+			expectError:          true,
+		},
+		{
+			name:               "When both kubelet restart and rollback fail it should return combined error",
 			description:        "both kubelet restart and rollback fail, file should remain with new content",
 			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
 			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
 			rollbackShouldFail: true,
+			setupKubeletMock: func(m *MockKubeletRestarter) {
+				m.EXPECT().Restart().Return(fmt.Errorf("dbus error")).Times(3)
+			},
 			expectedErrorContains: []string{
 				"2 errors happened",
 				"the kubelet restart failed after 3 attempts",
@@ -87,65 +125,60 @@ func TestCheckAndFixFile(t *testing.T) {
 			expectError:          true,
 		},
 		{
-			name:               "preserve trailing newline when original file has one",
-			description:        "file has trailing newline, new content doesn't, should preserve newline",
-			initialContent:     "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
-			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
-			rollbackShouldFail: false,
-			expectedErrorContains: []string{
-				"failed to restart kubelet after 3 attempts",
-				"rolled back changes",
-			},
-			expectedFinalContent: "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
-			expectError:          true,
+			name:                  "When only trailing newline differs it should not restart kubelet",
+			description:           "file has trailing newline, new content doesn't, should not trigger restart",
+			initialContent:        "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
+			secretContent:         `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			setupKubeletMock:      nil, // No restart expected - content is same ignoring newline
+			expectedErrorContains: []string{},
+			expectedFinalContent:  "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n", // File unchanged
+			expectError:           false,
 		},
 		{
-			name:               "preserve single newline when both have newlines",
-			description:        "both original file and new content have trailing newlines, should preserve single newline",
-			initialContent:     "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
-			secretContent:      "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
-			rollbackShouldFail: false,
-			expectedErrorContains: []string{
-				"failed to restart kubelet after 3 attempts",
-				"rolled back changes",
+			name:           "When content differs and both have newlines it should update and restart",
+			description:    "both original file and new content have trailing newlines, different content",
+			initialContent: "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
+			secretContent:  "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
+			setupKubeletMock: func(m *MockKubeletRestarter) {
+				m.EXPECT().Restart().Return(nil)
 			},
-			expectedFinalContent: "{\"auths\":{\"old.registry.com\":{\"auth\":\"b2xkOnRlc3Q=\"}}}\n",
-			expectError:          true,
+			expectedErrorContains: []string{},
+			expectedFinalContent:  "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
+			expectError:           false,
 		},
 		{
-			name:               "no newline when original file has none",
-			description:        "original file has no newline, new content has newline, should preserve new content format",
-			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
-			secretContent:      "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
-			rollbackShouldFail: false,
-			expectedErrorContains: []string{
-				"failed to restart kubelet after 3 attempts",
-				"rolled back changes",
+			name:           "When content differs with newline in secret it should write exact secret content",
+			description:    "original file has no newline, new content has newline, should write new content exactly",
+			initialContent: `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
+			secretContent:  "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
+			setupKubeletMock: func(m *MockKubeletRestarter) {
+				m.EXPECT().Restart().Return(nil)
 			},
-			expectedFinalContent: `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
-			expectError:          true,
+			expectedErrorContains: []string{},
+			expectedFinalContent:  "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
+			expectError:           false,
 		},
 		{
-			name:               "no newlines preserved",
-			description:        "neither original file nor new content have newlines, should preserve format",
-			initialContent:     `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
-			secretContent:      `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
-			rollbackShouldFail: false,
-			expectedErrorContains: []string{
-				"failed to restart kubelet after 3 attempts",
-				"rolled back changes",
+			name:           "When content differs without newlines it should update and restart",
+			description:    "neither original file nor new content have newlines, should update",
+			initialContent: `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
+			secretContent:  `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			setupKubeletMock: func(m *MockKubeletRestarter) {
+				m.EXPECT().Restart().Return(nil)
 			},
-			expectedFinalContent: `{"auths":{"old.registry.com":{"auth":"b2xkOnRlc3Q="}}}`,
-			expectError:          true,
+			expectedErrorContains: []string{},
+			expectedFinalContent:  `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
+			expectError:           false,
 		},
 		{
-			name:                  "same content with newline - no change needed",
-			description:           "file content is identical including newline, no restart should be attempted",
+			name:                  "When file has newline and secret does not but content is same it should not restart",
+			description:           "file content is identical ignoring newline, no restart should be attempted",
 			initialContent:        "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
 			secretContent:         `{"auths":{"test.registry.com":{"auth":"dGVzdDp0ZXN0"}}}`,
 			rollbackShouldFail:    false,
+			setupKubeletMock:      nil, // No restart expected
 			expectedErrorContains: []string{},
-			expectedFinalContent:  "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n",
+			expectedFinalContent:  "{\"auths\":{\"test.registry.com\":{\"auth\":\"dGVzdDp0ZXN0\"}}}\n", // File unchanged
 			expectError:           false,
 		},
 	}
@@ -153,6 +186,8 @@ func TestCheckAndFixFile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 
 			// Create a temporary directory for test files
 			tempDir, err := os.MkdirTemp("", "sync-pullsecret-test-*")
@@ -175,10 +210,17 @@ func TestCheckAndFixFile(t *testing.T) {
 				g.Expect(string(content)).To(Equal(tt.initialContent))
 			}
 
-			// Create syncer for testing
+			// Create mock kubelet restarter
+			mockRestarter := NewMockKubeletRestarter(ctrl)
+			if tt.setupKubeletMock != nil {
+				tt.setupKubeletMock(mockRestarter)
+			}
+
+			// Create syncer for testing with mock
 			syncer := &GlobalPullSecretSyncer{
 				kubeletConfigJsonPath: testFilePath,
 				log:                   logr.Discard(),
+				kubeletRestarter:      mockRestarter,
 			}
 
 			// Save original write function and restore it after test
