@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	hyperapi "github.com/openshift/hypershift/support/api"
@@ -38,13 +36,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.Namespace, "namespace", os.Getenv("MY_NAMESPACE"), "The namespace this operator lives in (required)")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
+		ctx := ctrl.SetupSignalHandler()
 
 		if err := run(ctx, opts); err != nil {
 			log.Fatal(err)

@@ -8,9 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"os/signal"
 	"regexp"
-	"syscall"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -98,13 +96,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.FeatureGateManifest, "feature-gate-manifest", opts.FeatureGateManifest, "Path to a rendered featuregates.config.openshift.io/v1 file")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
+		ctx := ctrl.SetupSignalHandler()
 
 		// TODO: Add an fsnotify watcher to cancel the context and trigger a restart
 		// if any of the secret data has changed.

@@ -4,11 +4,10 @@ package kasbootstrap
 // It will apply some CRDs rendered by the cluster-config-operator and update the featureGate CR status by appending the git FeatureGate status.
 
 import (
-	"context"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
+
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/spf13/cobra"
 )
@@ -29,13 +28,7 @@ func NewRunCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&opts.ResourcesPath, "resources-path", "", "The path to all resources that should be applied and the rendered featureGate CR to reconcile.")
 	cmd.Run = func(cmd *cobra.Command, args []string) {
-		ctx, cancel := context.WithCancel(context.Background())
-		sigs := make(chan os.Signal, 1)
-		signal.Notify(sigs, syscall.SIGINT)
-		go func() {
-			<-sigs
-			cancel()
-		}()
+		ctx := ctrl.SetupSignalHandler()
 
 		if err := run(ctx, opts); err != nil {
 			log.Fatal(err)
