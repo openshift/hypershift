@@ -12,6 +12,7 @@ import (
 	availabilityprober "github.com/openshift/hypershift/availability-prober"
 	hyperclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/awsprivatelink"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/azureprivatelinkservice"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/gcpprivateserviceconnect"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/healthcheck"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
@@ -28,6 +29,7 @@ import (
 	konnectivitysocks5proxy "github.com/openshift/hypershift/konnectivity-socks5-proxy"
 	kubernetesdefaultproxy "github.com/openshift/hypershift/kubernetes-default-proxy"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/events"
@@ -40,6 +42,11 @@ import (
 	syncfgconfigmap "github.com/openshift/hypershift/sync-fg-configmap"
 	syncglobalpullsecret "github.com/openshift/hypershift/sync-global-pullsecret"
 	tokenminter "github.com/openshift/hypershift/token-minter"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -553,6 +560,72 @@ func NewStartCommand() *cobra.Command {
 				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
 			}).SetupWithManager(mgr); err != nil {
 				setupLog.Error(err, "unable to create controller", "controller", endpointControllerName)
+				os.Exit(1)
+			}
+		}
+
+		if hcp.Spec.Platform.Type == hyperv1.AzurePlatform && util.IsPrivateHCP(hcp) && mgmtClusterCaps.Has(capabilities.CapabilityRoute) && !azureutil.IsAroHCP() {
+			azureObserverName := "AzurePrivateLinkServiceObserver"
+
+			if err = (&azureprivatelinkservice.AzurePrivateLinkServiceObserver{
+				Client:                 mgr.GetClient(),
+				ControllerName:         azureObserverName,
+				ServiceNamespace:       namespace,
+				ServiceName:            manifests.KubeAPIServerPrivateServiceName,
+				HCPNamespace:           namespace,
+				CreateOrUpdateProvider: upsert.New(enableCIDebugOutput),
+			}).SetupWithManager(ctx, mgr); err != nil {
+				setupLog.Error(err, "unable to create controller", "controller", azureObserverName)
+				os.Exit(1)
+			}
+
+			azureReconcilerName := "AzurePrivateLinkServiceReconciler"
+
+			cloudConfig, err := azureutil.GetAzureCloudConfiguration(hcp.Spec.Platform.Azure.Cloud)
+			if err != nil {
+				setupLog.Error(err, "failed to get Azure cloud configuration")
+				os.Exit(1)
+			}
+			azureCreds, err := azidentity.NewDefaultAzureCredential(
+				&azidentity.DefaultAzureCredentialOptions{
+					ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+				},
+			)
+			if err != nil {
+				setupLog.Error(err, "failed to create Azure credentials")
+				os.Exit(1)
+			}
+			azureSubscriptionID := hcp.Spec.Platform.Azure.SubscriptionID
+			armClientOpts := azureutil.NewARMClientOptions(cloudConfig)
+			peClient, err := armnetwork.NewPrivateEndpointsClient(azureSubscriptionID, azureCreds, armClientOpts)
+			if err != nil {
+				setupLog.Error(err, "failed to create Azure Private Endpoints client")
+				os.Exit(1)
+			}
+			dnsZonesClient, err := armprivatedns.NewPrivateZonesClient(azureSubscriptionID, azureCreds, armClientOpts)
+			if err != nil {
+				setupLog.Error(err, "failed to create Azure Private DNS Zones client")
+				os.Exit(1)
+			}
+			vnetLinksClient, err := armprivatedns.NewVirtualNetworkLinksClient(azureSubscriptionID, azureCreds, armClientOpts)
+			if err != nil {
+				setupLog.Error(err, "failed to create Azure Virtual Network Links client")
+				os.Exit(1)
+			}
+			recordSetsClient, err := armprivatedns.NewRecordSetsClient(azureSubscriptionID, azureCreds, armClientOpts)
+			if err != nil {
+				setupLog.Error(err, "failed to create Azure Record Sets client")
+				os.Exit(1)
+			}
+
+			if err = (&azureprivatelinkservice.AzurePrivateLinkServiceReconciler{
+				Client:              mgr.GetClient(),
+				PrivateEndpoints:    peClient,
+				PrivateDNSZones:     dnsZonesClient,
+				VirtualNetworkLinks: vnetLinksClient,
+				RecordSets:          recordSetsClient,
+			}).SetupWithManager(mgr); err != nil {
+				setupLog.Error(err, "unable to create controller", "controller", azureReconcilerName)
 				os.Exit(1)
 			}
 		}

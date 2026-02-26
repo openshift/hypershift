@@ -83,14 +83,14 @@ func (r *GCPPrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Extract LoadBalancer IP and validate it's ready
-	loadBalancerIP, hasValidIP := extractLoadBalancerIP(svc)
+	loadBalancerIP, hasValidIP := supportutil.ExtractLoadBalancerIP(svc)
 	if !hasValidIP {
 		r.log.Info("LoadBalancer IP not ready yet")
 		return ctrl.Result{}, nil
 	}
 
 	// Find HostedControlPlane from service OwnerReference
-	hcpName := extractHostedControlPlaneOwnerName(svc.OwnerReferences)
+	hcpName := supportutil.ExtractHostedControlPlaneOwnerName(svc.OwnerReferences)
 	if hcpName == "" {
 		return ctrl.Result{}, fmt.Errorf("service does not have HostedControlPlane owner reference")
 	}
@@ -169,30 +169,4 @@ func getConsumerAcceptList(hcp *hyperv1.HostedControlPlane) []string {
 // isInternalLoadBalancer checks if the service is configured as an Internal Load Balancer
 func isInternalLoadBalancer(svc *corev1.Service) bool {
 	return svc.Annotations[gcpLoadBalancerTypeAnnotation] == gcpInternalLoadBalancerType
-}
-
-// extractLoadBalancerIP extracts the LoadBalancer IP from the service and returns whether it's valid
-func extractLoadBalancerIP(svc *corev1.Service) (string, bool) {
-	// Check if LoadBalancer is ready
-	if len(svc.Status.LoadBalancer.Ingress) == 0 {
-		return "", false
-	}
-
-	// Extract LoadBalancer IP
-	loadBalancerIP := svc.Status.LoadBalancer.Ingress[0].IP
-	if loadBalancerIP == "" {
-		return "", false
-	}
-
-	return loadBalancerIP, true
-}
-
-// extractHostedControlPlaneOwnerName finds and returns the HostedControlPlane owner reference name
-func extractHostedControlPlaneOwnerName(ownerRefs []metav1.OwnerReference) string {
-	for _, ownerRef := range ownerRefs {
-		if ownerRef.Kind == "HostedControlPlane" && ownerRef.APIVersion == hyperv1.GroupVersion.String() {
-			return ownerRef.Name
-		}
-	}
-	return ""
 }

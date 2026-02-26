@@ -64,6 +64,11 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
 	}
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform &&
+		hcp.Spec.Platform.Azure != nil &&
+		hcp.Spec.Platform.Azure.EndpointAccess == hyperv1.AzureEndpointAccessPrivate {
+		svc.Annotations[azureutil.InternalLoadBalancerAnnotation] = azureutil.InternalLoadBalancerValue
+	}
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
 		if isPublic {
@@ -198,9 +203,14 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 		svc.Annotations = map[string]string{}
 	}
 
-	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
-	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
-	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AzurePlatform:
+		svc.Annotations[azureutil.InternalLoadBalancerAnnotation] = azureutil.InternalLoadBalancerValue
+	default:
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
+	}
 	svc.Spec.Ports[0] = portSpec
 	return nil
 }
