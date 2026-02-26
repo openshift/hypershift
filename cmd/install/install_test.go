@@ -138,6 +138,41 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
+		"When Azure private platform is specified without credentials, it should error": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.AzurePlatform),
+			},
+			expectError: true,
+		},
+		"When Azure private platform is specified with creds file, it should succeed": {
+			inputOptions: Options{
+				PrivatePlatform:   string(hyperv1.AzurePlatform),
+				AzurePrivateCreds: "/dev/null",
+			},
+			expectError: false,
+		},
+		"When Azure private platform is specified with secret reference, it should succeed": {
+			inputOptions: Options{
+				PrivatePlatform:               string(hyperv1.AzurePlatform),
+				AzurePrivateCredentialsSecret: "my-azure-secret",
+			},
+			expectError: false,
+		},
+		"When Azure private platform is specified with both creds and secret, it should error": {
+			inputOptions: Options{
+				PrivatePlatform:               string(hyperv1.AzurePlatform),
+				AzurePrivateCreds:             "/dev/null",
+				AzurePrivateCredentialsSecret: "my-azure-secret",
+			},
+			expectError: true,
+		},
+		"When Azure private platform is specified for ARO HCP without credentials, it should succeed": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.AzurePlatform),
+				ManagedService:  hyperv1.AroHCP,
+			},
+			expectError: false,
+		},
 		"when all data specified there is no error": {
 			inputOptions: Options{
 				PrivatePlatform:                           string(hyperv1.NonePlatform),

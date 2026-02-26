@@ -288,6 +288,62 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				},
 			},
 		},
+		"When Azure private platform is specified, it should mount credentials and set AZURE_CREDENTIALS_FILE env var": {
+			inputBuildParameters: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				OperatorImage: testOperatorImage,
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "hypershift",
+					},
+				},
+				Replicas:        3,
+				PrivatePlatform: string(hyperv1.AzurePlatform),
+				AzurePrivateSecret: &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: azureCredsSecretName,
+					},
+				},
+				AzurePrivateSecretKey: "credentials",
+			},
+			expectedVolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "azure-credentials",
+					MountPath: "/etc/azure-provider",
+					ReadOnly:  true,
+				},
+			},
+			expectedVolumes: []corev1.Volume{
+				{
+					Name: "azure-credentials",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: azureCredsSecretName,
+						},
+					},
+				},
+			},
+			expectedArgs: []string{
+				"run",
+				"--namespace=$(MY_NAMESPACE)",
+				"--pod-name=$(MY_NAME)",
+				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", false),
+				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
+				fmt.Sprintf("--enable-ci-debug-output=%t", false),
+				fmt.Sprintf("--private-platform=%s", string(hyperv1.AzurePlatform)),
+			},
+			expectedEnvVars: []corev1.EnvVar{
+				{
+					Name:  "AZURE_CREDENTIALS_FILE",
+					Value: "/etc/azure-provider/credentials",
+				},
+			},
+		},
 		"specify dedicated request serving isolation parameter (true) result in appropriate arguments": {
 			inputBuildParameters: HyperShiftOperatorDeployment{
 				Namespace: &corev1.Namespace{

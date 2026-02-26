@@ -26,7 +26,7 @@ metadata:
 ---
 apiVersion: v1
 data:
-  key: 7o9RQL/BlcNrBWfNBVrJg55oKrDDaDu2kfoULl9MNIE=
+  key: L43BAE+qKKla5oLK33yY3uWp1gIAu3YW0YU1Vdt2Mqs=
 kind: Secret
 metadata:
   labels:
@@ -102,8 +102,13 @@ spec:
             diskMSIClientID: ""
             fileMSIClientID: ""
             imageRegistryMSIClientID: ""
-      endpointAccess: Public
+      endpointAccess: Private
       location: fakeLocation
+      privateConnectivity:
+        allowedSubscriptions:
+        - sub-1
+        - sub-2
+        natSubnetID: /subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/nat-subnet
       resourceGroup: fakeResourceGroupName
       securityGroupID: fakeSecurityGroupID
       subnetID: fakeSubnetID
