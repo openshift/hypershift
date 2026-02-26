@@ -248,11 +248,12 @@ func reconcileEC2NodeClass(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2
 				ID: string(userDataSecret.Labels[hyperkarpenterv1.UserDataAMILabel]),
 			},
 		},
-		AssociatePublicIPAddress: openshiftEC2NodeClass.Spec.AssociatePublicIPAddress,
-		Tags:                     mergeEC2NodeClassTags(ctx, openshiftEC2NodeClass, hcp),
-		DetailedMonitoring:       openshiftEC2NodeClass.Spec.DetailedMonitoring,
-		BlockDeviceMappings:      openshiftEC2NodeClass.Spec.KarpenterBlockDeviceMapping(),
-		InstanceStorePolicy:      openshiftEC2NodeClass.Spec.KarpenterInstanceStorePolicy(),
+		AssociatePublicIPAddress:         openshiftEC2NodeClass.Spec.AssociatePublicIPAddress,
+		Tags:                             mergeEC2NodeClassTags(ctx, openshiftEC2NodeClass, hcp),
+		DetailedMonitoring:               openshiftEC2NodeClass.Spec.DetailedMonitoring,
+		BlockDeviceMappings:              openshiftEC2NodeClass.Spec.KarpenterBlockDeviceMapping(),
+		InstanceStorePolicy:              openshiftEC2NodeClass.Spec.KarpenterInstanceStorePolicy(),
+		CapacityReservationSelectorTerms: openshiftEC2NodeClass.Spec.KarpenterCapacityReservationSelectorTerms(),
 	}
 
 	// Set instance profile from HostedCluster annotation (platform-controlled)
@@ -333,6 +334,18 @@ func (r *EC2NodeClassReconciler) reconcileStatus(ctx context.Context, ec2NodeCla
 			ID:     subnet.ID,
 			Zone:   subnet.Zone,
 			ZoneID: subnet.ZoneID,
+		})
+	}
+	for _, cr := range ec2NodeClass.Status.CapacityReservations {
+		openshiftNodeClass.Status.CapacityReservations = append(openshiftNodeClass.Status.CapacityReservations, hyperkarpenterv1.CapacityReservation{
+			AvailabilityZone:      cr.AvailabilityZone,
+			EndTime:               cr.EndTime,
+			ID:                    cr.ID,
+			InstanceMatchCriteria: cr.InstanceMatchCriteria,
+			InstanceType:          cr.InstanceType,
+			OwnerID:               cr.OwnerID,
+			ReservationType:       string(cr.ReservationType),
+			State:                 string(cr.State),
 		})
 	}
 	for _, condition := range ec2NodeClass.Status.Conditions {

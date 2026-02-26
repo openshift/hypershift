@@ -24,9 +24,10 @@ import (
 // OpenshiftEC2NodeClassStatusApplyConfiguration represents a declarative configuration of the OpenshiftEC2NodeClassStatus type for use
 // with apply.
 type OpenshiftEC2NodeClassStatusApplyConfiguration struct {
-	Subnets        []SubnetApplyConfiguration        `json:"subnets,omitempty"`
-	SecurityGroups []SecurityGroupApplyConfiguration `json:"securityGroups,omitempty"`
-	Conditions     []v1.ConditionApplyConfiguration  `json:"conditions,omitempty"`
+	Subnets              []SubnetApplyConfiguration              `json:"subnets,omitempty"`
+	SecurityGroups       []SecurityGroupApplyConfiguration       `json:"securityGroups,omitempty"`
+	CapacityReservations []CapacityReservationApplyConfiguration `json:"capacityReservations,omitempty"`
+	Conditions           []v1.ConditionApplyConfiguration        `json:"conditions,omitempty"`
 }
 
 // OpenshiftEC2NodeClassStatusApplyConfiguration constructs a declarative configuration of the OpenshiftEC2NodeClassStatus type for use with
@@ -57,6 +58,19 @@ func (b *OpenshiftEC2NodeClassStatusApplyConfiguration) WithSecurityGroups(value
 			panic("nil value passed to WithSecurityGroups")
 		}
 		b.SecurityGroups = append(b.SecurityGroups, *values[i])
+	}
+	return b
+}
+
+// WithCapacityReservations adds the given value to the CapacityReservations field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the CapacityReservations field.
+func (b *OpenshiftEC2NodeClassStatusApplyConfiguration) WithCapacityReservations(values ...*CapacityReservationApplyConfiguration) *OpenshiftEC2NodeClassStatusApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithCapacityReservations")
+		}
+		b.CapacityReservations = append(b.CapacityReservations, *values[i])
 	}
 	return b
 }
