@@ -174,3 +174,38 @@ func CleanupOIDCBucketObjects(ctx context.Context, log logr.Logger, s3Client aws
 		}
 	}
 }
+
+// CreateCapacityReservation creates an EC2 capacity reservation and returns its ID and a cleanup function
+// that cancels the reservation. The caller is responsible for calling the cleanup function.
+func CreateCapacityReservation(ctx context.Context, awsCreds, awsRegion, instanceType, availabilityZone string, instanceCount int64) (string, func() error, error) {
+	awsSession := awsutil.NewSession("e2e-capacity-reservation", awsCreds, "", "", awsRegion)
+	awsConfig := awsutil.NewConfig()
+	ec2Client := ec2.New(awsSession, awsConfig)
+
+	result, err := ec2Client.CreateCapacityReservationWithContext(ctx, &ec2.CreateCapacityReservationInput{
+		InstanceType:          aws.String(instanceType),
+		InstancePlatform:      aws.String("Linux/UNIX"),
+		AvailabilityZone:      aws.String(availabilityZone),
+		InstanceCount:         aws.Int64(instanceCount),
+		InstanceMatchCriteria: aws.String("targeted"),
+		EndDateType:           aws.String("unlimited"),
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create capacity reservation: %w", err)
+	}
+
+	crID := aws.StringValue(result.CapacityReservation.CapacityReservationId)
+	cleanupFunc := func() error {
+		cancelCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		_, err := ec2Client.CancelCapacityReservationWithContext(cancelCtx, &ec2.CancelCapacityReservationInput{
+			CapacityReservationId: aws.String(crID),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to cancel capacity reservation %s: %w", crID, err)
+		}
+		return nil
+	}
+
+	return crID, cleanupFunc, nil
+}
