@@ -1,0 +1,47 @@
+---
+description: This rule is helpful when a user asks to close, resolve, or transition Jira tickets, epics, stories, tasks, or bugs.
+alwaysApply: false
+---
+
+# Closing Jira Items
+
+When closing Jira issues, use the `mcp__atlassian-mcp__jira_transition_issue` tool.
+
+## Getting Available Transitions
+
+Before transitioning an issue, always check the available transitions using `mcp__atlassian-mcp__jira_get_transitions` since different issue types and statuses have different available transitions.
+
+## Transition IDs by Issue Type
+
+Different issue types have different transition IDs for closing:
+
+### Epics
+- Transition ID: `71` - "Closed"
+
+### Stories/Tasks
+- Transition ID: `51` - "Closed"
+
+## Important Notes
+
+1. **Don't specify resolution field**: When transitioning issues to closed status, do NOT include the `fields` parameter with a resolution unless you know the exact valid resolution values for that Jira instance. The transition will work without specifying the resolution field.
+
+2. **Don't add comments by default**: Unless explicitly requested by the user, do not include comments when transitioning issues. The `comment` parameter should be omitted.
+
+3. **Check transitions first**: Always use `jira_get_transitions` to verify the available transitions and their IDs for each issue before attempting to transition it.
+
+4. **Handle child issues**: When closing an Epic or parent issue, remember to also close all related child stories, tasks, or subtasks. Use JQL queries like:
+   - `parent = EPIC-KEY` - to find direct children
+   - `"Epic Link" = EPIC-KEY` - to find issues linked to an epic
+
+## Example Workflow
+
+1. Get the issue details to understand the issue type
+2. Find all related child issues if closing an Epic
+3. Get available transitions for each issue
+4. Transition each issue using the appropriate transition ID
+5. Do not include resolution or comment parameters unless explicitly needed
+
+## Common Pitfalls
+
+- **Error: Invalid resolution**: This happens when you try to set a resolution like `{"resolution": {"name": "Obsolete"}}` but "Obsolete" is not a valid resolution value in that Jira instance. Solution: Omit the resolution field entirely.
+- **Error: Transition not available**: This happens when using the wrong transition ID for an issue type. Solution: Always call `jira_get_transitions` first.
