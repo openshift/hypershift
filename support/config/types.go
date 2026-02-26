@@ -9,4 +9,7 @@ const (
 	HCCOUser = "hosted-cluster-config"
 	// HCCOUserAgent references the userAgent used by the HostedClusterConfigOperator
 	HCCOUserAgent = "hosted-cluster-config-operator-manager"
+
+	// KASBootstrapContainerUser references the user used by the KAS bootstrap container
+	KASBootstrapContainerUser = "kas-bootstrap-container"
 )

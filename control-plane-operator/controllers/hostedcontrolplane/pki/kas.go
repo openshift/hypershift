@@ -69,6 +69,10 @@ func ReconcileHCCOClientCertSecret(secret, ca *corev1.Secret, ownerRef config.Ow
 	return reconcileSignedCert(secret, ca, ownerRef, fmt.Sprintf("system:%s", config.HCCOUser), []string{"kubernetes", "system:serviceaccounts:openshift"}, X509UsageClientAuth)
 }
 
+func ReconcileKASBootstrapContainerClientCertSecret(secret, ca *corev1.Secret, ownerRef config.OwnerRef) error {
+	return reconcileSignedCert(secret, ca, ownerRef, fmt.Sprintf("system:%s", config.KASBootstrapContainerUser), []string{"kubernetes"}, X509UsageClientAuth)
+}
+
 func ReconcileServiceAccountKubeconfig(secret, csrSigner *corev1.Secret, ca *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane, serviceAccountNamespace, serviceAccountName string) error {
 	cn := serviceaccount.MakeUsername(serviceAccountNamespace, serviceAccountName)
 	if err := reconcileSignedCert(secret, csrSigner, config.OwnerRef{}, cn, serviceaccount.MakeGroupNames(serviceAccountNamespace), X509UsageClientAuth); err != nil {
