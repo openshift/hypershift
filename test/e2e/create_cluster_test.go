@@ -2496,7 +2496,7 @@ func TestCreateCluster(t *testing.T) {
 		e2eutil.EnsureCAPIFinalizers(t, ctx, mgtClient, hostedCluster)
 
 		// ensure KAS DNS name is configured with a KAS Serving cert
-		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)
+		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster, clusterOpts)
 		e2eutil.EnsureDefaultSecurityGroupTags(t, ctx, mgtClient, hostedCluster, clusterOpts)
 
 		if globalOpts.Platform == hyperv1.AzurePlatform {

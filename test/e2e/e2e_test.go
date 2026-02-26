@@ -75,6 +75,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.N4MinorReleaseImage, "e2e.n4-minor-release-image", "", "The n-4 minor OCP release image relative to the latest")
 	flag.StringVar(&globalOpts.PlatformRaw, "e2e.platform", string(hyperv1.AWSPlatform), "The platform to use for the tests")
 	flag.Var(&globalOpts.ConfigurableClusterOptions.Annotations, "e2e.annotations", "Annotations to apply to the HostedCluster (key=value). Can be specified multiple times")
+	flag.Var(&globalOpts.ConfigurableClusterOptions.DisableClusterCapabilities, "e2e.disable-cluster-capabilities", "Cluster capabilities to disable (e.g. ImageRegistry,Console). Can be specified multiple times")
 	flag.Var(&globalOpts.ConfigurableClusterOptions.ClusterCIDR, "e2e.cluster-cidr", "The CIDR of the cluster network. Can be specified multiple times.")
 	flag.Var(&globalOpts.ConfigurableClusterOptions.ServiceCIDR, "e2e.service-cidr", "The CIDR of the service network. Can be specified multiple times.")
 	flag.Var(&globalOpts.ConfigurableClusterOptions.Zone, "e2e.availability-zones", "Availability zones for clusters")
@@ -160,6 +161,26 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.PowerVSVpcRegion, "e2e.powervs-vpc-region", "us-south", "IBM Cloud VPC Region for VPC resources. Default is us-south")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.PowerVSZone, "e2e.powervs-zone", "us-south", "IBM Cloud zone. Default is us-sout")
 	flag.Var(&globalOpts.ConfigurableClusterOptions.PowerVSProcType, "e2e.powervs-proc-type", "Processor type (dedicated, shared, capped). Default is shared")
+
+	// GCP Platform Flags
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPProject, "e2e.gcp-project", "", "GCP project ID")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPRegion, "e2e.gcp-region", "us-central1", "GCP region")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPNetwork, "e2e.gcp-network", "", "GCP VPC network name")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPPrivateServiceConnectSubnet, "e2e.gcp-psc-subnet", "", "Subnet for Private Service Connect endpoints")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPWorkloadIdentityProjectNumber, "e2e.gcp-wif-project-number", "", "GCP project number for Workload Identity")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPWorkloadIdentityPoolID, "e2e.gcp-wif-pool-id", "", "Workload Identity Pool ID")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPWorkloadIdentityProviderID, "e2e.gcp-wif-provider-id", "", "Workload Identity Provider ID")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPNodePoolServiceAccount, "e2e.gcp-nodepool-sa", "", "Service Account for NodePool CAPG controllers")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPControlPlaneServiceAccount, "e2e.gcp-controlplane-sa", "", "Service Account for Control Plane Operator")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPCloudControllerServiceAccount, "e2e.gcp-cloudcontroller-sa", "", "Service Account for Cloud Controller Manager")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPStorageServiceAccount, "e2e.gcp-storage-sa", "", "Service Account for GCP PD CSI Driver")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPServiceAccountSigningKeyPath, "e2e.gcp-sa-signing-key-path", "", "Path to the private key file for the GCP service account token issuer")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPEndpointAccess, "e2e.gcp-endpoint-access", "Private", "GCP endpoint access type: Private or PublicAndPrivate")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPIssuerURL, "e2e.gcp-oidc-issuer-url", "", "The OIDC provider issuer URL for GCP")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPMachineType, "e2e.gcp-machine-type", "", "GCP machine type for node instances. Defaults to n2-standard-4")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPZone, "e2e.gcp-zone", "", "GCP zone for node instances. Defaults to {region}-a")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPSubnet, "e2e.gcp-subnet", "", "Subnet for node instances. Defaults to the PSC subnet value")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPBootImage, "e2e.gcp-boot-image", "", "GCP boot image for node instances. Overrides the default RHCOS image from the release payload")
 
 	flag.Parse()
 
@@ -249,6 +270,11 @@ func main(m *testing.M) int {
 func alertSLOs(ctx context.Context) error {
 	if globalOpts.Platform == hyperv1.AzurePlatform {
 		return fmt.Errorf("Alerting SLOs is not supported on Azure")
+	}
+	// TODO(GCP): Revisit. Prometheus support is WIP for GCP.
+	// GKE management clusters don't have OpenShift monitoring (prometheus-k8s service).
+	if globalOpts.Platform == hyperv1.GCPPlatform {
+		return fmt.Errorf("Alerting SLOs is not supported on GCP")
 	}
 
 	// Query fairing for SLOs.

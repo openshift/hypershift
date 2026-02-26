@@ -126,23 +126,19 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 	gcpCluster.Spec.Project = gcpSpec.Project
 	gcpCluster.Spec.Region = gcpSpec.Region
 
-	// Configure network settings if available
+	// Configure network settings if available.
+	// We update individual fields rather than replacing the entire NetworkSpec/SubnetSpec
+	// to preserve server-defaulted values (Mtu, Purpose, StackType) that CAPG sets
+	// after creation. Overwriting them with zero values triggers the loop detector.
 	if gcpSpec.NetworkConfig.Network.Name != "" {
-		gcpCluster.Spec.Network = capigcp.NetworkSpec{
-			Name: ptr.To(gcpSpec.NetworkConfig.Network.Name),
-		}
+		gcpCluster.Spec.Network.Name = ptr.To(gcpSpec.NetworkConfig.Network.Name)
 
-		// Set subnet for Private Service Connect if available
 		if gcpSpec.NetworkConfig.PrivateServiceConnectSubnet.Name != "" {
-			// CAPG handles subnets differently, configure as needed for PSC
-			// This will be used by CAPG for node creation
-			gcpCluster.Spec.Network.Subnets = []capigcp.SubnetSpec{
-				{
-					Name:   gcpSpec.NetworkConfig.PrivateServiceConnectSubnet.Name,
-					Region: gcpSpec.Region,
-					// CAPG will discover the network CIDR automatically
-				},
+			if len(gcpCluster.Spec.Network.Subnets) == 0 {
+				gcpCluster.Spec.Network.Subnets = []capigcp.SubnetSpec{{}}
 			}
+			gcpCluster.Spec.Network.Subnets[0].Name = gcpSpec.NetworkConfig.PrivateServiceConnectSubnet.Name
+			gcpCluster.Spec.Network.Subnets[0].Region = gcpSpec.Region
 		}
 	}
 

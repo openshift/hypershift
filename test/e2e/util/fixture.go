@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/cluster/gcp"
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/openstack"
 	"github.com/openshift/hypershift/cmd/cluster/powervs"
@@ -50,6 +51,8 @@ func createClusterOpts(ctx context.Context, client crclient.Client, hc *hyperv1.
 		opts.InfraID = hc.Name
 	case hyperv1.PowerVSPlatform:
 		opts.InfraID = fmt.Sprintf("%s-infra", hc.Name)
+	case hyperv1.GCPPlatform:
+		opts.InfraID = hc.Name
 	}
 
 	return opts, nil
@@ -171,6 +174,14 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 		return renderCreate(ctx, &opts.RawCreateOptions, &opts.PowerVSPlatform, manifestsFile, renderLogFile, createLogFile)
 	case hyperv1.OpenStackPlatform:
 		return renderCreate(ctx, &opts.RawCreateOptions, &opts.OpenStackPlatform, manifestsFile, renderLogFile, createLogFile)
+	case hyperv1.GCPPlatform:
+		completer, err := opts.GCPPlatform.Validate(ctx, coreOpts)
+		if err != nil {
+			return fmt.Errorf("failed to validate GCP platform options: %w", err)
+		}
+		_ = completer.(*gcp.ValidatedCreateOptions)
+
+		return renderCreate(ctx, &opts.RawCreateOptions, &opts.GCPPlatform, manifestsFile, renderLogFile, createLogFile)
 
 	default:
 		return fmt.Errorf("unsupported platform %s", hc.Spec.Platform.Type)
@@ -269,6 +280,8 @@ func destroyCluster(ctx context.Context, t *testing.T, hc *hyperv1.HostedCluster
 		return powervs.DestroyCluster(ctx, opts)
 	case hyperv1.OpenStackPlatform:
 		return openstack.DestroyCluster(ctx, opts)
+	case hyperv1.GCPPlatform:
+		return gcp.DestroyCluster(ctx, opts)
 
 	default:
 		return fmt.Errorf("unsupported cluster platform %s", hc.Spec.Platform.Type)

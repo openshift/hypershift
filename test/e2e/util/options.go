@@ -13,6 +13,7 @@ import (
 	hypershiftaws "github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	hypershiftgcp "github.com/openshift/hypershift/cmd/cluster/gcp"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	hypershiftopenstack "github.com/openshift/hypershift/cmd/cluster/openstack"
@@ -143,6 +144,7 @@ type ConfigurableClusterOptions struct {
 	BaseDomain                            string
 	ClusterCIDR                           stringSliceVar
 	ControlPlaneOperatorImage             string
+	DisableClusterCapabilities            stringSliceVar
 	EtcdStorageClass                      string
 	ExternalDNSDomain                     string
 	KubeVirtContainerDiskImage            string
@@ -178,6 +180,26 @@ type ConfigurableClusterOptions struct {
 	SSHKeyFile                            string
 	ServiceCIDR                           stringSliceVar
 	Zone                                  stringSliceVar
+
+	// GCP Platform Configuration
+	GCPProject                       string
+	GCPRegion                        string
+	GCPNetwork                       string
+	GCPPrivateServiceConnectSubnet   string
+	GCPWorkloadIdentityProjectNumber string
+	GCPWorkloadIdentityPoolID        string
+	GCPWorkloadIdentityProviderID    string
+	GCPNodePoolServiceAccount        string
+	GCPControlPlaneServiceAccount    string
+	GCPCloudControllerServiceAccount string
+	GCPStorageServiceAccount         string
+	GCPServiceAccountSigningKeyPath  string
+	GCPEndpointAccess                string
+	GCPIssuerURL                     string
+	GCPMachineType                   string
+	GCPZone                          string
+	GCPSubnet                        string
+	GCPBootImage                     string
 }
 
 func (o *Options) DefaultClusterOptions(t *testing.T) PlatformAgnosticOptions {
@@ -201,7 +223,8 @@ func (o *Options) DefaultClusterOptions(t *testing.T) PlatformAgnosticOptions {
 				fmt.Sprintf("%s=true", hyperv1.CleanupCloudResourcesAnnotation),
 				fmt.Sprintf("%s=true", hyperv1.SkipReleaseImageValidation),
 			},
-			EtcdStorageClass: o.ConfigurableClusterOptions.EtcdStorageClass,
+			EtcdStorageClass:           o.ConfigurableClusterOptions.EtcdStorageClass,
+			DisableClusterCapabilities: o.ConfigurableClusterOptions.DisableClusterCapabilities,
 		},
 		NonePlatform:        o.DefaultNoneOptions(),
 		AWSPlatform:         o.DefaultAWSOptions(),
@@ -209,11 +232,12 @@ func (o *Options) DefaultClusterOptions(t *testing.T) PlatformAgnosticOptions {
 		AzurePlatform:       o.DefaultAzureOptions(),
 		PowerVSPlatform:     o.DefaultPowerVSOptions(),
 		OpenStackPlatform:   o.DefaultOpenStackOptions(),
+		GCPPlatform:         o.DefaultGCPOptions(),
 		ExternalCNIProvider: o.ExternalCNIProvider,
 	}
 
 	switch o.Platform {
-	case hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.NonePlatform, hyperv1.KubevirtPlatform, hyperv1.OpenStackPlatform:
+	case hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.NonePlatform, hyperv1.KubevirtPlatform, hyperv1.OpenStackPlatform, hyperv1.GCPPlatform:
 		createOption.Arch = hyperv1.ArchitectureAMD64
 	case hyperv1.PowerVSPlatform:
 		createOption.Arch = hyperv1.ArchitecturePPC64LE
@@ -413,6 +437,29 @@ func (o *Options) DefaultPowerVSOptions() powervs.RawCreateOptions {
 		VPC:                    o.ConfigurableClusterOptions.PowerVSVPC,
 		TransitGatewayLocation: o.ConfigurableClusterOptions.PowerVSTransitGatewayLocation,
 		TransitGateway:         o.ConfigurableClusterOptions.PowerVSTransitGateway,
+	}
+}
+
+func (o *Options) DefaultGCPOptions() hypershiftgcp.RawCreateOptions {
+	return hypershiftgcp.RawCreateOptions{
+		Project:                       o.ConfigurableClusterOptions.GCPProject,
+		Region:                        o.ConfigurableClusterOptions.GCPRegion,
+		Network:                       o.ConfigurableClusterOptions.GCPNetwork,
+		PrivateServiceConnectSubnet:   o.ConfigurableClusterOptions.GCPPrivateServiceConnectSubnet,
+		WorkloadIdentityProjectNumber: o.ConfigurableClusterOptions.GCPWorkloadIdentityProjectNumber,
+		WorkloadIdentityPoolID:        o.ConfigurableClusterOptions.GCPWorkloadIdentityPoolID,
+		WorkloadIdentityProviderID:    o.ConfigurableClusterOptions.GCPWorkloadIdentityProviderID,
+		NodePoolServiceAccount:        o.ConfigurableClusterOptions.GCPNodePoolServiceAccount,
+		ControlPlaneServiceAccount:    o.ConfigurableClusterOptions.GCPControlPlaneServiceAccount,
+		CloudControllerServiceAccount: o.ConfigurableClusterOptions.GCPCloudControllerServiceAccount,
+		StorageServiceAccount:         o.ConfigurableClusterOptions.GCPStorageServiceAccount,
+		ServiceAccountSigningKeyPath:  o.ConfigurableClusterOptions.GCPServiceAccountSigningKeyPath,
+		EndpointAccess:                o.ConfigurableClusterOptions.GCPEndpointAccess,
+		IssuerURL:                     o.ConfigurableClusterOptions.GCPIssuerURL,
+		MachineType:                   o.ConfigurableClusterOptions.GCPMachineType,
+		Zone:                          o.ConfigurableClusterOptions.GCPZone,
+		Subnet:                        o.ConfigurableClusterOptions.GCPSubnet,
+		BootImage:                     o.ConfigurableClusterOptions.GCPBootImage,
 	}
 }
 
