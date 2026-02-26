@@ -3283,7 +3283,7 @@ func EnsureCustomLabels(t *testing.T, ctx context.Context, client crclient.Clien
 		var podsWithoutLabel []string
 		for _, pod := range podList.Items {
 			// Skip KubeVirt related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
+			if pod.Labels["app"] == "vmi-console-debug" {
 				continue
 			}
 
@@ -3312,7 +3312,7 @@ func EnsureCustomTolerations(t *testing.T, ctx context.Context, client crclient.
 		var podsWithoutToleration []string
 		for _, pod := range podList.Items {
 			// Skip KubeVirt related pods
-			if pod.Labels["kubevirt.io"] == "virt-launcher" || pod.Labels["app"] == "vmi-console-debug" {
+			if pod.Labels["app"] == "vmi-console-debug" {
 				continue
 			}
 
