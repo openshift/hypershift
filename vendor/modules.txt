@@ -447,6 +447,11 @@ github.com/aws/aws-sdk-go-v2/service/internal/presigned-url
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared/arn
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared/config
+# github.com/aws/aws-sdk-go-v2/service/pricing v1.40.11
+## explicit; go 1.23
+github.com/aws/aws-sdk-go-v2/service/pricing
+github.com/aws/aws-sdk-go-v2/service/pricing/internal/endpoints
+github.com/aws/aws-sdk-go-v2/service/pricing/types
 # github.com/aws/aws-sdk-go-v2/service/route53 v1.62.1
 ## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/service/route53
