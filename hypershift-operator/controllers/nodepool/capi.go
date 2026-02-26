@@ -707,17 +707,27 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 		// The MachineDeployment replicas field should default to a value inside the (min size, max size) range based on the autoscaler annotations
 		// so the autoscaler can take control of the replicas field.
 		//
-		// 1. if it’s a new MachineDeployment, or the replicas field of the old MachineDeployment is < min size, use min size
+		// 1. if it's a new MachineDeployment, or the replicas field of the old MachineDeployment is <= min size, use min size
 		// 2. if the replicas field of the old MachineDeployment is > max size, use max size
+		//
+		// Guard: Enforce min=1 for non-AWS platforms to prevent scale-from-zero issues.
+		// Even if API validation fails or pre-existing objects exist with min=0, this prevents
+		// NodePools from being permanently stuck at 0 replicas on platforms that don't support
+		// scale-from-zero metadata.
+		effectiveMin := ptr.Deref(nodePool.Spec.AutoScaling.Min, 0)
+		if effectiveMin == 0 && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
+			effectiveMin = 1
+		}
+
 		mdReplicas := ptr.Deref(machineDeployment.Spec.Replicas, 0)
-		if mdReplicas < nodePool.Spec.AutoScaling.Min {
-			machineDeployment.Spec.Replicas = &nodePool.Spec.AutoScaling.Min
+		if mdReplicas <= effectiveMin {
+			machineDeployment.Spec.Replicas = &effectiveMin
 		} else if mdReplicas > nodePool.Spec.AutoScaling.Max {
 			machineDeployment.Spec.Replicas = &nodePool.Spec.AutoScaling.Max
 		}
 
 		machineDeployment.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Max))
-		machineDeployment.Annotations[autoscalerMinAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Min))
+		machineDeployment.Annotations[autoscalerMinAnnotation] = strconv.Itoa(int(effectiveMin))
 	}
 
 	// If autoscaling is NOT enabled we reset min/max annotations and reconcile replicas.
@@ -995,17 +1005,27 @@ func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.Machin
 		// The MachineSet replicas field should default to a value inside the (min size, max size) range based on the autoscaler annotations
 		// so the autoscaler can take control of the replicas field.
 		//
-		// 1. if it’s a new MachineSet, or the replicas field of the old MachineSet is < min size, use min size
+		// 1. if it's a new MachineSet, or the replicas field of the old MachineSet is <= min size, use min size
 		// 2. if the replicas field of the old MachineSet is > max size, use max size
+		//
+		// Guard: Enforce min=1 for non-AWS platforms to prevent scale-from-zero issues.
+		// Even if API validation fails or pre-existing objects exist with min=0, this prevents
+		// NodePools from being permanently stuck at 0 replicas on platforms that don't support
+		// scale-from-zero metadata.
+		effectiveMin := ptr.Deref(nodePool.Spec.AutoScaling.Min, 0)
+		if effectiveMin == 0 && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
+			effectiveMin = 1
+		}
+
 		msReplicas := ptr.Deref(machineSet.Spec.Replicas, 0)
-		if msReplicas < nodePool.Spec.AutoScaling.Min {
-			machineSet.Spec.Replicas = &nodePool.Spec.AutoScaling.Min
+		if msReplicas <= effectiveMin {
+			machineSet.Spec.Replicas = &effectiveMin
 		} else if msReplicas > nodePool.Spec.AutoScaling.Max {
 			machineSet.Spec.Replicas = &nodePool.Spec.AutoScaling.Max
 		}
 
 		machineSet.Annotations[autoscalerMaxAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Max))
-		machineSet.Annotations[autoscalerMinAnnotation] = strconv.Itoa(int(nodePool.Spec.AutoScaling.Min))
+		machineSet.Annotations[autoscalerMinAnnotation] = strconv.Itoa(int(effectiveMin))
 	}
 
 	// If autoscaling is NOT enabled we reset min/max annotations and reconcile replicas.

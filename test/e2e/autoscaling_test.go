@@ -17,10 +17,12 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
+	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -60,7 +62,7 @@ func TestAutoscaling(t *testing.T) {
 				}
 				additionalNP.Spec.Replicas = nil
 				additionalNP.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
-					Min: 1,
+					Min: ptr.To[int32](1),
 					Max: 3,
 				}
 
@@ -107,7 +109,7 @@ func testAutoscaling(ctx context.Context, mgtClient crclient.Client, hostedClust
 
 		original := nodepool.DeepCopy()
 		nodepool.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
-			Min: numNodes,
+			Min: ptr.To[int32](numNodes),
 			Max: max,
 		}
 		nodepool.Spec.Replicas = nil
@@ -383,4 +385,273 @@ func newWorkLoad(njobs int32, memoryRequest resource.Quantity, nodeSelector, ima
 		}
 	}
 	return job
+}
+
+func TestNodePoolAutoscalingScaleFromZero(t *testing.T) {
+	if globalOpts.Platform != hyperv1.AWSPlatform {
+		t.Skip("test only supported on platform AWS")
+	}
+
+	// Get management client to check for scale-from-zero secret
+	mgtClient, err := e2eutil.GetClient()
+	if err != nil {
+		t.Fatalf("failed to get management client: %v", err)
+	}
+
+	// Check if scale-from-zero is enabled by looking for the credentials secret
+	// The instance type provider is enabled when this secret is set
+	scaleFromZeroSecret := &corev1.Secret{}
+	err = mgtClient.Get(testContext, crclient.ObjectKey{
+		Namespace: "hypershift",
+		Name:      "hypershift-operator-scale-from-zero-credentials",
+	}, scaleFromZeroSecret)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			t.Skip("test requires scale-from-zero to be enabled on the HyperShift Operator (secret hypershift-operator-scale-from-zero-credentials not found)")
+		}
+		t.Fatalf("failed to check for scale-from-zero secret: %v", err)
+	}
+
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts.NodePoolReplicas = 1
+
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		t.Run("TestScaleFromZero", testScaleFromZero(ctx, mgtClient, hostedCluster))
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "autoscaling-scale-from-zero", globalOpts.ServiceAccountSigningKey)
+}
+
+func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) func(t *testing.T) {
+	return func(t *testing.T) {
+		g := NewWithT(t)
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
+
+		// Security context settings for workload pods
+		allowPrivilegeEscalation := false
+		runAsNonRoot := false
+		runAsUser := int64(0)
+
+		// Get guest client
+		guestClient := e2eutil.WaitForGuestClient(t, ctx, mgtClient, hostedCluster)
+
+		// Get default NodePool to copy spec
+		nodepools := &hyperv1.NodePoolList{}
+		err := mgtClient.List(ctx, nodepools, crclient.InNamespace(hostedCluster.Namespace))
+		g.Expect(err).NotTo(HaveOccurred(), "failed to list nodepools")
+		g.Expect(nodepools.Items).NotTo(BeEmpty(), "expected at least one nodepool")
+
+		// Create NodePool with scale-from-zero autoscaling
+		scaleFromZeroNP := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      hostedCluster.Name + "-scale-from-zero",
+				Namespace: hostedCluster.Namespace,
+			},
+		}
+		nodepools.Items[0].Spec.DeepCopyInto(&scaleFromZeroNP.Spec)
+		scaleFromZeroNP.Spec.Replicas = nil // Must be nil when using autoscaling
+		scaleFromZeroNP.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
+			Min: ptr.To[int32](0), // Scale from zero
+			Max: 2,
+		}
+		// Add unique labels to nodes from this NodePool so workload can target them
+		scaleFromZeroNP.Spec.NodeLabels = map[string]string{
+			"scale-from-zero-test": "true",
+		}
+
+		err = mgtClient.Create(ctx, scaleFromZeroNP)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create scale-from-zero nodepool")
+		t.Logf("Created NodePool %s with autoscaling min=0, max=2", scaleFromZeroNP.Name)
+
+		// Verify MachineDeployment has capacity annotations
+		t.Log("Verifying MachineDeployment has capacity annotations")
+		md := &capiv1.MachineDeployment{}
+		e2eutil.EventuallyObject(t, ctx, "MachineDeployment to have capacity annotations",
+			func(ctx context.Context) (*capiv1.MachineDeployment, error) {
+				// MachineDeployment is in the hosted cluster namespace with same name as NodePool
+				err := mgtClient.Get(ctx, crclient.ObjectKey{
+					Namespace: manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name),
+					Name:      scaleFromZeroNP.Name,
+				}, md)
+				return md, err
+			},
+			[]e2eutil.Predicate[*capiv1.MachineDeployment]{
+				func(md *capiv1.MachineDeployment) (done bool, reasons string, err error) {
+					if _, ok := md.Annotations["machine.openshift.io/vCPU"]; !ok {
+						return false, "missing vCPU annotation", nil
+					}
+					if _, ok := md.Annotations["machine.openshift.io/memoryMb"]; !ok {
+						return false, "missing memoryMb annotation", nil
+					}
+					if _, ok := md.Annotations["machine.openshift.io/GPU"]; !ok {
+						return false, "missing GPU annotation", nil
+					}
+					labels, ok := md.Annotations["capacity.cluster-autoscaler.kubernetes.io/labels"]
+					if !ok {
+						return false, "missing capacity labels annotation", nil
+					}
+					if !strings.Contains(labels, "kubernetes.io/arch=") {
+						return false, "capacity labels missing architecture", nil
+					}
+					return true, "all capacity annotations present", nil
+				},
+			},
+			e2eutil.WithTimeout(5*time.Minute),
+		)
+		t.Logf("MachineDeployment has capacity annotations: vCPU=%s, memoryMb=%s, GPU=%s, labels=%s",
+			md.Annotations["machine.openshift.io/vCPU"],
+			md.Annotations["machine.openshift.io/memoryMb"],
+			md.Annotations["machine.openshift.io/GPU"],
+			md.Annotations["capacity.cluster-autoscaler.kubernetes.io/labels"])
+
+		// Verify NodePool autoscaling is enabled
+		e2eutil.EventuallyObject(t, ctx, "NodePool autoscaling to be enabled",
+			func(ctx context.Context) (*hyperv1.NodePool, error) {
+				err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(scaleFromZeroNP), scaleFromZeroNP)
+				return scaleFromZeroNP, err
+			},
+			[]e2eutil.Predicate[*hyperv1.NodePool]{
+				func(np *hyperv1.NodePool) (done bool, reasons string, err error) {
+					for _, condition := range np.Status.Conditions {
+						if condition.Type == hyperv1.NodePoolAutoscalingEnabledConditionType {
+							return condition.Status == corev1.ConditionTrue,
+								fmt.Sprintf("autoscaling enabled status is %s", condition.Status),
+								nil
+						}
+					}
+					return false, "autoscaling enabled condition not found", nil
+				},
+			},
+			e2eutil.WithTimeout(5*time.Minute),
+		)
+
+		// Verify NodePool starts with 0 replicas
+		t.Log("Verifying NodePool starts with 0 replicas")
+		err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(scaleFromZeroNP), scaleFromZeroNP)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(scaleFromZeroNP.Status.Replicas).To(Equal(int32(0)), "NodePool should start with 0 replicas")
+		t.Log("Confirmed NodePool has 0 replicas")
+
+		// Create workload to trigger scale-up from 0
+		t.Log("Creating workload to trigger scale-up from 0 nodes")
+		workload := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "scale-from-zero-workload",
+				Namespace: "default",
+			},
+			Spec: batchv1.JobSpec{
+				Template: corev1.PodTemplateSpec{
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{
+							{
+								Name:    "workload",
+								Image:   globalOpts.LatestReleaseImage,
+								Command: []string{"sleep", "3600"},
+								Resources: corev1.ResourceRequirements{
+									Requests: corev1.ResourceList{
+										"memory": resource.MustParse("1Gi"),
+										"cpu":    resource.MustParse("500m"),
+									},
+								},
+								SecurityContext: &corev1.SecurityContext{
+									AllowPrivilegeEscalation: &allowPrivilegeEscalation,
+									Capabilities: &corev1.Capabilities{
+										Drop: []corev1.Capability{
+											"ALL",
+										},
+									},
+									RunAsNonRoot: &runAsNonRoot,
+									RunAsUser:    &runAsUser,
+									SeccompProfile: &corev1.SeccompProfile{
+										Type: corev1.SeccompProfileTypeRuntimeDefault,
+									},
+								},
+							},
+						},
+						// Target only nodes from the scale-from-zero NodePool
+						NodeSelector: map[string]string{
+							"scale-from-zero-test": "true",
+						},
+						RestartPolicy: corev1.RestartPolicyNever,
+					},
+				},
+				Completions: ptr.To[int32](2),
+				Parallelism: ptr.To[int32](2),
+			},
+		}
+
+		err = guestClient.Create(ctx, workload)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to create workload")
+		t.Log("Created workload with 2 pods")
+
+		defer func() {
+			cascadeDelete := metav1.DeletePropagationForeground
+			_ = guestClient.Delete(ctx, workload, &crclient.DeleteOptions{
+				PropagationPolicy: &cascadeDelete,
+			})
+		}()
+
+		// Wait for NodePool to scale from 0 to at least 1
+		// Note: We request 2 pods but they may fit on a single node depending on instance capacity
+		t.Log("Waiting for NodePool to scale from 0 to at least 1 node")
+		e2eutil.EventuallyObject(t, ctx, "NodePool to scale from 0",
+			func(ctx context.Context) (*hyperv1.NodePool, error) {
+				err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(scaleFromZeroNP), scaleFromZeroNP)
+				return scaleFromZeroNP, err
+			},
+			[]e2eutil.Predicate[*hyperv1.NodePool]{
+				func(np *hyperv1.NodePool) (done bool, reasons string, err error) {
+					if np.Status.Replicas > 0 {
+						return true, fmt.Sprintf("NodePool scaled to %d replicas", np.Status.Replicas), nil
+					}
+					return false, fmt.Sprintf("NodePool has %d replicas, waiting for >0", np.Status.Replicas), nil
+				},
+			},
+			e2eutil.WithInterval(10*time.Second),
+			e2eutil.WithTimeout(15*time.Minute),
+		)
+		t.Logf("NodePool successfully scaled from 0 to %d replicas", scaleFromZeroNP.Status.Replicas)
+
+		// Verify pods are scheduled and running
+		t.Log("Verifying workload pods are scheduled and running")
+		e2eutil.EventuallyObjects(t, ctx, "Pods to be scheduled and running",
+			func(ctx context.Context) ([]*corev1.Pod, error) {
+				pods := &corev1.PodList{}
+				err := guestClient.List(ctx, pods,
+					crclient.InNamespace("default"),
+					crclient.MatchingLabels{"job-name": "scale-from-zero-workload"})
+				items := make([]*corev1.Pod, len(pods.Items))
+				for i := range pods.Items {
+					items[i] = &pods.Items[i]
+				}
+				return items, err
+			},
+			[]e2eutil.Predicate[[]*corev1.Pod]{
+				func(pods []*corev1.Pod) (done bool, reasons string, err error) {
+					if len(pods) < 2 {
+						return false, fmt.Sprintf("expected at least 2 pods, got %d", len(pods)), nil
+					}
+					return true, fmt.Sprintf("found %d pods (>= 2)", len(pods)), nil
+				},
+			},
+			[]e2eutil.Predicate[*corev1.Pod]{
+				e2eutil.ConditionPredicate[*corev1.Pod](e2eutil.Condition{
+					Type:   string(corev1.PodScheduled),
+					Status: metav1.ConditionTrue,
+				}),
+				e2eutil.Predicate[*corev1.Pod](func(pod *corev1.Pod) (done bool, reasons string, err error) {
+					if pod.Status.Phase == corev1.PodRunning || pod.Status.Phase == corev1.PodSucceeded {
+						return true, fmt.Sprintf("pod %s is %s", pod.Name, pod.Status.Phase), nil
+					}
+					return false, fmt.Sprintf("pod %s is %s", pod.Name, pod.Status.Phase), nil
+				}),
+			},
+			e2eutil.WithTimeout(20*time.Minute),
+		)
+		t.Log("Successfully verified scale-from-zero: workload pods are scheduled and running on scaled nodes")
+	}
 }

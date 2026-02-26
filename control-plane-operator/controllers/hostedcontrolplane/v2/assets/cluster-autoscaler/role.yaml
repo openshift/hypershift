@@ -23,6 +23,7 @@ rules:
   verbs:
   - get
   - list
+  - watch
 - apiGroups:
   - capi-provider.agent-install.openshift.io
   resources:

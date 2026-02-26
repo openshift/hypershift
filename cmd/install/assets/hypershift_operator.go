@@ -100,6 +100,7 @@ func (o HyperShiftNamespace) Build() *corev1.Namespace {
 const (
 	awsCredsSecretName            = "hypershift-operator-aws-credentials"
 	oidcProviderS3CredsSecretName = "hypershift-operator-oidc-provider-s3-credentials"
+	scaleFromZeroCredsSecretName  = "hypershift-operator-scale-from-zero-credentials"
 	externaDNSCredsSecretName     = "external-dns-credentials"
 
 	HypershiftOperatorName                = "operator"
@@ -148,6 +149,30 @@ func (o HyperShiftOperatorOIDCProviderS3Secret) Build() *corev1.Secret {
 		},
 		Data: map[string][]byte{
 			o.CredsKey: o.OIDCStorageProviderS3CredBytes,
+		},
+	}
+	return secret
+}
+
+type ScaleFromZeroCredentialsSecret struct {
+	Namespace  *corev1.Namespace
+	CredsBytes []byte
+	CredsKey   string
+	Provider   string
+}
+
+func (o ScaleFromZeroCredentialsSecret) Build() *corev1.Secret {
+	secret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      scaleFromZeroCredsSecretName,
+			Namespace: o.Namespace.Name,
+		},
+		Data: map[string][]byte{
+			o.CredsKey: o.CredsBytes,
 		},
 	}
 	return secret
@@ -423,6 +448,9 @@ type HyperShiftOperatorDeployment struct {
 	PlatformsInstalled                      string
 	ImagePullPolicy                         string
 	EnableAuditLogPersistence               bool
+	ScaleFromZeroSecret                     *corev1.Secret
+	ScaleFromZeroSecretKey                  string
+	ScaleFromZeroProvider                   string
 }
 
 func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
@@ -538,6 +566,26 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
 					SecretName: o.OIDCStorageProviderS3Secret.Name,
+				},
+			},
+		})
+	}
+
+	if o.ScaleFromZeroSecret != nil && len(o.ScaleFromZeroSecret.Name) > 0 && len(o.ScaleFromZeroSecretKey) > 0 && len(o.ScaleFromZeroProvider) > 0 {
+		args = append(args,
+			"--scale-from-zero-provider="+o.ScaleFromZeroProvider,
+			"--scale-from-zero-creds=/etc/scale-from-zero-creds/"+o.ScaleFromZeroSecretKey,
+		)
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      "scale-from-zero-creds",
+			MountPath: "/etc/scale-from-zero-creds",
+			ReadOnly:  true,
+		})
+		volumes = append(volumes, corev1.Volume{
+			Name: "scale-from-zero-creds",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: o.ScaleFromZeroSecret.Name,
 				},
 			},
 		})
