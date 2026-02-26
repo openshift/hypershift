@@ -226,6 +226,12 @@ func executeNodePoolTests(t *testing.T, nodePoolTestCasesPerHostedCluster []Host
 				clusterOpts.NodePoolReplicas = 1
 			}
 
+			// On ARO HCP with Cilium, we need at least one worker node to install cilium-olm operator
+			// before individual tests run. The cilium-olm deployment requires worker nodes to schedule its pods.
+			if globalOpts.Platform == hyperv1.AzurePlatform && clusterOpts.ExternalCNIProvider == "cilium" {
+				clusterOpts.NodePoolReplicas = 1
+			}
+
 			ctx, cancel := context.WithCancel(testContext)
 			defer cancel()
 			e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
