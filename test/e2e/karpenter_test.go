@@ -52,6 +52,7 @@ func TestKarpenter(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.AWSPlatform.AutoNode = true
+	clusterOpts.AWSPlatform.PublicOnly = false
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 	clusterOpts.ReleaseImage = globalOpts.PreviousReleaseImage
 
