@@ -28567,6 +28567,184 @@ OpenShift clusters at scale.</p>
 worker nodes and their kubelets, and the infrastructure on which they run). This
 enables &ldquo;hosted control plane as a service&rdquo; use cases.</p>
 </p>
+##AzurePrivateLinkService { #hypershift.openshift.io/v1beta1.AzurePrivateLinkService }
+<p>
+<p>AzurePrivateLinkService represents Azure Private Link Service infrastructure
+for private connectivity to hosted cluster API servers.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>apiVersion</code></br>
+string</td>
+<td>
+<code>
+hypershift.openshift.io/v1beta1
+</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>kind</code></br>
+string
+</td>
+<td><code>AzurePrivateLinkService</code></td>
+</tr>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metadata is the metadata for the AzurePrivateLinkService.</p>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec">
+AzurePrivateLinkServiceSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>spec is the specification for the AzurePrivateLinkService.</p>
+<br/>
+<br/>
+<table>
+<tr>
+<td>
+<code>loadBalancerIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>loadBalancerIP is the frontend IP address of the internal load balancer.
+This field is populated by the CPO observer from the KAS service status,
+not supplied by users. It is placed in Spec rather than Status because:
+- It follows the same pattern as GCP Private Service Connect (GCPPrivateServiceConnect.Spec.LoadBalancerIP)
+- It enables the HO controller to consume this value through normal Spec watches
+without requiring a status subresource watch
+This value must be a valid IPv4 or IPv6 address.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>subscriptionID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>subscriptionID is the Azure subscription ID where the PLS will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourceGroupName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>resourceGroupName is the Azure resource group where the PLS will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>location</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>location is the Azure region where the PLS will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>natSubnetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>natSubnetID is the Azure resource ID of the subnet used for PLS NAT IP allocation.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>allowedSubscriptions</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<p>allowedSubscriptions is the list of Azure subscription IDs permitted to create Private Endpoints.
+This field is intentionally mutable (no immutability constraint) to allow operators to
+grant or revoke Private Endpoint access without recreating the resource. This follows
+the same pattern as AWS additionalAllowedPrincipals.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestSubnetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>guestSubnetID is the Azure resource ID of the subnet in the guest VNet where the Private Endpoint will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestVNetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>guestVNetID is the Azure resource ID of the guest VNet for DNS zone linking.</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+<tr>
+<td>
+<code>status</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceStatus">
+AzurePrivateLinkServiceStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>status is the status of the AzurePrivateLinkService.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ##CertificateSigningRequestApproval { #hypershift.openshift.io/v1beta1.CertificateSigningRequestApproval }
 <p>
 <p>CertificateSigningRequestApproval defines the desired state of CertificateSigningRequestApproval</p>
@@ -31629,6 +31807,32 @@ applications and dev/test.</p>
 </td>
 </tr></tbody>
 </table>
+###AzureEndpointAccessType { #hypershift.openshift.io/v1beta1.AzureEndpointAccessType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>AzureEndpointAccessType specifies the visibility of the Azure API server endpoint.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Private&#34;</p></td>
+<td><p>AzureEndpointAccessPrivate indicates the API server is only accessible via a private endpoint.</p>
+</td>
+</tr><tr><td><p>&#34;Public&#34;</p></td>
+<td><p>AzureEndpointAccessPublic indicates the API server is publicly accessible.</p>
+</td>
+</tr><tr><td><p>&#34;PublicAndPrivate&#34;</p></td>
+<td><p>AzureEndpointAccessPublicAndPrivate indicates the API server is accessible via both public and private endpoints.</p>
+</td>
+</tr></tbody>
+</table>
 ###AzureKMSKey { #hypershift.openshift.io/v1beta1.AzureKMSKey }
 <p>
 (<em>Appears on:</em>
@@ -32206,6 +32410,315 @@ string
 <p>tenantID is a unique identifier for the tenant where Azure resources will be created and managed in.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>endpointAccess</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureEndpointAccessType">
+AzureEndpointAccessType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>endpointAccess specifies the visibility of the API server endpoint for the hosted cluster.
+When set to Private or PublicAndPrivate, Azure Private Link Service infrastructure will be
+created to enable private connectivity.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateConnectivity</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateConnectivityConfig">
+AzurePrivateConnectivityConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateConnectivity specifies configuration for Azure Private Link connectivity.
+This field is required when endpointAccess is set to Private or PublicAndPrivate.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateConnectivityConfig { #hypershift.openshift.io/v1beta1.AzurePrivateConnectivityConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>AzurePrivateConnectivityConfig specifies configuration for Azure Private Link connectivity.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>natSubnetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>natSubnetID is the Azure resource ID of the subnet used for Private Link Service NAT IP allocation.
+This subnet must have privateLinkServiceNetworkPolicies disabled.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>allowedSubscriptions</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<p>allowedSubscriptions is the list of Azure subscription IDs permitted to create Private Endpoints
+to the Private Link Service.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateLinkServiceSpec { #hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkService">AzurePrivateLinkService</a>)
+</p>
+<p>
+<p>AzurePrivateLinkServiceSpec defines the desired state of AzurePrivateLinkService</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>loadBalancerIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>loadBalancerIP is the frontend IP address of the internal load balancer.
+This field is populated by the CPO observer from the KAS service status,
+not supplied by users. It is placed in Spec rather than Status because:
+- It follows the same pattern as GCP Private Service Connect (GCPPrivateServiceConnect.Spec.LoadBalancerIP)
+- It enables the HO controller to consume this value through normal Spec watches
+without requiring a status subresource watch
+This value must be a valid IPv4 or IPv6 address.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>subscriptionID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>subscriptionID is the Azure subscription ID where the PLS will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourceGroupName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>resourceGroupName is the Azure resource group where the PLS will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>location</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>location is the Azure region where the PLS will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>natSubnetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>natSubnetID is the Azure resource ID of the subnet used for PLS NAT IP allocation.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>allowedSubscriptions</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<p>allowedSubscriptions is the list of Azure subscription IDs permitted to create Private Endpoints.
+This field is intentionally mutable (no immutability constraint) to allow operators to
+grant or revoke Private Endpoint access without recreating the resource. This follows
+the same pattern as AWS additionalAllowedPrincipals.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestSubnetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>guestSubnetID is the Azure resource ID of the subnet in the guest VNet where the Private Endpoint will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestVNetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>guestVNetID is the Azure resource ID of the guest VNet for DNS zone linking.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateLinkServiceStatus { #hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkService">AzurePrivateLinkService</a>)
+</p>
+<p>
+<p>AzurePrivateLinkServiceStatus defines the observed state of AzurePrivateLinkService</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>conditions represent the current state of PLS infrastructure.
+Current condition types are: &ldquo;AzurePrivateLinkServiceAvailable&rdquo;, &ldquo;AzureInternalLoadBalancerAvailable&rdquo;,
+&ldquo;AzurePLSCreated&rdquo;, &ldquo;AzurePrivateEndpointAvailable&rdquo;, &ldquo;AzurePrivateDNSAvailable&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>internalLoadBalancerID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>internalLoadBalancerID is the Azure resource ID of the internal load balancer.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateLinkServiceID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateLinkServiceID is the Azure resource ID of the Private Link Service.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateLinkServiceAlias</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateLinkServiceAlias is the globally unique alias for the Private Link Service.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateEndpointID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateEndpointID is the Azure resource ID of the Private Endpoint.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateEndpointIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateEndpointIP is the private IP address assigned to the Private Endpoint.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateDNSZoneID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateDNSZoneID is the Azure resource ID of the Private DNS Zone.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dnsZoneName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>dnsZoneName is the Private DNS zone name (derived from the KAS hostname).
+Persisted at creation time so that deletion does not depend on the
+HostedControlPlane still existing.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AzureResourceManagedIdentities { #hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities }
@@ -32481,6 +32994,22 @@ WorkloadIdentity
 <td>
 <p>network is the client ID of a federated managed identity, associated with cluster-network-operator, used in
 workload identity authentication.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateLinkService</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateLinkService is the client ID of a federated managed identity used to create and manage
+Azure Private Link Service resources. Requires Network Contributor RBAC on the management cluster
+resource group. This field is optional and only needed when endpointAccess is Private or PublicAndPrivate.</p>
 </td>
 </tr>
 </tbody>
@@ -33465,6 +33994,21 @@ created in the guest VPC</p>
 </tr><tr><td><p>&#34;AWSEndpointServiceAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 has been created for the specified NLB in the management VPC</p>
+</td>
+</tr><tr><td><p>&#34;AzureInternalLoadBalancerAvailable&#34;</p></td>
+<td><p>AzureInternalLoadBalancerAvailable indicates the ILB has been provisioned with a frontend IP</p>
+</td>
+</tr><tr><td><p>&#34;AzurePLSCreated&#34;</p></td>
+<td><p>AzurePLSCreated indicates the Azure Private Link Service has been created in the management cluster resource group</p>
+</td>
+</tr><tr><td><p>&#34;AzurePrivateDNSAvailable&#34;</p></td>
+<td><p>AzurePrivateDNSAvailable indicates the Private DNS zone and A records have been created</p>
+</td>
+</tr><tr><td><p>&#34;AzurePrivateEndpointAvailable&#34;</p></td>
+<td><p>AzurePrivateEndpointAvailable indicates the Private Endpoint has been created in the guest VNet</p>
+</td>
+</tr><tr><td><p>&#34;AzurePrivateLinkServiceAvailable&#34;</p></td>
+<td><p>AzurePrivateLinkServiceAvailable indicates overall PLS infrastructure availability</p>
 </td>
 </tr><tr><td><p>&#34;CVOScaledDown&#34;</p></td>
 <td></td>
