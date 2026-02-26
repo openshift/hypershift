@@ -74,13 +74,22 @@ func (r *secretJanitor) Reconcile(ctx context.Context, req reconcile.Request) (r
 		}
 
 		log.Info("removing secret as nodePool is missing")
-		return ctrl.Result{}, r.Client.Delete(ctx, secret)
+		return ctrl.Result{}, client.IgnoreNotFound(r.Client.Delete(ctx, secret))
 
 	}
 
 	hcluster, err := GetHostedClusterByName(ctx, r.Client, nodePool.GetNamespace(), nodePool.Spec.ClusterName)
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Info("removing secret as hosted cluster is missing")
+			return ctrl.Result{}, r.cleanupSecretForDeletion(ctx, secret)
+		}
 		return ctrl.Result{}, err
+	}
+
+	if !hcluster.DeletionTimestamp.IsZero() {
+		log.Info("removing secret as hosted cluster is being deleted")
+		return ctrl.Result{}, r.cleanupSecretForDeletion(ctx, secret)
 	}
 
 	shouldKeepOldUserData, err := r.shouldKeepOldUserData(ctx, hcluster)
@@ -195,4 +204,13 @@ func (r *NodePoolReconciler) shouldKeepOldUserData(ctx context.Context, hc *hype
 	}
 
 	return false, nil
+}
+
+// cleanupSecretForDeletion handles secret cleanup when the HostedCluster is missing or being deleted.
+// Token secrets get an expiration annotation; userdata secrets get deleted directly.
+func (r *secretJanitor) cleanupSecretForDeletion(ctx context.Context, secret *corev1.Secret) error {
+	if strings.HasPrefix(secret.Name, TokenSecretPrefix) {
+		return client.IgnoreNotFound(setExpirationTimestampOnToken(ctx, r.Client, secret, r.now))
+	}
+	return client.IgnoreNotFound(r.Client.Delete(ctx, secret))
 }
