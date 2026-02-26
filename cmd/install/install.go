@@ -37,6 +37,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -974,6 +975,21 @@ func setupExternalDNS(opts Options, operatorNamespace *corev1.Namespace) ([]crcl
 	objects = append(objects, externalDNSServiceAccount)
 
 	externalDNSClusterRole := assets.ExternalDNSClusterRole{}.Build()
+	if opts.ExternalDNSProvider == "google" {
+		// GCP-386: Allow external-dns to read/update DNSEndpoint resources for ingress zone delegation
+		externalDNSClusterRole.Rules = append(externalDNSClusterRole.Rules,
+			rbacv1.PolicyRule{
+				APIGroups: []string{"externaldns.k8s.io"},
+				Resources: []string{"dnsendpoints"},
+				Verbs:     []string{"get", "watch", "list"},
+			},
+			rbacv1.PolicyRule{
+				APIGroups: []string{"externaldns.k8s.io"},
+				Resources: []string{"dnsendpoints/status"},
+				Verbs:     []string{rbacv1.VerbAll},
+			},
+		)
+	}
 	objects = append(objects, externalDNSClusterRole)
 
 	externalDNSClusterRoleBinding := assets.ExternalDNSClusterRoleBinding{

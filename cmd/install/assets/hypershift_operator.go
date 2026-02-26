@@ -1046,18 +1046,6 @@ func (o ExternalDNSClusterRole) Build() *rbacv1.ClusterRole {
 				},
 				Verbs: []string{"get", "list", "watch"},
 			},
-			// GCP-386: Allow external-dns to read/update DNSEndpoint resources for ingress zone delegation
-			// Matches: https://github.com/openshift/external-dns/blob/master/charts/external-dns/templates/clusterrole.yaml
-			{
-				APIGroups: []string{"externaldns.k8s.io"},
-				Resources: []string{"dnsendpoints"},
-				Verbs:     []string{"get", "watch", "list"},
-			},
-			{
-				APIGroups: []string{"externaldns.k8s.io"},
-				Resources: []string{"dnsendpoints/status"},
-				Verbs:     []string{rbacv1.VerbAll},
-			},
 		},
 	}
 	return role
