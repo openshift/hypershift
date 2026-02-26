@@ -1325,6 +1325,13 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 		errs = append(errs, fmt.Errorf("failed to get proxy config: %w", err))
 	}
 
+	agentServiceAccount := manifests.KonnectivityAgentServiceAccount()
+	if _, err := r.CreateOrUpdate(ctx, r.client, agentServiceAccount, func() error {
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent service account: %w", err))
+	}
+
 	agentDaemonset := manifests.KonnectivityAgentDaemonSet()
 	if _, err := r.CreateOrUpdate(ctx, r.client, agentDaemonset, func() error {
 		konnectivity.ReconcileAgentDaemonSet(agentDaemonset, p, hcp.Spec.Platform, proxy.Status)
