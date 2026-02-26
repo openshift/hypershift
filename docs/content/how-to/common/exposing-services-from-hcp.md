@@ -64,6 +64,64 @@ OpenShift routes provide a way to expose services within the cluster to external
 
 HostedControlPlanes operate in two domains: the Control Plane and the Data Plane. The Control Plane uses routes through the MGMT Cluster ingress to expose services for each of the HostedControlPlanes, and the routes are created in the HostedControlPlane namespace. For the Data Plane, the Ingress handles `*.apps.subdomain.tld` URLs, and all routes under this wildcard are directed to the Namespace by the OpenShift Router on the worker nodes.
 
+#### Route Hostname Assignment
+
+Routes require a hostname (`spec.host` field) to be routable. HyperShift supports two patterns for assigning route hostnames:
+
+**Pattern A: Explicit Hostnames** (Recommended for production)
+
+When creating a HostedCluster with the `--external-dns-domain` flag, explicit hostnames are assigned to each route:
+
+```yaml
+spec:
+  services:
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: oauth-mycluster.service-provider-domain.com
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: konnectivity-mycluster.service-provider-domain.com
+```
+
+This pattern:
+- Used by cloud platforms (AWS, Azure) with external-DNS integration
+- Provides stable, predictable DNS names
+- See [External-DNS Guide](../aws/external-dns.md) for setup details
+
+**Pattern B: Auto-Generated Hostnames**
+
+When routes don't have explicit hostnames, they depend on the `DEFAULT_INGRESS_DOMAIN` environment variable in the control-plane-operator:
+
+```yaml
+spec:
+  services:
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+      # No route.hostname field
+```
+
+If `DEFAULT_INGRESS_DOMAIN` is set, hostnames are auto-generated like: `oauth-<namespace>.${DEFAULT_INGRESS_DOMAIN}`
+
+!!! warning "Platform=None Considerations"
+    Platform=None clusters using the Route strategy must ensure routes get valid hostnames through one of these methods:
+
+    1. Set explicit hostnames in the HostedCluster spec (Pattern A)
+    2. Configure `DEFAULT_INGRESS_DOMAIN` in the control-plane-operator deployment
+
+    **If neither is configured**, routes will be created with **empty `spec.host` fields**, which:
+
+    - Cannot be routed by shared ingress (HAProxy requires hostnames for SNI routing)
+    - Causes `InfrastructureReady=False` status
+    - Prevents kubeconfig publication
+    - Blocks cluster from becoming functional
+
+    For architecture details, see [Shared Ingress Architecture](../../reference/architecture/managed-azure/shared-ingress.md).
+
 The usual configuration for the Hosted Cluster is similar to the LoadBalancer setup we will discuss next.
 
 ### LoadBalancer
