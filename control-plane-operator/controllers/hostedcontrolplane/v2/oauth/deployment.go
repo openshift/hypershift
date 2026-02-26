@@ -34,6 +34,20 @@ const (
 )
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
+	// Reuse CPO as much as possible
+	// FIXME: not the best place for this, but for now this is enough
+	// TODO: alternative: create a custom deployment provider at oauth/workload_provider.go with a custom LoadManifest (
+	generator := NewManifestGenerator(cpContext.HCP)
+	generatedDeployment, err := generator.GenerateOAuthDeployment(cpContext.Context)
+	if err != nil {
+		return fmt.Errorf("failed to generate OAuth deployment: %w", err)
+	}
+
+	generatedDeployment.SetNamespace(deployment.Namespace)
+	generatedDeployment.SetName(deployment.Name)
+	*deployment = *generatedDeployment
+
+	// Now apply CPO-specific adaptations on top of the generated manifest that came from authenticaion-operator
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		if cpContext.HCP.Spec.AuditWebhook != nil && len(cpContext.HCP.Spec.AuditWebhook.Name) > 0 {
 			c.Args = append(c.Args, fmt.Sprintf("--audit-webhook-config-file=%s", path.Join("/etc/kubernetes/auditwebhook", hyperv1.AuditWebhookKubeconfigKey)))

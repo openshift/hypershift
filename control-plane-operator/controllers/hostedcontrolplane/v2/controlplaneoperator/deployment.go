@@ -171,6 +171,47 @@ func (cpo *ControlPlaneOperatorOptions) adaptDeployment(cpContext component.Work
 		util.DeploymentAddTrustBundleVolume(hcp.Spec.AdditionalTrustBundle, deployment)
 	}
 
+	fmt.Printf("DEBUG(fjb) cpContext.ReleaseImageProvider.GetImage: %s\n", cpContext.ReleaseImageProvider.GetImage("cluster-authentication-operator"))
+
+	deployment.Spec.Template.Spec.InitContainers = append(deployment.Spec.Template.Spec.InitContainers, corev1.Container{
+		Name: "extract-auth-operator-binary",
+		// TODO: this would mean an initContainer for operator
+		// TODO: altnerative: a single init container that uses skope-like tool to fetch the binaries
+		// TODO: Use payload image instead of hardcoded image
+		// Image: cpContext.ReleaseImageProvider.GetImage("cluster-authentication-operator"),
+		Image:   "quay.io/bertinatto/cluster-authentication-operator:hypershiftv8",
+		Command: []string{"/bin/sh", "-c"},
+		Args: []string{`
+				set -e
+				echo "Extracting authentication-operator binary..."
+				cp /usr/bin/authentication-operator /shared-binaries/authentication-operator
+				chmod +x /shared-binaries/authentication-operator
+				echo "Extraction complete."
+			`},
+		VolumeMounts: []corev1.VolumeMount{
+			{
+				Name:      "shared-binaries",
+				MountPath: "/shared-binaries",
+			},
+		},
+	})
+
+	deployment.Spec.Template.Spec.Volumes = append(deployment.Spec.Template.Spec.Volumes, corev1.Volume{
+		Name: "shared-binaries",
+		VolumeSource: corev1.VolumeSource{
+			EmptyDir: &corev1.EmptyDirVolumeSource{},
+		},
+	})
+
+	// Mount shared-binaries volume in the main CPO container (only if not already mounted)
+	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		c.VolumeMounts = append(c.VolumeMounts, corev1.VolumeMount{
+			Name:      "shared-binaries",
+			MountPath: "/usr/local/bin/operators",
+			ReadOnly:  true,
+		})
+	})
+
 	cpo.applyPlatformSpecificConfig(hcp, deployment)
 
 	if deployment.Annotations == nil {
