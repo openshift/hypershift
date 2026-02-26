@@ -25,6 +25,7 @@ import (
 )
 
 const (
+	defaultClientTimeout                   = 60 * time.Second
 	pollWaitDuration                       = 2 * time.Second
 	pollTimeoutDuration                    = 60 * time.Second
 	maxDefragFailuresBeforeDegrade         = 3
@@ -116,6 +117,10 @@ https://github.com/openshift/cluster-etcd-operator/tree/master/pkg/etcdcli
 
 func (r *DefragController) runDefrag(ctx context.Context) error {
 	// Do not defrag if any of the cluster members are unhealthy.
+	// need to set etcd cli timeout as it may be stuck by the network or server
+	// set the defaultClientTImeout just as equal to 60s, to be compatible with pollTimeoutDuration
+	ctx, cancel := context.WithTimeout(ctx, defaultClientTimeout)
+	defer cancel()
 	members, err := r.etcdClient.MemberList(ctx)
 	if err != nil {
 		return err
