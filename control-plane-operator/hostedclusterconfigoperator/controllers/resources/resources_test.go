@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/globalconfig"
 	fakereleaseprovider "github.com/openshift/hypershift/support/releaseinfo/fake"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -32,6 +33,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -92,6 +94,8 @@ var initialObjects = []client.Object{
 	manifests.ValidatingAdmissionPolicyBinding(fmt.Sprintf("%s-binding", kas.AdmissionPolicyNameInfra)),
 
 	fakeOperatorHub(),
+	manifests.KASConnectionCheckerDaemonSet(),
+	manifests.KASConnectionCheckerServiceAccount(),
 }
 
 func shouldNotError(key client.ObjectKey) bool {
@@ -166,8 +170,12 @@ func TestReconcileErrorHandling(t *testing.T) {
 			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build(),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
-			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
-			ImageMetaDataProvider:  &imageMetaDataProvider,
+			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				Components: map[string]string{
+					"pod": "registry.k8s.io/pause:3.9",
+				},
+			},
+			ImageMetaDataProvider: &imageMetaDataProvider,
 		}
 		_, err := r.Reconcile(ctx, controllerruntime.Request{})
 		if err != nil {
@@ -196,8 +204,12 @@ func TestReconcileErrorHandling(t *testing.T) {
 			cpClient:               fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(cpObjects...).Build(),
 			hcpName:                "foo",
 			hcpNamespace:           "bar",
-			releaseProvider:        &fakereleaseprovider.FakeReleaseProvider{},
-			ImageMetaDataProvider:  &imageMetaDataProvider,
+			releaseProvider: &fakereleaseprovider.FakeReleaseProvider{
+				Components: map[string]string{
+					"pod": "registry.k8s.io/pause:3.9",
+				},
+			},
+			ImageMetaDataProvider: &imageMetaDataProvider,
 		}
 		_, err := r.Reconcile(ctx, controllerruntime.Request{})
 		if err != nil {
@@ -2308,7 +2320,7 @@ func newCondition(conditionType string, status metav1.ConditionStatus, reason, m
 	}
 }
 
-func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *testing.T) {
+func Test_reconciler_reconcileDataPlaneConnectionAvailable(t *testing.T) {
 	newKonnectivityAgentPod := func(name string, phase corev1.PodPhase) corev1.Pod {
 		return corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -2475,15 +2487,15 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 			r.cpClient = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 			r.GetPodLogs = tt.mockedGetPodLogs
 
-			gotErr := r.reconcileControlPlaneDataPlaneConnectivityConditions(ctx, tt.hcp, log)
+			gotErr := r.reconcileDataPlaneConnectionAvailable(ctx, tt.hcp, log)
 			if gotErr != nil {
 				if !tt.wantErr {
-					t.Errorf("reconcileControlPlaneDataPlaneConnectivityConditions() failed: %v", gotErr)
+					t.Errorf("reconcileDataPlaneConnectionAvailable() failed: %v", gotErr)
 				}
 				return
 			}
 			if tt.wantErr {
-				t.Fatal("reconcileControlPlaneDataPlaneConnectivityConditions() succeeded unexpectedly")
+				t.Fatal("reconcileDataPlaneConnectionAvailable() succeeded unexpectedly")
 			}
 			if tt.expectedCondition != nil {
 				found := false
@@ -2498,6 +2510,415 @@ func Test_reconciler_reconcileControlPlaneDataPlaneConnectivityConditions(t *tes
 				if !found {
 					t.Fatal("couldn't find expected condition")
 				}
+			}
+		})
+	}
+}
+
+func Test_reconciler_reconcileControlPlaneConnectionAvailable(t *testing.T) {
+	newKASConnectionCheckerDaemonSet := func(desiredScheduled, numberReady int32) *appsv1.DaemonSet {
+		return &appsv1.DaemonSet{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      manifests.KASConnectionCheckerName,
+				Namespace: manifests.KASConnectionCheckerNamespace,
+			},
+			Status: appsv1.DaemonSetStatus{
+				DesiredNumberScheduled: desiredScheduled,
+				NumberReady:            numberReady,
+			},
+		}
+	}
+
+	tests := []struct {
+		name              string
+		hcp               *hyperv1.HostedControlPlane
+		wantErr           bool
+		expectedCondition *metav1.Condition
+		daemonSet         *appsv1.DaemonSet
+	}{
+		{
+			name:    "When DaemonSet does not exist it should set condition to Unknown with DaemonSetNotFound reason",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: newCondition(
+				string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionUnknown,
+				hyperv1.ControlPlaneConnectionDaemonSetNotFoundReason,
+				fmt.Sprintf("KAS connection checker DaemonSet %s/%s not found; the hosted cluster config operator may not have reconciled it yet",
+					manifests.KASConnectionCheckerNamespace, manifests.KASConnectionCheckerName),
+			),
+			daemonSet: nil, // No DaemonSet
+		},
+		{
+			name:    "When DesiredNumberScheduled is 0 it should set condition to Unknown with NoWorkerNodesAvailable reason",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: newCondition(
+				string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionUnknown,
+				hyperv1.ControlPlaneConnectionNoWorkerNodesAvailableReason,
+				"KAS connection checker DaemonSet has 0 desired pods scheduled; no worker nodes are available to verify control plane connectivity",
+			),
+			daemonSet: newKASConnectionCheckerDaemonSet(0, 0),
+		},
+		{
+			name:    "When all pods are ready it should set condition to True",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: newCondition(
+				string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionTrue,
+				hyperv1.AsExpectedReason,
+				hyperv1.AllIsWellMessage,
+			),
+			daemonSet: newKASConnectionCheckerDaemonSet(3, 3),
+		},
+		{
+			name:    "When some pods are not ready it should set condition to False",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: newCondition(
+				string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionFalse,
+				hyperv1.ControlPlaneConnectionKASAccessFailedReason,
+				"Data plane to control plane connection is not available: 1/3 pods ready",
+			),
+			daemonSet: newKASConnectionCheckerDaemonSet(3, 1),
+		},
+		{
+			name:    "When no pods are ready it should set condition to False",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: newCondition(
+				string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionFalse,
+				hyperv1.ControlPlaneConnectionKASAccessFailedReason,
+				"Data plane to control plane connection is not available: 0/5 pods ready",
+			),
+			daemonSet: newKASConnectionCheckerDaemonSet(5, 0),
+		},
+		{
+			name:    "When only one pod is ready out of one it should set condition to True",
+			hcp:     fakeHCP(),
+			wantErr: false,
+			expectedCondition: newCondition(
+				string(hyperv1.ControlPlaneConnectionAvailable),
+				metav1.ConditionTrue,
+				hyperv1.AsExpectedReason,
+				hyperv1.AllIsWellMessage,
+			),
+			daemonSet: newKASConnectionCheckerDaemonSet(1, 1),
+		},
+	}
+
+	log := zapr.NewLogger(zaptest.NewLogger(t))
+	ctx := logr.NewContext(context.Background(), log)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var r reconciler
+
+			// Build client with DaemonSet if provided
+			var objects []client.Object
+			if tt.daemonSet != nil {
+				objects = append(objects, tt.daemonSet)
+			}
+
+			r.client = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
+			r.cpClient = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(tt.hcp).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+
+			gotErr := r.reconcileControlPlaneConnectionAvailable(ctx, tt.hcp)
+			if gotErr != nil {
+				if !tt.wantErr {
+					t.Errorf("reconcileControlPlaneConnectionAvailable() failed: %v", gotErr)
+				}
+				return
+			}
+			if tt.wantErr {
+				t.Fatal("reconcileControlPlaneConnectionAvailable() succeeded unexpectedly")
+			}
+			if tt.expectedCondition != nil {
+				found := false
+				for _, c := range tt.hcp.Status.Conditions {
+					if tt.expectedCondition.Type == c.Type &&
+						tt.expectedCondition.Message == c.Message &&
+						tt.expectedCondition.Status == c.Status &&
+						tt.expectedCondition.Reason == c.Reason {
+						found = true
+					}
+				}
+				if !found {
+					t.Fatalf("couldn't find expected condition. Expected: %+v, Got: %+v", tt.expectedCondition, tt.hcp.Status.Conditions)
+				}
+			}
+		})
+	}
+}
+
+func Test_reconciler_reconcileKASConnectionCheckerDaemonSet(t *testing.T) {
+	tests := []struct {
+		name              string
+		hcp               *hyperv1.HostedControlPlane
+		existingDaemonSet *appsv1.DaemonSet
+		wantErr           bool
+		validate          func(t *testing.T, ds *appsv1.DaemonSet)
+	}{
+		{
+			name:              "When DaemonSet does not exist it should create it with correct spec",
+			hcp:               fakeHCP(),
+			existingDaemonSet: nil,
+			wantErr:           false,
+			validate: func(t *testing.T, ds *appsv1.DaemonSet) {
+				if ds == nil {
+					t.Fatal("DaemonSet should be created")
+				}
+				if ds.Name != manifests.KASConnectionCheckerName {
+					t.Errorf("Expected name %s, got %s", manifests.KASConnectionCheckerName, ds.Name)
+				}
+				if ds.Namespace != manifests.KASConnectionCheckerNamespace {
+					t.Errorf("Expected namespace %s, got %s", manifests.KASConnectionCheckerNamespace, ds.Namespace)
+				}
+
+				// Validate labels and selectors
+				if ds.Spec.Selector == nil || ds.Spec.Selector.MatchLabels["app"] != manifests.KASConnectionCheckerName {
+					t.Error("Selector labels not set correctly")
+				}
+				if ds.Spec.Template.ObjectMeta.Labels["app"] != manifests.KASConnectionCheckerName {
+					t.Error("Pod template labels not set correctly")
+				}
+
+				// Validate container spec
+				if len(ds.Spec.Template.Spec.Containers) != 1 {
+					t.Fatalf("Expected 1 container, got %d", len(ds.Spec.Template.Spec.Containers))
+				}
+				container := ds.Spec.Template.Spec.Containers[0]
+				if container.Name != "connection-checker" {
+					t.Errorf("Expected container name 'connection-checker', got %s", container.Name)
+				}
+				if container.Image != "registry.k8s.io/pause:3.9" {
+					t.Errorf("Expected pause image, got %s", container.Image)
+				}
+
+				// Validate readiness probe
+				if container.ReadinessProbe == nil {
+					t.Fatal("ReadinessProbe should be set")
+				}
+				probe := container.ReadinessProbe
+				if probe.HTTPGet == nil {
+					t.Fatal("HTTPGet probe should be set")
+				}
+				if probe.HTTPGet.Scheme != corev1.URISchemeHTTPS {
+					t.Errorf("Expected HTTPS scheme, got %s", probe.HTTPGet.Scheme)
+				}
+				if probe.HTTPGet.Host != config.DefaultAdvertiseIPv4Address {
+					t.Errorf("Expected host %s (KAS advertise address), got %s", config.DefaultAdvertiseIPv4Address, probe.HTTPGet.Host)
+				}
+				if probe.HTTPGet.Port.IntValue() != 6443 {
+					t.Errorf("Expected port 6443, got %d", probe.HTTPGet.Port.IntValue())
+				}
+				if probe.HTTPGet.Path != "/version" {
+					t.Errorf("Expected path /version, got %s", probe.HTTPGet.Path)
+				}
+
+				// Validate probe timing
+				if probe.InitialDelaySeconds != 5 {
+					t.Errorf("Expected InitialDelaySeconds 5, got %d", probe.InitialDelaySeconds)
+				}
+				if probe.PeriodSeconds != 10 {
+					t.Errorf("Expected PeriodSeconds 10, got %d", probe.PeriodSeconds)
+				}
+				if probe.TimeoutSeconds != 5 {
+					t.Errorf("Expected TimeoutSeconds 5, got %d", probe.TimeoutSeconds)
+				}
+				if probe.SuccessThreshold != 1 {
+					t.Errorf("Expected SuccessThreshold 1, got %d", probe.SuccessThreshold)
+				}
+				if probe.FailureThreshold != 3 {
+					t.Errorf("Expected FailureThreshold 3, got %d", probe.FailureThreshold)
+				}
+
+				// Validate priority class
+				if ds.Spec.Template.Spec.PriorityClassName != "system-node-critical" {
+					t.Errorf("Expected PriorityClassName system-node-critical, got %s", ds.Spec.Template.Spec.PriorityClassName)
+				}
+
+				// Validate automount service account token is disabled
+				if ds.Spec.Template.Spec.AutomountServiceAccountToken == nil || *ds.Spec.Template.Spec.AutomountServiceAccountToken {
+					t.Error("AutomountServiceAccountToken should be set to false")
+				}
+
+				// Validate resource requests
+				expectedCPU := resource.MustParse("5m")
+				expectedMemory := resource.MustParse("10Mi")
+				if !container.Resources.Requests.Cpu().Equal(expectedCPU) {
+					t.Errorf("Expected CPU request 5m, got %s", container.Resources.Requests.Cpu())
+				}
+				if !container.Resources.Requests.Memory().Equal(expectedMemory) {
+					t.Errorf("Expected memory request 10Mi, got %s", container.Resources.Requests.Memory())
+				}
+
+				// Validate that host network is NOT used
+				if ds.Spec.Template.Spec.HostNetwork {
+					t.Error("HostNetwork should be false (not set)")
+				}
+
+				// Validate tolerations
+				if len(ds.Spec.Template.Spec.Tolerations) != 1 {
+					t.Fatalf("Expected 1 toleration, got %d", len(ds.Spec.Template.Spec.Tolerations))
+				}
+				if ds.Spec.Template.Spec.Tolerations[0].Operator != corev1.TolerationOpExists {
+					t.Error("Expected toleration operator Exists")
+				}
+
+				// Validate ServiceAccountName
+				if ds.Spec.Template.Spec.ServiceAccountName != manifests.KASConnectionCheckerName {
+					t.Errorf("Expected ServiceAccountName %s, got %s", manifests.KASConnectionCheckerName, ds.Spec.Template.Spec.ServiceAccountName)
+				}
+
+				// Validate required-scc annotation
+				if ds.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"] != "restricted-v2" {
+					t.Errorf("Expected openshift.io/required-scc annotation 'restricted-v2', got %s", ds.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"])
+				}
+			},
+		},
+		{
+			name: "When platform is IBM Cloud it should use IBM Cloud specific endpoint",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-hcp",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.IBMCloudPlatform,
+					},
+				},
+			},
+			existingDaemonSet: nil,
+			wantErr:           false,
+			validate: func(t *testing.T, ds *appsv1.DaemonSet) {
+				if ds == nil {
+					t.Fatal("DaemonSet should be created")
+				}
+				container := ds.Spec.Template.Spec.Containers[0]
+				if container.ReadinessProbe.HTTPGet.Path != "/livez?exclude=etcd&exclude=log" {
+					t.Errorf("Expected IBM Cloud endpoint, got %s", container.ReadinessProbe.HTTPGet.Path)
+				}
+			},
+		},
+		{
+			name: "When DaemonSet already exists it should update it",
+			hcp:  fakeHCP(),
+			existingDaemonSet: &appsv1.DaemonSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      manifests.KASConnectionCheckerName,
+					Namespace: manifests.KASConnectionCheckerNamespace,
+				},
+				Spec: appsv1.DaemonSetSpec{
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app": "old-label",
+						},
+					},
+					Template: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{
+								"app": "old-label",
+							},
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name:  "old-container",
+									Image: "old-image",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: false,
+			validate: func(t *testing.T, ds *appsv1.DaemonSet) {
+				if ds == nil {
+					t.Fatal("DaemonSet should exist")
+				}
+				// Verify it was updated with new spec
+				if ds.Spec.Selector.MatchLabels["app"] != manifests.KASConnectionCheckerName {
+					t.Error("DaemonSet should be updated with correct selector")
+				}
+				if len(ds.Spec.Template.Spec.Containers) != 1 {
+					t.Fatalf("Expected 1 container after update, got %d", len(ds.Spec.Template.Spec.Containers))
+				}
+				container := ds.Spec.Template.Spec.Containers[0]
+				if container.Name != "connection-checker" {
+					t.Error("Container should be updated to connection-checker")
+				}
+				if container.Image != "registry.k8s.io/pause:3.9" {
+					t.Error("Image should be updated to pause:3.9")
+				}
+				if container.ReadinessProbe == nil {
+					t.Error("ReadinessProbe should be added during update")
+				}
+
+				// Validate ServiceAccountName
+				if ds.Spec.Template.Spec.ServiceAccountName != manifests.KASConnectionCheckerName {
+					t.Errorf("Expected ServiceAccountName %s, got %s", manifests.KASConnectionCheckerName, ds.Spec.Template.Spec.ServiceAccountName)
+				}
+
+				// Validate required-scc annotation
+				if ds.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"] != "restricted-v2" {
+					t.Errorf("Expected openshift.io/required-scc annotation 'restricted-v2', got %s", ds.Spec.Template.ObjectMeta.Annotations["openshift.io/required-scc"])
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var r reconciler
+
+			// Setup fake client with existing DaemonSet if provided
+			objects := []client.Object{}
+			if tt.existingDaemonSet != nil {
+				objects = append(objects, tt.existingDaemonSet)
+			}
+			r.client = fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objects...).Build()
+			r.CreateOrUpdateProvider = &simpleCreateOrUpdater{}
+
+			ctx := context.Background()
+			pauseImage := "registry.k8s.io/pause:3.9"
+			err := r.reconcileKASConnectionCheckerDaemonSet(ctx, tt.hcp, pauseImage)
+
+			if (err != nil) != tt.wantErr {
+				t.Errorf("reconcileKASConnectionCheckerDaemonSet() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			// Verify ServiceAccount was created
+			sa := &corev1.ServiceAccount{}
+			saKey := client.ObjectKey{
+				Name:      manifests.KASConnectionCheckerName,
+				Namespace: manifests.KASConnectionCheckerNamespace,
+			}
+			if err := r.client.Get(ctx, saKey, sa); err != nil {
+				t.Errorf("Failed to get ServiceAccount: %v", err)
+			}
+
+			// Retrieve the DaemonSet and validate
+			daemonSet := &appsv1.DaemonSet{}
+			key := client.ObjectKey{
+				Name:      manifests.KASConnectionCheckerName,
+				Namespace: manifests.KASConnectionCheckerNamespace,
+			}
+			if err := r.client.Get(ctx, key, daemonSet); err != nil {
+				if !apierrors.IsNotFound(err) {
+					t.Errorf("Failed to get DaemonSet: %v", err)
+				}
+				daemonSet = nil
+			}
+
+			if tt.validate != nil {
+				tt.validate(t, daemonSet)
 			}
 		})
 	}
