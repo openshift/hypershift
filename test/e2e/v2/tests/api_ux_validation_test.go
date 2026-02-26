@@ -1597,6 +1597,76 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 			})
 		})
 
+	Context("AWS ImageType and arch validation", Label("AWS", "ImageType", "Arch"), func() {
+		// Helper function to reduce boilerplate for AWS platform setup
+		setupAWSNodePool := func(np *hyperv1.NodePool, arch string, instanceType string) {
+			np.Spec.Arch = arch
+			np.Spec.Platform.Type = hyperv1.AWSPlatform
+			if np.Spec.Platform.AWS == nil {
+				np.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{}
+			}
+			np.Spec.Platform.AWS.InstanceType = instanceType
+		}
+
+		It("should accept when imageType is not set with arm64 architecture", func() {
+			err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
+				setupAWSNodePool(np, hyperv1.ArchitectureARM64, "m6g.large")
+				// ImageType intentionally not set
+			})
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should accept when imageType is not set with amd64 architecture", func() {
+			err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
+				setupAWSNodePool(np, hyperv1.ArchitectureAMD64, "m6i.large")
+				// ImageType intentionally not set
+			})
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should reject when imageType is Windows with arm64 architecture", func() {
+			err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
+				setupAWSNodePool(np, hyperv1.ArchitectureARM64, "m6g.large")
+				np.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeWindows
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("ImageType 'Windows' requires arch 'amd64' (AWS only)"))
+		})
+
+		It("should accept when imageType is Windows with amd64 architecture", func() {
+			err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
+				setupAWSNodePool(np, hyperv1.ArchitectureAMD64, "m6i.large")
+				np.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeWindows
+			})
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should accept when imageType is Windows without arch (defaults to amd64)", func() {
+			err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
+				// Explicitly unset arch to test default behavior (defaults to amd64)
+				setupAWSNodePool(np, "", "m6i.large")
+				np.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeWindows
+			})
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should accept when imageType is Linux with arm64 architecture", func() {
+			err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
+				setupAWSNodePool(np, hyperv1.ArchitectureARM64, "m6g.large")
+				np.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeLinux
+			})
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should accept when imageType is Linux with amd64 architecture", func() {
+			err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
+				setupAWSNodePool(np, hyperv1.ArchitectureAMD64, "m6i.large")
+				np.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeLinux
+			})
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
 		Context("Azure VM image configuration validation", Label("Azure", "VMImage"), func() {
 			It("should accept when marketplace is fully populated with imageGeneration set", func() {
 				err := testNodePoolCreation(ctx, mgmtClient, "nodepool-base.yaml", func(np *hyperv1.NodePool) {
