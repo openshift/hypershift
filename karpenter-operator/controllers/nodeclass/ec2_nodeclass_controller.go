@@ -278,15 +278,16 @@ func reconcileEC2NodeClass(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2
 	}
 
 	ec2NodeClass.Spec = awskarpenterv1.EC2NodeClassSpec{
-		UserData:                 ptr.To(string(userDataSecret.Data["value"])),
-		AMIFamily:                ptr.To("Custom"),
-		AMISelectorTerms:         amiSelectorTerms,
-		AssociatePublicIPAddress: openshiftEC2NodeClass.Spec.KarpenterAssociatePublicIPAddress(),
-		Tags:                     mergeEC2NodeClassTags(ctx, openshiftEC2NodeClass, hcp),
-		DetailedMonitoring:       openshiftEC2NodeClass.Spec.KarpenterDetailedMonitoring(),
-		BlockDeviceMappings:      openshiftEC2NodeClass.Spec.KarpenterBlockDeviceMapping(),
-		InstanceStorePolicy:      openshiftEC2NodeClass.Spec.KarpenterInstanceStorePolicy(),
-		MetadataOptions:          openshiftEC2NodeClass.Spec.KarpenterMetadataOptions(),
+		UserData:                         ptr.To(string(userDataSecret.Data["value"])),
+		AMIFamily:                        ptr.To("Custom"),
+		AMISelectorTerms:                 amiSelectorTerms,
+		AssociatePublicIPAddress:         openshiftEC2NodeClass.Spec.KarpenterAssociatePublicIPAddress(),
+		Tags:                             mergeEC2NodeClassTags(ctx, openshiftEC2NodeClass, hcp),
+		DetailedMonitoring:               openshiftEC2NodeClass.Spec.KarpenterDetailedMonitoring(),
+		BlockDeviceMappings:              openshiftEC2NodeClass.Spec.KarpenterBlockDeviceMapping(),
+		InstanceStorePolicy:              openshiftEC2NodeClass.Spec.KarpenterInstanceStorePolicy(),
+		MetadataOptions:                  openshiftEC2NodeClass.Spec.KarpenterMetadataOptions(),
+		CapacityReservationSelectorTerms: openshiftEC2NodeClass.Spec.KarpenterCapacityReservationSelectorTerms(),
 	}
 
 	// Set instance profile from HostedCluster annotation (platform-controlled)
@@ -376,6 +377,21 @@ func (r *EC2NodeClassReconciler) reconcileStatus(ctx context.Context, ec2NodeCla
 		})
 	}
 	openshiftNodeClass.Status.Subnets = subnets
+
+	// Sync CapacityReservations from upstream EC2NodeClass
+	openshiftNodeClass.Status.CapacityReservations = nil
+	for _, cr := range ec2NodeClass.Status.CapacityReservations {
+		openshiftNodeClass.Status.CapacityReservations = append(openshiftNodeClass.Status.CapacityReservations, hyperkarpenterv1.CapacityReservation{
+			AvailabilityZone:      cr.AvailabilityZone,
+			EndTime:               cr.EndTime,
+			ID:                    cr.ID,
+			InstanceMatchCriteria: cr.InstanceMatchCriteria,
+			InstanceType:          cr.InstanceType,
+			OwnerID:               cr.OwnerID,
+			ReservationType:       string(cr.ReservationType),
+			State:                 string(cr.State),
+		})
+	}
 
 	// Sync conditions from the upstream EC2NodeClass. Use SetStatusCondition so that
 	// conditions managed by the ignition controller are preserved.
