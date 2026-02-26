@@ -251,11 +251,18 @@ func (b *clientBuilder) getClients() (ec2iface.EC2API, route53iface.Route53API, 
 	return ec2Client, route53Client, nil
 }
 
-func (b *clientBuilder) localHostedZoneID() string {
+func (b *clientBuilder) getLocalHostedZoneID() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	return b.localZoneID
+}
+
+func (b *clientBuilder) setLocalHostedZoneID(zoneID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.localZoneID = zoneID
 }
 
 func (b *clientBuilder) initializeWithHCP(log logr.Logger, hcp *hyperv1.HostedControlPlane) {
@@ -299,7 +306,6 @@ func (b *clientBuilder) setFromHCP(hcp *hyperv1.HostedControlPlane) {
 	} else {
 		b.assumeSharedVPCEndpointRoleARN = ""
 		b.assumeSharedVPCRoute53RoleARN = ""
-		b.localZoneID = ""
 	}
 }
 
@@ -692,13 +698,14 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointService(ctx context.C
 
 	zoneName := zoneName(hcp.Name)
 	var zoneID string
-	if r.awsClientBuilder.localHostedZoneID() == "" {
+	if r.awsClientBuilder.getLocalHostedZoneID() == "" {
 		zoneID, err = lookupZoneID(ctx, route53Client, zoneName)
 		if err != nil {
 			return err
 		}
+		r.awsClientBuilder.setLocalHostedZoneID(zoneID)
 	} else {
-		zoneID = r.awsClientBuilder.localHostedZoneID()
+		zoneID = r.awsClientBuilder.getLocalHostedZoneID()
 	}
 
 	var fqdns []string
