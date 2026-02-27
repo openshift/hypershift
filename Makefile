@@ -33,8 +33,11 @@ PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 GO_GCFLAGS ?= -gcflags=all='-N -l'
 GO=GO111MODULE=on GOWORK=off GOFLAGS=-mod=vendor go
 GOWS=GO111MODULE=on GOWORK=$(shell pwd)/hack/workspace/go.work GOFLAGS=-mod=vendor go
-GO_BUILD_RECIPE=CGO_ENABLED=1 $(GO) build $(GO_GCFLAGS)
-GO_CLI_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS) -ldflags '-extldflags "-static"'
+COMMIT_HASH ?= $(shell git rev-parse HEAD 2>/dev/null)
+VERSION_PKG=github.com/openshift/hypershift/support/supportedversion
+GO_LDFLAGS=-ldflags '-X $(VERSION_PKG).commitHash=$(COMMIT_HASH)'
+GO_BUILD_RECIPE=CGO_ENABLED=1 $(GO) build $(GO_GCFLAGS) $(GO_LDFLAGS)
+GO_CLI_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS) -ldflags '-X $(VERSION_PKG).commitHash=$(COMMIT_HASH) -extldflags "-static"'
 GO_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2e -c
 GO_E2EV2_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2ev2 -c
 GO_REQSERVING_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags reqserving -c
