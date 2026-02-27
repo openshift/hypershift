@@ -22,7 +22,7 @@ E.g. Introduce a new field/feature like AWS tenancy
 Components honour existing standalone in-cluster OCP feature gate mechanisim
 
 ## Users
-All the feature gates are grouped in a single TechPreviewNoUpgrade feature set. Current implementation exposes this --tech-preview-no-upgrade flag in the CLI at install time
+All the feature gates are grouped in a single `TechPreviewNoUpgrade` feature set. Current implementation exposes this `--tech-preview-no-upgrade` flag in the CLI at install time
 
 ```
 hypershift install --help
@@ -32,8 +32,8 @@ Will show among other flags:
 --tech-preview-no-upgrade                        If true, the HyperShift operator runs with TechPreviewNoUpgrade features enabled
 ```
 
-In a follow up we'll consider to introduce support to also signal --tech-preview-no-upgrade at the HC level.
-Eventually support for at least 1, 2, 3 and 4 afromentioned scenarios will most likely converge into a single API.
+In a follow up we'll consider to introduce support to also signal `--tech-preview-no-upgrade` at the HC level.
+Eventually support for at least 1, 2, 3 and 4 aforementioned scenarios will most likely converge into a single API.
 
 ## Devs
 
@@ -42,7 +42,7 @@ We rely on [openshift/api](https://github.com/openshift/api) tooling for generat
 The currently ongoing implementation of feature gates for the controllers business logic relies on "k8s.io/component-base/featuregate". This enables devs to declare [granular gates for their features](https://github.com/openshift/hypershift/blob/9f5ccaef47cdcf9d2df91134571f1783e99e30fe/hypershift-operator/featuregate/feature.go).
 See [this PR](https://github.com/openshift/hypershift/pull/4980) as an example.
 
-### Promoting a feature gated API field and feature to sable
+### Promoting a feature gated API field and feature to stable
 
 Generally speaking any new field should start by being feature gated.
 The minimum criteria for promotion is:
