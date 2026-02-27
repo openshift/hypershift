@@ -175,12 +175,6 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 	case hyperv1.OpenStackPlatform:
 		return renderCreate(ctx, &opts.RawCreateOptions, &opts.OpenStackPlatform, manifestsFile, renderLogFile, createLogFile)
 	case hyperv1.GCPPlatform:
-		completer, err := opts.GCPPlatform.Validate(ctx, coreOpts)
-		if err != nil {
-			return fmt.Errorf("failed to validate GCP platform options: %w", err)
-		}
-		_ = completer.(*gcp.ValidatedCreateOptions)
-
 		return renderCreate(ctx, &opts.RawCreateOptions, &opts.GCPPlatform, manifestsFile, renderLogFile, createLogFile)
 
 	default:
