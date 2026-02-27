@@ -37,11 +37,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation"
 	clientset "k8s.io/client-go/kubernetes"
+	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"k8s.io/utils/ptr"
 
 	controllerruntime "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/go-logr/logr"
@@ -2625,4 +2627,235 @@ func TestReconcileImageRegistry(t *testing.T) {
 			}
 		})
 	}
+}
+
+func makeAPIService(name string, available bool) *apiregistrationv1.APIService {
+	status := apiregistrationv1.ConditionFalse
+	if available {
+		status = apiregistrationv1.ConditionTrue
+	}
+	return &apiregistrationv1.APIService{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Status: apiregistrationv1.APIServiceStatus{
+			Conditions: []apiregistrationv1.APIServiceCondition{
+				{Type: apiregistrationv1.Available, Status: status},
+			},
+		},
+	}
+}
+
+func TestReconcileAggregatedAPIServicesAvailableCondition(t *testing.T) {
+	openshiftGroups := manifests.OpenShiftAPIServerAPIServiceGroups()
+	oauthGroups := manifests.OpenShiftOAuthAPIServerAPIServiceGroups()
+
+	allOpenshiftAPIServices := make([]client.Object, 0, len(openshiftGroups))
+	for _, group := range openshiftGroups {
+		allOpenshiftAPIServices = append(allOpenshiftAPIServices, makeAPIService(fmt.Sprintf("v1.%s.openshift.io", group), true))
+	}
+	allOAuthAPIServices := make([]client.Object, 0, len(oauthGroups))
+	for _, group := range oauthGroups {
+		allOAuthAPIServices = append(allOAuthAPIServices, makeAPIService(fmt.Sprintf("v1.%s.openshift.io", group), true))
+	}
+	packageServerAPIService := makeAPIService(manifests.OLMPackageServerAPIService().Name, true)
+
+	testCases := []struct {
+		name           string
+		oauthEnabled   bool
+		guestObjects   []client.Object
+		setupClientErr bool
+		expectedStatus metav1.ConditionStatus
+		expectedReason string
+		expectMessage  string
+	}{
+		{
+			name:         "When all APIServices are available with OAuth enabled, it should set condition to True",
+			oauthEnabled: true,
+			guestObjects: func() []client.Object {
+				objs := make([]client.Object, 0)
+				objs = append(objs, allOpenshiftAPIServices...)
+				objs = append(objs, allOAuthAPIServices...)
+				objs = append(objs, packageServerAPIService)
+				return objs
+			}(),
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+			expectMessage:  hyperv1.AllIsWellMessage,
+		},
+		{
+			name:         "When all APIServices are available with OAuth disabled, it should set condition to True",
+			oauthEnabled: false,
+			guestObjects: func() []client.Object {
+				objs := make([]client.Object, 0)
+				objs = append(objs, allOpenshiftAPIServices...)
+				objs = append(objs, packageServerAPIService)
+				return objs
+			}(),
+			expectedStatus: metav1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+			expectMessage:  hyperv1.AllIsWellMessage,
+		},
+		{
+			name:           "When some APIServices are missing, it should set condition to False",
+			oauthEnabled:   false,
+			guestObjects:   []client.Object{packageServerAPIService},
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: hyperv1.AggregatedAPIServicesNotAvailableReason,
+			expectMessage:  "Unavailable APIServices:",
+		},
+		{
+			name:         "When an APIService is not Available, it should set condition to False",
+			oauthEnabled: false,
+			guestObjects: func() []client.Object {
+				objs := make([]client.Object, 0)
+				objs = append(objs, makeAPIService(fmt.Sprintf("v1.%s.openshift.io", openshiftGroups[0]), false))
+				for _, group := range openshiftGroups[1:] {
+					objs = append(objs, makeAPIService(fmt.Sprintf("v1.%s.openshift.io", group), true))
+				}
+				objs = append(objs, packageServerAPIService)
+				return objs
+			}(),
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: hyperv1.AggregatedAPIServicesNotAvailableReason,
+			expectMessage:  fmt.Sprintf("v1.%s.openshift.io", openshiftGroups[0]),
+		},
+		{
+			name:         "When an APIService has empty conditions, it should be treated as unavailable",
+			oauthEnabled: false,
+			guestObjects: func() []client.Object {
+				objs := make([]client.Object, 0)
+				// First APIService has no conditions at all
+				objs = append(objs, &apiregistrationv1.APIService{
+					ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("v1.%s.openshift.io", openshiftGroups[0])},
+				})
+				for _, group := range openshiftGroups[1:] {
+					objs = append(objs, makeAPIService(fmt.Sprintf("v1.%s.openshift.io", group), true))
+				}
+				objs = append(objs, packageServerAPIService)
+				return objs
+			}(),
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: hyperv1.AggregatedAPIServicesNotAvailableReason,
+			expectMessage:  fmt.Sprintf("v1.%s.openshift.io", openshiftGroups[0]),
+		},
+		{
+			name:         "When OAuth is enabled and OAuth APIServices are missing, it should set condition to False",
+			oauthEnabled: true,
+			guestObjects: func() []client.Object {
+				objs := make([]client.Object, 0)
+				objs = append(objs, allOpenshiftAPIServices...)
+				objs = append(objs, packageServerAPIService)
+				return objs
+			}(),
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: hyperv1.AggregatedAPIServicesNotAvailableReason,
+			expectMessage:  "v1.oauth.openshift.io",
+		},
+		{
+			name:           "When guest cluster client fails to list APIServices, it should set condition to ReconcileError",
+			oauthEnabled:   false,
+			guestObjects:   []client.Object{},
+			setupClientErr: true,
+			expectedStatus: metav1.ConditionFalse,
+			expectedReason: hyperv1.ReconcileErrorReason,
+			expectMessage:  "Failed to list APIServices",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			log := zapr.NewLogger(zaptest.NewLogger(t))
+
+			hcp := manifests.HostedControlPlane("bar", "foo")
+			if !tc.oauthEnabled {
+				hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{
+					Authentication: &configv1.AuthenticationSpec{
+						Type: configv1.AuthenticationTypeOIDC,
+					},
+				}
+			}
+
+			var guestClient client.Client
+			if tc.setupClientErr {
+				guestClient = fake.NewClientBuilder().
+					WithScheme(api.Scheme).
+					WithObjects(tc.guestObjects...).
+					WithInterceptorFuncs(interceptor.Funcs{
+						List: func(ctx context.Context, client client.WithWatch, list client.ObjectList, opts ...client.ListOption) error {
+							if _, ok := list.(*apiregistrationv1.APIServiceList); ok {
+								return fmt.Errorf("simulated list error")
+							}
+							return client.List(ctx, list, opts...)
+						},
+					}).
+					Build()
+			} else {
+				guestClient = fake.NewClientBuilder().
+					WithScheme(api.Scheme).
+					WithObjects(tc.guestObjects...).
+					Build()
+			}
+
+			cpClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(hcp).
+				WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+				Build()
+
+			r := &reconciler{
+				client:                 guestClient,
+				cpClient:               cpClient,
+				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+			}
+
+			err := r.reconcileAggregatedAPIServicesAvailableCondition(context.Background(), hcp, log)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			updatedHCP := &hyperv1.HostedControlPlane{}
+			err = cpClient.Get(context.Background(), client.ObjectKeyFromObject(hcp), updatedHCP)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			condition := meta.FindStatusCondition(updatedHCP.Status.Conditions, string(hyperv1.AggregatedAPIServicesAvailable))
+			g.Expect(condition).ToNot(BeNil(), "expected AggregatedAPIServicesAvailable condition to be set")
+			g.Expect(condition.Status).To(Equal(tc.expectedStatus))
+			g.Expect(condition.Reason).To(Equal(tc.expectedReason))
+			if tc.expectMessage != "" {
+				g.Expect(condition.Message).To(ContainSubstring(tc.expectMessage))
+			}
+		})
+	}
+}
+
+func TestPatchHCPWithConditionCPClientFailure(t *testing.T) {
+	g := NewWithT(t)
+	log := zapr.NewLogger(zaptest.NewLogger(t))
+
+	hcp := manifests.HostedControlPlane("bar", "foo")
+
+	cpClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hcp).
+		WithStatusSubresource(&hyperv1.HostedControlPlane{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourcePatch: func(ctx context.Context, client client.Client, subResourceName string, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+				return fmt.Errorf("simulated cpClient patch error")
+			},
+		}).
+		Build()
+
+	r := &reconciler{
+		cpClient:               cpClient,
+		CreateOrUpdateProvider: &simpleCreateOrUpdater{},
+	}
+
+	condition := &metav1.Condition{
+		Type:    string(hyperv1.AggregatedAPIServicesAvailable),
+		Status:  metav1.ConditionTrue,
+		Reason:  hyperv1.AsExpectedReason,
+		Message: hyperv1.AllIsWellMessage,
+	}
+
+	err := r.patchHCPWithCondition(context.Background(), hcp, condition, log)
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("simulated cpClient patch error"))
 }
