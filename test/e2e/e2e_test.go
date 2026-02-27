@@ -175,7 +175,7 @@ func TestMain(m *testing.M) {
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPCloudControllerServiceAccount, "e2e.gcp-cloudcontroller-sa", "", "Service Account for Cloud Controller Manager")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPStorageServiceAccount, "e2e.gcp-storage-sa", "", "Service Account for GCP PD CSI Driver")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPServiceAccountSigningKeyPath, "e2e.gcp-sa-signing-key-path", "", "Path to the private key file for the GCP service account token issuer")
-	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPEndpointAccess, "e2e.gcp-endpoint-access", "Private", "GCP endpoint access type: Private or PublicAndPrivate")
+	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPEndpointAccess, "e2e.gcp-endpoint-access", string(hyperv1.GCPEndpointAccessPrivate), "GCP endpoint access type: Private or PublicAndPrivate")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPIssuerURL, "e2e.gcp-oidc-issuer-url", "", "The OIDC provider issuer URL for GCP")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPMachineType, "e2e.gcp-machine-type", "", "GCP machine type for node instances. Defaults to n2-standard-4")
 	flag.StringVar(&globalOpts.ConfigurableClusterOptions.GCPZone, "e2e.gcp-zone", "", "GCP zone for node instances. Defaults to {region}-a")
