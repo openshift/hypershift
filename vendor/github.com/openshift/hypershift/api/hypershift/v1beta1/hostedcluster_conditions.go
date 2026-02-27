@@ -243,6 +243,13 @@ const (
 	// **False / AutoNodeProgressing** means AutoNode is being enabled or disabled — the operation is in progress.
 	// **False / AutoNodeNotConfigured** means AutoNode is not configured in the spec and all Karpenter components have been removed.
 	AutoNodeEnabled ConditionType = "AutoNodeEnabled"
+
+	// AggregatedAPIServicesAvailable indicates whether all aggregated APIServices
+	// in the guest cluster are available. This includes OpenShift API Server,
+	// OAuth API Server (when enabled), and OLM PackageServer APIServices.
+	// This condition is an HCP implementation detail set by the HCCO and is not
+	// bubbled up to the HostedCluster level.
+	AggregatedAPIServicesAvailable ConditionType = "AggregatedAPIServicesAvailable"
 )
 
 // Reasons.
@@ -322,6 +329,8 @@ const (
 	AutoNodeNotConfiguredReason    = "AutoNodeNotConfigured"
 	AutoNodeProgressingReason      = "AutoNodeProgressing"
 	AutoNodeEvaluationFailedReason = "AutoNodeEvaluationFailed"
+
+	AggregatedAPIServicesNotAvailableReason = "APIServicesNotAvailable"
 )
 
 // Messages.
