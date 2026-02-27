@@ -146,8 +146,12 @@ github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.17 h1:RuNSMooz
 github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.17/go.mod h1:F2xxQ9TZz5gDWsclCtPQscGpP0VUOc8RqgFM3vDENmU=
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.16 h1:NSbvS17MlI2lurYgXnCOLvCFX38sBW4eiVER7+kkgsU=
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.16/go.mod h1:SwT8Tmqd4sA6G1qaGdzWCJN99bUmPGHfRwwq3G5Qb+A=
+github.com/aws/aws-sdk-go-v2/service/kms v1.50.0 h1:XSvRJBoDObL6Sn4cRmvH9wqjxjL7wf1ZDolUEyP7hw4=
+github.com/aws/aws-sdk-go-v2/service/kms v1.50.0/go.mod h1:1SdcmEGUEQE1mrU2sIgeHtcMSxHuybhPvuEPANzIDfI=
 github.com/aws/aws-sdk-go-v2/service/pricing v1.39.4 h1:FLRgwQXpnb+NWOAg1oP0VD0wM+q7OWJRssKyDsbrIEo=
 github.com/aws/aws-sdk-go-v2/service/pricing v1.39.4/go.mod h1:EWTrh/FVF3sDmcK5tKy1ETFPn6VX2nfLy5gDTsCy2+s=
+github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi v1.31.6 h1:gd7YMnFZQGdy4lERF9ffz9kbc6K/IPhCu5CrJDJr8XY=
+github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi v1.31.6/go.mod h1:lnTv81am9e2C2SjX3VKyUrKEzDADD9lKST9ou96UBoY=
 github.com/aws/aws-sdk-go-v2/service/route53 v1.62.1 h1:1jIdwWOulae7bBLIgB36OZ0DINACb1wxM6wdGlx4eHE=
 github.com/aws/aws-sdk-go-v2/service/route53 v1.62.1/go.mod h1:tE2zGlMIlxWv+7Otap7ctRp3qeKqtnja7DZguj3Vu/Y=
 github.com/aws/aws-sdk-go-v2/service/s3 v1.94.0 h1:SWTxh/EcUCDVqi/0s26V6pVUq0BBG7kx0tDTmF/hCgA=

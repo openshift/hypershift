@@ -340,10 +340,8 @@ github.com/aws/aws-sdk-go/service/elb
 github.com/aws/aws-sdk-go/service/elb/elbiface
 github.com/aws/aws-sdk-go/service/elbv2
 github.com/aws/aws-sdk-go/service/elbv2/elbv2iface
-github.com/aws/aws-sdk-go/service/kms
 github.com/aws/aws-sdk-go/service/ram
 github.com/aws/aws-sdk-go/service/ram/ramiface
-github.com/aws/aws-sdk-go/service/resourcegroupstaggingapi
 github.com/aws/aws-sdk-go/service/sqs
 github.com/aws/aws-sdk-go/service/sqs/sqsiface
 github.com/aws/aws-sdk-go/service/sso
@@ -447,6 +445,16 @@ github.com/aws/aws-sdk-go-v2/service/internal/presigned-url
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared/arn
 github.com/aws/aws-sdk-go-v2/service/internal/s3shared/config
+# github.com/aws/aws-sdk-go-v2/service/kms v1.50.0
+## explicit; go 1.23
+github.com/aws/aws-sdk-go-v2/service/kms
+github.com/aws/aws-sdk-go-v2/service/kms/internal/endpoints
+github.com/aws/aws-sdk-go-v2/service/kms/types
+# github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi v1.31.6
+## explicit; go 1.23
+github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi
+github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/internal/endpoints
+github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi/types
 # github.com/aws/aws-sdk-go-v2/service/route53 v1.62.1
 ## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/service/route53
