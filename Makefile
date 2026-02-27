@@ -279,7 +279,7 @@ NUM_CORES := $(shell getconf _NPROCESSORS_ONLN || echo 1)
 
 test: generate
 	echo "Running tests with $(NUM_CORES) parallel jobs..."
-	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m ./...
+	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
 
 .PHONY: e2e
 e2e: reqserving-e2e e2ev2
