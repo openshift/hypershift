@@ -3180,8 +3180,6 @@ func TestReconcileAggregatedAPIServicesAvailableCondition(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
-			log := zapr.NewLogger(zaptest.NewLogger(t))
-
 			hcp := manifests.HostedControlPlane("bar", "foo")
 			if !tc.oauthEnabled {
 				hcp.Spec.Configuration = &hyperv1.ClusterConfiguration{
@@ -3224,7 +3222,8 @@ func TestReconcileAggregatedAPIServicesAvailableCondition(t *testing.T) {
 				CreateOrUpdateProvider: &simpleCreateOrUpdater{},
 			}
 
-			err := r.reconcileAggregatedAPIServicesAvailableCondition(context.Background(), hcp, log)
+			ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+			err := r.reconcileAggregatedAPIServicesAvailableCondition(ctx, hcp)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			updatedHCP := &hyperv1.HostedControlPlane{}
@@ -3242,9 +3241,8 @@ func TestReconcileAggregatedAPIServicesAvailableCondition(t *testing.T) {
 	}
 }
 
-func TestPatchHCPWithConditionCPClientFailure(t *testing.T) {
+func TestPatchHCPStatusConditionCPClientFailure(t *testing.T) {
 	g := NewWithT(t)
-	log := zapr.NewLogger(zaptest.NewLogger(t))
 
 	hcp := manifests.HostedControlPlane("bar", "foo")
 
@@ -3271,7 +3269,8 @@ func TestPatchHCPWithConditionCPClientFailure(t *testing.T) {
 		Message: hyperv1.AllIsWellMessage,
 	}
 
-	err := r.patchHCPWithCondition(context.Background(), hcp, condition, log)
+	ctx := logr.NewContext(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+	err := r.patchHCPStatusCondition(ctx, hcp, condition)
 	g.Expect(err).To(HaveOccurred())
 	g.Expect(err.Error()).To(ContainSubstring("simulated cpClient patch error"))
 }
