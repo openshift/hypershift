@@ -147,7 +147,10 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, platform hyperv1.PlatformType) {
 	h.Run("ValidateHostedCluster", func(t *testing.T) {
 		if platform != hyperv1.NonePlatform && hostedCluster.Spec.Networking.NetworkType != hyperv1.Other {
-			if opts.AWSPlatform.EndpointAccess == string(hyperv1.Private) {
+			// Use !IsPublicHC to detect strictly private clusters (no public API endpoint).
+			// IsPrivateHC includes PublicAndPrivate, which has a reachable API server
+			// and should use ValidatePublicCluster.
+			if !util.IsPublicHC(hostedCluster) {
 				ValidatePrivateCluster(t, h.ctx, h.client, hostedCluster, opts)
 			} else {
 				ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts)
