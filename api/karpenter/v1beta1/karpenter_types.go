@@ -29,6 +29,26 @@ const (
 	// For 4.y versions, all versions support up to 3 minor version differences (n-3).
 	// When false, the NodeClass will continue operating but there are no compatibility guarantees.
 	ConditionTypeSupportedVersionSkew = "SupportedVersionSkew"
+
+	// ConditionReasonVersionNotSpecified indicates that no spec.version was set,
+	// so the NodeClass uses the control plane release image.
+	ConditionReasonVersionNotSpecified = "VersionNotSpecified"
+
+	// ConditionReasonVersionResolved indicates that spec.version was successfully
+	// resolved to a release image via Cincinnati.
+	ConditionReasonVersionResolved = "VersionResolved"
+
+	// ConditionReasonResolutionFailed indicates that spec.version could not be
+	// resolved to a release image.
+	ConditionReasonResolutionFailed = "ResolutionFailed"
+
+	// ConditionReasonUnsupportedSkew indicates that the NodeClass spec.version
+	// falls outside the supported version skew policy relative to the control plane.
+	ConditionReasonUnsupportedSkew = "UnsupportedSkew"
+
+	// ConditionReasonAsExpected indicates that the version skew is within the
+	// supported policy.
+	ConditionReasonAsExpected = "AsExpected"
 )
 
 // Subnet contains resolved Subnet selector values utilized for node launch

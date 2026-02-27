@@ -714,21 +714,23 @@ func TestResolveVersion(t *testing.T) {
 	}
 
 	baseHostedCluster := func(hcp *hyperv1.HostedControlPlane) *hyperv1.HostedCluster {
-		return hostedClusterFromHCP(hcp, testIgnitionEndpoint)
+		hc, err := hostedClusterFromHCP(hcp, testIgnitionEndpoint)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return hc
 	}
 
 	t.Run("When version is empty it should return HCP release image", func(t *testing.T) {
 		g := NewWithT(t)
 		hcp := baseHCP()
-		hc := baseHostedCluster(hcp)
 		resolver := &fakeVersionResolver{image: "should-not-be-called"}
 
 		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
 		ctx := log.IntoContext(t.Context(), testr.New(t))
 
-		image, skewErr, err := r.resolveVersion(ctx, hcp, hc, "", "")
+		image, err := r.resolveReleaseImage(ctx, hcp, "")
 		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(skewErr).NotTo(HaveOccurred())
 		g.Expect(image).To(Equal(hcp.Spec.ReleaseImage))
 		g.Expect(resolver.calls).To(Equal(0), "resolver should not be called when version is empty")
 	})
@@ -736,16 +738,14 @@ func TestResolveVersion(t *testing.T) {
 	t.Run("When version is set it should resolve and return release image", func(t *testing.T) {
 		g := NewWithT(t)
 		hcp := baseHCP()
-		hc := baseHostedCluster(hcp)
 		resolvedImage := "quay.io/openshift-release-dev/ocp-release@sha256:abc123"
 		resolver := &fakeVersionResolver{image: resolvedImage}
 
 		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
 		ctx := log.IntoContext(t.Context(), testr.New(t))
 
-		image, skewErr, err := r.resolveVersion(ctx, hcp, hc, "4.17.0", "")
+		image, err := r.resolveReleaseImage(ctx, hcp, "4.17.0")
 		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(skewErr).NotTo(HaveOccurred())
 		g.Expect(image).To(Equal(resolvedImage))
 		g.Expect(resolver.calls).To(Equal(1))
 		g.Expect(resolver.lastChannel).To(Equal("stable-4.17"))
@@ -755,15 +755,10 @@ func TestResolveVersion(t *testing.T) {
 		g := NewWithT(t)
 		hcp := baseHCP()
 		hc := baseHostedCluster(hcp)
-		resolver := &fakeVersionResolver{}
 
-		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
-		ctx := log.IntoContext(t.Context(), testr.New(t))
-
-		_, _, err := r.resolveVersion(ctx, hcp, hc, "not-a-version", "")
+		err := validateVersion(hc, "not-a-version", "")
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("failed to parse OpenshiftEC2NodeClass version"))
-		g.Expect(resolver.calls).To(Equal(0))
 	})
 
 	t.Run("When version is below minimum supported it should return error", func(t *testing.T) {
@@ -771,16 +766,11 @@ func TestResolveVersion(t *testing.T) {
 		hcp := baseHCP()
 		hcp.Status.Version = "4.17.0"
 		hc := baseHostedCluster(hcp)
-		resolver := &fakeVersionResolver{}
-
-		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
-		ctx := log.IntoContext(t.Context(), testr.New(t))
 
 		// 4.13.0 is below the minimum supported version (4.14.0)
-		_, _, err := r.resolveVersion(ctx, hcp, hc, "4.13.0", "")
+		err := validateVersion(hc, "4.13.0", "")
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("minimum version supported"))
-		g.Expect(resolver.calls).To(Equal(0))
 	})
 
 	t.Run("When version exceeds allowed skew it should return skew error without failing", func(t *testing.T) {
@@ -798,25 +788,29 @@ func TestResolveVersion(t *testing.T) {
 		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
 		ctx := log.IntoContext(t.Context(), testr.New(t))
 
+		// validateVersion should pass (4.16.0 is valid, just outside skew policy)
+		g.Expect(validateVersion(hc, "4.16.0", "")).To(Succeed())
+
 		// 4.16.0 is 4 minor versions behind 4.20.0, exceeding the n-3 skew policy
-		image, skewErr, err := r.resolveVersion(ctx, hcp, hc, "4.16.0", "")
-		g.Expect(err).NotTo(HaveOccurred(), "resolveVersion should not return a hard error for skew")
-		g.Expect(skewErr).To(HaveOccurred())
-		g.Expect(skewErr.Error()).To(ContainSubstring("minor version"))
+		image, err := r.resolveReleaseImage(ctx, hcp, "4.16.0")
+		g.Expect(err).NotTo(HaveOccurred(), "resolveReleaseImage should not return a hard error for skew")
 		g.Expect(image).To(Equal(resolvedImage))
 		g.Expect(resolver.calls).To(Equal(1), "resolver should still be called despite skew")
+
+		skewErr := detectVersionSkew(hc, "4.16.0")
+		g.Expect(skewErr).To(HaveOccurred())
+		g.Expect(skewErr.Error()).To(ContainSubstring("minor version"))
 	})
 
 	t.Run("When resolver fails it should return error", func(t *testing.T) {
 		g := NewWithT(t)
 		hcp := baseHCP()
-		hc := baseHostedCluster(hcp)
 		resolver := &fakeVersionResolver{err: fmt.Errorf("Cincinnati API unavailable")}
 
 		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
 		ctx := log.IntoContext(t.Context(), testr.New(t))
 
-		_, _, err := r.resolveVersion(ctx, hcp, hc, "4.17.0", "")
+		_, err := r.resolveReleaseImage(ctx, hcp, "4.17.0")
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("Cincinnati API unavailable"))
 	})
@@ -829,12 +823,8 @@ func TestResolveVersion(t *testing.T) {
 			Desired: configv1.Release{Version: "invalid"},
 		}
 		hc := baseHostedCluster(hcp)
-		resolver := &fakeVersionResolver{}
 
-		r := &KarpenterIgnitionReconciler{VersionResolver: resolver}
-		ctx := log.IntoContext(t.Context(), testr.New(t))
-
-		_, _, err := r.resolveVersion(ctx, hcp, hc, "4.17.0", "")
+		err := validateVersion(hc, "4.17.0", "")
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("failed to parse HostedCluster version"))
 	})
