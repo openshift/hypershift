@@ -372,19 +372,23 @@ func (r *AzurePrivateLinkServiceController) updateStatusFromPLS(ctx context.Cont
 		len(pls.Properties.LoadBalancerFrontendIPConfigurations) > 0
 
 	if isReady {
-		meta.SetStatusCondition(&azPLS.Status.Conditions, metav1.Condition{
-			Type:    string(hyperv1.AzurePLSCreated),
-			Status:  metav1.ConditionTrue,
-			Reason:  hyperv1.AzurePLSSuccessReason,
-			Message: "Azure Private Link Service is ready",
-		})
+		for _, t := range []hyperv1.ConditionType{hyperv1.AzurePLSCreated, hyperv1.AzurePrivateLinkServiceAvailable} {
+			meta.SetStatusCondition(&azPLS.Status.Conditions, metav1.Condition{
+				Type:    string(t),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.AzurePLSSuccessReason,
+				Message: "Azure Private Link Service is ready",
+			})
+		}
 	} else {
-		meta.SetStatusCondition(&azPLS.Status.Conditions, metav1.Condition{
-			Type:    string(hyperv1.AzurePLSCreated),
-			Status:  metav1.ConditionFalse,
-			Reason:  hyperv1.AzurePLSErrorReason,
-			Message: "Azure Private Link Service is not properly configured",
-		})
+		for _, t := range []hyperv1.ConditionType{hyperv1.AzurePLSCreated, hyperv1.AzurePrivateLinkServiceAvailable} {
+			meta.SetStatusCondition(&azPLS.Status.Conditions, metav1.Condition{
+				Type:    string(t),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.AzurePLSErrorReason,
+				Message: "Azure Private Link Service is not properly configured",
+			})
+		}
 	}
 
 	if err := r.Status().Patch(ctx, azPLS, patch); err != nil {
@@ -400,23 +404,40 @@ func (r *AzurePrivateLinkServiceController) plsSubscriptionsDrifted(pls armnetwo
 		return len(desired) > 0
 	}
 
-	existing := ptrSliceToStrings(pls.Properties.Visibility)
-	sort.Strings(existing)
+	existingVisibility := ptrSliceToStrings(pls.Properties.Visibility)
+	sort.Strings(existingVisibility)
+
+	existingAutoApproval := autoApprovalPtrSliceToStrings(pls.Properties.AutoApproval)
+	sort.Strings(existingAutoApproval)
 
 	sorted := make([]string, len(desired))
 	copy(sorted, desired)
 	sort.Strings(sorted)
 
-	return !slices.Equal(existing, sorted)
+	return !slices.Equal(existingVisibility, sorted) || !slices.Equal(existingAutoApproval, sorted)
 }
 
-// ptrSliceToStrings extracts subscription strings from a PLS visibility or auto-approval struct.
+// ptrSliceToStrings extracts subscription strings from a PLS visibility struct.
 func ptrSliceToStrings(vis *armnetwork.PrivateLinkServicePropertiesVisibility) []string {
 	if vis == nil || len(vis.Subscriptions) == 0 {
 		return nil
 	}
 	out := make([]string, 0, len(vis.Subscriptions))
 	for _, s := range vis.Subscriptions {
+		if s != nil {
+			out = append(out, *s)
+		}
+	}
+	return out
+}
+
+// autoApprovalPtrSliceToStrings extracts subscription strings from a PLS auto-approval struct.
+func autoApprovalPtrSliceToStrings(auto *armnetwork.PrivateLinkServicePropertiesAutoApproval) []string {
+	if auto == nil || len(auto.Subscriptions) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(auto.Subscriptions))
+	for _, s := range auto.Subscriptions {
 		if s != nil {
 			out = append(out, *s)
 		}
@@ -435,6 +456,9 @@ func (r *AzurePrivateLinkServiceController) updatePLSSubscriptions(ctx context.C
 	}
 
 	// Preserve the existing PLS configuration and only update visibility/auto-approval.
+	if existing.Properties == nil {
+		existing.Properties = &armnetwork.PrivateLinkServiceProperties{}
+	}
 	existing.Properties.Visibility = &armnetwork.PrivateLinkServicePropertiesVisibility{
 		Subscriptions: allowedSubs,
 	}
@@ -539,12 +563,14 @@ func (r *AzurePrivateLinkServiceController) handleAzureError(ctx context.Context
 	log.Error(err, message)
 
 	patch := client.MergeFrom(azPLS.DeepCopy())
-	meta.SetStatusCondition(&azPLS.Status.Conditions, metav1.Condition{
-		Type:    string(hyperv1.AzurePLSCreated),
-		Status:  metav1.ConditionFalse,
-		Reason:  reason,
-		Message: message,
-	})
+	for _, t := range []hyperv1.ConditionType{hyperv1.AzurePLSCreated, hyperv1.AzurePrivateLinkServiceAvailable} {
+		meta.SetStatusCondition(&azPLS.Status.Conditions, metav1.Condition{
+			Type:    string(t),
+			Status:  metav1.ConditionFalse,
+			Reason:  reason,
+			Message: message,
+		})
+	}
 
 	if patchErr := r.Status().Patch(ctx, azPLS, patch); patchErr != nil {
 		log.Error(patchErr, "failed to update status")

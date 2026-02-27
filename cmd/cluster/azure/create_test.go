@@ -48,6 +48,18 @@ func TestValidateEndpointAccess(t *testing.T) {
 			expectError:                    true,
 			expectedErrorMsg:               "--private-connectivity-allowed-subscriptions is required when --endpoint-access is not Public",
 		},
+		"When endpoint-access is PublicAndPrivate but private-connectivity-nat-subnet-id is missing it should return an error": {
+			endpointAccess:                          "PublicAndPrivate",
+			privateConnectivityAllowedSubscriptions: []string{"sub-1"},
+			expectError:                             true,
+			expectedErrorMsg:                        "--private-connectivity-nat-subnet-id is required when --endpoint-access is not Public",
+		},
+		"When endpoint-access is PublicAndPrivate but private-connectivity-allowed-subscriptions is missing it should return an error": {
+			endpointAccess:                 "PublicAndPrivate",
+			privateConnectivityNATSubnetID: "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/nat-subnet",
+			expectError:                    true,
+			expectedErrorMsg:               "--private-connectivity-allowed-subscriptions is required when --endpoint-access is not Public",
+		},
 		"When endpoint-access is Public it should succeed without private connectivity fields": {
 			endpointAccess: "Public",
 			expectError:    false,

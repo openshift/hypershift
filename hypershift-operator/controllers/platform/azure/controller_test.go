@@ -1028,6 +1028,9 @@ func TestPlsSubscriptionsDrifted(t *testing.T) {
 					Visibility: &armnetwork.PrivateLinkServicePropertiesVisibility{
 						Subscriptions: []*string{to.Ptr("sub-123")},
 					},
+					AutoApproval: &armnetwork.PrivateLinkServicePropertiesAutoApproval{
+						Subscriptions: []*string{to.Ptr("sub-123")},
+					},
 				},
 			},
 			desired:  []string{"sub-123"},
@@ -1038,6 +1041,9 @@ func TestPlsSubscriptionsDrifted(t *testing.T) {
 			pls: armnetwork.PrivateLinkService{
 				Properties: &armnetwork.PrivateLinkServiceProperties{
 					Visibility: &armnetwork.PrivateLinkServicePropertiesVisibility{
+						Subscriptions: []*string{to.Ptr("sub-456"), to.Ptr("sub-123")},
+					},
+					AutoApproval: &armnetwork.PrivateLinkServicePropertiesAutoApproval{
 						Subscriptions: []*string{to.Ptr("sub-456"), to.Ptr("sub-123")},
 					},
 				},

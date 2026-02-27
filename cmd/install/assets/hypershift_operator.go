@@ -734,7 +734,7 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 					Value: "1",
 				})
 		case hyperv1.AzurePlatform:
-			if o.AzurePrivateSecret != nil && len(o.AzurePrivateSecret.Name) > 0 {
+			if o.AzurePrivateSecret != nil && len(o.AzurePrivateSecret.Name) > 0 && len(o.AzurePrivateSecretKey) > 0 {
 				volumes = append(volumes, corev1.Volume{
 					Name: "azure-credentials",
 					VolumeSource: corev1.VolumeSource{

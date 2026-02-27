@@ -9,6 +9,9 @@ import (
 
 // ExtractLoadBalancerIP extracts the LoadBalancer IP from a Service's status and returns whether it's valid.
 func ExtractLoadBalancerIP(svc *corev1.Service) (string, bool) {
+	if svc == nil {
+		return "", false
+	}
 	if len(svc.Status.LoadBalancer.Ingress) == 0 {
 		return "", false
 	}

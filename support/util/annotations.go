@@ -31,7 +31,7 @@ func HostedClusterFromAnnotation(ctx context.Context, reader client.Reader, obj 
 	}
 
 	parts := strings.SplitN(hcNamespaceName, "/", 2)
-	if len(parts) != 2 {
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 		return nil, fmt.Errorf("invalid %s annotation format: %s", HostedClusterAnnotation, hcNamespaceName)
 	}
 

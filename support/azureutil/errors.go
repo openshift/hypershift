@@ -77,6 +77,9 @@ func ParseRetryAfterDuration(err error) (time.Duration, bool) {
 //   - Other Azure API errors: 2 minutes - general retry interval
 //   - Non-Azure errors: 2 minutes - general retry interval
 func ClassifyAzureError(err error) (requeueAfter time.Duration, message string) {
+	if err == nil {
+		return 0, ""
+	}
 	var respErr *azcore.ResponseError
 	if errors.As(err, &respErr) {
 		switch respErr.StatusCode {

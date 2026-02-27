@@ -137,6 +137,11 @@ func BindProductFlags(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	// Encryption
 	flags.StringVar(&opts.EncryptionKeyID, "encryption-key-id", opts.EncryptionKeyID, util.EncryptionKeyIDDescription)
 
+	// Private connectivity flags
+	flags.StringVar(&opts.EndpointAccess, "endpoint-access", string(hyperv1.AzureEndpointAccessPublic), "API server endpoint access type: Public, PublicAndPrivate, or Private")
+	flags.StringVar(&opts.PrivateConnectivityNATSubnetID, "private-connectivity-nat-subnet-id", "", "Azure resource ID of the subnet used for Private Link Service NAT IP allocation (the subnet must have privateLinkServiceNetworkPolicies disabled)")
+	flags.StringSliceVar(&opts.PrivateConnectivityAllowedSubscriptions, "private-connectivity-allowed-subscriptions", nil, "Azure subscription IDs permitted to create Private Endpoints")
+
 	// Nodepool flags
 	azurenodepool.BindProductFlags(opts.NodePoolOpts, flags)
 }

@@ -45,7 +45,16 @@ func TestAzurePrivateTopology(t *testing.T) {
 	if natSubnetID == "" || allowedSubscriptionsRaw == "" {
 		t.Skip("Skipping Azure Private Topology test: AZURE_PRIVATE_NAT_SUBNET_ID and AZURE_PRIVATE_ALLOWED_SUBSCRIPTIONS environment variables are required")
 	}
-	allowedSubscriptions := strings.Split(allowedSubscriptionsRaw, ",")
+	allowedSubscriptions := make([]string, 0)
+	for _, sub := range strings.Split(allowedSubscriptionsRaw, ",") {
+		sub = strings.TrimSpace(sub)
+		if sub != "" {
+			allowedSubscriptions = append(allowedSubscriptions, sub)
+		}
+	}
+	if len(allowedSubscriptions) == 0 {
+		t.Skip("Skipping Azure Private Topology test: no valid subscription IDs parsed from AZURE_PRIVATE_ALLOWED_SUBSCRIPTIONS")
+	}
 
 	t.Parallel()
 
