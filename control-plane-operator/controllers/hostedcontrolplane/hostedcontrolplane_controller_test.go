@@ -2389,7 +2389,7 @@ func TestReconcileAvailabilityStatus(t *testing.T) {
 			expectedMessage: "",
 		},
 		{
-			name: "When AggregatedAPIServicesAvailable condition is missing and not already available, it should block availability",
+			name: "When AggregatedAPIServicesAvailable condition is False and not already available, it should block availability",
 			conditions: append(append([]metav1.Condition{}, allHealthyConditions...),
 				metav1.Condition{Type: string(hyperv1.AggregatedAPIServicesAvailable), Status: metav1.ConditionFalse, Reason: hyperv1.AggregatedAPIServicesNotAvailableReason, Message: "Unavailable APIServices: v1.apps.openshift.io"},
 			),

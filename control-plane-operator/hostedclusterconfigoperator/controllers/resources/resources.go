@@ -1375,7 +1375,7 @@ func (r *reconciler) patchHCPWithCondition(ctx context.Context, hcp *hyperv1.Hos
 	if !meta.SetStatusCondition(&hcp.Status.Conditions, *condition) {
 		return nil // No status change; avoid unnecessary API call.
 	}
-	if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFrom(originalHCP)); err != nil {
+	if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 		return fmt.Errorf("failed to update HostedControlPlane status with %s condition: %w", condition.Type, err)
 	}
 	log.Info(condition.Type + " updated")
