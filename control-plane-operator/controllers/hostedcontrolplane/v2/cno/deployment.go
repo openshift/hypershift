@@ -162,5 +162,12 @@ func buildCNOEnvVars(cpContext component.WorkloadContext) ([]corev1.EnvVar, erro
 		)
 	}
 
+	if hcp.Spec.Platform.Type == hyperv1.GCPPlatform {
+		cnoEnv = append(cnoEnv, corev1.EnvVar{
+			Name:  "GCP_CNCC_CREDENTIALS_FILE",
+			Value: "application_default_credentials.json",
+		})
+	}
+
 	return cnoEnv, nil
 }
