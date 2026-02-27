@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/blang/semver"
+	"k8s.io/utils/ptr"
 )
 
 const (
@@ -444,4 +445,51 @@ func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileGCPClusterPreservesServerDefaultedFields(t *testing.T) {
+	g := NewWithT(t)
+
+	platform := New("test-utilities-image", "test-capg-image", &semver.Version{Major: 4, Minor: 17, Patch: 0})
+
+	hc := validHostedCluster()
+	hc.Spec.Platform.GCP.NetworkConfig = hyperv1.GCPNetworkConfig{
+		Network:                     hyperv1.GCPResourceReference{Name: "test-network"},
+		PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{Name: "test-subnet"},
+	}
+
+	// Simulate a GCPCluster that CAPG has already defaulted with Mtu, Purpose, StackType
+	gcpCluster := &capigcp.GCPCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster",
+			Namespace: "test-control-plane-namespace",
+		},
+		Spec: capigcp.GCPClusterSpec{
+			Project: "test-project",
+			Region:  "us-central1",
+			Network: capigcp.NetworkSpec{
+				Name: ptr.To("test-network"),
+				Mtu:  1460,
+				Subnets: capigcp.Subnets{{
+					Name:      "test-subnet",
+					Region:    "us-central1",
+					Purpose:   ptr.To("PRIVATE_RFC_1918"),
+					StackType: "IPV4_ONLY",
+				}},
+			},
+		},
+	}
+
+	err := platform.reconcileGCPCluster(gcpCluster, hc, hyperv1.APIEndpoint{Host: "example.com", Port: 443})
+	g.Expect(err).To(BeNil())
+
+	// Verify server-defaulted fields are preserved
+	g.Expect(gcpCluster.Spec.Network.Mtu).To(Equal(int64(1460)), "Mtu should be preserved")
+	g.Expect(gcpCluster.Spec.Network.Subnets[0].Purpose).To(Equal(ptr.To("PRIVATE_RFC_1918")), "Purpose should be preserved")
+	g.Expect(gcpCluster.Spec.Network.Subnets[0].StackType).To(Equal("IPV4_ONLY"), "StackType should be preserved")
+
+	// Verify that network name, subnet name, and subnet region are still correctly set
+	g.Expect(gcpCluster.Spec.Network.Name).To(Equal(ptr.To("test-network")))
+	g.Expect(gcpCluster.Spec.Network.Subnets[0].Name).To(Equal("test-subnet"))
+	g.Expect(gcpCluster.Spec.Network.Subnets[0].Region).To(Equal("us-central1"))
 }
