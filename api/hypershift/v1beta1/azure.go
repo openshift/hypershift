@@ -685,7 +685,21 @@ type DataPlaneManagedIdentities struct {
 	FileMSIClientID string `json:"fileMSIClientID"`
 }
 
+// AzureKeyVaultAccessType specifies the access method for the Azure Key Vault.
+// +kubebuilder:validation:Enum=Public;Private;""
+type AzureKeyVaultAccessType string
+
+const (
+	// AzureKeyVaultPublic indicates the Key Vault is accessible via its public endpoint.
+	AzureKeyVaultPublic AzureKeyVaultAccessType = "Public"
+	// AzureKeyVaultPrivate indicates the Key Vault is behind a private endpoint
+	// and traffic must be routed through the private router (Swift).
+	AzureKeyVaultPrivate AzureKeyVaultAccessType = "Private"
+)
+
 // AzureKMSSpec defines metadata about the configuration of the Azure KMS Secret Encryption provider using Azure key vault
+//
+// +kubebuilder:validation:XValidation:rule="!has(self.backupKey) || self.backupKey.keyVaultName == self.activeKey.keyVaultName",message="backupKey.keyVaultName must match activeKey.keyVaultName; both keys must reside in the same Key Vault"
 type AzureKMSSpec struct {
 	// activeKey defines the active key used to encrypt new secrets
 	//
@@ -700,6 +714,16 @@ type AzureKMSSpec struct {
 	//
 	// +required
 	KMS ManagedIdentity `json:"kms"`
+
+	// keyVaultAccess specifies how the Key Vault should be accessed.
+	// When set to "Private", the control plane routes Key Vault traffic through
+	// the private router to reach the Key Vault's private endpoint in the customer VNet.
+	// When set to "Public" or omitted (empty), the Key Vault is accessed via its public endpoint.
+	// Controllers treat an empty value the same as "Public".
+	//
+	// +kubebuilder:validation:Enum=Public;Private;""
+	// +optional
+	KeyVaultAccess AzureKeyVaultAccessType `json:"keyVaultAccess,omitempty"`
 }
 
 type AzureKMSKey struct {
