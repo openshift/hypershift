@@ -505,11 +505,9 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to update ControlPlaneToDataPlaneConnectivity condition: %w", err))
 	}
 
-	log.Info("reconciling openshift apiserver apiservices")
-	if err := r.reconcileOpenshiftAPIServerAPIServices(ctx, hcp); err != nil {
-		errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver service: %w", err))
-	}
-
+	// Reconcile Service and Endpoints before APIServices to avoid a race condition
+	// where the Kubernetes API aggregator picks up an APIService before its backend
+	// Service and Endpoints exist, causing transient 503 errors on aggregated API groups.
 	log.Info("reconciling openshift apiserver service")
 	openshiftAPIServerService := manifests.OpenShiftAPIServerClusterService()
 	if _, err := r.CreateOrUpdate(ctx, r.client, openshiftAPIServerService, func() error {
@@ -524,12 +522,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver endpoints: %w", err))
 	}
 
-	if util.HCPOAuthEnabled(hcp) {
-		log.Info("reconciling openshift oauth apiserver apiservices")
-		if err := r.reconcileOpenshiftOAuthAPIServerAPIServices(ctx, hcp); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver service: %w", err))
-		}
+	log.Info("reconciling openshift apiserver apiservices")
+	if err := r.reconcileOpenshiftAPIServerAPIServices(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver apiservices: %w", err))
+	}
 
+	if util.HCPOAuthEnabled(hcp) {
 		log.Info("reconciling openshift oauth apiserver service")
 		openshiftOAuthAPIServerService := manifests.OpenShiftOAuthAPIServerClusterService()
 		if _, err := r.CreateOrUpdate(ctx, r.client, openshiftOAuthAPIServerService, func() error {
@@ -541,7 +539,12 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 		log.Info("reconciling openshift oauth apiserver endpoints")
 		if err := r.reconcileOpenshiftOAuthAPIServerEndpoints(ctx, hcp); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile openshift apiserver endpoints: %w", err))
+			errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver endpoints: %w", err))
+		}
+
+		log.Info("reconciling openshift oauth apiserver apiservices")
+		if err := r.reconcileOpenshiftOAuthAPIServerAPIServices(ctx, hcp); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile openshift oauth apiserver apiservices: %w", err))
 		}
 
 		log.Info("reconciling kubeadmin password hash secret")
@@ -672,6 +675,11 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 
 	log.Info("reconciling olm resources")
 	errs = append(errs, r.reconcileOLM(ctx, hcp, pullSecret)...)
+
+	log.Info("reconciling aggregated API services available condition")
+	if err := r.reconcileAggregatedAPIServicesAvailableCondition(ctx, hcp, log); err != nil {
+		errs = append(errs, fmt.Errorf("failed to update AggregatedAPIServicesAvailable condition: %w", err))
+	}
 
 	log.Info("reconciling kubelet configs")
 	if err := r.reconcileKubeletConfig(ctx); err != nil {
@@ -1362,19 +1370,19 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	return nil
 }
 
-func (r *reconciler) reconcileControlPlaneDataPlaneConnectivityConditions(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
-	patchHCPWithCondition := func(hcp *hyperv1.HostedControlPlane, condition *metav1.Condition) error {
-		originalHCP := hcp.DeepCopy()
-		if !meta.SetStatusCondition(&hcp.Status.Conditions, *condition) {
-			return nil // No status change; avoid unnecessary API call.
-		}
-		if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFrom(originalHCP)); err != nil {
-			return fmt.Errorf("failed to update HostedControlPlane status with %s condition: %w", condition.Type, err)
-		}
-		log.Info(string(hyperv1.DataPlaneConnectionAvailable) + " updated")
-		return nil
+func (r *reconciler) patchHCPWithCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, condition *metav1.Condition, log logr.Logger) error {
+	originalHCP := hcp.DeepCopy()
+	if !meta.SetStatusCondition(&hcp.Status.Conditions, *condition) {
+		return nil // No status change; avoid unnecessary API call.
 	}
+	if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFrom(originalHCP)); err != nil {
+		return fmt.Errorf("failed to update HostedControlPlane status with %s condition: %w", condition.Type, err)
+	}
+	log.Info(condition.Type + " updated")
+	return nil
+}
 
+func (r *reconciler) reconcileControlPlaneDataPlaneConnectivityConditions(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
 	condition := &metav1.Condition{
 		Type:   string(hyperv1.DataPlaneConnectionAvailable),
 		Status: metav1.ConditionFalse, // False by default
@@ -1384,20 +1392,20 @@ func (r *reconciler) reconcileControlPlaneDataPlaneConnectivityConditions(ctx co
 		condition.Status = metav1.ConditionUnknown
 		condition.Reason = hyperv1.ReconcileErrorReason
 		condition.Message = "Unable to count worker nodes: " + err.Error()
-		return patchHCPWithCondition(hcp, condition)
+		return r.patchHCPWithCondition(ctx, hcp, condition, log)
 	}
 	if totalNodes == 0 {
 		condition.Status = metav1.ConditionUnknown
 		condition.Reason = hyperv1.DataPlaneConnectionNoWorkerNodesAvailableReason
 		condition.Message = "No worker nodes available"
-		return patchHCPWithCondition(hcp, condition)
+		return r.patchHCPWithCondition(ctx, hcp, condition, log)
 	}
 	var podList corev1.PodList
 	if err := r.uncachedClient.List(ctx, &podList,
 		client.MatchingLabels{"app": "konnectivity-agent"}, client.InNamespace("kube-system")); err != nil {
 		condition.Reason = hyperv1.ReconciliationErrorReason
 		condition.Message = "Couldn't list konnectivity-agent PODs in kube-system namespace: " + err.Error()
-		return patchHCPWithCondition(hcp, condition)
+		return r.patchHCPWithCondition(ctx, hcp, condition, log)
 	}
 
 	logsFound := false
@@ -1432,7 +1440,68 @@ func (r *reconciler) reconcileControlPlaneDataPlaneConnectivityConditions(ctx co
 		}
 	}
 
-	return patchHCPWithCondition(hcp, condition)
+	return r.patchHCPWithCondition(ctx, hcp, condition, log)
+}
+
+// reconcileAggregatedAPIServicesAvailableCondition checks all expected aggregated
+// APIServices in the guest cluster and sets the AggregatedAPIServicesAvailable
+// condition on the HostedControlPlane.
+func (r *reconciler) reconcileAggregatedAPIServicesAvailableCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
+	condition := &metav1.Condition{
+		Type: string(hyperv1.AggregatedAPIServicesAvailable),
+	}
+
+	expected := sets.New[string]()
+	for _, group := range manifests.OpenShiftAPIServerAPIServiceGroups() {
+		expected.Insert(fmt.Sprintf("v1.%s.openshift.io", group))
+	}
+	if util.HCPOAuthEnabled(hcp) {
+		for _, group := range manifests.OpenShiftOAuthAPIServerAPIServiceGroups() {
+			expected.Insert(fmt.Sprintf("v1.%s.openshift.io", group))
+		}
+	}
+	expected.Insert(manifests.OLMPackageServerAPIService().Name)
+
+	apiServiceList := &apiregistrationv1.APIServiceList{}
+	if err := r.client.List(ctx, apiServiceList); err != nil {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.ReconcileErrorReason
+		condition.Message = fmt.Sprintf("Failed to list APIServices: %v", err)
+		return r.patchHCPWithCondition(ctx, hcp, condition, log)
+	}
+
+	found := sets.New[string]()
+	for i := range apiServiceList.Items {
+		apiSvc := &apiServiceList.Items[i]
+		if !expected.Has(apiSvc.Name) {
+			continue
+		}
+		available := false
+		for _, c := range apiSvc.Status.Conditions {
+			if c.Type == apiregistrationv1.Available {
+				if c.Status == apiregistrationv1.ConditionTrue {
+					available = true
+				}
+				break
+			}
+		}
+		if available {
+			found.Insert(apiSvc.Name)
+		}
+	}
+	unavailable := sets.List(expected.Difference(found))
+
+	if len(unavailable) > 0 {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.AggregatedAPIServicesNotAvailableReason
+		condition.Message = fmt.Sprintf("Unavailable APIServices: %s", strings.Join(unavailable, ", "))
+	} else {
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = hyperv1.AsExpectedReason
+		condition.Message = hyperv1.AllIsWellMessage
+	}
+
+	return r.patchHCPWithCondition(ctx, hcp, condition, log)
 }
 
 func (r *reconciler) reconcileOpenshiftAPIServerAPIServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -1940,19 +2009,9 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 		}
 	}
 
-	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
-	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
-		errs = append(errs, fmt.Errorf("failed to get root ca cert from control plane namespace: %w", err))
-	} else {
-		packageServerAPIService := manifests.OLMPackageServerAPIService()
-		if _, err := r.CreateOrUpdate(ctx, r.client, packageServerAPIService, func() error {
-			olm.ReconcilePackageServerAPIService(packageServerAPIService, rootCA)
-			return nil
-		}); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile OLM packageserver API service: %w", err))
-		}
-	}
-
+	// Reconcile Service and Endpoints before APIService to avoid a race condition
+	// where the Kubernetes API aggregator picks up the APIService before its backend
+	// Service and Endpoints exist, causing transient 503 errors on packages.operators.coreos.com.
 	packageServerService := manifests.OLMPackageServerService()
 	if _, err := r.CreateOrUpdate(ctx, r.client, packageServerService, func() error {
 		olm.ReconcilePackageServerService(packageServerService)
@@ -1975,6 +2034,19 @@ func (r *reconciler) reconcileOLM(ctx context.Context, hcp *hyperv1.HostedContro
 			}); err != nil {
 				errs = append(errs, fmt.Errorf("failed to reconcile OLM packageserver service: %w", err))
 			}
+		}
+	}
+
+	rootCA := cpomanifests.RootCASecret(hcp.Namespace)
+	if err := r.cpClient.Get(ctx, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+		errs = append(errs, fmt.Errorf("failed to get root ca cert from control plane namespace: %w", err))
+	} else {
+		packageServerAPIService := manifests.OLMPackageServerAPIService()
+		if _, err := r.CreateOrUpdate(ctx, r.client, packageServerAPIService, func() error {
+			olm.ReconcilePackageServerAPIService(packageServerAPIService, rootCA)
+			return nil
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile OLM packageserver API service: %w", err))
 		}
 	}
 
