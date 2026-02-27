@@ -108,6 +108,10 @@ func (r *RBACManager) AssignWorkloadIdentities(ctx context.Context, opts *Create
 		components[config.CIRO] = workloadIdentities.ImageRegistry.ClientID
 	}
 
+	if workloadIdentities.PrivateLinkService != nil {
+		components[config.PrivateLinkService] = workloadIdentities.PrivateLinkService.ClientID
+	}
+
 	// Get an access token for Microsoft Graph API for getting the object IDs
 	token, err := r.getAzureToken()
 	if err != nil {

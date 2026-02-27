@@ -350,6 +350,9 @@ func GetServicePrincipalScopes(subscriptionID, managedResourceGroupName, nsgReso
 		if assignCustomHCPRoles {
 			role = config.CAPZCustomRoleDefinitionID
 		}
+	case config.PrivateLinkService:
+		role = config.NetworkContributorRoleDefinitionID
+		scopes = append(scopes, vnetRG)
 	}
 
 	return role, scopes

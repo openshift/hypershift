@@ -42,9 +42,9 @@ func TestGetWorkloadIdentityDefinitions(t *testing.T) {
 		expectedCount     int
 		expectedComponent []string
 	}{
-		"When called it should return 7 identity definitions with correct components": {
+		"When called it should return 8 identity definitions with correct components": {
 			clusterName:   "test-cluster",
-			expectedCount: 7,
+			expectedCount: 8,
 			expectedComponent: []string{
 				"disk",
 				"file",
@@ -53,6 +53,7 @@ func TestGetWorkloadIdentityDefinitions(t *testing.T) {
 				"cloudProvider",
 				"nodePoolManagement",
 				"network",
+				"privateLinkService",
 			},
 		},
 	}
@@ -64,7 +65,7 @@ func TestGetWorkloadIdentityDefinitions(t *testing.T) {
 			definitions := GetWorkloadIdentityDefinitions(test.clusterName)
 
 			// Verify count
-			g.Expect(definitions).To(HaveLen(test.expectedCount), "Should return 7 identity definitions")
+			g.Expect(definitions).To(HaveLen(test.expectedCount), "Should return 8 identity definitions")
 
 			// Verify all expected components are present
 			componentNames := make([]string, len(definitions))
