@@ -7,7 +7,7 @@ package awsapi
 import (
 	"context"
 
-	iamv2 "github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 )
 
 // IAMAPI defines the IAM operations used by HyperShift.
@@ -18,25 +18,25 @@ import (
 // implemented by the delegating client; non-delegated methods will panic if called
 // through the delegating path (matching v1 behavior).
 type IAMAPI interface {
-	AddRoleToInstanceProfile(ctx context.Context, input *iamv2.AddRoleToInstanceProfileInput, optFns ...func(*iamv2.Options)) (*iamv2.AddRoleToInstanceProfileOutput, error)
-	AttachRolePolicy(ctx context.Context, input *iamv2.AttachRolePolicyInput, optFns ...func(*iamv2.Options)) (*iamv2.AttachRolePolicyOutput, error)
-	CreateInstanceProfile(ctx context.Context, input *iamv2.CreateInstanceProfileInput, optFns ...func(*iamv2.Options)) (*iamv2.CreateInstanceProfileOutput, error)
-	CreateOpenIDConnectProvider(ctx context.Context, input *iamv2.CreateOpenIDConnectProviderInput, optFns ...func(*iamv2.Options)) (*iamv2.CreateOpenIDConnectProviderOutput, error)
-	CreateRole(ctx context.Context, input *iamv2.CreateRoleInput, optFns ...func(*iamv2.Options)) (*iamv2.CreateRoleOutput, error)
-	DeleteInstanceProfile(ctx context.Context, input *iamv2.DeleteInstanceProfileInput, optFns ...func(*iamv2.Options)) (*iamv2.DeleteInstanceProfileOutput, error)
-	DeleteOpenIDConnectProvider(ctx context.Context, input *iamv2.DeleteOpenIDConnectProviderInput, optFns ...func(*iamv2.Options)) (*iamv2.DeleteOpenIDConnectProviderOutput, error)
-	DeleteRole(ctx context.Context, input *iamv2.DeleteRoleInput, optFns ...func(*iamv2.Options)) (*iamv2.DeleteRoleOutput, error)
-	DeleteRolePolicy(ctx context.Context, input *iamv2.DeleteRolePolicyInput, optFns ...func(*iamv2.Options)) (*iamv2.DeleteRolePolicyOutput, error)
-	DetachRolePolicy(ctx context.Context, input *iamv2.DetachRolePolicyInput, optFns ...func(*iamv2.Options)) (*iamv2.DetachRolePolicyOutput, error)
-	GetInstanceProfile(ctx context.Context, input *iamv2.GetInstanceProfileInput, optFns ...func(*iamv2.Options)) (*iamv2.GetInstanceProfileOutput, error)
-	GetRole(ctx context.Context, input *iamv2.GetRoleInput, optFns ...func(*iamv2.Options)) (*iamv2.GetRoleOutput, error)
-	GetRolePolicy(ctx context.Context, input *iamv2.GetRolePolicyInput, optFns ...func(*iamv2.Options)) (*iamv2.GetRolePolicyOutput, error)
-	ListAttachedRolePolicies(ctx context.Context, input *iamv2.ListAttachedRolePoliciesInput, optFns ...func(*iamv2.Options)) (*iamv2.ListAttachedRolePoliciesOutput, error)
-	ListOpenIDConnectProviders(ctx context.Context, input *iamv2.ListOpenIDConnectProvidersInput, optFns ...func(*iamv2.Options)) (*iamv2.ListOpenIDConnectProvidersOutput, error)
-	ListRolePolicies(ctx context.Context, input *iamv2.ListRolePoliciesInput, optFns ...func(*iamv2.Options)) (*iamv2.ListRolePoliciesOutput, error)
-	PutRolePolicy(ctx context.Context, input *iamv2.PutRolePolicyInput, optFns ...func(*iamv2.Options)) (*iamv2.PutRolePolicyOutput, error)
-	RemoveRoleFromInstanceProfile(ctx context.Context, input *iamv2.RemoveRoleFromInstanceProfileInput, optFns ...func(*iamv2.Options)) (*iamv2.RemoveRoleFromInstanceProfileOutput, error)
+	AddRoleToInstanceProfile(ctx context.Context, input *iam.AddRoleToInstanceProfileInput, optFns ...func(*iam.Options)) (*iam.AddRoleToInstanceProfileOutput, error)
+	AttachRolePolicy(ctx context.Context, input *iam.AttachRolePolicyInput, optFns ...func(*iam.Options)) (*iam.AttachRolePolicyOutput, error)
+	CreateInstanceProfile(ctx context.Context, input *iam.CreateInstanceProfileInput, optFns ...func(*iam.Options)) (*iam.CreateInstanceProfileOutput, error)
+	CreateOpenIDConnectProvider(ctx context.Context, input *iam.CreateOpenIDConnectProviderInput, optFns ...func(*iam.Options)) (*iam.CreateOpenIDConnectProviderOutput, error)
+	CreateRole(ctx context.Context, input *iam.CreateRoleInput, optFns ...func(*iam.Options)) (*iam.CreateRoleOutput, error)
+	DeleteInstanceProfile(ctx context.Context, input *iam.DeleteInstanceProfileInput, optFns ...func(*iam.Options)) (*iam.DeleteInstanceProfileOutput, error)
+	DeleteOpenIDConnectProvider(ctx context.Context, input *iam.DeleteOpenIDConnectProviderInput, optFns ...func(*iam.Options)) (*iam.DeleteOpenIDConnectProviderOutput, error)
+	DeleteRole(ctx context.Context, input *iam.DeleteRoleInput, optFns ...func(*iam.Options)) (*iam.DeleteRoleOutput, error)
+	DeleteRolePolicy(ctx context.Context, input *iam.DeleteRolePolicyInput, optFns ...func(*iam.Options)) (*iam.DeleteRolePolicyOutput, error)
+	DetachRolePolicy(ctx context.Context, input *iam.DetachRolePolicyInput, optFns ...func(*iam.Options)) (*iam.DetachRolePolicyOutput, error)
+	GetInstanceProfile(ctx context.Context, input *iam.GetInstanceProfileInput, optFns ...func(*iam.Options)) (*iam.GetInstanceProfileOutput, error)
+	GetRole(ctx context.Context, input *iam.GetRoleInput, optFns ...func(*iam.Options)) (*iam.GetRoleOutput, error)
+	GetRolePolicy(ctx context.Context, input *iam.GetRolePolicyInput, optFns ...func(*iam.Options)) (*iam.GetRolePolicyOutput, error)
+	ListAttachedRolePolicies(ctx context.Context, input *iam.ListAttachedRolePoliciesInput, optFns ...func(*iam.Options)) (*iam.ListAttachedRolePoliciesOutput, error)
+	ListOpenIDConnectProviders(ctx context.Context, input *iam.ListOpenIDConnectProvidersInput, optFns ...func(*iam.Options)) (*iam.ListOpenIDConnectProvidersOutput, error)
+	ListRolePolicies(ctx context.Context, input *iam.ListRolePoliciesInput, optFns ...func(*iam.Options)) (*iam.ListRolePoliciesOutput, error)
+	PutRolePolicy(ctx context.Context, input *iam.PutRolePolicyInput, optFns ...func(*iam.Options)) (*iam.PutRolePolicyOutput, error)
+	RemoveRoleFromInstanceProfile(ctx context.Context, input *iam.RemoveRoleFromInstanceProfileInput, optFns ...func(*iam.Options)) (*iam.RemoveRoleFromInstanceProfileOutput, error)
 }
 
-// Ensure *iamv2.Client implements IAMAPI
-var _ IAMAPI = (*iamv2.Client)(nil)
+// Ensure *iam.Client implements IAMAPI
+var _ IAMAPI = (*iam.Client)(nil)
