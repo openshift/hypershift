@@ -6,7 +6,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -20,10 +19,10 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-// TestAdaptDeployment verifies that adaptDeployment does not set the MIRRORED_RELEASE_IMAGE
-// environment variable. This addresses OCPBUGS-60185 where that env var caused deployment
-// flapping because SeekOverride returned non-deterministic mirror URLs during network issues,
-// and the variable was not consumed by the ignition-server binary at runtime.
+// TestAdaptDeployment verifies that adaptDeployment produces a deterministic deployment
+// spec and does not perform live registry connectivity checks. This addresses OCPBUGS-60185
+// where non-deterministic results from LookupMappedImage/SeekOverride caused deployment
+// flapping and pod restarts.
 func TestAdaptDeployment(t *testing.T) {
 	tests := []struct {
 		name                   string
@@ -31,10 +30,10 @@ func TestAdaptDeployment(t *testing.T) {
 		setupEnv               func(t *testing.T)
 	}{
 		{
-			name: "When called it should not set MIRRORED_RELEASE_IMAGE",
+			name: "When called it should produce a deterministic deployment spec",
 		},
 		{
-			name: "When proxy env vars are set it should not set MIRRORED_RELEASE_IMAGE",
+			name: "When proxy env vars are set it should produce a deterministic deployment spec",
 			setupEnv: func(t *testing.T) {
 				t.Setenv("HTTP_PROXY", "http://proxy.example.com:3128")
 				t.Setenv("HTTPS_PROXY", "https://proxy.example.com:3128")
@@ -42,7 +41,7 @@ func TestAdaptDeployment(t *testing.T) {
 			},
 		},
 		{
-			name: "When mirror overrides are configured it should not set MIRRORED_RELEASE_IMAGE",
+			name: "When mirror overrides are configured it should produce a deterministic deployment spec",
 			imageRegistryOverrides: map[string][]string{
 				"quay.io":                            {"mirror-registry.example.com", "backup-mirror.example.com"},
 				"registry.redhat.io":                 {"mirror-registry.example.com"},
@@ -69,12 +68,6 @@ func TestAdaptDeployment(t *testing.T) {
 			mockRelease := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(ctrl)
 			mockRelease.EXPECT().GetOpenShiftImageRegistryOverrides().Return(overrides).AnyTimes()
 			mockRelease.EXPECT().GetRegistryOverrides().Return(map[string]string{}).AnyTimes()
-			mockRelease.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
-
-			mockImageProvider := imageprovider.NewMockReleaseImageProvider(ctrl)
-			mockImageProvider.EXPECT().GetImage(gomock.Any()).DoAndReturn(func(name string) string {
-				return "test-registry.example.com/" + name + ":latest"
-			}).AnyTimes()
 
 			client := crfake.NewClientBuilder().WithScheme(api.Scheme).Build()
 
@@ -88,23 +81,10 @@ func TestAdaptDeployment(t *testing.T) {
 				},
 			}
 
-			pullSecret := &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "pull-secret",
-					Namespace: hcp.Namespace,
-				},
-				Data: map[string][]byte{
-					corev1.DockerConfigJsonKey: []byte(`{"auths":{}}`),
-				},
-			}
-			err := client.Create(t.Context(), pullSecret)
-			g.Expect(err).ToNot(HaveOccurred())
-
 			cpContext := component.WorkloadContext{
-				Context:              t.Context(),
-				Client:               client,
-				HCP:                  hcp,
-				ReleaseImageProvider: mockImageProvider,
+				Context: t.Context(),
+				Client:  client,
+				HCP:     hcp,
 			}
 
 			ign := &ignitionServer{releaseProvider: mockRelease}
@@ -125,7 +105,7 @@ func TestAdaptDeployment(t *testing.T) {
 				},
 			}
 
-			err = ign.adaptDeployment(cpContext, deployment)
+			err := ign.adaptDeployment(cpContext, deployment)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			for _, container := range deployment.Spec.Template.Spec.Containers {

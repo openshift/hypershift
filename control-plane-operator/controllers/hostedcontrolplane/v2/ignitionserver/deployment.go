@@ -2,18 +2,13 @@ package ignitionserver
 
 import (
 	"bytes"
-	"context"
 	"fmt"
-	"maps"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/proxy"
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
@@ -21,8 +16,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
@@ -54,18 +47,9 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 		})
 	}
 
-	pullSecret := common.PullSecret(cpContext.HCP.Namespace)
-	if err := cpContext.Client.Get(cpContext.Context, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
-		return err
-	}
-	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
-	registryOverrides, err := ign.getRegistryOverrides(context.Background(), cpContext.ReleaseImageProvider, pullSecretBytes)
-	if err != nil {
-		return err
-	}
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args,
-			"--registry-overrides", util.ConvertRegistryOverridesToCommandLineFlag(registryOverrides),
+			"--registry-overrides", util.ConvertRegistryOverridesToCommandLineFlag(ign.releaseProvider.GetRegistryOverrides()),
 			"--platform", string(hcp.Spec.Platform.Type),
 		)
 
@@ -89,41 +73,4 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 	}
 
 	return nil
-}
-
-func (ign *ignitionServer) getRegistryOverrides(ctx context.Context, imageProvider imageprovider.ReleaseImageProvider, pullSecret []byte) (map[string]string, error) {
-	configAPIImage := imageProvider.GetImage("cluster-config-api")
-	machineConfigOperatorImage := imageProvider.GetImage("machine-config-operator")
-	clusterAuthenticationOperatorImage := imageProvider.GetImage("cluster-authentication-operator")
-
-	openShiftRegistryOverrides := util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(ign.releaseProvider.GetOpenShiftImageRegistryOverrides())
-	ocpRegistryMapping := util.ConvertImageRegistryOverrideStringToMap(openShiftRegistryOverrides)
-
-	// Determine if we need to override the machine config operator and cluster config operator
-	// images based on image mappings present in management cluster.
-	overrideConfigAPIImage, err := util.LookupMappedImage(ctx, ocpRegistryMapping, configAPIImage, pullSecret, registryclient.GetMetadata)
-	if err != nil {
-		return nil, err
-	}
-	overrideMachineConfigOperatorImage, err := util.LookupMappedImage(ctx, ocpRegistryMapping, machineConfigOperatorImage, pullSecret, registryclient.GetMetadata)
-	if err != nil {
-		return nil, err
-	}
-	overrideClusterAuthenticationOperatorImage, err := util.LookupMappedImage(ctx, ocpRegistryMapping, clusterAuthenticationOperatorImage, pullSecret, registryclient.GetMetadata)
-	if err != nil {
-		return nil, err
-	}
-
-	registryOverrides := maps.Clone(ign.releaseProvider.GetRegistryOverrides())
-	if overrideConfigAPIImage != configAPIImage {
-		registryOverrides[configAPIImage] = overrideConfigAPIImage
-	}
-	if overrideMachineConfigOperatorImage != machineConfigOperatorImage {
-		registryOverrides[machineConfigOperatorImage] = overrideMachineConfigOperatorImage
-	}
-	if overrideClusterAuthenticationOperatorImage != clusterAuthenticationOperatorImage {
-		registryOverrides[clusterAuthenticationOperatorImage] = overrideClusterAuthenticationOperatorImage
-	}
-
-	return registryOverrides, nil
 }
