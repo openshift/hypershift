@@ -58,3 +58,7 @@ __pycache__/
 .venv/
 venv/
 *.egg
+
+# Azure credential rotation temp files that get generated under hack/ci/e2e-aks/
+creds-tmp/
+managed-identities.json
