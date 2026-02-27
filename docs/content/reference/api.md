@@ -1030,11 +1030,15 @@ autoScaling is mutually exclusive with replicas. If replicas is set, this field 
 <td>
 <em>(Optional)</em>
 <p>config is a list of references to ConfigMaps containing serialized
-MachineConfig resources to be injected into the ignition configurations of
-nodes in the NodePool. The MachineConfig API schema is defined here:</p>
-<p><a href="https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185">https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185</a></p>
+MachineConfig or select OpenShift Config resources to be injected into
+the ignition configurations of nodes in the NodePool.</p>
+<p>The MachineConfig API schema is defined here:
+<a href="https://github.com/openshift/api/blob/caf97963ed302881f01e67b791ae4efc6bcf723c/machineconfiguration/v1/types.go#L290">https://github.com/openshift/api/blob/caf97963ed302881f01e67b791ae4efc6bcf723c/machineconfiguration/v1/types.go#L290</a></p>
+<p>The OpenShift Config API schemas are defined here:
+<a href="https://github.com/openshift/api/tree/master/config/v1">https://github.com/openshift/api/tree/master/config/v1</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the YML
-with one or more serialized machineconfiguration.openshift.io resources:</p>
+with one or more serialized machineconfiguration.openshift.io or select
+config.openshift.io resources:</p>
 <ul>
 <li>KubeletConfig</li>
 <li>ContainerRuntimeConfig</li>
@@ -1042,6 +1046,7 @@ with one or more serialized machineconfiguration.openshift.io resources:</p>
 <li>ClusterImagePolicy</li>
 <li>ImageContentSourcePolicy</li>
 <li>ImageDigestMirrorSet</li>
+<li>ImageTagMirrorSet</li>
 </ul>
 <p>This is validated in the backend and signaled back via validMachineConfig condition.
 Changing this field will trigger a NodePool rollout.</p>
@@ -11064,11 +11069,15 @@ autoScaling is mutually exclusive with replicas. If replicas is set, this field 
 <td>
 <em>(Optional)</em>
 <p>config is a list of references to ConfigMaps containing serialized
-MachineConfig resources to be injected into the ignition configurations of
-nodes in the NodePool. The MachineConfig API schema is defined here:</p>
-<p><a href="https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185">https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185</a></p>
+MachineConfig or select OpenShift Config resources to be injected into
+the ignition configurations of nodes in the NodePool.</p>
+<p>The MachineConfig API schema is defined here:
+<a href="https://github.com/openshift/api/blob/caf97963ed302881f01e67b791ae4efc6bcf723c/machineconfiguration/v1/types.go#L290">https://github.com/openshift/api/blob/caf97963ed302881f01e67b791ae4efc6bcf723c/machineconfiguration/v1/types.go#L290</a></p>
+<p>The OpenShift Config API schemas are defined here:
+<a href="https://github.com/openshift/api/tree/master/config/v1">https://github.com/openshift/api/tree/master/config/v1</a></p>
 <p>Each ConfigMap must have a single key named &ldquo;config&rdquo; whose value is the YML
-with one or more serialized machineconfiguration.openshift.io resources:</p>
+with one or more serialized machineconfiguration.openshift.io or select
+config.openshift.io resources:</p>
 <ul>
 <li>KubeletConfig</li>
 <li>ContainerRuntimeConfig</li>
@@ -11076,6 +11085,7 @@ with one or more serialized machineconfiguration.openshift.io resources:</p>
 <li>ClusterImagePolicy</li>
 <li>ImageContentSourcePolicy</li>
 <li>ImageDigestMirrorSet</li>
+<li>ImageTagMirrorSet</li>
 </ul>
 <p>This is validated in the backend and signaled back via validMachineConfig condition.
 Changing this field will trigger a NodePool rollout.</p>
