@@ -23,11 +23,13 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/blang/semver"
 )
@@ -353,6 +355,60 @@ func (a Azure) CAPIProviderPolicyRules() []rbacv1.PolicyRule {
 
 func (a Azure) DeleteCredentials(ctx context.Context, c client.Client, hcluster *hyperv1.HostedCluster, controlPlaneNamespace string) error {
 	return nil
+}
+
+// ValidCredentials checks if the Azure credentials are valid by examining the HostedCluster status conditions.
+// Since all Azure hosted clusters use managed identities, we check for any conditions indicating
+// credential failures.
+// Returns true if credentials are valid, false otherwise.
+func ValidCredentials(hc *hyperv1.HostedCluster) bool {
+	// Check if any condition has failed due to invalid Azure credentials
+	for _, condition := range hc.Status.Conditions {
+		if condition.Status == metav1.ConditionFalse &&
+			condition.Reason == string(hyperv1.InvalidAzureCredentialsReason) {
+			return false
+		}
+	}
+
+	// If no condition indicates invalid credentials, assume they are valid
+	return true
+}
+
+// DeleteOrphanedMachines removes the finalizer from Azure machines if they have been deleted and it is no
+// longer possible to delete them normally via the provider (i.e., the Azure managed identity is no longer valid).
+// This allows the managed resource group cleanup to be handled by the ARO cluster service using a special
+// Azure 1P application identity.
+func (Azure) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	// If credentials are valid, nothing to do - normal deletion will work
+	if ValidCredentials(hc) {
+		return nil
+	}
+
+	// Credentials are invalid - orphan the machines by removing finalizers
+	azureMachineList := capiazure.AzureMachineList{}
+	if err := c.List(ctx, &azureMachineList, client.InNamespace(controlPlaneNamespace)); err != nil {
+		return fmt.Errorf("failed to list AzureMachines in %s: %w", controlPlaneNamespace, err)
+	}
+
+	logger := ctrl.LoggerFrom(ctx)
+	var errs []error
+
+	for i := range azureMachineList.Items {
+		azureMachine := &azureMachineList.Items[i]
+		if !azureMachine.DeletionTimestamp.IsZero() {
+			// Remove finalizers to orphan the machine
+			azureMachine.Finalizers = []string{}
+			if err := c.Update(ctx, azureMachine); err != nil {
+				errs = append(errs, fmt.Errorf("failed to orphan machine %s/%s: %w",
+					azureMachine.Namespace, azureMachine.Name, err))
+				continue
+			}
+			logger.Info("skipping cleanup of azuremachine because of invalid Azure managed identity",
+				"machine", client.ObjectKeyFromObject(azureMachine))
+		}
+	}
+
+	return utilerrors.NewAggregate(errs)
 }
 
 func reconcileAzureCluster(azureCluster *capiazure.AzureCluster, hcluster *hyperv1.HostedCluster, apiEndpoint hyperv1.APIEndpoint, azureClusterIdentity *capiazure.AzureClusterIdentity, controlPlaneNamespace string) error {
