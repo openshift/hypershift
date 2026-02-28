@@ -5058,6 +5058,25 @@ spec:
                                 x-kubernetes-validations:
                                 - message: ControlPlane is immutable
                                   rule: self == oldSelf
+                              imageRegistry:
+                                description: |-
+                                  imageRegistry is the Google Service Account email for the Image Registry Operator
+                                  that manages GCS storage for the internal container image registry.
+                                  This GSA requires the following IAM roles:
+                                  - roles/storage.admin (Storage Admin - for creating and managing GCS buckets and objects)
+                                  See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+                                  Format: service-account-name@project-id.iam.gserviceaccount.com
+
+                                  This is a user-provided value referencing a pre-created Google Service Account.
+                                  Typically obtained from the output of `hypershift infra create gcp` which creates
+                                  the required service accounts with appropriate IAM roles and WIF bindings.
+                                maxLength: 100
+                                minLength: 38
+                                pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$
+                                type: string
+                                x-kubernetes-validations:
+                                - message: ImageRegistry is immutable
+                                  rule: self == oldSelf
                               nodePool:
                                 description: |-
                                   nodePool is the Google Service Account email for CAPG controllers
@@ -5104,6 +5123,7 @@ spec:
                             required:
                             - cloudController
                             - controlPlane
+                            - imageRegistry
                             - nodePool
                             - storage
                             type: object
@@ -5140,6 +5160,11 @@ spec:
                     - message: storage service account must belong to the same project
                       rule: self.workloadIdentity.serviceAccountsEmails.storage.contains('@')
                         && self.workloadIdentity.serviceAccountsEmails.storage.endsWith('@'
+                        + self.project + '.iam.gserviceaccount.com')
+                    - message: imageRegistry service account must belong to the same
+                        project
+                      rule: self.workloadIdentity.serviceAccountsEmails.imageRegistry.contains('@')
+                        && self.workloadIdentity.serviceAccountsEmails.imageRegistry.endsWith('@'
                         + self.project + '.iam.gserviceaccount.com')
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components

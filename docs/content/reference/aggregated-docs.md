@@ -35455,6 +35455,25 @@ Typically obtained from the output of <code>hypershift infra create gcp</code> w
 the required service accounts with appropriate IAM roles and WIF bindings.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>imageRegistry</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>imageRegistry is the Google Service Account email for the Image Registry Operator
+that manages GCS storage for the internal container image registry.
+This GSA requires the following IAM roles:
+- roles/storage.admin (Storage Admin - for creating and managing GCS buckets and objects)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###GCPWorkloadIdentityConfig { #hypershift.openshift.io/v1beta1.GCPWorkloadIdentityConfig }
