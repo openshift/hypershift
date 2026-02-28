@@ -578,6 +578,105 @@ func TestKubevirtMachineTemplate(t *testing.T) {
 			},
 			expectedValidationError: "host device count must be greater than or equal to 1. received: -7",
 		},
+		{
+			name: "When CPU model is set to host-passthrough it should configure the VM with the CPU model",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+							cpuModelNPOption(hyperv1.CpuModelHostPassthrough),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							memoryTmpltOpt("5Gi"),
+							cpuWithModelTmpltOpt(4, "host-passthrough"),
+							storageTmpltOpt("32Gi"),
+						),
+					},
+				},
+			},
+		},
+		{
+			name: "When CPU model is set with QoS Class Guaranteed it should configure the VM with the CPU model",
+			nodePool: &hyperv1.NodePool{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      poolName,
+					Namespace: namespace,
+				},
+				Spec: hyperv1.NodePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    nil,
+					Config:      nil,
+					Management:  hyperv1.NodePoolManagement{},
+					AutoScaling: nil,
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+						Kubevirt: generateKubevirtPlatform(
+							memoryNPOption("5Gi"),
+							coresNPOption(4),
+							imageNPOption("testimage"),
+							volumeNPOption("32Gi"),
+							qosClassGuaranteedNPOption(),
+							cpuModelNPOption(hyperv1.CpuModelHostPassthrough),
+						),
+					},
+					Release: hyperv1.Release{},
+				},
+			},
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "my-hostedcluster",
+					Namespace: "clusters",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					InfraID: "1234",
+				},
+			},
+
+			expected: &capikubevirt.KubevirtMachineTemplateSpec{
+				Template: capikubevirt.KubevirtMachineTemplateResource{
+					Spec: capikubevirt.KubevirtMachineSpec{
+						BootstrapCheckSpec: capikubevirt.VirtualMachineBootstrapCheckSpec{CheckStrategy: "none"},
+						VirtualMachineTemplate: *generateNodeTemplate(
+							storageTmpltOpt("32Gi"),
+							guaranteedResourcesOpt(4, "5Gi"),
+							cpuModelTmpltOpt("host-passthrough"),
+						),
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -1289,6 +1388,15 @@ func hostDevicesOption(hostDevices []hyperv1.KubevirtHostDevice) nodePoolOption 
 	}
 }
 
+func cpuModelNPOption(model hyperv1.CpuModelType) nodePoolOption {
+	return func(kvNodePool *hyperv1.KubevirtNodePoolPlatform) {
+		if kvNodePool.Compute == nil {
+			kvNodePool.Compute = &hyperv1.KubevirtCompute{}
+		}
+		kvNodePool.Compute.Model = &model
+	}
+}
+
 func generateKubevirtPlatform(options ...nodePoolOption) *hyperv1.KubevirtNodePoolPlatform {
 	exampleTemplate := &hyperv1.KubevirtNodePoolPlatform{}
 
@@ -1304,6 +1412,21 @@ type nodeTemplateOption func(template *capikubevirt.VirtualMachineTemplateSpec)
 func cpuTmpltOpt(cores uint32) nodeTemplateOption {
 	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
 		template.Spec.Template.Spec.Domain.CPU = &kubevirtv1.CPU{Cores: cores}
+	}
+}
+
+func cpuModelTmpltOpt(model string) nodeTemplateOption {
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		if template.Spec.Template.Spec.Domain.CPU == nil {
+			template.Spec.Template.Spec.Domain.CPU = &kubevirtv1.CPU{}
+		}
+		template.Spec.Template.Spec.Domain.CPU.Model = model
+	}
+}
+
+func cpuWithModelTmpltOpt(cores uint32, model string) nodeTemplateOption {
+	return func(template *capikubevirt.VirtualMachineTemplateSpec) {
+		template.Spec.Template.Spec.Domain.CPU = &kubevirtv1.CPU{Cores: cores, Model: model}
 	}
 }
 

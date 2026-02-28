@@ -141,6 +141,7 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 	var (
 		memory              apiresource.Quantity
 		cores               uint32
+		cpuModel            string
 		guaranteedResources = false
 	)
 
@@ -158,6 +159,10 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 
 		if kvPlatform.Compute.Cores != nil {
 			cores = *kvPlatform.Compute.Cores
+		}
+
+		if kvPlatform.Compute.Model != nil {
+			cpuModel = string(*kvPlatform.Compute.Model)
 		}
 
 		guaranteedResources = kvPlatform.Compute.QosClass != nil && *kvPlatform.Compute.QosClass == hyperv1.QoSClassGuaranteed
@@ -197,10 +202,14 @@ func virtualMachineTemplateBase(nodePool *hyperv1.NodePool, bootImage BootImage)
 
 		template.Spec.Template.Spec.Domain.Resources.Requests = podResources
 		template.Spec.Template.Spec.Domain.Resources.Limits = podResources
+
+		if cpuModel != "" {
+			template.Spec.Template.Spec.Domain.CPU = &kubevirtv1.CPU{Model: cpuModel}
+		}
 	} else {
 		template.Spec.Template.Spec.Domain.Memory = &kubevirtv1.Memory{Guest: &memory}
-		if cores > 0 {
-			template.Spec.Template.Spec.Domain.CPU = &kubevirtv1.CPU{Cores: cores}
+		if cores > 0 || cpuModel != "" {
+			template.Spec.Template.Spec.Domain.CPU = &kubevirtv1.CPU{Cores: cores, Model: cpuModel}
 		}
 	}
 

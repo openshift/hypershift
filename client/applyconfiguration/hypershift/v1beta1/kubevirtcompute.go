@@ -25,9 +25,10 @@ import (
 // KubevirtComputeApplyConfiguration represents a declarative configuration of the KubevirtCompute type for use
 // with apply.
 type KubevirtComputeApplyConfiguration struct {
-	Memory   *resource.Quantity          `json:"memory,omitempty"`
-	Cores    *uint32                     `json:"cores,omitempty"`
-	QosClass *hypershiftv1beta1.QoSClass `json:"qosClass,omitempty"`
+	Memory   *resource.Quantity              `json:"memory,omitempty"`
+	Cores    *uint32                         `json:"cores,omitempty"`
+	QosClass *hypershiftv1beta1.QoSClass     `json:"qosClass,omitempty"`
+	Model    *hypershiftv1beta1.CpuModelType `json:"model,omitempty"`
 }
 
 // KubevirtComputeApplyConfiguration constructs a declarative configuration of the KubevirtCompute type for use with
@@ -57,5 +58,13 @@ func (b *KubevirtComputeApplyConfiguration) WithCores(value uint32) *KubevirtCom
 // If called multiple times, the QosClass field is set to the value of the last call.
 func (b *KubevirtComputeApplyConfiguration) WithQosClass(value hypershiftv1beta1.QoSClass) *KubevirtComputeApplyConfiguration {
 	b.QosClass = &value
+	return b
+}
+
+// WithModel sets the Model field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Model field is set to the value of the last call.
+func (b *KubevirtComputeApplyConfiguration) WithModel(value hypershiftv1beta1.CpuModelType) *KubevirtComputeApplyConfiguration {
+	b.Model = &value
 	return b
 }

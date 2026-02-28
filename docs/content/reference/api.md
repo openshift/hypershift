@@ -5504,6 +5504,26 @@ ManagedIdentity
 </tr>
 </tbody>
 </table>
+###CpuModelType { #hypershift.openshift.io/v1beta1.CpuModelType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.KubevirtCompute">KubevirtCompute</a>)
+</p>
+<p>
+<p>CpuModelType represents the CPU model for KubeVirt VMs.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;host-passthrough&#34;</p></td>
+<td><p>CpuModelHostPassthrough configures the VM to use the same CPU model as the node.</p>
+</td>
+</tr></tbody>
+</table>
 ###DNSSpec { #hypershift.openshift.io/v1beta1.DNSSpec }
 <p>
 (<em>Appears on:</em>
@@ -9284,6 +9304,22 @@ QoSClass
 limit memory and CPU, equal to be the requested values, to set the VMI as a Guaranteed QoS Class;
 See here for more details:
 <a href="https://kubevirt.io/user-guide/operations/node_overcommit/#requesting-the-right-qos-class-for-virtualmachineinstances">https://kubevirt.io/user-guide/operations/node_overcommit/#requesting-the-right-qos-class-for-virtualmachineinstances</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>model</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.CpuModelType">
+CpuModelType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>model specifies the CPU model for the KubeVirt VirtualMachineInstance.
+When set to &ldquo;host-passthrough&rdquo;, the VM will use the same CPU model as the node,
+which provides the best performance but may limit live migration compatibility.</p>
 </td>
 </tr>
 </tbody>
