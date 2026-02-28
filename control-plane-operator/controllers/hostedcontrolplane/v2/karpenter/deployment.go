@@ -4,6 +4,7 @@ import (
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -34,6 +35,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 				Value: hcp.Spec.InfraID,
 			},
 		)
+		proxy.SetEnvVars(&c.Env)
 		// Override the image if specified in the HCP annotations.
 		karpenterProviderAWSOverride, exists := hcp.Annotations[hyperkarpenterv1.KarpenterProviderAWSImage]
 		if exists {
