@@ -347,6 +347,7 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane:    ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController: CloudControllerCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage:         GCPPDCloudCredentialsSecret(controlPlaneNamespace),
+		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry:   ImageRegistryCredsSecret(controlPlaneNamespace),
 	}
 
 	for email, secret := range credentialSecrets {
@@ -414,6 +415,17 @@ func GCPPDCloudCredentialsSecret(controlPlaneNamespace string) *corev1.Secret {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
 			Name:      "gcp-pd-cloud-credentials",
+		},
+	}
+}
+
+// ImageRegistryCredsSecret returns the secret containing Workload Identity Federation credentials
+// for the Image Registry Operator.
+func ImageRegistryCredsSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "image-registry-creds",
 		},
 	}
 }
@@ -560,6 +572,10 @@ func (p GCP) validateWorkloadIdentityConfiguration(hcluster *hyperv1.HostedClust
 
 	if wif.ServiceAccountsEmails.Storage == "" {
 		return fmt.Errorf("storage service account email is required")
+	}
+
+	if wif.ServiceAccountsEmails.ImageRegistry == "" {
+		return fmt.Errorf("image registry service account email is required")
 	}
 
 	return nil
