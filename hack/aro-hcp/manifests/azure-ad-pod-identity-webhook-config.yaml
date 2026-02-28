@@ -1,0 +1,8 @@
+apiVersion: v1
+stringData:
+  azure_tenant_id: 520cf09d-78ff-44ed-a731-abd623e73b09
+kind: Secret
+metadata:
+  name: azure-credentials
+  namespace: openshift-cloud-credential-operator
+type: Opaque

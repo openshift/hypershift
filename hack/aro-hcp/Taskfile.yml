@@ -1,0 +1,192 @@
+version: '3'
+
+vars:
+  # === Credentials (primary source of Azure config) ===
+  AZURE_CREDS: '{{.AZURE_CREDS | default "azure-credentials.json"}}'
+  PULL_SECRET: '{{.PULL_SECRET | default "pull-secret.json"}}'
+  HYPERSHIFT_BINARY_PATH: '{{.HYPERSHIFT_BINARY_PATH | default ""}}'
+
+  # === Azure Configuration (derived from AZURE_CREDS or env vars) ===
+  SUBSCRIPTION_ID:
+    sh: 'jq -r ".subscriptionId // empty" {{.AZURE_CREDS}} 2>/dev/null || echo "${SUBSCRIPTION_ID:-}"'
+  TENANT_ID:
+    sh: 'jq -r ".tenantId // empty" {{.AZURE_CREDS}} 2>/dev/null || echo "${TENANT_ID:-}"'
+  LOCATION: '{{.LOCATION | default "eastus"}}'
+
+  # === Naming ===
+  PREFIX: '{{.PREFIX | default ""}}'
+  CLUSTER_NAME: '{{.PREFIX}}-hc'
+
+  # === Resource Groups ===
+  PERSISTENT_RG_NAME: '{{.PERSISTENT_RG_NAME | default "os4-common"}}'
+  PERSISTENT_RG_LOCATION: '{{.PERSISTENT_RG_LOCATION | default "centralus"}}'
+  AKS_RG: '{{.PREFIX}}-aks-rg'
+  AKS_CLUSTER_NAME: '{{.PREFIX}}-aks-cluster'
+
+  # === Key Vault ===
+  KV_NAME: '{{.PREFIX}}'
+
+  # === OIDC Configuration ===
+  OIDC_ISSUER_NAME: '{{.OIDC_ISSUER_NAME | default ""}}'
+  OIDC_ISSUER_URL: 'https://{{.OIDC_ISSUER_NAME}}.blob.core.windows.net/{{.OIDC_ISSUER_NAME}}'
+
+  # === DNS ===
+  PARENT_DNS_ZONE: '{{.PARENT_DNS_ZONE | default "hypershift.azure.devcluster.openshift.com"}}'
+  MGMT_DNS_ZONE_NAME: '{{.PREFIX}}.{{.PARENT_DNS_ZONE}}'
+
+  # === Managed Identities JSON (MIv3 pattern) ===
+  CP_OUTPUT_FILE: '{{.CP_OUTPUT_FILE | default "./cp-output.json"}}'
+  DP_OUTPUT_FILE: '{{.DP_OUTPUT_FILE | default "./dp-output.json"}}'
+  SA_TOKEN_ISSUER_PUBLIC_KEY_PATH: '{{.SA_TOKEN_ISSUER_PUBLIC_KEY_PATH | default "./serviceaccount-signer.public"}}'
+  SA_TOKEN_ISSUER_PRIVATE_KEY_PATH: '{{.SA_TOKEN_ISSUER_PRIVATE_KEY_PATH | default "./serviceaccount-signer.private"}}'
+  EXTERNAL_DNS_CREDS_FILE: '{{.EXTERNAL_DNS_CREDS_FILE | default "./external-dns-creds.json"}}'
+
+  # === Image Overrides ===
+  HYPERSHIFT_IMAGE: '{{.HYPERSHIFT_IMAGE | default ""}}'
+  RELEASE_IMAGE: '{{.RELEASE_IMAGE | default ""}}'
+
+  # === AKS Configuration ===
+  AKS_NODE_COUNT: '{{.AKS_NODE_COUNT | default "3"}}'
+  AKS_NODE_VM_SIZE: '{{.AKS_NODE_VM_SIZE | default "Standard_D4s_v4"}}'
+  AKS_K8S_VERSION: '{{.AKS_K8S_VERSION | default "1.30"}}'
+  MGMT_KUBECONFIG: '{{.KUBECONFIG | default "./mgmt-kubeconfig"}}'
+
+  # === Hosted Cluster Configuration ===
+  NODE_POOL_REPLICAS: '{{.NODE_POOL_REPLICAS | default "2"}}'
+  MANAGED_RG_NAME: '{{.PREFIX}}-managed-rg'
+  CUSTOMER_VNET_RG_NAME: '{{.PREFIX}}-customer-vnet-rg'
+  CUSTOMER_NSG_RG_NAME: '{{.PREFIX}}-customer-nsg-rg'
+  CUSTOMER_VNET_NAME: '{{.PREFIX}}-customer-vnet'
+  CUSTOMER_VNET_SUBNET1: '{{.PREFIX}}-customer-subnet-1'
+  CUSTOMER_NSG: '{{.PREFIX}}-customer-nsg'
+
+  # === Control Plane SP Names ===
+  AZURE_DISK_SP_NAME: 'azure-disk-{{.PREFIX}}'
+  AZURE_FILE_SP_NAME: 'azure-file-{{.PREFIX}}'
+  CLOUD_PROVIDER_SP_NAME: 'cloud-provider-{{.PREFIX}}'
+  CONTROL_PLANE_SP_NAME: 'cpo-{{.PREFIX}}'
+  IMAGE_REGISTRY_SP_NAME: 'ciro-{{.PREFIX}}'
+  INGRESS_SP_NAME: 'ingress-{{.PREFIX}}'
+  CNCC_SP_NAME: 'cncc-{{.PREFIX}}'
+  NODEPOOL_MGMT_SP_NAME: 'nodepool-mgmt-{{.PREFIX}}'
+  VELERO_SP_NAME: 'velero-{{.PREFIX}}'
+
+  # === Data Plane MI Names ===
+  AZURE_DISK_MI_NAME: 'azure-disk-MI-{{.PREFIX}}'
+  AZURE_FILE_MI_NAME: 'azure-file-MI-{{.PREFIX}}'
+  IMAGE_REGISTRY_MI_NAME: 'image-registry-MI-{{.PREFIX}}'
+
+  # === AKS MI Names ===
+  AKS_CP_MI_NAME: '{{.PREFIX}}-aks-mi'
+  AKS_KUBELET_MI_NAME: '{{.PREFIX}}-aks-kubelet-mi'
+
+includes:
+  prereq:
+    taskfile: ./tasks/prereq.yml
+  keyvault:
+    taskfile: ./tasks/keyvault.yml
+  oidc:
+    taskfile: ./tasks/oidc.yml
+  dataplane:
+    taskfile: ./tasks/dataplane.yml
+  aks:
+    taskfile: ./tasks/aks.yml
+  dns:
+    taskfile: ./tasks/dns.yml
+  operator:
+    taskfile: ./tasks/operator.yml
+  cluster:
+    taskfile: ./tasks/cluster.yml
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  # ============================================================
+  # PRIMARY TASKS (the 4 most-used operations)
+  # ============================================================
+
+  mgmt:create:
+    desc: Create management cluster (AKS) with all dependencies
+    cmds:
+      - task: prereq:validate
+      # One-time setup (idempotent via status checks)
+      - task: keyvault:setup
+      - task: oidc:create
+      - task: dataplane:create
+      - task: aks:create-identities
+      # Per-mgmt-cluster setup
+      - task: aks:create
+      - task: dns:setup
+      - task: operator:install
+
+  mgmt:destroy:
+    desc: Destroy management cluster (AKS)
+    cmds:
+      - task: operator:uninstall
+      - task: dns:delete
+      - task: aks:delete
+
+  cluster:create:
+    desc:  Create hosted cluster (most frequent operation)
+    preconditions:
+      - sh: kubectl get deployment operator -n hypershift < /dev/null 2>/dev/null
+        msg: "Management cluster not ready. Run 'task mgmt:create' first."
+      - sh: test -f {{.CP_OUTPUT_FILE}}
+        msg: "Control plane identities file not found at {{.CP_OUTPUT_FILE}}. Run 'task mgmt:create' first."
+      - sh: test -f {{.DP_OUTPUT_FILE}}
+        msg: "Data plane identities file not found at {{.DP_OUTPUT_FILE}}. Run 'task mgmt:create' first."
+    cmds:
+      - task: cluster:create-rgs
+      - task: cluster:create-network
+      - task: cluster:create-hc
+
+  cluster:destroy:
+    desc: Destroy hosted cluster
+    cmds:
+      - task: cluster:destroy-hc
+      - task: cluster:delete-rgs
+
+  # ============================================================
+  # UTILITY TASKS
+  # ============================================================
+
+  first-time:
+    desc: One-time setup only (Key Vault, OIDC, identities)
+    cmds:
+      - task: prereq:validate
+      - task: keyvault:setup
+      - task: oidc:create
+      - task: dataplane:create
+      - task: aks:create-identities
+
+  teardown-all:
+    desc: Complete teardown (including one-time resources)
+    cmds:
+      - task: cluster:destroy
+      - task: mgmt:destroy
+      - task: dataplane:delete
+      - task: oidc:delete
+      - task: keyvault:delete
+      - task: aks:delete-identities
+
+  status:
+    desc: Show status of all components
+    vars:
+      KV_STATUS:
+        sh: az keyvault show --name {{.KV_NAME}} -o none 2>/dev/null && echo "Key Vault,✓ Ready,{{.KV_NAME}}" || echo "Key Vault,✗ Not Found,{{.KV_NAME}}"
+      OIDC_STATUS:
+        sh: az storage account show --name {{.OIDC_ISSUER_NAME}} -g {{.PERSISTENT_RG_NAME}} -o none 2>/dev/null && echo "OIDC Issuer,✓ Ready,{{.OIDC_ISSUER_NAME}}" || echo "OIDC Issuer,✗ Not Found,{{.OIDC_ISSUER_NAME}}"
+      AKS_STATUS:
+        sh: az aks show --name {{.AKS_CLUSTER_NAME}} -g {{.AKS_RG}} -o none 2>/dev/null && echo "AKS Cluster,✓ Ready,{{.AKS_CLUSTER_NAME}}" || echo "AKS Cluster,✗ Not Found,{{.AKS_CLUSTER_NAME}}"
+      OPERATOR_STATUS:
+        sh: kubectl get deployment operator -n hypershift < /dev/null 2>/dev/null | grep -q operator && echo "HyperShift Operator,✓ Ready,-" || echo "HyperShift Operator,✗ Not Deployed,-"
+      CLUSTERS_STATUS:
+        sh: 'HC=$(kubectl get hostedclusters -A -o name < /dev/null 2>/dev/null | wc -l | tr -d " "); [ "$HC" -gt 0 ] && echo "Hosted Clusters,✓ $HC cluster(s),-" || echo "Hosted Clusters,○ None,-"'
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "ARO-HCP Environment Status"
+        silent: true
+      - cmd: 'echo -e "Component,Status,Details\n{{.KV_STATUS}}\n{{.OIDC_STATUS}}\n{{.AKS_STATUS}}\n{{.OPERATOR_STATUS}}\n{{.CLUSTERS_STATUS}}" | gum table --print --border rounded'
+        silent: true
