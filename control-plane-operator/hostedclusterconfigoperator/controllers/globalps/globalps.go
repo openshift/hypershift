@@ -81,6 +81,14 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("reconciling global pull secret")
 
+	// Create ServiceAccount for global-pull-secret-syncer
+	serviceAccount := manifests.GlobalPullSecretServiceAccount()
+	if _, err := r.CreateOrUpdate(ctx, r.hcUncachedClient, serviceAccount, func() error {
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile global pull secret service account: %w", err)
+	}
+
 	// Get the original pull secret once at the beginning (used in both scenarios)
 	originalPullSecret := manifests.PullSecret(r.hcpNamespace)
 	if err := r.cpClient.Get(ctx, crclient.ObjectKeyFromObject(originalPullSecret), originalPullSecret); err != nil {
@@ -284,6 +292,7 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 					},
 				},
 				Spec: corev1.PodSpec{
+					ServiceAccountName:           manifests.GlobalPullSecretDSName,
 					AutomountServiceAccountToken: ptr.To(false),
 					SecurityContext:              &corev1.PodSecurityContext{},
 					DNSPolicy:                    corev1.DNSDefault,
