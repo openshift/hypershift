@@ -19,6 +19,36 @@ const (
 
 	// UserDataAMILabel is a label set in the userData secret generated for karpenter instances.
 	UserDataAMILabel = "hypershift.openshift.io/ami"
+
+	// ConditionTypeVersionResolved indicates whether the spec.version was successfully resolved to a release image.
+	ConditionTypeVersionResolved = "VersionResolved"
+
+	// ConditionTypeSupportedVersionSkew signals whether the NodeClass spec.version falls within the
+	// supported skew policy relative to the HostedControlPlane version.
+	// NodeClass version cannot be higher than the HostedControlPlane version.
+	// For 4.y versions, all versions support up to 3 minor version differences (n-3).
+	// When false, the NodeClass will continue operating but there are no compatibility guarantees.
+	ConditionTypeSupportedVersionSkew = "SupportedVersionSkew"
+
+	// ConditionReasonVersionNotSpecified indicates that no spec.version was set,
+	// so the NodeClass uses the control plane release image.
+	ConditionReasonVersionNotSpecified = "VersionNotSpecified"
+
+	// ConditionReasonVersionResolved indicates that spec.version was successfully
+	// resolved to a release image via Cincinnati.
+	ConditionReasonVersionResolved = "VersionResolved"
+
+	// ConditionReasonResolutionFailed indicates that spec.version could not be
+	// resolved to a release image.
+	ConditionReasonResolutionFailed = "ResolutionFailed"
+
+	// ConditionReasonUnsupportedSkew indicates that the NodeClass spec.version
+	// falls outside the supported version skew policy relative to the control plane.
+	ConditionReasonUnsupportedSkew = "UnsupportedSkew"
+
+	// ConditionReasonAsExpected indicates that the version skew is within the
+	// supported policy.
+	ConditionReasonAsExpected = "AsExpected"
 )
 
 // Subnet contains resolved Subnet selector values utilized for node launch
@@ -104,6 +134,14 @@ type OpenshiftEC2NodeClassSpec struct {
 	// DetailedMonitoring controls if detailed monitoring is enabled for instances that are launched
 	// +optional
 	DetailedMonitoring *bool `json:"detailedMonitoring,omitempty"`
+
+	// Version is an OpenShift version (e.g., "4.20.1") specifying the release version
+	// for nodes managed by this NodeClass. When set, the controller resolves this to a
+	// release image via the Cincinnati graph API. When not set, nodes use the control plane's
+	// release image.
+	// +kubebuilder:validation:Pattern=`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$`
+	// +optional
+	Version string `json:"version,omitempty"`
 }
 
 // SubnetSelectorTerm defines selection logic for a subnet used by Karpenter to launch nodes.
@@ -241,6 +279,16 @@ type OpenshiftEC2NodeClassStatus struct {
 	// cluster under the SecurityGroups selectors.
 	// +optional
 	SecurityGroups []SecurityGroup `json:"securityGroups,omitempty"`
+
+	// ReleaseImage is the fully qualified release image resolved either from spec.version, or inherited from
+	// the HostedControlPlane's spec.ReleaseImage.
+	// Of the format "quay.io/openshift-release-dev/ocp-release@sha256:<digest>".
+	// +optional
+	ReleaseImage string `json:"releaseImage,omitempty"`
+
+	// Version is the resolved OpenShift version corresponding to the status.releaseImage.
+	// +optional
+	Version string `json:"version,omitempty"`
 
 	// +optional
 	// +listType=map

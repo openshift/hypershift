@@ -261,6 +261,14 @@ spec:
                   rule: self.all(k, k !='karpenter.sh/nodeclaim')
                 - message: tag contains a restricted tag matching karpenter.k8s.aws/ec2nodeclass
                   rule: self.all(k, k !='karpenter.k8s.aws/ec2nodeclass')
+              version:
+                description: |-
+                  Version is an OpenShift version (e.g., "4.20.1") specifying the release version
+                  for nodes managed by this NodeClass. When set, the controller resolves this to a
+                  release image via the Cincinnati graph API. When not set, nodes use the control plane's
+                  release image.
+                pattern: ^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$
+                type: string
             type: object
           status:
             description: OpenshiftEC2NodeClassStatus defines the observed state of
@@ -326,6 +334,12 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              releaseImage:
+                description: |-
+                  ReleaseImage is the fully qualified release image resolved either from spec.version, or inherited from
+                  the HostedControlPlane's spec.ReleaseImage.
+                  Of the format "quay.io/openshift-release-dev/ocp-release@sha256:<digest>".
+                type: string
               securityGroups:
                 description: |-
                   SecurityGroups contains the current Security Groups values that are available to the
@@ -366,6 +380,10 @@ spec:
                   - zone
                   type: object
                 type: array
+              version:
+                description: Version is the resolved OpenShift version corresponding
+                  to the status.releaseImage.
+                type: string
             type: object
         type: object
     served: true

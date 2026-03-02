@@ -170,6 +170,7 @@ func run(ctx context.Context) error {
 
 	kir := karpenterignition.KarpenterIgnitionReconciler{
 		ReleaseProvider:         releaseProvider,
+		VersionResolver:         releaseinfo.NewCincinnatiVersionResolver(),
 		ImageMetadataProvider:   imageMetaDataProvider,
 		HypershiftOperatorImage: hypershiftOperatorImage,
 		IgnitionEndpoint:        ignitionEndpoint,

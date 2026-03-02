@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -321,22 +322,31 @@ func (r *EC2NodeClassReconciler) reconcileStatus(ctx context.Context, ec2NodeCla
 
 	originalObj := openshiftNodeClass.DeepCopy()
 
-	openshiftNodeClass.Status = hyperkarpenterv1.OpenshiftEC2NodeClassStatus{}
-	for _, securityGroup := range ec2NodeClass.Status.SecurityGroups {
-		openshiftNodeClass.Status.SecurityGroups = append(openshiftNodeClass.Status.SecurityGroups, hyperkarpenterv1.SecurityGroup{
-			ID:   securityGroup.ID,
-			Name: securityGroup.Name,
+	// Update only the fields this controller manages, leaving fields owned by the
+	// ignition controller (ReleaseImage, Version, VersionResolved and SupportedVersionSkew conditions) untouched.
+	securityGroups := make([]hyperkarpenterv1.SecurityGroup, 0, len(ec2NodeClass.Status.SecurityGroups))
+	for _, sg := range ec2NodeClass.Status.SecurityGroups {
+		securityGroups = append(securityGroups, hyperkarpenterv1.SecurityGroup{
+			ID:   sg.ID,
+			Name: sg.Name,
 		})
 	}
-	for _, subnet := range ec2NodeClass.Status.Subnets {
-		openshiftNodeClass.Status.Subnets = append(openshiftNodeClass.Status.Subnets, hyperkarpenterv1.Subnet{
-			ID:     subnet.ID,
-			Zone:   subnet.Zone,
-			ZoneID: subnet.ZoneID,
+	openshiftNodeClass.Status.SecurityGroups = securityGroups
+
+	subnets := make([]hyperkarpenterv1.Subnet, 0, len(ec2NodeClass.Status.Subnets))
+	for _, s := range ec2NodeClass.Status.Subnets {
+		subnets = append(subnets, hyperkarpenterv1.Subnet{
+			ID:     s.ID,
+			Zone:   s.Zone,
+			ZoneID: s.ZoneID,
 		})
 	}
+	openshiftNodeClass.Status.Subnets = subnets
+
+	// Sync conditions from the upstream EC2NodeClass. Use SetStatusCondition so that
+	// conditions managed by the ignition controller are preserved.
 	for _, condition := range ec2NodeClass.Status.Conditions {
-		openshiftNodeClass.Status.Conditions = append(openshiftNodeClass.Status.Conditions, metav1.Condition(condition))
+		meta.SetStatusCondition(&openshiftNodeClass.Status.Conditions, metav1.Condition(condition))
 	}
 
 	if !reflect.DeepEqual(originalObj.Status, openshiftNodeClass.Status) {
