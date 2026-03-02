@@ -373,6 +373,11 @@ func TestHyperShiftOperatorManifests_SharedIngress(t *testing.T) {
 			managedService:             "",
 			expectSharedIngressObjects: false,
 		},
+		{
+			name:                       "When ManagedService is ROSA it should not include shared ingress resources",
+			managedService:             "ROSA",
+			expectSharedIngressObjects: false,
+		},
 	}
 
 	for _, tc := range tests {
@@ -385,21 +390,24 @@ func TestHyperShiftOperatorManifests_SharedIngress(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 
 			var hasSharedIngressNamespace bool
+			var namespaceLabels map[string]string
 			var hasSharedIngressClusterRole bool
 			var hasSharedIngressClusterRoleBinding bool
 			for _, obj := range objects {
 				switch {
 				case obj.GetName() == sharedingress.RouterNamespace && obj.GetObjectKind().GroupVersionKind().Kind == "Namespace":
 					hasSharedIngressNamespace = true
-				case obj.GetName() == "sharedingress-config-generator" && obj.GetObjectKind().GroupVersionKind().Kind == "ClusterRole":
+					namespaceLabels = obj.GetLabels()
+				case obj.GetName() == sharedingress.ConfigGeneratorName && obj.GetObjectKind().GroupVersionKind().Kind == "ClusterRole":
 					hasSharedIngressClusterRole = true
-				case obj.GetName() == "sharedingress-config-generator" && obj.GetObjectKind().GroupVersionKind().Kind == "ClusterRoleBinding":
+				case obj.GetName() == sharedingress.ConfigGeneratorName && obj.GetObjectKind().GroupVersionKind().Kind == "ClusterRoleBinding":
 					hasSharedIngressClusterRoleBinding = true
 				}
 			}
 
 			if tc.expectSharedIngressObjects {
 				g.Expect(hasSharedIngressNamespace).To(BeTrue(), "expected shared ingress namespace to be present")
+				g.Expect(namespaceLabels).To(HaveKeyWithValue("hypershift.openshift.io/component", "shared-ingress"), "expected shared ingress namespace to have component label")
 				g.Expect(hasSharedIngressClusterRole).To(BeTrue(), "expected shared ingress ClusterRole to be present")
 				g.Expect(hasSharedIngressClusterRoleBinding).To(BeTrue(), "expected shared ingress ClusterRoleBinding to be present")
 			} else {

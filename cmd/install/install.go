@@ -900,7 +900,7 @@ func setupMonitoring(opts Options, operatorNamespace *corev1.Namespace) []crclie
 // service, PDB, network policy, etc.). Cluster-scoped resources (ClusterRole,
 // ClusterRoleBinding) must be explicitly included.
 func setupSharedIngress() []crclient.Object {
-	var objects []crclient.Object
+	objects := make([]crclient.Object, 0, 3)
 
 	namespace := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -912,16 +912,18 @@ func setupSharedIngress() []crclient.Object {
 	}
 	objects = append(objects, namespace)
 
+	// ClusterRole and ClusterRoleBinding are deletion markers only; actual RBAC rules
+	// are populated by the SharedIngressReconciler at runtime via createOrUpdate.
 	clusterRole := &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "sharedingress-config-generator",
+			Name: sharedingress.ConfigGeneratorName,
 		},
 	}
 	objects = append(objects, clusterRole)
 
 	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "sharedingress-config-generator",
+			Name: sharedingress.ConfigGeneratorName,
 		},
 	}
 	objects = append(objects, clusterRoleBinding)
