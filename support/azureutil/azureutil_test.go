@@ -188,6 +188,91 @@ func TestIsAroHCP(t *testing.T) {
 	}
 }
 
+func TestIsPrivateKeyVault(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		expected bool
+	}{
+		{
+			name: "When KeyVaultAccess is Private it should return true",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								KeyVaultAccess: hyperv1.AzureKeyVaultPrivate,
+							},
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "When KeyVaultAccess is Public it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								KeyVaultAccess: hyperv1.AzureKeyVaultPublic,
+							},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When KeyVaultAccess is empty it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{},
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When SecretEncryption is nil it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{},
+			},
+			expected: false,
+		},
+		{
+			name: "When KMS is nil it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "When Azure KMS is nil it should return false",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{},
+					},
+				},
+			},
+			expected: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			g.Expect(IsPrivateKeyVault(tc.hcp)).To(Equal(tc.expected))
+		})
+	}
+}
+
 func TestCreateEnvVarsForAzureManagedIdentity(t *testing.T) {
 	type args struct {
 		azureCredentialsFilepath string
@@ -274,6 +359,124 @@ func TestCreateVolumeForAzureSecretStoreProviderClass(t *testing.T) {
 			if got := CreateVolumeForAzureSecretStoreProviderClass(tt.secretStoreVolumeName, tt.secretProviderClassName); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("CreateVolumeForAzureSecretStoreProviderClass() = %v, want %v", got, tt.want)
 			}
+		})
+	}
+}
+
+func TestGetKeyVaultFQDN(t *testing.T) {
+	tests := []struct {
+		name     string
+		hcp      *hyperv1.HostedControlPlane
+		wantFQDN string
+		wantErr  bool
+	}{
+		{
+			name: "When Azure KMS is configured with public cloud it should return correct FQDN",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud: "AzurePublicCloud",
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								ActiveKey: hyperv1.AzureKMSKey{
+									KeyVaultName: "my-keyvault",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantFQDN: "my-keyvault.vault.azure.net",
+		},
+		{
+			name: "When Azure KMS is configured with gov cloud it should return correct FQDN",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud: "AzureUSGovernmentCloud",
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								ActiveKey: hyperv1.AzureKMSKey{
+									KeyVaultName: "gov-vault",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantFQDN: "gov-vault.vault.usgovcloudapi.net",
+		},
+		{
+			name: "When SecretEncryption is nil it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud: "AzurePublicCloud",
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "When KMS Azure is nil it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud: "AzurePublicCloud",
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "When KeyVaultName is empty it should return error",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Azure: &hyperv1.AzurePlatformSpec{
+							Cloud: "AzurePublicCloud",
+						},
+					},
+					SecretEncryption: &hyperv1.SecretEncryptionSpec{
+						KMS: &hyperv1.KMSSpec{
+							Azure: &hyperv1.AzureKMSSpec{
+								ActiveKey: hyperv1.AzureKMSKey{
+									KeyVaultName: "",
+								},
+							},
+						},
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			got, err := GetKeyVaultFQDN(tt.hcp)
+			if tt.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(got).To(Equal(tt.wantFQDN))
 		})
 	}
 }

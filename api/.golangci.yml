@@ -402,6 +402,10 @@ linters:
         text: 'optionalfields: field Version should be a pointer'
       - linters:
           - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field KeyVaultAccess should be a pointer'
+      - linters:
+          - kubeapilinter
         path: hypershift/v1beta1/certificatesigningrequestapproval_types.go
         text: 'optionalfields: field Spec should be a pointer'
       - linters:
