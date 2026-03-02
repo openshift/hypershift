@@ -1,15 +1,22 @@
-FROM registry.fedoraproject.org/fedora-minimal:41
+# Use multi-arch Python Alpine base image
+FROM python:3.11-alpine
 
-RUN dnf install -y python-pip \
-  && dnf clean all \
-  && useradd docs
+# Install git and create user
+RUN apk add --no-cache git \
+  && adduser -D -s /bin/sh docs
 
 WORKDIR /home/docs
 USER docs
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-  && mkdir /home/docs/hypershift
+# Copy requirements and install Python dependencies
+COPY --chown=docs:docs requirements.txt .
+RUN pip install --user --no-cache-dir -r requirements.txt \
+  && mkdir -p /home/docs/hypershift
 
 WORKDIR /home/docs/hypershift
-ENTRYPOINT [ "/home/docs/.local/bin/mkdocs" ]
+
+# Set PATH to include user local bin and configure git for container use
+ENV PATH="/home/docs/.local/bin:${PATH}"
+RUN git config --global --add safe.directory /home/docs/hypershift
+
+ENTRYPOINT [ "mkdocs" ]

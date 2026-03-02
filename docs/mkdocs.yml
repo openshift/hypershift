@@ -55,7 +55,14 @@ extra_css:
   - custom.css
 nav:
 - Home: index.md
-- 'Getting started': getting-started.md
+- 'Getting Started':
+  - getting-started/index.md
+  - 'AWS': getting-started/aws.md
+  - 'Azure': getting-started/azure.md
+  - 'IBM Cloud': getting-started/ibm-cloud.md
+  - 'KubeVirt': getting-started/kubevirt.md
+  - 'Agent': getting-started/agent.md
+  - 'OpenStack': getting-started/openstack.md
 - 'How-to guides':
   - how-to/index.md
   - how-to/feature-gates.md
