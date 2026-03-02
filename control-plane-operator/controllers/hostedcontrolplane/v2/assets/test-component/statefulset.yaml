@@ -1,5 +1,5 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: test-component
 spec:
@@ -7,11 +7,7 @@ spec:
   selector:
     matchLabels:
       app: test-component
-  strategy:
-    rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
-    type: RollingUpdate
+  serviceName: test-component
   template:
     metadata:
       labels:
@@ -24,6 +20,11 @@ spec:
         - --foo=bar
         command:
         - /usr/bin/test-component
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          capabilities:
+            drop: ["ALL"]
         env:
         - name: MY_NAMESPACE
           valueFrom:
