@@ -296,7 +296,7 @@ func (r *SharedIngressReconciler) reconcileConfigGeneratorControllerRBAC(ctx con
 
 	cr := &rbacv1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "sharedingress-config-generator",
+			Name: ConfigGeneratorName,
 		},
 	}
 	if _, err := r.createOrUpdate(ctx, r.Client, cr, func() error {
@@ -329,7 +329,7 @@ func (r *SharedIngressReconciler) reconcileConfigGeneratorControllerRBAC(ctx con
 
 	crb := &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "sharedingress-config-generator",
+			Name: ConfigGeneratorName,
 		},
 	}
 	if _, err := r.createOrUpdate(ctx, r.Client, crb, func() error {

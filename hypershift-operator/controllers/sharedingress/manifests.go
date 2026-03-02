@@ -9,6 +9,7 @@ import (
 )
 
 const RouterNamespace = "hypershift-sharedingress"
+const ConfigGeneratorName = "sharedingress-config-generator"
 
 func RouterDeployment() *appsv1.Deployment {
 	return &appsv1.Deployment{

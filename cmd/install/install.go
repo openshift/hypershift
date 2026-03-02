@@ -27,6 +27,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -684,6 +685,12 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 	monitoringObjs := setupMonitoring(opts, operatorNamespace)
 	objects = append(objects, monitoringObjs...)
 
+	// Setup Shared Ingress resources (ARO HCP only)
+	if opts.ManagedService == hyperv1.AroHCP {
+		sharedIngressObjs := setupSharedIngress()
+		objects = append(objects, sharedIngressObjs...)
+	}
+
 	crds, err = setupCRDs(ctx, client, opts, operatorNamespace, operatorService)
 	if err != nil {
 		return nil, nil, err
@@ -884,6 +891,43 @@ func setupMonitoring(opts Options, operatorNamespace *corev1.Namespace) []crclie
 		}.Build()
 		objects = append(objects, monitoringDashboardTemplate)
 	}
+	return objects
+}
+
+// setupSharedIngress returns the shared ingress resources that need to be included
+// in the install manifests so they are cleaned up during uninstallation.
+// The namespace deletion cascades to all namespaced resources (router deployment,
+// service, PDB, network policy, etc.). Cluster-scoped resources (ClusterRole,
+// ClusterRoleBinding) must be explicitly included.
+func setupSharedIngress() []crclient.Object {
+	objects := make([]crclient.Object, 0, 3)
+
+	namespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: sharedingress.RouterNamespace,
+			Labels: map[string]string{
+				"hypershift.openshift.io/component": "shared-ingress",
+			},
+		},
+	}
+	objects = append(objects, namespace)
+
+	// ClusterRole and ClusterRoleBinding are deletion markers only; actual RBAC rules
+	// are populated by the SharedIngressReconciler at runtime via createOrUpdate.
+	clusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: sharedingress.ConfigGeneratorName,
+		},
+	}
+	objects = append(objects, clusterRole)
+
+	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: sharedingress.ConfigGeneratorName,
+		},
+	}
+	objects = append(objects, clusterRoleBinding)
+
 	return objects
 }
 
