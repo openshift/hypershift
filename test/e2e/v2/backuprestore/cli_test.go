@@ -3,8 +3,12 @@
 package backuprestore
 
 import (
+	"context"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -287,6 +291,256 @@ func TestBuildScheduleArgs(t *testing.T) {
 			result := buildScheduleArgs(tt.opts)
 			if diff := cmp.Diff(tt.expected, result); diff != "" {
 				t.Errorf("buildScheduleArgs() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestBuildFixDrOidcIamArgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		opts     *FixDrOidcIamOptions
+		expected []string
+	}{
+		{
+			name: "hosted cluster mode with aws creds",
+			opts: &FixDrOidcIamOptions{
+				HCName:       "my-cluster",
+				HCNamespace:  "clusters",
+				AWSCredsFile: "/path/to/creds",
+			},
+			expected: []string{
+				"fix", "dr-oidc-iam",
+				"--hc-name", "my-cluster",
+				"--hc-namespace", "clusters",
+				"--aws-creds", "/path/to/creds",
+			},
+		},
+		{
+			name: "hosted cluster mode with sts creds",
+			opts: &FixDrOidcIamOptions{
+				HCName:       "my-cluster",
+				HCNamespace:  "clusters",
+				STSCredsFile: "/path/to/sts-creds",
+				RoleARN:      "arn:aws:iam::123456789012:role/my-role",
+			},
+			expected: []string{
+				"fix", "dr-oidc-iam",
+				"--hc-name", "my-cluster",
+				"--hc-namespace", "clusters",
+				"--sts-creds", "/path/to/sts-creds",
+				"--role-arn", "arn:aws:iam::123456789012:role/my-role",
+			},
+		},
+		{
+			name: "manual mode with aws creds",
+			opts: &FixDrOidcIamOptions{
+				InfraID:      "my-infra-123",
+				Region:       "us-east-1",
+				AWSCredsFile: "/path/to/creds",
+			},
+			expected: []string{
+				"fix", "dr-oidc-iam",
+				"--infra-id", "my-infra-123",
+				"--region", "us-east-1",
+				"--aws-creds", "/path/to/creds",
+			},
+		},
+		{
+			name: "manual mode with sts creds",
+			opts: &FixDrOidcIamOptions{
+				InfraID:      "my-infra-123",
+				Region:       "us-west-2",
+				STSCredsFile: "/path/to/sts-creds",
+				RoleARN:      "arn:aws:iam::123456789012:role/my-role",
+			},
+			expected: []string{
+				"fix", "dr-oidc-iam",
+				"--infra-id", "my-infra-123",
+				"--region", "us-west-2",
+				"--sts-creds", "/path/to/sts-creds",
+				"--role-arn", "arn:aws:iam::123456789012:role/my-role",
+			},
+		},
+		{
+			name: "hosted cluster mode with oidc bucket and issuer",
+			opts: &FixDrOidcIamOptions{
+				HCName:       "my-cluster",
+				HCNamespace:  "clusters",
+				OIDCBucket:   "my-oidc-bucket",
+				Issuer:       "https://my-issuer.example.com",
+				AWSCredsFile: "/path/to/creds",
+			},
+			expected: []string{
+				"fix", "dr-oidc-iam",
+				"--hc-name", "my-cluster",
+				"--hc-namespace", "clusters",
+				"--oidc-bucket", "my-oidc-bucket",
+				"--issuer", "https://my-issuer.example.com",
+				"--aws-creds", "/path/to/creds",
+			},
+		},
+		{
+			name: "hosted cluster mode with all optional flags",
+			opts: &FixDrOidcIamOptions{
+				HCName:        "my-cluster",
+				HCNamespace:   "clusters",
+				OIDCBucket:    "my-oidc-bucket",
+				Issuer:        "https://issuer.example.com",
+				AWSCredsFile:  "/path/to/creds",
+				Timeout:       10 * time.Minute,
+				DryRun:        true,
+				ForceRecreate: true,
+				RestartDelay:  1 * time.Minute,
+			},
+			expected: []string{
+				"fix", "dr-oidc-iam",
+				"--hc-name", "my-cluster",
+				"--hc-namespace", "clusters",
+				"--oidc-bucket", "my-oidc-bucket",
+				"--issuer", "https://issuer.example.com",
+				"--aws-creds", "/path/to/creds",
+				"--timeout", "10m0s",
+				"--dry-run",
+				"--force-recreate",
+				"--restart-delay", "1m0s",
+			},
+		},
+		{
+			name: "manual mode with all optional flags",
+			opts: &FixDrOidcIamOptions{
+				InfraID:       "my-infra-123",
+				Region:        "us-west-2",
+				OIDCBucket:    "my-oidc-bucket",
+				Issuer:        "https://issuer.example.com",
+				AWSCredsFile:  "/path/to/creds",
+				Timeout:       5 * time.Minute,
+				DryRun:        true,
+				ForceRecreate: true,
+				RestartDelay:  30 * time.Second,
+			},
+			expected: []string{
+				"fix", "dr-oidc-iam",
+				"--infra-id", "my-infra-123",
+				"--region", "us-west-2",
+				"--oidc-bucket", "my-oidc-bucket",
+				"--issuer", "https://issuer.example.com",
+				"--aws-creds", "/path/to/creds",
+				"--timeout", "5m0s",
+				"--dry-run",
+				"--force-recreate",
+				"--restart-delay", "30s",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildFixDrOidcIamArgs(tt.opts)
+			if diff := cmp.Diff(tt.expected, result); diff != "" {
+				t.Errorf("buildFixDrOidcIamArgs() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestRunFixDrOidcIamValidation(t *testing.T) {
+	tests := []struct {
+		name        string
+		opts        *FixDrOidcIamOptions
+		expectedErr string
+	}{
+		{
+			name: "hc-name without hc-namespace",
+			opts: &FixDrOidcIamOptions{
+				HCName:       "my-cluster",
+				AWSCredsFile: "/path/to/creds",
+			},
+			expectedErr: "--hc-namespace is required when using --hc-name",
+		},
+		{
+			name: "hc-namespace without hc-name",
+			opts: &FixDrOidcIamOptions{
+				HCNamespace:  "clusters",
+				AWSCredsFile: "/path/to/creds",
+			},
+			expectedErr: "--hc-namespace can only be used with --hc-name",
+		},
+		{
+			name: "both modes specified",
+			opts: &FixDrOidcIamOptions{
+				HCName:       "my-cluster",
+				HCNamespace:  "clusters",
+				InfraID:      "my-infra",
+				Region:       "us-east-1",
+				AWSCredsFile: "/path/to/creds",
+			},
+			expectedErr: "when using --hc-name, --infra-id and --region should not be specified",
+		},
+		{
+			name: "manual mode missing infra-id",
+			opts: &FixDrOidcIamOptions{
+				Region:       "us-east-1",
+				AWSCredsFile: "/path/to/creds",
+			},
+			expectedErr: "--infra-id and --region are required when --hc-name is not set",
+		},
+		{
+			name: "manual mode missing region",
+			opts: &FixDrOidcIamOptions{
+				InfraID:      "my-infra",
+				AWSCredsFile: "/path/to/creds",
+			},
+			expectedErr: "--infra-id and --region are required when --hc-name is not set",
+		},
+		{
+			name: "both credential modes specified",
+			opts: &FixDrOidcIamOptions{
+				HCName:       "my-cluster",
+				HCNamespace:  "clusters",
+				AWSCredsFile: "/path/to/creds",
+				STSCredsFile: "/path/to/sts-creds",
+				RoleARN:      "arn:aws:iam::123456789012:role/my-role",
+			},
+			expectedErr: "only one of 'aws-creds' or 'sts-creds'/'role-arn' can be provided",
+		},
+		{
+			name: "no credentials",
+			opts: &FixDrOidcIamOptions{
+				HCName:      "my-cluster",
+				HCNamespace: "clusters",
+			},
+			expectedErr: "either 'aws-creds' or both 'sts-creds' and 'role-arn' must be provided",
+		},
+		{
+			name: "sts-creds without role-arn",
+			opts: &FixDrOidcIamOptions{
+				HCName:       "my-cluster",
+				HCNamespace:  "clusters",
+				STSCredsFile: "/path/to/sts-creds",
+			},
+			expectedErr: "role-arn is required when using sts-creds",
+		},
+		{
+			name: "role-arn without sts-creds",
+			opts: &FixDrOidcIamOptions{
+				HCName:      "my-cluster",
+				HCNamespace: "clusters",
+				RoleARN:     "arn:aws:iam::123456789012:role/my-role",
+			},
+			expectedErr: "sts-creds is required when using role-arn",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// RunFixDrOidcIam will fail at validation before reaching CLI lookup
+			err := RunFixDrOidcIam(context.Background(), logr.Discard(), "/tmp/artifacts", tt.opts)
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tt.expectedErr)
+			}
+			if !strings.Contains(err.Error(), tt.expectedErr) {
+				t.Errorf("expected error containing %q, got %q", tt.expectedErr, err.Error())
 			}
 		})
 	}

@@ -284,6 +284,9 @@ func isVeleroResourceInFinalState(
 
 		phase, found, err := unstructured.NestedString(resource.Object, "status", "phase")
 		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return false, nil
+			}
 			return false, fmt.Errorf("failed to get %s phase: %w", kind, err)
 		}
 
