@@ -13,12 +13,12 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.4.0
 	github.com/Azure/msi-dataplane v0.4.3
-	github.com/IBM-Cloud/power-go-client v1.11.0
-	github.com/IBM/go-sdk-core/v5 v5.19.1
-	github.com/IBM/ibm-cos-sdk-go v1.12.2
-	github.com/IBM/networking-go-sdk v0.51.4
-	github.com/IBM/platform-services-go-sdk v0.81.0
-	github.com/IBM/vpc-go-sdk v0.68.0
+	github.com/IBM-Cloud/power-go-client v1.14.4
+	github.com/IBM/go-sdk-core/v5 v5.21.2
+	github.com/IBM/ibm-cos-sdk-go v1.13.0
+	github.com/IBM/networking-go-sdk v0.51.16
+	github.com/IBM/platform-services-go-sdk v0.95.0
+	github.com/IBM/vpc-go-sdk v0.80.0
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5
 	github.com/aws/aws-sdk-go v1.55.8
 	github.com/aws/aws-sdk-go-v2 v1.41.1
@@ -145,7 +145,6 @@ require (
 	github.com/PaesslerAG/jsonpath v0.1.1 // indirect
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
-	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/asaskevich/govalidator/v11 v11.0.2-0.20250122183457-e11347878e23 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.4 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.18.17 // indirect
@@ -184,23 +183,24 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
-	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.11 // indirect
 	github.com/go-errors/errors v1.5.1 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
-	github.com/go-openapi/analysis v0.21.5 // indirect
-	github.com/go-openapi/errors v0.22.1 // indirect
+	github.com/go-openapi/analysis v0.23.0 // indirect
+	github.com/go-openapi/errors v0.22.4 // indirect
 	github.com/go-openapi/jsonpointer v0.21.1 // indirect
 	github.com/go-openapi/jsonreference v0.21.0 // indirect
-	github.com/go-openapi/loads v0.21.3 // indirect
-	github.com/go-openapi/runtime v0.26.2 // indirect
-	github.com/go-openapi/spec v0.20.12 // indirect
-	github.com/go-openapi/strfmt v0.23.0 // indirect
+	github.com/go-openapi/loads v0.22.0 // indirect
+	github.com/go-openapi/runtime v0.28.0 // indirect
+	github.com/go-openapi/spec v0.21.0 // indirect
+	github.com/go-openapi/strfmt v0.25.0 // indirect
 	github.com/go-openapi/swag v0.23.1 // indirect
-	github.com/go-openapi/validate v0.22.4 // indirect
+	github.com/go-openapi/validate v0.24.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
-	github.com/go-playground/validator/v10 v10.26.0 // indirect
+	github.com/go-playground/validator/v10 v10.28.0 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/gobuffalo/flect v1.0.3 // indirect
 	github.com/godbus/dbus v0.0.0-20190726142602-4481cbc300e2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -237,7 +237,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
-	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/moby/spdystream v0.5.0 // indirect
 	github.com/moby/sys/user v0.4.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
@@ -274,7 +273,7 @@ require (
 	go.etcd.io/etcd/pkg/v3 v3.6.7 // indirect
 	go.etcd.io/gofail v0.2.0 // indirect
 	go.etcd.io/raft/v3 v3.6.0 // indirect
-	go.mongodb.org/mongo-driver v1.17.2 // indirect
+	go.mongodb.org/mongo-driver v1.17.6 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.61.0 // indirect
