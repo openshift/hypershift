@@ -931,20 +931,54 @@ func (o *CreateIAMOptions) CreateOIDCResources(ctx context.Context, iamClient aw
 		ingressRoleName := output.Roles.IngressARN[strings.LastIndex(output.Roles.IngressARN, "/")+1:]
 
 		// Cloud Controller Manager's (CCM) managed policy needs to be updated on ROSA to allow new permissions downstream controllers to work.
-		// The permissions are:
-		// - elasticloadbalancing:DescribeTargetGroupAttributes
-		// - elasticloadbalancing:ModifyTargetGroupAttributes
+		// The permissions are required for NLB with managed security groups feature.
 		//
+		// References for hairpinning support:
 		// https://issues.redhat.com/browse/OCPBUGS-65885
-		//
-		// This inline policy must be removed when the following issue is resolved:
 		// https://issues.redhat.com/browse/SREP-2895
 		// https://redhat-internal.slack.com/archives/C03SZLX3A10/p1765396356482459
+		//
+		// References for managed security group support:
+		// https://github.com/kubernetes/cloud-provider-aws/pull/1158
+		// https://issues.redhat.com/browse/SREP-3643
+		// https://issues.redhat.com/browse/OCPSTRAT-1553
 		ccmPolicyStatement := `{
 				"Effect": "Allow",
 				"Action": [
+					"elasticloadbalancing:CreateLoadBalancer",
+					"elasticloadbalancing:DeleteLoadBalancer",
+					"elasticloadbalancing:DescribeLoadBalancers",
+					"elasticloadbalancing:ModifyLoadBalancerAttributes",
+					"elasticloadbalancing:CreateTargetGroup",
+					"elasticloadbalancing:DeleteTargetGroup",
+					"elasticloadbalancing:DescribeTargetGroups",
 					"elasticloadbalancing:DescribeTargetGroupAttributes",
-					"elasticloadbalancing:ModifyTargetGroupAttributes"
+					"elasticloadbalancing:ModifyTargetGroupAttributes",
+					"elasticloadbalancing:DescribeTargetHealth",
+					"elasticloadbalancing:RegisterTargets",
+					"elasticloadbalancing:DeregisterTargets",
+					"elasticloadbalancing:CreateListener",
+					"elasticloadbalancing:DeleteListener",
+					"elasticloadbalancing:DescribeListeners",
+					"elasticloadbalancing:SetSecurityGroups",
+					"elasticloadbalancing:DescribeTags",
+					"elasticloadbalancing:AddTags",
+					"elasticloadbalancing:RemoveTags"
+				],
+				"Resource": "*"
+			},
+			{
+				"Effect": "Allow",
+				"Action": [
+					"ec2:CreateSecurityGroup",
+					"ec2:DeleteSecurityGroup",
+					"ec2:DescribeSecurityGroups",
+					"ec2:AuthorizeSecurityGroupIngress",
+					"ec2:RevokeSecurityGroupIngress",
+					"ec2:DescribeSubnets",
+					"ec2:DescribeVpcs",
+					"ec2:DescribeInstances",
+					"ec2:CreateTags"
 				],
 				"Resource": "*"
 			}`

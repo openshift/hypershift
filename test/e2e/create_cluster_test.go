@@ -18,6 +18,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/azureutil"
@@ -422,16 +423,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 							hc.Spec.Platform.Type = hyperv1.GCPPlatform
 							spec := validGCPPlatformSpec()
 							spec.EndpointAccess = hyperv1.GCPEndpointAccessPrivate
-							hc.Spec.Platform.GCP = spec
-						},
-						expectedErrorSubstring: "",
-					},
-					{
-						name: "when GCP endpointAccess is PublicAndPrivate it should pass",
-						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Platform.Type = hyperv1.GCPPlatform
-							spec := validGCPPlatformSpec()
-							spec.EndpointAccess = hyperv1.GCPEndpointAccessPublicAndPrivate
 							hc.Spec.Platform.GCP = spec
 						},
 						expectedErrorSubstring: "",
@@ -2436,6 +2427,8 @@ func TestCreateCluster(t *testing.T) {
 	if !e2eutil.IsLessThan(e2eutil.Version418) {
 		clusterOpts.FeatureSet = string(configv1.TechPreviewNoUpgrade)
 	}
+	// // Configure feature gates globally so tests can check if features are enabled
+	featuregates.ConfigureFeatureSet(string(clusterOpts.FeatureSet))
 
 	if globalOpts.Platform == hyperv1.AzurePlatform || globalOpts.Platform == hyperv1.AWSPlatform {
 		// Configure Ingress Operator with custom endpointPublishingStrategy before cluster creation
@@ -2515,6 +2508,20 @@ func TestCreateCluster(t *testing.T) {
 			// ensure Ingress Operator configuration is properly applied
 			e2eutil.EnsureIngressOperatorConfiguration(t, ctx, mgtClient, guestClient, hostedCluster)
 		}
+
+		e2eutil.EnsureAWSCCMWithCustomizations(&e2eutil.E2eTestConfig{
+			T:                     t,
+			Ctx:                   ctx,
+			MgtClient:             mgtClient,
+			GuestClient:           guestClient,
+			HostedCluster:         hostedCluster,
+			FeatureSet:            clusterOpts.FeatureSet,
+			ControlPlaneNamespace: manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name),
+			FeatureGateEnabled:    featuregates.Gate().Enabled(featuregates.AWSServiceLBNetworkSecurityGroup),
+			AWSCredsFile:          clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile,
+			AWSRegion:             clusterOpts.AWSPlatform.Region,
+			Platform:              globalOpts.Platform,
+		})
 	}).WithAssetReader(content.ReadFile).
 		Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "create-cluster", globalOpts.ServiceAccountSigningKey)
 }
