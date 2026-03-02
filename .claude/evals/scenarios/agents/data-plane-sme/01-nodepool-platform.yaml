@@ -1,0 +1,62 @@
+name: "data-plane-sme: spot/preemptible instance support across platforms"
+description: >
+  Tests that the data-plane-sme agent understands NodePool platform
+  abstraction, machine lifecycle management, and the implications of
+  preemptible instances on upgrades and availability.
+type: agent
+target: data-plane-sme
+
+invocation:
+  model: claude-opus-4-6
+  allowed_tools: ""
+  max_budget_usd: 5.00
+
+prompt: |
+  We want to improve spot/preemptible instance support in NodePools.
+  Currently users can request spot instances on AWS, but we want to
+  ensure consistent behavior across platforms. How should the NodePool
+  API and controllers handle instance interruption events, and what
+  changes are needed for the data plane upgrade flow to account for
+  spot instance characteristics?
+  IMPORTANT: Write your COMPLETE analysis and guidance as your direct response text.
+  Do NOT enter plan mode. Do NOT write to a plan file. Do NOT say "the plan is ready"
+  or refer to any plan file. Instead, include ALL details — API changes, controller
+  logic, interruption handling, upgrade flow considerations, CAPI integration —
+  directly in your response output.
+
+criteria:
+  - id: platform-abstraction
+    description: "Discusses NodePool API abstraction for spot across platforms"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response discuss how the NodePool API should abstract
+      spot/preemptible instance configuration across different cloud
+      platforms (AWS Spot, Azure Spot VMs, GCP Preemptible/Spot)?
+      Answer PASS or FAIL.
+
+  - id: interruption-handling
+    description: "Addresses machine interruption lifecycle"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response address how the system should handle instance
+      interruption events (e.g., node drain, workload rescheduling,
+      machine replacement, or termination notice handling)?
+      Answer PASS or FAIL.
+
+  - id: upgrade-impact
+    description: "Considers impact on rolling upgrade strategy"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response consider how spot/preemptible instances affect
+      the data plane upgrade flow (e.g., surge capacity, replacement
+      timing, or availability during rolling updates)?
+      Answer PASS or FAIL.
+
+  - id: capi-integration
+    description: "References ClusterAPI machine management"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response reference ClusterAPI (CAPI) resources or
+      controllers (e.g., MachineSet, MachineDeployment, Machine)
+      in the context of managing spot instance lifecycle?
+      Answer PASS or FAIL.
