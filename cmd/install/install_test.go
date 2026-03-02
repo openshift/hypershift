@@ -10,6 +10,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/install/assets"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/set"
@@ -352,6 +353,60 @@ func TestSetupCRDs(t *testing.T) {
 			}
 
 			g.Expect(nodePoolCRDS[0].GetAnnotations()["release.openshift.io/feature-set"]).To(Equal("Default"))
+		})
+	}
+}
+
+func TestHyperShiftOperatorManifests_SharedIngress(t *testing.T) {
+	tests := []struct {
+		name                       string
+		managedService             string
+		expectSharedIngressObjects bool
+	}{
+		{
+			name:                       "When ManagedService is ARO-HCP it should include shared ingress resources",
+			managedService:             hyperv1.AroHCP,
+			expectSharedIngressObjects: true,
+		},
+		{
+			name:                       "When ManagedService is empty it should not include shared ingress resources",
+			managedService:             "",
+			expectSharedIngressObjects: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			_, objects, err := hyperShiftOperatorManifests(t.Context(), nil, Options{
+				PrivatePlatform: string(hyperv1.NonePlatform),
+				ManagedService:  tc.managedService,
+			})
+			g.Expect(err).ToNot(HaveOccurred())
+
+			var hasSharedIngressNamespace bool
+			var hasSharedIngressClusterRole bool
+			var hasSharedIngressClusterRoleBinding bool
+			for _, obj := range objects {
+				switch {
+				case obj.GetName() == sharedingress.RouterNamespace && obj.GetObjectKind().GroupVersionKind().Kind == "Namespace":
+					hasSharedIngressNamespace = true
+				case obj.GetName() == "sharedingress-config-generator" && obj.GetObjectKind().GroupVersionKind().Kind == "ClusterRole":
+					hasSharedIngressClusterRole = true
+				case obj.GetName() == "sharedingress-config-generator" && obj.GetObjectKind().GroupVersionKind().Kind == "ClusterRoleBinding":
+					hasSharedIngressClusterRoleBinding = true
+				}
+			}
+
+			if tc.expectSharedIngressObjects {
+				g.Expect(hasSharedIngressNamespace).To(BeTrue(), "expected shared ingress namespace to be present")
+				g.Expect(hasSharedIngressClusterRole).To(BeTrue(), "expected shared ingress ClusterRole to be present")
+				g.Expect(hasSharedIngressClusterRoleBinding).To(BeTrue(), "expected shared ingress ClusterRoleBinding to be present")
+			} else {
+				g.Expect(hasSharedIngressNamespace).To(BeFalse(), "expected shared ingress namespace to not be present")
+				g.Expect(hasSharedIngressClusterRole).To(BeFalse(), "expected shared ingress ClusterRole to not be present")
+				g.Expect(hasSharedIngressClusterRoleBinding).To(BeFalse(), "expected shared ingress ClusterRoleBinding to not be present")
+			}
 		})
 	}
 }
