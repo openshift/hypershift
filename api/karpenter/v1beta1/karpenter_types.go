@@ -76,6 +76,13 @@ type OpenshiftEC2NodeClassSpec struct {
 	// +optional
 	SecurityGroupSelectorTerms []SecurityGroupSelectorTerm `json:"securityGroupSelectorTerms,omitempty"`
 
+	// CapacityReservationSelectorTerms is a list of capacity reservation selector terms. The terms are ORed.
+	// +kubebuilder:validation:XValidation:message="expected at least one, got none, ['tags', 'id', 'instanceMatchCriteria']",rule="self.all(x, has(x.tags) || has(x.id) || has(x.instanceMatchCriteria))"
+	// +kubebuilder:validation:XValidation:message="'id' is mutually exclusive, cannot be set along with other fields in a capacity reservation selector term",rule="!self.all(x, has(x.id) && (has(x.tags) || has(x.ownerID) || has(x.instanceMatchCriteria)))"
+	// +kubebuilder:validation:MaxItems:=30
+	// +optional
+	CapacityReservationSelectorTerms []CapacityReservationSelectorTerm `json:"capacityReservationSelectorTerms,omitempty"`
+
 	// AssociatePublicIPAddress controls if public IP addresses are assigned to instances that are launched with the nodeclass.
 	// +optional
 	AssociatePublicIPAddress *bool `json:"associatePublicIPAddress,omitempty"`
@@ -140,6 +147,32 @@ type SecurityGroupSelectorTerm struct {
 	// Name is the security group name in EC2.
 	// This value is the name field, which is different from the name tag.
 	Name string `json:"name,omitempty"`
+}
+
+// CapacityReservationSelectorTerm defines selection logic for a capacity reservation used by Karpenter to launch nodes.
+// If multiple fields are used for selection, the requirements are ANDed.
+type CapacityReservationSelectorTerm struct {
+	// Tags is a map of key/value tags used to select capacity reservations.
+	// Specifying '*' for a value selects all values for a given tag key.
+	// +kubebuilder:validation:XValidation:message="empty tag keys or values aren't supported",rule="self.all(k, k != '' && self[k] != '')"
+	// +kubebuilder:validation:MaxProperties:=20
+	// +optional
+	Tags map[string]string `json:"tags,omitempty"`
+
+	// ID is the capacity reservation id in EC2
+	// +kubebuilder:validation:Pattern:="^cr-[0-9a-z]+$"
+	// +optional
+	ID string `json:"id,omitempty"`
+
+	// OwnerID is the owner account id for the capacity reservation.
+	// +kubebuilder:validation:Pattern:="^[0-9]{12}$"
+	// +optional
+	OwnerID string `json:"ownerID,omitempty"`
+
+	// InstanceMatchCriteria specifies how instances are matched to capacity reservations.
+	// +kubebuilder:validation:Enum:={open,targeted}
+	// +optional
+	InstanceMatchCriteria string `json:"instanceMatchCriteria,omitempty"`
 }
 
 type BlockDeviceMapping struct {
@@ -230,6 +263,35 @@ type BlockDevice struct {
 	VolumeType *string `json:"volumeType,omitempty"`
 }
 
+// CapacityReservation contains resolved CapacityReservation selector values utilized for node launch
+type CapacityReservation struct {
+	// The availability zone the capacity reservation is available in.
+	// +required
+	AvailabilityZone string `json:"availabilityZone"`
+	// The time at which the capacity reservation expires. Once expired, the reserved capacity is released and Karpenter
+	// will no longer be able to launch instances into that reservation.
+	// +optional
+	EndTime *metav1.Time `json:"endTime,omitempty"`
+	// The id for the capacity reservation.
+	// +required
+	ID string `json:"id"`
+	// Indicates the type of instance launches the capacity reservation accepts.
+	// +required
+	InstanceMatchCriteria string `json:"instanceMatchCriteria"`
+	// The instance type for the capacity reservation.
+	// +required
+	InstanceType string `json:"instanceType"`
+	// The ID of the AWS account that owns the capacity reservation.
+	// +required
+	OwnerID string `json:"ownerID"`
+	// The type of capacity reservation.
+	// +optional
+	ReservationType string `json:"reservationType,omitempty"`
+	// The state of the capacity reservation.
+	// +optional
+	State string `json:"state,omitempty"`
+}
+
 // OpenshiftEC2NodeClassStatus defines the observed state of OpenshiftEC2NodeClass.
 type OpenshiftEC2NodeClassStatus struct {
 	// Subnets contains the current Subnet values that are available to the
@@ -241,6 +303,11 @@ type OpenshiftEC2NodeClassStatus struct {
 	// cluster under the SecurityGroups selectors.
 	// +optional
 	SecurityGroups []SecurityGroup `json:"securityGroups,omitempty"`
+
+	// CapacityReservations contains the current Capacity Reservation values that are available to the
+	// cluster under the capacityReservationSelectorTerms.
+	// +optional
+	CapacityReservations []CapacityReservation `json:"capacityReservations,omitempty"`
 
 	// +optional
 	// +listType=map
