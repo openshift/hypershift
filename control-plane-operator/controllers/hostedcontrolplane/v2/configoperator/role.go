@@ -85,5 +85,14 @@ func adaptRole(cpContext component.WorkloadContext, role *rbacv1.Role) error {
 		}...)
 	}
 	// TODO (jparrill): Add RBAC specific needs for Agent platform
+
+	// The HCCO reads the metrics-proxy Route to discover the hostname
+	// for the guest cluster metrics forwarder.
+	role.Rules = append(role.Rules, rbacv1.PolicyRule{
+		APIGroups: []string{"route.openshift.io"},
+		Resources: []string{"routes"},
+		Verbs:     []string{"get", "list", "watch"},
+	})
+
 	return nil
 }
