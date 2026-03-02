@@ -19,6 +19,7 @@ import (
 	"github.com/openshift/hypershift/cmd/cluster/aws"
 	"github.com/openshift/hypershift/cmd/cluster/azure"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/cmd/cluster/gcp"
 	"github.com/openshift/hypershift/cmd/cluster/kubevirt"
 	"github.com/openshift/hypershift/cmd/cluster/none"
 	"github.com/openshift/hypershift/cmd/cluster/openstack"
@@ -49,9 +50,21 @@ type PlatformAgnosticOptions struct {
 	AzurePlatform     azure.RawCreateOptions
 	PowerVSPlatform   powervs.RawCreateOptions
 	OpenStackPlatform openstack.RawCreateOptions
+	GCPPlatform       gcp.RawCreateOptions
 
 	ExtOIDCConfig       *ExtOIDCConfig
 	ExternalCNIProvider string
+}
+
+// ExpectedNodeCount returns the expected number of nodes based on platform configuration.
+// AWS creates one NodePool per zone, so the total is NodePoolReplicas * len(zones).
+// All other platforms create a single NodePool, so the total is just NodePoolReplicas.
+func (opts *PlatformAgnosticOptions) ExpectedNodeCount() int32 {
+	nodePoolCount := int32(1)
+	if len(opts.AWSPlatform.Zones) > 0 {
+		nodePoolCount = int32(len(opts.AWSPlatform.Zones))
+	}
+	return opts.NodePoolReplicas * nodePoolCount
 }
 
 type hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
@@ -124,7 +137,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 	h.after(hostedCluster, platform)
 
 	if h.Failed() {
-		numNodes := opts.NodePoolReplicas * int32(len(opts.AWSPlatform.Zones))
+		numNodes := opts.ExpectedNodeCount()
 		h.Logf("Summarizing unexpected conditions for HostedCluster %s ", hostedCluster.Name)
 		ValidateHostedClusterConditions(h.T, h.ctx, h.client, hostedCluster, numNodes > 0, 2*time.Second)
 	}
@@ -134,7 +147,10 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *PlatformAgnosticOptions, platform hyperv1.PlatformType) {
 	h.Run("ValidateHostedCluster", func(t *testing.T) {
 		if platform != hyperv1.NonePlatform && hostedCluster.Spec.Networking.NetworkType != hyperv1.Other {
-			if opts.AWSPlatform.EndpointAccess == string(hyperv1.Private) {
+			// Use !IsPublicHC to detect strictly private clusters (no public API endpoint).
+			// IsPrivateHC includes PublicAndPrivate, which has a reachable API server
+			// and should use ValidatePublicCluster.
+			if !util.IsPublicHC(hostedCluster) {
 				ValidatePrivateCluster(t, h.ctx, h.client, hostedCluster, opts)
 			} else {
 				ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts)

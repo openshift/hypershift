@@ -2,10 +2,15 @@ package gcp
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
 	"github.com/openshift/hypershift/cmd/util"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -16,6 +21,9 @@ import (
 var _ core.Platform = (*CreateOptions)(nil)
 
 const (
+	SATokenIssuerSecret   = "sa-token-issuer-key"
+	defaultGCPMachineType = "n2-standard-4"
+
 	flagProject                       = "project"
 	flagRegion                        = "region"
 	flagNetwork                       = "network"
@@ -27,6 +35,13 @@ const (
 	flagControlPlaneServiceAccount    = "control-plane-service-account"
 	flagCloudControllerServiceAccount = "cloud-controller-service-account"
 	flagStorageServiceAccount         = "storage-service-account"
+	flagServiceAccountSigningKeyPath  = "service-account-signing-key-path"
+	flagEndpointAccess                = "endpoint-access"
+	flagIssuerURL                     = "oidc-issuer-url"
+	flagMachineType                   = "machine-type"
+	flagZone                          = "zone"
+	flagSubnet                        = "subnet"
+	flagBootImage                     = "boot-image"
 )
 
 // RawCreateOptions contains the raw command-line options for creating a GCP cluster
@@ -63,6 +78,27 @@ type RawCreateOptions struct {
 
 	// StorageServiceAccount is the Google Service Account email for the GCP PD CSI Driver
 	StorageServiceAccount string
+
+	// ServiceAccountSigningKeyPath is the path to the private key file for the service account token issuer
+	ServiceAccountSigningKeyPath string
+
+	// EndpointAccess controls API endpoint accessibility (Private or PublicAndPrivate)
+	EndpointAccess string
+
+	// IssuerURL is the OIDC provider issuer URL
+	IssuerURL string
+
+	// MachineType is the GCP machine type for node instances (e.g. n2-standard-4)
+	MachineType string
+
+	// Zone is the GCP zone for node instances (e.g. us-central1-a)
+	Zone string
+
+	// Subnet is the subnet name for node instances
+	Subnet string
+
+	// BootImage is the GCP boot image for node instances. Overrides the default RHCOS image from the release payload
+	BootImage string
 }
 
 // BindOptions binds the GCP-specific flags to the provided flag set
@@ -78,6 +114,13 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.ControlPlaneServiceAccount, flagControlPlaneServiceAccount, opts.ControlPlaneServiceAccount, "Google Service Account email for Control Plane Operator (from `hypershift create iam gcp` output)")
 	flags.StringVar(&opts.CloudControllerServiceAccount, flagCloudControllerServiceAccount, opts.CloudControllerServiceAccount, "Google Service Account email for Cloud Controller Manager (from `hypershift create iam gcp` output)")
 	flags.StringVar(&opts.StorageServiceAccount, flagStorageServiceAccount, opts.StorageServiceAccount, "Google Service Account email for GCP PD CSI Driver (from `hypershift create iam gcp` output)")
+	flags.StringVar(&opts.ServiceAccountSigningKeyPath, flagServiceAccountSigningKeyPath, "", "The file to the private key for the service account token issuer")
+	flags.StringVar(&opts.EndpointAccess, flagEndpointAccess, string(hyperv1.GCPEndpointAccessPrivate), "Endpoint access type (Private or PublicAndPrivate)")
+	flags.StringVar(&opts.IssuerURL, flagIssuerURL, "", "The OIDC provider issuer URL")
+	flags.StringVar(&opts.MachineType, flagMachineType, "", "GCP machine type for node instances. Defaults to "+defaultGCPMachineType)
+	flags.StringVar(&opts.Zone, flagZone, "", "GCP zone for node instances (e.g. us-central1-a). Defaults to {region}-a")
+	flags.StringVar(&opts.Subnet, flagSubnet, "", "Subnet name for node instances. Defaults to the PSC subnet value")
+	flags.StringVar(&opts.BootImage, flagBootImage, "", "GCP boot image for node instances. Overrides the default RHCOS image from the release payload")
 }
 
 // ValidatedCreateOptions represents validated options for creating a GCP cluster
@@ -137,6 +180,10 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 // completedCreateOptions is a private wrapper that enforces a call of Complete() before cluster creation can be invoked.
 type completedCreateOptions struct {
 	*ValidatedCreateOptions
+
+	namespace         string
+	name              string
+	externalDNSDomain string
 }
 
 // CreateOptions represents the completed and validated options for creating a GCP cluster
@@ -150,6 +197,9 @@ func (o *ValidatedCreateOptions) Complete(ctx context.Context, opts *core.Create
 	return &CreateOptions{
 		completedCreateOptions: &completedCreateOptions{
 			ValidatedCreateOptions: o,
+			namespace:              opts.Namespace,
+			name:                   opts.Name,
+			externalDNSDomain:      opts.ExternalDNSDomain,
 		},
 	}, nil
 }
@@ -188,6 +238,19 @@ func NewCreateCommand(opts *core.RawCreateOptions) *cobra.Command {
 	return cmd
 }
 
+func serviceAccountTokenIssuerSecret(namespace, name string) *corev1.Secret {
+	return &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Secret",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-%s", name, SATokenIssuerSecret),
+			Namespace: namespace,
+		},
+	}
+}
+
 // ApplyPlatformSpecifics applies GCP-specific configurations to the HostedCluster
 func (o *CreateOptions) ApplyPlatformSpecifics(hostedCluster *hyperv1.HostedCluster) error {
 	hostedCluster.Spec.Platform.Type = hyperv1.GCPPlatform
@@ -213,19 +276,86 @@ func (o *CreateOptions) ApplyPlatformSpecifics(hostedCluster *hyperv1.HostedClus
 				Storage:         o.StorageServiceAccount,
 			},
 		},
+		EndpointAccess: hyperv1.GCPEndpointAccessType(o.EndpointAccess),
 	}
-	// TODO: support for external DNS will be added later after details are defined
-	hostedCluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(hostedCluster.Spec.Networking.NetworkType, false)
+
+	hostedCluster.Spec.IssuerURL = o.IssuerURL
+
+	if len(o.ServiceAccountSigningKeyPath) > 0 {
+		hostedCluster.Spec.ServiceAccountSigningKey = &corev1.LocalObjectReference{
+			Name: serviceAccountTokenIssuerSecret(o.namespace, o.name).Name,
+		}
+	}
+
+	hostedCluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(hostedCluster.Spec.Networking.NetworkType, o.externalDNSDomain != "")
+
+	if o.externalDNSDomain != "" {
+		// Only APIServer and OAuthServer need external DNS routes.
+		// Konnectivity and Ignition are accessed via Private Service Connect (.hypershift.local).
+		for i, svc := range hostedCluster.Spec.Services {
+			switch svc.Service {
+			case hyperv1.APIServer:
+				hostedCluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
+					Hostname: fmt.Sprintf("api-%s.%s", hostedCluster.Name, o.externalDNSDomain),
+				}
+			case hyperv1.OAuthServer:
+				hostedCluster.Spec.Services[i].Route = &hyperv1.RoutePublishingStrategy{
+					Hostname: fmt.Sprintf("oauth-%s.%s", hostedCluster.Name, o.externalDNSDomain),
+				}
+			}
+		}
+	}
+
 	return nil
 }
 
 // GenerateNodePools generates the NodePool resources for GCP
 func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstructor) []*hyperv1.NodePool {
 	nodePool := constructor(hyperv1.GCPPlatform, "")
+	if nodePool.Spec.Management.UpgradeType == "" {
+		nodePool.Spec.Management.UpgradeType = hyperv1.UpgradeTypeReplace
+	}
+
+	machineType := o.MachineType
+	if machineType == "" {
+		machineType = defaultGCPMachineType
+	}
+	zone := o.Zone
+	if zone == "" {
+		zone = o.Region + "-a"
+	}
+	subnet := o.Subnet
+	if subnet == "" {
+		subnet = o.PrivateServiceConnectSubnet
+	}
+	var bootImage *string
+	if o.BootImage != "" {
+		bootImage = &o.BootImage
+	}
+
+	nodePool.Spec.Platform.GCP = &hyperv1.GCPNodePoolPlatform{
+		MachineType: machineType,
+		Zone:        zone,
+		Subnet:      subnet,
+		Image:       bootImage,
+	}
 	return []*hyperv1.NodePool{nodePool}
 }
 
 // GenerateResources generates additional resources for GCP
 func (o *CreateOptions) GenerateResources() ([]client.Object, error) {
-	return nil, nil
+	var result []client.Object
+	if len(o.ServiceAccountSigningKeyPath) > 0 {
+		privateKey, err := os.ReadFile(o.ServiceAccountSigningKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read service account signing key file: %w", err)
+		}
+
+		saSecret := serviceAccountTokenIssuerSecret(o.namespace, o.name)
+		saSecret.Data = map[string][]byte{
+			"key": privateKey,
+		}
+		result = append(result, saSecret)
+	}
+	return result, nil
 }
