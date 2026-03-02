@@ -133,22 +133,24 @@ func TestExtractMCOBinaries(t *testing.T) {
 }
 
 func TestGetOrGenerateMCSCert(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name          string
-		setupProvider func(p *LocalIgnitionProvider)
+		setupProvider func(t testing.TB, p *LocalIgnitionProvider)
 		expectCached  bool
 		expectNewCert bool
 	}{
 		{
 			name: "When no cached certificate exists, it should generate a new certificate",
-			setupProvider: func(p *LocalIgnitionProvider) {
+			setupProvider: func(t testing.TB, p *LocalIgnitionProvider) {
 				// No setup needed, cache is empty by default.
 			},
 			expectNewCert: true,
 		},
 		{
 			name: "When a valid cached certificate exists, it should return the cached certificate",
-			setupProvider: func(p *LocalIgnitionProvider) {
+			setupProvider: func(t testing.TB, p *LocalIgnitionProvider) {
 				// Pre-populate the cache with a valid cert.
 				certPEM, keyPEM, err := p.getOrGenerateMCSCert()
 				if err != nil {
@@ -163,7 +165,7 @@ func TestGetOrGenerateMCSCert(t *testing.T) {
 		},
 		{
 			name: "When the cached certificate has expired, it should generate a new certificate",
-			setupProvider: func(p *LocalIgnitionProvider) {
+			setupProvider: func(t testing.TB, p *LocalIgnitionProvider) {
 				// Pre-populate the cache with an expired cert.
 				_, _, err := p.getOrGenerateMCSCert()
 				if err != nil {
@@ -176,7 +178,7 @@ func TestGetOrGenerateMCSCert(t *testing.T) {
 		},
 		{
 			name: "When the cached certificate is within the refresh margin, it should generate a new certificate",
-			setupProvider: func(p *LocalIgnitionProvider) {
+			setupProvider: func(t testing.TB, p *LocalIgnitionProvider) {
 				// Pre-populate the cache.
 				_, _, err := p.getOrGenerateMCSCert()
 				if err != nil {
@@ -188,14 +190,30 @@ func TestGetOrGenerateMCSCert(t *testing.T) {
 			},
 			expectNewCert: true,
 		},
+		{
+			name: "When the cached certificate expires exactly at the refresh margin boundary, it should generate a new certificate",
+			setupProvider: func(t testing.TB, p *LocalIgnitionProvider) {
+				// Pre-populate the cache.
+				_, _, err := p.getOrGenerateMCSCert()
+				if err != nil {
+					t.Fatalf("failed to generate initial cert: %v", err)
+				}
+				// Set expiry to exactly the refresh margin from now.
+				// time.Now().Add(mcsCertRefreshMargin) is NOT before the expiry,
+				// so this should trigger regeneration.
+				p.mcsCertExpiry = time.Now().Add(mcsCertRefreshMargin)
+			},
+			expectNewCert: true,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewWithT(t)
 
 			provider := &LocalIgnitionProvider{}
-			tc.setupProvider(provider)
+			tc.setupProvider(t, provider)
 
 			// Capture the cached cert before the call (if any).
 			cachedCertPEM := make([]byte, len(provider.mcsCertPEM))
@@ -216,6 +234,9 @@ func TestGetOrGenerateMCSCert(t *testing.T) {
 			g.Expect(cert.Subject.CommonName).To(Equal("machine-config-server"))
 			g.Expect(cert.Subject.OrganizationalUnit).To(Equal([]string{"openshift"}))
 			g.Expect(cert.IsCA).To(BeTrue())
+
+			// Verify the certificate validity duration is ~24 hours
+			g.Expect(cert.NotAfter.Sub(cert.NotBefore)).To(BeNumerically("~", 24*time.Hour, time.Minute))
 
 			// Verify the key is valid PEM
 			keyBlock, _ := pem.Decode(keyPEM)
@@ -242,7 +263,10 @@ func TestGetOrGenerateMCSCert(t *testing.T) {
 }
 
 func TestGetOrGenerateMCSCertCacheReuse(t *testing.T) {
+	t.Parallel()
+
 	t.Run("When calling getOrGenerateMCSCert multiple times, it should return identical results for cached certificates", func(t *testing.T) {
+		t.Parallel()
 		g := NewWithT(t)
 
 		provider := &LocalIgnitionProvider{}

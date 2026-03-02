@@ -120,6 +120,8 @@ func (p *LocalIgnitionProvider) getOrGenerateMCSCert() (certPEM []byte, keyPEM [
 	p.mcsKeyPEM = certs.PrivateKeyToPem(key)
 	p.mcsCertExpiry = crt.NotAfter
 
+	ctrl.Log.WithName("get-payload").Info("regenerated MCS TLS certificate", "expiry", crt.NotAfter)
+
 	return p.mcsCertPEM, p.mcsKeyPEM, nil
 }
 
