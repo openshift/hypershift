@@ -54,7 +54,6 @@ import (
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/azureutil"
-	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
@@ -97,7 +96,7 @@ import (
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -2493,18 +2492,6 @@ func (r *HostedClusterReconciler) reconcileCAPIManager(cpContext controlplanecom
 
 	imageOverride := hcluster.Annotations[hyperv1.ClusterAPIManagerImage]
 
-	if imageOverride == "" {
-		pullSecret, err := hyperutil.GetPullSecretBytes(cpContext, r.Client, hcluster)
-		if err != nil {
-			return err
-		}
-
-		imageOverride, err = backwardcompat.GetBackwardCompatibleCAPIImage(cpContext, pullSecret, r.RegistryProvider.GetReleaseProvider(), releaseVersion, ImageStreamCAPI)
-		if err != nil {
-			return err
-		}
-	}
-
 	capiManager := capimanagerv2.NewComponent(imageOverride)
 	if err := capiManager.Reconcile(cpContext); err != nil {
 		return fmt.Errorf("failed to reconcile capi manager component: %w", err)
@@ -2941,6 +2928,11 @@ func reconcileCAPIManagerClusterRoleBinding(binding *rbacv1.ClusterRoleBinding, 
 		{
 			Kind:      "ServiceAccount",
 			Name:      sa.Name,
+			Namespace: sa.Namespace,
+		},
+		{
+			Kind:      "ServiceAccount",
+			Name:      "capi-provider",
 			Namespace: sa.Namespace,
 		},
 	}

@@ -22,7 +22,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	rosacontrolplanev1 "sigs.k8s.io/cluster-api-provider-aws/v2/controlplane/rosa/api/v1beta2"
+	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 )
 
 // RosaMachinePoolSpec defines the desired state of RosaMachinePool.
@@ -79,7 +80,7 @@ type RosaMachinePoolSpec struct {
 	// Autoscaling specifies auto scaling behaviour for this MachinePool.
 	// required if Replicas is not configured
 	// +optional
-	Autoscaling *RosaMachinePoolAutoScaling `json:"autoscaling,omitempty"`
+	Autoscaling *rosacontrolplanev1.AutoScaling `json:"autoscaling,omitempty"`
 
 	// TuningConfigs specifies the names of the tuning configs to be applied to this MachinePool.
 	// Tuning configs must already exist.
@@ -118,6 +119,12 @@ type RosaMachinePoolSpec struct {
 	//
 	// +optional
 	UpdateConfig *RosaUpdateConfig `json:"updateConfig,omitempty"`
+
+	// CapacityReservationID specifies the ID of an AWS On-Demand Capacity Reservation and Capacity Blocks for ML.
+	// The CapacityReservationID must be pre-created in advance, before creating a NodePool.
+	//
+	// +optional
+	CapacityReservationID string `json:"capacityReservationID,omitempty"`
 }
 
 // RosaTaint represents a taint to be applied to a node.
@@ -137,14 +144,6 @@ type RosaTaint struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Enum=NoSchedule;PreferNoSchedule;NoExecute
 	Effect corev1.TaintEffect `json:"effect"`
-}
-
-// RosaMachinePoolAutoScaling specifies scaling options.
-type RosaMachinePoolAutoScaling struct {
-	// +kubebuilder:validation:Minimum=1
-	MinReplicas int `json:"minReplicas,omitempty"`
-	// +kubebuilder:validation:Minimum=1
-	MaxReplicas int `json:"maxReplicas,omitempty"`
 }
 
 // RosaUpdateConfig specifies update configuration
@@ -207,7 +206,7 @@ type RosaMachinePoolStatus struct {
 	Replicas int32 `json:"replicas"`
 	// Conditions defines current service state of the managed machine pool
 	// +optional
-	Conditions clusterv1.Conditions `json:"conditions,omitempty"`
+	Conditions clusterv1beta1.Conditions `json:"conditions,omitempty"`
 	// FailureMessage will be set in the event that there is a terminal problem
 	// reconciling the state and will be set to a descriptive error message.
 	//
@@ -253,12 +252,12 @@ type ROSAMachinePoolList struct {
 }
 
 // GetConditions returns the observations of the operational state of the RosaMachinePool resource.
-func (r *ROSAMachinePool) GetConditions() clusterv1.Conditions {
+func (r *ROSAMachinePool) GetConditions() clusterv1beta1.Conditions {
 	return r.Status.Conditions
 }
 
-// SetConditions sets the underlying service state of the RosaMachinePool to the predescribed clusterv1.Conditions.
-func (r *ROSAMachinePool) SetConditions(conditions clusterv1.Conditions) {
+// SetConditions sets the underlying service state of the RosaMachinePool to the predescribed clusterv1beta1.Conditions.
+func (r *ROSAMachinePool) SetConditions(conditions clusterv1beta1.Conditions) {
 	r.Status.Conditions = conditions
 }
 
