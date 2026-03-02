@@ -1362,7 +1362,6 @@ type AutoNode struct {
 type ProvisionerConfig struct {
 	// name specifies the name of the provisioner to use.
 	// +required
-	// +kubebuilder:validation:Enum=Karpenter
 	Name Provisioner `json:"name"`
 	// karpenter specifies the configuration for the Karpenter provisioner.
 	// +optional
