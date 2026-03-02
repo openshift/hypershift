@@ -15,6 +15,8 @@ The input for `hostedCluster.spec.services.routePublishingStrategy.hostname` dic
 
 Note: External DNS will only make a difference for setups with Public endpoints i.e. "Public" or "PublicAndPrivate". For a "Private" setup all endpoints will be accessible via `.hypershift.local`, which will contain CNAME records to the appropriate Private Link Endpoint Services.
 
+> **See Also:** For a comprehensive reference of service publishing strategies across all platforms, see [Service Publishing Strategy Reference](../../reference/service-publishing-strategies.md).
+
 # Use Service-level DNS for Control Plane Services
 There are four service that are exposed by a Hosted Control Plane (HCP)
 
@@ -79,44 +81,9 @@ hypershift create cluster aws --name=example --endpoint-access=PublicAndPrivate 
 
 > **NOTE:** The **external-dns-domain** should match the Public Hosted Zone created in the previous step
 
-The resulting HostedCluster `services` block looks like this:
+When the `Services` and `Routes` are created by the Control Plane Operator (CPO), it will annotate them with the `external-dns.alpha.kubernetes.io/hostname` annotation. The value will be the `hostname` field in the `servicePublishingStrategy` for that type. The CPO uses this name blindly for the service endpoints and assumes that if `hostname` is set, there is some mechanism external-dns or otherwise, that will create the DNS records.
 
-```
-  platform:
-    aws:
-      endpointAccess: PublicAndPrivate
-...
-  services:
-  - service: APIServer
-    servicePublishingStrategy:
-      route:
-        hostname: api-example.service-provider-domain.com
-      type: Route
-  - service: OAuthServer
-    servicePublishingStrategy:
-      route:
-        hostname: oauth-example.service-provider-domain.com
-      type: Route
-  - service: Konnectivity
-    servicePublishingStrategy:
-      type: Route
-  - service: Ignition
-    servicePublishingStrategy:
-      type: Route
-```
-
-When the `Services` and `Routes` are created by the Control Plane Operator (CPO), it will annotate them with the `external-dns.alpha.kubernetes.io/hostname` annotation. The value will be the `hostname` field in the `servicePublishingStrategy` for that type.  The CPO uses this name blindly for the service endpoints and assumes that if `hostname` is set, there is some mechanism external-dns or otherwise, that will create the DNS records.
-
-There is an interaction between the `spec.platform.aws.endpointAccess` and which services are permitted to set `hostname` when using [AWS Private clustering](deploy-aws-private-clusters.md).  Only *public* services can have service-level DNS indirection.  Private services use the `hypershift.local` private zone and it is not valid to set `hostname` for `services` that are private for a given `endpointAccess` type.
-
-The following table notes when it is valid to set hostname for a particular `service` and `endpointAccess` combination:
-
-|              | Public | PublicAndPrivate | Private |
-|--------------|--------|------------------|---------|
-| APIServer    | Y      | Y                | N       |
-| OAuthServer  | Y      | Y                | N       |
-| Konnectivity | Y      | N                | N       |
-| Ingition     | Y      | N                | N       |
+For detailed information about service publishing strategies and configuration examples for different endpoint access modes, see the [Service Publishing Strategy Reference](../../reference/service-publishing-strategies.md#aws).
 
 ## Examples of how to deploy a cluster using the CLI and externalDNS
 

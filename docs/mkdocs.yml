@@ -337,6 +337,7 @@ nav:
       - reference/test-information-debugging/Azure/test-artifacts-directory-structure.md
   - reference/SLOs.md
   - reference/versioning-support.md
+  - reference/service-publishing-strategies.md
 - 'Contribute':
   - contribute/index.md
   - 'HO/CPO Release Process': contribute/release-process.md
