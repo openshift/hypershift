@@ -2458,6 +2458,11 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 				Namespace: ConfigManagedNamespace,
 			},
 		}
+
+		if err := r.deleteImmutableConfigMapIfNeeded(ctx, log, hostedClusterCM); err != nil {
+			return err
+		}
+
 		if result, err := r.CreateOrUpdate(ctx, r.client, hostedClusterCM, func() error {
 			return mutateKubeletConfig(&cm, hostedClusterCM)
 		}); err != nil {
@@ -2487,8 +2492,29 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 	return nil
 }
 
+// deleteImmutableConfigMapIfNeeded checks if a ConfigMap exists and is immutable,
+// and deletes it if necessary to allow recreation as a mutable ConfigMap.
+// This handles migration from immutable ConfigMaps to mutable ones.
+func (r *reconciler) deleteImmutableConfigMapIfNeeded(ctx context.Context, log logr.Logger, cm *corev1.ConfigMap) error {
+	existingCM := &corev1.ConfigMap{}
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(cm), existingCM); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get ConfigMap %s: %w", client.ObjectKeyFromObject(cm).String(), err)
+	}
+
+	if existingCM.Immutable != nil && *existingCM.Immutable {
+		log.Info("deleting immutable KubeletConfig ConfigMap to recreate as mutable", "configMap", client.ObjectKeyFromObject(existingCM).String())
+		if _, err := util.DeleteIfNeeded(ctx, r.client, existingCM); err != nil {
+			return fmt.Errorf("failed to delete immutable ConfigMap %s: %w", client.ObjectKeyFromObject(existingCM).String(), err)
+		}
+	}
+
+	return nil
+}
+
 func mutateKubeletConfig(controlPlaneConfigMap, hostedClusterConfigMap *corev1.ConfigMap) error {
-	hostedClusterConfigMap.Immutable = ptr.To(true)
 	hostedClusterConfigMap.Labels = labels.Merge(hostedClusterConfigMap.Labels, map[string]string{
 		nodepool.KubeletConfigConfigMapLabel: "true",
 		hyperv1.NodePoolLabel:                controlPlaneConfigMap.Labels[hyperv1.NodePoolLabel],
