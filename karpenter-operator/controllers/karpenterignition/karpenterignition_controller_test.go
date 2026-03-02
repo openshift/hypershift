@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -112,6 +113,13 @@ func TestReconcile(t *testing.T) {
 			VersionStatus: &hyperv1.ClusterVersionStatus{
 				Desired: configv1.Release{
 					Version: "4.17.0",
+				},
+				History: []configv1.UpdateHistory{
+					{
+						State:          configv1.CompletedUpdate,
+						Version:        "4.17.0",
+						CompletionTime: &metav1.Time{Time: time.Now()},
+					},
 				},
 			},
 			KubeConfig: &hyperv1.KubeconfigSecretRef{
@@ -421,6 +429,13 @@ func TestReconcileVersionResolution(t *testing.T) {
 					Desired: configv1.Release{
 						Version: "4.17.0",
 					},
+					History: []configv1.UpdateHistory{
+						{
+							State:          configv1.CompletedUpdate,
+							Version:        "4.17.0",
+							CompletionTime: &metav1.Time{Time: time.Now()},
+						},
+					},
 				},
 				KubeConfig: &hyperv1.KubeconfigSecretRef{
 					Name: "admin-kubeconfig",
@@ -708,6 +723,13 @@ func TestResolveVersion(t *testing.T) {
 					Desired: configv1.Release{
 						Version: "4.17.0",
 					},
+					History: []configv1.UpdateHistory{
+						{
+							State:          configv1.CompletedUpdate,
+							Version:        "4.17.0",
+							CompletionTime: &metav1.Time{Time: time.Now()},
+						},
+					},
 				},
 			},
 		}
@@ -779,6 +801,13 @@ func TestResolveVersion(t *testing.T) {
 		hcp.Status.Version = "4.20.0"
 		hcp.Status.VersionStatus = &hyperv1.ClusterVersionStatus{
 			Desired: configv1.Release{Version: "4.20.0"},
+			History: []configv1.UpdateHistory{
+				{
+					State:          configv1.CompletedUpdate,
+					Version:        "4.20.0",
+					CompletionTime: &metav1.Time{Time: time.Now()},
+				},
+			},
 		}
 		hcp.Spec.ReleaseImage = "quay.io/openshift-release-dev/ocp-release:4.20.0-x86_64"
 		hc := baseHostedCluster(hcp)
@@ -821,6 +850,13 @@ func TestResolveVersion(t *testing.T) {
 		hcp.Status.Version = "invalid"
 		hcp.Status.VersionStatus = &hyperv1.ClusterVersionStatus{
 			Desired: configv1.Release{Version: "invalid"},
+			History: []configv1.UpdateHistory{
+				{
+					State:          configv1.CompletedUpdate,
+					Version:        "invalid",
+					CompletionTime: &metav1.Time{Time: time.Now()},
+				},
+			},
 		}
 		hc := baseHostedCluster(hcp)
 
@@ -950,6 +986,148 @@ func TestUpdateVersionStatus(t *testing.T) {
 		err = r.updateVersionStatus(ctx, nc, hcpImage, "4.17.0", nil)
 		g.Expect(err).NotTo(HaveOccurred())
 	})
+}
+
+func TestCurrentClusterVersion(t *testing.T) {
+	completedTime1 := metav1.Now()
+	completedTime2 := metav1.NewTime(completedTime1.Add(time.Hour))
+
+	testCases := []struct {
+		name            string
+		hostedCluster   *hyperv1.HostedCluster
+		expectedVersion string
+	}{
+		{
+			name: "When there is a single completed history entry it should return that version",
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Version: "4.17.0"},
+						History: []configv1.UpdateHistory{
+							{
+								State:          configv1.CompletedUpdate,
+								Version:        "4.17.0",
+								CompletionTime: &completedTime1,
+							},
+						},
+					},
+				},
+			},
+			expectedVersion: "4.17.0",
+		},
+		{
+			name: "When there are multiple completed entries it should return the one with the most recent CompletionTime",
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Version: "4.18.0"},
+						History: []configv1.UpdateHistory{
+							{
+								State:          configv1.CompletedUpdate,
+								Version:        "4.17.0",
+								CompletionTime: &completedTime1,
+							},
+							{
+								State:          configv1.CompletedUpdate,
+								Version:        "4.18.0",
+								CompletionTime: &completedTime2,
+							},
+						},
+					},
+				},
+			},
+			expectedVersion: "4.18.0",
+		},
+		{
+			name: "When there is a partial entry and a completed entry it should return the completed entry",
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Version: "4.18.0"},
+						History: []configv1.UpdateHistory{
+							{
+								State:   configv1.PartialUpdate,
+								Version: "4.18.0",
+							},
+							{
+								State:          configv1.CompletedUpdate,
+								Version:        "4.17.0",
+								CompletionTime: &completedTime1,
+							},
+						},
+					},
+				},
+			},
+			expectedVersion: "4.17.0",
+		},
+		{
+			name: "When there are no completed entries and exactly one history entry it should fall back to Desired.Version",
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Version: "4.17.0"},
+						History: []configv1.UpdateHistory{
+							{
+								State:   configv1.PartialUpdate,
+								Version: "4.17.0",
+							},
+						},
+					},
+				},
+			},
+			expectedVersion: "4.17.0",
+		},
+		{
+			name: "When there are no completed entries and multiple history entries it should fall back to Desired.Version",
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Version: "4.18.0"},
+						History: []configv1.UpdateHistory{
+							{
+								State:   configv1.PartialUpdate,
+								Version: "4.18.0",
+							},
+							{
+								State:   configv1.PartialUpdate,
+								Version: "4.17.0",
+							},
+						},
+					},
+				},
+			},
+			expectedVersion: "4.18.0",
+		},
+		{
+			name: "When history is empty it should fall back to Desired.Version",
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Version: &hyperv1.ClusterVersionStatus{
+						Desired: configv1.Release{Version: "4.17.0"},
+						History: []configv1.UpdateHistory{},
+					},
+				},
+			},
+			expectedVersion: "4.17.0",
+		},
+		{
+			name: "When Version is nil it should return empty string",
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Version: nil,
+				},
+			},
+			expectedVersion: "",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			version := currentClusterVersion(tc.hostedCluster)
+			g.Expect(version).To(Equal(tc.expectedVersion))
+		})
+	}
 }
 
 func findCondition(conditions []metav1.Condition, condType string) *metav1.Condition {

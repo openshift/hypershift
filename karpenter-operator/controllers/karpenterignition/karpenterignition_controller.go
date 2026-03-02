@@ -114,7 +114,7 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 
 	releaseImage := hcp.Spec.ReleaseImage
-	version := hostedCluster.Status.Version.Desired.Version
+	version := currentClusterVersion(hostedCluster)
 
 	// When the user requests a version for the OpenshiftEC2NodeClass we perform further validation and lookup of the release image.
 	// We only detect skew and if the version is valid in this case, as under normal circumstances we can assume the release image
@@ -248,6 +248,44 @@ func (r *KarpenterIgnitionReconciler) createInMemoryNodePool(
 			Arch: hyperv1.ArchitectureAMD64, // used to find default AMI
 		},
 	}
+}
+
+// currentClusterVersion returns the version of the most recently completed update from the
+// HostedCluster's version history. It searches history entries for the one with state=Completed
+// and the most recent CompletionTime. If no completed entries exist and there is exactly one
+// history entry, it falls back to the desired version. This handles the case where a cluster
+// is still rolling out its initial version.
+func currentClusterVersion(hostedCluster *hyperv1.HostedCluster) string {
+	if hostedCluster.Status.Version == nil {
+		return ""
+	}
+
+	var latest *configv1.UpdateHistory
+	for i := range hostedCluster.Status.Version.History {
+		entry := &hostedCluster.Status.Version.History[i]
+		if entry.State != configv1.CompletedUpdate {
+			continue
+		}
+		if latest == nil {
+			latest = entry
+			continue
+		}
+		if entry.CompletionTime != nil && latest.CompletionTime != nil && entry.CompletionTime.After(latest.CompletionTime.Time) {
+			latest = entry
+		}
+	}
+
+	if latest != nil {
+		return latest.Version
+	}
+
+	// If there are no completed entries but exactly one history entry exists, the cluster
+	// is likely still rolling out its first version. Fall back to the desired version.
+	if len(hostedCluster.Status.Version.History) == 1 {
+		return hostedCluster.Status.Version.Desired.Version
+	}
+
+	return hostedCluster.Status.Version.Desired.Version
 }
 
 // validateVersion checks whether the requested version is valid for the given HostedCluster.
@@ -434,6 +472,7 @@ func hostedClusterFromHCP(hcp *hyperv1.HostedControlPlane, ignitionEndpoint stri
 
 	if hcp.Status.VersionStatus != nil {
 		hc.Status.Version.Desired.Version = hcp.Status.VersionStatus.Desired.Version
+		hc.Status.Version.History = hcp.Status.VersionStatus.History
 	}
 
 	if hcp.Spec.ControlPlaneReleaseImage != nil {
