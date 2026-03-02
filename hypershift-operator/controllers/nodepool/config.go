@@ -158,7 +158,57 @@ func (cg *ConfigGenerator) generateMCORawConfig(ctx context.Context, caps *hyper
 		configs = append(configs, nodeTuningGeneratedConfigs...)
 	}
 
+	// Generate ACR credential provider MachineConfig for Azure NodePools with ImageRegistryCredentials configured.
+	acrConfig, err := cg.getACRCredentialProviderConfig()
+	if err != nil {
+		return "", err
+	}
+	if acrConfig != nil {
+		configs = append(configs, *acrConfig)
+	}
+
 	return cg.parse(configs)
+}
+
+// getACRCredentialProviderConfig generates a ConfigMap wrapping the ACR credential provider MachineConfig
+// when the NodePool platform is Azure and ImageRegistryCredentials is configured.
+// The MachineConfig configures the kubelet credential provider for ACR authentication
+// using a managed identity, enabling worker nodes to pull images from Azure Container Registry
+// without static pull secrets.
+func (cg *ConfigGenerator) getACRCredentialProviderConfig() (*corev1.ConfigMap, error) {
+	if cg.nodePool.Spec.Platform.Type != hyperv1.AzurePlatform {
+		return nil, nil
+	}
+	if cg.nodePool.Spec.Platform.Azure == nil || cg.nodePool.Spec.Platform.Azure.ImageRegistryCredentials == nil {
+		return nil, nil
+	}
+	if cg.hostedCluster.Spec.Platform.Azure == nil {
+		return nil, fmt.Errorf("hostedCluster.Spec.Platform.Azure must not be nil when NodePool platform is Azure")
+	}
+
+	mc, err := generateACRCredentialProviderMachineConfig(
+		cg.nodePool.Spec.Platform.Azure.ImageRegistryCredentials,
+		cg.hostedCluster.Spec.Platform.Azure.Cloud,
+		cg.hostedCluster.Spec.Platform.Azure.TenantID,
+		cg.hostedCluster.Spec.Platform.Azure.SubscriptionID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate ACR credential provider MachineConfig: %w", err)
+	}
+
+	mcYAML, err := api.CompatibleYAMLEncode(mc, api.YamlSerializer)
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize ACR credential provider MachineConfig to YAML: %w", err)
+	}
+
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "acr-credential-provider-config",
+		},
+		Data: map[string]string{
+			TokenSecretConfigKey: string(mcYAML),
+		},
+	}, nil
 }
 
 // getUserConfigs returns a slice with all the configMaps in nodePool.Spec.Config.

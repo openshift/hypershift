@@ -3083,6 +3083,54 @@ applications and dev/test.</p>
 </td>
 </tr></tbody>
 </table>
+###AzureImageRegistryCredentials { #hypershift.openshift.io/v1beta1.AzureImageRegistryCredentials }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureNodePoolPlatform">AzureNodePoolPlatform</a>)
+</p>
+<p>
+<p>AzureImageRegistryCredentials configures the kubelet credential provider for ACR
+authentication using a managed identity assigned to worker node VMs.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>managedIdentity</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>managedIdentity is the ARM resource ID of a user-assigned managed identity that will be
+assigned to worker node VMs/VMSS. The credential provider plugin running on each node
+will use this identity to authenticate to ACR via the Azure Instance Metadata Service (IMDS).</p>
+<p>The identity must have the AcrPull role granted on the target ACR registry(ies).</p>
+<p>Format: /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.ManagedIdentity/userAssignedIdentities/{identityName}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>registries</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<p>registries is the list of ACR registries that the credential provider should authenticate
+to. Each entry should be a fully qualified ACR hostname (e.g., &ldquo;myregistry.azurecr.io&rdquo;).
+The credential provider will use the managed identity to obtain short-lived tokens for
+pulling images from these registries.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###AzureKMSKey { #hypershift.openshift.io/v1beta1.AzureKMSKey }
 <p>
 (<em>Appears on:</em>
@@ -3555,6 +3603,24 @@ Diagnostics
 <em>(Optional)</em>
 <p>diagnostics specifies the diagnostics settings for a virtual machine.
 If not specified, then Boot diagnostics will be disabled.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageRegistryCredentials</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureImageRegistryCredentials">
+AzureImageRegistryCredentials
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>imageRegistryCredentials specifies configuration for enabling kubelet&rsquo;s image credential
+provider to authenticate to Azure Container Registry (ACR) using a managed identity.
+When configured, worker nodes will use the acr-credential-provider plugin to obtain
+short-lived tokens for ACR image pulls instead of relying on static pull secrets.
+Changing this field will trigger a node rollout.</p>
 </td>
 </tr>
 </tbody>
