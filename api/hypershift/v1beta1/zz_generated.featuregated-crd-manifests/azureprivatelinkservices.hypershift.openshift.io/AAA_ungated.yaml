@@ -1,0 +1,264 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    feature-gate.release.openshift.io/: "true"
+  name: azureprivatelinkservices.hypershift.openshift.io
+spec:
+  group: hypershift.openshift.io
+  names:
+    kind: AzurePrivateLinkService
+    listKind: AzurePrivateLinkServiceList
+    plural: azureprivatelinkservices
+    shortNames:
+    - azpls
+    singular: azureprivatelinkservice
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Globally unique PLS alias
+      jsonPath: .status.privateLinkServiceAlias
+      name: PLS Alias
+      type: string
+    - description: IP address of the Private Endpoint
+      jsonPath: .status.privateEndpointIP
+      name: Endpoint IP
+      type: string
+    - description: PLS availability status
+      jsonPath: .status.conditions[?(@.type=="AzurePrivateLinkServiceAvailable")].status
+      name: Available
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          AzurePrivateLinkService represents Azure Private Link Service infrastructure
+          for private connectivity to hosted cluster API servers.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec is the specification for the AzurePrivateLinkService.
+            properties:
+              allowedSubscriptions:
+                description: |-
+                  allowedSubscriptions is the list of Azure subscription IDs permitted to create Private Endpoints.
+                  This field is intentionally mutable (no immutability constraint) to allow operators to
+                  grant or revoke Private Endpoint access without recreating the resource. This follows
+                  the same pattern as AWS additionalAllowedPrincipals.
+                items:
+                  maxLength: 255
+                  pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                  type: string
+                maxItems: 50
+                minItems: 1
+                type: array
+              guestSubnetID:
+                description: guestSubnetID is the Azure resource ID of the subnet
+                  in the guest VNet where the Private Endpoint will be created.
+                maxLength: 355
+                minLength: 1
+                pattern: ^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Network/virtualNetworks/[^/]+/subnets/[^/]+$
+                type: string
+                x-kubernetes-validations:
+                - message: guestSubnetID is immutable once set
+                  rule: self == oldSelf
+              guestVNetID:
+                description: guestVNetID is the Azure resource ID of the guest VNet
+                  for DNS zone linking.
+                maxLength: 255
+                minLength: 1
+                pattern: ^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Network/virtualNetworks/[^/]+$
+                type: string
+                x-kubernetes-validations:
+                - message: guestVNetID is immutable once set
+                  rule: self == oldSelf
+              loadBalancerIP:
+                description: |-
+                  loadBalancerIP is the frontend IP address of the internal load balancer.
+                  This field is populated by the CPO observer from the KAS service status,
+                  not supplied by users. It is placed in Spec rather than Status because:
+                    - It follows the same pattern as GCP Private Service Connect (GCPPrivateServiceConnect.Spec.LoadBalancerIP)
+                    - It enables the HO controller to consume this value through normal Spec watches
+                      without requiring a status subresource watch
+                  This value must be a valid IPv4 or IPv6 address.
+                maxLength: 45
+                type: string
+                x-kubernetes-validations:
+                - message: loadBalancerIP must be a valid IPv4 or IPv6 address
+                  rule: self == '' || self.matches('^((\\d{1,3}\\.){3}\\d{1,3})$')
+                    || self.matches('^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$')
+              location:
+                description: location is the Azure region where the PLS will be created.
+                maxLength: 255
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: location is immutable once set
+                  rule: self == oldSelf
+              natSubnetID:
+                description: natSubnetID is the Azure resource ID of the subnet used
+                  for PLS NAT IP allocation.
+                maxLength: 355
+                minLength: 1
+                pattern: ^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Network/virtualNetworks/[^/]+/subnets/[^/]+$
+                type: string
+                x-kubernetes-validations:
+                - message: natSubnetID is immutable once set
+                  rule: self == oldSelf
+              resourceGroupName:
+                description: resourceGroupName is the Azure resource group where the
+                  PLS will be created.
+                maxLength: 90
+                minLength: 1
+                type: string
+                x-kubernetes-validations:
+                - message: resourceGroupName is immutable once set
+                  rule: self == oldSelf
+              subscriptionID:
+                description: subscriptionID is the Azure subscription ID where the
+                  PLS will be created.
+                maxLength: 255
+                minLength: 1
+                pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                type: string
+                x-kubernetes-validations:
+                - message: subscriptionID is immutable once set
+                  rule: self == oldSelf
+            required:
+            - allowedSubscriptions
+            - guestSubnetID
+            - guestVNetID
+            - location
+            - natSubnetID
+            - resourceGroupName
+            - subscriptionID
+            type: object
+          status:
+            description: status is the status of the AzurePrivateLinkService.
+            properties:
+              conditions:
+                description: |-
+                  conditions represent the current state of PLS infrastructure.
+                  Current condition types are: "AzurePrivateLinkServiceAvailable", "AzureInternalLoadBalancerAvailable",
+                  "AzurePLSCreated", "AzurePrivateEndpointAvailable", "AzurePrivateDNSAvailable"
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 10
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              dnsZoneName:
+                description: |-
+                  dnsZoneName is the Private DNS zone name (derived from the KAS hostname).
+                  Persisted at creation time so that deletion does not depend on the
+                  HostedControlPlane still existing.
+                maxLength: 255
+                type: string
+              internalLoadBalancerID:
+                description: internalLoadBalancerID is the Azure resource ID of the
+                  internal load balancer.
+                maxLength: 512
+                type: string
+              privateDNSZoneID:
+                description: privateDNSZoneID is the Azure resource ID of the Private
+                  DNS Zone.
+                maxLength: 512
+                type: string
+              privateEndpointID:
+                description: privateEndpointID is the Azure resource ID of the Private
+                  Endpoint.
+                maxLength: 512
+                type: string
+              privateEndpointIP:
+                description: privateEndpointIP is the private IP address assigned
+                  to the Private Endpoint.
+                maxLength: 45
+                type: string
+              privateLinkServiceAlias:
+                description: privateLinkServiceAlias is the globally unique alias
+                  for the Private Link Service.
+                maxLength: 255
+                type: string
+              privateLinkServiceID:
+                description: privateLinkServiceID is the Azure resource ID of the
+                  Private Link Service.
+                maxLength: 512
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

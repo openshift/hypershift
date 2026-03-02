@@ -9,26 +9,29 @@ import (
 
 // RawCreateOptions is the raw options for the Azure create cluster command
 type RawCreateOptions struct {
-	CredentialsFile                  string
-	Location                         string
-	EncryptionKeyID                  string
-	AvailabilityZones                []string
-	ResourceGroupName                string
-	VnetID                           string
-	NetworkSecurityGroupID           string
-	ResourceGroupTags                map[string]string
-	SubnetID                         string
-	KMSUserAssignedCredsSecretName   string
-	TechPreviewEnabled               bool
-	DNSZoneRGName                    string
-	ManagedIdentitiesFile            string
-	DataPlaneIdentitiesFile          string
-	WorkloadIdentitiesFile           string
-	AssignServicePrincipalRoles      bool
-	AssignCustomHCPRoles             bool
-	IssuerURL                        string
-	ServiceAccountTokenIssuerKeyPath string
-	MultiArch                        bool
+	CredentialsFile                         string
+	Location                                string
+	EncryptionKeyID                         string
+	AvailabilityZones                       []string
+	ResourceGroupName                       string
+	VnetID                                  string
+	NetworkSecurityGroupID                  string
+	ResourceGroupTags                       map[string]string
+	SubnetID                                string
+	KMSUserAssignedCredsSecretName          string
+	TechPreviewEnabled                      bool
+	DNSZoneRGName                           string
+	ManagedIdentitiesFile                   string
+	DataPlaneIdentitiesFile                 string
+	WorkloadIdentitiesFile                  string
+	AssignServicePrincipalRoles             bool
+	AssignCustomHCPRoles                    bool
+	IssuerURL                               string
+	ServiceAccountTokenIssuerKeyPath        string
+	MultiArch                               bool
+	EndpointAccess                          string
+	PrivateConnectivityNATSubnetID          string
+	PrivateConnectivityAllowedSubscriptions []string
 
 	NodePoolOpts *azurenodepool.RawAzurePlatformCreateOptions
 }

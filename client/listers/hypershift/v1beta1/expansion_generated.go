@@ -17,6 +17,14 @@ limitations under the License.
 
 package v1beta1
 
+// AzurePrivateLinkServiceListerExpansion allows custom methods to be added to
+// AzurePrivateLinkServiceLister.
+type AzurePrivateLinkServiceListerExpansion interface{}
+
+// AzurePrivateLinkServiceNamespaceListerExpansion allows custom methods to be added to
+// AzurePrivateLinkServiceNamespaceLister.
+type AzurePrivateLinkServiceNamespaceListerExpansion interface{}
+
 // CertificateSigningRequestApprovalListerExpansion allows custom methods to be added to
 // CertificateSigningRequestApprovalLister.
 type CertificateSigningRequestApprovalListerExpansion interface{}

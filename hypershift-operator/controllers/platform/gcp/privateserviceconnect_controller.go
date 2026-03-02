@@ -127,7 +127,7 @@ func (r *GCPPrivateServiceConnectReconciler) Reconcile(ctx context.Context, req 
 	}
 
 	// 4. Find the hosted cluster using annotation (set by customer-side controller)
-	hc, err := r.hostedClusterFromAnnotation(ctx, gcpPSC)
+	hc, err := supportutil.HostedClusterFromAnnotation(ctx, r.Client, gcpPSC)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get hosted cluster: %w", err)
 	}
@@ -535,25 +535,6 @@ func (r *GCPPrivateServiceConnectReconciler) extractGCPRegionFromEnv() (string, 
 		return "", fmt.Errorf("GCP_REGION environment variable is required")
 	}
 	return region, nil
-}
-
-// hostedClusterFromAnnotation retrieves the HostedCluster using the annotation on GCPPrivateServiceConnect
-func (r *GCPPrivateServiceConnectReconciler) hostedClusterFromAnnotation(ctx context.Context, gcpPSC *hyperv1.GCPPrivateServiceConnect) (*hyperv1.HostedCluster, error) {
-	hcNamespaceName, exists := gcpPSC.Annotations[supportutil.HostedClusterAnnotation]
-	if !exists {
-		return nil, fmt.Errorf("GCPPrivateServiceConnect %s/%s missing %s annotation", gcpPSC.Namespace, gcpPSC.Name, supportutil.HostedClusterAnnotation)
-	}
-
-	parts := strings.SplitN(hcNamespaceName, "/", 2)
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid %s annotation format: %s", supportutil.HostedClusterAnnotation, hcNamespaceName)
-	}
-
-	hc := &hyperv1.HostedCluster{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: parts[0], Name: parts[1]}, hc); err != nil {
-		return nil, fmt.Errorf("failed to get hosted cluster %s/%s: %w", parts[0], parts[1], err)
-	}
-	return hc, nil
 }
 
 // isReconciliationPaused checks if reconciliation should be paused and returns the pause duration

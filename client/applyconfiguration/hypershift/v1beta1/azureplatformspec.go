@@ -17,6 +17,10 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // AzurePlatformSpecApplyConfiguration represents a declarative configuration of the AzurePlatformSpec type for use
 // with apply.
 type AzurePlatformSpecApplyConfiguration struct {
@@ -29,6 +33,8 @@ type AzurePlatformSpecApplyConfiguration struct {
 	SecurityGroupID           *string                                             `json:"securityGroupID,omitempty"`
 	AzureAuthenticationConfig *AzureAuthenticationConfigurationApplyConfiguration `json:"azureAuthenticationConfig,omitempty"`
 	TenantID                  *string                                             `json:"tenantID,omitempty"`
+	EndpointAccess            *hypershiftv1beta1.AzureEndpointAccessType          `json:"endpointAccess,omitempty"`
+	PrivateConnectivity       *AzurePrivateConnectivityConfigApplyConfiguration   `json:"privateConnectivity,omitempty"`
 }
 
 // AzurePlatformSpecApplyConfiguration constructs a declarative configuration of the AzurePlatformSpec type for use with
@@ -106,5 +112,21 @@ func (b *AzurePlatformSpecApplyConfiguration) WithAzureAuthenticationConfig(valu
 // If called multiple times, the TenantID field is set to the value of the last call.
 func (b *AzurePlatformSpecApplyConfiguration) WithTenantID(value string) *AzurePlatformSpecApplyConfiguration {
 	b.TenantID = &value
+	return b
+}
+
+// WithEndpointAccess sets the EndpointAccess field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the EndpointAccess field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithEndpointAccess(value hypershiftv1beta1.AzureEndpointAccessType) *AzurePlatformSpecApplyConfiguration {
+	b.EndpointAccess = &value
+	return b
+}
+
+// WithPrivateConnectivity sets the PrivateConnectivity field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the PrivateConnectivity field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithPrivateConnectivity(value *AzurePrivateConnectivityConfigApplyConfiguration) *AzurePlatformSpecApplyConfiguration {
+	b.PrivateConnectivity = value
 	return b
 }

@@ -968,6 +968,25 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// Copy AzurePrivateLinkServiceAvailable and AzurePLSCreated conditions from the AzurePrivateLinkService resources.
+	// ARO HCP uses Swift networking, not Private Link Services.
+	if hcluster.Spec.Platform.Type == hyperv1.AzurePlatform && !azureutil.IsAroHCP() {
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
+		var azPLSList hyperv1.AzurePrivateLinkServiceList
+		if err := r.List(ctx, &azPLSList, &client.ListOptions{Namespace: hcpNamespace}); err != nil {
+			condition := metav1.Condition{
+				Type:    string(hyperv1.AzurePrivateLinkServiceAvailable),
+				Status:  metav1.ConditionUnknown,
+				Reason:  hyperv1.NotFoundReason,
+				Message: fmt.Sprintf("error listing AzurePrivateLinkService in namespace %s: %v", hcpNamespace, err),
+			}
+			meta.SetStatusCondition(&hcluster.Status.Conditions, condition)
+		} else if len(azPLSList.Items) > 0 {
+			meta.SetStatusCondition(&hcluster.Status.Conditions, computeAzurePLSCondition(azPLSList, hyperv1.AzurePrivateLinkServiceAvailable))
+			meta.SetStatusCondition(&hcluster.Status.Conditions, computeAzurePLSCondition(azPLSList, hyperv1.AzurePLSCreated))
+		}
+	}
+
 	// Set ValidConfiguration condition
 	{
 		condition := metav1.Condition{
@@ -3879,6 +3898,20 @@ func (r *HostedClusterReconciler) validateAzureConfig(hc *hyperv1.HostedCluster)
 		return errors.New("azurecluster needs .spec.platform.azure to be filled")
 	}
 
+	// When endpointAccess is Private or PublicAndPrivate, privateConnectivity must be configured
+	// to provide Azure Private Link Service settings for private API server access.
+	// ARO HCP uses Swift networking, not Private Link Services.
+	if !azureutil.IsAroHCP() &&
+		hc.Spec.Platform.Azure.EndpointAccess != hyperv1.AzureEndpointAccessPublic &&
+		hc.Spec.Platform.Azure.EndpointAccess != "" &&
+		hc.Spec.Platform.Azure.PrivateConnectivity == nil {
+		return field.Invalid(
+			field.NewPath("spec", "platform", "azure", "privateConnectivity"),
+			hc.Spec.Platform.Azure.PrivateConnectivity,
+			fmt.Sprintf("privateConnectivity is required when endpointAccess is %q", hc.Spec.Platform.Azure.EndpointAccess),
+		)
+	}
+
 	return nil
 }
 
@@ -5168,6 +5201,47 @@ func computeGCPPSCCondition(gcpPSCList hyperv1.GCPPrivateServiceConnectList, con
 		Type:    string(conditionType),
 		Status:  metav1.ConditionTrue,
 		Reason:  hyperv1.GCPSuccessReason,
+		Message: hyperv1.AllIsWellMessage,
+	}
+}
+
+func computeAzurePLSCondition(azPLSList hyperv1.AzurePrivateLinkServiceList, conditionType hyperv1.ConditionType) metav1.Condition {
+	var messages []string
+	var conditions []metav1.Condition
+
+	for _, pls := range azPLSList.Items {
+		condition := meta.FindStatusCondition(pls.Status.Conditions, string(conditionType))
+		if condition != nil {
+			conditions = append(conditions, *condition)
+
+			if condition.Status == metav1.ConditionFalse {
+				messages = append(messages, condition.Message)
+			}
+		}
+	}
+
+	if len(conditions) == 0 {
+		return metav1.Condition{
+			Type:    string(conditionType),
+			Status:  metav1.ConditionUnknown,
+			Reason:  hyperv1.StatusUnknownReason,
+			Message: "AzurePrivateLinkService conditions not found",
+		}
+	}
+
+	if len(messages) > 0 {
+		return metav1.Condition{
+			Type:    string(conditionType),
+			Status:  metav1.ConditionFalse,
+			Reason:  hyperv1.AzurePLSErrorReason,
+			Message: strings.Join(messages, "; "),
+		}
+	}
+
+	return metav1.Condition{
+		Type:    string(conditionType),
+		Status:  metav1.ConditionTrue,
+		Reason:  hyperv1.AzurePLSSuccessReason,
 		Message: hyperv1.AllIsWellMessage,
 	}
 }

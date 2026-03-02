@@ -103,6 +103,7 @@ spec:
             diskMSIClientID: ""
             fileMSIClientID: ""
             imageRegistryMSIClientID: ""
+      endpointAccess: Public
       location: fakeLocation
       resourceGroup: fakeResourceGroupName
       securityGroupID: fakeSecurityGroupID

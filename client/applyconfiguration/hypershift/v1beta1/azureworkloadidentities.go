@@ -27,6 +27,7 @@ type AzureWorkloadIdentitiesApplyConfiguration struct {
 	NodePoolManagement *WorkloadIdentityApplyConfiguration `json:"nodePoolManagement,omitempty"`
 	CloudProvider      *WorkloadIdentityApplyConfiguration `json:"cloudProvider,omitempty"`
 	Network            *WorkloadIdentityApplyConfiguration `json:"network,omitempty"`
+	PrivateLinkService *WorkloadIdentityApplyConfiguration `json:"privateLinkService,omitempty"`
 }
 
 // AzureWorkloadIdentitiesApplyConfiguration constructs a declarative configuration of the AzureWorkloadIdentities type for use with
@@ -88,5 +89,13 @@ func (b *AzureWorkloadIdentitiesApplyConfiguration) WithCloudProvider(value *Wor
 // If called multiple times, the Network field is set to the value of the last call.
 func (b *AzureWorkloadIdentitiesApplyConfiguration) WithNetwork(value *WorkloadIdentityApplyConfiguration) *AzureWorkloadIdentitiesApplyConfiguration {
 	b.Network = value
+	return b
+}
+
+// WithPrivateLinkService sets the PrivateLinkService field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the PrivateLinkService field is set to the value of the last call.
+func (b *AzureWorkloadIdentitiesApplyConfiguration) WithPrivateLinkService(value *WorkloadIdentityApplyConfiguration) *AzureWorkloadIdentitiesApplyConfiguration {
+	b.PrivateLinkService = value
 	return b
 }

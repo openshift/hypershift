@@ -283,6 +283,17 @@ func GetWorkloadIdentityDefinitions(clusterName string) []WorkloadIdentityDefini
 				},
 			},
 		},
+		{
+			ComponentName:      "privateLinkService",
+			IdentityNameSuffix: "-pls",
+			FederatedCredentials: []FederatedCredentialConfig{
+				{
+					CredentialName: clusterName + "-pls-fed-id",
+					Subject:        "system:serviceaccount:kube-system:azure-private-link-service",
+					Audience:       "openshift",
+				},
+			},
+		},
 	}
 }
 
@@ -361,6 +372,10 @@ func (i *IdentityManager) CreateWorkloadIdentitiesFromIAMOptions(ctx context.Con
 			workloadIdentities.NodePoolManagement.ClientID = hyperv1.AzureClientID(clientID)
 		case "network":
 			workloadIdentities.Network.ClientID = hyperv1.AzureClientID(clientID)
+		case "privateLinkService":
+			workloadIdentities.PrivateLinkService = &hyperv1.WorkloadIdentity{
+				ClientID: hyperv1.AzureClientID(clientID),
+			}
 		default:
 			return nil, fmt.Errorf("unknown workload identity component: %s", def.ComponentName)
 		}

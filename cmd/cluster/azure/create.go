@@ -15,6 +15,8 @@ import (
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
@@ -101,6 +103,9 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.IssuerURL, "oidc-issuer-url", "", util.OIDCIssuerURLDescription)
 	flags.StringVar(&opts.ServiceAccountTokenIssuerKeyPath, "sa-token-issuer-private-key-path", "", util.SATokenIssuerKeyPathDescription)
 	flags.StringVar(&opts.DNSZoneRGName, "dns-zone-rg-name", opts.DNSZoneRGName, util.DNSZoneRGNameDescription)
+	flags.StringVar(&opts.EndpointAccess, "endpoint-access", string(hyperv1.AzureEndpointAccessPublic), "API server endpoint access type: Public, PublicAndPrivate, or Private")
+	flags.StringVar(&opts.PrivateConnectivityNATSubnetID, "private-connectivity-nat-subnet-id", "", "Azure resource ID of the subnet used for Private Link Service NAT IP allocation (the subnet must have privateLinkServiceNetworkPolicies disabled)")
+	flags.StringSliceVar(&opts.PrivateConnectivityAllowedSubscriptions, "private-connectivity-allowed-subscriptions", nil, "Azure subscription IDs permitted to create Private Endpoints")
 }
 
 // BindDeveloperOptions binds developer/development only options for the Azure create cluster command
@@ -131,6 +136,11 @@ func BindProductFlags(opts *RawCreateOptions, flags *pflag.FlagSet) {
 
 	// Encryption
 	flags.StringVar(&opts.EncryptionKeyID, "encryption-key-id", opts.EncryptionKeyID, util.EncryptionKeyIDDescription)
+
+	// Private connectivity flags
+	flags.StringVar(&opts.EndpointAccess, "endpoint-access", string(hyperv1.AzureEndpointAccessPublic), "API server endpoint access type: Public, PublicAndPrivate, or Private")
+	flags.StringVar(&opts.PrivateConnectivityNATSubnetID, "private-connectivity-nat-subnet-id", "", "Azure resource ID of the subnet used for Private Link Service NAT IP allocation (the subnet must have privateLinkServiceNetworkPolicies disabled)")
+	flags.StringSliceVar(&opts.PrivateConnectivityAllowedSubscriptions, "private-connectivity-allowed-subscriptions", nil, "Azure subscription IDs permitted to create Private Endpoints")
 
 	// Nodepool flags
 	azurenodepool.BindProductFlags(opts.NodePoolOpts, flags)
@@ -171,6 +181,31 @@ func (o *RawCreateOptions) Validate(ctx context.Context, _ *core.CreateOptions) 
 	}
 	if o.ManagedIdentitiesFile != "" && o.DataPlaneIdentitiesFile == "" {
 		return nil, fmt.Errorf("--managed-identities-file requires --data-plane-identities-file")
+	}
+
+	// Validate the endpoint access value if provided
+	if o.EndpointAccess != "" {
+		validEndpointAccessValues := []string{string(hyperv1.AzureEndpointAccessPublic), string(hyperv1.AzureEndpointAccessPublicAndPrivate), string(hyperv1.AzureEndpointAccessPrivate)}
+		if !slices.Contains(validEndpointAccessValues, o.EndpointAccess) {
+			return nil, fmt.Errorf("--endpoint-access must be one of: Public, PublicAndPrivate, Private")
+		}
+	}
+
+	if o.EndpointAccess != "" && o.EndpointAccess != string(hyperv1.AzureEndpointAccessPublic) {
+		if o.PrivateConnectivityNATSubnetID == "" {
+			return nil, fmt.Errorf("--private-connectivity-nat-subnet-id is required when --endpoint-access is not Public")
+		}
+		// Validate NAT subnet resource ID format and type
+		natSubnet, parseErr := arm.ParseResourceID(o.PrivateConnectivityNATSubnetID)
+		if parseErr != nil {
+			return nil, fmt.Errorf("--private-connectivity-nat-subnet-id is not a valid Azure resource ID: %w", parseErr)
+		}
+		if !strings.EqualFold(natSubnet.ResourceType.Type, "virtualNetworks/subnets") {
+			return nil, fmt.Errorf("--private-connectivity-nat-subnet-id must be a subnet resource ID (Microsoft.Network/virtualNetworks/subnets), got %q", natSubnet.ResourceType.String())
+		}
+		if len(o.PrivateConnectivityAllowedSubscriptions) == 0 {
+			return nil, fmt.Errorf("--private-connectivity-allowed-subscriptions is required when --endpoint-access is not Public")
+		}
 	}
 
 	validOpts := &ValidatedCreateOptions{
@@ -284,6 +319,14 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 			SubnetID:          o.infra.SubnetID,
 			SecurityGroupID:   o.infra.SecurityGroupID,
 		},
+	}
+
+	cluster.Spec.Platform.Azure.EndpointAccess = hyperv1.AzureEndpointAccessType(o.EndpointAccess)
+	if o.EndpointAccess != string(hyperv1.AzureEndpointAccessPublic) && o.EndpointAccess != "" {
+		cluster.Spec.Platform.Azure.PrivateConnectivity = &hyperv1.AzurePrivateConnectivityConfig{
+			NATSubnetID:          o.PrivateConnectivityNATSubnetID,
+			AllowedSubscriptions: o.PrivateConnectivityAllowedSubscriptions,
+		}
 	}
 
 	// Configure authentication based on whether workload identities or managed identities are provided

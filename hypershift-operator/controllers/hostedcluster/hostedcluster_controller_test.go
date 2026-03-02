@@ -5923,3 +5923,234 @@ func TestComputeGCPPSCCondition(t *testing.T) {
 		})
 	}
 }
+
+func TestComputeAzurePLSCondition(t *testing.T) {
+	tests := []struct {
+		name          string
+		plsConditions []metav1.Condition
+		conditionType hyperv1.ConditionType
+		expected      metav1.Condition
+	}{
+		{
+			name: "When AzurePrivateLinkServiceAvailable is true it should return condition true",
+			plsConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.AzurePrivateLinkServiceAvailable),
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperv1.AzurePLSSuccessReason,
+					Message: hyperv1.AllIsWellMessage,
+				},
+			},
+			conditionType: hyperv1.AzurePrivateLinkServiceAvailable,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.AzurePrivateLinkServiceAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.AzurePLSSuccessReason,
+				Message: hyperv1.AllIsWellMessage,
+			},
+		},
+		{
+			name: "When AzurePLSCreated is false it should return condition false",
+			plsConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.AzurePLSCreated),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.AzurePLSErrorReason,
+					Message: "PLS creation failed",
+				},
+			},
+			conditionType: hyperv1.AzurePLSCreated,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.AzurePLSCreated),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.AzurePLSErrorReason,
+				Message: "PLS creation failed",
+			},
+		},
+		{
+			name:          "When PLS has no conditions it should return condition unknown",
+			plsConditions: []metav1.Condition{},
+			conditionType: hyperv1.AzurePrivateLinkServiceAvailable,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.AzurePrivateLinkServiceAvailable),
+				Status:  metav1.ConditionUnknown,
+				Reason:  hyperv1.StatusUnknownReason,
+				Message: "AzurePrivateLinkService conditions not found",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			azPLSList := hyperv1.AzurePrivateLinkServiceList{
+				Items: []hyperv1.AzurePrivateLinkService{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "test-pls",
+						},
+						Status: hyperv1.AzurePrivateLinkServiceStatus{
+							Conditions: tc.plsConditions,
+						},
+					},
+				},
+			}
+			condition := computeAzurePLSCondition(azPLSList, tc.conditionType)
+			if condition != tc.expected {
+				t.Errorf("error, expected %v\nbut got %v", tc.expected, condition)
+			}
+		})
+	}
+}
+
+func TestValidateAzureConfig(t *testing.T) {
+	testCases := []struct {
+		name        string
+		hc          *hyperv1.HostedCluster
+		expectError bool
+		errorMsg    string
+		setup       func(t *testing.T)
+	}{
+		{
+			name: "When platform is not Azure it should return nil",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When platform is Azure but Azure spec is nil it should return an error",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:  hyperv1.AzurePlatform,
+						Azure: nil,
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    "azurecluster needs .spec.platform.azure to be filled",
+		},
+		{
+			name: "When endpointAccess is Private without PrivateConnectivity it should return an error",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							EndpointAccess:      hyperv1.AzureEndpointAccessPrivate,
+							PrivateConnectivity: nil,
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    `spec.platform.azure.privateConnectivity: Invalid value: null: privateConnectivity is required when endpointAccess is "Private"`,
+		},
+		{
+			name: "When endpointAccess is PublicAndPrivate without PrivateConnectivity it should return an error",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							EndpointAccess:      hyperv1.AzureEndpointAccessPublicAndPrivate,
+							PrivateConnectivity: nil,
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    `spec.platform.azure.privateConnectivity: Invalid value: null: privateConnectivity is required when endpointAccess is "PublicAndPrivate"`,
+		},
+		{
+			name: "When endpointAccess is Public without PrivateConnectivity it should succeed",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							EndpointAccess: hyperv1.AzureEndpointAccessPublic,
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When endpointAccess is Private with PrivateConnectivity it should succeed",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							EndpointAccess: hyperv1.AzureEndpointAccessPrivate,
+							PrivateConnectivity: &hyperv1.AzurePrivateConnectivityConfig{
+								NATSubnetID:          "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/nat-subnet",
+								AllowedSubscriptions: []string{"sub-1"},
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When ARO HCP has Private endpointAccess without PrivateConnectivity it should succeed",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							EndpointAccess:      hyperv1.AzureEndpointAccessPrivate,
+							PrivateConnectivity: nil,
+						},
+					},
+				},
+			},
+			expectError: false,
+			setup: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
+		},
+		{
+			name: "When endpointAccess is empty it should succeed as it defaults to Public",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							EndpointAccess: "",
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setup != nil {
+				tc.setup(t)
+			}
+			r := &HostedClusterReconciler{}
+			err := r.validateAzureConfig(tc.hc)
+			if tc.expectError {
+				if err == nil {
+					t.Fatalf("expected error but got nil")
+				}
+				if err.Error() != tc.errorMsg {
+					t.Errorf("expected error message %q but got %q", tc.errorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("expected no error but got: %v", err)
+				}
+			}
+		})
+	}
+}

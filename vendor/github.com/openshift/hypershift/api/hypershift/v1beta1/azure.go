@@ -359,6 +359,8 @@ type AzureNodePoolOSDisk struct {
 // your own (BYO) cloud infrastructure resources. For example, resources like a resource group, a subnet, or a vnet
 // would be pre-created and then their names would be used respectively in the ResourceGroupName, SubnetName, VnetName
 // fields of the Hosted Cluster CR. An existing cloud resource is expected to exist under the same SubscriptionID.
+// +kubebuilder:validation:XValidation:rule="self.endpointAccess == 'Public' || size(self.endpointAccess) == 0 || has(self.privateConnectivity)",message="privateConnectivity is required when endpointAccess is not Public"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.privateConnectivity) || has(self.privateConnectivity)",message="privateConnectivity cannot be removed once set"
 type AzurePlatformSpec struct {
 	// cloud is the cloud environment identifier, valid values could be found here: https://github.com/Azure/go-autorest/blob/4c0e21ca2bbb3251fe7853e6f9df6397f53dd419/autorest/azure/environments.go#L33
 	//
@@ -463,6 +465,22 @@ type AzurePlatformSpec struct {
 	// +required
 	// +kubebuilder:validation:MaxLength=255
 	TenantID string `json:"tenantID"`
+
+	// endpointAccess specifies the visibility of the API server endpoint for the hosted cluster.
+	// When set to Private or PublicAndPrivate, Azure Private Link Service infrastructure will be
+	// created to enable private connectivity.
+	//
+	// +optional
+	// +kubebuilder:default=Public
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="EndpointAccess is immutable"
+	// +immutable
+	EndpointAccess AzureEndpointAccessType `json:"endpointAccess,omitempty"`
+
+	// privateConnectivity specifies configuration for Azure Private Link connectivity.
+	// This field is required when endpointAccess is set to Private or PublicAndPrivate.
+	//
+	// +optional
+	PrivateConnectivity *AzurePrivateConnectivityConfig `json:"privateConnectivity,omitempty"`
 }
 
 // objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
@@ -555,6 +573,12 @@ type AzureWorkloadIdentities struct {
 	// workload identity authentication.
 	// +required
 	Network WorkloadIdentity `json:"network"`
+
+	// privateLinkService is the client ID of a federated managed identity used to create and manage
+	// Azure Private Link Service resources. Requires Network Contributor RBAC on the management cluster
+	// resource group. This field is optional and only needed when endpointAccess is Private or PublicAndPrivate.
+	// +optional
+	PrivateLinkService *WorkloadIdentity `json:"privateLinkService,omitempty"`
 }
 
 // ManagedIdentity contains the client ID, and its certificate name, of a managed identity. This managed identity is
@@ -604,6 +628,42 @@ type WorkloadIdentity struct {
 	//
 	// +required
 	ClientID AzureClientID `json:"clientID"`
+}
+
+// AzureEndpointAccessType specifies the visibility of the Azure API server endpoint.
+// +kubebuilder:validation:Enum=Public;PublicAndPrivate;Private
+type AzureEndpointAccessType string
+
+const (
+	// AzureEndpointAccessPublic indicates the API server is publicly accessible.
+	AzureEndpointAccessPublic AzureEndpointAccessType = "Public"
+	// AzureEndpointAccessPublicAndPrivate indicates the API server is accessible via both public and private endpoints.
+	AzureEndpointAccessPublicAndPrivate AzureEndpointAccessType = "PublicAndPrivate"
+	// AzureEndpointAccessPrivate indicates the API server is only accessible via a private endpoint.
+	AzureEndpointAccessPrivate AzureEndpointAccessType = "Private"
+)
+
+// AzurePrivateConnectivityConfig specifies configuration for Azure Private Link connectivity.
+type AzurePrivateConnectivityConfig struct {
+	// natSubnetID is the Azure resource ID of the subnet used for Private Link Service NAT IP allocation.
+	// This subnet must have privateLinkServiceNetworkPolicies disabled.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=355
+	// +kubebuilder:validation:Pattern=`^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Network/virtualNetworks/[^/]+/subnets/[^/]+$`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="NATSubnetID is immutable"
+	NATSubnetID string `json:"natSubnetID"`
+
+	// allowedSubscriptions is the list of Azure subscription IDs permitted to create Private Endpoints
+	// to the Private Link Service.
+	//
+	// +required
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:items:MaxLength=255
+	// +kubebuilder:validation:items:Pattern=`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`
+	AllowedSubscriptions []string `json:"allowedSubscriptions"`
 }
 
 // ControlPlaneManagedIdentities contains the managed identities on the HCP control plane needing to authenticate with

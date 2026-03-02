@@ -4776,6 +4776,28 @@ spec:
                                 required:
                                 - clientID
                                 type: object
+                              privateLinkService:
+                                description: |-
+                                  privateLinkService is the client ID of a federated managed identity used to create and manage
+                                  Azure Private Link Service resources. Requires Network Contributor RBAC on the management cluster
+                                  resource group. This field is optional and only needed when endpointAccess is Private or PublicAndPrivate.
+                                properties:
+                                  clientID:
+                                    description: clientID is client ID of a federated
+                                      managed identity used in workload identity authentication
+                                    maxLength: 36
+                                    minLength: 36
+                                    pattern: ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
+                                required:
+                                - clientID
+                                type: object
                             required:
                             - cloudProvider
                             - disk
@@ -4808,6 +4830,20 @@ spec:
                         - AzureGermanCloud
                         - AzureStackCloud
                         type: string
+                      endpointAccess:
+                        default: Public
+                        description: |-
+                          endpointAccess specifies the visibility of the API server endpoint for the hosted cluster.
+                          When set to Private or PublicAndPrivate, Azure Private Link Service infrastructure will be
+                          created to enable private connectivity.
+                        enum:
+                        - Public
+                        - PublicAndPrivate
+                        - Private
+                        type: string
+                        x-kubernetes-validations:
+                        - message: EndpointAccess is immutable
+                          rule: self == oldSelf
                       location:
                         description: |-
                           location is the Azure region in where all the cloud infrastructure resources will be created.
@@ -4818,6 +4854,37 @@ spec:
                         x-kubernetes-validations:
                         - message: Location is immutable
                           rule: self == oldSelf
+                      privateConnectivity:
+                        description: |-
+                          privateConnectivity specifies configuration for Azure Private Link connectivity.
+                          This field is required when endpointAccess is set to Private or PublicAndPrivate.
+                        properties:
+                          allowedSubscriptions:
+                            description: |-
+                              allowedSubscriptions is the list of Azure subscription IDs permitted to create Private Endpoints
+                              to the Private Link Service.
+                            items:
+                              maxLength: 255
+                              pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                              type: string
+                            maxItems: 50
+                            minItems: 1
+                            type: array
+                          natSubnetID:
+                            description: |-
+                              natSubnetID is the Azure resource ID of the subnet used for Private Link Service NAT IP allocation.
+                              This subnet must have privateLinkServiceNetworkPolicies disabled.
+                            maxLength: 355
+                            minLength: 1
+                            pattern: ^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Network/virtualNetworks/[^/]+/subnets/[^/]+$
+                            type: string
+                            x-kubernetes-validations:
+                            - message: NATSubnetID is immutable
+                              rule: self == oldSelf
+                        required:
+                        - allowedSubscriptions
+                        - natSubnetID
+                        type: object
                       resourceGroup:
                         default: default
                         description: |-
@@ -4924,6 +4991,13 @@ spec:
                     - tenantID
                     - vnetID
                     type: object
+                    x-kubernetes-validations:
+                    - message: privateConnectivity is required when endpointAccess
+                        is not Public
+                      rule: self.endpointAccess == 'Public' || size(self.endpointAccess)
+                        == 0 || has(self.privateConnectivity)
+                    - message: privateConnectivity cannot be removed once set
+                      rule: '!has(oldSelf.privateConnectivity) || has(self.privateConnectivity)'
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components
                     properties:
