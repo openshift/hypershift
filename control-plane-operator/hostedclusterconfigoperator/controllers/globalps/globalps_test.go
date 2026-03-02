@@ -532,6 +532,47 @@ func TestLabelNodesForGlobalPullSecret(t *testing.T) {
 			},
 			expectedLabeled: []string{"replace-node-1", "replace-node-2"}, // All Replace nodes should be labeled
 		},
+		{
+			name: "When Machine.Status.NodeRef is nil it should skip the node for labeling",
+			nodes: []corev1.Node{
+				{ObjectMeta: metav1.ObjectMeta{Name: "new-node-1"}},
+				{ObjectMeta: metav1.ObjectMeta{Name: "existing-node-1"}},
+			},
+			machineSets: []capiv1.MachineSet{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "replace-machineset-1",
+						Namespace: "test-namespace",
+					},
+					Spec: capiv1.MachineSetSpec{
+						Selector: metav1.LabelSelector{
+							MatchLabels: map[string]string{"machineset": "replace-1"},
+						},
+					},
+				},
+			},
+			machines: []capiv1.Machine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "machine-with-noderef",
+						Namespace: "test-namespace",
+						Labels:    map[string]string{"machineset": "replace-1"},
+					},
+					Status: capiv1.MachineStatus{
+						NodeRef: &corev1.ObjectReference{Name: "existing-node-1"},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "machine-without-noderef",
+						Namespace: "test-namespace",
+						Labels:    map[string]string{"machineset": "replace-1"},
+					},
+					Status: capiv1.MachineStatus{NodeRef: nil},
+				},
+			},
+			expectedLabeled: []string{"existing-node-1"},
+		},
 	}
 
 	for _, tt := range tests {
