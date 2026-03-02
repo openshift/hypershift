@@ -10600,7 +10600,7 @@ int32
 </td>
 <td>
 <p>min is the minimum number of nodes to maintain in the pool.
-Can be set to 0 for scale-from-zero for AWS platform.
+Can be set to 0 for scale-from-zero for AWS and Azure platforms.
 Must be &gt;= 0 and &lt;= .Max.</p>
 </td>
 </tr>
