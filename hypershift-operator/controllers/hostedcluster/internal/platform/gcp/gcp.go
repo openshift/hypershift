@@ -349,6 +349,11 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage:         GCPPDCloudCredentialsSecret(controlPlaneNamespace),
 	}
 
+	// Add CNCC credentials if the Network service account is configured
+	if hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Network != "" {
+		credentialSecrets[hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Network] = CNCCCredsSecret(controlPlaneNamespace)
+	}
+
 	for email, secret := range credentialSecrets {
 		if err := syncSecret(secret, email); err != nil {
 			errs = append(errs, err)
@@ -414,6 +419,17 @@ func GCPPDCloudCredentialsSecret(controlPlaneNamespace string) *corev1.Secret {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: controlPlaneNamespace,
 			Name:      "gcp-pd-cloud-credentials",
+		},
+	}
+}
+
+// CNCCCredsSecret returns the secret containing Workload Identity Federation credentials
+// for the Cloud Network Config Controller to manage cloud-level network configurations.
+func CNCCCredsSecret(controlPlaneNamespace string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: controlPlaneNamespace,
+			Name:      "cloud-network-config-controller-creds",
 		},
 	}
 }

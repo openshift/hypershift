@@ -107,6 +107,7 @@ type GCPNetworkConfig struct {
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.nodePool.contains('@') && self.workloadIdentity.serviceAccountsEmails.nodePool.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="nodePool service account must belong to the same project"
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.cloudController.contains('@') && self.workloadIdentity.serviceAccountsEmails.cloudController.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="cloudController service account must belong to the same project"
 // +kubebuilder:validation:XValidation:rule="self.workloadIdentity.serviceAccountsEmails.storage.contains('@') && self.workloadIdentity.serviceAccountsEmails.storage.endsWith('@' + self.project + '.iam.gserviceaccount.com')",message="storage service account must belong to the same project"
+// +kubebuilder:validation:XValidation:rule="!has(self.workloadIdentity.serviceAccountsEmails.network) || self.workloadIdentity.serviceAccountsEmails.network == '' || (self.workloadIdentity.serviceAccountsEmails.network.contains('@') && self.workloadIdentity.serviceAccountsEmails.network.endsWith('@' + self.project + '.iam.gserviceaccount.com'))",message="network service account must belong to the same project"
 type GCPPlatformSpec struct {
 	// project is the GCP project ID.
 	// A valid project ID must satisfy the following rules:
@@ -335,6 +336,29 @@ type GCPServiceAccountsEmails struct {
 	// +kubebuilder:validation:MaxLength=100
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Storage is immutable"
 	Storage string `json:"storage,omitempty"`
+
+	// network is the Google Service Account email for the Cloud Network Config Controller
+	// that manages cloud-level network configurations (egress IPs, subnets).
+	// This GSA requires a custom role with the following permissions:
+	// - compute.instances.updateNetworkInterface
+	// - compute.instances.get
+	// - compute.subnetworks.use
+	// - compute.subnetworks.get
+	// - compute.zoneOperations.get
+	// See cmd/infra/gcp/iam-bindings.json for the authoritative permission definitions.
+	// Format: service-account-name@project-id.iam.gserviceaccount.com
+	//
+	// This is a user-provided value referencing a pre-created Google Service Account.
+	// Typically obtained from the output of `hypershift infra create gcp` which creates
+	// the required service accounts with appropriate IAM roles and WIF bindings.
+	//
+	// +optional
+	// +immutable
+	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`
+	// +kubebuilder:validation:MinLength=38
+	// +kubebuilder:validation:MaxLength=100
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Network is immutable"
+	Network string `json:"network,omitempty"`
 }
 
 // GCPOnHostMaintenance defines the behavior when a host maintenance event occurs.

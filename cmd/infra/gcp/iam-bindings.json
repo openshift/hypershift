@@ -56,6 +56,22 @@
         "namespace": "openshift-cluster-csi-drivers",
         "name": "gcp-pd-csi-driver-controller-sa"
       }
+    },
+    {
+      "name": "cloud-network",
+      "displayName": "Cloud Network Config Controller Service Account",
+      "description": "Service account for cloud network configuration (egress IP, subnet management)",
+      "permissions": [
+        "compute.instances.updateNetworkInterface",
+        "compute.instances.get",
+        "compute.subnetworks.use",
+        "compute.subnetworks.get",
+        "compute.zoneOperations.get"
+      ],
+      "k8sServiceAccount": {
+        "namespace": "openshift-cloud-network-config-controller",
+        "name": "cloud-network-config-controller"
+      }
     }
   ]
 }
