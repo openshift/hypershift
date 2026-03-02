@@ -97,9 +97,9 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	return cmd
 }
 
-// generateScheduleName creates a schedule name using the format: {hcName}-{hcNamespace}-{randomSuffix}
+// GenerateScheduleName creates a schedule name using the format: {hcName}-{hcNamespace}-{randomSuffix}
 // If the name is too long, it uses utils.ShortenName to ensure it doesn't exceed 63 characters
-func generateScheduleName(hcName, hcNamespace string) string {
+func GenerateScheduleName(hcName, hcNamespace string) string {
 	randomSuffix := utilrand.String(6)
 	baseName := fmt.Sprintf("%s-%s", hcName, hcNamespace)
 	// Use ShortenName to ensure it doesn't exceed DNS1123 subdomain max length (63 chars)
@@ -202,7 +202,7 @@ func (o *CreateOptions) GenerateScheduleObject(platform string) (*unstructured.U
 	// Use the name from flag, or generate if empty
 	scheduleName := o.ScheduleName
 	if scheduleName == "" {
-		scheduleName = generateScheduleName(o.HCName, o.HCNamespace)
+		scheduleName = GenerateScheduleName(o.HCName, o.HCNamespace)
 	}
 
 	// Determine which resources to include
