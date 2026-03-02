@@ -11,59 +11,31 @@ import (
 
 func TestAddImagePrePullInitContainers(t *testing.T) {
 	testCases := []struct {
-		name                   string
-		containers             []corev1.Container
-		existingInitContainers []corev1.Container
-		// expectedPrePullCount = unique container images - images already in init containers
-		expectedPrePullCount int
+		name                  string
+		containers            []corev1.Container
+		expectedPrePullImages []string
 	}{
 		{
-			name: "When containers have unique images it should create one pre-pull init container per image",
+			name: "When kube-apiserver container exists it should pre-pull only the apiserver image",
 			containers: []corev1.Container{
 				{Name: "kube-apiserver", Image: "registry.io/kube-apiserver:v1"},
+				{Name: "bootstrap", Image: "registry.io/controlplane-operator:v1"},
 				{Name: "konnectivity-server", Image: "registry.io/konnectivity:v1"},
 			},
-			existingInitContainers: []corev1.Container{
-				{Name: "init-bootstrap-render", Image: "registry.io/cli:v1"},
-			},
-			expectedPrePullCount: 2,
+			expectedPrePullImages: []string{"registry.io/kube-apiserver:v1"},
 		},
 		{
-			name: "When containers share the same image it should create only one pre-pull init container",
+			name: "When kube-apiserver container does not exist it should not create pre-pull init containers",
 			containers: []corev1.Container{
-				{Name: "container-a", Image: "registry.io/shared:v1"},
-				{Name: "container-b", Image: "registry.io/shared:v1"},
+				{Name: "konnectivity-server", Image: "registry.io/konnectivity:v1"},
+				{Name: "audit-logs", Image: "registry.io/cli:v1"},
 			},
-			existingInitContainers: []corev1.Container{
-				{Name: "existing-init", Image: "registry.io/init:v1"},
-			},
-			expectedPrePullCount: 1,
+			expectedPrePullImages: []string{},
 		},
 		{
-			name: "When there are no existing init containers it should only have pre-pull init containers",
-			containers: []corev1.Container{
-				{Name: "kube-apiserver", Image: "registry.io/kube-apiserver:v1"},
-			},
-			existingInitContainers: []corev1.Container{},
-			expectedPrePullCount:   1,
-		},
-		{
-			// edge case that should never happen, still testing for robustness
-			name:                   "When there are no existing containers it should have no pre-pull init containers",
-			containers:             []corev1.Container{},
-			existingInitContainers: []corev1.Container{},
-			expectedPrePullCount:   0,
-		},
-		{
-			name: "When a regular container uses the same image as an init container it should not pre-pull that image",
-			containers: []corev1.Container{
-				{Name: "kube-apiserver", Image: "registry.io/kube-apiserver:v1"},
-				{Name: "sidecar", Image: "registry.io/cli:v1"}, // same image as init container
-			},
-			existingInitContainers: []corev1.Container{
-				{Name: "init-bootstrap-render", Image: "registry.io/cli:v1"},
-			},
-			expectedPrePullCount: 1,
+			name:                  "When there are no containers it should have no pre-pull init containers",
+			containers:            []corev1.Container{},
+			expectedPrePullImages: []string{},
 		},
 	}
 
@@ -72,22 +44,13 @@ func TestAddImagePrePullInitContainers(t *testing.T) {
 			g := NewWithT(t)
 
 			podSpec := &corev1.PodSpec{
-				Containers:     tc.containers,
-				InitContainers: tc.existingInitContainers,
+				Containers: tc.containers,
 			}
 
 			addImagePrePullInitContainers(podSpec)
 
-			// Collect unique images from regular containers
-			regularContainerImages := make(map[string]bool)
-			for _, container := range tc.containers {
-				if container.Image != "" {
-					regularContainerImages[container.Image] = true
-				}
-			}
-
 			// Find pre-pull init containers and their positions
-			prePullInitContainers := []corev1.Container{}
+			var prePullInitContainers []corev1.Container
 			firstOtherInitContainerIndex := -1
 			lastPrePullInitContainerIndex := -1
 
@@ -103,26 +66,16 @@ func TestAddImagePrePullInitContainers(t *testing.T) {
 			}
 
 			// Validate the expected number of pre-pull init containers
-			g.Expect(len(prePullInitContainers)).To(Equal(tc.expectedPrePullCount),
+			g.Expect(len(prePullInitContainers)).To(Equal(len(tc.expectedPrePullImages)),
 				"unexpected number of pre-pull init containers")
 
-			// Validate that pre-pull init containers use images from regular containers
-			for _, prePullContainer := range prePullInitContainers {
-				g.Expect(regularContainerImages[prePullContainer.Image]).To(BeTrue(),
-					"pre-pull init container %s uses image %s which is not in regular containers",
-					prePullContainer.Name, prePullContainer.Image)
+			// Validate that pre-pull init containers use the expected images
+			prePullImages := make([]string, 0, len(prePullInitContainers))
+			for _, c := range prePullInitContainers {
+				prePullImages = append(prePullImages, c.Image)
 			}
-
-			// Validate that pre-pull init containers do NOT use images from existing init containers
-			existingInitImages := make(map[string]bool)
-			for _, c := range tc.existingInitContainers {
-				existingInitImages[c.Image] = true
-			}
-			for _, prePullContainer := range prePullInitContainers {
-				g.Expect(existingInitImages[prePullContainer.Image]).To(BeFalse(),
-					"pre-pull init container %s uses image %s which is already in an existing init container",
-					prePullContainer.Name, prePullContainer.Image)
-			}
+			g.Expect(prePullImages).To(Equal(tc.expectedPrePullImages),
+				"pre-pull init containers have unexpected images")
 
 			// Validate that pre-pull init containers come before other init containers
 			if firstOtherInitContainerIndex != -1 && lastPrePullInitContainerIndex != -1 {

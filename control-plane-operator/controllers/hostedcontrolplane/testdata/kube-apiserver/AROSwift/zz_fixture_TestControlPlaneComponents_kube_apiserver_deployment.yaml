@@ -357,37 +357,10 @@ spec:
       - command:
         - /bin/sh
         - -c
-        - 'echo ''Image pre-pulled: hyperkube''; exit 0'
+        - 'echo ''Image for kube-apiserver pre-pulled: hyperkube''; exit 0'
         image: hyperkube
         imagePullPolicy: IfNotPresent
-        name: pre-pull-image-hyperkube
-        resources: {}
-        terminationMessagePolicy: FallbackToLogsOnError
-      - command:
-        - /bin/sh
-        - -c
-        - 'echo ''Image pre-pulled: controlplane-operator''; exit 0'
-        image: controlplane-operator
-        imagePullPolicy: IfNotPresent
-        name: pre-pull-image-controlplane-operator
-        resources: {}
-        terminationMessagePolicy: FallbackToLogsOnError
-      - command:
-        - /bin/sh
-        - -c
-        - 'echo ''Image pre-pulled: apiserver-network-proxy''; exit 0'
-        image: apiserver-network-proxy
-        imagePullPolicy: IfNotPresent
-        name: pre-pull-image-apiserver-network-proxy
-        resources: {}
-        terminationMessagePolicy: FallbackToLogsOnError
-      - command:
-        - /bin/sh
-        - -c
-        - 'echo ''Image pre-pulled: azure-kms-encryption-provider''; exit 0'
-        image: azure-kms-encryption-provider
-        imagePullPolicy: IfNotPresent
-        name: pre-pull-image-azure-kms-encryption-provider
+        name: pre-pull-image-kube-apiserver
         resources: {}
         terminationMessagePolicy: FallbackToLogsOnError
       - args:
