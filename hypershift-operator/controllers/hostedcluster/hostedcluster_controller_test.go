@@ -5644,6 +5644,72 @@ func TestIsAWSNodeTerminationHandlerNeeded(t *testing.T) {
 			expectedResult: false,
 		},
 		{
+			name: "When AWS platform with NodePool with spot market type it should return true",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			nodePools: []crclient.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "nodepool-spot-api",
+						Namespace: "test-namespace",
+					},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "test-cluster",
+						Platform: hyperv1.NodePoolPlatform{
+							AWS: &hyperv1.AWSNodePoolPlatform{
+								Placement: &hyperv1.PlacementOptions{
+									MarketType: hyperv1.MarketTypeSpot,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name: "When AWS platform with NodePool with non-spot market type it should return false",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			nodePools: []crclient.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "nodepool-on-demand",
+						Namespace: "test-namespace",
+					},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "test-cluster",
+						Platform: hyperv1.NodePoolPlatform{
+							AWS: &hyperv1.AWSNodePoolPlatform{
+								Placement: &hyperv1.PlacementOptions{
+									MarketType: hyperv1.MarketTypeOnDemand,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedResult: false,
+		},
+		{
 			name: "When AWS platform with NodePool with spot annotation it should return true",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{

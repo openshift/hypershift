@@ -71,7 +71,18 @@ type AWSNodePoolPlatform struct {
 }
 
 // PlacementOptions specifies the placement options for the EC2 instances.
+//
+// The instance market type is determined by the marketType field:
+// - "OnDemand" (default): Standard on-demand instances
+// - "Spot": Spot instances using spare EC2 capacity at reduced prices
+// - "CapacityBlocks": Scheduled pre-purchased compute capacity for ML workloads
+//
 // +kubebuilder:validation:XValidation:rule="has(self.tenancy) && self.tenancy == 'host' ? !has(self.capacityReservation) : true", message="AWS Capacity Reservations cannot be used with Dedicated Hosts (tenancy 'host')"
+// +kubebuilder:validation:XValidation:rule="!has(self.marketType) || self.marketType != 'Spot' || !has(self.capacityReservation)", message="Spot instances cannot be combined with Capacity Reservations"
+// +kubebuilder:validation:XValidation:rule="!has(self.marketType) || self.marketType != 'Spot' || !has(self.tenancy) || self.tenancy == '' || self.tenancy == 'default'", message="Spot instances require tenancy 'default' or unset"
+// +kubebuilder:validation:XValidation:rule="!has(self.marketType) || self.marketType != 'CapacityBlocks' || has(self.capacityReservation)", message="CapacityBlocks market type requires capacityReservation to be specified"
+// +kubebuilder:validation:XValidation:rule="!has(self.spot) || (has(self.marketType) && self.marketType == 'Spot')", message="spot options can only be specified when marketType is 'Spot'"
+// +kubebuilder:validation:XValidation:rule="has(self.marketType) && self.marketType == 'Spot' ? has(self.spot) : true", message="spot options must be specified when marketType is 'Spot'"
 type PlacementOptions struct {
 	// tenancy indicates if instance should run on shared or single-tenant hardware.
 	//
@@ -87,24 +98,74 @@ type PlacementOptions struct {
 	// +kubebuilder:validation:Enum:=default;dedicated;host
 	Tenancy string `json:"tenancy,omitempty"`
 
+	// marketType specifies the EC2 instance purchasing model.
+	//
+	// Possible values:
+	// - "OnDemand": Standard on-demand instances (default if unset)
+	// - "Spot": Spot instances using spare EC2 capacity at reduced prices but may be interrupted.
+	//           Requires spot options and terminationHandlerQueueURL on the HostedCluster.
+	// - "CapacityBlocks": Scheduled pre-purchased compute capacity. Recommended for GPU/ML workloads.
+	//                     Requires capacityReservation with a specific reservation ID.
+	//
+	// When omitted, the backend will use "OnDemand" as the default.
+	// +optional
+	// +kubebuilder:validation:Enum:=OnDemand;Spot;CapacityBlocks
+	MarketType MarketType `json:"marketType,omitempty"`
+
+	// spot configures Spot instance options.
+	// Required when marketType is "Spot".
+	//
+	// Spot instances use spare EC2 capacity at reduced prices but may be interrupted
+	// with a 2-minute warning. Requires terminationHandlerQueueURL to be set on the
+	// HostedCluster's AWS platform spec for graceful handling of interruptions.
+	//
+	// +optional
+	Spot *SpotOptions `json:"spot,omitempty"`
+
 	// capacityReservation specifies Capacity Reservation options for the NodePool instances.
 	//
 	// Cannot be specified when tenancy is set to "host" as Dedicated Hosts
 	// do not support Capacity Reservations. Compatible with "default" and "dedicated" tenancy.
 	//
+	// Required when marketType is "CapacityBlocks".
+	//
 	// +optional
 	CapacityReservation *CapacityReservationOptions `json:"capacityReservation,omitempty"`
 }
 
-// MarketType describes the market type of the CapacityReservation for an Instance.
+// SpotOptions configures options for Spot instances.
+//
+// Spot instances use spare EC2 capacity at reduced prices but may be interrupted
+// with a 2-minute warning when EC2 needs the capacity back.
+type SpotOptions struct {
+	// maxPrice defines the maximum price the user is willing to pay for Spot instances.
+	// If not specified, the on-demand price is used as the maximum (you pay the actual spot price).
+	// The value should be a decimal number representing the price per hour in USD.
+	// For example, "0.50" means 50 cents per hour.
+	//
+	// Note: AWS recommends NOT setting maxPrice to reduce interruption frequency.
+	// When omitted, you pay the current Spot price (capped at On-Demand price).
+	// AWS minimum allowed value is $0.001.
+	//
+	// +optional
+	// +kubebuilder:validation:Pattern=`^[0-9]+(\.[0-9]+)?$`
+	// +kubebuilder:validation:MaxLength=20
+	MaxPrice *string `json:"maxPrice,omitempty"`
+}
+
+// MarketType describes the market type for EC2 instances.
 type MarketType string
 
 const (
-	// MarketTypeOnDemand is a MarketType enum value
+	// MarketTypeOnDemand is a MarketType enum value for standard on-demand instances.
 	MarketTypeOnDemand MarketType = "OnDemand"
 
-	// MarketTypeCapacityBlock is a MarketType enum value
+	// MarketTypeCapacityBlock is a MarketType enum value for Capacity Blocks.
 	MarketTypeCapacityBlock MarketType = "CapacityBlocks"
+
+	// MarketTypeSpot is a MarketType enum value for Spot instances.
+	// Spot instances use spare EC2 capacity at reduced prices but may be interrupted.
+	MarketTypeSpot MarketType = "Spot"
 )
 
 // CapacityReservationOptions specifies Capacity Reservation options for the NodePool instances.
@@ -124,11 +185,14 @@ type CapacityReservationOptions struct {
 	// +optional
 	ID *string `json:"id,omitempty"`
 
-	// marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values are OnDemand, CapacityBlocks and omitted:
+	// marketType specifies the market type of the CapacityReservation for the EC2 instances.
+	//
+	// Deprecated: Use placement.marketType instead. This field is maintained for backward compatibility.
+	// When both placement.marketType and capacityReservation.marketType are set, placement.marketType takes precedence.
+	//
+	// Valid values are OnDemand, CapacityBlocks and omitted:
 	// - "OnDemand": EC2 instances run as standard On-Demand instances.
-	// - "CapacityBlocks": scheduled pre-purchased compute capacity. Capacity Blocks is recommended when GPUs are needed to support ML workloads.
-	// When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
-	// The current default value is CapacityBlocks.
+	// - "CapacityBlocks": scheduled pre-purchased compute capacity. Recommended for GPU/ML workloads.
 	//
 	// When set to 'CapacityBlocks', a specific Capacity Reservation ID must be provided.
 	//
@@ -352,6 +416,22 @@ type AWSPlatformSpec struct {
 	//
 	// +optional
 	SharedVPC *AWSSharedVPC `json:"sharedVPC,omitempty"`
+
+	// terminationHandlerQueueURL specifies the SQS queue URL for EC2 spot interruption events.
+	// This is required when using spot instances (marketType: Spot) in NodePools to enable
+	// graceful handling of spot instance terminations.
+	//
+	// The queue should be configured to receive EC2 Spot Instance Interruption Warnings
+	// and EC2 Instance Rebalance Recommendations via EventBridge rules.
+	// The AWS Node Termination Handler will poll this queue and cordon/drain nodes
+	// before they are terminated, providing a best effort for graceful shutdown.
+	//
+	// Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).
+	//
+	// +optional
+	// +kubebuilder:validation:Pattern=`^https://sqs\.[a-z0-9-]+\.amazonaws\.com/[0-9]{12}/[a-zA-Z0-9_-]+(\.fifo)?$`
+	// +kubebuilder:validation:MaxLength=512
+	TerminationHandlerQueueURL *string `json:"terminationHandlerQueueURL,omitempty"`
 }
 
 // AWSSharedVPC contains fields needed to create a HostedCluster using a VPC that has been

@@ -4489,6 +4489,13 @@ func (r *HostedClusterReconciler) isAWSNodeTerminationHandlerNeeded(ctx context.
 	}
 
 	for _, nodePool := range nodePools {
+		// Check API spec first - marketType: Spot
+		if nodePool.Spec.Platform.AWS != nil &&
+			nodePool.Spec.Platform.AWS.Placement != nil &&
+			nodePool.Spec.Platform.AWS.Placement.MarketType == hyperv1.MarketTypeSpot {
+			return true, nil
+		}
+		// Check annotation for backward compatibility (used for e2e testing)
 		if nodePool.Annotations != nil {
 			if _, ok := nodePool.Annotations["hypershift.openshift.io/enable-spot"]; ok {
 				return true, nil

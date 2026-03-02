@@ -1862,6 +1862,25 @@ created in a different AWS account and is shared with the AWS account where the 
 will be created.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>terminationHandlerQueueURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>terminationHandlerQueueURL specifies the SQS queue URL for EC2 spot interruption events.
+This is required when using spot instances (marketType: Spot) in NodePools to enable
+graceful handling of spot instance terminations.</p>
+<p>The queue should be configured to receive EC2 Spot Instance Interruption Warnings
+and EC2 Instance Rebalance Recommendations via EventBridge rules.
+The AWS Node Termination Handler will poll this queue and cordon/drain nodes
+before they are terminated, providing a best effort for graceful shutdown.</p>
+<p>Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSPlatformStatus { #hypershift.openshift.io/v1beta1.AWSPlatformStatus }
@@ -4085,11 +4104,12 @@ MarketType
 </td>
 <td>
 <em>(Optional)</em>
-<p>marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values are OnDemand, CapacityBlocks and omitted:
+<p>marketType specifies the market type of the CapacityReservation for the EC2 instances.</p>
+<p>Deprecated: Use placement.marketType instead. This field is maintained for backward compatibility.
+When both placement.marketType and capacityReservation.marketType are set, placement.marketType takes precedence.</p>
+<p>Valid values are OnDemand, CapacityBlocks and omitted:
 - &ldquo;OnDemand&rdquo;: EC2 instances run as standard On-Demand instances.
-- &ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Capacity Blocks is recommended when GPUs are needed to support ML workloads.
-When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
-The current default value is CapacityBlocks.</p>
+- &ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Recommended for GPU/ML workloads.</p>
 <p>When set to &lsquo;CapacityBlocks&rsquo;, a specific Capacity Reservation ID must be provided.</p>
 </td>
 </tr>
@@ -10381,10 +10401,11 @@ credentialsSecretName must also be unique within the Azure Key Vault. See more d
 ###MarketType { #hypershift.openshift.io/v1beta1.MarketType }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>)
+<a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>, 
+<a href="#hypershift.openshift.io/v1beta1.PlacementOptions">PlacementOptions</a>)
 </p>
 <p>
-<p>MarketType describes the market type of the CapacityReservation for an Instance.</p>
+<p>MarketType describes the market type for EC2 instances.</p>
 </p>
 <table>
 <thead>
@@ -10394,10 +10415,14 @@ credentialsSecretName must also be unique within the Azure Key Vault. See more d
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;CapacityBlocks&#34;</p></td>
-<td><p>MarketTypeCapacityBlock is a MarketType enum value</p>
+<td><p>MarketTypeCapacityBlock is a MarketType enum value for Capacity Blocks.</p>
 </td>
 </tr><tr><td><p>&#34;OnDemand&#34;</p></td>
-<td><p>MarketTypeOnDemand is a MarketType enum value</p>
+<td><p>MarketTypeOnDemand is a MarketType enum value for standard on-demand instances.</p>
+</td>
+</tr><tr><td><p>&#34;Spot&#34;</p></td>
+<td><p>MarketTypeSpot is a MarketType enum value for Spot instances.
+Spot instances use spare EC2 capacity at reduced prices but may be interrupted.</p>
 </td>
 </tr></tbody>
 </table>
@@ -11956,6 +11981,10 @@ This field is immutable</p>
 </p>
 <p>
 <p>PlacementOptions specifies the placement options for the EC2 instances.</p>
+<p>The instance market type is determined by the marketType field:
+- &ldquo;OnDemand&rdquo; (default): Standard on-demand instances
+- &ldquo;Spot&rdquo;: Spot instances using spare EC2 capacity at reduced prices
+- &ldquo;CapacityBlocks&rdquo;: Scheduled pre-purchased compute capacity for ML workloads</p>
 </p>
 <table>
 <thead>
@@ -11985,6 +12014,45 @@ as AWS does not support Capacity Reservations with Dedicated Hosts.</p>
 </tr>
 <tr>
 <td>
+<code>marketType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MarketType">
+MarketType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>marketType specifies the EC2 instance purchasing model.</p>
+<p>Possible values:
+- &ldquo;OnDemand&rdquo;: Standard on-demand instances (default if unset)
+- &ldquo;Spot&rdquo;: Spot instances using spare EC2 capacity at reduced prices but may be interrupted.
+Requires spot options and terminationHandlerQueueURL on the HostedCluster.
+- &ldquo;CapacityBlocks&rdquo;: Scheduled pre-purchased compute capacity. Recommended for GPU/ML workloads.
+Requires capacityReservation with a specific reservation ID.</p>
+<p>When omitted, the backend will use &ldquo;OnDemand&rdquo; as the default.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>spot</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SpotOptions">
+SpotOptions
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>spot configures Spot instance options.
+Required when marketType is &ldquo;Spot&rdquo;.</p>
+<p>Spot instances use spare EC2 capacity at reduced prices but may be interrupted
+with a 2-minute warning. Requires terminationHandlerQueueURL to be set on the
+HostedCluster&rsquo;s AWS platform spec for graceful handling of interruptions.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>capacityReservation</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">
@@ -11997,6 +12065,7 @@ CapacityReservationOptions
 <p>capacityReservation specifies Capacity Reservation options for the NodePool instances.</p>
 <p>Cannot be specified when tenancy is set to &ldquo;host&rdquo; as Dedicated Hosts
 do not support Capacity Reservations. Compatible with &ldquo;default&rdquo; and &ldquo;dedicated&rdquo; tenancy.</p>
+<p>Required when marketType is &ldquo;CapacityBlocks&rdquo;.</p>
 </td>
 </tr>
 </tbody>
@@ -13715,6 +13784,44 @@ ServicePublishingStrategy
 <p>ServiceType defines what control plane services can be exposed from the
 management control plane.</p>
 </p>
+###SpotOptions { #hypershift.openshift.io/v1beta1.SpotOptions }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PlacementOptions">PlacementOptions</a>)
+</p>
+<p>
+<p>SpotOptions configures options for Spot instances.</p>
+<p>Spot instances use spare EC2 capacity at reduced prices but may be interrupted
+with a 2-minute warning when EC2 needs the capacity back.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>maxPrice</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>maxPrice defines the maximum price the user is willing to pay for Spot instances.
+If not specified, the on-demand price is used as the maximum (you pay the actual spot price).
+The value should be a decimal number representing the price per hour in USD.
+For example, &ldquo;0.50&rdquo; means 50 cents per hour.</p>
+<p>Note: AWS recommends NOT setting maxPrice to reduce interruption frequency.
+When omitted, you pay the current Spot price (capped at On-Demand price).
+AWS minimum allowed value is $0.001.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###SubnetFilter { #hypershift.openshift.io/v1beta1.SubnetFilter }
 <p>
 (<em>Appears on:</em>

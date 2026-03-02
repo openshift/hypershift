@@ -1103,9 +1103,7 @@ func TestControlPlaneComponents(t *testing.T) {
 				Labels: map[string]string{
 					"cluster.x-k8s.io/cluster-name": "cluster_name",
 				},
-				Annotations: map[string]string{
-					"hypershift.openshift.io/aws-termination-handler-queue-url": "https://sqs.us-east-1.amazonaws.com/123456789012/test-queue",
-				},
+				Annotations: map[string]string{},
 			},
 			Spec: hyperv1.HostedControlPlaneSpec{
 				IssuerURL: "https://test-oidc-bucket.s3.us-east-1.amazonaws.com/test-cluster",
@@ -1136,6 +1134,7 @@ func TestControlPlaneComponents(t *testing.T) {
 						RolesRef: hyperv1.AWSRolesRef{
 							NodePoolManagementARN: "arn:aws:iam::123456789012:role/test-node-pool-management-role",
 						},
+						TerminationHandlerQueueURL: ptr.To("https://sqs.us-east-1.amazonaws.com/123456789012/test-queue"),
 					},
 					Azure: &hyperv1.AzurePlatformSpec{
 						SubnetID:        "/subscriptions/mySubscriptionID/resourceGroups/myResourceGroupName/providers/Microsoft.Network/virtualNetworks/myVnetName/subnets/mySubnetName",

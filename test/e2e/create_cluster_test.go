@@ -1961,6 +1961,96 @@ func TestOnCreateAPIUX(t *testing.T) {
 						},
 						expectedErrorSubstring: "",
 					},
+					{
+						name: "When spot market type is set without spot options it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								MarketType: hyperv1.MarketTypeSpot,
+							}
+						},
+						expectedErrorSubstring: "spot options must be specified when marketType is 'Spot'",
+					},
+					{
+						name: "When spot options are set without spot market type it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								MarketType: hyperv1.MarketTypeOnDemand,
+								Spot:       &hyperv1.SpotOptions{},
+							}
+						},
+						expectedErrorSubstring: "spot options can only be specified when marketType is 'Spot'",
+					},
+					{
+						name: "When spot market type is set with default tenancy it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								MarketType: hyperv1.MarketTypeSpot,
+								Tenancy:    "default",
+								Spot:       &hyperv1.SpotOptions{},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "When spot market type is set with dedicated tenancy it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								MarketType: hyperv1.MarketTypeSpot,
+								Tenancy:    "dedicated",
+								Spot:       &hyperv1.SpotOptions{},
+							}
+						},
+						expectedErrorSubstring: "Spot instances require tenancy 'default' or unset",
+					},
+					{
+						name: "When spot market type is set with host tenancy it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								MarketType: hyperv1.MarketTypeSpot,
+								Tenancy:    "host",
+								Spot:       &hyperv1.SpotOptions{},
+							}
+						},
+						expectedErrorSubstring: "Spot instances require tenancy 'default' or unset",
+					},
+					{
+						name: "When spot market type is set with capacity reservation it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								MarketType: hyperv1.MarketTypeSpot,
+								Spot:       &hyperv1.SpotOptions{},
+								CapacityReservation: &hyperv1.CapacityReservationOptions{
+									ID: ptr.To("cr-1234567890abcdef0"),
+								},
+							}
+						},
+						expectedErrorSubstring: "Spot instances cannot be combined with Capacity Reservations",
+					},
+					{
+						name: "When deprecated capacity reservation market type is set to CapacityBlocks with ID it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								CapacityReservation: &hyperv1.CapacityReservationOptions{
+									ID:         ptr.To("cr-1234567890abcdef0"),
+									MarketType: hyperv1.MarketTypeCapacityBlock,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "When both placement and deprecated market type are set it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Platform.AWS.Placement = &hyperv1.PlacementOptions{
+								MarketType: hyperv1.MarketTypeCapacityBlock,
+								CapacityReservation: &hyperv1.CapacityReservationOptions{
+									ID:         ptr.To("cr-1234567890abcdef0"),
+									MarketType: hyperv1.MarketTypeOnDemand,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
 				},
 			},
 			{

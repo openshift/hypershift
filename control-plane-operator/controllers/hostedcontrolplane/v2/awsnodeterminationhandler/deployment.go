@@ -26,11 +26,8 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		awsRegion = hcp.Spec.Platform.AWS.Region
 	}
 
-	// Get SQS queue URL from annotation
-	queueURL := ""
-	if hcp.Annotations != nil {
-		queueURL = hcp.Annotations[AnnotationTerminationHandlerQueueURL]
-	}
+	// Get SQS queue URL from API
+	queueURL := getTerminationHandlerQueueURL(hcp)
 
 	// Get OIDC provider URL for token audience
 	issuerURL := ""
