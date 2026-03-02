@@ -35,6 +35,10 @@ const (
 	// The HostedCluster will be sized to the smallest size for which capacity * kubeAPIServerMemorySizeFractionDefault >= recommendation.
 	kubeAPIServerMemorySizeFractionDefault = 0.65
 
+	// kubeAPIServerCPUSizeFractionDefault is used to determine whether the VPA CPU recommendation fits within a cluster size.
+	// The HostedCluster will be sized to the smallest size for which capacity * kubeAPIServerCPUSizeFractionDefault >= recommendation.
+	kubeAPIServerCPUSizeFractionDefault = 0.65
+
 	// hosted cluster namespace annotation on VPA
 	hcNamespaceAnnotation = "hypershift.openshift.io/cluster-namespace"
 
@@ -177,11 +181,13 @@ func reconcileKubeAPIServerVPAFunc(vpa *vpaautoscalingv1.VerticalPodAutoscaler, 
 func (r *ControlPlaneAutoscalerController) updateSizeRecommendation(ctx context.Context, vpa *vpaautoscalingv1.VerticalPodAutoscaler, hc *hyperv1.HostedCluster) error {
 	log := ctrl.LoggerFrom(ctx)
 
-	// Get the kube-apiserver memory recommendation for logging
+	// Get the kube-apiserver memory and CPU recommendations for logging
 	var kubeAPIServerMemory *resource.Quantity
+	var kubeAPIServerCPU *resource.Quantity
 	for _, containerRec := range vpa.Status.Recommendation.ContainerRecommendations {
 		if containerRec.ContainerName == "kube-apiserver" {
 			kubeAPIServerMemory = containerRec.UncappedTarget.Memory()
+			kubeAPIServerCPU = containerRec.UncappedTarget.Cpu()
 			break
 		}
 	}
@@ -189,7 +195,7 @@ func (r *ControlPlaneAutoscalerController) updateSizeRecommendation(ctx context.
 	recommendedSize := recommendedClusterSize(vpa.Status.Recommendation, &r.sizeCache)
 	if recommendedSize == "" {
 		log.V(1).Info("No cluster size recommendation available",
-			"reason", "no kube-apiserver memory recommendation found",
+			"reason", "no kube-apiserver recommendation found",
 			"containerCount", len(vpa.Status.Recommendation.ContainerRecommendations))
 		return nil
 	}
@@ -200,18 +206,33 @@ func (r *ControlPlaneAutoscalerController) updateSizeRecommendation(ctx context.
 	}
 
 	if currentSize == recommendedSize {
-		log.V(2).Info("Cluster size recommendation unchanged",
+		logKVs := []interface{}{
 			"size", recommendedSize,
-			"kubeAPIServerMemory", kubeAPIServerMemory.String())
+		}
+		if kubeAPIServerMemory != nil {
+			logKVs = append(logKVs, "kubeAPIServerMemory", kubeAPIServerMemory.String())
+		}
+		if kubeAPIServerCPU != nil {
+			logKVs = append(logKVs, "kubeAPIServerCPU", kubeAPIServerCPU.String())
+		}
+		log.V(2).Info("Cluster size recommendation unchanged", logKVs...)
 		return nil
 	}
 
 	// Log the size change with detailed information
-	log.Info("Updating cluster size recommendation",
+	logKVs := []interface{}{
 		"previousSize", currentSize,
 		"newSize", recommendedSize,
-		"kubeAPIServerMemory", kubeAPIServerMemory.String(),
-		"memoryFraction", r.sizeCache.kasMemoryFraction())
+	}
+	if kubeAPIServerMemory != nil {
+		logKVs = append(logKVs, "kubeAPIServerMemory", kubeAPIServerMemory.String())
+		logKVs = append(logKVs, "effectiveMemoryFraction", r.sizeCache.effectiveMemoryFraction(recommendedSize))
+	}
+	if kubeAPIServerCPU != nil {
+		logKVs = append(logKVs, "kubeAPIServerCPU", kubeAPIServerCPU.String())
+		logKVs = append(logKVs, "effectiveCPUFraction", r.sizeCache.effectiveCPUFraction(recommendedSize))
+	}
+	log.Info("Updating cluster size recommendation", logKVs...)
 
 	patchedHC := hc.DeepCopy()
 	if patchedHC.Annotations == nil {
@@ -263,38 +284,48 @@ func findVPACondition(conditions []vpaautoscalingv1.VerticalPodAutoscalerConditi
 	return nil
 }
 
-// recommendedClusterSize determines the optimal cluster size class based on VPA memory recommendations
-// for the kube-apiserver container.
+// recommendedClusterSize determines the optimal cluster size class based on VPA recommendations
+// for the kube-apiserver container, considering both memory and CPU.
 //
 // The function implements the following logic:
-// 1. Extracts the memory recommendation specifically for the "kube-apiserver" container from VPA
-// 2. Uses the UncappedTarget value, which represents VPA's recommendation without resource limits
-// 3. Delegates to the size cache to find the smallest cluster size that can accommodate the memory requirement
+// 1. Extracts both memory and CPU recommendations for the "kube-apiserver" container from VPA
+// 2. Uses the UncappedTarget values, which represent VPA's recommendations without resource limits
+// 3. Delegates to the size cache to find the smallest cluster size that can accommodate both requirements
 //
 // Size selection algorithm:
-// - The cache considers the KubeAPIServerMemoryFraction (default 0.65) when calculating available memory
-// - For each size class (small, medium, large), it calculates: machine_memory * fraction >= recommended_memory
-// - Returns the smallest size class that satisfies this constraint
-// - If no size is sufficient, returns the largest available size as a best effort
+// - If both memory and CPU recommendations are available, uses recommendedSizeByBoth which
+//   independently determines the recommended size for each resource and returns the larger of the two
+// - If only memory is available, falls back to memory-only sizing (backward compatible)
+// - If only CPU is available, uses CPU-only sizing
+// - The cache considers effective fractions (per-size > global > default) when calculating capacity
 //
 // Returns:
 // - Empty string if no kube-apiserver recommendation is found or cache is empty
 // - Size class name (e.g., "small", "medium", "large") that can accommodate the workload
 func recommendedClusterSize(recommendation *vpaautoscalingv1.RecommendedPodResources, sizeCache *machineSizesCache) string {
-	// Extract memory recommendation specifically for kube-apiserver container
+	// Extract memory and CPU recommendations for kube-apiserver container
 	var recommendedMemory *resource.Quantity
+	var recommendedCPU *resource.Quantity
 	for _, containerRecommendation := range recommendation.ContainerRecommendations {
 		if containerRecommendation.ContainerName == "kube-apiserver" {
 			recommendedMemory = containerRecommendation.UncappedTarget.Memory()
+			recommendedCPU = containerRecommendation.UncappedTarget.Cpu()
 			break // Found the kube-apiserver recommendation
 		}
 	}
 
-	if recommendedMemory == nil {
+	if recommendedMemory == nil && recommendedCPU == nil {
 		// No kube-apiserver container found in VPA recommendations
 		return ""
 	}
 
-	// Delegate to cache for size class selection based on memory requirement
-	return sizeCache.recommendedSize(recommendedMemory.AsApproximateFloat64())
+	// Delegate to cache for size class selection
+	switch {
+	case recommendedMemory != nil && recommendedCPU != nil:
+		return sizeCache.recommendedSizeByBoth(recommendedMemory.AsApproximateFloat64(), recommendedCPU.AsApproximateFloat64())
+	case recommendedMemory != nil:
+		return sizeCache.recommendedSize(recommendedMemory.AsApproximateFloat64())
+	default:
+		return sizeCache.recommendedSizeByCPU(recommendedCPU.AsApproximateFloat64())
+	}
 }

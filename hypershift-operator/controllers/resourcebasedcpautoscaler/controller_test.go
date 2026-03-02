@@ -22,31 +22,57 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-// defaultSizingConfigWithCapacity returns a ClusterSizingConfiguration with memory capacity
+// defaultSizingConfigWithCapacity returns a ClusterSizingConfiguration with memory and CPU capacity
 // information that allows the cache to bypass machine set introspection for testing
 func defaultSizingConfigWithCapacity() *schedulingv1alpha1.ClusterSizingConfiguration {
 	csc := hostedclustersizing.DefaultSizingConfig()
 	csc.Generation = 1
 
-	// Add memory capacity to each size configuration to match test expectations
-	sizeMemoryMap := map[string]string{
-		"small":  "4Gi",
-		"medium": "8Gi",
-		"large":  "16Gi",
+	// Add memory and CPU capacity to each size configuration to match test expectations
+	sizeCapacityMap := map[string]struct {
+		memory string
+		cpu    string
+	}{
+		"small":  {memory: "4Gi", cpu: "4"},
+		"medium": {memory: "8Gi", cpu: "8"},
+		"large":  {memory: "16Gi", cpu: "16"},
 	}
 
 	for i := range csc.Spec.Sizes {
 		size := &csc.Spec.Sizes[i]
-		if memoryStr, exists := sizeMemoryMap[size.Name]; exists {
+		if cap, exists := sizeCapacityMap[size.Name]; exists {
 			if size.Capacity == nil {
 				size.Capacity = &schedulingv1alpha1.SizeCapacity{}
 			}
-			memory := resource.MustParse(memoryStr)
+			memory := resource.MustParse(cap.memory)
 			size.Capacity.Memory = &memory
+			cpu := resource.MustParse(cap.cpu)
+			size.Capacity.CPU = &cpu
 		}
 	}
 
 	return csc
+}
+
+// defaultSizeCacheWithCPU returns a machineSizesCache with both memory and CPU capacity
+func defaultSizeCacheWithCPU() machineSizesCache {
+	return machineSizesCache{
+		cscGeneration: 1,
+		sizes: map[string]machineResources{
+			"small": {
+				Memory: resource.MustParse("4Gi"),
+				CPU:    resource.MustParse("4"),
+			},
+			"medium": {
+				Memory: resource.MustParse("8Gi"),
+				CPU:    resource.MustParse("8"),
+			},
+			"large": {
+				Memory: resource.MustParse("16Gi"),
+				CPU:    resource.MustParse("16"),
+			},
+		},
+	}
 }
 
 func TestReconcile(t *testing.T) {
@@ -88,6 +114,29 @@ func TestReconcile(t *testing.T) {
 		}
 		return vpa
 	}
+	vpaWithMemoryAndCPURecommendation := func(memory, cpu resource.Quantity) *vpaautoscalingv1.VerticalPodAutoscaler {
+		vpa := defaultVPA()
+		vpa.Status = vpaautoscalingv1.VerticalPodAutoscalerStatus{
+			Conditions: []vpaautoscalingv1.VerticalPodAutoscalerCondition{
+				{
+					Type:   vpaautoscalingv1.RecommendationProvided,
+					Status: corev1.ConditionTrue,
+				},
+			},
+			Recommendation: &vpaautoscalingv1.RecommendedPodResources{
+				ContainerRecommendations: []vpaautoscalingv1.RecommendedContainerResources{
+					{
+						ContainerName: "kube-apiserver",
+						UncappedTarget: corev1.ResourceList{
+							corev1.ResourceMemory: memory,
+							corev1.ResourceCPU:    cpu,
+						},
+					},
+				},
+			},
+		}
+		return vpa
+	}
 	vpaWithMissingKASRecommendation := func() *vpaautoscalingv1.VerticalPodAutoscaler {
 		vpa := defaultVPA()
 		vpa.Status = vpaautoscalingv1.VerticalPodAutoscalerStatus{
@@ -116,36 +165,71 @@ func TestReconcile(t *testing.T) {
 		name                  string
 		hc                    *hyperv1.HostedCluster
 		vpa                   *vpaautoscalingv1.VerticalPodAutoscaler
+		sizeCache             machineSizesCache
 		expectVPAExists       bool
 		expectRecommendedSize string
 	}{
 		{
-			name: "hc not applicable",
+			name: "When HC is not applicable it should not create VPA",
 			hc: func() *hyperv1.HostedCluster {
 				hc := defaultHC()
 				hc.Annotations = map[string]string{}
 				return hc
 			}(),
 			vpa:             defaultVPA(),
+			sizeCache:       defaultSizeCacheWithCPU(),
 			expectVPAExists: false,
 		},
 		{
-			name:            "vpa not created yet",
+			name:            "When VPA is not created yet it should create VPA",
 			hc:              defaultHC(),
+			sizeCache:       defaultSizeCacheWithCPU(),
 			expectVPAExists: true,
 		},
 		{
-			name:                  "recommendation available",
+			name:                  "When memory recommendation is available it should set the recommended size",
 			hc:                    defaultHC(),
 			vpa:                   vpaWithRecommendation(resource.MustParse("5Gi")),
+			sizeCache:             defaultSizeCacheWithCPU(),
 			expectVPAExists:       true,
 			expectRecommendedSize: "medium",
 		},
 		{
-			name:            "recommendation missing kube-apiserver container results in no-op",
+			name:            "When recommendation is missing kube-apiserver container it should result in no-op",
 			hc:              defaultHC(),
 			vpa:             vpaWithMissingKASRecommendation(),
+			sizeCache:       defaultSizeCacheWithCPU(),
 			expectVPAExists: true,
+		},
+		{
+			name: "When both memory and CPU recommendations are available and CPU drives larger size it should use CPU-driven size",
+			hc:   defaultHC(),
+			// Memory: 2Gi fits in small (4Gi * 0.65 = 2.6Gi)
+			// CPU: 4 needs medium (4 * 0.65 = 2.6 < 4, 8 * 0.65 = 5.2 >= 4)
+			vpa:                   vpaWithMemoryAndCPURecommendation(resource.MustParse("2Gi"), resource.MustParse("4")),
+			sizeCache:             defaultSizeCacheWithCPU(),
+			expectVPAExists:       true,
+			expectRecommendedSize: "medium",
+		},
+		{
+			name: "When both memory and CPU recommendations are available and memory drives larger size it should use memory-driven size",
+			hc:   defaultHC(),
+			// Memory: 5Gi needs medium (4Gi * 0.65 = 2.6 < 5)
+			// CPU: 2 fits in small (4 * 0.65 = 2.6 >= 2)
+			vpa:                   vpaWithMemoryAndCPURecommendation(resource.MustParse("5Gi"), resource.MustParse("2")),
+			sizeCache:             defaultSizeCacheWithCPU(),
+			expectVPAExists:       true,
+			expectRecommendedSize: "medium",
+		},
+		{
+			name: "When CPU needs large it should return large even when memory is small",
+			hc:   defaultHC(),
+			// Memory: 2Gi fits in small
+			// CPU: 8 needs large (8 * 0.65 = 5.2 < 8, 16 * 0.65 = 10.4 >= 8)
+			vpa:                   vpaWithMemoryAndCPURecommendation(resource.MustParse("2Gi"), resource.MustParse("8")),
+			sizeCache:             defaultSizeCacheWithCPU(),
+			expectVPAExists:       true,
+			expectRecommendedSize: "large",
 		},
 	}
 
@@ -162,21 +246,8 @@ func TestReconcile(t *testing.T) {
 			}
 			fakeClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(objs...).Build()
 			r := &ControlPlaneAutoscalerController{
-				Client: fakeClient,
-				sizeCache: machineSizesCache{
-					cscGeneration: 1,
-					sizes: map[string]machineResources{
-						"small": {
-							Memory: resource.MustParse("4Gi"),
-						},
-						"medium": {
-							Memory: resource.MustParse("8Gi"),
-						},
-						"large": {
-							Memory: resource.MustParse("16Gi"),
-						},
-					},
-				},
+				Client:    fakeClient,
+				sizeCache: tc.sizeCache,
 				updateSizeCacheFunc: func(ctx context.Context) error {
 					return nil
 				},
@@ -214,15 +285,8 @@ func TestReconcileHostedClusterNotFound(t *testing.T) {
 	csc := defaultSizingConfigWithCapacity()
 	fakeClient := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(csc).Build()
 	r := &ControlPlaneAutoscalerController{
-		Client: fakeClient,
-		sizeCache: machineSizesCache{
-			cscGeneration: 1,
-			sizes: map[string]machineResources{
-				"small":  {Memory: resource.MustParse("4Gi")},
-				"medium": {Memory: resource.MustParse("8Gi")},
-				"large":  {Memory: resource.MustParse("16Gi")},
-			},
-		},
+		Client:    fakeClient,
+		sizeCache: defaultSizeCacheWithCPU(),
 		updateSizeCacheFunc: func(ctx context.Context) error {
 			return nil
 		},
@@ -231,6 +295,80 @@ func TestReconcileHostedClusterNotFound(t *testing.T) {
 	_, err := r.Reconcile(context.Background(), req)
 	g.Expect(err).ToNot(HaveOccurred())
 }
+
+func TestRecommendedClusterSize(t *testing.T) {
+	sizeCache := &machineSizesCache{
+		sizes: map[string]machineResources{
+			"small":  {Memory: resource.MustParse("4Gi"), CPU: resource.MustParse("4")},
+			"medium": {Memory: resource.MustParse("8Gi"), CPU: resource.MustParse("8")},
+			"large":  {Memory: resource.MustParse("16Gi"), CPU: resource.MustParse("16")},
+		},
+	}
+
+	t.Run("When VPA has both memory and CPU it should use both for sizing", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		recommendation := &vpaautoscalingv1.RecommendedPodResources{
+			ContainerRecommendations: []vpaautoscalingv1.RecommendedContainerResources{
+				{
+					ContainerName: "kube-apiserver",
+					UncappedTarget: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("2Gi"),
+						corev1.ResourceCPU:    resource.MustParse("4"),
+					},
+				},
+			},
+		}
+		// Memory fits in small, CPU needs medium -> medium
+		g.Expect(recommendedClusterSize(recommendation, sizeCache)).To(Equal("medium"))
+	})
+
+	t.Run("When VPA has only memory it should fall back to memory-only sizing", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		recommendation := &vpaautoscalingv1.RecommendedPodResources{
+			ContainerRecommendations: []vpaautoscalingv1.RecommendedContainerResources{
+				{
+					ContainerName: "kube-apiserver",
+					UncappedTarget: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("5Gi"),
+					},
+				},
+			},
+		}
+		g.Expect(recommendedClusterSize(recommendation, sizeCache)).To(Equal("medium"))
+	})
+
+	t.Run("When VPA has only CPU it should use CPU-only sizing", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		recommendation := &vpaautoscalingv1.RecommendedPodResources{
+			ContainerRecommendations: []vpaautoscalingv1.RecommendedContainerResources{
+				{
+					ContainerName: "kube-apiserver",
+					UncappedTarget: corev1.ResourceList{
+						corev1.ResourceCPU: resource.MustParse("4"),
+					},
+				},
+			},
+		}
+		// CPU: 4 needs medium (4 * 0.65 = 2.6 < 4)
+		g.Expect(recommendedClusterSize(recommendation, sizeCache)).To(Equal("medium"))
+	})
+
+	t.Run("When VPA has no kube-apiserver recommendation it should return empty string", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+		recommendation := &vpaautoscalingv1.RecommendedPodResources{
+			ContainerRecommendations: []vpaautoscalingv1.RecommendedContainerResources{
+				{
+					ContainerName: "other-container",
+					UncappedTarget: corev1.ResourceList{
+						corev1.ResourceMemory: resource.MustParse("1Gi"),
+					},
+				},
+			},
+		}
+		g.Expect(recommendedClusterSize(recommendation, sizeCache)).To(Equal(""))
+	})
+}
+
 func TestFindVPACondition(t *testing.T) {
 	testCases := []struct {
 		name          string
