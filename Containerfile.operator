@@ -8,7 +8,9 @@ RUN make hypershift \
   && make hypershift-no-cgo \
   && make hypershift-operator \
   && make product-cli \
-  && make karpenter-operator
+  && make karpenter-operator \
+  && make control-plane-operator \
+  && make control-plane-pki-operator
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:9.6-1760515502
 COPY --from=builder /hypershift/bin/hypershift \
@@ -16,7 +18,15 @@ COPY --from=builder /hypershift/bin/hypershift \
   /hypershift/bin/hcp \
   /hypershift/bin/hypershift-operator \
   /hypershift/bin/karpenter-operator \
+  /hypershift/bin/control-plane-operator \
+  /hypershift/bin/control-plane-pki-operator \
   /usr/bin/
+
+RUN cd /usr/bin && \
+    ln -s control-plane-operator ignition-server && \
+    ln -s control-plane-operator konnectivity-socks5-proxy && \
+    ln -s control-plane-operator availability-prober && \
+    ln -s control-plane-operator token-minter
 
 ENTRYPOINT ["/usr/bin/hypershift"]
 
@@ -42,4 +52,5 @@ LABEL io.openshift.hypershift.control-plane-operator-applies-management-kas-netw
 LABEL io.openshift.hypershift.restricted-psa=true
 LABEL io.openshift.hypershift.control-plane-pki-operator-signs-csrs=true
 LABEL io.openshift.hypershift.hosted-cluster-config-operator-reports-node-count=true
+LABEL io.openshift.hypershift.control-plane-operator-supports-kas-custom-kubeconfig=true
 LABEL io.openshift.hypershift.control-plane-operator.v2-isdefault=true
