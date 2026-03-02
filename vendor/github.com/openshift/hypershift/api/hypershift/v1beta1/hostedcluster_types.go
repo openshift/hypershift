@@ -1878,6 +1878,10 @@ type HostedClusterStatus struct {
 	// +optional
 	Platform *PlatformStatus `json:"platform,omitempty"`
 
+	// autoNode contains the observed state of the AutoNode (Karpenter) provisioner.
+	// +optional
+	AutoNode *AutoNodeStatus `json:"autoNode,omitempty"`
+
 	// configuration contains the cluster configuration status of the HostedCluster
 	// +optional
 	Configuration *ConfigurationStatus `json:"configuration,omitempty"`

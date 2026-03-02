@@ -19,6 +19,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	apiserverconfigv1 "k8s.io/apiserver/pkg/apis/apiserver/v1"
 	kasv1beta1 "k8s.io/apiserver/pkg/apis/apiserver/v1beta1"
@@ -27,6 +28,8 @@ import (
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	karpenterapis "sigs.k8s.io/karpenter/pkg/apis"
+	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 
 	snapshotv1 "github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
@@ -74,4 +77,13 @@ func init() {
 	_ = imageregistryv1.AddToScheme(Scheme)
 	_ = operatorsv1alpha1.AddToScheme(Scheme)
 	_ = snapshotv1.AddToScheme(Scheme)
+
+	// Karpenter does not expose an AddToScheme function, so we register its types manually.
+	karpenterGroupVersion := schema.GroupVersion{Group: karpenterapis.Group, Version: "v1"}
+	Scheme.AddKnownTypes(karpenterGroupVersion,
+		&karpenterv1.NodeClaim{},
+		&karpenterv1.NodeClaimList{},
+		&karpenterv1.NodePool{},
+		&karpenterv1.NodePoolList{},
+	)
 }

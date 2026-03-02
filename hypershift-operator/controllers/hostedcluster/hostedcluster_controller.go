@@ -61,6 +61,7 @@ import (
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/infraid"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/oidc"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -855,7 +856,24 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Copy the platform status from the hostedcontrolplane
 	if hcp != nil {
 		hcluster.Status.Platform = hcp.Status.Platform
+		hcluster.Status.AutoNode = hcp.Status.AutoNode
 	}
+
+	// Set the AutoNodeEnabled condition based on whether Karpenter is configured.
+	autoNodeCondition := metav1.Condition{
+		Type:               string(hyperv1.AutoNodeEnabled),
+		ObservedGeneration: hcluster.Generation,
+	}
+	if karpenterutil.IsKarpenterEnabled(hcluster.Spec.AutoNode) {
+		autoNodeCondition.Status = metav1.ConditionTrue
+		autoNodeCondition.Reason = hyperv1.AsExpectedReason
+		autoNodeCondition.Message = "AutoNode (Karpenter) is configured"
+	} else {
+		autoNodeCondition.Status = metav1.ConditionFalse
+		autoNodeCondition.Reason = "AutoNodeNotConfigured"
+		autoNodeCondition.Message = "AutoNode provisioner is not configured"
+	}
+	meta.SetStatusCondition(&hcluster.Status.Conditions, autoNodeCondition)
 
 	// Copy the AWSDefaultSecurityGroupCreated condition from the hostedcontrolplane
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
