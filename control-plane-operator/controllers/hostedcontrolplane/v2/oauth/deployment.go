@@ -94,6 +94,12 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 		identityProviders := configuration.OAuth.IdentityProviders
 		if len(identityProviders) > 0 {
+			// Remove any existing IDP volumes to ensure clean state after restore
+			// This is important for OADP restore scenarios where the deployment
+			// might be restored with stale volume configurations
+			removeIDPVolumes(deployment)
+			removeIDPVolumeMounts(deployment)
+
 			_, volumeMountInfo, _ := ConvertIdentityProviders(cpContext, identityProviders, providerOverrides(cpContext.HCP), cpContext.Client, deployment.Namespace)
 			// Ignore the error here, since we don't want to fail the deployment if the identity providers are invalid
 			// A condition will be set on the HC to indicate the error
@@ -103,6 +109,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 					c.VolumeMounts = append(c.VolumeMounts, volumeMountInfo.VolumeMounts.ContainerMounts(ComponentName)...)
 				})
 			}
+		} else {
+			// If no identity providers are configured, ensure any stale IDP volumes are removed
+			removeIDPVolumes(deployment)
+			removeIDPVolumeMounts(deployment)
 		}
 	}
 
@@ -141,5 +151,33 @@ func applyNamedCertificateMounts(certs []configv1.APIServerNamedServingCert, spe
 				MountPath: fmt.Sprintf("%s-%d", oauthNamedCertificateMountPathPrefix, i+1),
 			})
 		}
+	})
+}
+
+// removeIDPVolumes removes all IDP-related volumes from the deployment.
+// This ensures clean state after OADP restore where stale volumes might exist.
+func removeIDPVolumes(deployment *appsv1.Deployment) {
+	filtered := []corev1.Volume{}
+	for _, vol := range deployment.Spec.Template.Spec.Volumes {
+		// Keep volumes that are not IDP-related (idp-secret-* or idp-cm-*)
+		if !strings.HasPrefix(vol.Name, "idp-secret-") && !strings.HasPrefix(vol.Name, "idp-cm-") {
+			filtered = append(filtered, vol)
+		}
+	}
+	deployment.Spec.Template.Spec.Volumes = filtered
+}
+
+// removeIDPVolumeMounts removes all IDP-related volume mounts from the oauth-openshift container.
+// This ensures clean state after OADP restore where stale volume mounts might exist.
+func removeIDPVolumeMounts(deployment *appsv1.Deployment) {
+	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
+		filtered := []corev1.VolumeMount{}
+		for _, vm := range c.VolumeMounts {
+			// Keep volume mounts that are not IDP-related (idp-secret-* or idp-cm-*)
+			if !strings.HasPrefix(vm.Name, "idp-secret-") && !strings.HasPrefix(vm.Name, "idp-cm-") {
+				filtered = append(filtered, vm)
+			}
+		}
+		c.VolumeMounts = filtered
 	})
 }
