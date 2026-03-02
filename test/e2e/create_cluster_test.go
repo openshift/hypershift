@@ -68,9 +68,10 @@ func TestOnCreateAPIUX(t *testing.T) {
 		g.Expect(err).NotTo(HaveOccurred(), "couldn't get client")
 
 		testCases := []struct {
-			name        string
-			file        string
-			validations []struct {
+			name         string
+			file         string
+			platformType hyperv1.PlatformType // empty = use globalOpts.Platform
+			validations  []struct {
 				name                   string
 				mutateInput            func(*hyperv1.HostedCluster)
 				expectedErrorSubstring string
@@ -319,8 +320,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 				},
 			},
 			{
-				name: "when GCP project/region validation is applied it should handle formats",
-				file: "hostedcluster-base.yaml",
+				name:         "when GCP project/region validation is applied it should handle formats",
+				file:         "hostedcluster-base.yaml",
+				platformType: hyperv1.GCPPlatform,
 				validations: []struct {
 					name                   string
 					mutateInput            func(*hyperv1.HostedCluster)
@@ -359,8 +361,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 				},
 			},
 			{
-				name: "when GCP network configuration is not valid it should fail",
-				file: "hostedcluster-base.yaml",
+				name:         "when GCP network configuration is not valid it should fail",
+				file:         "hostedcluster-base.yaml",
+				platformType: hyperv1.GCPPlatform,
 				validations: []struct {
 					name                   string
 					mutateInput            func(*hyperv1.HostedCluster)
@@ -1363,8 +1366,9 @@ func TestOnCreateAPIUX(t *testing.T) {
 				},
 			},
 			{
-				name: "when Azure authentication configuration is not properly configured it should fail",
-				file: "hostedcluster-base.yaml",
+				name:         "when Azure authentication configuration is not properly configured it should fail",
+				file:         "hostedcluster-base.yaml",
+				platformType: hyperv1.AzurePlatform,
 				validations: []struct {
 					name                   string
 					mutateInput            func(*hyperv1.HostedCluster)
@@ -1373,7 +1377,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 					{
 						name: "when azureAuthenticationConfigType is ManagedIdentities but managedIdentities field is missing it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Platform.Type = hyperv1.AzurePlatform
 							hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
 								Location:          "eastus",
 								ResourceGroupName: "test-rg",
@@ -1393,7 +1396,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 					{
 						name: "when azureAuthenticationConfigType is WorkloadIdentities but workloadIdentities field is missing it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Platform.Type = hyperv1.AzurePlatform
 							hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
 								Location:          "eastus",
 								ResourceGroupName: "test-rg",
@@ -1413,7 +1415,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 					{
 						name: "when azureAuthenticationConfigType is ManagedIdentities but workloadIdentities field is present it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Platform.Type = hyperv1.AzurePlatform
 							hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
 								Location:          "eastus",
 								ResourceGroupName: "test-rg",
@@ -1441,7 +1442,6 @@ func TestOnCreateAPIUX(t *testing.T) {
 					{
 						name: "when azureAuthenticationConfigType is WorkloadIdentities but managedIdentities field is present it should fail",
 						mutateInput: func(hc *hyperv1.HostedCluster) {
-							hc.Spec.Platform.Type = hyperv1.AzurePlatform
 							hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
 								Location:          "eastus",
 								ResourceGroupName: "test-rg",
@@ -1634,13 +1634,19 @@ func TestOnCreateAPIUX(t *testing.T) {
 
 				t.Logf("Running validation %q", v.name)
 				hostedCluster := assets.ShouldHostedCluster(content.ReadFile, fmt.Sprintf("assets/%s", tc.file))
+				// Set platform type: explicit per test case, or fall back to environment
+				if tc.platformType != "" {
+					hostedCluster.Spec.Platform.Type = tc.platformType
+				} else {
+					hostedCluster.Spec.Platform.Type = globalOpts.Platform
+				}
 				// Generate unique name to avoid "already exists" race condition
 				hostedCluster.Name = fmt.Sprintf("test-%d-%d", time.Now().UnixNano(), i)
 				defer client.Delete(ctx, hostedCluster)
 				v.mutateInput(hostedCluster)
 
 				// Skip GCP validations outside TechPreviewNoUpgrade
-				if hostedCluster.Spec.Platform.Type == hyperv1.GCPPlatform && os.Getenv("TECH_PREVIEW_NO_UPGRADE") != "true" {
+				if tc.platformType == hyperv1.GCPPlatform && os.Getenv("TECH_PREVIEW_NO_UPGRADE") != "true" {
 					t.Logf("Skipping GCP validation outside TechPreviewNoUpgrade: %s", v.name)
 					continue
 				}
@@ -2426,7 +2432,7 @@ func TestCreateCluster(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	zones := strings.Split(globalOpts.ConfigurableClusterOptions.Zone.String(), ",")
-	if len(zones) >= 3 {
+	if len(zones) >= 3 && globalOpts.Platform == hyperv1.AWSPlatform {
 		// CreateCluster also tests multi-zone workers work properly if a sufficient number of zones are configured
 		t.Logf("Sufficient zones available for InfrastructureAvailabilityPolicy HighlyAvailable")
 		clusterOpts.AWSPlatform.Zones = zones
