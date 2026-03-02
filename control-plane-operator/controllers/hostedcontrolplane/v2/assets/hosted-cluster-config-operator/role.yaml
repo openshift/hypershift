@@ -45,6 +45,8 @@ rules:
   - get
   - list
   - watch
+  - patch
+  - update
 - apiGroups:
   - hypershift.openshift.io
   resources:
@@ -81,6 +83,18 @@ rules:
   - watch
   - patch
   - update
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - patch
+  - update
+  - delete
 - apiGroups:
   - cluster.x-k8s.io
   resources:

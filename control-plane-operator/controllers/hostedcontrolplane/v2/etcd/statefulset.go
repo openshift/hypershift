@@ -39,18 +39,45 @@ func adaptStatefulSet(cpContext component.WorkloadContext, sts *appsv1.StatefulS
 			},
 		)
 
+		// For KubeVirt platform, use 0.0.0.0 to listen on all interfaces
+		// This is required for Primary UDN support where pods have multiple IPs
+		// and the default route goes through the UDN network
+		isKubeVirt := hcp.Spec.Platform.Type == hyperv1.KubevirtPlatform
+
 		if !ipv4 {
-			util.UpsertEnvVar(c, corev1.EnvVar{
-				Name:  "ETCD_LISTEN_PEER_URLS",
-				Value: "https://[$(POD_IP)]:2380",
-			})
+			if isKubeVirt {
+				// IPv6 KubeVirt: listen on all interfaces
+				// Note: [::] includes localhost, so no need to specify it separately
+				util.UpsertEnvVar(c, corev1.EnvVar{
+					Name:  "ETCD_LISTEN_CLIENT_URLS",
+					Value: "https://[::]:2379",
+				})
+				util.UpsertEnvVar(c, corev1.EnvVar{
+					Name:  "ETCD_LISTEN_METRICS_URLS",
+					Value: "https://[::]:2382",
+				})
+			} else {
+				// IPv6 non-KubeVirt: use POD_IP
+				util.UpsertEnvVar(c, corev1.EnvVar{
+					Name:  "ETCD_LISTEN_PEER_URLS",
+					Value: "https://[$(POD_IP)]:2380",
+				})
+				util.UpsertEnvVar(c, corev1.EnvVar{
+					Name:  "ETCD_LISTEN_CLIENT_URLS",
+					Value: "https://[$(POD_IP)]:2379,https://localhost:2379",
+				})
+				util.UpsertEnvVar(c, corev1.EnvVar{
+					Name:  "ETCD_LISTEN_METRICS_URLS",
+					Value: "https://[::]:2382",
+				})
+			}
+		} else if isKubeVirt {
+			// IPv4 KubeVirt: listen on all interfaces
+			// Note: 0.0.0.0 includes localhost (127.0.0.1), so no need to specify it separately
+			// Adding localhost would cause "bind: address already in use" error
 			util.UpsertEnvVar(c, corev1.EnvVar{
 				Name:  "ETCD_LISTEN_CLIENT_URLS",
-				Value: "https://[$(POD_IP)]:2379,https://localhost:2379",
-			})
-			util.UpsertEnvVar(c, corev1.EnvVar{
-				Name:  "ETCD_LISTEN_METRICS_URLS",
-				Value: "https://[::]:2382",
+				Value: "https://0.0.0.0:2379",
 			})
 		}
 	})

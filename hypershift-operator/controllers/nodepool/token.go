@@ -9,7 +9,6 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
-	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/globalconfig"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
@@ -145,8 +144,14 @@ func NewToken(ctx context.Context, configGenerator *ConfigGenerator, cpoCapabili
 // getInitionCACert gets the ignition CA cert from a secret.
 // It's needed to generate a valid ignition config within the user data secret.
 func (t *Token) getIgnitionCACert(ctx context.Context) ([]byte, error) {
-	// Validate Ignition CA Secret.
-	caSecret := ignitionserver.IgnitionCACertSecret(t.controlplaneNamespace)
+	// Use root-ca secret which is the CA that signs the ignition-server certificate.
+	// This is needed for Primary UDN clusters where VMs access ignition-server via internal service DNS.
+	caSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: t.controlplaneNamespace,
+			Name:      "root-ca",
+		},
+	}
 	if err := t.Get(ctx, client.ObjectKeyFromObject(caSecret), caSecret); err != nil {
 		return nil, err
 	}

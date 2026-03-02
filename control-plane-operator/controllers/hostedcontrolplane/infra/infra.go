@@ -543,6 +543,18 @@ func (r *Reconciler) reconcileKonnectivityServiceStatus(ctx context.Context, hcp
 		err = fmt.Errorf("failed to get konnectivity service: %w", err)
 		return
 	}
+
+	// For KubeVirt with Primary UDN, use internal service endpoint
+	// Worker VMs on Primary UDN cannot reach external routes
+	if hcp.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+		if hcp.Annotations != nil && hcp.Annotations["hypershift.openshift.io/primary-udn"] == "true" {
+			// Primary UDN detected - use internal ClusterIP service endpoint
+			host = fmt.Sprintf("konnectivity-server.%s.svc.cluster.local", hcp.Namespace)
+			port = 8091
+			return
+		}
+	}
+
 	var route *routev1.Route
 	if serviceStrategy.Type == hyperv1.Route {
 		route = manifests.KonnectivityServerRoute(hcp.Namespace)

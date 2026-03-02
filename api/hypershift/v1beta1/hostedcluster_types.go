@@ -274,6 +274,13 @@ const (
 	// JSONPatchAnnotation allow modifying the kubevirt VM template using jsonpatch
 	JSONPatchAnnotation = "hypershift.openshift.io/kubevirt-vm-jsonpatch"
 
+	// PrimaryUDNNameAnnotation enables Primary UDN for KubeVirt hosted clusters by specifying the
+	// UserDefinedNetwork name to be used as the primary network for the hosted control plane namespace.
+	PrimaryUDNNameAnnotation = "hypershift.openshift.io/primary-udn-name"
+	// PrimaryUDNSubnetAnnotation specifies the subnet CIDR for the Primary UDN to be created/ensured
+	// in the hosted control plane namespace (e.g. "10.150.0.0/16").
+	PrimaryUDNSubnetAnnotation = "hypershift.openshift.io/primary-udn-subnet"
+
 	// KubeAPIServerGOGCAnnotation allows modifying the kube-apiserver GOGC environment variable to impact how often
 	// the GO garbage collector runs. This can be used to reduce the memory footprint of the kube-apiserver.
 	KubeAPIServerGOGCAnnotation = "hypershift.openshift.io/kube-apiserver-gogc"
