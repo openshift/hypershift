@@ -219,6 +219,13 @@ const (
 	// firewall rules, missing data plane nodes, or problems with infrastructure
 	// components like the konnectivity-agent workload.
 	DataPlaneConnectionAvailable ConditionType = "DataPlaneConnectionAvailable"
+
+	// AggregatedAPIServicesAvailable indicates whether all aggregated APIServices
+	// in the guest cluster are available. This includes OpenShift API Server,
+	// OAuth API Server (when enabled), and OLM PackageServer APIServices.
+	// This condition is an HCP implementation detail set by the HCCO and is not
+	// bubbled up to the HostedCluster level.
+	AggregatedAPIServicesAvailable ConditionType = "AggregatedAPIServicesAvailable"
 )
 
 // Reasons.
@@ -286,6 +293,8 @@ const (
 	DataPlaneConnectionNoWorkerNodesAvailableReason = "NoWorkerNodesAvailable"
 
 	ControlPlaneComponentsNotAvailable = "ComponentsNotAvailable"
+
+	AggregatedAPIServicesNotAvailableReason = "APIServicesNotAvailable"
 )
 
 // Messages.

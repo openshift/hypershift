@@ -714,6 +714,7 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			healthCheckErr,
 			componentsNotAvailableMsg,
 			componentsErr,
+			alreadyAvailable,
 			hostedControlPlane.Generation,
 		)
 		hostedControlPlane.Status.Ready = ready
@@ -808,18 +809,22 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 // reconcileAvailabilityStatus determines the HostedControlPlane availability condition
 // and Ready flag based on the current state of all prerequisite conditions.
 // It evaluates conditions in priority order: infrastructure, kubeconfig, etcd, KAS,
-// health check, and control plane components.
+// health check, control plane components, and aggregated API services.
+// The alreadyAvailable parameter implements a latch: once the HCP is Available,
+// transient aggregated API service issues will not regress availability.
 func reconcileAvailabilityStatus(
 	conditions []metav1.Condition,
 	kubeConfigAvailable bool,
 	healthCheckErr error,
 	componentsNotAvailableMsg string,
 	componentsErr error,
+	alreadyAvailable bool,
 	generation int64,
 ) (bool, metav1.Condition) {
 	infrastructureCondition := meta.FindStatusCondition(conditions, string(hyperv1.InfrastructureReady))
 	etcdCondition := meta.FindStatusCondition(conditions, string(hyperv1.EtcdAvailable))
 	kubeAPIServerCondition := meta.FindStatusCondition(conditions, string(hyperv1.KubeAPIServerAvailable))
+	apiServicesCondition := meta.FindStatusCondition(conditions, string(hyperv1.AggregatedAPIServicesAvailable))
 
 	status := metav1.ConditionFalse
 	var reason, message string
@@ -848,6 +853,13 @@ func reconcileAvailabilityStatus(
 	case componentsNotAvailableMsg != "":
 		reason = hyperv1.ControlPlaneComponentsNotAvailable
 		message = componentsNotAvailableMsg
+	case !alreadyAvailable && (apiServicesCondition == nil || apiServicesCondition.Status != metav1.ConditionTrue):
+		reason = hyperv1.AggregatedAPIServicesNotAvailableReason
+		if apiServicesCondition != nil {
+			message = apiServicesCondition.Message
+		} else {
+			message = "Waiting for aggregated API services to be available"
+		}
 	default:
 		reason = hyperv1.AsExpectedReason
 		message = ""
