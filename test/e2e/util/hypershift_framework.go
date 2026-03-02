@@ -159,7 +159,7 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 					t.Fatal("AssetReader is required for Cilium installation. Call WithAssetReader() on the test instance.")
 				}
 				guestClient := WaitForGuestClient(t, context.Background(), h.client, hostedCluster)
-				InstallCilium(t, context.Background(), guestClient, hostedCluster, h.assetReader)
+				InstallCilium(t, context.Background(), guestClient, hostedCluster, h.assetReader, opts.NodePoolReplicas)
 				// wait hosted cluster ready
 				WaitForNReadyNodes(t, context.Background(), guestClient, opts.NodePoolReplicas, platform)
 				WaitForImageRollout(t, context.Background(), h.client, hostedCluster)
