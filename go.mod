@@ -126,6 +126,8 @@ require (
 	sigs.k8s.io/yaml v1.6.0
 )
 
+replace github.com/openshift/api => github.com/ShazaAldawamneh/api v0.0.0-20260105154902-5470873fa1dc
+
 require (
 	cel.dev/expr v0.24.0 // indirect
 	cloud.google.com/go/auth v0.17.0 // indirect

@@ -89,6 +89,8 @@ github.com/Pallinder/go-randomdata v1.2.0 h1:DZ41wBchNRb/0GfsePLiSwb0PHZmT67XY00
 github.com/Pallinder/go-randomdata v1.2.0/go.mod h1:yHmJgulpD2Nfrm0cR9tI/+oAgRqCQQixsA8HyRZfV9Y=
 github.com/PuerkitoBio/purell v1.1.1/go.mod h1:c11w/QuzBsJSee3cPx9rAFu61PvFxuPbtSwDGJws/X0=
 github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578/go.mod h1:uGdkoq3SwY9Y+13GIhn11/XLaGBb4BfwItxLd5jeuXE=
+github.com/ShazaAldawamneh/api v0.0.0-20260105154902-5470873fa1dc h1:5gveQGNparb0mwqgwU/KomL5PLr1fDL9CDy2BOn3M4E=
+github.com/ShazaAldawamneh/api v0.0.0-20260105154902-5470873fa1dc/go.mod h1:d5uzF0YN2nQQFA0jIEWzzOZ+edmo6wzlGLvx5Fhz4uY=
 github.com/VividCortex/ewma v1.2.0 h1:f58SaIzcDXrSy3kWaHNvuJgJ3Nmz59Zji6XoJR/q1ow=
 github.com/VividCortex/ewma v1.2.0/go.mod h1:nz4BbCtbLyFDeC9SUHbtcT5644juEuWfUAUnGx7j5l4=
 github.com/alecthomas/template v0.0.0-20160405071501-a0175ee3bccc/go.mod h1:LOuyumcjzFXgccqObfd/Ljyb9UuFJ6TxHnclSeseNhc=
@@ -589,8 +591,6 @@ github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJw
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
 github.com/opencontainers/selinux v1.13.0 h1:Zza88GWezyT7RLql12URvoxsbLfjFx988+LGaWfbL84=
 github.com/opencontainers/selinux v1.13.0/go.mod h1:XxWTed+A/s5NNq4GmYScVy+9jzXhGBVEOAyucdRUY8s=
-github.com/openshift/api v0.0.0-20260120150926-4c643a652d54 h1:Gm81lfkiXFgg/N0x90WsplERGF2NqYjK0vd8YY/aFpU=
-github.com/openshift/api v0.0.0-20260120150926-4c643a652d54/go.mod h1:d5uzF0YN2nQQFA0jIEWzzOZ+edmo6wzlGLvx5Fhz4uY=
 github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260207025257-2e871ee4d207 h1:gLln7Mf87FFVV99cxf4Ai+LQohBopKIJ3OtXGz3Z2v4=
 github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260207025257-2e871ee4d207/go.mod h1:5WmnsSvkafGWUg2MPFTew5z2TVD2+aK3VNlNFGOid3A=
 github.com/openshift/client-go v0.0.0-20251202151200-fb4471581cf8 h1:97rgISdT4IOmXlmEUV5Wr6d8BzzjPclzAjCARLbSlT0=
