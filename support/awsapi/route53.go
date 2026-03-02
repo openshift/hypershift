@@ -7,7 +7,7 @@ package awsapi
 import (
 	"context"
 
-	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
 )
 
 // ROUTE53API defines the ROUTE53 operations used by HyperShift.
@@ -18,17 +18,17 @@ import (
 // implemented by the delegating client; non-delegated methods will panic if called
 // through the delegating path (matching v1 behavior).
 type ROUTE53API interface {
-	AssociateVPCWithHostedZone(ctx context.Context, input *route53v2.AssociateVPCWithHostedZoneInput, optFns ...func(*route53v2.Options)) (*route53v2.AssociateVPCWithHostedZoneOutput, error)
-	ChangeResourceRecordSets(ctx context.Context, input *route53v2.ChangeResourceRecordSetsInput, optFns ...func(*route53v2.Options)) (*route53v2.ChangeResourceRecordSetsOutput, error)
-	CreateHostedZone(ctx context.Context, input *route53v2.CreateHostedZoneInput, optFns ...func(*route53v2.Options)) (*route53v2.CreateHostedZoneOutput, error)
-	CreateVPCAssociationAuthorization(ctx context.Context, input *route53v2.CreateVPCAssociationAuthorizationInput, optFns ...func(*route53v2.Options)) (*route53v2.CreateVPCAssociationAuthorizationOutput, error)
-	DeleteHostedZone(ctx context.Context, input *route53v2.DeleteHostedZoneInput, optFns ...func(*route53v2.Options)) (*route53v2.DeleteHostedZoneOutput, error)
-	DisassociateVPCFromHostedZone(ctx context.Context, input *route53v2.DisassociateVPCFromHostedZoneInput, optFns ...func(*route53v2.Options)) (*route53v2.DisassociateVPCFromHostedZoneOutput, error)
-	GetHostedZone(ctx context.Context, input *route53v2.GetHostedZoneInput, optFns ...func(*route53v2.Options)) (*route53v2.GetHostedZoneOutput, error)
-	ListHostedZones(ctx context.Context, input *route53v2.ListHostedZonesInput, optFns ...func(*route53v2.Options)) (*route53v2.ListHostedZonesOutput, error)
-	ListHostedZonesByVPC(ctx context.Context, input *route53v2.ListHostedZonesByVPCInput, optFns ...func(*route53v2.Options)) (*route53v2.ListHostedZonesByVPCOutput, error)
-	ListResourceRecordSets(ctx context.Context, input *route53v2.ListResourceRecordSetsInput, optFns ...func(*route53v2.Options)) (*route53v2.ListResourceRecordSetsOutput, error)
+	AssociateVPCWithHostedZone(ctx context.Context, input *route53.AssociateVPCWithHostedZoneInput, optFns ...func(*route53.Options)) (*route53.AssociateVPCWithHostedZoneOutput, error)
+	ChangeResourceRecordSets(ctx context.Context, input *route53.ChangeResourceRecordSetsInput, optFns ...func(*route53.Options)) (*route53.ChangeResourceRecordSetsOutput, error)
+	CreateHostedZone(ctx context.Context, input *route53.CreateHostedZoneInput, optFns ...func(*route53.Options)) (*route53.CreateHostedZoneOutput, error)
+	CreateVPCAssociationAuthorization(ctx context.Context, input *route53.CreateVPCAssociationAuthorizationInput, optFns ...func(*route53.Options)) (*route53.CreateVPCAssociationAuthorizationOutput, error)
+	DeleteHostedZone(ctx context.Context, input *route53.DeleteHostedZoneInput, optFns ...func(*route53.Options)) (*route53.DeleteHostedZoneOutput, error)
+	DisassociateVPCFromHostedZone(ctx context.Context, input *route53.DisassociateVPCFromHostedZoneInput, optFns ...func(*route53.Options)) (*route53.DisassociateVPCFromHostedZoneOutput, error)
+	GetHostedZone(ctx context.Context, input *route53.GetHostedZoneInput, optFns ...func(*route53.Options)) (*route53.GetHostedZoneOutput, error)
+	ListHostedZones(ctx context.Context, input *route53.ListHostedZonesInput, optFns ...func(*route53.Options)) (*route53.ListHostedZonesOutput, error)
+	ListHostedZonesByVPC(ctx context.Context, input *route53.ListHostedZonesByVPCInput, optFns ...func(*route53.Options)) (*route53.ListHostedZonesByVPCOutput, error)
+	ListResourceRecordSets(ctx context.Context, input *route53.ListResourceRecordSetsInput, optFns ...func(*route53.Options)) (*route53.ListResourceRecordSetsOutput, error)
 }
 
-// Ensure *route53v2.Client implements ROUTE53API
-var _ ROUTE53API = (*route53v2.Client)(nil)
+// Ensure *route53.Client implements ROUTE53API
+var _ ROUTE53API = (*route53.Client)(nil)
