@@ -136,7 +136,7 @@ func getImageRegistryCABundle(ctx context.Context, client crclient.Client) (*byt
 		for _, crt := range configmap.Data {
 			// Added a newline character to the end of each certificate to avoid bad concatenation
 			// of certificates in the buffer using the UI.
-			buf.WriteString(fmt.Sprintf("%s\n", crt))
+			fmt.Fprintf(&buf, "%s\n", crt)
 		}
 		if buf.Len() > 0 {
 			return &buf, nil
