@@ -140,7 +140,6 @@ func TestGetOrGenerateMCSTLSCert(t *testing.T) {
 		existingCache  *mcsTLSCertCache
 		expectCacheHit bool
 		expectNewCert  bool
-		expectError    bool
 	}{
 		{
 			name:           "When no cached certificate exists, it should generate a new certificate",
@@ -176,6 +175,20 @@ func TestGetOrGenerateMCSTLSCert(t *testing.T) {
 			expectNewCert:  true,
 		},
 		{
+			name: "When the cached certificate has exactly the minimum remaining validity, it should generate a new certificate",
+			existingCache: func() *mcsTLSCertCache {
+				certPEM, keyPEM, _ := generateTestCert(t)
+				return &mcsTLSCertCache{
+					certPEM: certPEM,
+					keyPEM:  keyPEM,
+					// Set expiry to exactly the threshold; time.Until will not be strictly greater
+					expiry: time.Now().Add(mcsTLSCertMinRemainingValidity),
+				}
+			}(),
+			expectCacheHit: false,
+			expectNewCert:  true,
+		},
+		{
 			name: "When the cached certificate has already expired, it should generate a new certificate",
 			existingCache: func() *mcsTLSCertCache {
 				certPEM, keyPEM, _ := generateTestCert(t)
@@ -205,11 +218,6 @@ func TestGetOrGenerateMCSTLSCert(t *testing.T) {
 			}
 
 			certPEM, keyPEM, err := provider.getOrGenerateMCSTLSCert()
-
-			if tc.expectError {
-				g.Expect(err).To(HaveOccurred())
-				return
-			}
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(certPEM).NotTo(BeEmpty())
 			g.Expect(keyPEM).NotTo(BeEmpty())

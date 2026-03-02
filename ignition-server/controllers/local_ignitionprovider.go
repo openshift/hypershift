@@ -80,7 +80,7 @@ type LocalIgnitionProvider struct {
 
 	ImageFileCache *imageFileCache
 
-	mcsTLSCache *mcsTLSCertCache
+	mcsTLSCache *mcsTLSCertCache // guarded by lock
 	lock        sync.Mutex
 }
 
@@ -711,7 +711,8 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 // the cached certificate is approaching expiry. This method must be called
 // while holding p.lock.
 func (p *LocalIgnitionProvider) getOrGenerateMCSTLSCert() (certPEM []byte, keyPEM []byte, err error) {
-	if p.mcsTLSCache != nil && time.Now().Before(p.mcsTLSCache.expiry.Add(-mcsTLSCertMinRemainingValidity)) {
+	if p.mcsTLSCache != nil && time.Until(p.mcsTLSCache.expiry) > mcsTLSCertMinRemainingValidity {
+		log.Info("reusing cached MCS TLS certificate", "expiry", p.mcsTLSCache.expiry)
 		return p.mcsTLSCache.certPEM, p.mcsTLSCache.keyPEM, nil
 	}
 
@@ -731,6 +732,7 @@ func (p *LocalIgnitionProvider) getOrGenerateMCSTLSCert() (certPEM []byte, keyPE
 		keyPEM:  certs.PrivateKeyToPem(key),
 		expiry:  crt.NotAfter,
 	}
+	log.Info("generated new MCS TLS certificate", "expiry", crt.NotAfter)
 	return p.mcsTLSCache.certPEM, p.mcsTLSCache.keyPEM, nil
 }
 
