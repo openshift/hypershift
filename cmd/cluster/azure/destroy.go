@@ -108,6 +108,10 @@ func DestroyCluster(ctx context.Context, o *core.DestroyOptions) error {
 		}
 
 		if _, err = resourceGroupClient.Get(ctx, o.AzurePlatform.ResourceGroupName, nil); err != nil {
+			if azureutil.IsNotFoundError(err) {
+				o.Log.Info("Resource group not found, skipping Azure resource cleanup", "resource-group", o.AzurePlatform.ResourceGroupName)
+				return core.DestroyCluster(ctx, hostedCluster, o, nil)
+			}
 			return fmt.Errorf("failed to get resource group name, '%s': %w", o.AzurePlatform.ResourceGroupName, err)
 		}
 	} else {
