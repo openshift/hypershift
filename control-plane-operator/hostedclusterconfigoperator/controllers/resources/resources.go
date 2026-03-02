@@ -2937,7 +2937,7 @@ func (r *reconciler) reconcileImageContentPolicyType(ctx context.Context, hcp *h
 	// Next, reconcile the ImageDigestMirrorSet
 	idms := globalconfig.ImageDigestMirrorSet()
 	if _, err = r.CreateOrUpdate(ctx, r.client, idms, func() error {
-		return globalconfig.ReconcileImageDigestMirrors(idms, hcp)
+		return globalconfig.ReconcileImageDigestMirrors(idms, hcp, nil)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile image digest mirror set: %w", err)
 	}

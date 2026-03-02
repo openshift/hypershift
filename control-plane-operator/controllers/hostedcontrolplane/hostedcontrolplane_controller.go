@@ -82,6 +82,7 @@ import (
 	"github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/validations"
 
+	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
@@ -2011,17 +2012,43 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 		return nil
 	}
 
+	// Parse imageMirrorConfigRef if provided
+	var additionalIDMS *configv1.ImageDigestMirrorSet
+	var additionalITMS *configv1.ImageTagMirrorSet
+	if hcp.Spec.ImageMirrorConfigRef != nil {
+		parsedIDMS, parsedITMS, err := globalconfig.ParseImageMirrorConfigMap(ctx, r.Client, hcp.Spec.ImageMirrorConfigRef, hcp.Namespace)
+		if err != nil {
+			return fmt.Errorf("failed to parse imageMirrorConfigRef: %w", err)
+		}
+		additionalIDMS = parsedIDMS
+		additionalITMS = parsedITMS
+	}
+
 	// ImageDigestMirrorSet is only applicable for release image versions >= 4.13
 	r.Log.Info("Reconciling ImageDigestMirrorSet")
 	imageDigestMirrorSet := globalconfig.ImageDigestMirrorSet()
-	if err := globalconfig.ReconcileImageDigestMirrors(imageDigestMirrorSet, hcp); err != nil {
+	if err := globalconfig.ReconcileImageDigestMirrors(imageDigestMirrorSet, hcp, additionalIDMS); err != nil {
 		return fmt.Errorf("failed to reconcile image content policy: %w", err)
 	}
 
-	if _, err := createOrUpdate(ctx, r, imageContentPolicyIgnitionConfig, func() error {
-		return ignition.ReconcileImageSourceMirrorsIgnitionConfigFromIDMS(imageContentPolicyIgnitionConfig, p.OwnerRef, imageDigestMirrorSet)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile image content source policy ignition config: %w", err)
+	// Reconcile ImageTagMirrorSet if additional ITMS is provided
+	if additionalITMS != nil {
+		imageTagMirrorSet := globalconfig.ImageTagMirrorSet()
+		if err := globalconfig.ReconcileImageTagMirrors(imageTagMirrorSet, hcp, additionalITMS); err != nil {
+			return fmt.Errorf("failed to reconcile image tag mirror set: %w", err)
+		}
+
+		if _, err := createOrUpdate(ctx, r, imageContentPolicyIgnitionConfig, func() error {
+			return ignition.ReconcileImageSourceMirrorsIgnitionConfigFromIDMSAndITMS(imageContentPolicyIgnitionConfig, p.OwnerRef, imageDigestMirrorSet, imageTagMirrorSet)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile image content source policy ignition config: %w", err)
+		}
+	} else {
+		if _, err := createOrUpdate(ctx, r, imageContentPolicyIgnitionConfig, func() error {
+			return ignition.ReconcileImageSourceMirrorsIgnitionConfigFromIDMS(imageContentPolicyIgnitionConfig, p.OwnerRef, imageDigestMirrorSet)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile image content source policy ignition config: %w", err)
+		}
 	}
 
 	return nil
