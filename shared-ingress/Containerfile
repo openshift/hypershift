@@ -1,6 +1,6 @@
 FROM registry.access.redhat.com/ubi10/ubi:10.0-1753787353
 
-RUN dnf install -y haproxy-3.0.5-4.el10 socat-1.7.4.4-8.el10 \
+RUN dnf install -y haproxy-3.0.5-4.el10_1.1 socat-1.7.4.4-8.el10 \
   && dnf clean all
 
 ENTRYPOINT [ "/usr/sbin/haproxy" ]
@@ -10,7 +10,7 @@ LABEL name="multicluster-engine/hypershift-shared-ingress"
 LABEL description="HyperShift's HAProxy 3 based Shared Ingress container"
 LABEL summary="HyperShift Shared Ingress"
 LABEL url="https://quay.io/repository/redhat-user-workloads/crt-redhat-acm-tenant/hypershift-shared-ingress"
-LABEL version="3.0.5-4"
+LABEL version="3.0.5-4.el10_1.1"
 LABEL com.redhat.component="multicluster-engine-hypershift-shared-ingress"
 LABEL io.openshift.tags="data,images"
 LABEL io.k8s.display-name="multicluster-engine-hypershift-shared-ingress"
