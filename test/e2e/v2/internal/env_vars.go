@@ -19,6 +19,7 @@ package internal
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -151,5 +152,11 @@ func init() {
 		"Directory for test artifacts. Defaults to /tmp/artifacts.",
 		false,
 		"/tmp/artifacts",
+	)
+	RegisterEnvVarWithDefault(
+		"AWS_GUEST_INFRA_CREDENTIALS_FILE",
+		"Path to the AWS guest infrastructure credentials file. Defaults to ~/.aws/credentials.",
+		false,
+		filepath.Join(os.Getenv("HOME"), ".aws", "credentials"),
 	)
 }

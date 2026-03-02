@@ -17,7 +17,8 @@ import (
 
 const (
 	BackupTimeout        = 20 * time.Minute
-	RestoreTimeout       = 20 * time.Minute
+	RestoreTimeout       = BackupTimeout
+	OIDCTimeout          = BackupTimeout
 	DefaultOADPNamespace = "openshift-adp"
 )
 
@@ -100,6 +101,30 @@ type OADPScheduleOptions struct {
 	Paused                   bool     // Create schedule in paused state
 	UseOwnerReferences       bool     // Use owner references in backup objects
 	SkipImmediately          bool     // Skip immediate backup after schedule creation
+}
+
+// FixDrOidcIamOptions contains options for fixing OIDC identity provider during disaster recovery
+type FixDrOidcIamOptions struct {
+	// HostedCluster options (alternative to manual specification)
+	HCName      string
+	HCNamespace string
+
+	// Manual specification options
+	InfraID    string
+	Region     string
+	OIDCBucket string
+	Issuer     string
+
+	// AWS Credentials options (one of these is required)
+	AWSCredsFile string
+	STSCredsFile string
+	RoleARN      string
+
+	// Optional flags
+	Timeout       time.Duration
+	DryRun        bool
+	ForceRecreate bool
+	RestartDelay  time.Duration
 }
 
 // RunOADPBackup executes the "hypershift create oadp-backup" command
@@ -365,6 +390,120 @@ func buildScheduleArgs(opts *OADPScheduleOptions) []string {
 	}
 	if len(opts.IncludeNamespaces) > 0 {
 		args = append(args, "--include-additional-namespaces", strings.Join(opts.IncludeNamespaces, ","))
+	}
+
+	return args
+}
+
+// RunFixDrOidcIam executes the "hypershift fix dr-oidc-iam" command
+func RunFixDrOidcIam(ctx context.Context, logger logr.Logger, artifactDir string, fixOpts *FixDrOidcIamOptions) error {
+	// Validate mode: either hosted-cluster mode or manual mode, but not both
+	if fixOpts.HCName != "" {
+		if fixOpts.HCNamespace == "" {
+			return fmt.Errorf("--hc-namespace is required when using --hc-name")
+		}
+		if fixOpts.InfraID != "" || fixOpts.Region != "" {
+			return fmt.Errorf("when using --hc-name, --infra-id and --region should not be specified")
+		}
+	} else {
+		if fixOpts.HCNamespace != "" {
+			return fmt.Errorf("--hc-namespace can only be used with --hc-name")
+		}
+		if fixOpts.InfraID == "" || fixOpts.Region == "" {
+			return fmt.Errorf("--infra-id and --region are required when --hc-name is not set")
+		}
+	}
+
+	// Validate credentials: either aws-creds or sts-creds+role-arn, but not both
+	if fixOpts.AWSCredsFile != "" {
+		if fixOpts.STSCredsFile != "" || fixOpts.RoleARN != "" {
+			return fmt.Errorf("only one of 'aws-creds' or 'sts-creds'/'role-arn' can be provided")
+		}
+	} else if fixOpts.STSCredsFile != "" || fixOpts.RoleARN != "" {
+		if fixOpts.STSCredsFile == "" {
+			return fmt.Errorf("sts-creds is required when using role-arn")
+		}
+		if fixOpts.RoleARN == "" {
+			return fmt.Errorf("role-arn is required when using sts-creds")
+		}
+	} else {
+		return fmt.Errorf("either 'aws-creds' or both 'sts-creds' and 'role-arn' must be provided")
+	}
+
+	hypershiftCLI, err := getHypershiftCLIPath()
+	if err != nil {
+		return err
+	}
+
+	if artifactDir == "" {
+		return fmt.Errorf("artifact directory is required")
+	}
+
+	if err := os.MkdirAll(artifactDir, 0755); err != nil {
+		return fmt.Errorf("failed to create artifact directory: %w", err)
+	}
+
+	args := buildFixDrOidcIamArgs(fixOpts)
+	cmd := exec.CommandContext(ctx, hypershiftCLI, args...)
+
+	var logPath string
+	if fixOpts.HCName != "" {
+		logPath = fmt.Sprintf("fix-dr-oidc-iam-%s-%s.log", fixOpts.HCNamespace, fixOpts.HCName)
+	} else {
+		logPath = fmt.Sprintf("fix-dr-oidc-iam-%s-%s.log", fixOpts.Region, fixOpts.InfraID)
+	}
+
+	// Create minimal framework options for RunCommand
+	opts := &framework.Options{
+		ArtifactDir: artifactDir,
+	}
+
+	return framework.RunCommand(logger, opts, logPath, cmd)
+}
+
+// buildFixDrOidcIamArgs constructs the command line arguments for fix dr-oidc-iam.
+// It only appends flags relevant to the chosen mode (hosted-cluster or manual).
+func buildFixDrOidcIamArgs(opts *FixDrOidcIamOptions) []string {
+	args := []string{"fix", "dr-oidc-iam"}
+
+	if opts.HCName != "" {
+		// Hosted-cluster mode
+		args = append(args, "--hc-name", opts.HCName)
+		args = append(args, "--hc-namespace", opts.HCNamespace)
+	} else {
+		// Manual mode
+		args = append(args, "--infra-id", opts.InfraID)
+		args = append(args, "--region", opts.Region)
+	}
+
+	// Optional target flags (valid in both modes)
+	if opts.OIDCBucket != "" {
+		args = append(args, "--oidc-bucket", opts.OIDCBucket)
+	}
+	if opts.Issuer != "" {
+		args = append(args, "--issuer", opts.Issuer)
+	}
+
+	// AWS Credentials flags (mutually exclusive, validated by RunFixDrOidcIam)
+	if opts.AWSCredsFile != "" {
+		args = append(args, "--aws-creds", opts.AWSCredsFile)
+	} else {
+		args = append(args, "--sts-creds", opts.STSCredsFile)
+		args = append(args, "--role-arn", opts.RoleARN)
+	}
+
+	// Optional flags
+	if opts.Timeout > 0 {
+		args = append(args, "--timeout", opts.Timeout.String())
+	}
+	if opts.DryRun {
+		args = append(args, "--dry-run")
+	}
+	if opts.ForceRecreate {
+		args = append(args, "--force-recreate")
+	}
+	if opts.RestartDelay > 0 {
+		args = append(args, "--restart-delay", opts.RestartDelay.String())
 	}
 
 	return args

@@ -575,7 +575,10 @@ func waitForControlPlaneWorkloadsByType(testCtx *TestContext, timeout time.Durat
 		}
 		return true, nil
 	}); err != nil {
-		return fmt.Errorf("failed to wait for control plane workloads to be ready: %w", lastErr)
+		if lastErr != nil {
+			return fmt.Errorf("failed to wait for control plane workloads to be ready: %w (last validation error: %v)", err, lastErr)
+		}
+		return fmt.Errorf("failed to wait for control plane workloads to be ready: %w", err)
 	}
 	return nil
 }

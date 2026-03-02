@@ -25,6 +25,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/oadp"
+	"github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/backuprestore"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -36,12 +37,10 @@ import (
 // and unify naming conventions.
 const (
 	ContextPreBackupControlPlane   = "PreBackupControlPlane"
-	ContextPreBackupGuest          = "PreBackupGuest"
 	ContextSetupContinual          = "SetupContinual"
 	ContextBackup                  = "Backup"
 	ContextVerifyContinual         = "VerifyContinual"
 	ContextPostBackupControlPlane  = "PostBackupControlPlane"
-	ContextPostBackupGuest         = "PostBackupGuest"
 	ContextRestore                 = "Restore"
 	ContextPostRestoreControlPlane = "PostRestoreControlPlane"
 	ContextPostRestoreGuest        = "PostRestoreGuest"
@@ -59,6 +58,13 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 		excludeWorkloads []string = []string{
 			"router", "karpenter", "karpenter-operator", "aws-node-termination-handler",
 		}
+		expectedConditions []util.Condition = []util.Condition{
+			{
+				Type:   hyperv1.NodePoolAllMachinesReadyConditionType,
+				Status: metav1.ConditionTrue,
+				Reason: "AsExpected",
+			},
+		}
 	)
 
 	AfterAll(func() {
@@ -73,6 +79,7 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 
 	BeforeEach(func() {
 		testCtx = internal.GetTestContext()
+		Expect(testCtx).NotTo(BeNil())
 		if err := testCtx.ValidateControlPlaneNamespace(); err != nil {
 			AbortSuite(err.Error())
 		}
@@ -95,12 +102,11 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 			Expect(err).NotTo(HaveOccurred())
 			err = internal.ValidateControlPlaneStatefulSetsReadiness(testCtx, excludeWorkloads)
 			Expect(err).NotTo(HaveOccurred())
-		})
-	})
 
-	Context(ContextPreBackupGuest, func() {
-		It("should have guest cluster ready before backup", func() {
-			Skip("Skipping due to OCPBUGS-59876")
+			nodePool, err := getNodePool(testCtx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(nodePool).NotTo(BeNil())
+			internal.ValidateConditions(NewGomegaWithT(GinkgoT()), nodePool, expectedConditions)
 		})
 	})
 
@@ -197,12 +203,6 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 		})
 	})
 
-	Context(ContextPostBackupGuest, func() {
-		It("should have guest cluster healthy after backup", func() {
-			Skip("Skipping due to OCPBUGS-59876")
-		})
-	})
-
 	Context(ContextBreakControlPlane, func() {
 		It("should break hosted cluster", func() {
 			err := backuprestore.BreakHostedClusterPreservingMachines(testCtx, GinkgoLogr.WithName("cleanup"))
@@ -225,6 +225,17 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 			By("Waiting for restore to complete")
 			err = backuprestore.WaitForRestoreCompletion(testCtx, restoreName)
 			Expect(err).NotTo(HaveOccurred())
+
+			By("Fixing OIDC identity provider after restore")
+			awsCredsFile := internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
+			fixOpts := &backuprestore.FixDrOidcIamOptions{
+				HCName:       testCtx.ClusterName,
+				HCNamespace:  testCtx.ClusterNamespace,
+				AWSCredsFile: awsCredsFile,
+				Timeout:      backuprestore.OIDCTimeout,
+			}
+			err = backuprestore.RunFixDrOidcIam(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, fixOpts)
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
@@ -236,6 +247,13 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 			By("Waiting for control plane deployments to be ready")
 			err = internal.WaitForControlPlaneDeploymentsReadiness(testCtx, backuprestore.RestoreTimeout, excludeWorkloads)
 			Expect(err).NotTo(HaveOccurred())
+			By("Validating NodePool conditions")
+			Eventually(func(g Gomega) {
+				nodePool, err := getNodePool(testCtx)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(nodePool).NotTo(BeNil())
+				internal.ValidateConditions(g, nodePool, expectedConditions)
+			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.OIDCTimeout).Should(Succeed())
 		})
 	})
 
@@ -245,3 +263,21 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 		})
 	})
 })
+
+func getNodePool(testCtx *internal.TestContext) (*hyperv1.NodePool, error) {
+	nodePoolList := &hyperv1.NodePoolList{}
+	err := testCtx.MgmtClient.List(testCtx.Context, nodePoolList, crclient.InNamespace(testCtx.ClusterNamespace))
+
+	if err != nil {
+		return nil, err
+	}
+	if len(nodePoolList.Items) == 0 {
+		return nil, fmt.Errorf("no NodePools found in namespace %s", testCtx.ClusterNamespace)
+	}
+	for i := range nodePoolList.Items {
+		if nodePoolList.Items[i].Spec.ClusterName == testCtx.ClusterName {
+			return &nodePoolList.Items[i], nil
+		}
+	}
+	return nil, fmt.Errorf("no NodePool found for cluster %s", testCtx.ClusterName)
+}
