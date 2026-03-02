@@ -118,6 +118,7 @@ import (
 	"go/token"
 	"go/types"
 	"io"
+	"maps"
 	"os"
 	"reflect"
 	"runtime"
@@ -364,7 +365,7 @@ type analyzerAction struct {
 	// We can store actual results here without worrying about memory
 	// consumption because analyzer actions get garbage collected once
 	// a package has been fully analyzed.
-	Result       interface{}
+	Result       any
 	Diagnostics  []Diagnostic
 	ObjectFacts  map[objectFactKey]objectFact
 	PackageFacts map[packageFactKey]analysis.Fact
@@ -654,7 +655,7 @@ func (r *Runner) writeCacheReader(a *packageAction, kind string, rs io.ReadSeeke
 	return r.cache.OutputFile(out), nil
 }
 
-func (r *Runner) writeCacheGob(a *packageAction, kind string, data interface{}) (string, error) {
+func (r *Runner) writeCacheGob(a *packageAction, kind string, data any) (string, error) {
 	f, err := os.CreateTemp("", "staticcheck")
 	if err != nil {
 		return "", err
@@ -841,7 +842,7 @@ type analyzerRunner struct {
 
 func (ar *analyzerRunner) do(act action) error {
 	a := act.(*analyzerAction)
-	results := map[*analysis.Analyzer]interface{}{}
+	results := map[*analysis.Analyzer]any{}
 	// TODO(dh): does this have to be recursive?
 	for _, dep := range a.deps {
 		dep := dep.(*analyzerAction)
@@ -1070,12 +1071,8 @@ func (r *subrunner) runAnalyzers(pkgAct *packageAction, pkg *loader.Package) (an
 			unusedResult = a.Result.(unused.Result)
 		}
 
-		for key, fact := range a.ObjectFacts {
-			depObjFacts[key] = fact
-		}
-		for key, fact := range a.PackageFacts {
-			depPkgFacts[key] = fact
-		}
+		maps.Copy(depObjFacts, a.ObjectFacts)
+		maps.Copy(depPkgFacts, a.PackageFacts)
 	}
 
 	// OPT(dh): cull objects not reachable via the exported closure
