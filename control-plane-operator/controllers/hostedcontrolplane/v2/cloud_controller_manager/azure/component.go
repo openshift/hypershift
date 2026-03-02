@@ -37,7 +37,7 @@ func (c *azureOptions) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &azureOptions{}).
 		WithAdaptFunction(adaptDeployment).
-		WithPredicate(predicate).
+		WithPlatformPredicate(predicate).
 		WithManifestAdapter(
 			"serviceaccount.yaml",
 			component.WithAdaptFunction(adaptServiceAccount),
@@ -54,7 +54,7 @@ func NewComponent() component.ControlPlaneComponent {
 		WithManifestAdapter(
 			"config-secretprovider.yaml",
 			component.WithAdaptFunction(adaptSecretProvider),
-			component.WithPredicate(isAroHCP),
+			component.WithPlatformPredicate(isAroHCP),
 		).
 		InjectTokenMinterContainer(component.TokenMinterContainerOptions{
 			TokenType:               component.CloudToken,

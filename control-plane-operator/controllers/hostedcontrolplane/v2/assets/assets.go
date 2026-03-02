@@ -85,7 +85,7 @@ func LoadManifestInto(componentName string, fileName string, into client.Object)
 	return obj.(client.Object), gvk, err
 }
 
-func ForEachManifest(componentName string, action func(manifestName string) error) error {
+func ForEachManifest(componentName string, manifestFilter func(manifestName string) bool, action func(manifestName string) error) error {
 	return fs.WalkDir(manifestsAssets, componentName, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -95,6 +95,12 @@ func ForEachManifest(componentName string, action func(manifestName string) erro
 		}
 		manifestName := d.Name()
 		if manifestName == deploymentManifest || manifestName == statefulSetManifest || manifestName == cronJobManifest || manifestName == jobManifest {
+			return nil
+		}
+
+		// Apply filter if provided - skip manifest if filter returns false
+		// This prevents LoadManifest from being called, avoiding informer creation
+		if manifestFilter != nil && !manifestFilter(manifestName) {
 			return nil
 		}
 

@@ -93,25 +93,38 @@ func (c *controlPlaneWorkload[T]) checkDependencies(cpContext ControlPlaneContex
 func (c *controlPlaneWorkload[T]) reconcileComponentStatus(cpContext ControlPlaneContext, component *hyperv1.ControlPlaneComponent, unavailableDependencies []string, reconcilationError error) error {
 	workloadContrext := cpContext.workloadContext()
 	component.Status.Resources = []hyperv1.ComponentResource{}
-	if err := assets.ForEachManifest(c.Name(), func(manifestName string) error {
-		adapter, exist := c.manifestsAdapters[manifestName]
-		if exist && adapter.predicate != nil && !adapter.predicate(workloadContrext) {
+	if err := assets.ForEachManifest(c.Name(),
+		// manifestFilter: Skip platform-specific manifests on wrong platform
+		func(manifestName string) bool {
+			adapter, exist := c.manifestsAdapters[manifestName]
+			if !exist {
+				return true
+			}
+			// Check platformPredicate first (platform-specific resources)
+			if adapter.platformPredicate != nil && !adapter.platformPredicate(workloadContrext) {
+				return false
+			}
+			// Then check regular predicate (config-based enabling/disabling)
+			if adapter.predicate != nil && !adapter.predicate(workloadContrext) {
+				return false
+			}
+			return true
+		},
+		// action: Load manifest and add to status
+		func(manifestName string) error {
+			obj, gvk, err := assets.LoadManifest(c.name, manifestName)
+			if err != nil {
+				return err
+			}
+
+			component.Status.Resources = append(component.Status.Resources, hyperv1.ComponentResource{
+				Kind:  gvk.Kind,
+				Group: gvk.Group,
+				Name:  obj.GetName(),
+			})
+
 			return nil
-		}
-
-		obj, gvk, err := assets.LoadManifest(c.name, manifestName)
-		if err != nil {
-			return err
-		}
-
-		component.Status.Resources = append(component.Status.Resources, hyperv1.ComponentResource{
-			Kind:  gvk.Kind,
-			Group: gvk.Group,
-			Name:  obj.GetName(),
-		})
-
-		return nil
-	}); err != nil {
+		}); err != nil {
 		return err
 	}
 

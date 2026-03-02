@@ -56,8 +56,9 @@ func DisableIfAnnotationExist(annotation string) option {
 }
 
 // EnableForPlatform is a helper predicate for the common use case of only enabling a resource for a specific platform.
+// This uses WithPlatformPredicate to ensure the resource is completely skipped (no API calls) on other platforms.
 func EnableForPlatform(platform hyperv1.PlatformType) option {
-	return WithPredicate(func(cpContext WorkloadContext) bool {
+	return WithPlatformPredicate(func(cpContext WorkloadContext) bool {
 		return cpContext.HCP.Spec.Platform.Type == platform
 	})
 }
