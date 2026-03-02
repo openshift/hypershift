@@ -26,6 +26,7 @@ const (
 	testControlPlaneGSA    = "test-control-plane-sa@test-project.iam.gserviceaccount.com"
 	testCloudControllerGSA = "test-cloud-controller@test-project.iam.gserviceaccount.com"
 	testStorageGSA         = "test-storage@test-project.iam.gserviceaccount.com"
+	testImageRegistryGSA   = "test-image-registry@test-project.iam.gserviceaccount.com"
 )
 
 // testCreateOrUpdate is a test helper that implements createOrUpdate functionality
@@ -90,6 +91,7 @@ func validHostedCluster() *hyperv1.HostedCluster {
 							ControlPlane:    testControlPlaneGSA,
 							CloudController: testCloudControllerGSA,
 							Storage:         testStorageGSA,
+							ImageRegistry:   testImageRegistryGSA,
 						},
 					},
 				},
@@ -302,6 +304,7 @@ func TestBuildGCPWorkloadIdentityCredentials(t *testing.T) {
 			ControlPlane:    testControlPlaneGSA,
 			CloudController: testCloudControllerGSA,
 			Storage:         testStorageGSA,
+			ImageRegistry:   testImageRegistryGSA,
 		},
 	}
 
@@ -331,6 +334,7 @@ func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
 				ControlPlane:    testControlPlaneGSA,
 				CloudController: testCloudControllerGSA,
 				Storage:         testStorageGSA,
+				ImageRegistry:   testImageRegistryGSA,
 			},
 		}
 	}
@@ -426,6 +430,13 @@ func TestValidateWorkloadIdentityConfiguration(t *testing.T) {
 				hc.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController = ""
 			},
 			errorMsg: "cloud controller service account email is required",
+		},
+		{
+			name: "missing image registry service account email",
+			mutate: func(hc *hyperv1.HostedCluster) {
+				hc.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry = ""
+			},
+			errorMsg: "image registry service account email is required",
 		},
 	}
 

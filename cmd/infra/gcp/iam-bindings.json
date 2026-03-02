@@ -56,6 +56,16 @@
         "namespace": "openshift-cluster-csi-drivers",
         "name": "gcp-pd-csi-driver-controller-sa"
       }
+    },
+    {
+      "name": "image-registry",
+      "displayName": "HyperShift Image Registry Operator",
+      "description": "Service account for Image Registry Operator GCS storage operations",
+      "roles": ["roles/storage.admin"],
+      "k8sServiceAccount": {
+        "namespace": "openshift-image-registry",
+        "name": "cluster-image-registry-operator"
+      }
     }
   ]
 }
