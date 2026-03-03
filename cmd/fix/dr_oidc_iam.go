@@ -614,16 +614,17 @@ func (o *DrOidcIamOptions) updateHostedClusterRestartAnnotation(ctx context.Cont
 		return fmt.Errorf("failed to get HostedCluster %s/%s: %w", o.HostedClusterNamespace, o.HostedClusterName, err)
 	}
 
+	restartTime := time.Now().UTC().Add(o.RestartDelay).Format(time.RFC3339)
+	fmt.Printf("  - Scheduled rolling restart at %s UTC (in %s)\n", restartTime, o.RestartDelay)
+
+	patch := client.MergeFrom(hc.DeepCopy())
 	if hc.Annotations == nil {
 		hc.Annotations = make(map[string]string)
 	}
-
-	restartTime := time.Now().UTC().Add(o.RestartDelay).Format(time.RFC3339)
 	hc.Annotations[restartDateAnnotation] = restartTime
-	fmt.Printf("  - Scheduled rolling restart at %s UTC (in %s)\n", restartTime, o.RestartDelay)
 
-	if err := k8sClient.Update(ctx, hc); err != nil {
-		return fmt.Errorf("failed to update HostedCluster with restart annotation: %w", err)
+	if err := k8sClient.Patch(ctx, hc, patch); err != nil {
+		return fmt.Errorf("failed to patch HostedCluster with restart annotation: %w", err)
 	}
 
 	return nil
