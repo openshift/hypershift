@@ -3,7 +3,6 @@ package sharedingress
 import (
 	"context"
 	"fmt"
-	"os"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	assets "github.com/openshift/hypershift/cmd/install/assets"
@@ -320,8 +319,7 @@ func ReconcileRouteStatus(route *routev1.Route, canonicalHostname string) {
 }
 
 func UseSharedIngress() bool {
-	managedService, _ := os.LookupEnv("MANAGED_SERVICE")
-	return managedService == hyperv1.AroHCP
+	return util.UseSharedIngress()
 }
 
 func Hostname(hcp *hyperv1.HostedControlPlane) string {
