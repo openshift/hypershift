@@ -5801,7 +5801,7 @@ spec:
                                   Typically obtained from the output of `hypershift infra create gcp` which creates
                                   the required service accounts with appropriate IAM roles and WIF bindings.
                                 maxLength: 100
-                                minLength: 38
+                                minLength: 37
                                 pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$
                                 type: string
                                 x-kubernetes-validations:
@@ -5822,7 +5822,7 @@ spec:
                                   Typically obtained from the output of `hypershift infra create gcp` which creates
                                   the required service accounts with appropriate IAM roles and WIF bindings.
                                 maxLength: 100
-                                minLength: 38
+                                minLength: 37
                                 pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$
                                 type: string
                                 x-kubernetes-validations:
@@ -5841,7 +5841,7 @@ spec:
                                   Typically obtained from the output of `hypershift infra create gcp` which creates
                                   the required service accounts with appropriate IAM roles and WIF bindings.
                                 maxLength: 100
-                                minLength: 38
+                                minLength: 37
                                 pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$
                                 type: string
                                 x-kubernetes-validations:
@@ -5862,7 +5862,7 @@ spec:
                                   Typically obtained from the output of `hypershift infra create gcp` which creates
                                   the required service accounts with appropriate IAM roles and WIF bindings.
                                 maxLength: 100
-                                minLength: 38
+                                minLength: 37
                                 pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$
                                 type: string
                                 x-kubernetes-validations:
@@ -5884,7 +5884,7 @@ spec:
                                   Typically obtained from the output of `hypershift infra create gcp` which creates
                                   the required service accounts with appropriate IAM roles and WIF bindings.
                                 maxLength: 100
-                                minLength: 38
+                                minLength: 37
                                 pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$
                                 type: string
                                 x-kubernetes-validations:

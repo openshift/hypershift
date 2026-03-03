@@ -268,7 +268,7 @@ type GCPServiceAccountsEmails struct {
 	// +required
 	// +immutable
 	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`
-	// +kubebuilder:validation:MinLength=38
+	// +kubebuilder:validation:MinLength=37
 	// +kubebuilder:validation:MaxLength=100
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="NodePool is immutable"
 	NodePool string `json:"nodePool,omitempty"`
@@ -289,7 +289,7 @@ type GCPServiceAccountsEmails struct {
 	// +required
 	// +immutable
 	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`
-	// +kubebuilder:validation:MinLength=38
+	// +kubebuilder:validation:MinLength=37
 	// +kubebuilder:validation:MaxLength=100
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ControlPlane is immutable"
 	ControlPlane string `json:"controlPlane,omitempty"`
@@ -310,7 +310,7 @@ type GCPServiceAccountsEmails struct {
 	// +required
 	// +immutable
 	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`
-	// +kubebuilder:validation:MinLength=38
+	// +kubebuilder:validation:MinLength=37
 	// +kubebuilder:validation:MaxLength=100
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="CloudController is immutable"
 	CloudController string `json:"cloudController,omitempty"`
@@ -332,7 +332,7 @@ type GCPServiceAccountsEmails struct {
 	// +required
 	// +immutable
 	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`
-	// +kubebuilder:validation:MinLength=38
+	// +kubebuilder:validation:MinLength=37
 	// +kubebuilder:validation:MaxLength=100
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Storage is immutable"
 	Storage string `json:"storage,omitempty"`
@@ -351,7 +351,7 @@ type GCPServiceAccountsEmails struct {
 	// +required
 	// +immutable
 	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`
-	// +kubebuilder:validation:MinLength=38
+	// +kubebuilder:validation:MinLength=37
 	// +kubebuilder:validation:MaxLength=100
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ImageRegistry is immutable"
 	ImageRegistry string `json:"imageRegistry,omitempty"`
