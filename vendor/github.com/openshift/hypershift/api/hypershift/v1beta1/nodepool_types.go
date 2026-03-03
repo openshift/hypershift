@@ -453,7 +453,7 @@ type NodePoolAutoScaling struct {
 	//
 	// +kubebuilder:validation:Minimum=0
 	// +required
-	Min *int32 `json:"min"`
+	Min *int32 `json:"min,omitempty"`
 
 	// max is the maximum number of nodes allowed in the pool. Must be >= 1 and >= Min.
 	//
