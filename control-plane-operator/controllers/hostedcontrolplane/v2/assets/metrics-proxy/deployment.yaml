@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metrics-proxy
+spec:
+  selector:
+    matchLabels:
+      app: metrics-proxy
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: metrics-proxy
+    spec:
+      containers:
+      - args:
+        - --tls-cert-file
+        - /etc/metrics-proxy/serving-cert/tls.crt
+        - --tls-key-file
+        - /etc/metrics-proxy/serving-cert/tls.key
+        - --kas-kubeconfig
+        - /etc/metrics-proxy/kas-kubeconfig/kubeconfig
+        - --config-file
+        - /etc/metrics-proxy/config/config.yaml
+        command:
+        - /usr/bin/control-plane-operator
+        - metrics-proxy
+        env:
+        - name: MY_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: controlplane-operator
+        livenessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /healthz
+            port: 9443
+            scheme: HTTPS
+          initialDelaySeconds: 120
+          periodSeconds: 60
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: metrics-proxy
+        ports:
+        - containerPort: 9443
+          name: https
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 9443
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 10m
+            memory: 40Mi
+        volumeMounts:
+        - mountPath: /etc/metrics-proxy/serving-cert
+          name: serving-cert
+        - mountPath: /etc/metrics-proxy/kas-kubeconfig
+          name: kas-kubeconfig
+        - mountPath: /etc/metrics-proxy/config
+          name: scrape-config
+        - mountPath: /etc/metrics-proxy/certs/endpoint-resolver-ca
+          name: endpoint-resolver-ca
+      serviceAccount: metrics-proxy
+      serviceAccountName: metrics-proxy
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: metrics-proxy-serving-cert
+      - name: kas-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - configMap:
+          name: metrics-proxy-config
+          optional: true
+        name: scrape-config
+      - name: endpoint-resolver-ca
+        secret:
+          optional: true
+          secretName: endpoint-resolver-ca
