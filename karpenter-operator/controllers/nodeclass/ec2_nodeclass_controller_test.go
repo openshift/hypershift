@@ -371,6 +371,83 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "when CapacityReservationSelectorTerms are set it should mirror them to EC2NodeClass",
+			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				CapacityReservationSelectorTerms: []hyperkarpenterv1.CapacityReservationSelectorTerm{
+					{
+						Tags:                  map[string]string{"karpenter.sh/discovery": "my-cr"},
+						ID:                    "cr-1234567890abcdef0",
+						OwnerID:               "123456789012",
+						InstanceMatchCriteria: "targeted",
+					},
+				},
+			},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				CapacityReservationSelectorTerms: []awskarpenterv1.CapacityReservationSelectorTerm{
+					{
+						Tags:                  map[string]string{"karpenter.sh/discovery": "my-cr"},
+						ID:                    "cr-1234567890abcdef0",
+						OwnerID:               "123456789012",
+						InstanceMatchCriteria: "targeted",
+					},
+				},
+				BlockDeviceMappings: []*awskarpenterv1.BlockDeviceMapping{
+					{
+						DeviceName: ptr.To("/dev/xvda"),
+						EBS: &awskarpenterv1.BlockDevice{
+							VolumeSize: ptr.To(resource.MustParse("120Gi")),
+							VolumeType: ptr.To("gp3"),
+							Encrypted:  ptr.To(true),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "when CapacityReservationSelectorTerms are not set it should not set them on EC2NodeClass",
+			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				BlockDeviceMappings: []*awskarpenterv1.BlockDeviceMapping{
+					{
+						DeviceName: ptr.To("/dev/xvda"),
+						EBS: &awskarpenterv1.BlockDevice{
+							VolumeSize: ptr.To(resource.MustParse("120Gi")),
+							VolumeType: ptr.To("gp3"),
+							Encrypted:  ptr.To(true),
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -399,6 +476,104 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 			}
 
 			g.Expect(ec2NodeClass.Spec).To(Equal(tc.expectedSpec))
+		})
+	}
+}
+
+func TestReconcileStatus(t *testing.T) {
+	testCases := []struct {
+		name                         string
+		ec2NodeClassStatus           awskarpenterv1.EC2NodeClassStatus
+		expectedCapacityReservations []hyperkarpenterv1.CapacityReservation
+		expectedSubnets              []hyperkarpenterv1.Subnet
+		expectedSecurityGroups       []hyperkarpenterv1.SecurityGroup
+	}{
+		{
+			name: "when EC2NodeClass has capacity reservations it should mirror them to OpenshiftEC2NodeClass status",
+			ec2NodeClassStatus: awskarpenterv1.EC2NodeClassStatus{
+				CapacityReservations: []awskarpenterv1.CapacityReservation{
+					{
+						AvailabilityZone:      "us-east-1a",
+						ID:                    "cr-1234567890abcdef0",
+						InstanceMatchCriteria: "targeted",
+						InstanceType:          "m5.large",
+						OwnerID:               "123456789012",
+						ReservationType:       "default",
+						State:                 "active",
+					},
+				},
+			},
+			expectedCapacityReservations: []hyperkarpenterv1.CapacityReservation{
+				{
+					AvailabilityZone:      "us-east-1a",
+					ID:                    "cr-1234567890abcdef0",
+					InstanceMatchCriteria: "targeted",
+					InstanceType:          "m5.large",
+					OwnerID:               "123456789012",
+					ReservationType:       "default",
+					State:                 "active",
+				},
+			},
+		},
+		{
+			name: "when EC2NodeClass has subnets and security groups it should mirror them to OpenshiftEC2NodeClass status",
+			ec2NodeClassStatus: awskarpenterv1.EC2NodeClassStatus{
+				Subnets: []awskarpenterv1.Subnet{
+					{ID: "subnet-abc123", Zone: "us-east-1a", ZoneID: "use1-az1"},
+				},
+				SecurityGroups: []awskarpenterv1.SecurityGroup{
+					{ID: "sg-abc123", Name: "test-sg"},
+				},
+			},
+			expectedSubnets: []hyperkarpenterv1.Subnet{
+				{ID: "subnet-abc123", Zone: "us-east-1a", ZoneID: "use1-az1"},
+			},
+			expectedSecurityGroups: []hyperkarpenterv1.SecurityGroup{
+				{ID: "sg-abc123", Name: "test-sg"},
+			},
+		},
+		{
+			name:                         "when EC2NodeClass has no capacity reservations it should leave status capacity reservations empty",
+			ec2NodeClassStatus:           awskarpenterv1.EC2NodeClassStatus{},
+			expectedCapacityReservations: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			scheme := runtime.NewScheme()
+			g.Expect(hyperkarpenterv1.AddToScheme(scheme)).To(Succeed())
+
+			openshiftNodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-nodeclass",
+				},
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(openshiftNodeClass).
+				WithStatusSubresource(openshiftNodeClass).
+				Build()
+
+			r := &EC2NodeClassReconciler{guestClient: fakeClient}
+
+			ec2NodeClass := &awskarpenterv1.EC2NodeClass{
+				Status: tc.ec2NodeClassStatus,
+			}
+
+			err := r.reconcileStatus(context.Background(), ec2NodeClass, openshiftNodeClass)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// Re-fetch to verify what was persisted via status patch
+			updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+			g.Expect(fakeClient.Get(context.Background(), client.ObjectKeyFromObject(openshiftNodeClass), updated)).To(Succeed())
+
+			g.Expect(updated.Status.CapacityReservations).To(Equal(tc.expectedCapacityReservations))
+			g.Expect(updated.Status.Subnets).To(Equal(tc.expectedSubnets))
+			g.Expect(updated.Status.SecurityGroups).To(Equal(tc.expectedSecurityGroups))
 		})
 	}
 }

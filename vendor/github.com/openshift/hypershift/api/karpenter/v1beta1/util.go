@@ -24,6 +24,22 @@ func (spec OpenshiftEC2NodeClassSpec) KarpenterBlockDeviceMapping() []*awskarpen
 	return blockDeviceMapping
 }
 
+func (spec OpenshiftEC2NodeClassSpec) KarpenterCapacityReservationSelectorTerms() []awskarpenterv1.CapacityReservationSelectorTerm {
+	if spec.CapacityReservationSelectorTerms == nil {
+		return nil
+	}
+	var terms []awskarpenterv1.CapacityReservationSelectorTerm
+	for _, term := range spec.CapacityReservationSelectorTerms {
+		terms = append(terms, awskarpenterv1.CapacityReservationSelectorTerm{
+			Tags:                  term.Tags,
+			ID:                    term.ID,
+			OwnerID:               term.OwnerID,
+			InstanceMatchCriteria: term.InstanceMatchCriteria,
+		})
+	}
+	return terms
+}
+
 func (spec OpenshiftEC2NodeClassSpec) KarpenterInstanceStorePolicy() *awskarpenterv1.InstanceStorePolicy {
 	if spec.InstanceStorePolicy == nil {
 		return nil

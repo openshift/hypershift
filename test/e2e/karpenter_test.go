@@ -16,6 +16,7 @@ import (
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	karpentercpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
 	karpenteroperatorcpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -30,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/utils/ptr"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	"sigs.k8s.io/yaml"
@@ -373,6 +375,210 @@ func TestKarpenter(t *testing.T) {
 				g.Expect(ec2NodeClass.Spec.InstanceProfile).To(BeNil(), "InstanceProfile should be cleared")
 			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 			t.Logf("EC2NodeClass InstanceProfile cleared successfully")
+		})
+
+		t.Run("Capacity reservation selector propagation", func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Ensure the HostedCluster has the karpenter role ARN configured.
+			if hostedCluster.Spec.AutoNode == nil ||
+				hostedCluster.Spec.AutoNode.Provisioner == nil ||
+				hostedCluster.Spec.AutoNode.Provisioner.Karpenter == nil ||
+				hostedCluster.Spec.AutoNode.Provisioner.Karpenter.AWS == nil {
+				t.Skip("HostedCluster does not have a Karpenter AWS role configured, skipping capacity reservation test")
+			}
+			karpenterRoleARN := hostedCluster.Spec.AutoNode.Provisioner.Karpenter.AWS.RoleARN
+
+			// Temporarily grant the karpenter role permission to create and cancel capacity reservations.
+			// ec2:DescribeCapacityReservations is already permanently in the policy (added to AllowRegionalReadActions).
+			crPolicy := `{
+				"Version": "2012-10-17",
+				"Statement": [
+					{
+						"Effect": "Allow",
+						"Action": [
+							"ec2:CreateCapacityReservation",
+							"ec2:CancelCapacityReservation"
+						],
+						"Resource": "*"
+					}
+				]
+			}`
+			t.Logf("Adding CreateCapacityReservation/CancelCapacityReservation policy to karpenter role %s", karpenterRoleARN)
+			cleanupCRPolicy, err := e2eutil.PutRolePolicy(
+				ctx,
+				clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile,
+				clusterOpts.AWSPlatform.Region,
+				karpenterRoleARN,
+				crPolicy,
+			)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to add capacity reservation policy to karpenter role")
+			defer func() {
+				if err := cleanupCRPolicy(); err != nil {
+					t.Logf("warning: failed to cleanup capacity reservation policy from karpenter role: %v", err)
+				}
+			}()
+
+			// Determine an availability zone to use: pick the AZ from the first subnet in the cluster.
+			defaultNodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+			g.Expect(guestClient.Get(ctx, crclient.ObjectKey{Name: "default"}, defaultNodeClass)).To(Succeed())
+			g.Expect(defaultNodeClass.Status.Subnets).NotTo(BeEmpty(), "default OpenshiftEC2NodeClass should have resolved subnets")
+			targetAZ := defaultNodeClass.Status.Subnets[0].Zone
+			t.Logf("Using availability zone %s for capacity reservation", targetAZ)
+
+			// Create a real EC2 capacity reservation with 1 instance of t3.large in targeted mode.
+			// We use t3.large to match the instance type used by the other karpenter tests — OpenShift
+			// platform daemonsets consume enough overhead that smaller types (t3.small, t3.medium) don't
+			// have enough free memory to satisfy karpenter's scheduling check.
+			// We need a real reservation because karpenter 1.8 runs with ReservedCapacity=true by default,
+			// so selector terms that match nothing would cause CapacityReservationsReady=False on the
+			// EC2NodeClass and block provisioning.
+			crID, cleanupCR, err := e2eutil.CreateCapacityReservation(
+				ctx,
+				clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile,
+				clusterOpts.AWSPlatform.Region,
+				"t3.large",
+				targetAZ,
+				1,
+			)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to create capacity reservation")
+			t.Logf("Created capacity reservation %s in %s", crID, targetAZ)
+			defer func() {
+				if err := cleanupCR(); err != nil {
+					t.Logf("warning: failed to cancel capacity reservation %s: %v", crID, err)
+				}
+			}()
+
+			// Create a new OpenshiftEC2NodeClass (not "default") pointing to the capacity reservation by ID.
+			// Using a separate object avoids contaminating the shared "default" class used by other sub-tests.
+			crNodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "capacity-reservation-test",
+				},
+				Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+					CapacityReservationSelectorTerms: []hyperkarpenterv1.CapacityReservationSelectorTerm{
+						{ID: crID},
+					},
+					// Mirror the cluster-wide public IP setting so the node can reach the ignition
+					// server. Without this, nodes in subnets with MapPublicIpOnLaunch=false get no
+					// public IP and no route out, causing ignition fetch to time out. The default
+					// OpenshiftEC2NodeClass gets this set automatically by the operator; user-created
+					// NodeClasses like this one do not.
+					AssociatePublicIPAddress: ptr.To(hostedCluster.Annotations[hyperv1.AWSMachinePublicIPs] == "true"),
+				},
+			}
+			g.Expect(guestClient.Create(ctx, crNodeClass)).To(Succeed())
+			t.Logf("Created OpenshiftEC2NodeClass capacity-reservation-test with CapacityReservationSelectorTerms ID=%s", crID)
+			defer func() {
+				if err := guestClient.Delete(ctx, crNodeClass); err != nil {
+					t.Logf("warning: failed to delete OpenshiftEC2NodeClass capacity-reservation-test: %v", err)
+				}
+			}()
+
+			// Verify the downstream EC2NodeClass has the CapacityReservationSelectorTerms propagated.
+			t.Logf("Waiting for EC2NodeClass capacity-reservation-test to have CapacityReservationSelectorTerms set")
+			g.Eventually(func(g Gomega) {
+				ec2nc := &awskarpenterv1.EC2NodeClass{}
+				g.Expect(guestClient.Get(ctx, crclient.ObjectKey{Name: "capacity-reservation-test"}, ec2nc)).To(Succeed())
+				g.Expect(ec2nc.Spec.CapacityReservationSelectorTerms).To(HaveLen(1))
+				g.Expect(ec2nc.Spec.CapacityReservationSelectorTerms[0].ID).To(Equal(crID))
+			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+			t.Logf("EC2NodeClass capacity-reservation-test has correct CapacityReservationSelectorTerms")
+
+			// Verify karpenter resolves the capacity reservation and reflects it in the OpenshiftEC2NodeClass status.
+			t.Logf("Waiting for OpenshiftEC2NodeClass capacity-reservation-test to have CapacityReservations in status")
+			g.Eventually(func(g Gomega) {
+				updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+				g.Expect(guestClient.Get(ctx, crclient.ObjectKey{Name: "capacity-reservation-test"}, updated)).To(Succeed())
+				g.Expect(updated.Status.CapacityReservations).NotTo(BeEmpty(), "expected at least one resolved capacity reservation in status")
+				g.Expect(updated.Status.CapacityReservations[0].ID).To(Equal(crID))
+			}).WithTimeout(5 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+			t.Logf("OpenshiftEC2NodeClass capacity-reservation-test has capacity reservation %s in status", crID)
+
+			// Create a dedicated NodePool that targets the capacity-reservation-test NodeClass and requires
+			// capacity-type=reserved so karpenter launches the instance into the reservation (not alongside it).
+			crNodePool := karpenterNodePool.DeepCopy()
+			crNodePool.SetResourceVersion("")
+			crNodePool.SetName("capacity-reservation-test")
+			crNodePool.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})["nodeClassRef"] = map[string]interface{}{
+				"group": "karpenter.k8s.aws",
+				"kind":  "EC2NodeClass",
+				"name":  "capacity-reservation-test",
+			}
+			// Require t3.large (matches the CR) and capacity-type=reserved so karpenter uses the targeted reservation.
+			crNodePool.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})["requirements"] = []interface{}{
+				map[string]interface{}{
+					"key":      "node.kubernetes.io/instance-type",
+					"operator": "In",
+					"values":   []interface{}{"t3.large"},
+				},
+				map[string]interface{}{
+					"key":      "karpenter.sh/capacity-type",
+					"operator": "In",
+					"values":   []interface{}{"reserved"},
+				},
+			}
+			defer func() {
+				if err := guestClient.Delete(ctx, crNodePool); err != nil {
+					t.Logf("warning: failed to delete NodePool capacity-reservation-test: %v", err)
+				}
+			}()
+			g.Expect(guestClient.Create(ctx, crNodePool)).To(Succeed())
+			t.Logf("Created NodePool capacity-reservation-test targeting capacity reservation %s", crID)
+
+			// Use the existing workload yaml but pin it to our capacity-reservation NodePool instead of
+			// the default instance-type nodeSelector, so karpenter satisfies it from the CR NodePool.
+			crWorkload := workLoads.DeepCopy()
+			crWorkload.SetResourceVersion("")
+			crWorkload.SetName("capacity-reservation-web-app")
+			crWorkload.Object["spec"].(map[string]interface{})["replicas"] = 1
+			crWorkload.Object["spec"].(map[string]interface{})["template"].(map[string]interface{})["spec"].(map[string]interface{})["nodeSelector"] = map[string]interface{}{
+				"karpenter.sh/nodepool": crNodePool.GetName(),
+			}
+			defer func() {
+				if err := guestClient.Delete(ctx, crWorkload); err != nil {
+					t.Logf("warning: failed to delete workload capacity-reservation-web-app: %v", err)
+				}
+			}()
+			// Retry the create to tolerate transient admission plugin timeouts on the guest API server.
+			g.Eventually(func(g Gomega) {
+				crWorkload.SetResourceVersion("")
+				g.Expect(guestClient.Create(ctx, crWorkload)).To(Succeed())
+			}).WithTimeout(2 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
+			t.Logf("Created workload capacity-reservation-web-app to trigger node provisioning")
+
+			// Wait for the node to be ready.
+			crNodeLabels := map[string]string{
+				"karpenter.sh/nodepool": crNodePool.GetName(),
+			}
+			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, crNodeLabels)
+			g.Expect(nodes).To(HaveLen(1))
+			t.Logf("Node provisioned by capacity-reservation-test NodePool is ready")
+
+			// Verify the EC2 instance was launched into the capacity reservation.
+			ec2client := ec2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+
+			node := nodes[0]
+			providerID := node.Spec.ProviderID
+			g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
+
+			parts := strings.Split(providerID, "/")
+			g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
+			instanceID := parts[4]
+			t.Logf("Verifying EC2 instance %s was launched into capacity reservation %s", instanceID, crID)
+
+			result, err := ec2client.DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
+				InstanceIds: []*string{aws.String(instanceID)},
+			})
+			g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance %s", instanceID)
+			g.Expect(result.Reservations).NotTo(BeEmpty())
+			g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty())
+
+			instance := result.Reservations[0].Instances[0]
+			g.Expect(instance.CapacityReservationId).NotTo(BeNil(), "instance %s should have a CapacityReservationId", instanceID)
+			g.Expect(aws.StringValue(instance.CapacityReservationId)).To(Equal(crID),
+				"instance %s should have been launched into capacity reservation %s", instanceID, crID)
+			t.Logf("Instance %s correctly launched into capacity reservation %s", instanceID, crID)
 		})
 
 		// TODO(jkyros): This test doesn't clean up after itself (I think intentionally) so we can test general cluster

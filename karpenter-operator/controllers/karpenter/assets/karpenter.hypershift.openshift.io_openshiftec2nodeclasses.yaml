@@ -156,6 +156,51 @@ spec:
                 - message: must have only one blockDeviceMappings with rootVolume
                   rule: self.filter(x, has(x.rootVolume)?x.rootVolume==true:false).size()
                     <= 1
+              capacityReservationSelectorTerms:
+                description: CapacityReservationSelectorTerms is a list of capacity
+                  reservation selector terms. The terms are ORed.
+                items:
+                  description: |-
+                    CapacityReservationSelectorTerm defines selection logic for a capacity reservation used by Karpenter to launch nodes.
+                    If multiple fields are used for selection, the requirements are ANDed.
+                  properties:
+                    id:
+                      description: ID is the capacity reservation id in EC2
+                      pattern: ^cr-[0-9a-z]+$
+                      type: string
+                    instanceMatchCriteria:
+                      description: InstanceMatchCriteria specifies how instances are
+                        matched to capacity reservations.
+                      enum:
+                      - open
+                      - targeted
+                      type: string
+                    ownerID:
+                      description: OwnerID is the owner account id for the capacity
+                        reservation.
+                      pattern: ^[0-9]{12}$
+                      type: string
+                    tags:
+                      additionalProperties:
+                        type: string
+                      description: |-
+                        Tags is a map of key/value tags used to select capacity reservations.
+                        Specifying '*' for a value selects all values for a given tag key.
+                      maxProperties: 20
+                      type: object
+                      x-kubernetes-validations:
+                      - message: empty tag keys or values aren't supported
+                        rule: self.all(k, k != '' && self[k] != '')
+                  type: object
+                maxItems: 30
+                type: array
+                x-kubernetes-validations:
+                - message: expected at least one, got none, ['tags', 'id', 'instanceMatchCriteria']
+                  rule: self.all(x, has(x.tags) || has(x.id) || has(x.instanceMatchCriteria))
+                - message: '''id'' is mutually exclusive, cannot be set along with
+                    other fields in a capacity reservation selector term'
+                  rule: '!self.all(x, has(x.id) && (has(x.tags) || has(x.ownerID)
+                    || has(x.instanceMatchCriteria)))'
               detailedMonitoring:
                 description: DetailedMonitoring controls if detailed monitoring is
                   enabled for instances that are launched
@@ -266,6 +311,52 @@ spec:
             description: OpenshiftEC2NodeClassStatus defines the observed state of
               OpenshiftEC2NodeClass.
             properties:
+              capacityReservations:
+                description: |-
+                  CapacityReservations contains the current Capacity Reservation values that are available to the
+                  cluster under the capacityReservationSelectorTerms.
+                items:
+                  description: CapacityReservation contains resolved CapacityReservation
+                    selector values utilized for node launch
+                  properties:
+                    availabilityZone:
+                      description: The availability zone the capacity reservation
+                        is available in.
+                      type: string
+                    endTime:
+                      description: |-
+                        The time at which the capacity reservation expires. Once expired, the reserved capacity is released and Karpenter
+                        will no longer be able to launch instances into that reservation.
+                      format: date-time
+                      type: string
+                    id:
+                      description: The id for the capacity reservation.
+                      type: string
+                    instanceMatchCriteria:
+                      description: Indicates the type of instance launches the capacity
+                        reservation accepts.
+                      type: string
+                    instanceType:
+                      description: The instance type for the capacity reservation.
+                      type: string
+                    ownerID:
+                      description: The ID of the AWS account that owns the capacity
+                        reservation.
+                      type: string
+                    reservationType:
+                      description: The type of capacity reservation.
+                      type: string
+                    state:
+                      description: The state of the capacity reservation.
+                      type: string
+                  required:
+                  - availabilityZone
+                  - id
+                  - instanceMatchCriteria
+                  - instanceType
+                  - ownerID
+                  type: object
+                type: array
               conditions:
                 description: Conditions contain signals for health and readiness.
                 items:

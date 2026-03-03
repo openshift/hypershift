@@ -345,6 +345,7 @@ var (
 				"Effect": "Allow",
 				"Resource": "*",
 				"Action": [
+					"ec2:DescribeCapacityReservations",
 					"ec2:DescribeImages",
 					"ec2:DescribeInstances",
 					"ec2:DescribeInstanceTypeOfferings",
