@@ -62,6 +62,7 @@ var (
 		"hostedcontrolplanes.hypershift.openshift.io", "clusters.cluster.x-k8s.io",
 		"machinedeployments.cluster.x-k8s.io", "machinesets.cluster.x-k8s.io", "machines.cluster.x-k8s.io",
 		"routes.route.openshift.io", "clusterdeployments.hive.openshift.io",
+		"nmstateconfigs.agent-install.openshift.io",
 	}
 
 	// Platform-specific resources constants
