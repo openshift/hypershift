@@ -35,6 +35,7 @@ const (
 	flagControlPlaneServiceAccount    = "control-plane-service-account"
 	flagCloudControllerServiceAccount = "cloud-controller-service-account"
 	flagStorageServiceAccount         = "storage-service-account"
+	flagImageRegistryServiceAccount   = "image-registry-service-account"
 	flagServiceAccountSigningKeyPath  = "service-account-signing-key-path"
 	flagEndpointAccess                = "endpoint-access"
 	flagIssuerURL                     = "oidc-issuer-url"
@@ -79,6 +80,9 @@ type RawCreateOptions struct {
 	// StorageServiceAccount is the Google Service Account email for the GCP PD CSI Driver
 	StorageServiceAccount string
 
+	// ImageRegistryServiceAccount is the Google Service Account email for the Image Registry Operator
+	ImageRegistryServiceAccount string
+
 	// ServiceAccountSigningKeyPath is the path to the private key file for the service account token issuer
 	ServiceAccountSigningKeyPath string
 
@@ -114,6 +118,7 @@ func BindOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.ControlPlaneServiceAccount, flagControlPlaneServiceAccount, opts.ControlPlaneServiceAccount, "Google Service Account email for Control Plane Operator (from `hypershift create iam gcp` output)")
 	flags.StringVar(&opts.CloudControllerServiceAccount, flagCloudControllerServiceAccount, opts.CloudControllerServiceAccount, "Google Service Account email for Cloud Controller Manager (from `hypershift create iam gcp` output)")
 	flags.StringVar(&opts.StorageServiceAccount, flagStorageServiceAccount, opts.StorageServiceAccount, "Google Service Account email for GCP PD CSI Driver (from `hypershift create iam gcp` output)")
+	flags.StringVar(&opts.ImageRegistryServiceAccount, flagImageRegistryServiceAccount, opts.ImageRegistryServiceAccount, "Google Service Account email for Image Registry Operator (from `hypershift create iam gcp` output)")
 	flags.StringVar(&opts.ServiceAccountSigningKeyPath, flagServiceAccountSigningKeyPath, "", "The file to the private key for the service account token issuer")
 	flags.StringVar(&opts.EndpointAccess, flagEndpointAccess, string(hyperv1.GCPEndpointAccessPrivate), "Endpoint access type (Private or PublicAndPrivate)")
 	flags.StringVar(&opts.IssuerURL, flagIssuerURL, "", "The OIDC provider issuer URL")
@@ -168,6 +173,9 @@ func (o *RawCreateOptions) Validate(_ context.Context, _ *core.CreateOptions) (c
 		return nil, err
 	}
 	if err := util.ValidateRequiredOption(flagStorageServiceAccount, o.StorageServiceAccount); err != nil {
+		return nil, err
+	}
+	if err := util.ValidateRequiredOption(flagImageRegistryServiceAccount, o.ImageRegistryServiceAccount); err != nil {
 		return nil, err
 	}
 	return &ValidatedCreateOptions{
@@ -274,6 +282,7 @@ func (o *CreateOptions) ApplyPlatformSpecifics(hostedCluster *hyperv1.HostedClus
 				ControlPlane:    o.ControlPlaneServiceAccount,
 				CloudController: o.CloudControllerServiceAccount,
 				Storage:         o.StorageServiceAccount,
+				ImageRegistry:   o.ImageRegistryServiceAccount,
 			},
 		},
 		EndpointAccess: hyperv1.GCPEndpointAccessType(o.EndpointAccess),

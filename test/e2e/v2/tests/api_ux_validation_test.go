@@ -315,6 +315,7 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 						ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
 						CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 						Storage:         "storage@my-project-123.iam.gserviceaccount.com",
+						ImageRegistry:   "imageregistry@my-project-123.iam.gserviceaccount.com",
 					},
 				},
 			}
@@ -414,6 +415,11 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 						spec.WorkloadIdentity.ServiceAccountsEmails.Storage = "invalid-storage-email"
 					},
 					"storage in body"),
+				Entry("it should reject invalid ImageRegistry service account email",
+					func(spec *hyperv1.GCPPlatformSpec) {
+						spec.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry = "invalid-image-registry-email"
+					},
+					"imageRegistry in body"),
 			)
 
 			DescribeTable("When validating GCP resource labels",

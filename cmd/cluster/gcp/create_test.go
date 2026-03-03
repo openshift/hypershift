@@ -38,6 +38,7 @@ func TestCreateOptionsApplyPlatformSpecifics(t *testing.T) {
 						ControlPlaneServiceAccount:    "controlplane@test-project-123.iam.gserviceaccount.com",
 						CloudControllerServiceAccount: "cloudcontroller@test-project-123.iam.gserviceaccount.com",
 						StorageServiceAccount:         "storage@test-project-123.iam.gserviceaccount.com",
+						ImageRegistryServiceAccount:   "imageregistry@test-project-123.iam.gserviceaccount.com",
 					},
 				},
 			},
@@ -61,6 +62,7 @@ func TestCreateOptionsApplyPlatformSpecifics(t *testing.T) {
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane).To(Equal("controlplane@test-project-123.iam.gserviceaccount.com"))
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController).To(Equal("cloudcontroller@test-project-123.iam.gserviceaccount.com"))
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage).To(Equal("storage@test-project-123.iam.gserviceaccount.com"))
+	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry).To(Equal("imageregistry@test-project-123.iam.gserviceaccount.com"))
 }
 
 func TestValidateGCPOptions(t *testing.T) {
@@ -78,6 +80,7 @@ func TestValidateGCPOptions(t *testing.T) {
 		ControlPlaneServiceAccount:    "controlplane@test-project-123.iam.gserviceaccount.com",
 		CloudControllerServiceAccount: "cloudcontroller@test-project-123.iam.gserviceaccount.com",
 		StorageServiceAccount:         "storage@test-project-123.iam.gserviceaccount.com",
+		ImageRegistryServiceAccount:   "imageregistry@test-project-123.iam.gserviceaccount.com",
 	}
 
 	tests := map[string]struct {
@@ -86,29 +89,34 @@ func TestValidateGCPOptions(t *testing.T) {
 		expectSubstr string
 	}{
 		"missing project": {
-			opts:         RawCreateOptions{Region: validOpts.Region, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount, StorageServiceAccount: validOpts.StorageServiceAccount},
+			opts:         RawCreateOptions{Region: validOpts.Region, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount, StorageServiceAccount: validOpts.StorageServiceAccount, ImageRegistryServiceAccount: validOpts.ImageRegistryServiceAccount},
 			expectErr:    true,
 			expectSubstr: "required flag(s) \"project\" not set",
 		},
 		"missing region": {
-			opts:         RawCreateOptions{Project: validOpts.Project, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount, StorageServiceAccount: validOpts.StorageServiceAccount},
+			opts:         RawCreateOptions{Project: validOpts.Project, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount, StorageServiceAccount: validOpts.StorageServiceAccount, ImageRegistryServiceAccount: validOpts.ImageRegistryServiceAccount},
 			expectErr:    true,
 			expectSubstr: "required flag(s) \"region\" not set",
 		},
 		"missing network": {
-			opts:         RawCreateOptions{Project: validOpts.Project, Region: validOpts.Region, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount, StorageServiceAccount: validOpts.StorageServiceAccount},
+			opts:         RawCreateOptions{Project: validOpts.Project, Region: validOpts.Region, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount, StorageServiceAccount: validOpts.StorageServiceAccount, ImageRegistryServiceAccount: validOpts.ImageRegistryServiceAccount},
 			expectErr:    true,
 			expectSubstr: "required flag(s) \"network\" not set",
 		},
 		"missing cloud-controller-service-account": {
-			opts:         RawCreateOptions{Project: validOpts.Project, Region: validOpts.Region, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, StorageServiceAccount: validOpts.StorageServiceAccount},
+			opts:         RawCreateOptions{Project: validOpts.Project, Region: validOpts.Region, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, StorageServiceAccount: validOpts.StorageServiceAccount, ImageRegistryServiceAccount: validOpts.ImageRegistryServiceAccount},
 			expectErr:    true,
 			expectSubstr: "required flag(s) \"cloud-controller-service-account\" not set",
 		},
 		"missing storage service account": {
-			opts:         RawCreateOptions{Project: validOpts.Project, Region: validOpts.Region, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount},
+			opts:         RawCreateOptions{Project: validOpts.Project, Region: validOpts.Region, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount, ImageRegistryServiceAccount: validOpts.ImageRegistryServiceAccount},
 			expectErr:    true,
 			expectSubstr: "required flag(s) \"storage-service-account\" not set",
+		},
+		"missing image-registry-service-account": {
+			opts:         RawCreateOptions{Project: validOpts.Project, Region: validOpts.Region, Network: validOpts.Network, PrivateServiceConnectSubnet: validOpts.PrivateServiceConnectSubnet, WorkloadIdentityProjectNumber: validOpts.WorkloadIdentityProjectNumber, WorkloadIdentityPoolID: validOpts.WorkloadIdentityPoolID, WorkloadIdentityProviderID: validOpts.WorkloadIdentityProviderID, NodePoolServiceAccount: validOpts.NodePoolServiceAccount, ControlPlaneServiceAccount: validOpts.ControlPlaneServiceAccount, CloudControllerServiceAccount: validOpts.CloudControllerServiceAccount, StorageServiceAccount: validOpts.StorageServiceAccount},
+			expectErr:    true,
+			expectSubstr: "required flag(s) \"image-registry-service-account\" not set",
 		},
 		"all required fields provided": {
 			opts:      validOpts,
@@ -161,6 +169,7 @@ func TestCreateCluster(t *testing.T) {
 				"--control-plane-service-account=controlplane@test-project-123.iam.gserviceaccount.com",
 				"--cloud-controller-service-account=cloudcontroller@test-project-123.iam.gserviceaccount.com",
 				"--storage-service-account=storage@test-project-123.iam.gserviceaccount.com",
+				"--image-registry-service-account=imageregistry@test-project-123.iam.gserviceaccount.com",
 				"--node-pool-replicas=-1",
 				"--name=example",
 				"--pull-secret=" + pullSecretFile,
