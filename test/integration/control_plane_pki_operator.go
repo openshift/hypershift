@@ -42,6 +42,12 @@ func RunTestControlPlanePKIOperatorBreakGlassCredentials(t *testing.T, ctx conte
 		if hostedCluster.Spec.Platform.Type == hypershiftv1beta1.KubevirtPlatform {
 			t.Skip("skipping break-glass credentials test on KubeVirt platform")
 		}
+		// TODO(GCP): Revisit. GKE Warden blocks CSRs with system: prefix in CN
+		// and system:masters in Organization. The pre-generated certs work but
+		// the CSR flow and revocation tests fail.
+		if hostedCluster.Spec.Platform.Type == hypershiftv1beta1.GCPPlatform {
+			t.Skip("skipping break-glass credentials test on GCP platform - GKE Warden blocks system: CSRs")
+		}
 		// control-plane-pki-operator is only available in 4.15 and later
 		e2eutil.AtLeast(t, e2eutil.Version415)
 		hostedControlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)

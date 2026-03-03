@@ -2171,7 +2171,7 @@ func waitForDaemonSetsReady(t *testing.T, ctx context.Context, guestClient crcli
 	return nil
 }
 
-func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster) {
+func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClient crclient.Client, entryHostedCluster *hyperv1.HostedCluster, clusterOpts PlatformAgnosticOptions) {
 	t.Run("EnsureKubeAPIDNSNameCustomCert", func(t *testing.T) {
 		AtLeast(t, Version419)
 
@@ -2203,6 +2203,11 @@ func EnsureKubeAPIDNSNameCustomCert(t *testing.T, ctx context.Context, mgmtClien
 			// Use retries instead of proactive waiting for better efficiency
 			retryTimeout = 10 * time.Minute // Extended retry for the kubeconfig test
 			t.Log("Using Azure-specific retry strategy for DNS propagation race condition")
+		}
+
+		if entryHostedCluster.Spec.Platform.Type == hyperv1.GCPPlatform && clusterOpts.ExternalDNSDomain != "" {
+			serviceDomain = clusterOpts.ExternalDNSDomain
+			customApiServerHost = fmt.Sprintf("api-custom-cert-%s.%s", entryHostedCluster.Spec.InfraID, serviceDomain)
 		}
 
 		g := NewWithT(t)
@@ -2857,7 +2862,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	}
 
 	// Wait for Nodes to be Ready
-	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	numNodes := clusterOpts.ExpectedNodeCount()
 	WaitForNReadyNodes(t, ctx, guestClient, numNodes, hostedCluster.Spec.Platform.Type)
 
 	// rollout will not complete if there are no worker nodes.
@@ -2910,7 +2915,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	// Ensure NodePools have all Nodes ready.
 	WaitForNodePoolDesiredNodes(t, ctx, client, hostedCluster)
 
-	numNodes := clusterOpts.NodePoolReplicas * int32(len(clusterOpts.AWSPlatform.Zones))
+	numNodes := clusterOpts.ExpectedNodeCount()
 	// rollout will not complete if there are no worker nodes.
 	if numNodes > 0 {
 		WaitForImageRollout(t, ctx, client, hostedCluster)

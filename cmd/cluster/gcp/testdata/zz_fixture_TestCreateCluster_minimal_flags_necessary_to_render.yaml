@@ -35,6 +35,7 @@ spec:
   olmCatalogPlacement: management
   platform:
     gcp:
+      endpointAccess: Private
       networkConfig:
         network:
           name: test-network
