@@ -70,7 +70,7 @@ var (
 	}
 	agentResources = []string{
 		"agentclusters.infrastructure.cluster.x-k8s.io", "agentmachinetemplates.infrastructure.cluster.x-k8s.io", "agentmachines.infrastructure.cluster.x-k8s.io",
-		"agents.agent-install.openshift.io", "infraenvs.agent-install.openshift.io", "baremetalhosts.metal3.io",
+		"agents.agent-install.openshift.io", "infraenvs.agent-install.openshift.io", "nmstateconfigs.agent-install.openshift.io", "baremetalhosts.metal3.io",
 	}
 	kubevirtResources = []string{
 		"kubevirtclusters.infrastructure.cluster.x-k8s.io", "kubevirtmachinetemplates.infrastructure.cluster.x-k8s.io",
