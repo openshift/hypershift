@@ -34,7 +34,6 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
 		c.Args = append(c.Args,
 			"--metrics-set", string(metricsSet),
-			"--authorized-sa", "system:serviceaccount:openshift-monitoring:prometheus-k8s",
 		)
 		c.VolumeMounts = append(c.VolumeMounts, volumeMounts...)
 	})

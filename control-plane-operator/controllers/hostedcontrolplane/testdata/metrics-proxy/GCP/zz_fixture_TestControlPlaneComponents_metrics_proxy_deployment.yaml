@@ -28,7 +28,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
-        component.hypershift.openshift.io/config-hash: 5fe45f56741638a5741638a5
+        component.hypershift.openshift.io/config-hash: 5fe45f56741638a5741638a587ecf31a87ecf31a
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: metrics-proxy
@@ -68,14 +68,12 @@ spec:
         - /etc/metrics-proxy/serving-cert/tls.crt
         - --tls-key-file
         - /etc/metrics-proxy/serving-cert/tls.key
-        - --kas-kubeconfig
-        - /etc/metrics-proxy/kas-kubeconfig/kubeconfig
+        - --client-ca-file
+        - /etc/metrics-proxy/client-ca/ca.crt
         - --config-file
         - /etc/metrics-proxy/config/config.yaml
         - --metrics-set
         - All
-        - --authorized-sa
-        - system:serviceaccount:openshift-monitoring:prometheus-k8s
         command:
         - /usr/bin/control-plane-operator
         - metrics-proxy
@@ -126,8 +124,8 @@ spec:
         volumeMounts:
         - mountPath: /etc/metrics-proxy/serving-cert
           name: serving-cert
-        - mountPath: /etc/metrics-proxy/kas-kubeconfig
-          name: kas-kubeconfig
+        - mountPath: /etc/metrics-proxy/client-ca
+          name: client-ca
         - mountPath: /etc/metrics-proxy/config
           name: scrape-config
         - mountPath: /etc/metrics-proxy/certs/endpoint-resolver-ca
@@ -152,10 +150,10 @@ spec:
         secret:
           defaultMode: 416
           secretName: metrics-proxy-serving-cert
-      - name: kas-kubeconfig
+      - name: client-ca
         secret:
           defaultMode: 416
-          secretName: service-network-admin-kubeconfig
+          secretName: cluster-signer-ca
       - configMap:
           defaultMode: 420
           name: metrics-proxy-config

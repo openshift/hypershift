@@ -22,8 +22,8 @@ spec:
         - /etc/metrics-proxy/serving-cert/tls.crt
         - --tls-key-file
         - /etc/metrics-proxy/serving-cert/tls.key
-        - --kas-kubeconfig
-        - /etc/metrics-proxy/kas-kubeconfig/kubeconfig
+        - --client-ca-file
+        - /etc/metrics-proxy/client-ca/ca.crt
         - --config-file
         - /etc/metrics-proxy/config/config.yaml
         command:
@@ -67,8 +67,8 @@ spec:
         volumeMounts:
         - mountPath: /etc/metrics-proxy/serving-cert
           name: serving-cert
-        - mountPath: /etc/metrics-proxy/kas-kubeconfig
-          name: kas-kubeconfig
+        - mountPath: /etc/metrics-proxy/client-ca
+          name: client-ca
         - mountPath: /etc/metrics-proxy/config
           name: scrape-config
         - mountPath: /etc/metrics-proxy/certs/endpoint-resolver-ca
@@ -81,10 +81,10 @@ spec:
         secret:
           defaultMode: 416
           secretName: metrics-proxy-serving-cert
-      - name: kas-kubeconfig
+      - name: client-ca
         secret:
           defaultMode: 416
-          secretName: service-network-admin-kubeconfig
+          secretName: cluster-signer-ca
       - configMap:
           name: metrics-proxy-config
           optional: true

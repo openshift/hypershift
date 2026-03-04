@@ -104,15 +104,24 @@ func buildTLSConfigFromFiles(caFile, certFile, keyFile string) (*tls.Config, err
 		config.RootCAs = caPool
 	}
 
-	if certFile != "" && keyFile != "" {
+	if certFile != "" || keyFile != "" {
+		if certFile == "" || keyFile == "" {
+			return nil, fmt.Errorf("both certFile and keyFile must be set (got certFile=%q, keyFile=%q)", certFile, keyFile)
+		}
 		certPEM, err := os.ReadFile(certFile)
 		if err != nil {
-			// Client cert may not exist yet; return config without client cert.
-			return config, nil
+			if os.IsNotExist(err) {
+				// Client cert may not exist yet; return config without client cert.
+				return config, nil
+			}
+			return nil, fmt.Errorf("failed to read client cert: %w", err)
 		}
 		keyPEM, err := os.ReadFile(keyFile)
 		if err != nil {
-			return config, nil
+			if os.IsNotExist(err) {
+				return config, nil
+			}
+			return nil, fmt.Errorf("failed to read client key: %w", err)
 		}
 		cert, err := tls.X509KeyPair(certPEM, keyPEM)
 		if err != nil {

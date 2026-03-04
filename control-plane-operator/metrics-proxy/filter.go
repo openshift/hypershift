@@ -10,6 +10,10 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
+// matchNothing is a regex that never matches, used as a fail-closed fallback
+// when a keep-regex fails to compile.
+var matchNothing = regexp.MustCompile("a^")
+
 type Filter struct {
 	metricsSet metrics.MetricsSet
 
@@ -61,7 +65,12 @@ func (f *Filter) getOrCompile(componentName string) *regexp.Regexp {
 
 	compiled, err := regexp.Compile("^(" + regexStr + ")$")
 	if err != nil {
-		return nil
+		// Fail closed: if the regex can't compile, block all metrics rather
+		// than allowing unfiltered access.
+		f.mu.Lock()
+		f.cache[componentName] = matchNothing
+		f.mu.Unlock()
+		return matchNothing
 	}
 
 	f.mu.Lock()
