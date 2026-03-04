@@ -344,9 +344,6 @@ func (r *Reconciler) reconcileOpenshiftEC2NodeClassDefault(ctx context.Context, 
 			},
 		}
 
-		if hcp.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
-			ec2NodeClass.Spec.IPAddressAssociation = hyperkarpenterv1.IPAddressAssociationPublic
-		}
 		return nil
 	})
 	if err != nil {
