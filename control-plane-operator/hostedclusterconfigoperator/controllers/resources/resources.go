@@ -735,6 +735,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	case hyperv1.AzurePlatform:
 		log.Info("reconciling Azure specific resources")
 		errs = append(errs, r.reconcileAzureCloudNodeManager(ctx, releaseImage.ComponentImages()["azure-cloud-node-manager"])...)
+		errs = append(errs, r.reconcileAzureIdentityWebhook(ctx)...)
 	}
 
 	// Reconcile hostedCluster recovery if the hosted cluster was restored from backup
@@ -2161,6 +2162,78 @@ func (r *reconciler) reconcileAWSIdentityWebhook(ctx context.Context) []error {
 				URL:      ptr.To("https://127.0.0.1:4443/mutate"),
 			},
 			FailurePolicy: &ignoreFailurePolicy,
+			Rules: []admissionregistrationv1.RuleWithOperations{{
+				Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},
+				Rule: admissionregistrationv1.Rule{
+					APIGroups:   []string{""},
+					APIVersions: []string{"v1"},
+					Resources:   []string{"pods"},
+				},
+			}},
+			SideEffects: &sideEffectsNone,
+		}}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", webhook, webhook.Name, err))
+	}
+
+	return errs
+}
+
+func (r *reconciler) reconcileAzureIdentityWebhook(ctx context.Context) []error {
+	var errs []error
+	clusterRole := manifests.AzureWorkloadIdentityWebhookClusterRole()
+	if _, err := r.CreateOrUpdate(ctx, r.client, clusterRole, func() error {
+		clusterRole.Rules = []rbacv1.PolicyRule{{
+			APIGroups: []string{""},
+			Resources: []string{"serviceaccounts"},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+			},
+		}}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterRole, clusterRole.Name, err))
+	}
+
+	clusterRoleBinding := manifests.AzureWorkloadIdentityWebhookClusterRoleBinding()
+	if _, err := r.CreateOrUpdate(ctx, r.client, clusterRoleBinding, func() error {
+		clusterRoleBinding.RoleRef.APIGroup = "rbac.authorization.k8s.io"
+		clusterRoleBinding.RoleRef.Kind = "ClusterRole"
+		clusterRoleBinding.RoleRef.Name = clusterRole.Name
+		clusterRoleBinding.Subjects = []rbacv1.Subject{{
+			Kind:      "ServiceAccount",
+			Name:      "azure-workload-identity-webhook",
+			Namespace: "openshift-authentication",
+		}}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterRoleBinding, clusterRoleBinding.Name, err))
+	}
+
+	failFailurePolicy := admissionregistrationv1.Fail
+	sideEffectsNone := admissionregistrationv1.SideEffectClassNone
+	matchEquivalent := admissionregistrationv1.Equivalent
+	reinvocationIfNeeded := admissionregistrationv1.IfNeededReinvocationPolicy
+	webhook := manifests.AzureWorkloadIdentityWebhook()
+	if _, err := r.CreateOrUpdate(ctx, r.client, webhook, func() error {
+		webhook.Webhooks = []admissionregistrationv1.MutatingWebhook{{
+			AdmissionReviewVersions: []string{"v1", "v1beta1"},
+			Name:                    "pod-identity-webhook.azure.mutate.io",
+			ClientConfig: admissionregistrationv1.WebhookClientConfig{
+				CABundle: []byte(r.rootCA),
+				URL:      ptr.To("https://127.0.0.1:9443/mutate-v1-pod"),
+			},
+			FailurePolicy:      &failFailurePolicy,
+			MatchPolicy:        &matchEquivalent,
+			ReinvocationPolicy: &reinvocationIfNeeded,
+			ObjectSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"azure.workload.identity/use": "true",
+				},
+			},
 			Rules: []admissionregistrationv1.RuleWithOperations{{
 				Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},
 				Rule: admissionregistrationv1.Rule{

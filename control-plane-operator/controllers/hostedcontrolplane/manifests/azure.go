@@ -51,3 +51,12 @@ func AzureFileConfigWithCredentials(ns string) *corev1.Secret {
 		},
 	}
 }
+
+func AzureWorkloadIdentityWebhookKubeconfig(ns string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "azure-workload-identity-webhook-kubeconfig",
+			Namespace: ns,
+		},
+	}
+}
