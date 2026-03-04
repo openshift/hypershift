@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,6 +34,24 @@ const (
 
 	awsPodIdentityWebhookServingCertVolumeName = "aws-pod-identity-webhook-serving-certs"
 	awsPodIdentityWebhookKubeconfigVolumeName  = "aws-pod-identity-webhook-kubeconfig"
+
+	azureWorkloadIdentityWebhookServingCertVolumeName = "azure-wi-webhook-serving-certs"
+	azureWorkloadIdentityWebhookKubeconfigVolumeName  = "azure-wi-webhook-kubeconfig"
+
+	azureWorkloadIdentityWebhookWaitForKASVersionTemplate = `set -u
+until curl -kfsS "https://localhost:%d/version" >/dev/null; do
+  echo "waiting for kube-apiserver /version endpoint to become available"
+  sleep 2
+done
+exec /usr/bin/azure-workload-identity-webhook \
+  --webhook-cert-dir=/var/run/app/certs \
+  --health-addr=:9440 \
+  --audience=api://AzureADTokenExchange \
+  --kubeconfig=/var/run/app/kubeconfig/kubeconfig \
+  --metrics-addr=:9441 \
+  --log-level=info \
+  --disable-cert-rotation
+`
 )
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
@@ -91,6 +110,11 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	switch hcp.Spec.Platform.Type {
 	case hyperv1.AWSPlatform:
 		applyAWSPodIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp)
+	case hyperv1.AzurePlatform:
+		if hcp.Spec.Platform.Azure == nil {
+			return fmt.Errorf("azure platform type requires spec.platform.azure")
+		}
+		applyAzureWorkloadIdentityWebhookContainer(&deployment.Spec.Template.Spec, hcp)
 	}
 
 	if hcp.Spec.AuditWebhook != nil && len(hcp.Spec.AuditWebhook.Name) > 0 {
@@ -308,6 +332,79 @@ func applyAWSPodIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.H
 			Name: awsPodIdentityWebhookKubeconfigVolumeName,
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{SecretName: manifests.AWSPodIdentityWebhookKubeconfig("").Name},
+			},
+		},
+	)
+}
+
+func applyAzureWorkloadIdentityWebhookContainer(podSpec *corev1.PodSpec, hcp *hyperv1.HostedControlPlane) {
+	waitForKASScript := fmt.Sprintf(azureWorkloadIdentityWebhookWaitForKASVersionTemplate, util.KASPodPort(hcp))
+
+	podSpec.Containers = append(podSpec.Containers, corev1.Container{
+		Name:            "azure-workload-identity-webhook",
+		Image:           "azure-workload-identity-webhook",
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-ec"},
+		Args:            []string{waitForKASScript},
+		Env: []corev1.EnvVar{
+			{Name: "AZURE_TENANT_ID", Value: hcp.Spec.Platform.Azure.TenantID},
+			{Name: "AZURE_ENVIRONMENT", Value: hcp.Spec.Platform.Azure.Cloud},
+		},
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("10m"),
+				corev1.ResourceMemory: resource.MustParse("25Mi"),
+			},
+		},
+		StartupProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz",
+					Port:   intstr.FromInt(9440),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			PeriodSeconds:    10,
+			FailureThreshold: 30,
+		},
+		LivenessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/healthz",
+					Port:   intstr.FromInt(9440),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			PeriodSeconds: 20,
+		},
+		ReadinessProbe: &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				HTTPGet: &corev1.HTTPGetAction{
+					Path:   "/readyz",
+					Port:   intstr.FromInt(9440),
+					Scheme: corev1.URISchemeHTTP,
+				},
+			},
+			InitialDelaySeconds: 5,
+			PeriodSeconds:       10,
+		},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: azureWorkloadIdentityWebhookServingCertVolumeName, MountPath: "/var/run/app/certs"},
+			{Name: azureWorkloadIdentityWebhookKubeconfigVolumeName, MountPath: "/var/run/app/kubeconfig"},
+		},
+	})
+
+	podSpec.Volumes = append(podSpec.Volumes,
+		corev1.Volume{
+			Name: azureWorkloadIdentityWebhookServingCertVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: manifests.AzureWorkloadIdentityWebhookServingCert("").Name},
+			},
+		},
+		corev1.Volume{
+			Name: azureWorkloadIdentityWebhookKubeconfigVolumeName,
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{SecretName: manifests.AzureWorkloadIdentityWebhookKubeconfig("").Name},
 			},
 		},
 	)
