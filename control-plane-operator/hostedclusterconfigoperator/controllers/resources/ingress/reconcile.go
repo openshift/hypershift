@@ -83,6 +83,13 @@ func ReconcileDefaultIngressController(ingressController *operatorv1.IngressCont
 					},
 				},
 			}
+		case hyperv1.AzurePlatform:
+			ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
+				Type: operatorv1.LoadBalancerServiceStrategyType,
+				LoadBalancer: &operatorv1.LoadBalancerStrategy{
+					Scope: loadBalancerScope,
+				},
+			}
 		default:
 			ingressController.Spec.EndpointPublishingStrategy = &operatorv1.EndpointPublishingStrategy{
 				Type: operatorv1.LoadBalancerServiceStrategyType,

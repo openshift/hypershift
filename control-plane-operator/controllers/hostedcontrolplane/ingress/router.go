@@ -45,6 +45,17 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 		}
 	}
 
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
+		if svc.Annotations == nil {
+			svc.Annotations = map[string]string{}
+		}
+		if internal {
+			svc.Annotations["service.beta.kubernetes.io/azure-load-balancer-internal"] = "true"
+		} else {
+			delete(svc.Annotations, "service.beta.kubernetes.io/azure-load-balancer-internal")
+		}
+	}
+
 	if svc.Labels == nil {
 		svc.Labels = map[string]string{}
 	}

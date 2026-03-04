@@ -123,6 +123,56 @@ func TestReconcileDefaultIngressController(t *testing.T) {
 			},
 		},
 		{
+			name:                   "Azure uses LoadBalancer publishing strategy (External)",
+			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressDomain:     fakeIngressDomain,
+			inputPlatformType:      hyperv1.AzurePlatform,
+			inputReplicas:          fakeInputReplicas,
+			inputIsPrivate:         false,
+			inputLoadBalancerScope: operatorv1.ExternalLoadBalancer,
+			expectedIngressController: &operatorv1.IngressController{
+				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				Spec: operatorv1.IngressControllerSpec{
+					Domain:   fakeIngressDomain,
+					Replicas: &fakeInputReplicas,
+					EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{
+						Type: operatorv1.LoadBalancerServiceStrategyType,
+						LoadBalancer: &operatorv1.LoadBalancerStrategy{
+							Scope: operatorv1.ExternalLoadBalancer,
+						},
+					},
+					DefaultCertificate: &corev1.LocalObjectReference{
+						Name: manifests.IngressDefaultIngressControllerCert().Name,
+					},
+				},
+			},
+		},
+		{
+			name:                   "Azure uses LoadBalancer publishing strategy (Internal)",
+			inputIngressController: manifests.IngressDefaultIngressController(),
+			inputIngressDomain:     fakeIngressDomain,
+			inputPlatformType:      hyperv1.AzurePlatform,
+			inputReplicas:          fakeInputReplicas,
+			inputIsPrivate:         false,
+			inputLoadBalancerScope: operatorv1.InternalLoadBalancer,
+			expectedIngressController: &operatorv1.IngressController{
+				ObjectMeta: manifests.IngressDefaultIngressController().ObjectMeta,
+				Spec: operatorv1.IngressControllerSpec{
+					Domain:   fakeIngressDomain,
+					Replicas: &fakeInputReplicas,
+					EndpointPublishingStrategy: &operatorv1.EndpointPublishingStrategy{
+						Type: operatorv1.LoadBalancerServiceStrategyType,
+						LoadBalancer: &operatorv1.LoadBalancerStrategy{
+							Scope: operatorv1.InternalLoadBalancer,
+						},
+					},
+					DefaultCertificate: &corev1.LocalObjectReference{
+						Name: manifests.IngressDefaultIngressControllerCert().Name,
+					},
+				},
+			},
+		},
+		{
 			name:                   "Kubevirt uses NodePort publishing strategy",
 			inputIngressController: manifests.IngressDefaultIngressController(),
 			inputIngressDomain:     fakeIngressDomain,

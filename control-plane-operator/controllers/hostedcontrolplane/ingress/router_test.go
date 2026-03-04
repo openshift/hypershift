@@ -143,6 +143,67 @@ func TestReconcileRouterService_AppliesLoadBalancerSourceRanges(t *testing.T) {
 	})
 }
 
+// When Azure platform is used it should handle azure-load-balancer-internal annotation correctly
+func TestReconcileRouterService_AzureLoadBalancer(t *testing.T) {
+	testCases := []struct {
+		name                string
+		internal            bool
+		existingAnnotations map[string]string
+		expectAnnotation    bool
+	}{
+		{
+			name:             "When internal is true it should set azure-load-balancer-internal annotation",
+			internal:         true,
+			expectAnnotation: true,
+		},
+		{
+			name:             "When internal is false it should not set azure-load-balancer-internal annotation",
+			internal:         false,
+			expectAnnotation: false,
+		},
+		{
+			name:     "When scope changes from internal to external it should remove azure-load-balancer-internal annotation",
+			internal: false,
+			existingAnnotations: map[string]string{
+				"service.beta.kubernetes.io/azure-load-balancer-internal": "true",
+			},
+			expectAnnotation: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcp := &hyperv1.HostedControlPlane{}
+			hcp.Spec.Platform.Type = hyperv1.AzurePlatform
+
+			svc := &corev1.Service{}
+			if tc.existingAnnotations != nil {
+				svc.Annotations = tc.existingAnnotations
+			}
+
+			if err := ReconcileRouterService(svc, tc.internal, false, hcp); err != nil {
+				t.Fatalf("ReconcileRouterService returned error: %v", err)
+			}
+
+			const annKey = "service.beta.kubernetes.io/azure-load-balancer-internal"
+			val, exists := svc.Annotations[annKey]
+			if tc.expectAnnotation {
+				if !exists || val != "true" {
+					t.Fatalf("expected %s annotation to be 'true', got %q (exists=%v)", annKey, val, exists)
+				}
+			} else {
+				if exists {
+					t.Fatalf("expected %s annotation to be absent, but it was set to %q", annKey, val)
+				}
+			}
+
+			if svc.Spec.Type != corev1.ServiceTypeLoadBalancer {
+				t.Fatalf("expected service type to be LoadBalancer, got %v", svc.Spec.Type)
+			}
+		})
+	}
+}
+
 // Test that GCP router service is configured with Internal Load Balancer
 func TestReconcileRouterService_GCPInternalLoadBalancer(t *testing.T) {
 	// Given a HostedControlPlane on GCP platform
