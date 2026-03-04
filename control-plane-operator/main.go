@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/healthcheck"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	endpointresolver "github.com/openshift/hypershift/control-plane-operator/endpoint-resolver"
 	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator"
 	pkiconfig "github.com/openshift/hypershift/control-plane-pki-operator/config"
@@ -99,6 +100,8 @@ func commandFor(name string) *cobra.Command {
 		cmd = syncfgconfigmap.NewRunCommand()
 	case "sync-global-pullsecret":
 		cmd = syncglobalpullsecret.NewRunCommand()
+	case "endpoint-resolver":
+		cmd = endpointresolver.NewStartCommand()
 	default:
 		// for the default case, there is no need
 		// to convert flags, return immediately
@@ -152,6 +155,7 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(kasbootstrap.NewRunCommand())
 	cmd.AddCommand(syncfgconfigmap.NewRunCommand())
 	cmd.AddCommand(syncglobalpullsecret.NewRunCommand())
+	cmd.AddCommand(endpointresolver.NewStartCommand())
 	return cmd
 }
 

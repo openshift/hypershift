@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: endpoint-resolver
+spec:
+  selector:
+    matchLabels:
+      app: endpoint-resolver
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: endpoint-resolver
+    spec:
+      containers:
+      - args:
+        - --tls-cert-file
+        - /etc/endpoint-resolver/serving-cert/tls.crt
+        - --tls-key-file
+        - /etc/endpoint-resolver/serving-cert/tls.key
+        command:
+        - /usr/bin/control-plane-operator
+        - endpoint-resolver
+        env:
+        - name: MY_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        image: controlplane-operator
+        livenessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: /healthz
+            port: 9444
+            scheme: HTTPS
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: endpoint-resolver
+        ports:
+        - containerPort: 9444
+          name: https
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /healthz
+            port: 9444
+            scheme: HTTPS
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 5m
+            memory: 20Mi
+        volumeMounts:
+        - mountPath: /etc/endpoint-resolver/serving-cert
+          name: serving-cert
+      serviceAccount: endpoint-resolver
+      serviceAccountName: endpoint-resolver
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: serving-cert
+        secret:
+          defaultMode: 416
+          secretName: endpoint-resolver-serving-cert
