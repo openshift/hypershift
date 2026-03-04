@@ -272,4 +272,38 @@ services:
       type: ClusterIP
     status:
       loadBalancer: {}
+  - metadata:
+      creationTimestamp: null
+      labels:
+        app: private-router
+      name: private-router
+      namespace: test-namespace
+    spec:
+      ports:
+      - name: https
+        port: 443
+        protocol: TCP
+        targetPort: https
+      selector:
+        app: private-router
+      type: LoadBalancer
+    status:
+      loadBalancer: {}
+  - metadata:
+      creationTimestamp: null
+      labels:
+        app: private-router
+      name: router
+      namespace: test-namespace
+    spec:
+      ports:
+      - name: https
+        port: 443
+        protocol: TCP
+        targetPort: https
+      selector:
+        app: private-router
+      type: LoadBalancer
+    status:
+      loadBalancer: {}
   metadata: {}

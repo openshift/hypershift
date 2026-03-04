@@ -35,6 +35,7 @@ var (
 		"capi-provider",
 		"karpenter-operator",
 		"karpenter",
+		"router",
 	)
 )
 
