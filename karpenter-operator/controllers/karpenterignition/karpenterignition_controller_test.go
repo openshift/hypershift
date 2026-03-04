@@ -17,6 +17,7 @@ import (
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/dockerv1client"
+	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 	fakeimagemetadataprovider "github.com/openshift/hypershift/support/util/fakeimagemetadataprovider"
 
@@ -25,6 +26,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -1138,4 +1140,547 @@ func findCondition(conditions []metav1.Condition, condType string) *metav1.Condi
 		}
 	}
 	return nil
+}
+
+func TestReconcileKubeletConfigMapOrphanCleanup(t *testing.T) {
+	scheme := api.Scheme
+
+	baseHCP := func() *hyperv1.HostedControlPlane {
+		return &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-hcp",
+				Namespace: testNamespace,
+			},
+			Spec: hyperv1.HostedControlPlaneSpec{
+				ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64",
+				AutoNode: &hyperv1.AutoNode{
+					Provisioner: hyperv1.ProvisionerConfig{
+						Name: hyperv1.ProvisionerKarpenter,
+						Karpenter: &hyperv1.KarpenterConfig{
+							Platform: hyperv1.AWSPlatform,
+						},
+					},
+				},
+			},
+		}
+	}
+
+	kubeletConfig := &hyperkarpenterv1.KubeletConfiguration{
+		MaxPods: ptr.To[int32](500),
+	}
+
+	t.Run("When spec.kubelet is set it should add the finalizer and create the ConfigMap", func(t *testing.T) {
+		g := NewWithT(t)
+
+		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{Name: testNodeClassName},
+			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				Kubelet: kubeletConfig,
+			},
+		}
+		hcp := baseHCP()
+
+		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp).Build()
+		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(nodeClass).
+			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+			Build()
+
+		r := &KarpenterIgnitionReconciler{
+			ManagementClient:       fakeManagementClient,
+			GuestClient:            fakeGuestClient,
+			Namespace:              testNamespace,
+			CreateOrUpdateProvider: upsert.New(false),
+		}
+
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+		err := r.reconcileKubeletConfigMap(ctx, hcp, nodeClass)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Add the finalizer as Reconcile() would
+		original := nodeClass.DeepCopy()
+		nodeClass.Finalizers = append(nodeClass.Finalizers, kubeletConfigFinalizer)
+		err = fakeGuestClient.Patch(ctx, nodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Verify ConfigMap was created
+		cm := &corev1.ConfigMap{}
+		err = fakeManagementClient.Get(ctx, client.ObjectKey{
+			Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
+			Namespace: testNamespace,
+		}, cm)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Verify finalizer is present on the NodeClass
+		updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: testNodeClassName}, updated)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(updated.Finalizers).To(ContainElement(kubeletConfigFinalizer))
+	})
+
+	t.Run("When spec.kubelet is nil and finalizer is present it should remove the finalizer", func(t *testing.T) {
+		g := NewWithT(t)
+
+		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:       testNodeClassName,
+				Finalizers: []string{kubeletConfigFinalizer},
+			},
+			// Spec.Kubelet is nil
+		}
+		hcp := baseHCP()
+
+		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(nodeClass).
+			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+			Build()
+
+		r := &KarpenterIgnitionReconciler{
+			ManagementClient:       fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp).Build(),
+			GuestClient:            fakeGuestClient,
+			Namespace:              testNamespace,
+			CreateOrUpdateProvider: upsert.New(false),
+		}
+
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+
+		// Simulate the finalizer removal branch in Reconcile(): kubelet is nil, finalizer present
+		original := nodeClass.DeepCopy()
+		nodeClass.Finalizers = nil
+		err := r.GuestClient.Patch(ctx, nodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{}))
+		g.Expect(err).NotTo(HaveOccurred())
+
+		updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: testNodeClassName}, updated)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(updated.Finalizers).NotTo(ContainElement(kubeletConfigFinalizer))
+	})
+
+	t.Run("When spec.kubelet is nil and finalizer is absent it should not add the finalizer", func(t *testing.T) {
+		g := NewWithT(t)
+
+		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{Name: testNodeClassName},
+			// Spec.Kubelet is nil, no finalizer
+		}
+		hcp := baseHCP()
+
+		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp).Build()
+		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(nodeClass).
+			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+			Build()
+
+		r := &KarpenterIgnitionReconciler{
+			ManagementClient:       fakeManagementClient,
+			GuestClient:            fakeGuestClient,
+			Namespace:              testNamespace,
+			CreateOrUpdateProvider: upsert.New(false),
+		}
+
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+		err := r.reconcileKubeletConfigMap(ctx, hcp, nodeClass)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: testNodeClassName}, updated)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(updated.Finalizers).NotTo(ContainElement(kubeletConfigFinalizer))
+	})
+
+	t.Run("When NodeClass is deleted with finalizer it should delete the ConfigMap and remove the finalizer", func(t *testing.T) {
+		g := NewWithT(t)
+
+		// Use a sentinel finalizer alongside ours so the fake client doesn't auto-delete
+		// the object after reconcileDeletedNodeClass removes our finalizer.
+		now := metav1.Now()
+		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              testNodeClassName,
+				Finalizers:        []string{kubeletConfigFinalizer, "other-controller-finalizer"},
+				DeletionTimestamp: &now,
+			},
+			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				Kubelet: kubeletConfig,
+			},
+		}
+		hcp := baseHCP()
+
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
+				Namespace: testNamespace,
+			},
+			Data: map[string]string{"config": "existing-data"},
+		}
+
+		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp, existingCM).Build()
+		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(nodeClass).
+			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+			Build()
+
+		r := &KarpenterIgnitionReconciler{
+			ManagementClient:       fakeManagementClient,
+			GuestClient:            fakeGuestClient,
+			Namespace:              testNamespace,
+			CreateOrUpdateProvider: upsert.New(false),
+		}
+
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+		result, err := r.reconcileDeletedNodeClass(ctx, hcp, nodeClass)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		// ConfigMap should be deleted
+		cm := &corev1.ConfigMap{}
+		err = fakeManagementClient.Get(ctx, client.ObjectKey{
+			Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
+			Namespace: testNamespace,
+		}, cm)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("not found"))
+
+		// Our finalizer should be removed; the sentinel remains so the object still exists
+		updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: testNodeClassName}, updated)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(updated.Finalizers).NotTo(ContainElement(kubeletConfigFinalizer))
+	})
+
+	t.Run("When NodeClass is deleted without the finalizer it should be a no-op", func(t *testing.T) {
+		g := NewWithT(t)
+
+		// Use a sentinel finalizer so the fake client accepts the object with DeletionTimestamp.
+		now := metav1.Now()
+		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              testNodeClassName,
+				DeletionTimestamp: &now,
+				Finalizers:        []string{"other-controller-finalizer"},
+				// No kubeletConfigFinalizer
+			},
+		}
+		hcp := baseHCP()
+
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
+				Namespace: testNamespace,
+			},
+			Data: map[string]string{"config": "should-remain"},
+		}
+
+		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp, existingCM).Build()
+		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(nodeClass).
+			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+			Build()
+
+		r := &KarpenterIgnitionReconciler{
+			ManagementClient:       fakeManagementClient,
+			GuestClient:            fakeGuestClient,
+			Namespace:              testNamespace,
+			CreateOrUpdateProvider: upsert.New(false),
+		}
+
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+		result, err := r.reconcileDeletedNodeClass(ctx, hcp, nodeClass)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		// ConfigMap should remain untouched
+		cm := &corev1.ConfigMap{}
+		err = fakeManagementClient.Get(ctx, client.ObjectKey{
+			Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
+			Namespace: testNamespace,
+		}, cm)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(cm.Data["config"]).To(Equal("should-remain"))
+	})
+
+	t.Run("When NodeClass is deleted with finalizer but ConfigMap is already absent it should remove the finalizer without error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		// Use a sentinel finalizer alongside ours so the fake client doesn't auto-delete
+		// the object after reconcileDeletedNodeClass removes our finalizer.
+		now := metav1.Now()
+		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              testNodeClassName,
+				Finalizers:        []string{kubeletConfigFinalizer, "other-controller-finalizer"},
+				DeletionTimestamp: &now,
+			},
+		}
+		hcp := baseHCP()
+
+		// No ConfigMap pre-created
+		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(hcp).Build()
+		fakeGuestClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithObjects(nodeClass).
+			WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+			Build()
+
+		r := &KarpenterIgnitionReconciler{
+			ManagementClient:       fakeManagementClient,
+			GuestClient:            fakeGuestClient,
+			Namespace:              testNamespace,
+			CreateOrUpdateProvider: upsert.New(false),
+		}
+
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+		result, err := r.reconcileDeletedNodeClass(ctx, hcp, nodeClass)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(result).To(Equal(ctrl.Result{}))
+
+		// Our finalizer should be removed even though the ConfigMap was already gone
+		updated := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+		err = fakeGuestClient.Get(ctx, client.ObjectKey{Name: testNodeClassName}, updated)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(updated.Finalizers).NotTo(ContainElement(kubeletConfigFinalizer))
+	})
+}
+
+func TestCreateInMemoryNodePool(t *testing.T) {
+	r := &KarpenterIgnitionReconciler{}
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hcp",
+			Namespace: testNamespace,
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64",
+		},
+	}
+
+	t.Run("When kubelet config is nil it should only have taint config ref", func(t *testing.T) {
+		g := NewWithT(t)
+		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: testNodeClassName,
+			},
+			// KubeletConfig is nil
+		}
+
+		np := r.createInMemoryNodePool(hcp, nodeClass, hcp.Spec.ReleaseImage)
+
+		g.Expect(np.Spec.Config).To(HaveLen(1))
+		g.Expect(np.Spec.Config[0].Name).To(Equal(karpenterutil.KarpenterTaintConfigMapName))
+		g.Expect(np.Name).To(Equal(karpenterutil.KarpenterNodePoolName(nodeClass)))
+		g.Expect(np.Namespace).To(Equal(hcp.Namespace))
+		g.Expect(np.Labels).To(HaveKeyWithValue(karpenterutil.ManagedByKarpenterLabel, "true"))
+		g.Expect(np.Spec.ClusterName).To(Equal(hcp.Name))
+		g.Expect(np.Spec.Replicas).To(Equal(ptr.To[int32](0)))
+		g.Expect(np.Spec.Release.Image).To(Equal(hcp.Spec.ReleaseImage))
+		g.Expect(np.Spec.Arch).To(Equal(hyperv1.ArchitectureAMD64))
+	})
+
+	t.Run("When kubelet config is set it should include only the per-nodeclass kubelet config ref", func(t *testing.T) {
+		g := NewWithT(t)
+		maxPods := int32(500)
+		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: testNodeClassName,
+			},
+			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				Kubelet: &hyperkarpenterv1.KubeletConfiguration{
+					MaxPods: &maxPods,
+				},
+			},
+		}
+
+		np := r.createInMemoryNodePool(hcp, nodeClass, hcp.Spec.ReleaseImage)
+
+		// When Spec.Kubelet is set, only the per-nodeclass kubelet config ref is included.
+		// set-karpenter-taint is omitted because the taint is merged into the per-nodeclass
+		// manifest via ToKubeletConfigManifestWithTaints to avoid two KubeletConfigs targeting
+		// the same MachineConfigPool, which the MCO bootstrap rejects.
+		g.Expect(np.Spec.Config).To(HaveLen(1))
+		g.Expect(np.Spec.Config[0].Name).To(Equal(karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName)))
+		g.Expect(np.Name).To(Equal(karpenterutil.KarpenterNodePoolName(nodeClass)))
+		g.Expect(np.Namespace).To(Equal(hcp.Namespace))
+		g.Expect(np.Labels).To(HaveKeyWithValue(karpenterutil.ManagedByKarpenterLabel, "true"))
+		g.Expect(np.Spec.ClusterName).To(Equal(hcp.Name))
+		g.Expect(np.Spec.Replicas).To(Equal(ptr.To[int32](0)))
+		g.Expect(np.Spec.Release.Image).To(Equal(hcp.Spec.ReleaseImage))
+		g.Expect(np.Spec.Arch).To(Equal(hyperv1.ArchitectureAMD64))
+	})
+}
+
+func TestReconcileKubeletConfigMap(t *testing.T) {
+	t.Run("When kubelet config is nil it should delete the config map", func(t *testing.T) {
+		g := NewWithT(t)
+		scheme := api.Scheme
+
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
+				Namespace: testNamespace,
+			},
+			Data: map[string]string{"config": "old-data"},
+		}
+		fakeManagementClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(existingCM).
+			Build()
+
+		r := &KarpenterIgnitionReconciler{
+			ManagementClient:       fakeManagementClient,
+			CreateOrUpdateProvider: upsert.New(false),
+		}
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-hcp",
+				Namespace: testNamespace,
+			},
+		}
+		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{Name: testNodeClassName},
+			// KubeletConfig is nil
+		}
+
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+		err := r.reconcileKubeletConfigMap(ctx, hcp, nodeClass)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// ConfigMap should be deleted
+		cm := &corev1.ConfigMap{}
+		err = fakeManagementClient.Get(ctx, client.ObjectKey{
+			Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
+			Namespace: testNamespace,
+		}, cm)
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("not found"))
+	})
+
+	t.Run("When kubelet config is set it should create config map with manifest including taint", func(t *testing.T) {
+		g := NewWithT(t)
+		scheme := api.Scheme
+
+		fakeManagementClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			Build()
+
+		r := &KarpenterIgnitionReconciler{
+			ManagementClient:       fakeManagementClient,
+			CreateOrUpdateProvider: upsert.New(false),
+		}
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-hcp",
+				Namespace: testNamespace,
+			},
+		}
+		maxPods := int32(500)
+		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{Name: testNodeClassName},
+			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				Kubelet: &hyperkarpenterv1.KubeletConfiguration{
+					MaxPods: &maxPods,
+				},
+			},
+		}
+
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+		err := r.reconcileKubeletConfigMap(ctx, hcp, nodeClass)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		cm := &corev1.ConfigMap{}
+		err = fakeManagementClient.Get(ctx, client.ObjectKey{
+			Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
+			Namespace: testNamespace,
+		}, cm)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(cm.Name).To(Equal(karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName)))
+		g.Expect(cm.Namespace).To(Equal(testNamespace))
+		g.Expect(cm.Labels).To(HaveKeyWithValue(karpenterutil.KarpenterNodeClassKubeletConfigLabel, "true"))
+		g.Expect(cm.Data).To(HaveKey("config"))
+		g.Expect(cm.Data["config"]).To(ContainSubstring("maxPods"))
+		g.Expect(cm.Data["config"]).To(ContainSubstring("500"))
+		g.Expect(cm.Data["config"]).To(ContainSubstring("KubeletConfig"))
+		// The taint must be merged in so that set-karpenter-taint can be omitted from configRefs
+		// without losing the registerWithTaints behavior.
+		g.Expect(cm.Data["config"]).To(ContainSubstring("registerWithTaints"))
+		g.Expect(cm.Data["config"]).To(ContainSubstring("karpenter.sh/unregistered"))
+	})
+
+	t.Run("When kubelet config is nil and config map does not exist it should not return an error", func(t *testing.T) {
+		g := NewWithT(t)
+		scheme := api.Scheme
+
+		fakeManagementClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			Build()
+
+		r := &KarpenterIgnitionReconciler{
+			ManagementClient:       fakeManagementClient,
+			CreateOrUpdateProvider: upsert.New(false),
+		}
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-hcp",
+				Namespace: testNamespace,
+			},
+		}
+		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{Name: testNodeClassName},
+			// KubeletConfig is nil
+		}
+
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+		err := r.reconcileKubeletConfigMap(ctx, hcp, nodeClass)
+		g.Expect(err).NotTo(HaveOccurred())
+	})
+
+	t.Run("When kubelet config is set and config map already exists it should update the config map", func(t *testing.T) {
+		g := NewWithT(t)
+		scheme := api.Scheme
+
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
+				Namespace: testNamespace,
+			},
+			Data: map[string]string{"config": "stale-data-maxPods-100"},
+		}
+		fakeManagementClient := fake.NewClientBuilder().
+			WithScheme(scheme).
+			WithObjects(existingCM).
+			Build()
+
+		r := &KarpenterIgnitionReconciler{
+			ManagementClient:       fakeManagementClient,
+			CreateOrUpdateProvider: upsert.New(false),
+		}
+		hcp := &hyperv1.HostedControlPlane{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-hcp",
+				Namespace: testNamespace,
+			},
+		}
+		newMaxPods := int32(250)
+		nodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+			ObjectMeta: metav1.ObjectMeta{Name: testNodeClassName},
+			Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				Kubelet: &hyperkarpenterv1.KubeletConfiguration{
+					MaxPods: &newMaxPods,
+				},
+			},
+		}
+
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+		err := r.reconcileKubeletConfigMap(ctx, hcp, nodeClass)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		cm := &corev1.ConfigMap{}
+		err = fakeManagementClient.Get(ctx, client.ObjectKey{
+			Name:      karpenterutil.KarpenterNodeClassKubeletConfigName(testNodeClassName),
+			Namespace: testNamespace,
+		}, cm)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(cm.Data["config"]).To(ContainSubstring("250"))
+		g.Expect(cm.Data["config"]).NotTo(ContainSubstring("stale-data-maxPods-100"))
+		g.Expect(cm.Data["config"]).To(ContainSubstring("registerWithTaints"))
+		g.Expect(cm.Data["config"]).To(ContainSubstring("karpenter.sh/unregistered"))
+	})
 }
