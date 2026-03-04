@@ -98,7 +98,9 @@ components:
 	t.Run("When component is not in config, it should return false", func(t *testing.T) {
 		t.Parallel()
 		r := NewConfigFileReader(configPath, log)
-		_ = r.Load()
+		if err := r.Load(); err != nil {
+			t.Fatalf("Load() returned error: %v", err)
+		}
 		_, ok := r.GetComponent("nonexistent")
 		if ok {
 			t.Error("expected false for nonexistent component")

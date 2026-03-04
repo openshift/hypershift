@@ -3,17 +3,16 @@ package metricsproxy
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/supportedversion"
-
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -23,10 +22,10 @@ import (
 )
 
 func NewStartCommand() *cobra.Command {
-	l := log.Log.WithName("metrics-proxy")
 	log.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
 	})))
+	l := log.Log.WithName("metrics-proxy")
 
 	cmd := &cobra.Command{
 		Use:   "metrics-proxy",
@@ -34,21 +33,19 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	var (
-		servingPort   uint32
-		certFile      string
-		keyFile       string
-		kasKubeconfig string
-		metricsSet    string
-		authorizedSAs []string
-		configFile    string
+		servingPort  uint32
+		certFile     string
+		keyFile      string
+		clientCAFile string
+		metricsSet   string
+		configFile   string
 	)
 
 	cmd.Flags().Uint32Var(&servingPort, "serving-port", 9443, "The port to serve metrics on.")
 	cmd.Flags().StringVar(&certFile, "tls-cert-file", "/etc/metrics-proxy/serving-cert/tls.crt", "Path to TLS certificate file.")
 	cmd.Flags().StringVar(&keyFile, "tls-key-file", "/etc/metrics-proxy/serving-cert/tls.key", "Path to TLS private key file.")
-	cmd.Flags().StringVar(&kasKubeconfig, "kas-kubeconfig", "/etc/metrics-proxy/kas-kubeconfig/kubeconfig", "Path to kubeconfig for the hosted KAS (used for TokenReview authentication).")
+	cmd.Flags().StringVar(&clientCAFile, "client-ca-file", "/etc/metrics-proxy/client-ca/ca.crt", "Path to CA certificate file for verifying client certificates (mTLS).")
 	cmd.Flags().StringVar(&metricsSet, "metrics-set", "All", "The metrics set to use for filtering (e.g. All, Telemetry, SRE).")
-	cmd.Flags().StringSliceVar(&authorizedSAs, "authorized-sa", nil, "Service accounts authorized to access metrics (e.g. system:serviceaccount:openshift-monitoring:prometheus-k8s).")
 	cmd.Flags().StringVar(&configFile, "config-file", "", "Path to scrape config file (required). Component discovery and endpoint resolution use file-based config and the endpoint-resolver service.")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
@@ -59,24 +56,26 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
-		_, cancel := context.WithCancel(cmd.Context())
+		ctx, cancel := context.WithCancel(cmd.Context())
 		defer cancel()
 
 		namespace := os.Getenv("MY_NAMESPACE")
-
-		// Load kubeconfig for the hosted KAS to perform TokenReview authentication.
-		kasConfig, err := clientcmd.BuildConfigFromFlags("", kasKubeconfig)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error loading KAS kubeconfig: %v\n", err)
-			os.Exit(1)
-		}
-		kasClient, err := kubernetes.NewForConfig(kasConfig)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating KAS client: %v\n", err)
+		if namespace == "" {
+			fmt.Fprintln(os.Stderr, "Error: MY_NAMESPACE environment variable is not set")
 			os.Exit(1)
 		}
 
-		authenticator := NewTokenAuthenticator(kasClient, authorizedSAs)
+		// Load the client CA for mTLS verification.
+		clientCACert, err := os.ReadFile(clientCAFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading client CA file: %v\n", err)
+			os.Exit(1)
+		}
+		clientCAPool := x509.NewCertPool()
+		if !clientCAPool.AppendCertsFromPEM(clientCACert) {
+			fmt.Fprintf(os.Stderr, "Error: failed to parse client CA certificate from %s\n", clientCAFile)
+			os.Exit(1)
+		}
 
 		configReader := NewConfigFileReader(configFile, l)
 		if err := configReader.Load(); err != nil {
@@ -97,7 +96,7 @@ func NewStartCommand() *cobra.Command {
 		filter := NewFilter(metrics.MetricsSet(metricsSet))
 		labeler := NewLabeler(namespace)
 
-		handler := NewProxyHandler(l, authenticator, configReader, resolverClient, scraper, filter, labeler)
+		handler := NewProxyHandler(l, configReader, resolverClient, scraper, filter, labeler)
 		mux := http.NewServeMux()
 		mux.Handle("/", handler)
 		mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -115,8 +114,14 @@ func NewStartCommand() *cobra.Command {
 			Handler: mux,
 			TLSConfig: &tls.Config{
 				Certificates: []tls.Certificate{tlsCert},
+				ClientAuth:   tls.RequireAndVerifyClientCert,
+				ClientCAs:    clientCAPool,
 				MinVersion:   tls.VersionTLS12,
 			},
+			ReadHeaderTimeout: 10 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      60 * time.Second,
+			IdleTimeout:       120 * time.Second,
 		}
 
 		// Handle graceful shutdown on SIGTERM/SIGINT.
@@ -126,7 +131,9 @@ func NewStartCommand() *cobra.Command {
 			sig := <-sigChan
 			l.Info("Received shutdown signal", "signal", sig)
 			cancel()
-			if err := server.Shutdown(context.Background()); err != nil {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer shutdownCancel()
+			if err := server.Shutdown(shutdownCtx); err != nil {
 				l.Error(err, "Error during server shutdown")
 			}
 		}()
@@ -136,6 +143,7 @@ func NewStartCommand() *cobra.Command {
 			fmt.Fprintf(os.Stderr, "Error serving: %v\n", err)
 			os.Exit(1)
 		}
+		_ = ctx
 		l.Info("Server stopped")
 	}
 

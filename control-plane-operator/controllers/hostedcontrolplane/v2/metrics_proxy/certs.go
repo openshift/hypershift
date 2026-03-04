@@ -1,6 +1,7 @@
 package metricsproxy
 
 import (
+	"crypto/x509"
 	"fmt"
 
 	"github.com/openshift/hypershift/support/certs"
@@ -75,7 +76,7 @@ func adaptServingCertSecret(cpContext component.WorkloadContext, secret *corev1.
 		caCertSecret,
 		"metrics-proxy",
 		[]string{"openshift"},
-		nil,
+		[]x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		corev1.TLSCertKey,
 		corev1.TLSPrivateKeyKey,
 		"",

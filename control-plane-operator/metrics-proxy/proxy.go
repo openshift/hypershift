@@ -12,7 +12,6 @@ import (
 
 type ProxyHandler struct {
 	log               logr.Logger
-	authenticator     *TokenAuthenticator
 	componentProvider ComponentProvider
 	targetDiscoverer  TargetDiscoverer
 	scraper           *Scraper
@@ -20,10 +19,9 @@ type ProxyHandler struct {
 	labeler           *Labeler
 }
 
-func NewProxyHandler(log logr.Logger, authenticator *TokenAuthenticator, componentProvider ComponentProvider, targetDiscoverer TargetDiscoverer, scraper *Scraper, filter *Filter, labeler *Labeler) *ProxyHandler {
+func NewProxyHandler(log logr.Logger, componentProvider ComponentProvider, targetDiscoverer TargetDiscoverer, scraper *Scraper, filter *Filter, labeler *Labeler) *ProxyHandler {
 	return &ProxyHandler{
 		log:               log,
-		authenticator:     authenticator,
 		componentProvider: componentProvider,
 		targetDiscoverer:  targetDiscoverer,
 		scraper:           scraper,
@@ -51,24 +49,9 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Authenticate
-	token := extractBearerToken(r)
-	if token == "" {
-		http.Error(w, "missing bearer token", http.StatusUnauthorized)
-		return
-	}
-
-	authenticated, err := h.authenticator.Authenticate(ctx, token)
-	if err != nil {
-		h.log.Error(err, "authentication error")
-		w.Header().Set("Retry-After", "30")
-		http.Error(w, "authentication service unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	if !authenticated {
-		http.Error(w, "unauthorized", http.StatusForbidden)
-		return
-	}
+	// Authentication is handled at the TLS layer via mTLS (RequireAndVerifyClientCert).
+	// By the time a request reaches this handler, the client certificate has already
+	// been verified against the cluster-signer-ca CA bundle.
 
 	// Discover pods
 	targets, err := h.targetDiscoverer.Discover(ctx, componentConfig.ServiceName, componentConfig.MetricsPort)
@@ -92,11 +75,13 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var buf bytes.Buffer
 	encoder := expfmt.NewEncoder(&buf, format)
 
+	successes := 0
 	for i, result := range results {
 		if result.Err != nil {
 			h.log.Error(result.Err, "scrape error", "target", targets[i].PodName)
 			continue
 		}
+		successes++
 
 		families := h.filter.Apply(componentName, result.Families)
 		families = h.labeler.Inject(families, targets[i], componentName, componentConfig.ServiceName)
@@ -108,19 +93,12 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if successes == 0 {
+		http.Error(w, "all scrape targets failed", http.StatusBadGateway)
+		return
+	}
+
 	w.Header().Set("Content-Type", string(format))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(buf.Bytes())
-}
-
-func extractBearerToken(r *http.Request) string {
-	auth := r.Header.Get("Authorization")
-	if auth == "" {
-		return ""
-	}
-	parts := strings.SplitN(auth, " ", 2)
-	if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
-		return ""
-	}
-	return parts[1]
 }

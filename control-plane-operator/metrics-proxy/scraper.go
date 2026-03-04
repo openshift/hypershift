@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -71,6 +72,11 @@ func buildScrapeClient(tlsServerName string, tlsConfig *tls.Config) *http.Client
 func (s *Scraper) scrape(ctx context.Context, client *http.Client, target ScrapeTarget, metricsPath, scheme string) ScrapeResult {
 	if scheme == "" {
 		scheme = "https"
+	}
+	if metricsPath == "" {
+		metricsPath = "/metrics"
+	} else if !strings.HasPrefix(metricsPath, "/") {
+		metricsPath = "/" + metricsPath
 	}
 
 	url := fmt.Sprintf("%s://%s:%d%s", scheme, target.PodIP, target.Port, metricsPath)
