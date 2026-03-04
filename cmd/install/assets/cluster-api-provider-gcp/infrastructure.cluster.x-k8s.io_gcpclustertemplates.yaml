@@ -103,6 +103,8 @@ spec:
                         description: |-
                           CredentialsRef is a reference to a Secret that contains the credentials to use for provisioning this cluster. If not
                           supplied then the credentials of the controller will be used.
+                          When creating a new GCP client, the controller will try to extract the type
+                          of credential from the JSON data, and it will request a client for the specific credential type.
                         properties:
                           name:
                             description: |-
@@ -156,6 +158,12 @@ spec:
                                 - Regional
                                 - Global
                                 type: string
+                              ipAddress:
+                                description: |-
+                                  IPAddress is the static IP address to use for the Load Balancer.
+                                  If not set, a new static IP address will be allocated.
+                                  If set, it must be a valid free IP address from the LoadBalancer Subnet.
+                                type: string
                               name:
                                 description: |-
                                   Name is the name of the Load Balancer. If not set a default name
@@ -192,6 +200,26 @@ spec:
 
                               Defaults to true.
                             type: boolean
+                          firewall:
+                            description: Firewall configuration.
+                            properties:
+                              defaultRulesManagement:
+                                default: Managed
+                                description: |-
+                                  DefaultRulesManagement determines the management policy for the default firewall rules
+                                  created by the controller. DefaultRulesManagement has no effect on user specified firewall
+                                  rules. DefaultRulesManagement has no effect when a HostProject is specified.
+                                  "Managed": The controller will create and manage firewall rules.
+                                  "Unmanaged": The controller will not create or modify any firewall rules. If
+                                  the RulesManagement is changed from Managed to Unmanaged after the firewall rules
+                                  have been created, then the firewall rules will not be deleted.
+
+                                  Defaults to "Managed".
+                                enum:
+                                - Managed
+                                - Unmanaged
+                                type: string
+                            type: object
                           hostProject:
                             description: HostProject is the name of the project hosting
                               the shared VPC network resources.
@@ -200,6 +228,17 @@ spec:
                             description: Allow for configuration of load balancer
                               backend (useful for changing apiserver port)
                             format: int32
+                            type: integer
+                          minPortsPerVm:
+                            default: 64
+                            description: |-
+                              MinPortsPerVM: Minimum number of ports allocated to a VM from this NAT
+                              config. If not set, a default number of ports is allocated to a VM. This is
+                              rounded up to the nearest power of 2. For example, if the value of this
+                              field is 50, at least 64 ports are allocated to a VM.
+                            format: int64
+                            maximum: 65536
+                            minimum: 2
                             type: integer
                           mtu:
                             default: 1460
