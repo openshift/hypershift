@@ -10,7 +10,248 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/openshift/hypershift/support/thirdparty/library-go/pkg/image/reference"
+
+	"k8s.io/apimachinery/pkg/util/cache"
+
+	"github.com/docker/distribution"
+	"github.com/opencontainers/go-digest"
+	"go.uber.org/mock/gomock"
 )
+
+// fakeManifest is a minimal implementation of distribution.Manifest for testing.
+type fakeManifest struct {
+	refs []distribution.Descriptor
+}
+
+func (f *fakeManifest) References() []distribution.Descriptor { return f.refs }
+func (f *fakeManifest) Payload() (string, []byte, error) {
+	return "application/vnd.docker.distribution.manifest.v2+json", []byte("{}"), nil
+}
+
+func TestGetDigest(t *testing.T) {
+	testCases := []struct {
+		name           string
+		imageRef       string
+		overrides      map[string][]string
+		setupMock      func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error)
+		expectedErr    bool
+		expectedDigest digest.Digest
+		validateCache  bool
+	}{
+		{
+			name:        "When providing an invalid image reference it should return an error",
+			imageRef:    "::invalid-image-ref",
+			overrides:   map[string][]string{},
+			setupMock:   nil,
+			expectedErr: true,
+		},
+		{
+			name:      "When resolving a tag it should return the digest from the tag service",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release:4.16.12-multi",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				expectedDigest := digest.Digest("sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+				mockRepo := NewMockRepository(ctrl)
+				mockTags := NewMockTagService(ctrl)
+				mockTags.EXPECT().Get(gomock.Any(), "4.16.12-multi").Return(distribution.Descriptor{Digest: expectedDigest}, nil)
+				mockRepo.EXPECT().Tags(gomock.Any()).Return(mockTags)
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					ref, _ := reference.Parse(imageRef)
+					return mockRepo, &ref, nil
+				}
+			},
+			expectedErr:    false,
+			expectedDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			validateCache:  true,
+		},
+		{
+			name:      "When providing an image with a digest ID it should return that digest directly",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				mockRepo := NewMockRepository(ctrl)
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					ref, _ := reference.Parse(imageRef)
+					return mockRepo, &ref, nil
+				}
+			},
+			expectedErr:    false,
+			expectedDigest: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+			validateCache:  true,
+		},
+		{
+			name:      "When the digest is already cached it should return from cache without calling repoSetupFn",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release:4.16.12-cached",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				cachedDigest := digest.Digest("sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
+				digestCache.Add("quay.io/openshift-release-dev/ocp-release:4.16.12-cached", cachedDigest, cacheTTL)
+				// repoSetupFn should not be called; if it is, the test fails
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					t.Fatal("repoSetupFn should not be called when digest is cached")
+					return nil, nil, nil
+				}
+			},
+			expectedErr:    false,
+			expectedDigest: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+		},
+		{
+			name:      "When the repo setup fails it should return an error",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release:4.16.12-fail",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					return nil, nil, fmt.Errorf("connection refused")
+				}
+			},
+			expectedErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			// Clear caches for isolation
+			digestCache = newTestLRUCache()
+
+			ctrl := gomock.NewController(t)
+
+			provider := &RegistryClientImageMetadataProvider{
+				OpenShiftImageRegistryOverrides: tc.overrides,
+			}
+			if tc.setupMock != nil {
+				provider.repoSetupFn = tc.setupMock(ctrl)
+			}
+
+			ctx := t.Context()
+			d, ref, err := provider.GetDigest(ctx, tc.imageRef, []byte("{}"))
+			if tc.expectedErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(d).To(Equal(tc.expectedDigest))
+				g.Expect(ref).NotTo(BeNil())
+			}
+
+			if tc.validateCache {
+				_, exists := digestCache.Get(tc.imageRef)
+				g.Expect(exists).To(BeTrue(), "digest should be cached after successful call")
+			}
+		})
+	}
+}
+
+func TestGetManifest(t *testing.T) {
+	testCases := []struct {
+		name        string
+		imageRef    string
+		overrides   map[string][]string
+		setupMock   func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error)
+		expectedErr bool
+	}{
+		{
+			name:        "When providing an invalid image reference it should return an error",
+			imageRef:    "::invalid-image-ref",
+			overrides:   map[string][]string{},
+			setupMock:   nil,
+			expectedErr: true,
+		},
+		{
+			name:      "When pulling a manifest by tag it should resolve the tag and return the manifest",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release:4.16.12-x86_64",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				expectedDigest := digest.Digest("sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
+				mockRepo := NewMockRepository(ctrl)
+				mockTags := NewMockTagService(ctrl)
+				mockManifests := NewMockManifestService(ctrl)
+				mockTags.EXPECT().Get(gomock.Any(), "4.16.12-x86_64").Return(distribution.Descriptor{Digest: expectedDigest}, nil)
+				mockRepo.EXPECT().Tags(gomock.Any()).Return(mockTags)
+				mockRepo.EXPECT().Manifests(gomock.Any()).Return(mockManifests, nil)
+				mockManifests.EXPECT().Get(gomock.Any(), expectedDigest, gomock.Any()).Return(&fakeManifest{}, nil)
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					ref, _ := reference.Parse(imageRef)
+					return mockRepo, &ref, nil
+				}
+			},
+			expectedErr: false,
+		},
+		{
+			name:      "When pulling a manifest by digest it should use the digest directly",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release@sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				expectedDigest := digest.Digest("sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+				mockRepo := NewMockRepository(ctrl)
+				mockManifests := NewMockManifestService(ctrl)
+				mockRepo.EXPECT().Manifests(gomock.Any()).Return(mockManifests, nil)
+				mockManifests.EXPECT().Get(gomock.Any(), expectedDigest, gomock.Any()).Return(&fakeManifest{}, nil)
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					ref, _ := reference.Parse(imageRef)
+					return mockRepo, &ref, nil
+				}
+			},
+			expectedErr: false,
+		},
+		{
+			name:      "When a manifest is cached it should return from cache without calling repoSetupFn",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release:4.16.12-cached",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				manifestsCache.Add("quay.io/openshift-release-dev/ocp-release:4.16.12-cached", &fakeManifest{}, cacheTTL)
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					t.Fatal("repoSetupFn should not be called when manifest is cached")
+					return nil, nil, nil
+				}
+			},
+			expectedErr: false,
+		},
+		{
+			name:      "When the repo setup fails it should return an error",
+			imageRef:  "quay.io/openshift-release-dev/ocp-release:4.16.12-fail",
+			overrides: map[string][]string{},
+			setupMock: func(ctrl *gomock.Controller) func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+				return func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+					return nil, nil, fmt.Errorf("connection refused")
+				}
+			},
+			expectedErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			// Clear caches for isolation
+			manifestsCache = newTestLRUCache()
+
+			ctrl := gomock.NewController(t)
+
+			provider := &RegistryClientImageMetadataProvider{
+				OpenShiftImageRegistryOverrides: tc.overrides,
+			}
+			if tc.setupMock != nil {
+				provider.repoSetupFn = tc.setupMock(ctrl)
+			}
+
+			ctx := t.Context()
+			m, err := provider.GetManifest(ctx, tc.imageRef, []byte("{}"))
+			if tc.expectedErr {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(m).NotTo(BeNil())
+			}
+		})
+	}
+}
+
+// newTestLRUCache creates a fresh LRU cache for test isolation.
+func newTestLRUCache() *cache.LRUExpireCache {
+	return cache.NewLRUExpireCache(1000)
+}
 
 func TestGetRegistryOverrides(t *testing.T) {
 	ctx := t.Context()
