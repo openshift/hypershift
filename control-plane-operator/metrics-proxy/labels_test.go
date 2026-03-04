@@ -110,11 +110,11 @@ func TestInject(t *testing.T) {
 		families      map[string]*dto.MetricFamily
 		target        ScrapeTarget
 		componentName string
-		serviceName   string
+		cfg           ComponentConfig
 		expected      map[string]*dto.MetricFamily
 	}{
 		{
-			name:      "When metric family has metrics, it should add all expected labels",
+			name:      "When metric family has metrics, it should add all expected labels using fallback defaults",
 			namespace: "test-ns",
 			families: map[string]*dto.MetricFamily{
 				"test_metric": {
@@ -133,7 +133,7 @@ func TestInject(t *testing.T) {
 				Port:    8080,
 			},
 			componentName: "test-component",
-			serviceName:   "test-service",
+			cfg:           ComponentConfig{ServiceName: "test-service"},
 			expected: map[string]*dto.MetricFamily{
 				"test_metric": {
 					Name: stringPtr("test_metric"),
@@ -147,6 +147,52 @@ func TestInject(t *testing.T) {
 								{Name: stringPtr("service"), Value: stringPtr("test-service")},
 								{Name: stringPtr("endpoint"), Value: stringPtr("metrics")},
 								{Name: stringPtr("instance"), Value: stringPtr("10.0.0.1:8080")},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:      "When annotation-based label overrides are set, it should use them instead of defaults",
+			namespace: "clusters-my-cluster",
+			families: map[string]*dto.MetricFamily{
+				"etcd_metric": {
+					Name: stringPtr("etcd_metric"),
+					Type: metricTypePtr(dto.MetricType_COUNTER),
+					Metric: []*dto.Metric{
+						{
+							Label: []*dto.LabelPair{},
+						},
+					},
+				},
+			},
+			target: ScrapeTarget{
+				PodName: "etcd-0",
+				PodIP:   "10.0.0.5",
+				Port:    2381,
+			},
+			componentName: "etcd",
+			cfg: ComponentConfig{
+				ServiceName:      "etcd-client",
+				MetricsJob:       "etcd",
+				MetricsNamespace: "openshift-etcd",
+				MetricsService:   "etcd",
+				MetricsEndpoint:  "etcd-metrics",
+			},
+			expected: map[string]*dto.MetricFamily{
+				"etcd_metric": {
+					Name: stringPtr("etcd_metric"),
+					Type: metricTypePtr(dto.MetricType_COUNTER),
+					Metric: []*dto.Metric{
+						{
+							Label: []*dto.LabelPair{
+								{Name: stringPtr("pod"), Value: stringPtr("etcd-0")},
+								{Name: stringPtr("namespace"), Value: stringPtr("openshift-etcd")},
+								{Name: stringPtr("job"), Value: stringPtr("etcd")},
+								{Name: stringPtr("service"), Value: stringPtr("etcd")},
+								{Name: stringPtr("endpoint"), Value: stringPtr("etcd-metrics")},
+								{Name: stringPtr("instance"), Value: stringPtr("10.0.0.5:2381")},
 							},
 						},
 					},
@@ -176,7 +222,7 @@ func TestInject(t *testing.T) {
 				Port:    9090,
 			},
 			componentName: "test-component",
-			serviceName:   "test-service",
+			cfg:           ComponentConfig{ServiceName: "test-service"},
 			expected: map[string]*dto.MetricFamily{
 				"test_metric": {
 					Name: stringPtr("test_metric"),
@@ -207,7 +253,7 @@ func TestInject(t *testing.T) {
 				Port:    7070,
 			},
 			componentName: "test-component",
-			serviceName:   "test-service",
+			cfg:           ComponentConfig{ServiceName: "test-service"},
 			expected:      map[string]*dto.MetricFamily{},
 		},
 		{
@@ -229,7 +275,7 @@ func TestInject(t *testing.T) {
 				Port:    3000,
 			},
 			componentName: "multi-component",
-			serviceName:   "multi-service",
+			cfg:           ComponentConfig{ServiceName: "multi-service"},
 			expected: map[string]*dto.MetricFamily{
 				"test_metric": {
 					Name: stringPtr("test_metric"),
@@ -284,7 +330,7 @@ func TestInject(t *testing.T) {
 				Port:    8080,
 			},
 			componentName: "test-component",
-			serviceName:   "test-service",
+			cfg:           ComponentConfig{ServiceName: "test-service"},
 			expected: map[string]*dto.MetricFamily{
 				"metric_one": {
 					Name: stringPtr("metric_one"),
@@ -327,7 +373,7 @@ func TestInject(t *testing.T) {
 			t.Parallel()
 
 			labeler := NewLabeler(tt.namespace)
-			result := labeler.Inject(tt.families, tt.target, tt.componentName, tt.serviceName)
+			result := labeler.Inject(tt.families, tt.target, tt.componentName, tt.cfg)
 
 			if err := compareMetricFamilies(tt.expected, result); err != nil {
 				t.Errorf("Inject() mismatch: %v", err)

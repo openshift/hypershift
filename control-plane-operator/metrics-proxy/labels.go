@@ -14,13 +14,30 @@ func NewLabeler(namespace string) *Labeler {
 	return &Labeler{namespace: namespace}
 }
 
-func (l *Labeler) Inject(families map[string]*dto.MetricFamily, target ScrapeTarget, componentName, serviceName string) map[string]*dto.MetricFamily {
+func (l *Labeler) Inject(families map[string]*dto.MetricFamily, target ScrapeTarget, componentName string, cfg ComponentConfig) map[string]*dto.MetricFamily {
+	job := cfg.MetricsJob
+	if job == "" {
+		job = componentName
+	}
+	namespace := cfg.MetricsNamespace
+	if namespace == "" {
+		namespace = l.namespace
+	}
+	service := cfg.MetricsService
+	if service == "" {
+		service = cfg.ServiceName
+	}
+	endpoint := cfg.MetricsEndpoint
+	if endpoint == "" {
+		endpoint = "metrics"
+	}
+
 	extraLabels := map[string]string{
 		"pod":       target.PodName,
-		"namespace": l.namespace,
-		"job":       componentName,
-		"service":   serviceName,
-		"endpoint":  "metrics",
+		"namespace": namespace,
+		"job":       job,
+		"service":   service,
+		"endpoint":  endpoint,
 		"instance":  fmt.Sprintf("%s:%d", target.PodIP, target.Port),
 	}
 

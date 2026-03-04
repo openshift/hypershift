@@ -28,7 +28,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
-        component.hypershift.openshift.io/config-hash: 5fe45f56741638a5741638a587ecf31a87ecf31a
+        component.hypershift.openshift.io/config-hash: 741638a5741638a587ecf31a87ecf31af44079cb
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: metrics-proxy

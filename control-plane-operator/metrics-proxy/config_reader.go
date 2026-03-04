@@ -42,20 +42,24 @@ func (r *ConfigFileReader) Load() error {
 	}
 
 	components := make(map[string]ComponentConfig, len(cfg.Components))
-	for name, comp := range cfg.Components {
+	for _, comp := range cfg.Components {
 		tlsCfg, err := buildTLSConfigFromFiles(comp.CAFile, comp.CertFile, comp.KeyFile)
 		if err != nil {
-			r.log.Error(err, "failed to build TLS config, skipping component", "component", name)
+			r.log.Error(err, "failed to build TLS config, skipping component", "component", comp.Name)
 			continue
 		}
 
-		components[name] = ComponentConfig{
-			ServiceName:   comp.ServiceName,
-			MetricsPort:   comp.MetricsPort,
-			MetricsPath:   comp.MetricsPath,
-			MetricsScheme: comp.MetricsScheme,
-			TLSServerName: comp.TLSServerName,
-			TLSConfig:     tlsCfg,
+		components[comp.Name] = ComponentConfig{
+			ServiceName:      comp.ServiceName,
+			MetricsPort:      comp.MetricsPort,
+			MetricsPath:      comp.MetricsPath,
+			MetricsScheme:    comp.MetricsScheme,
+			TLSServerName:    comp.TLSServerName,
+			TLSConfig:        tlsCfg,
+			MetricsJob:       comp.MetricsJob,
+			MetricsNamespace: comp.MetricsNamespace,
+			MetricsService:   comp.MetricsService,
+			MetricsEndpoint:  comp.MetricsEndpoint,
 		}
 	}
 

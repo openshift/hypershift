@@ -20,6 +20,12 @@ type ComponentConfig struct {
 	MetricsScheme string
 	TLSServerName string
 	TLSConfig     *tls.Config
+
+	// Label overrides from SM/PM annotations for standalone OCP compatibility.
+	MetricsJob       string
+	MetricsNamespace string
+	MetricsService   string
+	MetricsEndpoint  string
 }
 
 // TargetDiscoverer discovers scrape targets (pod endpoints) for a given service.
@@ -37,8 +43,8 @@ type ScrapeTarget struct {
 // FileConfig is the YAML structure shared between the CPO (writer) and the
 // metrics-proxy binary (reader) for the scrape-config ConfigMap.
 type FileConfig struct {
-	EndpointResolver EndpointResolverFileConfig     `json:"endpointResolver"`
-	Components       map[string]ComponentFileConfig `json:"components"`
+	EndpointResolver EndpointResolverFileConfig `json:"endpointResolver"`
+	Components       []ComponentFileConfig      `json:"components"`
 }
 
 // EndpointResolverFileConfig holds the endpoint-resolver connection details.
@@ -49,6 +55,10 @@ type EndpointResolverFileConfig struct {
 
 // ComponentFileConfig holds the per-component scrape configuration.
 type ComponentFileConfig struct {
+	// Name is the unique identifier for this component (e.g. the ServiceMonitor
+	// or PodMonitor name). Components are sorted by this field for deterministic
+	// serialization.
+	Name string `json:"name"`
 	// ServiceName is the component name used for endpoint-resolver lookup.
 	// For ServiceMonitor components this matches the service name by convention.
 	// For PodMonitor components this is the PodMonitor/component name.
@@ -60,4 +70,10 @@ type ComponentFileConfig struct {
 	CAFile        string `json:"caFile,omitempty"`
 	CertFile      string `json:"certFile,omitempty"`
 	KeyFile       string `json:"keyFile,omitempty"`
+
+	// Label overrides from SM/PM annotations for standalone OCP compatibility.
+	MetricsJob       string `json:"metricsJob,omitempty"`
+	MetricsNamespace string `json:"metricsNamespace,omitempty"`
+	MetricsService   string `json:"metricsService,omitempty"`
+	MetricsEndpoint  string `json:"metricsEndpoint,omitempty"`
 }
