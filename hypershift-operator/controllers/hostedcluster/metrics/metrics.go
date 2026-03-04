@@ -489,7 +489,7 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			// clusterSizeOverrideMetric
 			{
 				metricLabels := make(map[string]string, 0)
-				if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform && hcluster.Spec.Platform.AWS.ResourceTags != nil {
+				if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform && hcluster.Spec.Platform.AWS != nil && hcluster.Spec.Platform.AWS.ResourceTags != nil {
 					for _, resourceTag := range hcluster.Spec.Platform.AWS.ResourceTags {
 						switch resourceTag.Key {
 						case "api.openshift.com/environment":
