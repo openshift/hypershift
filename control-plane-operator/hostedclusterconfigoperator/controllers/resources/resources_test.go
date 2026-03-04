@@ -2779,12 +2779,34 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 					t.Error("HostNetwork should be false (not set)")
 				}
 
-				// Validate tolerations
-				if len(dep.Spec.Template.Spec.Tolerations) != 1 {
-					t.Fatalf("Expected 1 toleration, got %d", len(dep.Spec.Template.Spec.Tolerations))
+				// Validate tolerations - should NOT use catch-all {Operator: Exists}
+				// because that bypasses the NodeUnschedulable filter, causing replacement
+				// pods to be scheduled back onto cordoned nodes during drain.
+				expectedTolerations := []corev1.Toleration{
+					{
+						Operator: corev1.TolerationOpExists,
+						Effect:   corev1.TaintEffectNoSchedule,
+					},
+					{
+						Key:      "node.kubernetes.io/unreachable",
+						Operator: corev1.TolerationOpExists,
+						Effect:   corev1.TaintEffectNoExecute,
+					},
+					{
+						Key:      "node.kubernetes.io/not-ready",
+						Operator: corev1.TolerationOpExists,
+						Effect:   corev1.TaintEffectNoExecute,
+					},
 				}
-				if dep.Spec.Template.Spec.Tolerations[0].Operator != corev1.TolerationOpExists {
-					t.Error("Expected toleration operator Exists")
+				if len(dep.Spec.Template.Spec.Tolerations) != len(expectedTolerations) {
+					t.Fatalf("Expected %d tolerations, got %d", len(expectedTolerations), len(dep.Spec.Template.Spec.Tolerations))
+				}
+				for i, expected := range expectedTolerations {
+					actual := dep.Spec.Template.Spec.Tolerations[i]
+					if actual.Operator != expected.Operator || actual.Effect != expected.Effect || actual.Key != expected.Key {
+						t.Errorf("Toleration[%d] mismatch: got {Key:%q, Operator:%q, Effect:%q}, want {Key:%q, Operator:%q, Effect:%q}",
+							i, actual.Key, actual.Operator, actual.Effect, expected.Key, expected.Operator, expected.Effect)
+					}
 				}
 
 				// Validate ServiceAccountName

@@ -1542,10 +1542,26 @@ done`, endpoint, manifests.KASConnectionCheckerConfigMapName, manifests.KASConne
 			},
 		}
 
-		// Tolerate all taints so it can be scheduled on any node
+		// Tolerate NoSchedule taints so it can be scheduled on tainted nodes,
+		// and specific NoExecute taints so it is not evicted from unhealthy nodes.
+		// A catch-all {Operator: Exists} toleration is NOT used because it also
+		// bypasses the NodeUnschedulable filter, causing replacement pods to be
+		// scheduled back onto cordoned nodes during drain — creating an infinite
+		// eviction loop that blocks node rollouts.
 		deployment.Spec.Template.Spec.Tolerations = []corev1.Toleration{
 			{
 				Operator: corev1.TolerationOpExists,
+				Effect:   corev1.TaintEffectNoSchedule,
+			},
+			{
+				Key:      "node.kubernetes.io/unreachable",
+				Operator: corev1.TolerationOpExists,
+				Effect:   corev1.TaintEffectNoExecute,
+			},
+			{
+				Key:      "node.kubernetes.io/not-ready",
+				Operator: corev1.TolerationOpExists,
+				Effect:   corev1.TaintEffectNoExecute,
 			},
 		}
 
