@@ -627,6 +627,68 @@ func TestTokenReconcile(t *testing.T) {
 				DecompressAndDecodeConfig: true,
 			},
 		},
+		{
+			name: "when HostedCluster is restored from backup it should set ignition-reached annotation on the token secret",
+			configGenerator: &ConfigGenerator{
+				hostedCluster: &hyperv1.HostedCluster{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      hcName,
+						Namespace: hcNamespace,
+						Annotations: map[string]string{
+							hyperv1.HostedClusterRestoredFromBackupAnnotation: "",
+						},
+					},
+					Spec: hyperv1.HostedClusterSpec{
+						PullSecret: corev1.LocalObjectReference{
+							Name: pullSecret.GetName(),
+						},
+						AdditionalTrustBundle: &corev1.LocalObjectReference{
+							Name: additionalTrustBundle.GetName(),
+						},
+						Configuration: &hyperv1.ClusterConfiguration{
+							Proxy: &expectedProxyConfig.Spec,
+						},
+					},
+					Status: hyperv1.HostedClusterStatus{
+						IgnitionEndpoint: "https://example.com",
+					},
+				},
+				nodePool: &hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "name",
+						Namespace: "namespace",
+					},
+					Spec: hyperv1.NodePoolSpec{
+						Management: hyperv1.NodePoolManagement{
+							UpgradeType: hyperv1.UpgradeTypeReplace,
+						},
+						Release: hyperv1.Release{
+							Image: "image:4.17",
+						},
+					},
+				},
+				controlplaneNamespace: controlplaneNamespace,
+				rolloutConfig: &rolloutConfig{
+					releaseImage: &releaseinfo.ReleaseImage{
+						ImageStream: &imageapi.ImageStream{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "4.17",
+							},
+						},
+					},
+					globalConfig: "test-global-config",
+					mcoRawConfig: "raw-config",
+				},
+			},
+			fakeObjects: []crclient.Object{
+				pullSecret,
+				additionalTrustBundle,
+				ignitionServerCACert,
+			},
+			cpoCapabilities: &CPOCapabilities{
+				DecompressAndDecodeConfig: true,
+			},
+		},
 	}
 
 	for _, tc := range testCases {
@@ -654,6 +716,14 @@ func TestTokenReconcile(t *testing.T) {
 
 			// Active token should never be marked as expired.
 			g.Expect(gotTokenSecret.Annotations).ToNot(HaveKey(hyperv1.IgnitionServerTokenExpirationTimestampAnnotation))
+
+			// When the HostedCluster was restored from backup, the ignition-reached
+			// annotation should be set so ReachedIgnitionEndpoint stays True.
+			if _, restored := tc.configGenerator.hostedCluster.Annotations[hyperv1.HostedClusterRestoredFromBackupAnnotation]; restored {
+				g.Expect(gotTokenSecret.Annotations[TokenSecretIgnitionReachedAnnotation]).To(Equal("True"))
+			} else {
+				g.Expect(gotTokenSecret.Annotations).ToNot(HaveKey(TokenSecretIgnitionReachedAnnotation))
+			}
 
 			// Generation time should be from ~now.
 			generationTime, err := time.Parse(time.RFC3339Nano, gotTokenSecret.Annotations[TokenSecretTokenGenerationTime])

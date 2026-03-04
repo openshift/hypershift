@@ -318,6 +318,16 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 	// active token should never be marked as expired.
 	delete(tokenSecret.Annotations, hyperv1.IgnitionServerTokenExpirationTimestampAnnotation)
 
+	// During a backup/restore the token secret may be deleted by the secret janitor
+	// before the NodePool is restored, causing the NodePool controller to create a new
+	// token secret without the ignition-reached annotation. Since the nodes are already
+	// running and won't contact the ignition endpoint again, the annotation must be
+	// carried over so that ReachedIgnitionEndpoint remains True and MachineHealthChecks
+	// continue to be created.
+	if _, restored := t.hostedCluster.Annotations[hyperv1.HostedClusterRestoredFromBackupAnnotation]; restored {
+		tokenSecret.Annotations[TokenSecretIgnitionReachedAnnotation] = "True"
+	}
+
 	if tokenSecret.Data == nil {
 		// 2. - Reconcile towards expected state of the world.
 		compressedConfig, err := t.CompressedAndEncoded()
