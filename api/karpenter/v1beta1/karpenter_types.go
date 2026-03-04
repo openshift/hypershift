@@ -5,6 +5,51 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// KubeletConfiguration configures kubelet settings for nodes provisioned by this NodeClass.
+// These settings are injected into the node's ignition configuration via MachineConfig.
+type KubeletConfiguration struct {
+	// ClusterDNS is a list of IP addresses for the cluster DNS server.
+	// +optional
+	ClusterDNS []string `json:"clusterDNS,omitempty"`
+	// MaxPods is the maximum number of pods that can run on a node.
+	// +optional
+	MaxPods *int32 `json:"maxPods,omitempty"`
+	// PodsPerCore is the maximum number of pods per core. Cannot exceed MaxPods.
+	// +optional
+	PodsPerCore *int32 `json:"podsPerCore,omitempty"`
+	// SystemReserved is a set of ResourceName=ResourceQuantity pairs that describe
+	// resources reserved for non-kubernetes components.
+	// +optional
+	SystemReserved map[string]string `json:"systemReserved,omitempty"`
+	// KubeReserved is a set of ResourceName=ResourceQuantity pairs that describe
+	// resources reserved for kubernetes system components.
+	// +optional
+	KubeReserved map[string]string `json:"kubeReserved,omitempty"`
+	// EvictionHard is a map of signal names to quantities that defines hard eviction thresholds.
+	// +optional
+	EvictionHard map[string]string `json:"evictionHard,omitempty"`
+	// EvictionSoft is a map of signal names to quantities that defines soft eviction thresholds.
+	// +optional
+	EvictionSoft map[string]string `json:"evictionSoft,omitempty"`
+	// EvictionSoftGracePeriod is a map of signal names to quantities that defines grace periods
+	// for each soft eviction signal.
+	// +optional
+	EvictionSoftGracePeriod map[string]metav1.Duration `json:"evictionSoftGracePeriod,omitempty"`
+	// EvictionMaxPodGracePeriod is the maximum allowed grace period (in seconds) to use
+	// when terminating pods in response to soft eviction thresholds.
+	// +optional
+	EvictionMaxPodGracePeriod *int32 `json:"evictionMaxPodGracePeriod,omitempty"`
+	// ImageGCHighThresholdPercent is the percent of disk usage which triggers image garbage collection.
+	// +optional
+	ImageGCHighThresholdPercent *int32 `json:"imageGCHighThresholdPercent,omitempty"`
+	// ImageGCLowThresholdPercent is the percent of disk usage to which image garbage collection attempts to free.
+	// +optional
+	ImageGCLowThresholdPercent *int32 `json:"imageGCLowThresholdPercent,omitempty"`
+	// CPUCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
+	// +optional
+	CPUCFSQuota *bool `json:"cpuCFSQuota,omitempty"`
+}
+
 const (
 	// KarpenterCoreE2EOverrideAnnotation is an annotation to be applied to a HostedCluster that allows
 	// overriding the default behavior of the Karpenter Operator for upstream Karpenter core E2E testing purposes.
@@ -147,6 +192,11 @@ type OpenshiftEC2NodeClassSpec struct {
 	// +kubebuilder:validation:Pattern=`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$`
 	// +optional
 	Version string `json:"version,omitempty"`
+
+	// Kubelet configures kubelet settings for nodes provisioned by this NodeClass.
+	// These settings are injected into the node's ignition configuration via MachineConfig.
+	// +optional
+	Kubelet *KubeletConfiguration `json:"kubelet,omitempty"`
 }
 
 // SubnetSelectorTerm defines selection logic for a subnet used by Karpenter to launch nodes.

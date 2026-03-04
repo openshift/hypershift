@@ -14,10 +14,20 @@ import (
 const (
 	// ManagedByKarpenterLabel is a label set on the userData secrets as being managed by Karpenter Operator
 	ManagedByKarpenterLabel = "hypershift.openshift.io/managed-by-karpenter"
+
+	// KarpenterNodeClassKubeletConfigLabel is a label set on per-OpenshiftEC2NodeClass KubeletConfig ConfigMaps
+	// in the HCP namespace so they can be discovered.
+	KarpenterNodeClassKubeletConfigLabel = "hypershift.openshift.io/karpenter-nodeclass-kubelet-config"
 )
 
 // KarpenterTaintConfigMapName is the name of the configmap containing the karpenter taint config
 const KarpenterTaintConfigMapName = "set-karpenter-taint"
+
+// KarpenterNodeClassKubeletConfigName returns the name of the ConfigMap containing the
+// per-OpenshiftEC2NodeClass KubeletConfig in the HCP namespace.
+func KarpenterNodeClassKubeletConfigName(nodeClassName string) string {
+	return fmt.Sprintf("karpenter-kubelet-%s", nodeClassName)
+}
 
 // ErrHCPNotFound is returned when no HostedControlPlane is found in the namespace.
 var ErrHCPNotFound = errors.New("hostedcontrolplane not found")
