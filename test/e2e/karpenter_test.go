@@ -123,6 +123,23 @@ func TestKarpenter(t *testing.T) {
 			ec2NodeClass := ec2NodeClassList.Items[0]
 			g.Expect(guestClient.Delete(ctx, &ec2NodeClass)).To(MatchError(ContainSubstring("EC2NodeClass resource can't be created/updated/deleted directly, please use OpenshiftEC2NodeClass resource instead")))
 
+			t.Log("Validating AutoNodeEnabled condition is set on HostedCluster")
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNodeEnabled condition", hostedCluster.Namespace, hostedCluster.Name),
+				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+					hc := &hyperv1.HostedCluster{}
+					err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+					return hc, err
+				},
+				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+					e2eutil.ConditionPredicate[*hyperv1.HostedCluster](e2eutil.Condition{
+						Type:   string(hyperv1.AutoNodeEnabled),
+						Status: metav1.ConditionTrue,
+						Reason: hyperv1.AsExpectedReason,
+					}),
+				},
+				e2eutil.WithTimeout(2*time.Minute),
+			)
+
 			// TODO(alberto): increase coverage:
 			// - Karpenter operator plumbing, e.g:
 			// -- validate the CRDs are installed
@@ -224,6 +241,31 @@ func TestKarpenter(t *testing.T) {
 
 			t.Logf("Waiting for Karpenter pods to schedule on the new node")
 			waitForReadyKarpenterPods(t, ctx, guestClient, nodes, replicas)
+
+			t.Log("Validating AutoNode status counts are populated after upgrade")
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNode status counts", hostedCluster.Namespace, hostedCluster.Name),
+				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+					hc := &hyperv1.HostedCluster{}
+					err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+					return hc, err
+				},
+				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+					func(hc *hyperv1.HostedCluster) (done bool, reasons string, err error) {
+						if hc.Status.AutoNode == nil {
+							return false, "Status.AutoNode is nil", nil
+						}
+						if hc.Status.AutoNode.NodeCount == nil || *hc.Status.AutoNode.NodeCount < len(nodes) {
+							return false, fmt.Sprintf("expected NodeCount >= %d, got %v", len(nodes), hc.Status.AutoNode.NodeCount), nil
+						}
+						if hc.Status.AutoNode.NodeClaimCount == nil || *hc.Status.AutoNode.NodeClaimCount < len(nodeClaims.Items) {
+							return false, fmt.Sprintf("expected NodeClaimCount >= %d, got %v", len(nodeClaims.Items), hc.Status.AutoNode.NodeClaimCount), nil
+						}
+						return true, fmt.Sprintf("AutoNode status: NodeCount=%d, NodeClaimCount=%d",
+							*hc.Status.AutoNode.NodeCount, *hc.Status.AutoNode.NodeClaimCount), nil
+					},
+				},
+				e2eutil.WithTimeout(5*time.Minute),
+			)
 
 			// Test we can delete both Karpenter NodePool and workloads.
 			g.Expect(guestClient.Delete(ctx, karpenterNodePool)).To(Succeed())
@@ -373,6 +415,101 @@ func TestKarpenter(t *testing.T) {
 				g.Expect(ec2NodeClass.Spec.InstanceProfile).To(BeNil(), "InstanceProfile should be cleared")
 			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 			t.Logf("EC2NodeClass InstanceProfile cleared successfully")
+		})
+
+		t.Run("AutoNode enable/disable lifecycle", func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Refresh to get current spec (including AutoNode config with RoleARN).
+			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+			g.Expect(err).NotTo(HaveOccurred())
+			savedAutoNode := hostedCluster.Spec.AutoNode
+
+			// Disable Karpenter.
+			t.Log("Disabling AutoNode (Karpenter) on HostedCluster")
+			err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+				obj.Spec.AutoNode = nil
+			})
+			g.Expect(err).NotTo(HaveOccurred(), "failed to disable AutoNode")
+
+			// Expect progressing (disable in flight — components still exist).
+			t.Log("Waiting for AutoNodeEnabled=False/AutoNodeProgressing (disable in progress)")
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNodeEnabled=False/AutoNodeProgressing", hostedCluster.Namespace, hostedCluster.Name),
+				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+					hc := &hyperv1.HostedCluster{}
+					err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+					return hc, err
+				},
+				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+					e2eutil.ConditionPredicate[*hyperv1.HostedCluster](e2eutil.Condition{
+						Type:   string(hyperv1.AutoNodeEnabled),
+						Status: metav1.ConditionFalse,
+						Reason: hyperv1.AutoNodeProgressingReason,
+					}),
+				},
+				e2eutil.WithTimeout(2*time.Minute),
+			)
+
+			// Expect fully disabled (components removed).
+			t.Log("Waiting for AutoNodeEnabled=False/AutoNodeNotConfigured (disable complete)")
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNodeEnabled=False/AutoNodeNotConfigured", hostedCluster.Namespace, hostedCluster.Name),
+				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+					hc := &hyperv1.HostedCluster{}
+					err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+					return hc, err
+				},
+				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+					e2eutil.ConditionPredicate[*hyperv1.HostedCluster](e2eutil.Condition{
+						Type:   string(hyperv1.AutoNodeEnabled),
+						Status: metav1.ConditionFalse,
+						Reason: hyperv1.AutoNodeNotConfiguredReason,
+					}),
+				},
+				e2eutil.WithTimeout(5*time.Minute),
+			)
+
+			// Re-enable Karpenter.
+			t.Log("Re-enabling AutoNode (Karpenter) on HostedCluster")
+			err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+				obj.Spec.AutoNode = savedAutoNode
+			})
+			g.Expect(err).NotTo(HaveOccurred(), "failed to re-enable AutoNode")
+
+			// Expect progressing (enable in flight — components being created/rolled out).
+			t.Log("Waiting for AutoNodeEnabled=False/AutoNodeProgressing (enable in progress)")
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNodeEnabled=False/AutoNodeProgressing", hostedCluster.Namespace, hostedCluster.Name),
+				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+					hc := &hyperv1.HostedCluster{}
+					err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+					return hc, err
+				},
+				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+					e2eutil.ConditionPredicate[*hyperv1.HostedCluster](e2eutil.Condition{
+						Type:   string(hyperv1.AutoNodeEnabled),
+						Status: metav1.ConditionFalse,
+						Reason: hyperv1.AutoNodeProgressingReason,
+					}),
+				},
+				e2eutil.WithTimeout(2*time.Minute),
+			)
+
+			// Expect fully enabled (both components rolled out).
+			t.Log("Waiting for AutoNodeEnabled=True/AsExpected (enable complete)")
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNodeEnabled=True/AsExpected", hostedCluster.Namespace, hostedCluster.Name),
+				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+					hc := &hyperv1.HostedCluster{}
+					err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+					return hc, err
+				},
+				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+					e2eutil.ConditionPredicate[*hyperv1.HostedCluster](e2eutil.Condition{
+						Type:   string(hyperv1.AutoNodeEnabled),
+						Status: metav1.ConditionTrue,
+						Reason: hyperv1.AsExpectedReason,
+					}),
+				},
+				e2eutil.WithTimeout(5*time.Minute),
+			)
 		})
 
 		// TODO(jkyros): This test doesn't clean up after itself (I think intentionally) so we can test general cluster

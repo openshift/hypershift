@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+	hypershiftv1beta1applyconfigurations "github.com/openshift/hypershift/client/applyconfiguration/hypershift/v1beta1"
+	hypershiftclient "github.com/openshift/hypershift/client/clientset/clientset"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/imageprovider"
 	karpenterv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
@@ -25,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
@@ -60,6 +64,7 @@ var (
 type Reconciler struct {
 	ManagementClient          client.Client
 	GuestClient               client.Client
+	HypershiftClient          hypershiftclient.Interface
 	Namespace                 string
 	ControlPlaneOperatorImage string
 	KarpenterProviderAWSImage string
@@ -133,6 +138,24 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, man
 		return fmt.Errorf("failed to watch HostedControlPlane: %w", err)
 	}
 
+	// Watch NodeClaims guest side to trigger reconcile when NodeClaims change.
+	if err := c.Watch(source.Kind[client.Object](mgr.GetCache(), &karpenterv1.NodeClaim{},
+		handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []ctrl.Request {
+			return []ctrl.Request{{NamespacedName: client.ObjectKey{Namespace: r.Namespace}}}
+		}),
+	)); err != nil {
+		return fmt.Errorf("failed to watch NodeClaims: %w", err)
+	}
+
+	// Watch Nodes guest side to trigger reconcile when node counts change.
+	if err := c.Watch(source.Kind[client.Object](mgr.GetCache(), &corev1.Node{},
+		handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, _ client.Object) []ctrl.Request {
+			return []ctrl.Request{{NamespacedName: client.ObjectKey{Namespace: r.Namespace}}}
+		}),
+	)); err != nil {
+		return fmt.Errorf("failed to watch Nodes: %w", err)
+	}
+
 	// Trigger initial sync.
 	initialSync := make(chan event.GenericEvent)
 	if err := c.Watch(source.Channel(initialSync, &handler.EnqueueRequestForObject{})); err != nil {
@@ -156,33 +179,6 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 			return ctrl.Result{RequeueAfter: time.Second * 5}, nil
 		}
 		return ctrl.Result{}, err
-	}
-
-	// Setup for ControlPlaneContext and the Karpenter control plane v2 component.
-	pullSecret := common.PullSecret(hcp.Namespace)
-	if err := r.ManagementClient.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
-	}
-
-	releaseImage, err := r.ReleaseProvider.Lookup(ctx, util.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
-	}
-	imageProvider := imageprovider.New(releaseImage)
-	imageProvider.ComponentImages()["token-minter"] = r.ControlPlaneOperatorImage
-	imageProvider.ComponentImages()[util.AvailabilityProberImageName] = r.ControlPlaneOperatorImage
-
-	cpContext := controlplanecomponent.ControlPlaneContext{
-		Context:              ctx,
-		Client:               r.ManagementClient,
-		ApplyProvider:        upsert.NewApplyProvider(false),
-		HCP:                  hcp,
-		ReleaseImageProvider: imageProvider,
-	}
-
-	r.ControlPlaneContext = cpContext
-	if r.KarpenterComponent == nil {
-		r.KarpenterComponent = karpenterv2.NewComponent()
 	}
 
 	if hcp.DeletionTimestamp != nil {
@@ -265,6 +261,39 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
+	// Reconcile AutoNode status before the release image lookup so node/nodeclaim counts
+	// are always updated even if the release image lookup fails during/after a control plane upgrade.
+	if err := r.reconcileAutoNodeStatus(ctx, hcp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile AutoNode status: %w", err)
+	}
+
+	// Setup for ControlPlaneContext and the Karpenter control plane v2 component.
+	pullSecret := common.PullSecret(hcp.Namespace)
+	if err := r.ManagementClient.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get pull secret: %w", err)
+	}
+
+	releaseImage, err := r.ReleaseProvider.Lookup(ctx, util.HCPControlPlaneReleaseImage(hcp), pullSecret.Data[corev1.DockerConfigJsonKey])
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to lookup release image: %w", err)
+	}
+	imageProvider := imageprovider.New(releaseImage)
+	imageProvider.ComponentImages()["token-minter"] = r.ControlPlaneOperatorImage
+	imageProvider.ComponentImages()[util.AvailabilityProberImageName] = r.ControlPlaneOperatorImage
+
+	cpContext := controlplanecomponent.ControlPlaneContext{
+		Context:              ctx,
+		Client:               r.ManagementClient,
+		ApplyProvider:        upsert.NewApplyProvider(false),
+		HCP:                  hcp,
+		ReleaseImageProvider: imageProvider,
+	}
+
+	r.ControlPlaneContext = cpContext
+	if r.KarpenterComponent == nil {
+		r.KarpenterComponent = karpenterv2.NewComponent()
+	}
+
 	// Don't reconcile if Karpenter E2E override is set.
 	if hcp.Annotations[hyperkarpenterv1.KarpenterCoreE2EOverrideAnnotation] != "true" {
 		if err := r.reconcileOpenshiftEC2NodeClassDefault(ctx, hcp); err != nil {
@@ -281,6 +310,59 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// reconcileAutoNodeStatus counts Karpenter-managed nodes and live NodeClaims in the guest cluster
+// and writes the counts to HCP.Status.AutoNode.
+func (r *Reconciler) reconcileAutoNodeStatus(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	log := ctrl.LoggerFrom(ctx)
+
+	nodes := &corev1.NodeList{}
+	if err := r.GuestClient.List(ctx, nodes); err != nil {
+		return fmt.Errorf("failed to list nodes: %w", err)
+	}
+
+	karpenterNodeCount := 0
+	for i := range nodes.Items {
+		if _, hasLabel := nodes.Items[i].Labels[karpenterv1.NodePoolLabelKey]; hasLabel {
+			karpenterNodeCount++
+		}
+	}
+
+	nodeClaims := &karpenterv1.NodeClaimList{}
+	if err := r.GuestClient.List(ctx, nodeClaims); err != nil {
+		return fmt.Errorf("failed to list NodeClaims: %w", err)
+	}
+
+	liveNodeClaimCount := 0
+	for i := range nodeClaims.Items {
+		if nodeClaims.Items[i].DeletionTimestamp == nil {
+			liveNodeClaimCount++
+		}
+	}
+
+	statusCfg := hypershiftv1beta1applyconfigurations.HostedControlPlaneStatus().
+		WithAutoNode(
+			hypershiftv1beta1applyconfigurations.AutoNodeStatus().
+				WithNodeCount(karpenterNodeCount).
+				WithNodeClaimCount(liveNodeClaimCount),
+		)
+	cfg := hypershiftv1beta1applyconfigurations.HostedControlPlane(hcp.Name, hcp.Namespace)
+	cfg.Status = statusCfg
+	if _, err := r.HypershiftClient.HypershiftV1beta1().HostedControlPlanes(hcp.Namespace).ApplyStatus(
+		ctx, cfg, metav1.ApplyOptions{FieldManager: "karpenter-operator", Force: true},
+	); err != nil {
+		// During a control plane upgrade, the old karpenter-operator pod has cached the old CRD
+		// schema (without .status.autoNode). SSA validates the patch client-side against that
+		// cached schema before sending to the API server. The new pod loads the updated schema
+		// at startup and succeeds. Skip gracefully so the rest of the reconcile is not blocked.
+		if strings.Contains(err.Error(), "field not declared in schema") {
+			log.V(4).Info("AutoNode status field not in CRD schema yet, skipping (old release schema cached)", "error", err)
+			return nil
+		}
+		return fmt.Errorf("failed to apply AutoNode status: %w", err)
+	}
+	return nil
 }
 
 // reconcileCRDs reconcile the Karpenter CRDs, if onlyCreate is true it uses an only write non cached client.

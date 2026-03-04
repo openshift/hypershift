@@ -36,6 +36,7 @@ type HostedClusterStatusApplyConfiguration struct {
 	OAuthCallbackURLTemplate *string                                 `json:"oauthCallbackURLTemplate,omitempty"`
 	PayloadArch              *hypershiftv1beta1.PayloadArchType      `json:"payloadArch,omitempty"`
 	Platform                 *PlatformStatusApplyConfiguration       `json:"platform,omitempty"`
+	AutoNode                 *AutoNodeStatusApplyConfiguration       `json:"autoNode,omitempty"`
 	Configuration            *ConfigurationStatusApplyConfiguration  `json:"configuration,omitempty"`
 }
 
@@ -127,6 +128,14 @@ func (b *HostedClusterStatusApplyConfiguration) WithPayloadArch(value hypershift
 // If called multiple times, the Platform field is set to the value of the last call.
 func (b *HostedClusterStatusApplyConfiguration) WithPlatform(value *PlatformStatusApplyConfiguration) *HostedClusterStatusApplyConfiguration {
 	b.Platform = value
+	return b
+}
+
+// WithAutoNode sets the AutoNode field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the AutoNode field is set to the value of the last call.
+func (b *HostedClusterStatusApplyConfiguration) WithAutoNode(value *AutoNodeStatusApplyConfiguration) *HostedClusterStatusApplyConfiguration {
+	b.AutoNode = value
 	return b
 }
 
