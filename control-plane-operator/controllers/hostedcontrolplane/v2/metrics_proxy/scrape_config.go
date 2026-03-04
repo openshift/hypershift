@@ -3,6 +3,7 @@ package metricsproxy
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 
 	metricsproxybin "github.com/openshift/hypershift/control-plane-operator/metrics-proxy"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -21,6 +22,11 @@ import (
 const (
 	certBasePath       = "/etc/metrics-proxy/certs"
 	endpointResolverCA = certBasePath + "/endpoint-resolver-ca/tls.crt"
+
+	annMetricsJob       = "hypershift.openshift.io/metrics-job"
+	annMetricsNamespace = "hypershift.openshift.io/metrics-namespace"
+	annMetricsService   = "hypershift.openshift.io/metrics-service"
+	annMetricsEndpoint  = "hypershift.openshift.io/metrics-endpoint"
 )
 
 func adaptScrapeConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
@@ -34,7 +40,6 @@ func adaptScrapeConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap
 			URL:    endpointResolverURL,
 			CAFile: endpointResolverCA,
 		},
-		Components: make(map[string]metricsproxybin.ComponentFileConfig),
 	}
 
 	// Process ServiceMonitors.
@@ -102,7 +107,9 @@ func adaptScrapeConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap
 			}
 		}
 
-		cfg.Components[sm.Name] = comp
+		comp.Name = sm.Name
+		populateMetricsLabelsFromAnnotations(&comp, sm.Annotations)
+		cfg.Components = append(cfg.Components, comp)
 	}
 
 	// Process PodMonitors.
@@ -167,8 +174,14 @@ func adaptScrapeConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap
 			}
 		}
 
-		cfg.Components[pm.Name] = comp
+		comp.Name = pm.Name
+		populateMetricsLabelsFromAnnotations(&comp, pm.Annotations)
+		cfg.Components = append(cfg.Components, comp)
 	}
+
+	sort.Slice(cfg.Components, func(i, j int) bool {
+		return cfg.Components[i].Name < cfg.Components[j].Name
+	})
 
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
@@ -248,6 +261,23 @@ func resolveServicePort(cpContext component.WorkloadContext, namespace, serviceN
 	}
 
 	return 0, fmt.Errorf("port %q not found on service %s", portName, serviceName)
+}
+
+// populateMetricsLabelsFromAnnotations reads the hypershift.openshift.io/metrics-*
+// annotations from a SM/PM and populates the corresponding ComponentFileConfig fields.
+func populateMetricsLabelsFromAnnotations(comp *metricsproxybin.ComponentFileConfig, annotations map[string]string) {
+	if v, ok := annotations[annMetricsJob]; ok {
+		comp.MetricsJob = v
+	}
+	if v, ok := annotations[annMetricsNamespace]; ok {
+		comp.MetricsNamespace = v
+	}
+	if v, ok := annotations[annMetricsService]; ok {
+		comp.MetricsService = v
+	}
+	if v, ok := annotations[annMetricsEndpoint]; ok {
+		comp.MetricsEndpoint = v
+	}
 }
 
 // resolveDeploymentPort reads a Deployment and resolves a named container port

@@ -16,16 +16,7 @@ endpointResolver:
   url: https://endpoint-resolver.test-ns.svc
   caFile: /tmp/test-ca/tls.crt
 components:
-  kube-apiserver:
-    serviceName: kube-apiserver
-    metricsPort: 6443
-    metricsPath: /metrics
-    metricsScheme: https
-    tlsServerName: kube-apiserver
-    caFile: ""
-    certFile: ""
-    keyFile: ""
-  etcd:
+  - name: etcd
     serviceName: etcd-client
     metricsPort: 2381
     metricsPath: /metrics
@@ -34,6 +25,23 @@ components:
     caFile: ""
     certFile: ""
     keyFile: ""
+    metricsJob: etcd
+    metricsNamespace: openshift-etcd
+    metricsService: etcd
+    metricsEndpoint: etcd-metrics
+  - name: kube-apiserver
+    serviceName: kube-apiserver
+    metricsPort: 6443
+    metricsPath: /metrics
+    metricsScheme: https
+    tlsServerName: kube-apiserver
+    caFile: ""
+    certFile: ""
+    keyFile: ""
+    metricsJob: apiserver
+    metricsNamespace: default
+    metricsService: kubernetes
+    metricsEndpoint: https
 `
 
 	dir := t.TempDir()
@@ -67,6 +75,18 @@ components:
 		if kas.ServiceName != "kube-apiserver" {
 			t.Errorf("expected service name kube-apiserver, got %s", kas.ServiceName)
 		}
+		if kas.MetricsJob != "apiserver" {
+			t.Errorf("expected metricsJob apiserver, got %s", kas.MetricsJob)
+		}
+		if kas.MetricsNamespace != "default" {
+			t.Errorf("expected metricsNamespace default, got %s", kas.MetricsNamespace)
+		}
+		if kas.MetricsService != "kubernetes" {
+			t.Errorf("expected metricsService kubernetes, got %s", kas.MetricsService)
+		}
+		if kas.MetricsEndpoint != "https" {
+			t.Errorf("expected metricsEndpoint https, got %s", kas.MetricsEndpoint)
+		}
 
 		etcd, ok := r.GetComponent("etcd")
 		if !ok {
@@ -74,6 +94,18 @@ components:
 		}
 		if etcd.MetricsPort != 2381 {
 			t.Errorf("expected port 2381, got %d", etcd.MetricsPort)
+		}
+		if etcd.MetricsJob != "etcd" {
+			t.Errorf("expected metricsJob etcd, got %s", etcd.MetricsJob)
+		}
+		if etcd.MetricsNamespace != "openshift-etcd" {
+			t.Errorf("expected metricsNamespace openshift-etcd, got %s", etcd.MetricsNamespace)
+		}
+		if etcd.MetricsService != "etcd" {
+			t.Errorf("expected metricsService etcd, got %s", etcd.MetricsService)
+		}
+		if etcd.MetricsEndpoint != "etcd-metrics" {
+			t.Errorf("expected metricsEndpoint etcd-metrics, got %s", etcd.MetricsEndpoint)
 		}
 	})
 

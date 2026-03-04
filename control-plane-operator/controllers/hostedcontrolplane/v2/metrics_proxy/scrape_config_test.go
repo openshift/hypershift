@@ -137,6 +137,15 @@ func newDeployment(name, namespace, portName string, portNum int32) *appsv1.Depl
 	}
 }
 
+func findComponent(components []metricsproxybin.ComponentFileConfig, name string) (metricsproxybin.ComponentFileConfig, bool) {
+	for _, c := range components {
+		if c.Name == name {
+			return c, true
+		}
+	}
+	return metricsproxybin.ComponentFileConfig{}, false
+}
+
 func TestAdaptScrapeConfig(t *testing.T) {
 	t.Parallel()
 
@@ -239,7 +248,7 @@ func TestAdaptScrapeConfig(t *testing.T) {
 
 	t.Run("When kube-apiserver config is generated, it should have correct port and certs", func(t *testing.T) {
 		t.Parallel()
-		kas, ok := cfg.Components["kube-apiserver"]
+		kas, ok := findComponent(cfg.Components, "kube-apiserver")
 		if !ok {
 			t.Fatal("kube-apiserver not found in components")
 		}
@@ -258,7 +267,7 @@ func TestAdaptScrapeConfig(t *testing.T) {
 
 	t.Run("When etcd config is generated, it should use etcd-specific certs", func(t *testing.T) {
 		t.Parallel()
-		etcd, ok := cfg.Components["etcd"]
+		etcd, ok := findComponent(cfg.Components, "etcd")
 		if !ok {
 			t.Fatal("etcd not found in components")
 		}
@@ -278,7 +287,7 @@ func TestAdaptScrapeConfig(t *testing.T) {
 
 	t.Run("When CVO config is generated, it should have no client cert", func(t *testing.T) {
 		t.Parallel()
-		cvo, ok := cfg.Components["cluster-version-operator"]
+		cvo, ok := findComponent(cfg.Components, "cluster-version-operator")
 		if !ok {
 			t.Fatal("cluster-version-operator not found in components")
 		}
@@ -292,7 +301,7 @@ func TestAdaptScrapeConfig(t *testing.T) {
 
 	t.Run("When NTO config is generated, it should include namespace in serverName", func(t *testing.T) {
 		t.Parallel()
-		nto, ok := cfg.Components["node-tuning-operator"]
+		nto, ok := findComponent(cfg.Components, "node-tuning-operator")
 		if !ok {
 			t.Fatal("node-tuning-operator not found in components")
 		}
@@ -351,7 +360,7 @@ func TestAdaptScrapeConfigMissingService(t *testing.T) {
 		if len(cfg.Components) != 1 {
 			t.Errorf("expected 1 component, got %d", len(cfg.Components))
 		}
-		if _, ok := cfg.Components["kube-apiserver"]; !ok {
+		if _, ok := findComponent(cfg.Components, "kube-apiserver"); !ok {
 			t.Error("expected kube-apiserver to be present")
 		}
 	})
@@ -431,7 +440,7 @@ func TestAdaptScrapeConfigWithPodMonitors(t *testing.T) {
 
 	t.Run("When cluster-autoscaler config is generated, it should have correct port and scheme", func(t *testing.T) {
 		t.Parallel()
-		ca, ok := cfg.Components["cluster-autoscaler"]
+		ca, ok := findComponent(cfg.Components, "cluster-autoscaler")
 		if !ok {
 			t.Fatal("cluster-autoscaler not found in components")
 		}
@@ -448,7 +457,7 @@ func TestAdaptScrapeConfigWithPodMonitors(t *testing.T) {
 
 	t.Run("When cluster-image-registry-operator config is generated, it should have TLS CA", func(t *testing.T) {
 		t.Parallel()
-		ciro, ok := cfg.Components["cluster-image-registry-operator"]
+		ciro, ok := findComponent(cfg.Components, "cluster-image-registry-operator")
 		if !ok {
 			t.Fatal("cluster-image-registry-operator not found in components")
 		}
@@ -477,7 +486,7 @@ func TestAdaptScrapeConfigWithPodMonitors(t *testing.T) {
 
 	t.Run("When PodMonitor without TLS is generated, it should have no TLS fields", func(t *testing.T) {
 		t.Parallel()
-		cpo, ok := cfg.Components["control-plane-operator"]
+		cpo, ok := findComponent(cfg.Components, "control-plane-operator")
 		if !ok {
 			t.Fatal("control-plane-operator not found in components")
 		}
@@ -537,10 +546,10 @@ func TestAdaptScrapeConfigMixedMonitors(t *testing.T) {
 		if len(cfg.Components) != 2 {
 			t.Errorf("expected 2 components, got %d", len(cfg.Components))
 		}
-		if _, ok := cfg.Components["kube-apiserver"]; !ok {
+		if _, ok := findComponent(cfg.Components, "kube-apiserver"); !ok {
 			t.Error("expected kube-apiserver to be present")
 		}
-		if _, ok := cfg.Components["cluster-autoscaler"]; !ok {
+		if _, ok := findComponent(cfg.Components, "cluster-autoscaler"); !ok {
 			t.Error("expected cluster-autoscaler to be present")
 		}
 	})
