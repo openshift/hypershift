@@ -133,9 +133,16 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 	case hyperv1.KubevirtPlatform:
 		if hcluster.Spec.Platform.Kubevirt.Credentials == nil {
 			// network policy is being set on centralized infra only, not on external infra
+
+			// Get the control plane namespace to check for Primary UDN label
+			controlPlaneNamespace := &corev1.Namespace{}
+			if err := r.Get(ctx, client.ObjectKey{Name: controlPlaneNamespaceName}, controlPlaneNamespace); err != nil {
+				return fmt.Errorf("failed to get control plane namespace: %w", err)
+			}
+
 			policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
 			if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-				return reconcileVirtLauncherNetworkPolicy(log, policy, hcluster, managementClusterNetwork)
+				return reconcileVirtLauncherNetworkPolicy(log, policy, hcluster, managementClusterNetwork, controlPlaneNamespace)
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
 			}
@@ -525,10 +532,13 @@ func addToBlockedNetworks(network string, blockedIPv4Networks []string, blockedI
 	return blockedIPv4Networks, blockedIPv6Networks
 }
 
-func reconcileVirtLauncherNetworkPolicy(log logr.Logger, policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, managementClusterNetwork *configv1.Network) error {
+func reconcileVirtLauncherNetworkPolicy(log logr.Logger, policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, managementClusterNetwork *configv1.Network, controlPlaneNamespace *corev1.Namespace) error {
 	protocolTCP := corev1.ProtocolTCP
 	protocolUDP := corev1.ProtocolUDP
 	protocolSCTP := corev1.ProtocolSCTP
+
+	// Check if namespace has Primary UDN enabled
+	_, hasPrimaryUDN := controlPlaneNamespace.Labels["k8s.ovn.org/primary-user-defined-network"]
 
 	blockedIPv4Networks := []string{}
 	blockedIPv6Networks := []string{}
@@ -536,8 +546,14 @@ func reconcileVirtLauncherNetworkPolicy(log logr.Logger, policy *networkingv1.Ne
 		blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network.CIDR, blockedIPv4Networks, blockedIPv6Networks)
 	}
 
-	for _, network := range managementClusterNetwork.Spec.ServiceNetwork {
-		blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network, blockedIPv4Networks, blockedIPv6Networks)
+	// For Primary UDN, allow access to service CIDR (for DNS and ClusterIP services)
+	// For non-Primary UDN, block service CIDR as before
+	if !hasPrimaryUDN {
+		for _, network := range managementClusterNetwork.Spec.ServiceNetwork {
+			blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network, blockedIPv4Networks, blockedIPv6Networks)
+		}
+	} else {
+		log.Info("Primary UDN detected, allowing service CIDR access for DNS and ClusterIP services")
 	}
 
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}

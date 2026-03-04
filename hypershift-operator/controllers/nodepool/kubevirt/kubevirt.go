@@ -445,6 +445,8 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 		return nil, err
 	}
 
+	applyPrimaryUDNVMTemplateOverrides(hcluster, vmTemplate)
+
 	return &capikubevirt.KubevirtMachineTemplateSpec{
 		Template: capikubevirt.KubevirtMachineTemplateResource{
 			Spec: capikubevirt.KubevirtMachineSpec{
@@ -453,6 +455,32 @@ func MachineTemplateSpec(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedClu
 			},
 		},
 	}, nil
+}
+
+func applyPrimaryUDNVMTemplateOverrides(hcluster *hyperv1.HostedCluster, tmplt *capikubevirt.VirtualMachineTemplateSpec) {
+	if hcluster == nil || tmplt == nil || hcluster.Annotations == nil {
+		return
+	}
+	// Primary UDN enablement is atomic: either both name+subnet are set, or neither.
+	if hcluster.Annotations[hyperv1.PrimaryUDNNameAnnotation] == "" || hcluster.Annotations[hyperv1.PrimaryUDNSubnetAnnotation] == "" {
+		return
+	}
+
+	// Primary UDN uses l2bridge binding and must not set allow-pod-bridge-network-live-migration.
+	if tmplt.Spec.Template != nil {
+		if tmplt.Spec.Template.ObjectMeta.Annotations != nil {
+			delete(tmplt.Spec.Template.ObjectMeta.Annotations, "kubevirt.io/allow-pod-bridge-network-live-migration")
+		}
+		ifaces := tmplt.Spec.Template.Spec.Domain.Devices.Interfaces
+		for i := range ifaces {
+			if ifaces[i].Name != "default" {
+				continue
+			}
+			ifaces[i].InterfaceBindingMethod = kubevirtv1.InterfaceBindingMethod{}
+			ifaces[i].Binding = &kubevirtv1.PluginBinding{Name: "l2bridge"}
+		}
+		tmplt.Spec.Template.Spec.Domain.Devices.Interfaces = ifaces
+	}
 }
 
 func applyJsonPatches(nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster, tmplt *capikubevirt.VirtualMachineTemplateSpec) error {
