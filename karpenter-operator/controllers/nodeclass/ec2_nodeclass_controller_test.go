@@ -2,6 +2,7 @@ package nodeclass
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -11,7 +12,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	nodepool "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+	"github.com/openshift/hypershift/support/upsert"
 
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 
@@ -685,6 +688,183 @@ func TestKarpenterSecretPredicate(t *testing.T) {
 			}
 
 			g.Expect(result).To(Equal(tc.expectedResult))
+		})
+	}
+}
+
+func TestReconcileKarpenterSubnetsConfigMap(t *testing.T) {
+	const testNamespace = "clusters-my-cluster"
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-cluster",
+			Namespace: testNamespace,
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			InfraID: testInfraID,
+		},
+	}
+
+	testCases := []struct {
+		name                string
+		guestObjects        []client.Object
+		managementObjects   []client.Object
+		expectConfigMap     bool
+		expectedSubnetCount int
+		expectedSubnets     []string
+	}{
+		{
+			name:         "When there are no OpenshiftEC2NodeClass resources it should delete the ConfigMap",
+			guestObjects: []client.Object{},
+			managementObjects: []client.Object{
+				&corev1.ConfigMap{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      karpenterutil.KarpenterSubnetsConfigMapName,
+						Namespace: testNamespace,
+					},
+				},
+			},
+			expectConfigMap: false,
+		},
+		{
+			name: "When OpenshiftEC2NodeClass resources have subnets in status it should create ConfigMap with aggregated subnet IDs",
+			guestObjects: []client.Object{
+				&hyperkarpenterv1.OpenshiftEC2NodeClass{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "nodeclass-1",
+					},
+					Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+						SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
+							{ID: "subnet-aaa"},
+						},
+					},
+					Status: hyperkarpenterv1.OpenshiftEC2NodeClassStatus{
+						Subnets: []hyperkarpenterv1.Subnet{
+							{ID: "subnet-aaa", Zone: "us-east-1a"},
+							{ID: "subnet-bbb", Zone: "us-east-1b"},
+						},
+					},
+				},
+			},
+			expectConfigMap:     true,
+			expectedSubnetCount: 2,
+			expectedSubnets:     []string{"subnet-aaa", "subnet-bbb"},
+		},
+		{
+			name: "When multiple OpenshiftEC2NodeClass resources have overlapping subnets it should deduplicate subnet IDs",
+			guestObjects: []client.Object{
+				&hyperkarpenterv1.OpenshiftEC2NodeClass{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "nodeclass-1",
+					},
+					Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+						SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
+							{ID: "subnet-shared"},
+						},
+					},
+					Status: hyperkarpenterv1.OpenshiftEC2NodeClassStatus{
+						Subnets: []hyperkarpenterv1.Subnet{
+							{ID: "subnet-shared", Zone: "us-east-1a"},
+							{ID: "subnet-aaa", Zone: "us-east-1b"},
+						},
+					},
+				},
+				&hyperkarpenterv1.OpenshiftEC2NodeClass{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "nodeclass-2",
+					},
+					Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+						SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
+							{ID: "subnet-bbb"},
+						},
+					},
+					Status: hyperkarpenterv1.OpenshiftEC2NodeClassStatus{
+						Subnets: []hyperkarpenterv1.Subnet{
+							{ID: "subnet-shared", Zone: "us-east-1a"},
+							{ID: "subnet-bbb", Zone: "us-east-1c"},
+						},
+					},
+				},
+			},
+			expectConfigMap:     true,
+			expectedSubnetCount: 3,
+			expectedSubnets:     []string{"subnet-aaa", "subnet-bbb", "subnet-shared"},
+		},
+		{
+			name: "When OpenshiftEC2NodeClass resources have no subnets in status it should delete the ConfigMap",
+			guestObjects: []client.Object{
+				&hyperkarpenterv1.OpenshiftEC2NodeClass{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "nodeclass-1",
+					},
+					Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+						SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
+							{ID: "subnet-aaa"},
+						},
+					},
+					Status: hyperkarpenterv1.OpenshiftEC2NodeClassStatus{},
+				},
+			},
+			expectConfigMap: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			managementClient := fake.NewClientBuilder().
+				WithScheme(hyperapi.Scheme).
+				WithObjects(tc.managementObjects...).
+				Build()
+
+			guestClient := fake.NewClientBuilder().
+				WithScheme(hyperapi.Scheme).
+				WithStatusSubresource(&hyperkarpenterv1.OpenshiftEC2NodeClass{}).
+				WithObjects(tc.guestObjects...).
+				Build()
+
+			// Patch status for guest objects since fake client WithObjects doesn't set status
+			for _, obj := range tc.guestObjects {
+				if nc, ok := obj.(*hyperkarpenterv1.OpenshiftEC2NodeClass); ok {
+					if err := guestClient.Status().Update(context.Background(), nc); err != nil {
+						t.Fatalf("failed to set status on OpenshiftEC2NodeClass: %v", err)
+					}
+				}
+			}
+
+			r := &EC2NodeClassReconciler{
+				Namespace:              testNamespace,
+				managementClient:       managementClient,
+				guestClient:            guestClient,
+				CreateOrUpdateProvider: upsert.New(false),
+			}
+
+			err := r.reconcileKarpenterSubnetsConfigMap(context.Background(), hcp)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			cm := &corev1.ConfigMap{}
+			getErr := managementClient.Get(context.Background(), client.ObjectKey{
+				Namespace: testNamespace,
+				Name:      karpenterutil.KarpenterSubnetsConfigMapName,
+			}, cm)
+
+			if !tc.expectConfigMap {
+				g.Expect(getErr).To(HaveOccurred(), "ConfigMap should have been deleted")
+				return
+			}
+
+			g.Expect(getErr).NotTo(HaveOccurred(), "ConfigMap should exist")
+			g.Expect(cm.Labels).To(HaveKeyWithValue("hypershift.openshift.io/managed-by", "karpenter"))
+			g.Expect(cm.Labels).To(HaveKeyWithValue("hypershift.openshift.io/infra-id", testInfraID))
+
+			subnetIDsJSON := cm.Data["subnetIDs"]
+			g.Expect(subnetIDsJSON).NotTo(BeEmpty())
+
+			var subnetIDs []string
+			g.Expect(json.Unmarshal([]byte(subnetIDsJSON), &subnetIDs)).To(Succeed())
+			g.Expect(subnetIDs).To(HaveLen(tc.expectedSubnetCount))
+			g.Expect(subnetIDs).To(ConsistOf(tc.expectedSubnets))
 		})
 	}
 }
