@@ -183,6 +183,27 @@ func adaptAWSPodIdentityWebhookKubeconfigSecret(cpContext component.WorkloadCont
 	return nil
 }
 
+func adaptAzureWorkloadIdentityWebhookKubeconfigSecret(cpContext component.WorkloadContext, secret *corev1.Secret) error {
+	csrSigner := manifests.CSRSignerCASecret(cpContext.HCP.Namespace)
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(csrSigner), csrSigner); err != nil {
+		return fmt.Errorf("failed to get cluster-signer-ca secret: %v", err)
+	}
+	rootCA := manifests.RootCASecret(cpContext.HCP.Namespace)
+	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(rootCA), rootCA); err != nil {
+		return fmt.Errorf("failed to get root ca cert secret: %w", err)
+	}
+	rootCACM := &corev1.ConfigMap{
+		Data: map[string]string{
+			certs.CASignerCertMapKey: string(rootCA.Data[certs.CASignerCertMapKey]),
+		},
+	}
+
+	if !cpContext.SkipCertificateSigning {
+		return pki.ReconcileServiceAccountKubeconfig(secret, csrSigner, rootCACM, cpContext.HCP, "openshift-authentication", "azure-workload-identity-webhook")
+	}
+	return nil
+}
+
 func generateKubeConfig(ca, cert *corev1.Secret, url string) ([]byte, error) {
 	caPEM := ca.Data[certs.CASignerCertMapKey]
 	crtBytes, keyBytes := cert.Data[corev1.TLSCertKey], cert.Data[corev1.TLSPrivateKeyKey]

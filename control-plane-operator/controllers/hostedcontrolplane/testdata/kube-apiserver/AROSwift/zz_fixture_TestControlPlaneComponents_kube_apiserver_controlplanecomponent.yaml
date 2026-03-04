@@ -33,6 +33,9 @@ status:
     name: managed-azure-kms
   - group: ""
     kind: Secret
+    name: azure-workload-identity-webhook-kubeconfig
+  - group: ""
+    kind: Secret
     name: bootstrap-kubeconfig
   - group: ""
     kind: Secret
