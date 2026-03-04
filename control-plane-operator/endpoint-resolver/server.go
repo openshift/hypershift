@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -82,6 +83,11 @@ func (h *resolverHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no ready pods found matching selector", http.StatusNotFound)
 		return
 	}
+
+	// Sort pods by name for deterministic ordering
+	sort.Slice(pods, func(i, j int) bool {
+		return pods[i].Name < pods[j].Name
+	})
 
 	buf, err := json.Marshal(ResolveResponse{Pods: pods})
 	if err != nil {
