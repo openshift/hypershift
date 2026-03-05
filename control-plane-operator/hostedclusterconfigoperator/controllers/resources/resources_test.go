@@ -2788,14 +2788,16 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 						Effect:   corev1.TaintEffectNoSchedule,
 					},
 					{
-						Key:      "node.kubernetes.io/unreachable",
-						Operator: corev1.TolerationOpExists,
-						Effect:   corev1.TaintEffectNoExecute,
+						Key:               "node.kubernetes.io/unreachable",
+						Operator:          corev1.TolerationOpExists,
+						Effect:            corev1.TaintEffectNoExecute,
+						TolerationSeconds: ptr.To[int64](120),
 					},
 					{
-						Key:      "node.kubernetes.io/not-ready",
-						Operator: corev1.TolerationOpExists,
-						Effect:   corev1.TaintEffectNoExecute,
+						Key:               "node.kubernetes.io/not-ready",
+						Operator:          corev1.TolerationOpExists,
+						Effect:            corev1.TaintEffectNoExecute,
+						TolerationSeconds: ptr.To[int64](120),
 					},
 				}
 				if len(dep.Spec.Template.Spec.Tolerations) != len(expectedTolerations) {
