@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"testing"
 	"time"
 
@@ -247,11 +248,7 @@ func (k KubeVirtAdvancedMultinetTest) TeardownInfra(t *testing.T) error {
 
 func (k KubeVirtAdvancedMultinetTest) configureDNAT(t *testing.T, dnsmasqPodAddress, machineAddress string) (string, error) {
 	dnsmasqPod := k.composeDNSMasqPod(t)
-	command := fmt.Sprintf(`
-apk update
-apk add iptables
-iptables -t nat -A PREROUTING -p tcp -d %[1]s -j DNAT --to-destination %[2]s
-`, dnsmasqPodAddress, machineAddress)
+	command := fmt.Sprintf(`iptables -t nat -A PREROUTING -p tcp -d %[1]s -j DNAT --to-destination %[2]s`, dnsmasqPodAddress, machineAddress)
 	infraClient, err := k.infra.DiscoverClient()
 	if err != nil {
 		return "", err
@@ -274,12 +271,21 @@ func (k KubeVirtAdvancedMultinetTest) firstMachineAddress() (string, error) {
 
 	internalAddress := ""
 	for _, address := range machineList.Items[0].Status.Addresses {
-		if address.Type == "InternalIP" { //TODO use constant
+		if address.Type != "InternalIP" {
+			continue
+		}
+		ip := net.ParseIP(address.Address)
+		if ip == nil {
+			continue
+		}
+		// Use only IPv4 addresses since iptables DNAT rules require IPv4.
+		if ip.To4() != nil {
 			internalAddress = address.Address
+			break
 		}
 	}
 	if internalAddress == "" {
-		return "", fmt.Errorf("missing internal address at kubevirt machine")
+		return "", fmt.Errorf("missing IPv4 internal address at kubevirt machine")
 	}
 	return internalAddress, nil
 }
