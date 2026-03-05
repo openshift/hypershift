@@ -7,7 +7,7 @@ package awsapi
 import (
 	"context"
 
-	s3v2 "github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // S3API defines the S3 operations allowed by IAM policies.
@@ -17,26 +17,26 @@ import (
 // Some IAM permissions map to multiple SDK methods (e.g., s3:ListBucket covers both
 // ListBuckets and ListObjectsV2). See delegatingclientgenerator for mapping rules.
 type S3API interface {
-	AbortMultipartUpload(ctx context.Context, input *s3v2.AbortMultipartUploadInput, optFns ...func(*s3v2.Options)) (*s3v2.AbortMultipartUploadOutput, error)
-	CreateBucket(ctx context.Context, input *s3v2.CreateBucketInput, optFns ...func(*s3v2.Options)) (*s3v2.CreateBucketOutput, error)
-	DeleteBucket(ctx context.Context, input *s3v2.DeleteBucketInput, optFns ...func(*s3v2.Options)) (*s3v2.DeleteBucketOutput, error)
-	DeleteObject(ctx context.Context, input *s3v2.DeleteObjectInput, optFns ...func(*s3v2.Options)) (*s3v2.DeleteObjectOutput, error)
-	DeleteObjects(ctx context.Context, input *s3v2.DeleteObjectsInput, optFns ...func(*s3v2.Options)) (*s3v2.DeleteObjectsOutput, error)
-	GetBucketEncryption(ctx context.Context, input *s3v2.GetBucketEncryptionInput, optFns ...func(*s3v2.Options)) (*s3v2.GetBucketEncryptionOutput, error)
-	GetBucketLifecycleConfiguration(ctx context.Context, input *s3v2.GetBucketLifecycleConfigurationInput, optFns ...func(*s3v2.Options)) (*s3v2.GetBucketLifecycleConfigurationOutput, error)
-	GetBucketLocation(ctx context.Context, input *s3v2.GetBucketLocationInput, optFns ...func(*s3v2.Options)) (*s3v2.GetBucketLocationOutput, error)
-	GetBucketTagging(ctx context.Context, input *s3v2.GetBucketTaggingInput, optFns ...func(*s3v2.Options)) (*s3v2.GetBucketTaggingOutput, error)
-	GetObject(ctx context.Context, input *s3v2.GetObjectInput, optFns ...func(*s3v2.Options)) (*s3v2.GetObjectOutput, error)
-	GetPublicAccessBlock(ctx context.Context, input *s3v2.GetPublicAccessBlockInput, optFns ...func(*s3v2.Options)) (*s3v2.GetPublicAccessBlockOutput, error)
-	ListBuckets(ctx context.Context, input *s3v2.ListBucketsInput, optFns ...func(*s3v2.Options)) (*s3v2.ListBucketsOutput, error)
-	ListMultipartUploads(ctx context.Context, input *s3v2.ListMultipartUploadsInput, optFns ...func(*s3v2.Options)) (*s3v2.ListMultipartUploadsOutput, error)
-	ListObjectsV2(ctx context.Context, input *s3v2.ListObjectsV2Input, optFns ...func(*s3v2.Options)) (*s3v2.ListObjectsV2Output, error)
-	PutBucketEncryption(ctx context.Context, input *s3v2.PutBucketEncryptionInput, optFns ...func(*s3v2.Options)) (*s3v2.PutBucketEncryptionOutput, error)
-	PutBucketLifecycleConfiguration(ctx context.Context, input *s3v2.PutBucketLifecycleConfigurationInput, optFns ...func(*s3v2.Options)) (*s3v2.PutBucketLifecycleConfigurationOutput, error)
-	PutBucketTagging(ctx context.Context, input *s3v2.PutBucketTaggingInput, optFns ...func(*s3v2.Options)) (*s3v2.PutBucketTaggingOutput, error)
-	PutObject(ctx context.Context, input *s3v2.PutObjectInput, optFns ...func(*s3v2.Options)) (*s3v2.PutObjectOutput, error)
-	PutPublicAccessBlock(ctx context.Context, input *s3v2.PutPublicAccessBlockInput, optFns ...func(*s3v2.Options)) (*s3v2.PutPublicAccessBlockOutput, error)
+	AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput, optFns ...func(*s3.Options)) (*s3.AbortMultipartUploadOutput, error)
+	CreateBucket(ctx context.Context, input *s3.CreateBucketInput, optFns ...func(*s3.Options)) (*s3.CreateBucketOutput, error)
+	DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput, optFns ...func(*s3.Options)) (*s3.DeleteBucketOutput, error)
+	DeleteObject(ctx context.Context, input *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
+	DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error)
+	GetBucketEncryption(ctx context.Context, input *s3.GetBucketEncryptionInput, optFns ...func(*s3.Options)) (*s3.GetBucketEncryptionOutput, error)
+	GetBucketLifecycleConfiguration(ctx context.Context, input *s3.GetBucketLifecycleConfigurationInput, optFns ...func(*s3.Options)) (*s3.GetBucketLifecycleConfigurationOutput, error)
+	GetBucketLocation(ctx context.Context, input *s3.GetBucketLocationInput, optFns ...func(*s3.Options)) (*s3.GetBucketLocationOutput, error)
+	GetBucketTagging(ctx context.Context, input *s3.GetBucketTaggingInput, optFns ...func(*s3.Options)) (*s3.GetBucketTaggingOutput, error)
+	GetObject(ctx context.Context, input *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	GetPublicAccessBlock(ctx context.Context, input *s3.GetPublicAccessBlockInput, optFns ...func(*s3.Options)) (*s3.GetPublicAccessBlockOutput, error)
+	ListBuckets(ctx context.Context, input *s3.ListBucketsInput, optFns ...func(*s3.Options)) (*s3.ListBucketsOutput, error)
+	ListMultipartUploads(ctx context.Context, input *s3.ListMultipartUploadsInput, optFns ...func(*s3.Options)) (*s3.ListMultipartUploadsOutput, error)
+	ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+	PutBucketEncryption(ctx context.Context, input *s3.PutBucketEncryptionInput, optFns ...func(*s3.Options)) (*s3.PutBucketEncryptionOutput, error)
+	PutBucketLifecycleConfiguration(ctx context.Context, input *s3.PutBucketLifecycleConfigurationInput, optFns ...func(*s3.Options)) (*s3.PutBucketLifecycleConfigurationOutput, error)
+	PutBucketTagging(ctx context.Context, input *s3.PutBucketTaggingInput, optFns ...func(*s3.Options)) (*s3.PutBucketTaggingOutput, error)
+	PutObject(ctx context.Context, input *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	PutPublicAccessBlock(ctx context.Context, input *s3.PutPublicAccessBlockInput, optFns ...func(*s3.Options)) (*s3.PutPublicAccessBlockOutput, error)
 }
 
-// Ensure *s3v2.Client implements S3API
-var _ S3API = (*s3v2.Client)(nil)
+// Ensure *s3.Client implements S3API
+var _ S3API = (*s3.Client)(nil)

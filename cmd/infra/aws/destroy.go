@@ -13,16 +13,14 @@ import (
 	"github.com/openshift/hypershift/support/awsapi"
 
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	elb "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
+	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/elb"
-	"github.com/aws/aws-sdk-go/service/elb/elbiface"
-	"github.com/aws/aws-sdk-go/service/elbv2"
-	"github.com/aws/aws-sdk-go/service/elbv2/elbv2iface"
 	"github.com/aws/aws-sdk-go/service/ram"
 	"github.com/aws/aws-sdk-go/service/ram/ramiface"
 
@@ -197,8 +195,8 @@ func (o *DestroyInfraOptions) Run(ctx context.Context) error {
 
 func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 	var ec2Client, vpcOwnerEC2Client ec2iface.EC2API
-	var elbClient elbiface.ELBAPI
-	var elbv2Client elbv2iface.ELBV2API
+	var elbClient awsapi.ELBAPI
+	var elbv2Client awsapi.ELBV2API
 	var clusterRoute53Client, vpcOwnerRoute53Client, listRoute53Client, recordsRoute53Client awsapi.ROUTE53API
 	var s3Client awsapi.S3API
 	var ramClient ramiface.RAMAPI
@@ -215,8 +213,12 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 		awsConfigv2 := awsutil.NewConfigV2()
 		ec2Client = ec2.New(awsSession, awsConfig)
 		vpcOwnerEC2Client = ec2Client
-		elbClient = elb.New(awsSession, awsConfig)
-		elbv2Client = elbv2.New(awsSession, awsConfig)
+		elbClient = elb.NewFromConfig(*awsSessionv2, func(o *elb.Options) {
+			o.Retryer = awsConfigv2()
+		})
+		elbv2Client = elbv2.NewFromConfig(*awsSessionv2, func(o *elbv2.Options) {
+			o.Retryer = awsConfigv2()
+		})
 		route53Configv2 := awsutil.NewRoute53ConfigV2()
 		clusterRoute53Client = route53v2.NewFromConfig(*awsSessionv2, func(o *route53v2.Options) {
 			o.Retryer = route53Configv2()
@@ -268,8 +270,8 @@ func (o *DestroyInfraOptions) DestroyInfra(ctx context.Context) error {
 			return fmt.Errorf("failed to create delegating client: %w", err)
 		}
 		ec2Client = delegatingClent.EC2API
-		elbClient = delegatingClent.ELBAPI
-		elbv2Client = delegatingClent.ELBV2API
+		elbClient = delegatingClent.ELBClient
+		elbv2Client = delegatingClent.ELBV2Client
 		listRoute53Client = delegatingClent.ROUTE53Client
 		recordsRoute53Client = delegatingClent.ROUTE53Client
 		s3Client = delegatingClent.S3Client
@@ -374,81 +376,73 @@ func emptyBucket(ctx context.Context, client awsapi.S3API, name string) error {
 	return nil
 }
 
-func (o *DestroyInfraOptions) DestroyV1ELBs(ctx context.Context, client elbiface.ELBAPI, vpcID *string) []error {
+func (o *DestroyInfraOptions) DestroyV1ELBs(ctx context.Context, client awsapi.ELBAPI, vpcID string) []error {
 	var errs []error
-	deleteLBs := func(out *elb.DescribeLoadBalancersOutput, _ bool) bool {
+	paginator := elb.NewDescribeLoadBalancersPaginator(client, &elb.DescribeLoadBalancersInput{})
+	for paginator.HasMorePages() {
+		out, err := paginator.NextPage(ctx)
+		if err != nil {
+			errs = append(errs, err)
+			break
+		}
 		for _, lb := range out.LoadBalancerDescriptions {
-			if *lb.VPCId != *vpcID {
+			if awsv2.ToString(lb.VPCId) != vpcID {
 				continue
 			}
-			_, err := client.DeleteLoadBalancerWithContext(ctx, &elb.DeleteLoadBalancerInput{
+			if _, err := client.DeleteLoadBalancer(ctx, &elb.DeleteLoadBalancerInput{
 				LoadBalancerName: lb.LoadBalancerName,
-			})
-			if err != nil {
+			}); err != nil {
 				errs = append(errs, err)
 			} else {
-				o.Log.Info("Deleted ELB", "name", lb.LoadBalancerName)
+				o.Log.Info("Deleted ELB", "name", awsv2.ToString(lb.LoadBalancerName))
 			}
 		}
-		return true
-	}
-	err := client.DescribeLoadBalancersPagesWithContext(ctx,
-		&elb.DescribeLoadBalancersInput{},
-		deleteLBs)
-	if err != nil {
-		errs = append(errs, err)
 	}
 	return errs
 }
 
-func (o *DestroyInfraOptions) DestroyV2ELBs(ctx context.Context, client elbv2iface.ELBV2API, vpcID *string) []error {
+func (o *DestroyInfraOptions) DestroyV2ELBs(ctx context.Context, client awsapi.ELBV2API, vpcID string) []error {
 	var errs []error
-	deleteLBs := func(out *elbv2.DescribeLoadBalancersOutput, _ bool) bool {
+	lbPaginator := elbv2.NewDescribeLoadBalancersPaginator(client, &elbv2.DescribeLoadBalancersInput{})
+	for lbPaginator.HasMorePages() {
+		out, err := lbPaginator.NextPage(ctx)
+		if err != nil {
+			errs = append(errs, err)
+			break
+		}
 		for _, lb := range out.LoadBalancers {
-			if *lb.VpcId != *vpcID {
+			if awsv2.ToString(lb.VpcId) != vpcID {
 				continue
 			}
-			_, err := client.DeleteLoadBalancerWithContext(ctx, &elbv2.DeleteLoadBalancerInput{
+			if _, err := client.DeleteLoadBalancer(ctx, &elbv2.DeleteLoadBalancerInput{
 				LoadBalancerArn: lb.LoadBalancerArn,
-			})
-			if err != nil {
+			}); err != nil {
 				errs = append(errs, err)
 			} else {
-				o.Log.Info("Deleted ELB", "name", lb.LoadBalancerName)
+				o.Log.Info("Deleted ELBV2 load balancer", "name", awsv2.ToString(lb.LoadBalancerName))
 			}
 		}
-		return true
 	}
-	err := client.DescribeLoadBalancersPagesWithContext(ctx,
-		&elbv2.DescribeLoadBalancersInput{},
-		deleteLBs)
-	if err != nil {
-		errs = append(errs, err)
-	}
-	deleteTargetGroups := func(out *elbv2.DescribeTargetGroupsOutput, _ bool) bool {
+	tgPaginator := elbv2.NewDescribeTargetGroupsPaginator(client, &elbv2.DescribeTargetGroupsInput{})
+	for tgPaginator.HasMorePages() {
+		out, err := tgPaginator.NextPage(ctx)
+		if err != nil {
+			errs = append(errs, err)
+			break
+		}
 		for _, tg := range out.TargetGroups {
-			if aws.StringValue(tg.VpcId) != aws.StringValue(vpcID) {
+			if awsv2.ToString(tg.VpcId) != vpcID {
 				continue
 			}
-			_, err := client.DeleteTargetGroupWithContext(ctx, &elbv2.DeleteTargetGroupInput{
+			if _, err := client.DeleteTargetGroup(ctx, &elbv2.DeleteTargetGroupInput{
 				TargetGroupArn: tg.TargetGroupArn,
-			})
-			if err != nil {
+			}); err != nil {
 				errs = append(errs, err)
 			} else {
-				o.Log.Info("Deleted TargetGroup", "name", aws.StringValue(tg.TargetGroupName))
+				o.Log.Info("Deleted TargetGroup", "name", awsv2.ToString(tg.TargetGroupName))
 			}
 		}
-		return true
 	}
-	err = client.DescribeTargetGroupsPagesWithContext(ctx,
-		&elbv2.DescribeTargetGroupsInput{},
-		deleteTargetGroups,
-	)
-	if err != nil {
-		errs = append(errs, err)
-	}
-
 	return errs
 }
 
@@ -782,8 +776,8 @@ func (o *DestroyInfraOptions) DestroySubnets(ctx context.Context, client ec2ifac
 func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context,
 	ec2client ec2iface.EC2API,
 	vpcOwnerEC2Client ec2iface.EC2API,
-	elbclient elbiface.ELBAPI,
-	elbv2client elbv2iface.ELBV2API,
+	elbclient awsapi.ELBAPI,
+	elbv2client awsapi.ELBV2API,
 	route53listClient awsapi.ROUTE53API,
 	route53client awsapi.ROUTE53API,
 	ramClient ramiface.RAMAPI) []error {
@@ -793,8 +787,8 @@ func (o *DestroyInfraOptions) DestroyVPCs(ctx context.Context,
 			var childErrs []error
 
 			// First, destroy resources that exist in cluster account (in the case vpc is shared)
-			childErrs = append(childErrs, o.DestroyV1ELBs(ctx, elbclient, vpc.VpcId)...)
-			childErrs = append(childErrs, o.DestroyV2ELBs(ctx, elbv2client, vpc.VpcId)...)
+			childErrs = append(childErrs, o.DestroyV1ELBs(ctx, elbclient, aws.StringValue(vpc.VpcId))...)
+			childErrs = append(childErrs, o.DestroyV2ELBs(ctx, elbv2client, aws.StringValue(vpc.VpcId))...)
 			childErrs = append(childErrs, o.DestroySecurityGroups(ctx, ec2client, vpc.VpcId)...)
 
 			if ramClient != nil {

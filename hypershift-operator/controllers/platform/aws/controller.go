@@ -11,19 +11,21 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
+	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	elbv2 "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/arn"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/elbv2"
-	"github.com/aws/aws-sdk-go/service/elbv2/elbv2iface"
+	"github.com/aws/smithy-go"
 
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -57,7 +59,7 @@ type AWSEndpointServiceReconciler struct {
 	client.Client
 	upsert.CreateOrUpdateProvider
 	ec2Client   ec2iface.EC2API
-	elbv2Client elbv2iface.ELBV2API
+	elbv2Client awsapi.ELBV2API
 }
 
 func awsEndpointServicesByName(ns string) []reconcile.Request {
@@ -109,8 +111,12 @@ func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
 	awsSession := awsutil.NewSession("hypershift-operator", "", "", "", "")
 	awsConfig := aws.NewConfig()
+	awsSessionv2 := awsutil.NewSessionV2(context.Background(), "hypershift-operator", "", "", "", "")
+	awsConfigv2 := awsutil.NewConfigV2()
 	r.ec2Client = ec2.New(awsSession, awsConfig)
-	r.elbv2Client = elbv2.New(awsSession, awsConfig)
+	r.elbv2Client = elbv2.NewFromConfig(*awsSessionv2, func(o *elbv2.Options) {
+		o.Retryer = awsConfigv2()
+	})
 
 	return nil
 }
@@ -356,7 +362,7 @@ func listSubnetIDs(ctx context.Context, c client.Client, clusterName, nodePoolNa
 	return subnetIDs, nil
 }
 
-func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointServiceStatus(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hostedCluster *hyperv1.HostedCluster, ec2Client ec2iface.EC2API, elbv2Client elbv2iface.ELBV2API) error {
+func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointServiceStatus(ctx context.Context, awsEndpointService *hyperv1.AWSEndpointService, hostedCluster *hyperv1.HostedCluster, ec2Client ec2iface.EC2API, elbv2Client awsapi.ELBV2API) error {
 	log := ctrl.LoggerFrom(ctx)
 
 	// If a previous awsendpointservice that points to an ingress controller exists, remove it
@@ -420,12 +426,13 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointServiceStatus(ctx con
 	} else {
 		// determine the LB ARN
 		lbName := awsEndpointService.Spec.NetworkLoadBalancerName
-		output, err := elbv2Client.DescribeLoadBalancersWithContext(ctx, &elbv2.DescribeLoadBalancersInput{
-			Names: []*string{aws.String(lbName)},
+		output, err := elbv2Client.DescribeLoadBalancers(ctx, &elbv2.DescribeLoadBalancersInput{
+			Names: []string{lbName},
 		})
 		if err != nil {
-			if awsErr, ok := err.(awserr.Error); ok {
-				return errors.New(awsErr.Code())
+			var smithyErr smithy.APIError
+			if errors.As(err, &smithyErr) {
+				return errors.New(smithyErr.ErrorCode())
 			}
 			return err
 		}
@@ -437,7 +444,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointServiceStatus(ctx con
 		if lbARN == nil {
 			return fmt.Errorf("load balancer ARN is nil")
 		}
-		if lb.State == nil || *lb.State.Code != elbv2.LoadBalancerStateEnumActive {
+		if lb.State == nil || lb.State.Code != elbv2types.LoadBalancerStateEnumActive {
 			return fmt.Errorf("load balancer %s is not yet active", *lbARN)
 		}
 

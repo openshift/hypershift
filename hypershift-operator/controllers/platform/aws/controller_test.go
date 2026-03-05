@@ -6,15 +6,16 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/awsapi"
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/elbv2"
-	"github.com/aws/aws-sdk-go/service/elbv2/elbv2iface"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -22,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"github.com/go-logr/logr/testr"
+	"go.uber.org/mock/gomock"
 )
 
 type fakeEC2Client struct {
@@ -54,15 +56,6 @@ func (f *fakeEC2Client) DescribeVpcEndpointConnectionsWithContext(ctx aws.Contex
 
 func (f *fakeEC2Client) RejectVpcEndpointConnectionsWithContext(ctx aws.Context, in *ec2.RejectVpcEndpointConnectionsInput, o ...request.Option) (*ec2.RejectVpcEndpointConnectionsOutput, error) {
 	return f.rejectOut, nil
-}
-
-type fakeElbv2Client struct {
-	elbv2iface.ELBV2API
-	out *elbv2.DescribeLoadBalancersOutput
-}
-
-func (f *fakeElbv2Client) DescribeLoadBalancersWithContext(aws.Context, *elbv2.DescribeLoadBalancersInput, ...request.Option) (*elbv2.DescribeLoadBalancersOutput, error) {
-	return f.out, nil
 }
 
 func (f *fakeEC2Client) DescribeVpcEndpointServicePermissions(in *ec2.DescribeVpcEndpointServicePermissionsInput) (*ec2.DescribeVpcEndpointServicePermissionsOutput, error) {
@@ -103,10 +96,11 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			elbClient := &fakeElbv2Client{out: &elbv2.DescribeLoadBalancersOutput{LoadBalancers: []*elbv2.LoadBalancer{{
+			elbClient := awsapi.NewMockELBV2API(gomock.NewController(t))
+			elbClient.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{LoadBalancers: []elbv2types.LoadBalancer{{
 				LoadBalancerArn: aws.String("lb-arn"),
-				State:           &elbv2.LoadBalancerState{Code: aws.String(elbv2.LoadBalancerStateEnumActive)},
-			}}}}
+				State:           &elbv2types.LoadBalancerState{Code: elbv2types.LoadBalancerStateEnumActive},
+			}}}, nil)
 
 			infra := &configv1.Infrastructure{
 				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
