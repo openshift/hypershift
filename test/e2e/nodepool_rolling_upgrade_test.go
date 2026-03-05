@@ -18,6 +18,7 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/cluster-api/util/labels/format"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -141,7 +142,7 @@ func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 	currentMachineSetName := currentMachineSetForDeployment(t, k.ctx, k.mgmtClient, controlPlaneNamespace, nodePool.Name)
 	machineLabels := crclient.MatchingLabels{
 		capiv1.MachineDeploymentNameLabel: nodePool.Name,
-		capiv1.MachineSetNameLabel:        currentMachineSetName,
+		capiv1.MachineSetNameLabel:        format.MustFormatValue(currentMachineSetName),
 	}
 
 	switch globalOpts.Platform {
