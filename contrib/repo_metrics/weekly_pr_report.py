@@ -708,6 +708,7 @@ class PRReportGenerator:
             tasks = [
                 self.fetch_prs_graphql('openshift', 'hypershift'),
                 self.fetch_prs_graphql('openshift-eng', 'ai-helpers'),
+                self.fetch_prs_graphql('openshift', 'enhancements'),
             ]
             results = await asyncio.gather(*tasks)
         else:
@@ -715,11 +716,13 @@ class PRReportGenerator:
             results = [
                 await self.fetch_prs_graphql('openshift', 'hypershift'),
                 await self.fetch_prs_graphql('openshift-eng', 'ai-helpers'),
+                await self.fetch_prs_graphql('openshift', 'enhancements'),
             ]
 
         # Combine and filter
         hypershift_prs = results[0]
         ai_helpers_prs = results[1] if len(results) > 1 else []
+        enhancements_prs = results[2] if len(results) > 2 else []
 
         # Filter ai-helpers PRs to only HyperShift contributors
         filtered_ai_helpers = [
@@ -727,12 +730,18 @@ class PRReportGenerator:
             if pr['author'] in self.hypershift_authors
         ]
 
+        # Filter enhancements PRs to only HyperShift contributors
+        filtered_enhancements = [
+            pr for pr in enhancements_prs
+            if pr['author'] in self.hypershift_authors
+        ]
+
         # Fetch openshift/release PRs filtered by HyperShift-related paths
         print("Fetching openshift/release PRs (filtering by HyperShift paths)...")
         release_prs = await self.fetch_release_prs_graphql()
 
-        self.prs = hypershift_prs + filtered_ai_helpers + release_prs
-        print(f"Found {len(self.prs)} PRs ({len(hypershift_prs)} hypershift, {len(filtered_ai_helpers)} ai-helpers, {len(release_prs)} release)")
+        self.prs = hypershift_prs + filtered_ai_helpers + filtered_enhancements + release_prs
+        print(f"Found {len(self.prs)} PRs ({len(hypershift_prs)} hypershift, {len(filtered_ai_helpers)} ai-helpers, {len(filtered_enhancements)} enhancements, {len(release_prs)} release)")
 
     async def load_jira_hierarchy(self):
         """Load Jira hierarchy - either via direct API or from cache.
@@ -787,9 +796,10 @@ class PRReportGenerator:
             # Count by repo
             hypershift_count = len([pr for pr in self.prs if pr['repo'] == 'openshift/hypershift'])
             ai_helpers_count = len([pr for pr in self.prs if pr['repo'] == 'openshift-eng/ai-helpers'])
+            enhancements_count = len([pr for pr in self.prs if pr['repo'] == 'openshift/enhancements'])
             release_count = len([pr for pr in self.prs if pr['repo'] == 'openshift/release'])
 
-            f.write(f"**Total PRs:** {len(self.prs)} ({hypershift_count} hypershift, {ai_helpers_count} ai-helpers, {release_count} release)\n\n")
+            f.write(f"**Total PRs:** {len(self.prs)} ({hypershift_count} hypershift, {ai_helpers_count} ai-helpers, {enhancements_count} enhancements, {release_count} release)\n\n")
             f.write("---\n\n")
 
             # Summary Statistics
@@ -797,6 +807,7 @@ class PRReportGenerator:
             f.write("### Repository Breakdown\n")
             f.write(f"- **openshift/hypershift:** {hypershift_count} PRs\n")
             f.write(f"- **openshift-eng/ai-helpers:** {ai_helpers_count} PRs\n")
+            f.write(f"- **openshift/enhancements:** {enhancements_count} PRs\n")
             f.write(f"- **openshift/release:** {release_count} PRs\n\n")
 
             # Group by OCPSTRAT
@@ -1116,6 +1127,7 @@ class PRReportGenerator:
                 'total': len(compact_prs),
                 'hypershift': len([p for p in compact_prs if p['repo'] == 'hypershift']),
                 'ai_helpers': len([p for p in compact_prs if p['repo'] == 'ai-helpers']),
+                'enhancements': len([p for p in compact_prs if p['repo'] == 'enhancements']),
                 'release': len([p for p in compact_prs if p['repo'] == 'release']),
                 'authors': len(set(p['author'] for p in compact_prs)),
                 'avgMergeHours': avg_merge,
@@ -1192,6 +1204,10 @@ class PRReportGenerator:
         if pr['repo'] == 'openshift/release':
             return 'ci'
 
+        # Enhancement proposals
+        if pr['repo'] == 'openshift/enhancements':
+            return 'enhancement'
+
         return '-'
 
     def _get_pr_jira_priority(self, pr: Dict) -> str:
@@ -1217,6 +1233,7 @@ class PRReportGenerator:
         """Score PRs by importance for deep analysis selection.
 
         Scoring criteria (higher = more important):
+        - Enhancement proposals (openshift/enhancements): +200 points (always selected)
         - Jira priority: Critical=100, Blocker=100, Major=50, Normal=20, Minor=10
         - SDK/API/migration work: +30 points
         - Feature work (feat in title): +15 points
@@ -1280,6 +1297,11 @@ class PRReportGenerator:
             # Having any Jira ticket is better than none
             if pr.get('jiraTickets'):
                 score += 5
+
+            # Enhancement proposals are always high-priority for deep analysis
+            if pr['repo'] == 'openshift/enhancements':
+                score += 200
+                reasons.append('enhancement')
 
             # For release repo, prefer non-bot PRs (manual CI changes)
             if pr['repo'] == 'openshift/release':

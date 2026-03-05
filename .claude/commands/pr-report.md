@@ -5,7 +5,7 @@ argument-hint: "[--start YYYY-MM-DD] [--end YYYY-MM-DD] [--deep] [--progress-rep
 
 # PR Report Generator
 
-Generate comprehensive PR reports for openshift/hypershift, openshift-eng/ai-helpers, and openshift/release repositories.
+Generate comprehensive PR reports for openshift/hypershift, openshift-eng/ai-helpers, openshift/enhancements, and openshift/release repositories.
 
 ## Usage
 
@@ -30,9 +30,9 @@ Generate comprehensive PR reports for openshift/hypershift, openshift-eng/ai-hel
 This command generates **two reports** (with two optional additions):
 
 ### 1. Fast Data Report (automated)
-- Fetches merged PRs from all three repositories
+- Fetches merged PRs from all repositories
 - Filters openshift/release PRs to only HyperShift-related paths
-- Filters openshift-eng/ai-helpers PRs to HyperShift contributors
+- Filters openshift-eng/ai-helpers and openshift/enhancements PRs to HyperShift contributors
 - Queries Jira for ticket hierarchy (Epic, OCPSTRAT linkage)
 - Generates metrics (timing, reviewers, merge patterns)
 
@@ -262,6 +262,7 @@ Present the user with PR selection options using AskUserQuestion:
 
    | Criterion | Points | Description |
    |-----------|--------|-------------|
+   | Enhancement proposal | +200 | openshift/enhancements PRs (always selected) |
    | Jira Priority: Critical/Blocker | +100 | Highest priority tickets |
    | Jira Priority: Major | +50 | Major priority tickets |
    | Jira Priority: Normal | +20 | Normal priority tickets |
