@@ -279,8 +279,10 @@ func (k KubeVirtAdvancedMultinetTest) firstMachineAddress() (string, error) {
 			continue
 		}
 		// Use only IPv4 addresses since iptables DNAT rules require IPv4.
-		if ip.To4() != nil {
-			internalAddress = address.Address
+		// Use v4.String() to ensure canonical dotted-decimal form even if
+		// the address was stored as IPv4-mapped IPv6 (::ffff:x.x.x.x).
+		if v4 := ip.To4(); v4 != nil {
+			internalAddress = v4.String()
 			break
 		}
 	}
