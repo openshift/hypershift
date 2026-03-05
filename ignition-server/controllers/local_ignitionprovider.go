@@ -650,7 +650,7 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 		if err := os.WriteFile(filepath.Join(mcsBaseDir, "tls.crt"), certPEM, 0644); err != nil {
 			return nil, fmt.Errorf("failed to write mcs cert: %w", err)
 		}
-		if err := os.WriteFile(filepath.Join(mcsBaseDir, "tls.key"), keyPEM, 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(mcsBaseDir, "tls.key"), keyPEM, 0600); err != nil {
 			return nil, fmt.Errorf("failed to write mcs key: %w", err)
 		}
 
