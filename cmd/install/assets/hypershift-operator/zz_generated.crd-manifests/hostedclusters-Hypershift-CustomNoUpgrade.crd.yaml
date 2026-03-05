@@ -113,12 +113,13 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               autoNode:
-                description: autoNode specifies the configuration for the autoNode
-                  feature.
+                description: |-
+                  autoNode specifies the configuration for automatic node provisioning and lifecycle management.
+                  When set, the provisioner(e.g. Karpenter) will be used to provision nodes for targeted workloads.
                 properties:
                   provisionerConfig:
-                    description: provisionerConfig is the implementation used for
-                      Node auto provisioning.
+                    description: provisionerConfig specifies the provisioner used
+                      for automatic node management.
                     properties:
                       karpenter:
                         description: karpenter specifies the configuration for the
@@ -129,30 +130,121 @@ spec:
                               for Karpenter.
                             properties:
                               roleARN:
-                                description: roleARN specifies the ARN of the Karpenter
-                                  provisioner.
-                                maxLength: 255
+                                description: "roleARN specifies the ARN of the IAM
+                                  role that Karpenter assumes to provision\nand manage
+                                  EC2 instances in the hosted cluster's AWS account.\n\nThe
+                                  referenced role must have a trust relationship that
+                                  allows it to be assumed\nby the karpenter service
+                                  account in the hosted cluster via OIDC.\nExample:\n{\n\t\"Version\":
+                                  \"2012-10-17\",\n\t\"Statement\": [\n\t\t{\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Principal\": {\n\t\t\t\t\"Federated\":
+                                  \"<oidc-provider-arn>\"\n\t\t\t},\n\t\t\t\"Action\":
+                                  \"sts:AssumeRoleWithWebIdentity\",\n\t\t\t\"Condition\":
+                                  {\n\t\t\t\t\"StringEquals\": {\n\t\t\t\t\t\"<oidc-provider-name>:sub\":
+                                  \"system:serviceaccount:kube-system:karpenter\"\n\t\t\t\t}\n\t\t\t}\n\t\t}\n\t]\n}\n\nThe
+                                  following is an example of the policy document for
+                                  this role.\n\n{\n\t\"Version\": \"2012-10-17\",\n\t\"Statement\":
+                                  [\n\t\t{\n\t\t\t\"Sid\": \"AllowScopedEC2InstanceAccessActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": [\n\t\t\t\t\"arn:*:ec2:*::image/*\",\n\t\t\t\t\"arn:*:ec2:*::snapshot/*\",\n\t\t\t\t\"arn:*:ec2:*:*:security-group/*\",\n\t\t\t\t\"arn:*:ec2:*:*:subnet/*\"\n\t\t\t],\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"ec2:RunInstances\",\n\t\t\t\t\"ec2:CreateFleet\"\n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedEC2LaunchTemplateAccessActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"arn:*:ec2:*:*:launch-template/*\",\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"ec2:RunInstances\",\n\t\t\t\t\"ec2:CreateFleet\"\n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedEC2InstanceActionsWithTags\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": [\n\t\t\t\t\"arn:*:ec2:*:*:fleet/*\",\n\t\t\t\t\"arn:*:ec2:*:*:instance/*\",\n\t\t\t\t\"arn:*:ec2:*:*:volume/*\",\n\t\t\t\t\"arn:*:ec2:*:*:network-interface/*\",\n\t\t\t\t\"arn:*:ec2:*:*:launch-template/*\",\n\t\t\t\t\"arn:*:ec2:*:*:spot-instances-request/*\"\n\t\t\t],\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"ec2:RunInstances\",\n\t\t\t\t\"ec2:CreateFleet\",\n\t\t\t\t\"ec2:CreateLaunchTemplate\"\n\t\t\t],\n\t\t\t\"Condition\":
+                                  {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:RequestTag/karpenter.sh/nodepool\":
+                                  \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedResourceCreationTagging\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": [\n\t\t\t\t\"arn:*:ec2:*:*:fleet/*\",\n\t\t\t\t\"arn:*:ec2:*:*:instance/*\",\n\t\t\t\t\"arn:*:ec2:*:*:volume/*\",\n\t\t\t\t\"arn:*:ec2:*:*:network-interface/*\",\n\t\t\t\t\"arn:*:ec2:*:*:launch-template/*\",\n\t\t\t\t\"arn:*:ec2:*:*:spot-instances-request/*\"\n\t\t\t],\n\t\t\t\"Action\":
+                                  \"ec2:CreateTags\",\n\t\t\t\"Condition\": {\n\t\t\t\t\"StringEquals\":
+                                  {\n\t\t\t\t\t\"ec2:CreateAction\": [\n\t\t\t\t\t\t\"RunInstances\",\n\t\t\t\t\t\t\"CreateFleet\",\n\t\t\t\t\t\t\"CreateLaunchTemplate\"\n\t\t\t\t\t]\n\t\t\t\t},\n\t\t\t\t\"StringLike\":
+                                  {\n\t\t\t\t\t\"aws:RequestTag/karpenter.sh/nodepool\":
+                                  \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedResourceTagging\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"arn:*:ec2:*:*:instance/*\",\n\t\t\t\"Action\":
+                                  \"ec2:CreateTags\",\n\t\t\t\"Condition\": {\n\t\t\t\t\"StringLike\":
+                                  {\n\t\t\t\t\t\"aws:ResourceTag/karpenter.sh/nodepool\":
+                                  \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedDeletion\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\":
+                                  [\n\t\t\t\t\"arn:*:ec2:*:*:instance/*\",\n\t\t\t\t\"arn:*:ec2:*:*:launch-template/*\"\n\t\t\t],\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"ec2:TerminateInstances\",\n\t\t\t\t\"ec2:DeleteLaunchTemplate\"\n\t\t\t],\n\t\t\t\"Condition\":
+                                  {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:ResourceTag/karpenter.sh/nodepool\":
+                                  \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowRegionalReadActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"*\",\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"ec2:DescribeImages\",\n\t\t\t\t\"ec2:DescribeInstances\",\n\t\t\t\t\"ec2:DescribeInstanceTypeOfferings\",\n\t\t\t\t\"ec2:DescribeInstanceTypes\",\n\t\t\t\t\"ec2:DescribeLaunchTemplates\",\n\t\t\t\t\"ec2:DescribeSecurityGroups\",\n\t\t\t\t\"ec2:DescribeSpotPriceHistory\",\n\t\t\t\t\"ec2:DescribeSubnets\"\n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowSSMReadActions\",\n\t\t\t\"Effect\": \"Allow\",\n\t\t\t\"Resource\":
+                                  \"arn:*:ssm:*::parameter/aws/service/*\",\n\t\t\t\"Action\":
+                                  \"ssm:GetParameter\"\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowPricingReadActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"*\",\n\t\t\t\"Action\":
+                                  \"pricing:GetProducts\"\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowInterruptionQueueActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"*\",\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"sqs:DeleteMessage\",\n\t\t\t\t\"sqs:GetQueueUrl\",\n\t\t\t\t\"sqs:ReceiveMessage\"\n\t\t\t]\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowPassingInstanceRole\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"arn:*:iam::*:role/*\",\n\t\t\t\"Action\":
+                                  \"iam:PassRole\",\n\t\t\t\"Condition\": {\n\t\t\t\t\"StringEquals\":
+                                  {\n\t\t\t\t\t\"iam:PassedToService\": [\n\t\t\t\t\t\t\"ec2.amazonaws.com\",\n\t\t\t\t\t\t\"ec2.amazonaws.com.cn\"\n\t\t\t\t\t]\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedInstanceProfileCreationActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"arn:*:iam::*:instance-profile/*\",\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"iam:CreateInstanceProfile\"\n\t\t\t],\n\t\t\t\"Condition\":
+                                  {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:RequestTag/karpenter.k8s.aws/ec2nodeclass\":
+                                  \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedInstanceProfileTagActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"arn:*:iam::*:instance-profile/*\",\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"iam:TagInstanceProfile\"\n\t\t\t],\n\t\t\t\"Condition\":
+                                  {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass\":
+                                  \"*\",\n\t\t\t\t\t\"aws:RequestTag/karpenter.k8s.aws/ec2nodeclass\":
+                                  \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowScopedInstanceProfileActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"arn:*:iam::*:instance-profile/*\",\n\t\t\t\"Action\":
+                                  [\n\t\t\t\t\"iam:AddRoleToInstanceProfile\",\n\t\t\t\t\"iam:RemoveRoleFromInstanceProfile\",\n\t\t\t\t\"iam:DeleteInstanceProfile\"\n\t\t\t],\n\t\t\t\"Condition\":
+                                  {\n\t\t\t\t\"StringLike\": {\n\t\t\t\t\t\"aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass\":
+                                  \"*\"\n\t\t\t\t}\n\t\t\t}\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowInstanceProfileReadActions\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"arn:*:iam::*:instance-profile/*\",\n\t\t\t\"Action\":
+                                  \"iam:GetInstanceProfile\"\n\t\t},\n\t\t{\n\t\t\t\"Sid\":
+                                  \"AllowUnscopedInstanceProfileListAction\",\n\t\t\t\"Effect\":
+                                  \"Allow\",\n\t\t\t\"Resource\": \"*\",\n\t\t\t\"Action\":
+                                  \"iam:ListInstanceProfiles\"\n\t\t}\n\t]\n}"
+                                maxLength: 2048
                                 type: string
+                                x-kubernetes-validations:
+                                - message: roleARN must be a valid AWS IAM role ARN
+                                    (e.g. arn:aws:iam::123456789012:role/MyRole)
+                                  rule: self.matches('^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:role/.+$')
                             required:
                             - roleARN
                             type: object
                           platform:
-                            description: platform specifies the platform-specific
-                              configuration for Karpenter.
+                            description: platform specifies the infrastructure platform
+                              that Karpenter should provision nodes on.
+                            enum:
+                            - AWS
                             maxLength: 100
                             type: string
                         required:
                         - platform
                         type: object
+                        x-kubernetes-validations:
+                        - message: aws is required when platform is AWS, and forbidden
+                            otherwise
+                          rule: 'self.platform == ''AWS'' ? has(self.aws) : !has(self.aws)'
                       name:
                         description: name specifies the name of the provisioner to
-                          use.
+                          use for automatic node management.
                         enum:
                         - Karpenter
                         type: string
                     required:
                     - name
                     type: object
+                    x-kubernetes-validations:
+                    - message: karpenter is required when name is Karpenter, and forbidden
+                        otherwise
+                      rule: 'self.name == ''Karpenter'' ? has(self.karpenter) : !has(self.karpenter)'
                 required:
                 - provisionerConfig
                 type: object
