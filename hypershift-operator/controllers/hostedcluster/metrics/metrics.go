@@ -43,7 +43,7 @@ const (
 
 	// Per hosted cluster metrics - name & help
 
-	WaitingInitialAvailabilityDurationMetricName = "hypershift_cluster_waiting_initial_avaibility_duration_seconds"
+	WaitingInitialAvailabilityDurationMetricName = "hypershift_cluster_waiting_initial_availability_duration_seconds"
 	waitingInitialAvailabilityDurationMetricHelp = "Time in seconds it is taking to get the HostedClusterAvailable condition becoming true since the creation of the HostedCluster. " +
 		"Undefined if the condition has already become true once or if the cluster no longer exists."
 
