@@ -193,6 +193,7 @@ type ConfigurableClusterOptions struct {
 	GCPControlPlaneServiceAccount    string
 	GCPCloudControllerServiceAccount string
 	GCPStorageServiceAccount         string
+	GCPImageRegistryServiceAccount   string
 	GCPServiceAccountSigningKeyPath  string
 	GCPEndpointAccess                string
 	GCPIssuerURL                     string
@@ -453,6 +454,7 @@ func (o *Options) DefaultGCPOptions() hypershiftgcp.RawCreateOptions {
 		ControlPlaneServiceAccount:    o.ConfigurableClusterOptions.GCPControlPlaneServiceAccount,
 		CloudControllerServiceAccount: o.ConfigurableClusterOptions.GCPCloudControllerServiceAccount,
 		StorageServiceAccount:         o.ConfigurableClusterOptions.GCPStorageServiceAccount,
+		ImageRegistryServiceAccount:   o.ConfigurableClusterOptions.GCPImageRegistryServiceAccount,
 		ServiceAccountSigningKeyPath:  o.ConfigurableClusterOptions.GCPServiceAccountSigningKeyPath,
 		EndpointAccess:                o.ConfigurableClusterOptions.GCPEndpointAccess,
 		IssuerURL:                     o.ConfigurableClusterOptions.GCPIssuerURL,

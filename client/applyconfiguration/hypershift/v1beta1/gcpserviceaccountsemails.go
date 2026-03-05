@@ -24,6 +24,7 @@ type GCPServiceAccountsEmailsApplyConfiguration struct {
 	ControlPlane    *string `json:"controlPlane,omitempty"`
 	CloudController *string `json:"cloudController,omitempty"`
 	Storage         *string `json:"storage,omitempty"`
+	ImageRegistry   *string `json:"imageRegistry,omitempty"`
 }
 
 // GCPServiceAccountsEmailsApplyConfiguration constructs a declarative configuration of the GCPServiceAccountsEmails type for use with
@@ -61,5 +62,13 @@ func (b *GCPServiceAccountsEmailsApplyConfiguration) WithCloudController(value s
 // If called multiple times, the Storage field is set to the value of the last call.
 func (b *GCPServiceAccountsEmailsApplyConfiguration) WithStorage(value string) *GCPServiceAccountsEmailsApplyConfiguration {
 	b.Storage = &value
+	return b
+}
+
+// WithImageRegistry sets the ImageRegistry field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ImageRegistry field is set to the value of the last call.
+func (b *GCPServiceAccountsEmailsApplyConfiguration) WithImageRegistry(value string) *GCPServiceAccountsEmailsApplyConfiguration {
+	b.ImageRegistry = &value
 	return b
 }

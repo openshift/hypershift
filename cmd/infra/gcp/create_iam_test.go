@@ -167,6 +167,7 @@ func TestOutput(t *testing.T) {
 					"ctrlplane-op":     "my-cluster-infra-ctrlplane-op@my-gcp-project.iam.gserviceaccount.com",
 					"cloud-controller": "my-cluster-infra-cloud-controller@my-gcp-project.iam.gserviceaccount.com",
 					"gcp-pd-csi":       "my-cluster-infra-gcp-pd-csi@my-gcp-project.iam.gserviceaccount.com",
+					"image-registry":   "my-cluster-infra-image-registry@my-gcp-project.iam.gserviceaccount.com",
 				},
 			},
 			validateJSON: true,

@@ -57,6 +57,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 					ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
 					CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 					Storage:         "storage@my-project-123.iam.gserviceaccount.com",
+					ImageRegistry:   "imageregistry@my-project-123.iam.gserviceaccount.com",
 				},
 			},
 		}
