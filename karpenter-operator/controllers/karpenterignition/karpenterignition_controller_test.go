@@ -100,7 +100,7 @@ func TestReconcile(t *testing.T) {
 				Name: "pull-secret",
 			},
 			AutoNode: &hyperv1.AutoNode{
-				Provisioner: &hyperv1.ProvisionerConfig{
+				Provisioner: hyperv1.ProvisionerConfig{
 					Name: hyperv1.ProvisionerKarpenter,
 					Karpenter: &hyperv1.KarpenterConfig{
 						Platform: hyperv1.AWSPlatform,
@@ -415,7 +415,7 @@ func TestReconcileVersionResolution(t *testing.T) {
 					Name: "pull-secret",
 				},
 				AutoNode: &hyperv1.AutoNode{
-					Provisioner: &hyperv1.ProvisionerConfig{
+					Provisioner: hyperv1.ProvisionerConfig{
 						Name: hyperv1.ProvisionerKarpenter,
 						Karpenter: &hyperv1.KarpenterConfig{
 							Platform: hyperv1.AWSPlatform,
