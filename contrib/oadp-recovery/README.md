@@ -12,6 +12,7 @@ This script provides automated recovery for HyperShift clusters that may get stu
 - **Backup Status Monitoring**: Monitors Velero backup states in real-time
 - **Intelligent Recovery**: Resumes clusters when backups complete, fail, or are deleted
 - **NodePool Management**: Automatically resumes associated NodePools
+- **Cascading Unpause**: Propagates unpause to HostedControlPlane, MachineDeployments, and CAPI Cluster objects ([OCPBUGS-77530](https://issues.redhat.com/browse/OCPBUGS-77530))
 - **Dry-run Mode**: Supports testing without making actual changes
 - **Structured Logging**: Comprehensive logging with cluster context
 - **Simple Deployment**: Single manifest file with minimal dependencies
@@ -33,9 +34,16 @@ This script provides automated recovery for HyperShift clusters that may get stu
    - `Deleted`: Backup was manually deleted
 
 4. **Recovery**: When terminal state detected or no backups found:
-   - Removes OADP pause annotations
-   - Clears `pausedUntil` field
-   - Resumes all associated NodePools
+    - Removes OADP pause annotations
+    - Clears `pausedUntil` field
+    - Resumes all associated NodePools
+
+Additionally, independently of the OADP recovery flow above:
+
+5. **Cascading Unpause** ([OCPBUGS-77530](https://issues.redhat.com/browse/OCPBUGS-77530)): For any HostedCluster being deleted (`deletionTimestamp` set), checks for leaked paused state on child objects. Due to a race condition in the nodepool controller, the operator may not propagate the unpause to inner resources even after the HC itself is unpaused. The script removes leaked pauses from:
+    - HostedControlPlane: removes `spec.pausedUntil`
+    - MachineDeployments: removes `cluster.x-k8s.io/paused` annotation
+    - CAPI Cluster: removes `cluster.x-k8s.io/paused` annotation and sets `spec.paused` to false
 
 ## Quick Start
 
@@ -142,7 +150,7 @@ The script requires minimal permissions:
 ```yaml
 rules:
 - apiGroups: ["hypershift.openshift.io"]
-  resources: ["hostedclusters", "nodepools"]
+  resources: ["hostedclusters", "nodepools", "hostedcontrolplanes"]
   verbs: ["get", "list", "patch", "update"]
 - apiGroups: ["velero.io"]
   resources: ["backups"]
@@ -150,6 +158,9 @@ rules:
 - apiGroups: [""]
   resources: ["namespaces"]
   verbs: ["get"]
+- apiGroups: ["cluster.x-k8s.io"]
+  resources: ["machinedeployments", "clusters"]
+  verbs: ["get", "list", "patch", "update"]
 ```
 
 ### Container Image
