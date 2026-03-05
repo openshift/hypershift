@@ -1,0 +1,250 @@
+version: '3'
+
+# This file handles AKS management cluster creation
+
+tasks:
+  # === AKS MANAGED IDENTITIES (one-time setup) ===
+
+  create-identities:
+    status:
+      - az identity show --name {{.AKS_CP_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} 2>/dev/null
+      - az identity show --name {{.AKS_KUBELET_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} 2>/dev/null
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Creating AKS Managed Identities"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - az identity create --name {{.AKS_CP_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --output none
+      - az identity create --name {{.AKS_KUBELET_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --output none
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,AKS Managed Identities
+          Control Plane MI,{{.AKS_CP_MI_NAME}}
+          Kubelet MI,{{.AKS_KUBELET_MI_NAME}}
+          Status,✓ Created" | gum table --print --border rounded
+        silent: true
+
+  # === RESOURCE GROUP ===
+
+  create-rg:
+    status:
+      - az group show --name {{.AKS_RG}} 2>/dev/null
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Creating AKS Resource Group"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - az group create --name {{.AKS_RG}} --location {{.LOCATION}} --output none
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,AKS Resource Group
+          Name,{{.AKS_RG}}
+          Location,{{.LOCATION}}
+          Status,✓ Created" | gum table --print --border rounded
+        silent: true
+
+  # === AKS CLUSTER ===
+
+  create-cluster:
+    vars:
+      AKS_CP_MI_ID:
+        sh: 'az identity show --name {{.AKS_CP_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --query id -o tsv'
+      AKS_KUBELET_MI_ID:
+        sh: 'az identity show --name {{.AKS_KUBELET_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --query id -o tsv'
+    status:
+      - az aks show --name {{.AKS_CLUSTER_NAME}} --resource-group {{.AKS_RG}} 2>/dev/null
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Creating AKS Cluster"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - |
+        az aks create \
+          --resource-group {{.AKS_RG}} \
+          --name {{.AKS_CLUSTER_NAME}} \
+          --node-count {{.AKS_NODE_COUNT}} \
+          --generate-ssh-keys \
+          --load-balancer-sku standard \
+          --os-sku AzureLinux \
+          --node-vm-size {{.AKS_NODE_VM_SIZE}} \
+          --enable-fips-image \
+          --kubernetes-version {{.AKS_K8S_VERSION}} \
+          --enable-addons azure-keyvault-secrets-provider \
+          --enable-secret-rotation \
+          --rotation-poll-interval 1m \
+          --assign-identity {{.AKS_CP_MI_ID}} \
+          --assign-kubelet-identity {{.AKS_KUBELET_MI_ID}} \
+          --network-plugin azure \
+          --network-policy azure \
+          --max-pods 250
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,AKS Cluster
+          Name,{{.AKS_CLUSTER_NAME}}
+          Resource Group,{{.AKS_RG}}
+          K8s Version,{{.AKS_K8S_VERSION}}
+          Node Count,{{.AKS_NODE_COUNT}}
+          VM Size,{{.AKS_NODE_VM_SIZE}}
+          Network Plugin,azure
+          Network Policy,azure
+          Status,✓ Created" | gum table --print --border rounded
+        silent: true
+
+  get-kubeconfig:
+    desc: Get AKS cluster kubeconfig (re-run if file is lost)
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Getting AKS Kubeconfig"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - az aks get-credentials --resource-group {{.AKS_RG}} --name {{.AKS_CLUSTER_NAME}} --file {{.MGMT_KUBECONFIG}} --overwrite-existing
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,AKS Kubeconfig
+          Cluster,{{.AKS_CLUSTER_NAME}}
+          File,{{.MGMT_KUBECONFIG}}
+          Status,✓ Saved" | gum table --print --border rounded
+        silent: true
+      - cmd: gum format "○ KUBECONFIG is set via .envrc - all kubectl/oc commands will use this file"
+        silent: true
+
+  assign-kv-role:
+    vars:
+      KV_OBJECT_ID:
+        sh: 'az aks show -n {{.AKS_CLUSTER_NAME}} -g {{.AKS_RG}} --query "addonProfiles.azureKeyvaultSecretsProvider.identity.objectId" -o tsv'
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Assigning Key Vault Role"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - |
+        az role assignment create \
+          --assignee-object-id "{{.KV_OBJECT_ID}}" \
+          --role "Key Vault Secrets User" \
+          --scope /subscriptions/{{.SUBSCRIPTION_ID}}/resourceGroups/{{.PERSISTENT_RG_NAME}} \
+          --assignee-principal-type ServicePrincipal
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Key Vault Role Assignment
+          Role,Key Vault Secrets User
+          Key Vault RG,{{.PERSISTENT_RG_NAME}}
+          Assignee,azureKeyvaultSecretsProvider MI
+          Status,✓ Assigned" | gum table --print --border rounded
+        silent: true
+
+  # === ORCHESTRATION ===
+
+  create:
+    cmds:
+      - task: create-rg
+      - task: create-cluster
+      - task: get-kubeconfig
+      - task: assign-kv-role
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,AKS Setup
+          Cluster,{{.AKS_CLUSTER_NAME}}
+          Resource Group,{{.AKS_RG}}
+          K8s Version,{{.AKS_K8S_VERSION}}
+          Node Count,{{.AKS_NODE_COUNT}}
+          Key Vault Role,{{.KV_NAME}}
+          Status,✓ Complete" | gum table --print --border rounded
+        silent: true
+      - kubectl cluster-info
+
+  # === CLEANUP ===
+
+  delete-cluster:
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Deleting AKS Cluster"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - cmd: az aks delete --name {{.AKS_CLUSTER_NAME}} --resource-group {{.AKS_RG}} --yes --no-wait
+        ignore_error: true
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Delete AKS Cluster
+          Cluster,{{.AKS_CLUSTER_NAME}}
+          Status,✓ Deletion initiated" | gum table --print --border rounded
+        silent: true
+
+  delete-rg:
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Deleting AKS Resource Group"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - cmd: az group delete --name {{.AKS_RG}} --yes --no-wait
+        ignore_error: true
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Delete Resource Group
+          Name,{{.AKS_RG}}
+          Status,✓ Deletion initiated" | gum table --print --border rounded
+        silent: true
+
+  delete:
+    cmds:
+      - task: delete-cluster
+      - task: delete-rg
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,AKS Cleanup
+          Cluster,{{.AKS_CLUSTER_NAME}}
+          Resource Group,{{.AKS_RG}}
+          Status,✓ Complete" | gum table --print --border rounded
+        silent: true
+
+  delete-identities:
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Deleting AKS Managed Identities"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - cmd: az identity delete --name {{.AKS_CP_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --output none
+        ignore_error: true
+      - cmd: az identity delete --name {{.AKS_KUBELET_MI_NAME}} --resource-group {{.PERSISTENT_RG_NAME}} --output none
+        ignore_error: true
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Delete AKS Identities
+          Control Plane MI,{{.AKS_CP_MI_NAME}}
+          Kubelet MI,{{.AKS_KUBELET_MI_NAME}}
+          Status,✓ Deleted" | gum table --print --border rounded
+        silent: true
+
+  # === STATUS ===
+
+  show:
+    desc: Show AKS cluster status
+    vars:
+      CLUSTER_INFO:
+        sh: 'az aks show --name {{.AKS_CLUSTER_NAME}} --resource-group {{.AKS_RG}} --query "{name:name, powerState:powerState.code, kubernetesVersion:kubernetesVersion}" -o tsv 2>/dev/null || echo "Not found	-	-"'
+      NODEPOOL_INFO:
+        sh: 'az aks nodepool list --cluster-name {{.AKS_CLUSTER_NAME}} --resource-group {{.AKS_RG}} --query "[0].{name:name, count:count, vmSize:vmSize}" -o tsv 2>/dev/null || echo "Not found	-	-"'
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "AKS Cluster Status"
+        silent: true
+      - cmd: az aks show --name {{.AKS_CLUSTER_NAME}} --resource-group {{.AKS_RG}} -o table
+        ignore_error: true

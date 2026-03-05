@@ -1,0 +1,169 @@
+version: '3'
+
+tasks:
+  validate:
+    desc: Validate all required environment variables and tools
+    vars:
+      # Query current subscription for comparison
+      CURRENT_SUB:
+        sh: 'az account show --query id -o tsv 2>/dev/null || echo ""'
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Validating Prerequisites"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+
+      # Check credentials files
+      - test -f "{{.AZURE_CREDS}}" || (gum format "✗ AZURE_CREDS file not found at {{.AZURE_CREDS}}" && exit 1)
+      - test -f "{{.PULL_SECRET}}" || (gum format "✗ PULL_SECRET file not found at {{.PULL_SECRET}}" && exit 1)
+
+      # Validate azure-creds has required fields
+      - 'jq -e ".subscriptionId" {{.AZURE_CREDS}} >/dev/null || (gum format "✗ subscriptionId missing in {{.AZURE_CREDS}}" && exit 1)'
+      - 'jq -e ".tenantId" {{.AZURE_CREDS}} >/dev/null || (gum format "✗ tenantId missing in {{.AZURE_CREDS}}" && exit 1)'
+      - 'jq -e ".clientId" {{.AZURE_CREDS}} >/dev/null || (gum format "✗ clientId missing in {{.AZURE_CREDS}}" && exit 1)'
+      - 'jq -e ".clientSecret" {{.AZURE_CREDS}} >/dev/null || (gum format "✗ clientSecret missing in {{.AZURE_CREDS}}" && exit 1)'
+
+      # Check required variables
+      - test -n "{{.PREFIX}}" || (gum format "✗ PREFIX not set" && exit 1)
+      - test -n "{{.OIDC_ISSUER_NAME}}" || (gum format "✗ OIDC_ISSUER_NAME not set" && exit 1)
+      - test -n "{{.RELEASE_IMAGE}}" || (gum format "✗ RELEASE_IMAGE not set" && exit 1)
+      - test -n "{{.LOCATION}}" || (gum format "✗ LOCATION not set" && exit 1)
+
+      # Check required CLIs
+      - command -v gum >/dev/null || (echo "gum not found - install from https://github.com/charmbracelet/gum" && exit 1)
+      - command -v az >/dev/null || (gum format "✗ az CLI not found" && exit 1)
+      - command -v kubectl >/dev/null || (gum format "✗ kubectl not found" && exit 1)
+      - command -v jq >/dev/null || (gum format "✗ jq not found" && exit 1)
+      - command -v ccoctl >/dev/null || (gum format "✗ ccoctl not found - install from https://github.com/openshift/cloud-credential-operator" && exit 1)
+
+      # Check hypershift CLI
+      - |
+        if [ -n "{{.HYPERSHIFT_BINARY_PATH}}" ]; then
+          test -x "{{.HYPERSHIFT_BINARY_PATH}}/hypershift" || (gum format "✗ hypershift binary not found at {{.HYPERSHIFT_BINARY_PATH}}/hypershift" && exit 1)
+        else
+          command -v hypershift >/dev/null || (gum format "✗ hypershift CLI not found (set HYPERSHIFT_BINARY_PATH or add to PATH)" && exit 1)
+        fi
+
+      # Check Azure login
+      - az account show >/dev/null 2>&1 || (gum format "✗ Not logged into Azure. Run 'task prereq:login' first." && exit 1)
+
+      # Verify logged-in identity matches credentials file
+      - |
+        LOGGED_IN_CLIENT=$(az account show --query user.name -o tsv 2>/dev/null)
+        CREDS_CLIENT=$(jq -r '.clientId' {{.AZURE_CREDS}})
+        if [ "$LOGGED_IN_CLIENT" != "$CREDS_CLIENT" ]; then
+          gum format "✗ **Identity mismatch!**"
+          gum format "  Logged in as: $LOGGED_IN_CLIENT"
+          gum format "  Credentials file: $CREDS_CLIENT"
+          gum format "  Run: **task prereq:login**"
+          exit 1
+        fi
+
+      # Verify subscription match
+      - |
+        if [ "{{.CURRENT_SUB}}" != "{{.SUBSCRIPTION_ID}}" ]; then
+          gum format "✗ **Subscription mismatch!**"
+          gum format "  Current: {{.CURRENT_SUB}}"
+          gum format "  Expected: {{.SUBSCRIPTION_ID}}"
+          gum format "  Run: **task prereq:login**"
+          exit 1
+        fi
+
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Prerequisites Validation
+          Credentials,{{.AZURE_CREDS}}
+          Pull Secret,{{.PULL_SECRET}}
+          Status,✓ Validated" | gum table --print --border rounded
+        silent: true
+
+  login:
+    desc: Login to Azure using credentials from azure-credentials.json
+    vars:
+      CREDS_CLIENT_ID:
+        sh: 'jq -r ".clientId" {{.AZURE_CREDS}}'
+      CREDS_CLIENT_SECRET:
+        sh: 'jq -r ".clientSecret" {{.AZURE_CREDS}}'
+      CREDS_TENANT_ID:
+        sh: 'jq -r ".tenantId" {{.AZURE_CREDS}}'
+      CREDS_SUBSCRIPTION_ID:
+        sh: 'jq -r ".subscriptionId" {{.AZURE_CREDS}}'
+    preconditions:
+      - sh: test -f "{{.AZURE_CREDS}}"
+        msg: "Credentials file not found: {{.AZURE_CREDS}}"
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Azure Login"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - |
+        az login --service-principal \
+          -u "{{.CREDS_CLIENT_ID}}" \
+          -p "{{.CREDS_CLIENT_SECRET}}" \
+          --tenant "{{.CREDS_TENANT_ID}}" \
+          --output none
+      - az account set --subscription "{{.CREDS_SUBSCRIPTION_ID}}"
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Azure Login
+          Client ID,{{.CREDS_CLIENT_ID}}
+          Subscription,{{.CREDS_SUBSCRIPTION_ID}}
+          Status,✓ Logged in" | gum table --print --border rounded
+        silent: true
+
+  whoami:
+    desc: Show current Azure identity and compare with credentials file
+    vars:
+      LOGGED_IN_CLIENT:
+        sh: 'az account show --query user.name -o tsv 2>/dev/null || echo "not logged in"'
+      LOGGED_IN_TYPE:
+        sh: 'az account show --query user.type -o tsv 2>/dev/null || echo "n/a"'
+      LOGGED_IN_SUB:
+        sh: 'az account show --query id -o tsv 2>/dev/null || echo "n/a"'
+      CREDS_CLIENT:
+        sh: 'jq -r ".clientId // \"n/a\"" {{.AZURE_CREDS}} 2>/dev/null || echo "file not found"'
+      CREDS_SUB:
+        sh: 'jq -r ".subscriptionId // \"n/a\"" {{.AZURE_CREDS}} 2>/dev/null || echo "file not found"'
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Azure Identity"
+        silent: true
+      - cmd: |
+          MATCH="✗ MISMATCH"
+          if [ "{{.LOGGED_IN_CLIENT}}" = "{{.CREDS_CLIENT}}" ]; then
+            MATCH="✓ Match"
+          fi
+          echo "Source,Client ID,Subscription
+          Logged in ({{.LOGGED_IN_TYPE}}),{{.LOGGED_IN_CLIENT}},{{.LOGGED_IN_SUB}}
+          Credentials file,{{.CREDS_CLIENT}},{{.CREDS_SUB}}
+          Status,$MATCH,-" | gum table --print --border rounded
+        silent: true
+
+  show-config:
+    desc: Display current configuration
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Current Configuration"
+        silent: true
+      - cmd: |
+          echo "Setting,Value
+          PREFIX,{{.PREFIX}}
+          CLUSTER_NAME,{{.CLUSTER_NAME}}
+          LOCATION,{{.LOCATION}}
+          SUBSCRIPTION_ID,{{.SUBSCRIPTION_ID}}
+          TENANT_ID,{{.TENANT_ID}}
+          PERSISTENT_RG_NAME,{{.PERSISTENT_RG_NAME}}
+          AKS_RG,{{.AKS_RG}}
+          KV_NAME,{{.KV_NAME}}
+          OIDC_ISSUER_NAME,{{.OIDC_ISSUER_NAME}}
+          OIDC_ISSUER_URL,{{.OIDC_ISSUER_URL}}
+          PARENT_DNS_ZONE,{{.PARENT_DNS_ZONE}}
+          MGMT_DNS_ZONE_NAME,{{.MGMT_DNS_ZONE_NAME}}
+          PULL_SECRET,{{.PULL_SECRET}}
+          CP_OUTPUT_FILE,{{.CP_OUTPUT_FILE}}
+          DP_OUTPUT_FILE,{{.DP_OUTPUT_FILE}}
+          RELEASE_IMAGE,{{.RELEASE_IMAGE}}
+          HYPERSHIFT_IMAGE,{{.HYPERSHIFT_IMAGE}}" | gum table --print --border rounded
+        silent: true
