@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router/util"
 	"github.com/openshift/hypershift/support/azureutil"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -312,7 +313,7 @@ func TestUseHCPRouter(t *testing.T) {
 			if tt.setupEnv != nil {
 				tt.setupEnv(t)
 			}
-			if got := UseHCPRouter(tt.hcp); got != tt.want {
+			if got := util.UseHCPRouter(tt.hcp); got != tt.want {
 				t.Errorf("UseHCPRouter() = %v, want %v", got, tt.want)
 			}
 		})
