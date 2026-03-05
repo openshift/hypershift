@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	ignitionproxyv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver_proxy"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
+	routerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router"
 	"github.com/openshift/hypershift/support/api"
 	autoscalercommon "github.com/openshift/hypershift/support/autoscaler"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
@@ -52,6 +54,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -282,11 +285,8 @@ func TestReconcileOAuthService(t *testing.T) {
 	oauthExternalPublicRoute := func(m ...func(*routev1.Route)) routev1.Route {
 		route := routev1.Route{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: targetNamespace,
-				Name:      "oauth",
-				Labels: map[string]string{
-					"hypershift.openshift.io/hosted-control-plane": targetNamespace,
-				},
+				Namespace:       targetNamespace,
+				Name:            "oauth",
 				OwnerReferences: []metav1.OwnerReference{ownerRef},
 			},
 			Spec: routev1.RouteSpec{
@@ -1577,7 +1577,7 @@ func TestReconcileRouter(t *testing.T) {
 			}
 
 			releaseInfo := &releaseinfo.ReleaseImage{ImageStream: &imagev1.ImageStream{}}
-			if useHCPRouter(hcp) {
+			if routerv2.UseHCPRouter(hcp) {
 				if err := r.reconcileRouter(ctx, hcp, imageprovider.New(releaseInfo), controllerutil.CreateOrUpdate); err != nil {
 					t.Fatalf("reconcileRouter failed: %v", err)
 				}
@@ -1606,6 +1606,153 @@ func TestReconcileRouter(t *testing.T) {
 			for _, r := range oldRouterResources {
 				if err := c.Get(ctx, client.ObjectKeyFromObject(r), r); !apierrors.IsNotFound(err) {
 					t.Errorf("expected %T %s to be deleted, wasn't the case (err=%v)", r, r.GetName(), err)
+				}
+			}
+		})
+	}
+}
+
+func TestCleanupRouterComponentResources(t *testing.T) {
+	const namespace = "test-ns"
+
+	testCases := []struct {
+		name                         string
+		platformType                 hyperv1.PlatformType
+		endpointAccess               hyperv1.AWSEndpointAccessType
+		kasPublishingStrategy        hyperv1.ServicePublishingStrategy
+		existingRouterResources      []client.Object
+		shouldCleanupRouterResources bool
+	}{
+		{
+			name:           "PublicAndPrivate cluster with KAS LoadBalancer should NOT cleanup router resources (needed for internal routes)",
+			platformType:   hyperv1.AWSPlatform,
+			endpointAccess: hyperv1.PublicAndPrivate,
+			kasPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+			},
+			existingRouterResources: []client.Object{
+				&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "router"}},
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "router"}},
+				&policyv1.PodDisruptionBudget{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "router"}},
+				&corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "router"}},
+				&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "router"}},
+				&rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "router"}},
+			},
+			shouldCleanupRouterResources: false,
+		},
+		{
+			name:           "Public cluster with KAS LoadBalancer should cleanup router resources",
+			platformType:   hyperv1.AWSPlatform,
+			endpointAccess: hyperv1.Public,
+			kasPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+			},
+			existingRouterResources: []client.Object{
+				&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "router"}},
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "router"}},
+				&policyv1.PodDisruptionBudget{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "router"}},
+			},
+			shouldCleanupRouterResources: true,
+		},
+		{
+			name:           "Agent platform with KAS LoadBalancer should cleanup router resources",
+			platformType:   hyperv1.AgentPlatform,
+			endpointAccess: "", // Agent platform doesn't have endpoint access
+			kasPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+			},
+			existingRouterResources: []client.Object{
+				&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "router"}},
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "router"}},
+			},
+			shouldCleanupRouterResources: true,
+		},
+		{
+			name:           "Private cluster with KAS LoadBalancer should NOT cleanup router resources",
+			platformType:   hyperv1.AWSPlatform,
+			endpointAccess: hyperv1.Private,
+			kasPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.LoadBalancer,
+			},
+			existingRouterResources: []client.Object{
+				&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "router"}},
+			},
+			shouldCleanupRouterResources: false,
+		},
+		{
+			name:           "Public cluster with KAS Route should NOT cleanup router resources",
+			platformType:   hyperv1.AWSPlatform,
+			endpointAccess: hyperv1.Public,
+			kasPublishingStrategy: hyperv1.ServicePublishingStrategy{
+				Type: hyperv1.Route,
+				Route: &hyperv1.RoutePublishingStrategy{
+					Hostname: "api.example.com",
+				},
+			},
+			existingRouterResources: []client.Object{
+				&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: "router"}},
+			},
+			shouldCleanupRouterResources: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: tc.platformType,
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service:                   hyperv1.APIServer,
+							ServicePublishingStrategy: tc.kasPublishingStrategy,
+						},
+					},
+				},
+			}
+
+			if tc.platformType == hyperv1.AWSPlatform {
+				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
+					EndpointAccess: tc.endpointAccess,
+				}
+			} else if tc.platformType == hyperv1.AgentPlatform {
+				hcp.Spec.Platform.Agent = &hyperv1.AgentPlatformSpec{
+					AgentNamespace: "agent-ns",
+				}
+			}
+
+			ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(append(tc.existingRouterResources, hcp)...).Build()
+
+			r := HostedControlPlaneReconciler{
+				Client: c,
+				Log:    ctrl.LoggerFrom(ctx),
+			}
+
+			// Simulate the conditional cleanup logic from the controller
+			// Only call cleanup when !UseHCPRouter(hcp)
+			if !routerv2.UseHCPRouter(hcp) {
+				if err := r.cleanupRouterComponentResources(ctx, hcp); err != nil {
+					t.Fatalf("cleanupRouterComponentResources failed: %v", err)
+				}
+			}
+
+			// Verify resources were deleted or not based on shouldCleanupRouterResources
+			for _, resource := range tc.existingRouterResources {
+				err := c.Get(ctx, client.ObjectKeyFromObject(resource), resource)
+				if tc.shouldCleanupRouterResources {
+					if !apierrors.IsNotFound(err) {
+						t.Errorf("expected %T %s to be deleted, but it still exists (err=%v)", resource, resource.GetName(), err)
+					}
+				} else {
+					if err != nil {
+						t.Errorf("expected %T %s to still exist, but got error: %v", resource, resource.GetName(), err)
+					}
 				}
 			}
 		})
@@ -1715,6 +1862,24 @@ func TestReconcileHCPRouterServices(t *testing.T) {
 			endpointAccess:               hyperv1.Private,
 			exposeAPIServerThroughRouter: true,
 			existingObjects:              []client.Object{publicService(), privateService()},
+			expectedServices: []corev1.Service{
+				*privateService(withCrossZoneAnnotation),
+			},
+		},
+		{
+			name:                         "Private LB gets removed when switching to Public",
+			endpointAccess:               hyperv1.Public,
+			exposeAPIServerThroughRouter: true,
+			existingObjects:              []client.Object{privateService()},
+			expectedServices: []corev1.Service{
+				*publicService(),
+			},
+		},
+		{
+			name:                         "Public LB gets removed when PublicAndPrivate but not using Route",
+			endpointAccess:               hyperv1.PublicAndPrivate,
+			exposeAPIServerThroughRouter: false,
+			existingObjects:              []client.Object{publicService()},
 			expectedServices: []corev1.Service{
 				*privateService(withCrossZoneAnnotation),
 			},
@@ -2630,6 +2795,391 @@ status:
 					g.Expect(err).NotTo(HaveOccurred())
 				} else {
 					g.Expect(err).To(HaveOccurred())
+				}
+			}
+		})
+	}
+}
+
+func TestRemoveHCPIngressFromRoutes(t *testing.T) {
+	const namespace = "test-ns"
+
+	tests := []struct {
+		name           string
+		hcp            *hyperv1.HostedControlPlane
+		existingRoutes []*routev1.Route
+		expectedRoutes []routev1.Route
+		expectError    bool
+		errorContains  string
+	}{
+		{
+			name: "Route with HCPRouteLabel is skipped",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+			},
+			existingRoutes: []*routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "hcp-managed-route",
+						Namespace: namespace,
+						Labels: map[string]string{
+							util.HCPRouteLabel: namespace,
+						},
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "example.com"},
+							{RouterName: "other-router", Host: "other.com"},
+						},
+					},
+				},
+			},
+			expectedRoutes: []routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "hcp-managed-route",
+						Namespace: namespace,
+						Labels: map[string]string{
+							util.HCPRouteLabel: namespace,
+						},
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "example.com"},
+							{RouterName: "other-router", Host: "other.com"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Route without HCPRouteLabel has router ingress removed",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+			},
+			existingRoutes: []*routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "example.com"},
+							{RouterName: "other-router", Host: "other.com"},
+						},
+					},
+				},
+			},
+			expectedRoutes: []routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "other-router", Host: "other.com"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Route without router ingress is unchanged",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+			},
+			existingRoutes: []*routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "other-router", Host: "other.com"},
+							{RouterName: "another-router", Host: "another.com"},
+						},
+					},
+				},
+			},
+			expectedRoutes: []routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "other-router", Host: "other.com"},
+							{RouterName: "another-router", Host: "another.com"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Route with only router ingress has all ingress removed",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+			},
+			existingRoutes: []*routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "router-only-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "example.com"},
+						},
+					},
+				},
+			},
+			expectedRoutes: []routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "router-only-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{},
+					},
+				},
+			},
+		},
+		{
+			name: "Multiple routes handled correctly",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+			},
+			existingRoutes: []*routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "hcp-managed",
+						Namespace: namespace,
+						Labels: map[string]string{
+							util.HCPRouteLabel: namespace,
+						},
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "hcp.example.com"},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route-1",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "route1.example.com"},
+							{RouterName: "other-router", Host: "route1.other.com"},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route-2",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "other-router", Host: "route2.other.com"},
+						},
+					},
+				},
+			},
+			expectedRoutes: []routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "hcp-managed",
+						Namespace: namespace,
+						Labels: map[string]string{
+							util.HCPRouteLabel: namespace,
+						},
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "hcp.example.com"},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route-1",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "other-router", Host: "route1.other.com"},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route-2",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "other-router", Host: "route2.other.com"},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Route with empty ingress list is unchanged",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+			},
+			existingRoutes: []*routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "empty-ingress-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{},
+					},
+				},
+			},
+			expectedRoutes: []routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "empty-ingress-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{},
+					},
+				},
+			},
+		},
+		{
+			name: "Route with multiple router ingress entries removes all",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+			},
+			existingRoutes: []*routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "multi-router-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "example1.com"},
+							{RouterName: "router", Host: "example2.com"},
+							{RouterName: "other-router", Host: "other.com"},
+							{RouterName: "router", Host: "example3.com"},
+						},
+					},
+				},
+			},
+			expectedRoutes: []routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "multi-router-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "other-router", Host: "other.com"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			ctx := ctrl.LoggerInto(context.Background(), zapr.NewLogger(zaptest.NewLogger(t)))
+
+			// Convert existing routes to client.Object slice
+			existingObjects := make([]client.Object, 0, len(tc.existingRoutes))
+			for _, route := range tc.existingRoutes {
+				existingObjects = append(existingObjects, route)
+			}
+			existingObjects = append(existingObjects, tc.hcp)
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(existingObjects...).
+				WithStatusSubresource(&routev1.Route{}).
+				Build()
+
+			r := &HostedControlPlaneReconciler{
+				Client: fakeClient,
+				Log:    ctrl.LoggerFrom(ctx),
+			}
+
+			err := r.removeHCPIngressFromRoutes(ctx, tc.hcp)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				if tc.errorContains != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.errorContains))
+				}
+			} else {
+				g.Expect(err).NotTo(HaveOccurred())
+
+				// Verify routes match expected state
+				var actualRoutes routev1.RouteList
+				err = fakeClient.List(ctx, &actualRoutes, client.InNamespace(namespace))
+				g.Expect(err).NotTo(HaveOccurred())
+
+				// Sort routes by name for comparison
+				sort.Slice(actualRoutes.Items, func(i, j int) bool {
+					return actualRoutes.Items[i].Name < actualRoutes.Items[j].Name
+				})
+				sort.Slice(tc.expectedRoutes, func(i, j int) bool {
+					return tc.expectedRoutes[i].Name < tc.expectedRoutes[j].Name
+				})
+
+				g.Expect(len(actualRoutes.Items)).To(Equal(len(tc.expectedRoutes)))
+
+				for i := range actualRoutes.Items {
+					actual := actualRoutes.Items[i]
+					expected := tc.expectedRoutes[i]
+
+					g.Expect(actual.Name).To(Equal(expected.Name))
+					g.Expect(actual.Labels).To(Equal(expected.Labels))
+					g.Expect(actual.Status.Ingress).To(HaveLen(len(expected.Status.Ingress)))
+
+					// Compare ingress entries
+					for j := range actual.Status.Ingress {
+						g.Expect(actual.Status.Ingress[j].RouterName).To(Equal(expected.Status.Ingress[j].RouterName))
+						g.Expect(actual.Status.Ingress[j].Host).To(Equal(expected.Status.Ingress[j].Host))
+					}
 				}
 			}
 		})

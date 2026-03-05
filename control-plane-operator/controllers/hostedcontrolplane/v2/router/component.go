@@ -1,6 +1,7 @@
 package router
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -46,15 +47,27 @@ func NewComponent() component.ControlPlaneComponent {
 		Build()
 }
 
-// useHCPRouter returns true if a dedicated common router is created for a HCP to handle ingress for the managed endpoints.
-// This is true when the API input specifies intent for the following:
-// 1 - AWS endpointAccess is private somehow (i.e. publicAndPrivate or private) or is public and configured with external DNS.
-// 2 - When 1 is true, we recommend (and automate via CLI) ServicePublishingStrategy to be "Route" for all endpoints but the KAS
-// which needs a dedicated Service type LB external to be exposed if no external DNS is supported.
-// Otherwise, the Routes use the management cluster Domain and resolve through the default ingress controller.
-func useHCPRouter(cpContext component.WorkloadContext) (bool, error) {
+// UseHCPRouter returns true when the HCP routes should be served by a dedicated
+// HCP router, as determined by util.LabelHCPRoutes. This occurs when:
+//  1. The cluster has no public internet access (Private endpoint access), OR
+//  2. The cluster has public internet access (Public or PublicAndPrivate endpoint access)
+//     but uses a dedicated Route for KAS DNS (rather than a LoadBalancer)
+//
+// Excludes shared ingress configurations and IBM Cloud platform.
+func UseHCPRouter(hcp *hyperv1.HostedControlPlane) bool {
 	if sharedingress.UseSharedIngress() {
-		return false, nil
+		return false
 	}
-	return util.IsPrivateHCP(cpContext.HCP) || util.IsPublicWithDNS(cpContext.HCP), nil
+	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
+		return false
+	}
+	// Router infrastructure is needed when:
+	// 1. Cluster has private access (Private or PublicAndPrivate) - for internal routes, OR
+	// 2. External routes are labeled for HCP router (Public with KAS DNS)
+	return util.IsPrivateHCP(hcp) || util.LabelHCPRoutes(hcp)
+}
+
+// useHCPRouter is an adapter for the component predicate interface.
+func useHCPRouter(cpContext component.WorkloadContext) (bool, error) {
+	return UseHCPRouter(cpContext.HCP), nil
 }

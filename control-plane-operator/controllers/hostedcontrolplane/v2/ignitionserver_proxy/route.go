@@ -33,5 +33,5 @@ func (ign *ignitionServerProxy) adaptRoute(cpContext component.WorkloadContext, 
 	if strategy.Route != nil {
 		hostname = strategy.Route.Hostname
 	}
-	return util.ReconcileExternalRoute(route, hostname, ign.defaultIngressDomain, ComponentName, util.UseDedicatedDNSForIgnition(hcp))
+	return util.ReconcileExternalRoute(route, hostname, ign.defaultIngressDomain, ComponentName, util.LabelHCPRoutes(hcp))
 }
