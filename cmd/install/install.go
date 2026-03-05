@@ -925,6 +925,18 @@ func setupSharedIngress() []crclient.Object {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: sharedingress.ConfigGeneratorName,
 		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     sharedingress.ConfigGeneratorName,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "router",
+				Namespace: sharedingress.RouterNamespace,
+			},
+		},
 	}
 	objects = append(objects, clusterRoleBinding)
 

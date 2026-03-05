@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/utils/set"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -393,6 +394,7 @@ func TestHyperShiftOperatorManifests_SharedIngress(t *testing.T) {
 			var namespaceLabels map[string]string
 			var hasSharedIngressClusterRole bool
 			var hasSharedIngressClusterRoleBinding bool
+			var clusterRoleBinding *rbacv1.ClusterRoleBinding
 			for _, obj := range objects {
 				switch {
 				case obj.GetName() == sharedingress.RouterNamespace && obj.GetObjectKind().GroupVersionKind().Kind == "Namespace":
@@ -402,6 +404,7 @@ func TestHyperShiftOperatorManifests_SharedIngress(t *testing.T) {
 					hasSharedIngressClusterRole = true
 				case obj.GetName() == sharedingress.ConfigGeneratorName && obj.GetObjectKind().GroupVersionKind().Kind == "ClusterRoleBinding":
 					hasSharedIngressClusterRoleBinding = true
+					clusterRoleBinding = obj.(*rbacv1.ClusterRoleBinding)
 				}
 			}
 
@@ -410,6 +413,16 @@ func TestHyperShiftOperatorManifests_SharedIngress(t *testing.T) {
 				g.Expect(namespaceLabels).To(HaveKeyWithValue("hypershift.openshift.io/component", "shared-ingress"), "expected shared ingress namespace to have component label")
 				g.Expect(hasSharedIngressClusterRole).To(BeTrue(), "expected shared ingress ClusterRole to be present")
 				g.Expect(hasSharedIngressClusterRoleBinding).To(BeTrue(), "expected shared ingress ClusterRoleBinding to be present")
+				g.Expect(clusterRoleBinding.RoleRef).To(Equal(rbacv1.RoleRef{
+					APIGroup: "rbac.authorization.k8s.io",
+					Kind:     "ClusterRole",
+					Name:     sharedingress.ConfigGeneratorName,
+				}), "expected ClusterRoleBinding to reference the correct ClusterRole")
+				g.Expect(clusterRoleBinding.Subjects).To(ConsistOf(rbacv1.Subject{
+					Kind:      "ServiceAccount",
+					Name:      "router",
+					Namespace: sharedingress.RouterNamespace,
+				}), "expected ClusterRoleBinding to have the router ServiceAccount as subject")
 			} else {
 				g.Expect(hasSharedIngressNamespace).To(BeFalse(), "expected shared ingress namespace to not be present")
 				g.Expect(hasSharedIngressClusterRole).To(BeFalse(), "expected shared ingress ClusterRole to not be present")
