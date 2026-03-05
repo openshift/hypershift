@@ -21,6 +21,7 @@ linters:
               - "*"
             enable:
               - conditions
+              - duplicatemarkers
               - maxlength
               - nobools
               - nomaps
@@ -180,24 +181,6 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/kubevirt.go
         text: 'defaultorrequired: field KubevirtNodePoolPlatform.RootVolume has conflicting markers: default_or_required: \{\[kubebuilder:default\], \[required\]\}. A field with a default value cannot be required. A required field must be provided by the user, so a default value is not meaningful'
-
-      # duplicatemarkers (4 issues)
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/azure.go
-        text: 'duplicatemarkers: Diagnostics.StorageAccountType has duplicated markers kubebuilder:validation:Enum'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/azure.go
-        text: 'duplicatemarkers: ManagedIdentity.ObjectEncoding has duplicated markers kubebuilder:default'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/azure.go
-        text: 'duplicatemarkers: ManagedIdentity.ObjectEncoding has duplicated markers kubebuilder:validation:Enum'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/hostedcluster_types.go
-        text: 'duplicatemarkers: ProvisionerConfig.Name has duplicated markers kubebuilder:validation:Enum'
 
       # integers (6 issues)
       - linters:

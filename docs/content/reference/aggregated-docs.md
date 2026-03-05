@@ -31752,8 +31752,7 @@ AzureKeyVaultAccessType
 <p>keyVaultAccess specifies how the Key Vault should be accessed.
 When set to &ldquo;Private&rdquo;, the control plane routes Key Vault traffic through
 the private router to reach the Key Vault&rsquo;s private endpoint in the customer VNet.
-When set to &ldquo;Public&rdquo; or omitted (empty), the Key Vault is accessed via its public endpoint.
-Controllers treat an empty value the same as &ldquo;Public&rdquo;.</p>
+When set to &ldquo;Public&rdquo; or omitted, the Key Vault is accessed via its public endpoint.</p>
 </td>
 </tr>
 </tbody>

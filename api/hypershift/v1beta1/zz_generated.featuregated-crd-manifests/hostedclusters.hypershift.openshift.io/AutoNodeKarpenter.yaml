@@ -143,13 +143,10 @@ spec:
                         - platform
                         type: object
                       name:
-                        allOf:
-                        - enum:
-                          - Karpenter
-                        - enum:
-                          - Karpenter
                         description: name specifies the name of the provisioner to
                           use.
+                        enum:
+                        - Karpenter
                         type: string
                     required:
                     - name
@@ -4149,16 +4146,6 @@ spec:
                                         pattern: ^[a-zA-Z0-9-]+$
                                         type: string
                                       objectEncoding:
-                                        allOf:
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        default: utf-8
                                         description: |-
                                           objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
                                           the managed identity. objectEncoding needs to match the encoding format used when the certificate was stored in the
@@ -4169,6 +4156,10 @@ spec:
                                           The default value is utf-8.
 
                                           See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                        enum:
+                                        - utf-8
+                                        - hex
+                                        - base64
                                         type: string
                                     required:
                                     - credentialsSecretName
@@ -4208,16 +4199,6 @@ spec:
                                         pattern: ^[a-zA-Z0-9-]+$
                                         type: string
                                       objectEncoding:
-                                        allOf:
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        default: utf-8
                                         description: |-
                                           objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
                                           the managed identity. objectEncoding needs to match the encoding format used when the certificate was stored in the
@@ -4228,6 +4209,10 @@ spec:
                                           The default value is utf-8.
 
                                           See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                        enum:
+                                        - utf-8
+                                        - hex
+                                        - base64
                                         type: string
                                     required:
                                     - credentialsSecretName
@@ -4266,16 +4251,6 @@ spec:
                                         pattern: ^[a-zA-Z0-9-]+$
                                         type: string
                                       objectEncoding:
-                                        allOf:
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        default: utf-8
                                         description: |-
                                           objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
                                           the managed identity. objectEncoding needs to match the encoding format used when the certificate was stored in the
@@ -4286,6 +4261,10 @@ spec:
                                           The default value is utf-8.
 
                                           See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                        enum:
+                                        - utf-8
+                                        - hex
+                                        - base64
                                         type: string
                                     required:
                                     - credentialsSecretName
@@ -4324,16 +4303,6 @@ spec:
                                         pattern: ^[a-zA-Z0-9-]+$
                                         type: string
                                       objectEncoding:
-                                        allOf:
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        default: utf-8
                                         description: |-
                                           objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
                                           the managed identity. objectEncoding needs to match the encoding format used when the certificate was stored in the
@@ -4344,6 +4313,10 @@ spec:
                                           The default value is utf-8.
 
                                           See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                        enum:
+                                        - utf-8
+                                        - hex
+                                        - base64
                                         type: string
                                     required:
                                     - credentialsSecretName
@@ -4382,16 +4355,6 @@ spec:
                                         pattern: ^[a-zA-Z0-9-]+$
                                         type: string
                                       objectEncoding:
-                                        allOf:
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        default: utf-8
                                         description: |-
                                           objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
                                           the managed identity. objectEncoding needs to match the encoding format used when the certificate was stored in the
@@ -4402,6 +4365,10 @@ spec:
                                           The default value is utf-8.
 
                                           See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                        enum:
+                                        - utf-8
+                                        - hex
+                                        - base64
                                         type: string
                                     required:
                                     - credentialsSecretName
@@ -4440,16 +4407,6 @@ spec:
                                         pattern: ^[a-zA-Z0-9-]+$
                                         type: string
                                       objectEncoding:
-                                        allOf:
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        default: utf-8
                                         description: |-
                                           objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
                                           the managed identity. objectEncoding needs to match the encoding format used when the certificate was stored in the
@@ -4460,6 +4417,10 @@ spec:
                                           The default value is utf-8.
 
                                           See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                        enum:
+                                        - utf-8
+                                        - hex
+                                        - base64
                                         type: string
                                     required:
                                     - credentialsSecretName
@@ -4522,16 +4483,6 @@ spec:
                                         pattern: ^[a-zA-Z0-9-]+$
                                         type: string
                                       objectEncoding:
-                                        allOf:
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        default: utf-8
                                         description: |-
                                           objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
                                           the managed identity. objectEncoding needs to match the encoding format used when the certificate was stored in the
@@ -4542,6 +4493,10 @@ spec:
                                           The default value is utf-8.
 
                                           See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                        enum:
+                                        - utf-8
+                                        - hex
+                                        - base64
                                         type: string
                                     required:
                                     - credentialsSecretName
@@ -4581,16 +4536,6 @@ spec:
                                         pattern: ^[a-zA-Z0-9-]+$
                                         type: string
                                       objectEncoding:
-                                        allOf:
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        - enum:
-                                          - utf-8
-                                          - hex
-                                          - base64
-                                        default: utf-8
                                         description: |-
                                           objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
                                           the managed identity. objectEncoding needs to match the encoding format used when the certificate was stored in the
@@ -4601,6 +4546,10 @@ spec:
                                           The default value is utf-8.
 
                                           See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                        enum:
+                                        - utf-8
+                                        - hex
+                                        - base64
                                         type: string
                                     required:
                                     - credentialsSecretName
@@ -5629,21 +5578,15 @@ spec:
                             - keyVersion
                             type: object
                           keyVaultAccess:
-                            allOf:
-                            - enum:
-                              - Public
-                              - Private
-                              - ""
-                            - enum:
-                              - Public
-                              - Private
-                              - ""
                             description: |-
                               keyVaultAccess specifies how the Key Vault should be accessed.
                               When set to "Private", the control plane routes Key Vault traffic through
                               the private router to reach the Key Vault's private endpoint in the customer VNet.
-                              When set to "Public" or omitted (empty), the Key Vault is accessed via its public endpoint.
-                              Controllers treat an empty value the same as "Public".
+                              When set to "Public" or omitted, the Key Vault is accessed via its public endpoint.
+                            enum:
+                            - Public
+                            - Private
+                            - ""
                             type: string
                           kms:
                             description: kms is a pre-existing managed identity used
@@ -5677,16 +5620,6 @@ spec:
                                 pattern: ^[a-zA-Z0-9-]+$
                                 type: string
                               objectEncoding:
-                                allOf:
-                                - enum:
-                                  - utf-8
-                                  - hex
-                                  - base64
-                                - enum:
-                                  - utf-8
-                                  - hex
-                                  - base64
-                                default: utf-8
                                 description: |-
                                   objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
                                   the managed identity. objectEncoding needs to match the encoding format used when the certificate was stored in the
@@ -5697,6 +5630,10 @@ spec:
                                   The default value is utf-8.
 
                                   See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
+                                enum:
+                                - utf-8
+                                - hex
+                                - base64
                                 type: string
                             required:
                             - credentialsSecretName

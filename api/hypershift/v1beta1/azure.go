@@ -241,7 +241,6 @@ const (
 type Diagnostics struct {
 	// storageAccountType determines if the storage account for storing the diagnostics data
 	// should be disabled (Disabled), provisioned by Azure (Managed) or by the user (UserManaged).
-	// +kubebuilder:validation:Enum=Managed;UserManaged;Disabled
 	// +kubebuilder:default:=Disabled
 	// +unionDiscriminator
 	// +optional
@@ -576,8 +575,6 @@ type ManagedIdentity struct {
 	//
 	// See this for more info - https://github.com/Azure/secrets-store-csi-driver-provider-azure/blob/master/website/content/en/getting-started/usage/_index.md
 	//
-	// +kubebuilder:validation:Enum:=utf-8;hex;base64
-	// +kubebuilder:default:="utf-8"
 	// +required
 	ObjectEncoding ObjectEncodingFormat `json:"objectEncoding"`
 
@@ -718,10 +715,8 @@ type AzureKMSSpec struct {
 	// keyVaultAccess specifies how the Key Vault should be accessed.
 	// When set to "Private", the control plane routes Key Vault traffic through
 	// the private router to reach the Key Vault's private endpoint in the customer VNet.
-	// When set to "Public" or omitted (empty), the Key Vault is accessed via its public endpoint.
-	// Controllers treat an empty value the same as "Public".
+	// When set to "Public" or omitted, the Key Vault is accessed via its public endpoint.
 	//
-	// +kubebuilder:validation:Enum=Public;Private;""
 	// +optional
 	KeyVaultAccess AzureKeyVaultAccessType `json:"keyVaultAccess,omitempty"`
 }
