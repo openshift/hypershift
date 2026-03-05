@@ -12,6 +12,7 @@ require (
 require (
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.279.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/iam v1.53.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/pricing v1.40.11 // indirect
 	github.com/aws/smithy-go v1.24.0 // indirect
 	github.com/awslabs/operatorpkg v0.0.0-20250909182303-e8e550b6f339 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
