@@ -35,6 +35,54 @@ The destination IP in this case will be exactly the same as the ClusterIP of the
 Note: the kube-apiserver will no longer be exposed through a dedicated LB service.
 
 
+## Route-Based Services
+
+While the kube-apiserver uses the PROXY protocol mechanism described above, other control plane services (OAuth, Konnectivity, Ignition) are exposed through OpenShift Routes with HAProxy-based routing.
+
+### How Route Processing Works
+
+The shared ingress system includes a **config-generator** sidecar container that dynamically generates HAProxy configuration for route-based services:
+
+1. **Route Creation**: Control plane operator creates Route resources in the HCP namespace
+2. **Route Labeling**: Routes are labeled with `hypershift.openshift.io/hosted-control-plane`
+3. **Config Generator Watches**: The config-generator watches for routes with this label
+4. **HAProxy Configuration**: Generates HAProxy config mapping route hostnames to backend services
+5. **Configuration Reload**: Reloads HAProxy when routes are added/modified/deleted
+
+### Critical Requirement: Route Hostnames
+
+**Routes MUST have `spec.host` field populated** to be processed by shared ingress.
+
+Routes without a hostname (`spec.host` is empty) will be **skipped** by the config-generator because:
+- HAProxy requires a hostname for SNI-based routing
+- Routes without hostnames cannot be matched to incoming requests
+- This results in `InfrastructureReady=False` condition on the HostedCluster
+
+**How routes get hostnames** (see [Exposing Services from HCP](../../how-to/common/exposing-services-from-hcp.md) for details):
+- **Explicit**: `spec.services[].route.hostname` set in HostedCluster spec
+- **Auto-generated**: From `DEFAULT_INGRESS_DOMAIN` environment variable in control-plane-operator
+
+**Platform-specific behavior**:
+- **Cloud platforms (AWS, Azure)**: Use explicit hostnames + external-DNS for DNS records
+- **Platform=None**: Requires `DEFAULT_INGRESS_DOMAIN` to be set, or routes will have empty hostnames
+
+!!! warning "Empty Route Hostnames"
+    If routes are created without `spec.host`, the shared ingress will not route traffic to them. This manifests as the OAuth route not having a valid host, preventing infrastructure readiness and kubeconfig publication.
+
+### Route Processing Flow
+
+```mermaid
+graph LR
+    A[Control Plane Operator] -->|Creates| B[Route with label]
+    B -->|Watched by| C[Config Generator]
+    C -->|Checks| D{Has spec.host?}
+    D -->|Yes| E[Add to HAProxy config]
+    D -->|No| F[Skip - cannot route]
+    E --> G[Reload HAProxy]
+    G --> H[Traffic routed via SNI]
+    F --> I[Route not accessible]
+```
+
 ## Reference Diagram
 
 ![](/images/shared-ingress-diagram.png)

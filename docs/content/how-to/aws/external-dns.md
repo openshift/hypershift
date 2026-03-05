@@ -15,6 +15,23 @@ The input for `hostedCluster.spec.services.routePublishingStrategy.hostname` dic
 
 Note: External DNS will only make a difference for setups with Public endpoints i.e. "Public" or "PublicAndPrivate". For a "Private" setup all endpoints will be accessible via `.hypershift.local`, which will contain CNAME records to the appropriate Private Link Endpoint Services.
 
+## Platform Compatibility
+
+!!! warning "Cloud Platforms Only"
+    External-DNS is designed for **cloud platforms only** (AWS, Azure) and requires **explicit route hostnames** (Pattern A).
+
+    **Key Requirements**:
+    - Only processes routes with `spec.services[].route.hostname` explicitly set in the HostedCluster spec
+    - Requires `--external-dns-domain` flag during cluster creation (e.g., `--external-dns-domain=service-provider-domain.com`)
+    - Creates DNS records in the cloud provider's DNS service (AWS Route53, Azure DNS)
+
+    **Platform=None Limitation**:
+    - External-DNS does **NOT** process Platform=None routes
+    - Platform=None clusters should use **NodePort** or **LoadBalancer** service publishing strategies
+    - For route-based publishing on Platform=None, see [Exposing Services from HCP](../common/exposing-services-from-hcp.md) for alternative approaches using shared ingress
+
+    For more details on service publishing patterns, see [Exposing Services from HCP](../common/exposing-services-from-hcp.md).
+
 # Use Service-level DNS for Control Plane Services
 There are four service that are exposed by a Hosted Control Plane (HCP)
 
