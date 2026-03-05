@@ -97,11 +97,11 @@ var _ IgnitionProvider = (*LocalIgnitionProvider)(nil)
 const mcsCertRefreshMargin = 1 * time.Hour
 
 // getOrGenerateMCSCert returns cached PEM-encoded MCS TLS certificate and key,
-// generating a new self-signed certificate if the cache is empty or the cached
-// certificate is about to expire. This avoids redundant RSA key generation on
-// every GetPayload call. The caller must hold p.lock.
+// generating a new self-signed certificate if the cache is empty, partially
+// populated, or the cached certificate is about to expire. This avoids redundant
+// RSA key generation on every GetPayload call. The caller must hold p.lock.
 func (p *LocalIgnitionProvider) getOrGenerateMCSCert() (certPEM []byte, keyPEM []byte, err error) {
-	if p.mcsCertPEM != nil && time.Now().Add(mcsCertRefreshMargin).Before(p.mcsCertExpiry) {
+	if p.mcsCertPEM != nil && p.mcsKeyPEM != nil && time.Now().Add(mcsCertRefreshMargin).Before(p.mcsCertExpiry) {
 		return p.mcsCertPEM, p.mcsKeyPEM, nil
 	}
 
