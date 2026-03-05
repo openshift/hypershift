@@ -29,6 +29,7 @@ type AzurePlatformSpecApplyConfiguration struct {
 	SecurityGroupID           *string                                             `json:"securityGroupID,omitempty"`
 	AzureAuthenticationConfig *AzureAuthenticationConfigurationApplyConfiguration `json:"azureAuthenticationConfig,omitempty"`
 	TenantID                  *string                                             `json:"tenantID,omitempty"`
+	EndpointAccess            *AzureEndpointAccessSpecApplyConfiguration          `json:"endpointAccess,omitempty"`
 }
 
 // AzurePlatformSpecApplyConfiguration constructs a declarative configuration of the AzurePlatformSpec type for use with
@@ -106,5 +107,13 @@ func (b *AzurePlatformSpecApplyConfiguration) WithAzureAuthenticationConfig(valu
 // If called multiple times, the TenantID field is set to the value of the last call.
 func (b *AzurePlatformSpecApplyConfiguration) WithTenantID(value string) *AzurePlatformSpecApplyConfiguration {
 	b.TenantID = &value
+	return b
+}
+
+// WithEndpointAccess sets the EndpointAccess field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the EndpointAccess field is set to the value of the last call.
+func (b *AzurePlatformSpecApplyConfiguration) WithEndpointAccess(value *AzureEndpointAccessSpecApplyConfiguration) *AzurePlatformSpecApplyConfiguration {
+	b.EndpointAccess = value
 	return b
 }
