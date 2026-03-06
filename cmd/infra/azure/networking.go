@@ -2,7 +2,9 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/openshift/hypershift/support/azureutil"
 
@@ -163,6 +165,49 @@ func (n *NetworkManager) CreateVirtualNetwork(ctx context.Context, resourceGroup
 	return vnet, nil
 }
 
+// NewNATSubnet creates a Subnet struct configured for Azure Private Link Service NAT IP allocation.
+// The subnet has privateLinkServiceNetworkPolicies disabled, which is required for Private Link Service
+// to allocate NAT IPs from this subnet.
+//
+// Parameters:
+//   - name: Name for the subnet resource (e.g., "{infraID}-pls-nat")
+//   - addressPrefix: CIDR notation for the subnet address space (e.g., "10.0.1.0/24")
+//
+// Returns an armnetwork.Subnet with PrivateLinkServiceNetworkPolicies disabled.
+func NewNATSubnet(name string, addressPrefix string) armnetwork.Subnet {
+	return armnetwork.Subnet{
+		Name: ptr.To(name),
+		Properties: &armnetwork.SubnetPropertiesFormat{
+			AddressPrefix:                     ptr.To(addressPrefix),
+			PrivateLinkServiceNetworkPolicies: ptr.To(armnetwork.VirtualNetworkPrivateLinkServiceNetworkPoliciesDisabled),
+		},
+	}
+}
+
+// CreateNATSubnet creates a subnet for Private Link Service NAT IP allocation in an existing VNet.
+func (n *NetworkManager) CreateNATSubnet(ctx context.Context, resourceGroupName string, vnetName string, subnetName string) (string, error) {
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(n.cloud)
+	if err != nil {
+		return "", fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	subnetsClient, err := armnetwork.NewSubnetsClient(n.subscriptionID, n.creds, &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}})
+	if err != nil {
+		return "", fmt.Errorf("failed to create subnets client: %w", err)
+	}
+
+	subnet := NewNATSubnet(subnetName, VirtualNetworkNATSubnetAddressPrefix)
+	poller, err := subnetsClient.BeginCreateOrUpdate(ctx, resourceGroupName, vnetName, subnetName, subnet, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create NAT subnet: %w", err)
+	}
+	result, err := poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed waiting for NAT subnet creation: %w", err)
+	}
+
+	return *result.ID, nil
+}
+
 // CreatePrivateDNSZone creates the private DNS zone
 func (n *NetworkManager) CreatePrivateDNSZone(ctx context.Context, resourceGroupName string, name string, baseDomain string) (string, string, error) {
 	cloudConfig, err := azureutil.GetAzureCloudConfiguration(n.cloud)
@@ -207,7 +252,8 @@ func NewVirtualNetworkLink(location string, vnetID string, registrationEnabled b
 	}
 }
 
-// CreatePrivateDNSZoneLink creates the private DNS Zone network link
+// CreatePrivateDNSZoneLink creates the private DNS Zone network link.
+// It is idempotent: if the link already exists, it returns successfully.
 func (n *NetworkManager) CreatePrivateDNSZoneLink(ctx context.Context, resourceGroupName string, name string, infraID string, vnetID string, privateDNSZoneName string) error {
 	cloudConfig, err := azureutil.GetAzureCloudConfiguration(n.cloud)
 	if err != nil {
@@ -218,13 +264,32 @@ func (n *NetworkManager) CreatePrivateDNSZoneLink(ctx context.Context, resourceG
 		return fmt.Errorf("failed to create new virtual network links client: %w", err)
 	}
 
+	linkName := name + "-" + infraID
+
+	// Check if the link already exists to handle re-runs gracefully.
+	// Azure resource IDs are case-insensitive, so use case-insensitive comparison.
+	existingLink, err := privateZoneLinkClient.Get(ctx, resourceGroupName, privateDNSZoneName, linkName, nil)
+	if err == nil &&
+		existingLink.Properties != nil &&
+		existingLink.Properties.VirtualNetwork != nil &&
+		existingLink.Properties.VirtualNetwork.ID != nil &&
+		strings.EqualFold(*existingLink.Properties.VirtualNetwork.ID, vnetID) {
+		return nil
+	}
+
 	virtualNetworkLinkParams := NewVirtualNetworkLink(VirtualNetworkLinkLocation, vnetID, false)
-	networkLinkPromise, err := privateZoneLinkClient.BeginCreateOrUpdate(ctx, resourceGroupName, privateDNSZoneName, name+"-"+infraID, virtualNetworkLinkParams, nil)
+	networkLinkPromise, err := privateZoneLinkClient.BeginCreateOrUpdate(ctx, resourceGroupName, privateDNSZoneName, linkName, virtualNetworkLinkParams, nil)
 	if err != nil {
 		return fmt.Errorf("failed to set up network link for private DNS zone: %w", err)
 	}
 	_, err = networkLinkPromise.PollUntilDone(ctx, nil)
 	if err != nil {
+		// Handle Conflict error when the DNS zone is already linked to this VNet
+		// (e.g., via a link with a different name from a previous run).
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) && strings.EqualFold(respErr.ErrorCode, "Conflict") {
+			return nil
+		}
 		return fmt.Errorf("failed waiting for network link for private DNS zone: %w", err)
 	}
 

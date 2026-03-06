@@ -111,6 +111,38 @@ func TestNewPublicIPAddress(t *testing.T) {
 	}
 }
 
+func TestNewNATSubnet(t *testing.T) {
+	tests := map[string]struct {
+		name          string
+		addressPrefix string
+	}{
+		"When standard NAT subnet is created it should have private link service network policies disabled": {
+			name:          "test-infra-pls-nat",
+			addressPrefix: "10.0.1.0/24",
+		},
+		"When custom address prefix is provided it should create NAT subnet with correct prefix": {
+			name:          "custom-nat-subnet",
+			addressPrefix: "10.1.0.0/24",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			subnet := NewNATSubnet(test.name, test.addressPrefix)
+
+			g.Expect(subnet.Name).ToNot(BeNil())
+			g.Expect(*subnet.Name).To(Equal(test.name))
+			g.Expect(subnet.Properties).ToNot(BeNil())
+			g.Expect(subnet.Properties.AddressPrefix).ToNot(BeNil())
+			g.Expect(*subnet.Properties.AddressPrefix).To(Equal(test.addressPrefix))
+			g.Expect(subnet.Properties.PrivateLinkServiceNetworkPolicies).ToNot(BeNil())
+			g.Expect(*subnet.Properties.PrivateLinkServiceNetworkPolicies).To(Equal(armnetwork.VirtualNetworkPrivateLinkServiceNetworkPoliciesDisabled))
+		})
+	}
+}
+
 func TestNewLoadBalancer(t *testing.T) {
 	tests := map[string]struct {
 		location         string
