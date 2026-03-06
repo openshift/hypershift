@@ -416,17 +416,21 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{}, nil
 		}
 
+		// getClients can fail if the operator restarted while the object is being deleted,
+		// since initializeWithHCP is only called in the non-deletion reconcile path.
+		// We must return an error here to prevent falling through to finalizer removal,
+		// which would orphan AWS resources (security groups, VPC endpoints, DNS records)
+		// by removing the only reference to their IDs.
 		ec2Client, route53Client, err := r.awsClientBuilder.getClients(ctx)
 		if err != nil {
-			log.Error(err, "failed to get AWS client, skipping aws endpoint service cleanup")
-		} else {
-			completed, err := r.delete(ctx, awsEndpointService, ec2Client, route53Client)
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
-			}
-			if !completed {
-				return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
-			}
+			return ctrl.Result{}, fmt.Errorf("failed to get AWS clients for endpoint service cleanup: %w", err)
+		}
+		completed, err := r.delete(ctx, awsEndpointService, ec2Client, route53Client)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
+		}
+		if !completed {
+			return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
 		}
 		if controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
 			controllerutil.RemoveFinalizer(awsEndpointService, finalizer)
@@ -1107,8 +1111,12 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissions,
 		}); err != nil {
+			// DependencyViolation indicates the VPC endpoint is still being deleted
+			if supportawsutil.AWSErrorCode(err) == "DependencyViolation" {
+				log.Info("security group ingress still has dependencies, will retry", "SecurityGroupID", aws.StringValue(sg.GroupId))
+				return fmt.Errorf("security group has dependencies, VPC endpoint deletion may still be in progress")
+			}
 			log.Error(err, "failed to revoke security group ingress permissions", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
-
 			return fmt.Errorf("failed to revoke security group ingress rules: %s", supportawsutil.AWSErrorCode(err))
 		}
 	}
@@ -1118,6 +1126,11 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissionsEgress,
 		}); err != nil {
+			// DependencyViolation indicates the VPC endpoint is still being deleted
+			if supportawsutil.AWSErrorCode(err) == "DependencyViolation" {
+				log.Info("security group egress still has dependencies, will retry", "SecurityGroupID", aws.StringValue(sg.GroupId))
+				return fmt.Errorf("security group has dependencies, VPC endpoint deletion may still be in progress")
+			}
 			log.Error(err, "failed to revoke security group egress permissions", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
 			return fmt.Errorf("failed to revoke security group egress rules: %s", supportawsutil.AWSErrorCode(err))
 		}
@@ -1126,6 +1139,11 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 	if _, err = ec2Client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
 		GroupId: sg.GroupId,
 	}); err != nil {
+		// DependencyViolation indicates the VPC endpoint is still being deleted
+		if supportawsutil.AWSErrorCode(err) == "DependencyViolation" {
+			log.Info("security group still has dependencies, will retry", "SecurityGroupID", aws.StringValue(sg.GroupId))
+			return fmt.Errorf("security group has dependencies, VPC endpoint deletion may still be in progress")
+		}
 		log.Error(err, "failed to delete security group", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
 		return fmt.Errorf("failed to delete security group %s: %s", aws.StringValue(sg.GroupId), supportawsutil.AWSErrorCode(err))
 	}
