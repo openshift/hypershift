@@ -1220,6 +1220,170 @@ func TestAdaptAuthConfig(t *testing.T) {
 			shouldError: true,
 		},
 		{
+			name:   "authn spec provided, username expression set, no error, successful mapping",
+			client: nil,
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							Audiences:           []string{"one", "two"},
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Expression: "claims.email",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Prefix: ptr.To(""),
+								Claim:  "",
+							},
+							UID:   ClaimOrExpression{Claim: "sub"},
+							Extra: []ExtraMapping{},
+						},
+						ClaimValidationRules: []ClaimValidationRule{},
+					},
+				},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:       "https://test.com",
+							Audiences: []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								Expression: "claims.email",
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "authn spec provided, groups expression set, no error, successful mapping",
+			client: nil,
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{
+					{
+						Issuer: Issuer{
+							URL:                 "https://test.com",
+							AudienceMatchPolicy: AudienceMatchPolicyMatchAny,
+							Audiences:           []string{"one", "two"},
+						},
+						ClaimMappings: ClaimMappings{
+							Username: PrefixedClaimOrExpression{
+								Prefix: ptr.To("https://test.com#"),
+								Claim:  "username",
+							},
+							Groups: PrefixedClaimOrExpression{
+								Expression: "claims.groups",
+							},
+							UID:   ClaimOrExpression{Claim: "sub"},
+							Extra: []ExtraMapping{},
+						},
+						ClaimValidationRules: []ClaimValidationRule{},
+					},
+				},
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:       "https://test.com",
+							Audiences: []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								PrefixPolicy: configv1.NoOpinion,
+								Claim:        "username",
+							},
+							Groups: configv1.PrefixedClaimMapping{
+								TokenClaimMapping: configv1.TokenClaimMapping{
+									Expression: "claims.groups",
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "authn spec provided, username claim and expression both set, error",
+			client: nil,
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:       "https://test.com",
+							Audiences: []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								Claim:      "username",
+								Expression: "claims.email",
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+		{
+			name:   "authn spec provided, groups claim and expression both set, error",
+			client: nil,
+			featureGates: []featuregate.Feature{
+				featuregates.ExternalOIDCWithUpstreamParity,
+			},
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				OIDCProviders: []configv1.OIDCProvider{
+					{
+						Name: "test",
+						Issuer: configv1.TokenIssuer{
+							URL:       "https://test.com",
+							Audiences: []configv1.TokenAudience{"one", "two"},
+						},
+						ClaimMappings: configv1.TokenClaimMappings{
+							Username: configv1.UsernameClaimMapping{
+								PrefixPolicy: configv1.NoOpinion,
+								Claim:        "username",
+							},
+							Groups: configv1.PrefixedClaimMapping{
+								TokenClaimMapping: configv1.TokenClaimMapping{
+									Claim:      "groups",
+									Expression: "claims.groups",
+								},
+							},
+						},
+					},
+				},
+			},
+			shouldError: true,
+		},
+		{
 			name:   "user validation rule invalid expression",
 			client: fake.NewClientBuilder().Build(),
 			featureGates: []featuregate.Feature{

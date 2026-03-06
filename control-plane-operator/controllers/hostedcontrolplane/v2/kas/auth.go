@@ -182,7 +182,10 @@ func generateClaimMappings(claimMappings configv1.TokenClaimMappings, issuerURL 
 		return out, fmt.Errorf("generating username claim mapping: %v", err)
 	}
 
-	groups := generateGroupsClaimMapping(claimMappings.Groups)
+	groups, err := generateGroupsClaimMapping(claimMappings.Groups)
+	if err != nil {
+		return out, fmt.Errorf("generating groups claim mapping: %v", err)
+	}
 
 	out.Username = username
 	out.Groups = groups
@@ -208,9 +211,11 @@ func generateClaimMappings(claimMappings configv1.TokenClaimMappings, issuerURL 
 func generateUsernameClaimMapping(username configv1.UsernameClaimMapping, issuerURL string) (PrefixedClaimOrExpression, error) {
 	out := PrefixedClaimOrExpression{}
 
-	// Currently, the authentications.config.openshift.io CRD only allows setting a claim for the mapping
-	// and does not allow setting a CEL expression like the upstream. This is likely to change in the future,
-	// but for now just set the claim.
+	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) && username.Expression != "" {
+		out.Expression = username.Expression
+		return out, nil
+	}
+
 	out.Claim = username.Claim
 
 	switch username.PrefixPolicy {
@@ -234,16 +239,17 @@ func generateUsernameClaimMapping(username configv1.UsernameClaimMapping, issuer
 	return out, nil
 }
 
-func generateGroupsClaimMapping(groups configv1.PrefixedClaimMapping) PrefixedClaimOrExpression {
+func generateGroupsClaimMapping(groups configv1.PrefixedClaimMapping) (PrefixedClaimOrExpression, error) {
 	out := PrefixedClaimOrExpression{}
+	if featuregates.Gate().Enabled(featuregates.ExternalOIDCWithUpstreamParity) && groups.Expression != "" {
+		out.Expression = groups.Expression
+		return out, nil
+	}
 
-	// Currently, the authentications.config.openshift.io CRD only allows setting a claim for the mapping
-	// and does not allow setting a CEL expression like the upstream. This is likely to change in the future,
-	// but for now just set the claim.
 	out.Claim = groups.Claim
 	out.Prefix = &groups.Prefix
 
-	return out
+	return out, nil
 }
 
 func generateUIDClaimMapping(uid *configv1.TokenClaimOrExpressionMapping) (ClaimOrExpression, error) {
@@ -331,21 +337,6 @@ func generateClaimValidationRule(claimValidationRule configv1.TokenClaimValidati
 
 		out.Claim = claimValidationRule.RequiredClaim.Claim
 		out.RequiredValue = claimValidationRule.RequiredClaim.RequiredValue
-	case configv1.TokenValidationRuleTypeCEL:
-		if len(claimValidationRule.CEL.Expression) == 0 {
-			return out, fmt.Errorf("claimValidationRule.type is %s and expression is not set", configv1.TokenValidationRuleTypeCEL)
-		}
-
-		// validate CEL expression
-		if err := validateCELExpression(&authenticationcel.ClaimValidationCondition{
-			Expression: claimValidationRule.CEL.Expression,
-		}); err != nil {
-			return out, fmt.Errorf("invalid CEL expression: %v", err)
-		}
-
-		out.Expression = claimValidationRule.CEL.Expression
-		out.Message = claimValidationRule.CEL.Message
-
 	default:
 		return out, fmt.Errorf("unknown claimValidationRule type %q", claimValidationRule.Type)
 	}
@@ -374,15 +365,8 @@ func generateUserValidationRules(rules ...configv1.TokenUserValidationRule) ([]U
 }
 
 func generateUserValidationRule(rule configv1.TokenUserValidationRule) (UserValidationRule, error) {
-	out := UserValidationRule{}
 	if len(rule.Expression) == 0 {
 		return UserValidationRule{}, fmt.Errorf("userValidationRule expression must be non-empty")
-	}
-	// validate CEL expression
-	if err := validateUserCELExpression(&authenticationcel.UserValidationCondition{
-		Expression: rule.Expression,
-	}); err != nil {
-		return out, fmt.Errorf("invalid CEL expression: %v", err)
 	}
 
 	return UserValidationRule{
@@ -441,19 +425,4 @@ func HCPAuthConfigToAPIServerAuthConfig(authConfig *AuthenticationConfiguration)
 	}
 
 	return apiserverAuthConfig, nil
-}
-
-// validateCELExpression validates a CEL expression using the provided expression accessor.
-// It uses the default authentication CEL compiler that the KAS uses and thus defaults to
-// validating CEL expressions based on the version of the k8s dependencies used by the
-// cluster-authentication-operator.
-func validateCELExpression(expressionAccessor authenticationcel.ExpressionAccessor) error {
-	_, err := authenticationcel.NewDefaultCompiler().CompileClaimsExpression(expressionAccessor)
-	return err
-}
-
-// validateUserCELExpression validates a user CEL expression using the user.* scope.
-func validateUserCELExpression(expressionAccessor authenticationcel.ExpressionAccessor) error {
-	_, err := authenticationcel.NewDefaultCompiler().CompileUserExpression(expressionAccessor)
-	return err
 }
