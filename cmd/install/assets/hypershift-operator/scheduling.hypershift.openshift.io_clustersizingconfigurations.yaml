@@ -85,6 +85,17 @@ spec:
                 description: resourceBasedAutoscaling contains configuration related
                   to resource based autoscaling of control planes
                 properties:
+                  kubeAPIServerCPUFraction:
+                    anyOf:
+                    - type: integer
+                    - type: string
+                    description: |-
+                      kubeAPIServerCPUFraction is a number between 0 and 1 that determines how much
+                      of a machine's total CPU is available for the Kube API server container. This fraction
+                      is used to determine whether a Kube API server container can fit within a particular cluster size.
+                      If not specified, a default fraction of 0.65 is used.
+                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                    x-kubernetes-int-or-string: true
                   kubeAPIServerMemoryFraction:
                     anyOf:
                     - type: integer
@@ -116,6 +127,26 @@ spec:
                           - type: string
                           description: cpu is the amount of CPU available for a specific
                             size
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        kubeAPIServerCPUFraction:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            kubeAPIServerCPUFraction is a number between 0 and 1 that overrides the global
+                            kubeAPIServerCPUFraction for this specific size. If not specified, the global
+                            fraction (or its default) is used.
+                          pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                          x-kubernetes-int-or-string: true
+                        kubeAPIServerMemoryFraction:
+                          anyOf:
+                          - type: integer
+                          - type: string
+                          description: |-
+                            kubeAPIServerMemoryFraction is a number between 0 and 1 that overrides the global
+                            kubeAPIServerMemoryFraction for this specific size. If not specified, the global
+                            fraction (or its default) is used.
                           pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
                           x-kubernetes-int-or-string: true
                         memory:
