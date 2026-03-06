@@ -133,6 +133,8 @@ var (
 		"network-node-identity": 1,
 		// temporary workaround for https://issues.redhat.com/browse/CNV-76520
 		"kubevirt-cloud-controller-manager": 2,
+		// Allow 1 restart for token-minter sidecar race condition: https://issues.redhat.com/browse/GCP-441
+		"gcp-cloud-controller-manager": 1,
 	}
 )
 
