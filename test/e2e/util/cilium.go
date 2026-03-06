@@ -136,7 +136,7 @@ func ciliumManifestFiles() []string {
 
 // InstallCilium validates that Cilium network policies are properly enforced
 // in ARO HCP guest clusters. This test covers:Verifying Cilium installation
-func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster, reader assets.AssetReader) {
+func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Client, hostedCluster *hyperv1.HostedCluster, reader assets.AssetReader, nodePoolReplicas int32) {
 	t.Run("InstallCilium", func(t *testing.T) {
 		if !azureutil.IsAroHCP() {
 			t.Skip("test only supported on ARO HCP clusters")
@@ -324,20 +324,7 @@ func InstallCilium(t *testing.T, ctx context.Context, guestClient crclient.Clien
 
 			// Now wait for DaemonSet pods to be ready
 			t.Log("Waiting for Cilium agent pods from DaemonSet to be ready")
-			nodeCount, err := hyperutil.CountAvailableNodes(ctx, guestClient)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to count available nodes")
-			err = waitForDaemonSetsReady(t, ctx, guestClient, []DaemonSetManifest{
-				{
-					GetFunc: func() *appsv1.DaemonSet {
-						return &appsv1.DaemonSet{
-							ObjectMeta: metav1.ObjectMeta{
-								Name:      ciliumDaemonSet.Name,
-								Namespace: ciliumDaemonSet.Namespace,
-							},
-						}
-					},
-				},
-			}, nodeCount)
+			err = waitForDaemonSetReady(t, ctx, guestClient, ciliumDaemonSet.Name, ciliumDaemonSet.Namespace, nodePoolReplicas)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to wait for Cilium DaemonSet to be ready")
 
 			t.Log("Cilium installation completed successfully")
