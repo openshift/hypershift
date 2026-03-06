@@ -18,15 +18,10 @@ STATICCHECK := $(abspath $(TOOLS_BIN_DIR)/staticcheck)
 GENAPIDOCS := $(abspath $(TOOLS_BIN_DIR)/gen-crd-api-reference-docs)
 MOCKGEN := $(abspath $(TOOLS_BIN_DIR)/mockgen)
 
-CODESPELL_VER := 2.4.1
-CODESPELL_BIN := codespell
-CODESPELL_DIST_DIR := codespell_dist
-CODESPELL := $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/$(CODESPELL_BIN)
+UVX ?= uvx
 
+CODESPELL_VER := 2.4.1
 GITLINT_VER := 0.19.1
-GITLINT_DIST_DIR := gitlint_dist
-GITLINT_BIN := gitlint
-GITLINT := $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin
 
 PROMTOOL=$(abspath $(TOOLS_BIN_DIR)/promtool)
 
@@ -384,14 +379,14 @@ run-operator-locally-aws-dev:
 	@$(RUN_OPERATOR_LOCALLY_AWS)
 
 .PHONY: verify-codespell
-verify-codespell: codespell ## Verify codespell.
-	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
+verify-codespell: ## Verify codespell.
+	@$(UVX) codespell==$(CODESPELL_VER) --count --ignore-words=./.codespellignore --skip="./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
 
 .PHONY: run-gitlint
-run-gitlint: $(GITLINT)
+run-gitlint:
 ifdef PULL_BASE_SHA
 	@echo "Linting commits from $(PULL_BASE_SHA) to $(PULL_PULL_SHA) (CI: PR targeting $(PULL_BASE_SHA))"
-	@$(GITLINT) --commits $(PULL_BASE_SHA)..$(PULL_PULL_SHA)
+	@$(UVX) gitlint-core==$(GITLINT_VER) --commits $(PULL_BASE_SHA)..$(PULL_PULL_SHA)
 else
 	$(eval MERGE_BASE := $(shell \
 		git merge-base HEAD origin/HEAD 2>/dev/null || \
@@ -400,7 +395,7 @@ else
 		echo "HEAD~1" \
 	))
 	@echo "Linting commits from $(MERGE_BASE) to HEAD (local development)"
-	@$(GITLINT) --commits $(MERGE_BASE)..HEAD
+	@$(UVX) gitlint-core==$(GITLINT_VER) --commits $(MERGE_BASE)..HEAD
 endif
 
 .PHONY: cpo-container-sync
@@ -420,22 +415,3 @@ karpenter-upstream-e2e:
 ## Tooling Binaries
 ## --------------------------------------
 
-##@ codespell
-codespell : $(CODESPELL) ## Build a local copy of codespell.
-$(CODESPELL): ## Build codespell from tools folder.
-		mkdir -p $(TOOLS_BIN_DIR); \
-		mkdir -p $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
-		mkdir -p $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin; \
-		mkdir -p $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
-	 	pip install --target=$(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR) $(CODESPELL_BIN)==$(CODESPELL_VER) --upgrade; \
-		mv $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin/$(CODESPELL_BIN) $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR); \
-		rm -r $(TOOLS_BIN_DIR)/$(CODESPELL_DIST_DIR)/bin;
-
-##@ gitlint
-gitlint : $(GITLINT) ## Install local copy of gitlint
-$(GITLINT): $(TOOLS_DIR)/go.mod
-	mkdir -p $(TOOLS_BIN_DIR); \
-	mkdir -p $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR); \
-	pip install --target=$(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR) gitlint==$(GITLINT_VER) --upgrade; \
-	cp $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/bin/$(GITLINT_BIN) $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin; \
-	chmod +x $(TOOLS_BIN_DIR)/$(GITLINT_DIST_DIR)/$(GITLINT_BIN)-bin;
