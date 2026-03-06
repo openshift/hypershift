@@ -14,6 +14,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -253,5 +254,330 @@ func TestGCPPrivateRouterNetworkPolicy_IngressOnly(t *testing.T) {
 				t.Error("Expected GCP private router to have ports 8080 and 8443")
 			}
 		}
+	}
+}
+
+func TestReconcileNetworkPolicies_OpenshiftIngressPolicy(t *testing.T) {
+	tests := []struct {
+		name          string
+		hcluster      *hyperv1.HostedCluster
+		hcp           *hyperv1.HostedControlPlane
+		expectCreated bool
+		expectDeleted bool
+	}{
+		{
+			name: "When AWS public cluster uses KAS LoadBalancer it should create policy",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Public}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Public}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			expectCreated: true,
+		},
+		{
+			name: "When AWS private cluster uses KAS LoadBalancer it should delete policy",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Private}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Private}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			expectDeleted: true,
+		},
+		{
+			name: "When AWS PublicAndPrivate cluster uses KAS LoadBalancer it should create policy",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.PublicAndPrivate}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.PublicAndPrivate}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			expectCreated: true,
+		},
+		{
+			name: "When AWS public cluster uses KAS Route with hostname it should delete policy",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Public}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type:  hyperv1.Route,
+							Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+						}},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform, AWS: &hyperv1.AWSPlatformSpec{EndpointAccess: hyperv1.Public}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type:  hyperv1.Route,
+							Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+						}},
+					},
+				},
+			},
+			expectDeleted: true,
+		},
+		{
+			name: "When GCP PublicAndPrivate cluster uses KAS LoadBalancer it should create policy",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform, GCP: &hyperv1.GCPPlatformSpec{EndpointAccess: hyperv1.GCPEndpointAccessPublicAndPrivate}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform, GCP: &hyperv1.GCPPlatformSpec{EndpointAccess: hyperv1.GCPEndpointAccessPublicAndPrivate}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			expectCreated: true,
+		},
+		{
+			name: "When GCP private cluster uses KAS LoadBalancer it should delete policy",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform, GCP: &hyperv1.GCPPlatformSpec{EndpointAccess: hyperv1.GCPEndpointAccessPrivate}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.GCPPlatform, GCP: &hyperv1.GCPPlatformSpec{EndpointAccess: hyperv1.GCPEndpointAccessPrivate}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			expectDeleted: true,
+		},
+		{
+			name: "When IBM Cloud cluster uses KAS Route it should create policy",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.IBMCloudPlatform},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.IBMCloudPlatform},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.Route}},
+					},
+				},
+			},
+			expectCreated: true,
+		},
+		{
+			name: "When Agent cluster uses KAS LoadBalancer it should create policy",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AgentPlatform},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AgentPlatform},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			expectCreated: true,
+		},
+		{
+			name: "When Agent cluster uses KAS Route with hostname it should delete policy",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AgentPlatform},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type:  hyperv1.Route,
+							Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+						}},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.AgentPlatform},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+							Type:  hyperv1.Route,
+							Route: &hyperv1.RoutePublishingStrategy{Hostname: "api.example.com"},
+						}},
+					},
+				},
+			},
+			expectDeleted: true,
+		},
+		{
+			name: "When KubeVirt cluster uses KAS LoadBalancer it should create policy",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "test-ns"},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform, Kubevirt: &hyperv1.KubevirtPlatformSpec{}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{Type: hyperv1.KubevirtPlatform, Kubevirt: &hyperv1.KubevirtPlatformSpec{}},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{Service: hyperv1.APIServer, ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer}},
+					},
+				},
+			},
+			expectCreated: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(tc.hcluster.Namespace, tc.hcluster.Name)
+			tc.hcp.Namespace = controlPlaneNamespaceName
+			tc.hcp.Name = tc.hcluster.Name
+
+			scheme := runtime.NewScheme()
+			if err := hyperv1.AddToScheme(scheme); err != nil {
+				t.Fatalf("Failed to add hyperv1 scheme: %v", err)
+			}
+			if err := corev1.AddToScheme(scheme); err != nil {
+				t.Fatalf("Failed to add corev1 scheme: %v", err)
+			}
+			if err := configv1.AddToScheme(scheme); err != nil {
+				t.Fatalf("Failed to add configv1 scheme: %v", err)
+			}
+			if err := networkingv1.AddToScheme(scheme); err != nil {
+				t.Fatalf("Failed to add networkingv1 scheme: %v", err)
+			}
+
+			//nolint:staticcheck // SA1019: corev1.Endpoints is intentionally used for backward compatibility
+			kubernetesEndpoint := &corev1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{Name: "kubernetes", Namespace: "default"},
+				//nolint:staticcheck // SA1019: corev1.EndpointSubset is intentionally used for backward compatibility
+				Subsets: []corev1.EndpointSubset{
+					{Addresses: []corev1.EndpointAddress{{IP: "10.0.0.1"}}},
+				},
+			}
+
+			managementClusterNetwork := &configv1.Network{
+				ObjectMeta: metav1.ObjectMeta{Name: "cluster"},
+				Spec: configv1.NetworkSpec{
+					ClusterNetwork: []configv1.ClusterNetworkEntry{{CIDR: "10.128.0.0/14"}},
+					ServiceNetwork: []string{"172.30.0.0/16"},
+				},
+			}
+
+			objs := []client.Object{kubernetesEndpoint, managementClusterNetwork}
+
+			// For deletion tests, pre-create the openshift-ingress NetworkPolicy
+			if tc.expectDeleted {
+				existingPolicy := networkpolicy.OpenshiftIngressNetworkPolicy(controlPlaneNamespaceName)
+				existingPolicy.Spec.PodSelector = metav1.LabelSelector{}
+				existingPolicy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}
+				objs = append(objs, existingPolicy)
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+
+			reconciler := &HostedClusterReconciler{
+				Client:                        fakeClient,
+				ManagementClusterCapabilities: fakecapabilities.NewSupportAllExcept(),
+			}
+
+			createdNetworkPolicies := make(map[string]*networkingv1.NetworkPolicy)
+			createOrUpdate := upsert.CreateOrUpdateFN(func(ctx context.Context, c client.Client, obj client.Object, f controllerutil.MutateFn) (controllerutil.OperationResult, error) {
+				if netPol, ok := obj.(*networkingv1.NetworkPolicy); ok {
+					if err := f(); err != nil {
+						return controllerutil.OperationResultNone, err
+					}
+					createdNetworkPolicies[netPol.Name] = netPol
+				}
+				return controllerutil.OperationResultCreated, nil
+			})
+
+			ctx := context.Background()
+			log := ctrl.Log.WithName("test")
+			version := semver.MustParse("4.15.0")
+
+			err := reconciler.reconcileNetworkPolicies(ctx, log, createOrUpdate, tc.hcluster, tc.hcp, version, false)
+			if err != nil {
+				t.Fatalf("reconcileNetworkPolicies failed: %v", err)
+			}
+
+			_, policyCreated := createdNetworkPolicies["openshift-ingress"]
+			if tc.expectCreated && !policyCreated {
+				t.Error("Expected openshift-ingress NetworkPolicy to be created, but it was not")
+			}
+			if !tc.expectCreated && policyCreated {
+				t.Error("Expected openshift-ingress NetworkPolicy to NOT be created, but it was")
+			}
+
+			if tc.expectDeleted {
+				policyObj := networkpolicy.OpenshiftIngressNetworkPolicy(controlPlaneNamespaceName)
+				err := fakeClient.Get(ctx, client.ObjectKeyFromObject(policyObj), policyObj)
+				if !apierrors.IsNotFound(err) {
+					t.Error("Expected openshift-ingress NetworkPolicy to be deleted from the cluster, but it still exists")
+				}
+			}
+		})
 	}
 }
