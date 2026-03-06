@@ -9,7 +9,6 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
@@ -17,7 +16,6 @@ import (
 	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/proxy"
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
 	"github.com/openshift/hypershift/support/upsert"
 	"github.com/openshift/hypershift/support/util"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -46,7 +44,6 @@ func ReconcileIgnitionServer(ctx context.Context,
 	managementClusterHasCapabilitySecurityContextConstraint bool,
 	ownerRef config.OwnerRef,
 	openShiftTrustedCABundleConfigMapExists bool,
-	mirroredReleaseImage string,
 	labelHCPRoutes bool,
 ) error {
 	log := ctrl.LoggerFrom(ctx)
@@ -198,41 +195,6 @@ func ReconcileIgnitionServer(ctx context.Context,
 		servingCertSecretName = manifests.IgnitionServerCertSecret("").Name
 	}
 
-	// Determine if we need to override the machine config operator and cluster config operator
-	// images based on image mappings present in management cluster.
-	ocpRegistryMapping := util.ConvertImageRegistryOverrideStringToMap(openShiftRegistryOverrides)
-
-	// Get pull secret for image availability verification
-	pullSecret := common.PullSecret(controlPlaneNamespace)
-	if err := c.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
-		return fmt.Errorf("failed to get pull secret: %w", err)
-	}
-	pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
-
-	overrideConfigAPIImage, err := util.LookupMappedImage(ctx, ocpRegistryMapping, configAPIImage, pullSecretBytes, registryclient.GetMetadata)
-	if err != nil {
-		return err
-	}
-	overrideMachineConfigOperatorImage, err := util.LookupMappedImage(ctx, ocpRegistryMapping, machineConfigOperatorImage, pullSecretBytes, registryclient.GetMetadata)
-	if err != nil {
-		return err
-	}
-
-	imageOverrides := map[string]string{}
-	for k, v := range registryOverrides {
-		if k != "" {
-			imageOverrides[k] = v
-		}
-	}
-
-	if overrideConfigAPIImage != configAPIImage {
-		imageOverrides[configAPIImage] = overrideConfigAPIImage
-	}
-
-	if overrideMachineConfigOperatorImage != machineConfigOperatorImage {
-		imageOverrides[machineConfigOperatorImage] = overrideMachineConfigOperatorImage
-	}
-
 	ignitionServerDeployment := ignitionserver.Deployment(controlPlaneNamespace)
 	if result, err := createOrUpdate(ctx, c, ignitionServerDeployment, func() error {
 		return reconcileDeployment(ignitionServerDeployment,
@@ -242,13 +204,12 @@ func ReconcileIgnitionServer(ctx context.Context,
 			hcp,
 			defaultIngressDomain,
 			hasHealthzHandler,
-			imageOverrides,
+			registryOverrides,
 			openShiftRegistryOverrides,
 			managementClusterHasCapabilitySecurityContextConstraint,
 			ignitionServerLabels,
 			servingCertSecretName,
 			openShiftTrustedCABundleConfigMapExists,
-			mirroredReleaseImage,
 		)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile ignition deployment: %w", err)
@@ -483,7 +444,6 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 	ignitionServerLabels map[string]string,
 	servingCertSecretName string,
 	openShiftTrustedCABundleConfigMapForCPOExists bool,
-	mirroredReleaseImage string,
 ) error {
 	var probeHandler corev1.ProbeHandler
 	if hasHealthzHandler {
@@ -717,10 +677,6 @@ func reconcileDeployment(deployment *appsv1.Deployment,
 		},
 	}
 	proxy.SetEnvVars(&deployment.Spec.Template.Spec.Containers[0].Env)
-
-	if len(mirroredReleaseImage) > 0 {
-		deployment.Spec.Template.Spec.Containers[0].Env = append(deployment.Spec.Template.Spec.Containers[0].Env, corev1.EnvVar{Name: "MIRRORED_RELEASE_IMAGE", Value: mirroredReleaseImage})
-	}
 
 	if hcp.Spec.AdditionalTrustBundle != nil {
 		// Add trusted-ca mount with optional configmap
