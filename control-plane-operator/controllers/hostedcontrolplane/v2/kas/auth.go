@@ -331,21 +331,6 @@ func generateClaimValidationRule(claimValidationRule configv1.TokenClaimValidati
 
 		out.Claim = claimValidationRule.RequiredClaim.Claim
 		out.RequiredValue = claimValidationRule.RequiredClaim.RequiredValue
-	case configv1.TokenValidationRuleTypeCEL:
-		if len(claimValidationRule.CEL.Expression) == 0 {
-			return out, fmt.Errorf("claimValidationRule.type is %s and expression is not set", configv1.TokenValidationRuleTypeCEL)
-		}
-
-		// validate CEL expression
-		if err := validateCELExpression(&authenticationcel.ClaimValidationCondition{
-			Expression: claimValidationRule.CEL.Expression,
-		}); err != nil {
-			return out, fmt.Errorf("invalid CEL expression: %v", err)
-		}
-
-		out.Expression = claimValidationRule.CEL.Expression
-		out.Message = claimValidationRule.CEL.Message
-
 	default:
 		return out, fmt.Errorf("unknown claimValidationRule type %q", claimValidationRule.Type)
 	}
@@ -374,15 +359,8 @@ func generateUserValidationRules(rules ...configv1.TokenUserValidationRule) ([]U
 }
 
 func generateUserValidationRule(rule configv1.TokenUserValidationRule) (UserValidationRule, error) {
-	out := UserValidationRule{}
 	if len(rule.Expression) == 0 {
 		return UserValidationRule{}, fmt.Errorf("userValidationRule expression must be non-empty")
-	}
-	// validate CEL expression
-	if err := validateUserCELExpression(&authenticationcel.UserValidationCondition{
-		Expression: rule.Expression,
-	}); err != nil {
-		return out, fmt.Errorf("invalid CEL expression: %v", err)
 	}
 
 	return UserValidationRule{
@@ -441,19 +419,4 @@ func HCPAuthConfigToAPIServerAuthConfig(authConfig *AuthenticationConfiguration)
 	}
 
 	return apiserverAuthConfig, nil
-}
-
-// validateCELExpression validates a CEL expression using the provided expression accessor.
-// It uses the default authentication CEL compiler that the KAS uses and thus defaults to
-// validating CEL expressions based on the version of the k8s dependencies used by the
-// cluster-authentication-operator.
-func validateCELExpression(expressionAccessor authenticationcel.ExpressionAccessor) error {
-	_, err := authenticationcel.NewDefaultCompiler().CompileClaimsExpression(expressionAccessor)
-	return err
-}
-
-// validateUserCELExpression validates a user CEL expression using the user.* scope.
-func validateUserCELExpression(expressionAccessor authenticationcel.ExpressionAccessor) error {
-	_, err := authenticationcel.NewDefaultCompiler().CompileUserExpression(expressionAccessor)
-	return err
 }
