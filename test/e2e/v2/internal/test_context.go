@@ -43,6 +43,43 @@ type TestContext struct {
 	hostedClusterOnce     sync.Once
 }
 
+// GetNodePools returns all NodePools associated with this HostedCluster.
+// It performs a fresh list on each call (NodePools are mutable during test execution).
+// Filters by Spec.ClusterName to ensure only NodePools for this HostedCluster are returned.
+func (tc *TestContext) GetNodePools() ([]*hyperv1.NodePool, error) {
+	nodePools := &hyperv1.NodePoolList{}
+	if err := tc.MgmtClient.List(tc.Context, nodePools, crclient.InNamespace(tc.ClusterNamespace)); err != nil {
+		return nil, fmt.Errorf("failed to list NodePools in namespace %s: %w", tc.ClusterNamespace, err)
+	}
+
+	var result []*hyperv1.NodePool
+	for i := range nodePools.Items {
+		if nodePools.Items[i].Spec.ClusterName == tc.ClusterName {
+			result = append(result, &nodePools.Items[i])
+		}
+	}
+	return result, nil
+}
+
+// GetNodePool returns a specific NodePool by name.
+// Performs a direct Get rather than listing.
+func (tc *TestContext) GetNodePool(name string) (*hyperv1.NodePool, error) {
+	np := &hyperv1.NodePool{}
+	if err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+		Namespace: tc.ClusterNamespace,
+		Name:      name,
+	}, np); err != nil {
+		return nil, fmt.Errorf("failed to get NodePool %s/%s: %w", tc.ClusterNamespace, name, err)
+	}
+	if np.Spec.ClusterName != tc.ClusterName {
+		return nil, fmt.Errorf(
+			"NodePool %s/%s belongs to cluster %q, not %q",
+			tc.ClusterNamespace, name, np.Spec.ClusterName, tc.ClusterName,
+		)
+	}
+	return np, nil
+}
+
 // GetHostedCluster returns the HostedCluster associated with this test context.
 // It fetches the HostedCluster lazily on first call if ClusterName and ClusterNamespace are set.
 // Returns nil if the HostedCluster cannot be fetched or if ClusterName/ClusterNamespace are not set.
