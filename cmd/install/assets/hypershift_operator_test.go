@@ -301,8 +301,9 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 						Name: "hypershift",
 					},
 				},
-				Replicas:        3,
-				PrivatePlatform: string(hyperv1.AzurePlatform),
+				Replicas:              3,
+				PrivatePlatform:       string(hyperv1.AzurePlatform),
+				AzurePLSResourceGroup: "rg-mgmt",
 				AzurePrivateSecret: &corev1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: azureCredsSecretName,
@@ -339,6 +340,10 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 			},
 			expectedEnvVars: []corev1.EnvVar{
 				{
+					Name:  "AZURE_RESOURCE_GROUP",
+					Value: "rg-mgmt",
+				},
+				{
 					Name:  "AZURE_CREDENTIALS_FILE",
 					Value: "/etc/azure-provider/credentials",
 				},
@@ -361,6 +366,7 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				PrivatePlatform:                 string(hyperv1.AzurePlatform),
 				AzurePLSManagedIdentityClientID: "00000000-0000-0000-0000-000000000001",
 				AzurePLSSubscriptionID:          "00000000-0000-0000-0000-000000000002",
+				AzurePLSResourceGroup:           "rg-mgmt",
 			},
 			expectedVolumeMounts: nil,
 			expectedVolumes:      nil,
@@ -375,6 +381,10 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				fmt.Sprintf("--private-platform=%s", string(hyperv1.AzurePlatform)),
 			},
 			expectedEnvVars: []corev1.EnvVar{
+				{
+					Name:  "AZURE_RESOURCE_GROUP",
+					Value: "rg-mgmt",
+				},
 				{
 					Name:  "AZURE_PLS_CLIENT_ID",
 					Value: "00000000-0000-0000-0000-000000000001",

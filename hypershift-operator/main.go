@@ -554,10 +554,15 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			if err != nil {
 				return fmt.Errorf("failed to create Azure Load Balancers client: %w", err)
 			}
+			azureResourceGroup := os.Getenv("AZURE_RESOURCE_GROUP")
+			if azureResourceGroup == "" {
+				return fmt.Errorf("AZURE_RESOURCE_GROUP environment variable is required for Azure platform")
+			}
 			if err := (&azureplatform.AzurePrivateLinkServiceController{
-				Client:              mgr.GetClient(),
-				PrivateLinkServices: plsClient,
-				LoadBalancers:       lbClient,
+				Client:                  mgr.GetClient(),
+				PrivateLinkServices:     plsClient,
+				LoadBalancers:           lbClient,
+				ManagementResourceGroup: azureResourceGroup,
 			}).SetupWithManager(mgr); err != nil {
 				return fmt.Errorf("unable to create AzurePrivateLinkService controller: %w", err)
 			}

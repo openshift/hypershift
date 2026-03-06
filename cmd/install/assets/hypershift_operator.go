@@ -467,6 +467,7 @@ type HyperShiftOperatorDeployment struct {
 	AzurePrivateSecretKey                   string
 	AzurePLSManagedIdentityClientID         string
 	AzurePLSSubscriptionID                  string
+	AzurePLSResourceGroup                   string
 	GCPProject                              string
 	GCPRegion                               string
 	OIDCBucketName                          string
@@ -736,6 +737,12 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 					Value: "1",
 				})
 		case hyperv1.AzurePlatform:
+			if o.AzurePLSResourceGroup != "" {
+				envVars = append(envVars, corev1.EnvVar{
+					Name:  "AZURE_RESOURCE_GROUP",
+					Value: o.AzurePLSResourceGroup,
+				})
+			}
 			if o.AzurePLSManagedIdentityClientID != "" {
 				// Workload identity mode: the SA annotation triggers Azure AD Workload Identity
 				// webhook to inject federated tokens. Set the client ID as an env var so the

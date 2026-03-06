@@ -103,6 +103,7 @@ type Options struct {
 	AzurePrivateCredentialsSecretKey          string
 	AzurePLSManagedIdentityClientID           string
 	AzurePLSSubscriptionID                    string
+	AzurePLSResourceGroup                     string
 	GCPProject                                string
 	GCPRegion                                 string
 	OIDCStorageProviderS3Region               string
@@ -182,6 +183,9 @@ func (o *Options) Validate() error {
 			}
 			if len(o.AzurePrivateCreds) != 0 && len(o.AzurePrivateCredentialsSecret) != 0 {
 				errs = append(errs, fmt.Errorf("only one of --azure-private-creds or --azure-private-secret is supported"))
+			}
+			if len(o.AzurePLSResourceGroup) == 0 {
+				errs = append(errs, fmt.Errorf("--azure-pls-resource-group is required with --private-platform=%s", hyperv1.AzurePlatform))
 			}
 		}
 	case hyperv1.NonePlatform:
@@ -325,6 +329,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.AzurePrivateCredentialsSecretKey, "azure-private-secret-key", "credentials", "Name of the secret key containing the Azure private link credentials")
 	cmd.PersistentFlags().StringVar(&opts.AzurePLSManagedIdentityClientID, "azure-pls-managed-identity-client-id", "", "Client ID of the managed identity for Azure Private Link Service operations (alternative to credential file; uses Azure Workload Identity federation)")
 	cmd.PersistentFlags().StringVar(&opts.AzurePLSSubscriptionID, "azure-pls-subscription-id", "", "Azure subscription ID for Private Link Service operations (required with --azure-pls-managed-identity-client-id)")
+	cmd.PersistentFlags().StringVar(&opts.AzurePLSResourceGroup, "azure-pls-resource-group", "", "Azure resource group of the management cluster where Private Link Services and load balancers reside (required with --private-platform=Azure for self-managed clusters)")
 	cmd.PersistentFlags().StringVar(&opts.GCPProject, "gcp-project", "", "GCP project ID for the operator when using --private-platform=GCP")
 	cmd.PersistentFlags().StringVar(&opts.GCPRegion, "gcp-region", "", "GCP region for the operator when using --private-platform=GCP")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", "", "Region of the OIDC bucket. Required for AWS guest clusters")
@@ -954,6 +959,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		AzurePrivateSecretKey:                   opts.AzurePrivateCredentialsSecretKey,
 		AzurePLSManagedIdentityClientID:         opts.AzurePLSManagedIdentityClientID,
 		AzurePLSSubscriptionID:                  opts.AzurePLSSubscriptionID,
+		AzurePLSResourceGroup:                   opts.AzurePLSResourceGroup,
 		OIDCBucketName:                          opts.OIDCStorageProviderS3BucketName,
 		OIDCBucketRegion:                        opts.OIDCStorageProviderS3Region,
 		OIDCStorageProviderS3Secret:             oidcSecret,

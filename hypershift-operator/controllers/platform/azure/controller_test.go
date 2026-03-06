@@ -259,9 +259,10 @@ func TestReconcile_WhenLoadBalancerIPIsSet_ItShouldCreateAPLS(t *testing.T) {
 	}
 
 	r := &AzurePrivateLinkServiceController{
-		Client:              c,
-		PrivateLinkServices: plsMock,
-		LoadBalancers:       lbMock,
+		Client:                  c,
+		PrivateLinkServices:     plsMock,
+		LoadBalancers:           lbMock,
+		ManagementResourceGroup: "rg-test",
 	}
 
 	req := reconcile.Request{
@@ -359,9 +360,10 @@ func TestReconcile_WhenPLSAlreadyExists_ItShouldUpdateStatus(t *testing.T) {
 	lbMock := &mockLoadBalancersAPI{}
 
 	r := &AzurePrivateLinkServiceController{
-		Client:              c,
-		PrivateLinkServices: plsMock,
-		LoadBalancers:       lbMock,
+		Client:                  c,
+		PrivateLinkServices:     plsMock,
+		LoadBalancers:           lbMock,
+		ManagementResourceGroup: "rg-test",
 	}
 
 	req := reconcile.Request{
@@ -446,9 +448,10 @@ func TestReconcile_WhenCRIsDeleted_ItShouldDeleteThePLS(t *testing.T) {
 	}
 
 	r := &AzurePrivateLinkServiceController{
-		Client:              c,
-		PrivateLinkServices: plsMock,
-		LoadBalancers:       &mockLoadBalancersAPI{},
+		Client:                  c,
+		PrivateLinkServices:     plsMock,
+		LoadBalancers:           &mockLoadBalancersAPI{},
+		ManagementResourceGroup: "rg-test",
 	}
 
 	req := reconcile.Request{
@@ -526,9 +529,10 @@ func TestReconcile_WhenCRIsDeleted_AndDeleteSucceeds_ItShouldRemoveFinalizer(t *
 	}
 
 	r := &AzurePrivateLinkServiceController{
-		Client:              c,
-		PrivateLinkServices: plsMock,
-		LoadBalancers:       &mockLoadBalancersAPI{},
+		Client:                  c,
+		PrivateLinkServices:     plsMock,
+		LoadBalancers:           &mockLoadBalancersAPI{},
+		ManagementResourceGroup: "rg-test",
 	}
 
 	req := reconcile.Request{
@@ -763,7 +767,8 @@ func TestLookupILBByFrontendIP(t *testing.T) {
 			}
 
 			r := &AzurePrivateLinkServiceController{
-				LoadBalancers: lbMock,
+				LoadBalancers:           lbMock,
+				ManagementResourceGroup: "rg-test",
 			}
 
 			azPLS := &hyperv1.AzurePrivateLinkService{
@@ -927,9 +932,10 @@ func TestReconcile_WhenAdditionalAllowedSubscriptionsChange_ItShouldUpdatePLS(t 
 	}
 
 	r := &AzurePrivateLinkServiceController{
-		Client:              c,
-		PrivateLinkServices: plsMock,
-		LoadBalancers:       &mockLoadBalancersAPI{},
+		Client:                  c,
+		PrivateLinkServices:     plsMock,
+		LoadBalancers:           &mockLoadBalancersAPI{},
+		ManagementResourceGroup: "rg-test",
 	}
 
 	req := reconcile.Request{
@@ -1020,9 +1026,10 @@ func TestReconcile_WhenAdditionalAllowedSubscriptionsMatch_ItShouldNotUpdatePLS(
 	}
 
 	r := &AzurePrivateLinkServiceController{
-		Client:              c,
-		PrivateLinkServices: plsMock,
-		LoadBalancers:       &mockLoadBalancersAPI{},
+		Client:                  c,
+		PrivateLinkServices:     plsMock,
+		LoadBalancers:           &mockLoadBalancersAPI{},
+		ManagementResourceGroup: "rg-test",
 	}
 
 	req := reconcile.Request{
@@ -1450,7 +1457,8 @@ func TestDelete_WhenPEConnectionsExist_ItShouldRejectAndRequeue(t *testing.T) {
 	}
 
 	r := &AzurePrivateLinkServiceController{
-		PrivateLinkServices: plsMock,
+		PrivateLinkServices:     plsMock,
+		ManagementResourceGroup: "rg-test",
 	}
 
 	azPLS := &hyperv1.AzurePrivateLinkService{
@@ -1495,7 +1503,8 @@ func TestDelete_WhenNoPEConnections_ItShouldProceedToDelete(t *testing.T) {
 	}
 
 	r := &AzurePrivateLinkServiceController{
-		PrivateLinkServices: plsMock,
+		PrivateLinkServices:     plsMock,
+		ManagementResourceGroup: "rg-test",
 	}
 
 	azPLS := &hyperv1.AzurePrivateLinkService{
@@ -1534,7 +1543,8 @@ func TestDelete_WhenPLSAlreadyDeleted_ItShouldReturnCompleted(t *testing.T) {
 	}
 
 	r := &AzurePrivateLinkServiceController{
-		PrivateLinkServices: plsMock,
+		PrivateLinkServices:     plsMock,
+		ManagementResourceGroup: "rg-test",
 	}
 
 	azPLS := &hyperv1.AzurePrivateLinkService{

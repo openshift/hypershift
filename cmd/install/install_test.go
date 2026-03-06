@@ -146,8 +146,9 @@ func TestOptions_Validate(t *testing.T) {
 		},
 		"When Azure private platform is specified with creds file, it should succeed": {
 			inputOptions: Options{
-				PrivatePlatform:   string(hyperv1.AzurePlatform),
-				AzurePrivateCreds: "/dev/null",
+				PrivatePlatform:       string(hyperv1.AzurePlatform),
+				AzurePrivateCreds:     "/dev/null",
+				AzurePLSResourceGroup: "rg-mgmt",
 			},
 			expectError: false,
 		},
@@ -155,6 +156,7 @@ func TestOptions_Validate(t *testing.T) {
 			inputOptions: Options{
 				PrivatePlatform:               string(hyperv1.AzurePlatform),
 				AzurePrivateCredentialsSecret: "my-azure-secret",
+				AzurePLSResourceGroup:         "rg-mgmt",
 			},
 			expectError: false,
 		},
@@ -175,11 +177,19 @@ func TestOptions_Validate(t *testing.T) {
 		},
 		"When Azure private platform is specified with managed identity and subscription ID, it should succeed": {
 			inputOptions: Options{
-				PrivatePlatform:             string(hyperv1.AzurePlatform),
+				PrivatePlatform:                 string(hyperv1.AzurePlatform),
 				AzurePLSManagedIdentityClientID: "00000000-0000-0000-0000-000000000001",
 				AzurePLSSubscriptionID:          "00000000-0000-0000-0000-000000000002",
+				AzurePLSResourceGroup:           "rg-mgmt",
 			},
 			expectError: false,
+		},
+		"When Azure private platform is specified without resource group, it should error": {
+			inputOptions: Options{
+				PrivatePlatform:   string(hyperv1.AzurePlatform),
+				AzurePrivateCreds: "/dev/null",
+			},
+			expectError: true,
 		},
 		"When Azure private platform is specified with managed identity but no subscription ID, it should error": {
 			inputOptions: Options{

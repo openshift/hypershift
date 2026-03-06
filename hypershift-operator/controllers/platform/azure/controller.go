@@ -100,8 +100,9 @@ type LoadBalancersAPI interface {
 // the lifecycle of Azure Private Link Service resources.
 type AzurePrivateLinkServiceController struct {
 	client.Client
-	PrivateLinkServices PrivateLinkServicesAPI
-	LoadBalancers       LoadBalancersAPI
+	PrivateLinkServices      PrivateLinkServicesAPI
+	LoadBalancers            LoadBalancersAPI
+	ManagementResourceGroup string
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -191,7 +192,7 @@ func (r *AzurePrivateLinkServiceController) reconcilePrivateLinkService(ctx cont
 	if err := azureutil.ValidateAzureResourceName(plsName, "Private Link Service"); err != nil {
 		return ctrl.Result{}, err
 	}
-	resourceGroup := azPLS.Spec.ResourceGroupName
+	resourceGroup := r.ManagementResourceGroup
 
 	// 1. Check if PLS already exists
 	getCtx, getCancel := context.WithTimeout(ctx, azureAPITimeout)
@@ -334,7 +335,7 @@ func (r *AzurePrivateLinkServiceController) reconcilePrivateLinkService(ctx cont
 // lookupILBByFrontendIP finds the ILB whose frontend IP matches spec.loadBalancerIP.
 // Returns the ILB resource ID and the matching frontend IP configuration ID.
 func (r *AzurePrivateLinkServiceController) lookupILBByFrontendIP(ctx context.Context, azPLS *hyperv1.AzurePrivateLinkService) (string, string, error) {
-	pager := r.LoadBalancers.NewListPager(azPLS.Spec.ResourceGroupName, nil)
+	pager := r.LoadBalancers.NewListPager(r.ManagementResourceGroup, nil)
 
 	for pager.More() {
 		pageCtx, pageCancel := context.WithTimeout(ctx, azureAPITimeout)
@@ -558,7 +559,7 @@ func (r *AzurePrivateLinkServiceController) delete(ctx context.Context, azPLS *h
 		return false, fmt.Errorf("failed to parse Private Link Service resource ID %q: %w", plsID, err)
 	}
 	plsName := parsedID.Name
-	resourceGroup := azPLS.Spec.ResourceGroupName
+	resourceGroup := r.ManagementResourceGroup
 
 	// Reject any active PE connections before attempting PLS deletion.
 	// Azure does not allow deleting a PLS with active PE connections,
