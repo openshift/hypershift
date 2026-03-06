@@ -200,8 +200,23 @@ const (
 type AWSEndpointServiceReconciler struct {
 	client.Client
 	upsert.CreateOrUpdateProvider
-	awsClientBuilder clientBuilder
+	awsClientBuilder awsClientProvider
 }
+
+// awsClientProvider abstracts AWS client creation for testability.
+// ec2iface.EC2API is not mockgen-generated because the interface has 500+ methods,
+// producing ~37K lines; tests use hand-written embedded mocks instead.
+//
+//go:generate ../../../hack/tools/bin/mockgen -source=awsprivatelink_controller.go -package=awsprivatelink -destination=awsprivatelink_controller_mock.go
+type awsClientProvider interface {
+	getClients(ctx context.Context) (ec2iface.EC2API, awsapi.ROUTE53API, error)
+	initializeWithHCP(log logr.Logger, hcp *hyperv1.HostedControlPlane)
+	getLocalHostedZoneID() string
+	setLocalHostedZoneID(zoneID string)
+}
+
+// Verify clientBuilder implements awsClientProvider.
+var _ awsClientProvider = (*clientBuilder)(nil)
 
 type clientBuilder struct {
 	mu                             sync.Mutex
@@ -323,6 +338,9 @@ func (b *clientBuilder) setFromHCP(hcp *hyperv1.HostedControlPlane) {
 }
 
 func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.awsClientBuilder == nil {
+		r.awsClientBuilder = &clientBuilder{}
+	}
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.AWSEndpointService{}).
 		WithOptions(controller.Options{
