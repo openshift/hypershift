@@ -516,26 +516,6 @@ func TestGenerateConfig(t *testing.T) {
 			),
 		},
 		{
-			name: "with ValidatingAdmissionPolicy feature gate explicitly enabled",
-			params: KubeAPIServerConfigParams{
-				FeatureGates: []string{
-					"ValidatingAdmissionPolicy=true",
-				},
-			},
-			// shouldn't be any different than the default configuration because this feature gate is enabled by default
-			expected: defaultKASConfig(),
-		},
-		{
-			name: "with ValidatingAdmissionPolicy feature gate explicitly disabled",
-			params: KubeAPIServerConfigParams{
-				FeatureGates: []string{
-					"ValidatingAdmissionPolicy=false",
-				},
-			},
-			// shouldn't be any different than the default configuration because this feature gate is forced to be enabled
-			expected: defaultKASConfig(),
-		},
-		{
 			name: "with StructuredAuthenticationConfiguration feature gate explicitly disabled",
 			params: KubeAPIServerConfigParams{
 				FeatureGates: []string{
@@ -770,7 +750,6 @@ func defaultKASConfig() *kcpv1.KubeAPIServerConfig {
 			"event-ttl":                 {"3h"},
 			"feature-gates": {
 				"StructuredAuthenticationConfiguration=true",
-				"ValidatingAdmissionPolicy=true",
 			},
 			"goaway-chance":                    {""},
 			"http2-max-streams-per-connection": {"2000"},
@@ -794,7 +773,7 @@ func defaultKASConfig() *kcpv1.KubeAPIServerConfig {
 			"requestheader-extra-headers-prefix":      {"X-Remote-Extra-"},
 			"requestheader-group-headers":             {"X-Remote-Group"},
 			"requestheader-username-headers":          {"X-Remote-User"},
-			"runtime-config":                          {"admissionregistration.k8s.io/v1beta1=true"},
+			"runtime-config":                          {},
 			"service-account-issuer":                  {""},
 			"service-account-jwks-uri":                {"/openid/v1/jwks"},
 			"service-account-lookup":                  {"true"},
