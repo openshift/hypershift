@@ -416,11 +416,23 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{}, nil
 		}
 
-		// getClients can fail if the operator restarted while the object is being deleted,
-		// since initializeWithHCP is only called in the non-deletion reconcile path.
-		// We must return an error here to prevent falling through to finalizer removal,
-		// which would orphan AWS resources (security groups, VPC endpoints, DNS records)
-		// by removing the only reference to their IDs.
+		// Best-effort initialization for deletion reconciles: after a controller restart
+		// the clientBuilder is uninitialized because initializeWithHCP is only called in
+		// the non-deletion path. If the HCP still exists, initialize from it so that
+		// getClients can succeed and deletion can proceed.
+		//
+		// Known issue (SharedVPC): when the HCP is already deleted, the SharedVPC role
+		// ARNs (needed for cross-account EC2/Route53 access) are lost. Initialization
+		// cannot happen, getClients will fail, and the finalizer will be preserved until
+		// the hypershift-operator force-removes it after the grace period — orphaning
+		// AWS resources in the shared VPC account. A proper fix requires persisting the
+		// SharedVPC role ARNs in the AWSEndpointService status. See
+		// TestReconcileDeletionSharedVPC for details.
+		hcpList := &hyperv1.HostedControlPlaneList{}
+		if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: req.Namespace}); err == nil && len(hcpList.Items) == 1 {
+			r.awsClientBuilder.initializeWithHCP(log, &hcpList.Items[0])
+		}
+
 		ec2Client, route53Client, err := r.awsClientBuilder.getClients(ctx)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to get AWS clients for endpoint service cleanup: %w", err)

@@ -310,6 +310,7 @@ func TestReconcileDeletion(t *testing.T) {
 	testCases := []struct {
 		name            string
 		awsEndpointSvc  *hyperv1.AWSEndpointService
+		extraObjects    []crclient.Object
 		setupMocks      func(ctrl *gomock.Controller) *MockawsClientProvider
 		expectError     bool
 		expectFinalizer bool
@@ -388,6 +389,69 @@ func TestReconcileDeletion(t *testing.T) {
 			expectFinalizer: false,
 		},
 		{
+			name: "When HCP exists after restart it should initialize clients and complete deletion",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "private-router",
+					Namespace:         "clusters-test",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{finalizer},
+				},
+				Status: hyperv1.AWSEndpointServiceStatus{
+					EndpointID:      "vpce-12345",
+					SecurityGroupID: "sg-12345",
+					DNSNames:        []string{"api.example.com"},
+					DNSZoneID:       "Z1234567890",
+				},
+			},
+			extraObjects: []crclient.Object{
+				&hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-hcp",
+						Namespace: "clusters-test",
+					},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{
+							AWS: &hyperv1.AWSPlatformSpec{},
+						},
+					},
+				},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+				mockEC2 := &mockEC2Client{
+					describeVpcEndpointsErr: awserr.New("InvalidVpcEndpointId.NotFound", "not found", nil),
+					describeSecurityGroupsOutput: &ec2.DescribeSecurityGroupsOutput{
+						SecurityGroups: []*ec2.SecurityGroup{{
+							GroupId:             aws.String("sg-12345"),
+							IpPermissions:       []*ec2.IpPermission{ingressPermission},
+							IpPermissionsEgress: []*ec2.IpPermission{egressPermission},
+						}},
+					},
+				}
+				// Best-effort initialization: HCP exists, so initializeWithHCP is called.
+				mockBuilder.EXPECT().initializeWithHCP(gomock.Any(), gomock.Any())
+				mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+				mockRoute53.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any()).Return(
+					&route53sdk.ListResourceRecordSetsOutput{
+						ResourceRecordSets: []route53types.ResourceRecordSet{{
+							Name: awsv2.String("api.example.com."),
+							Type: route53types.RRTypeCname,
+							TTL:  awsv2.Int64(300),
+							ResourceRecords: []route53types.ResourceRecord{
+								{Value: awsv2.String("vpce-12345.vpce-svc.us-east-1.vpce.amazonaws.com")},
+							},
+						}},
+					}, nil)
+				mockRoute53.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any()).Return(
+					&route53sdk.ChangeResourceRecordSetsOutput{}, nil)
+				return mockBuilder
+			},
+			expectError:     false,
+			expectFinalizer: false,
+		},
+		{
 			name: "When VPC endpoint deletion fails it should return error and preserve the finalizer",
 			awsEndpointSvc: &hyperv1.AWSEndpointService{
 				ObjectMeta: metav1.ObjectMeta{
@@ -424,9 +488,10 @@ func TestReconcileDeletion(t *testing.T) {
 			scheme := runtime.NewScheme()
 			_ = hyperv1.AddToScheme(scheme)
 
+			objects := append([]crclient.Object{tc.awsEndpointSvc}, tc.extraObjects...)
 			fakeClient := fake.NewClientBuilder().
 				WithScheme(scheme).
-				WithObjects(tc.awsEndpointSvc).
+				WithObjects(objects...).
 				Build()
 
 			reconciler := &AWSEndpointServiceReconciler{
@@ -477,11 +542,11 @@ func TestReconcileDeletion(t *testing.T) {
 // TestReconcileDeletion_AfterControllerRestart verifies the fix for OCPBUGS-74960.
 //
 // When the controller restarts, a new clientBuilder is created in SetupWithManager
-// with initialized=false. The non-deletion reconcile path calls initializeWithHCP
-// before getClients, but the deletion path calls getClients directly. If the first
-// reconciliation after restart is a deletion, getClients returns "clients not
-// initialized". The fix ensures the reconciler returns an error and preserves the
-// finalizer so that AWS resources are not orphaned.
+// with initialized=false. The deletion path now attempts best-effort initialization
+// by listing HostedControlPlanes in the namespace. When the HCP is not found (already
+// deleted), getClients returns "clients not initialized". The fix ensures the
+// reconciler returns an error and preserves the finalizer so that AWS resources are
+// not orphaned.
 func TestReconcileDeletion_AfterControllerRestart(t *testing.T) {
 	g := NewGomegaWithT(t)
 	now := metav1.NewTime(time.Now())
@@ -510,8 +575,9 @@ func TestReconcileDeletion_AfterControllerRestart(t *testing.T) {
 		Build()
 
 	// Simulate a controller restart: SetupWithManager creates a fresh
-	// clientBuilder{} (initialized=false). The deletion path does not call
-	// initializeWithHCP, so getClients returns "clients not initialized".
+	// clientBuilder{} (initialized=false). The deletion path attempts best-effort
+	// initialization by listing HCPs, but none exist here, so getClients still
+	// returns "clients not initialized".
 	restartedReconciler := &AWSEndpointServiceReconciler{
 		Client:           fakeClient,
 		awsClientBuilder: &clientBuilder{}, // fresh, uninitialized — as created by SetupWithManager
@@ -741,10 +807,10 @@ func TestDeleteSecurityGroup(t *testing.T) {
 // and Route53 operations. These ARNs are only stored in-memory in the clientBuilder
 // after initializeWithHCP is called.
 //
-// When the operator restarts during deletion and the HCP has already been deleted:
-//   - The clientBuilder is not initialized (initializeWithHCP is only called in the
-//     non-deletion reconcile path)
-//   - The HCP is gone, so there's no source for the SharedVPC role ARNs
+// The deletion path now attempts best-effort initialization by listing HCPs in the
+// namespace. However, when the operator restarts during deletion and the HCP has
+// already been deleted:
+//   - The best-effort List finds no HCP, so initializeWithHCP is not called
 //   - getClients fails with "clients not initialized"
 //   - The fix preserves the finalizer, but retries will never succeed
 //   - After 10 minutes, the hypershift-operator force-removes the CPO finalizer,
