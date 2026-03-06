@@ -28,32 +28,33 @@ func (m *mockProvider) GetInstanceTypeInfo(_ context.Context, _ string) (*instan
 }
 
 func TestTaintsToAnnotation(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		taints   []hyperv1.Taint
 		expected string
 	}{
 		{
-			name:     "When taints are empty it should return empty string",
+			name:     "When taints are empty, it should return empty string",
 			taints:   []hyperv1.Taint{},
 			expected: "",
 		},
 		{
-			name: "When single taint it should format correctly",
+			name: "When single taint, it should format correctly",
 			taints: []hyperv1.Taint{
 				{Key: "dedicated", Value: "gpu", Effect: corev1.TaintEffectNoSchedule},
 			},
 			expected: "dedicated=gpu:NoSchedule",
 		},
 		{
-			name: "When single taint with empty value it should format as key:Effect",
+			name: "When single taint with empty value, it should format as key:Effect",
 			taints: []hyperv1.Taint{
 				{Key: "node-role.kubernetes.io/infra", Value: "", Effect: corev1.TaintEffectNoSchedule},
 			},
 			expected: "node-role.kubernetes.io/infra:NoSchedule",
 		},
 		{
-			name: "When multiple taints it should format and sort",
+			name: "When multiple taints, it should format and sort",
 			taints: []hyperv1.Taint{
 				{Key: "critical", Value: "true", Effect: corev1.TaintEffectNoExecute},
 				{Key: "dedicated", Value: "gpu", Effect: corev1.TaintEffectNoSchedule},
@@ -61,7 +62,7 @@ func TestTaintsToAnnotation(t *testing.T) {
 			expected: "critical=true:NoExecute,dedicated=gpu:NoSchedule",
 		},
 		{
-			name: "When taints with different effects it should format correctly",
+			name: "When taints with different effects, it should format correctly",
 			taints: []hyperv1.Taint{
 				{Key: "node-role.kubernetes.io/infra", Value: "", Effect: corev1.TaintEffectNoSchedule},
 				{Key: "workload", Value: "batch", Effect: corev1.TaintEffectPreferNoSchedule},
@@ -72,6 +73,7 @@ func TestTaintsToAnnotation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			g := NewGomegaWithT(t)
 			result := taintsToAnnotation(tt.taints)
 			g.Expect(result).To(Equal(tt.expected))
@@ -101,7 +103,7 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 		validate        func(g Gomega, md *capiv1.MachineDeployment)
 	}{
 		{
-			name:            "When machine template is an unsupported type it should return an error",
+			name:            "When machine template is an unsupported type, it should return an error",
 			provider:        &mockProvider{},
 			nodePool:        &hyperv1.NodePool{},
 			object:          &capiv1.MachineDeployment{},
@@ -110,7 +112,7 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			errSubstring:    "unsupported machine template type",
 		},
 		{
-			name:            "When instanceType is empty it should return an error",
+			name:            "When instanceType is empty, it should return an error",
 			provider:        &mockProvider{},
 			nodePool:        &hyperv1.NodePool{},
 			object:          &capiv1.MachineDeployment{},
@@ -119,7 +121,7 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			errSubstring:    "instanceType is empty",
 		},
 		{
-			name:            "When provider returns an error it should propagate the error",
+			name:            "When provider returns an error, it should propagate the error",
 			provider:        &mockProvider{err: fmt.Errorf("failed to describe instance type")},
 			nodePool:        &hyperv1.NodePool{},
 			object:          &capiv1.MachineDeployment{},
@@ -128,7 +130,7 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			errSubstring:    "failed to describe instance type",
 		},
 		{
-			name:     "When Status.Capacity is already provided it should remove scale-from-zero annotations",
+			name:     "When Status.Capacity is already provided, it should remove scale-from-zero annotations",
 			provider: &mockProvider{},
 			nodePool: &hyperv1.NodePool{},
 			object: &capiv1.MachineDeployment{
@@ -165,7 +167,7 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			},
 		},
 		{
-			name:            "When provider is nil it should return nil without setting annotations",
+			name:            "When provider is nil, it should return nil without setting annotations",
 			provider:        nil,
 			nodePool:        &hyperv1.NodePool{},
 			object:          &capiv1.MachineDeployment{},
@@ -176,7 +178,7 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			},
 		},
 		{
-			name: "When instance has no GPU and no taints it should set basic annotations and remove stale ones",
+			name: "When instance has no GPU and no taints, it should set basic annotations and remove stale ones",
 			provider: &mockProvider{info: &instancetype.InstanceTypeInfo{
 				VCPU: 2, MemoryMb: 8192, GPU: 0, CPUArchitecture: "amd64",
 			}},
@@ -201,7 +203,7 @@ func TestSetScaleFromZeroAnnotationsOnObject(t *testing.T) {
 			},
 		},
 		{
-			name: "When instance has GPU, labels with arch override, taints, and existing annotations it should set all correctly",
+			name: "When instance has GPU, labels with arch override, taints, and existing annotations, it should set all correctly",
 			provider: &mockProvider{info: &instancetype.InstanceTypeInfo{
 				VCPU: 8, MemoryMb: 61440, GPU: 1, CPUArchitecture: "arm64",
 			}},

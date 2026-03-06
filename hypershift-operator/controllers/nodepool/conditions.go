@@ -165,17 +165,7 @@ func (r *NodePoolReconciler) autoscalerEnabledCondition(_ context.Context, nodeP
 	if isAutoscalingEnabled(nodePool) {
 		// Check if autoscaling from zero (min=0) is being used
 		if nodePool.Spec.AutoScaling.Min != nil && *nodePool.Spec.AutoScaling.Min == 0 {
-			// Check platform-specific support
-			var supported bool
-			switch nodePool.Spec.Platform.Type {
-			case hyperv1.AWSPlatform:
-				// AWS supports scale-from-zero either natively (when CPO supports it)
-				// or via MachineDeployment controller workaround annotations
-				supported = true
-			default:
-				// Other platforms don't support autoscaling from zero yet
-				supported = false
-			}
+			supported := supportedScaleFromZeroPlatform(nodePool.Spec.Platform.Type)
 
 			if !supported {
 				SetStatusCondition(&nodePool.Status.Conditions, hyperv1.NodePoolCondition{

@@ -753,12 +753,12 @@ func setMachineDeploymentReplicas(nodePool *hyperv1.NodePool, machineDeployment 
 		// 1. if it's a new MachineDeployment, or the replicas field of the old MachineDeployment is <= min size, use min size
 		// 2. if the replicas field of the old MachineDeployment is > max size, use max size
 		//
-		// Guard: Enforce min=1 for non-AWS platforms to prevent scale-from-zero issues.
+		// Guard: Enforce min=1 for platforms that don't support scale-from-zero.
 		// Even if API validation fails or pre-existing objects exist with min=0, this prevents
 		// NodePools from being permanently stuck at 0 replicas on platforms that don't support
 		// scale-from-zero metadata.
 		effectiveMin := ptr.Deref(nodePool.Spec.AutoScaling.Min, 0)
-		if effectiveMin == 0 && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
+		if effectiveMin == 0 && !supportedScaleFromZeroPlatform(nodePool.Spec.Platform.Type) {
 			effectiveMin = 1
 		}
 
@@ -1059,12 +1059,12 @@ func setMachineSetReplicas(nodePool *hyperv1.NodePool, machineSet *capiv1.Machin
 		// 1. if it's a new MachineSet, or the replicas field of the old MachineSet is <= min size, use min size
 		// 2. if the replicas field of the old MachineSet is > max size, use max size
 		//
-		// Guard: Enforce min=1 for non-AWS platforms to prevent scale-from-zero issues.
+		// Guard: Enforce min=1 for platforms that don't support scale-from-zero.
 		// Even if API validation fails or pre-existing objects exist with min=0, this prevents
 		// NodePools from being permanently stuck at 0 replicas on platforms that don't support
 		// scale-from-zero metadata.
 		effectiveMin := ptr.Deref(nodePool.Spec.AutoScaling.Min, 0)
-		if effectiveMin == 0 && nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
+		if effectiveMin == 0 && !supportedScaleFromZeroPlatform(nodePool.Spec.Platform.Type) {
 			effectiveMin = 1
 		}
 
