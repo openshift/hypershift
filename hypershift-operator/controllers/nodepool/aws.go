@@ -38,14 +38,26 @@ func awsClusterCloudProviderTagKey(id string) string {
 }
 
 // isSpotEnabled determines if spot instances should be enabled for this NodePool.
-// For initial implementation, this is controlled via annotation so we can e2e test it.
-// TODO: Replace with API based configuration.
+// Returns true if either:
+// - The API spec has marketType set to "Spot" in placement options
+// - The AnnotationEnableSpot annotation is present (kept for e2e testing without real spot instances)
 func isSpotEnabled(nodePool *hyperv1.NodePool) bool {
-	if nodePool.Annotations == nil {
+	if nodePool == nil {
 		return false
 	}
-	_, ok := nodePool.Annotations[AnnotationEnableSpot]
-	return ok
+	// Check API spec first - marketType: Spot
+	if nodePool.Spec.Platform.AWS != nil &&
+		nodePool.Spec.Platform.AWS.Placement != nil &&
+		nodePool.Spec.Platform.AWS.Placement.MarketType == hyperv1.MarketTypeSpot {
+		return true
+	}
+	// Check annotation (kept for e2e testing without real spot instances)
+	if nodePool.Annotations != nil {
+		if _, ok := nodePool.Annotations[AnnotationEnableSpot]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool, defaultSG bool, releaseImage *releaseinfo.ReleaseImage) (*capiaws.AWSMachineTemplateSpec, error) {
@@ -168,21 +180,41 @@ func awsMachineTemplateSpec(infraName string, hostedCluster *hyperv1.HostedClust
 	if placement := nodePool.Spec.Platform.AWS.Placement; placement != nil {
 		awsMachineTemplateSpec.Template.Spec.Tenancy = placement.Tenancy
 
-		if capacityReservation := placement.CapacityReservation; capacityReservation != nil {
-			awsMachineTemplateSpec.Template.Spec.CapacityReservationID = capacityReservation.ID
-
-			switch capacityReservation.MarketType {
-			case hyperv1.MarketTypeCapacityBlock:
-				awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
-			case hyperv1.MarketTypeOnDemand:
-				awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeOnDemand
-			default:
-				if placement.Tenancy != "host" && capacityReservation.ID != nil {
-					// if the tenancy is not host and the ID is set, default the market type to CapacityBlock
-					awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
+		// Handle market type - placement.MarketType takes precedence over capacityReservation.MarketType
+		switch placement.MarketType {
+		case hyperv1.MarketTypeSpot:
+			// Spot instances
+			if placement.Spot != nil {
+				awsMachineTemplateSpec.Template.Spec.SpotMarketOptions = &capiaws.SpotMarketOptions{}
+				if placement.Spot.MaxPrice != nil {
+					awsMachineTemplateSpec.Template.Spec.SpotMarketOptions.MaxPrice = placement.Spot.MaxPrice
 				}
 			}
+		case hyperv1.MarketTypeCapacityBlock:
+			awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
+		case hyperv1.MarketTypeOnDemand:
+			awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeOnDemand
+		default:
+			// If placement.MarketType is not set, fall back to capacityReservation.MarketType (deprecated)
+			if capacityReservation := placement.CapacityReservation; capacityReservation != nil {
+				//nolint:staticcheck // SA1019: capacityReservation.MarketType is deprecated but supported for backward compatibility
+				switch capacityReservation.MarketType {
+				case hyperv1.MarketTypeCapacityBlock:
+					awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
+				case hyperv1.MarketTypeOnDemand:
+					awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeOnDemand
+				default:
+					if placement.Tenancy != "host" && capacityReservation.ID != nil {
+						// if the tenancy is not host and the ID is set, default the market type to CapacityBlock
+						awsMachineTemplateSpec.Template.Spec.MarketType = capiaws.MarketTypeCapacityBlock
+					}
+				}
+			}
+		}
 
+		// Handle capacity reservation options
+		if capacityReservation := placement.CapacityReservation; capacityReservation != nil {
+			awsMachineTemplateSpec.Template.Spec.CapacityReservationID = capacityReservation.ID
 			awsMachineTemplateSpec.Template.Spec.CapacityReservationPreference = capiaws.CapacityReservationPreference(capacityReservation.Preference)
 		}
 	}

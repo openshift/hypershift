@@ -442,6 +442,8 @@ spec:
 
                               Cannot be specified when tenancy is set to "host" as Dedicated Hosts
                               do not support Capacity Reservations. Compatible with "default" and "dedicated" tenancy.
+
+                              Required when marketType is "CapacityBlocks".
                             properties:
                               id:
                                 description: |-
@@ -461,11 +463,14 @@ spec:
                                   rule: self.matches('^cr-[a-f0-9]{17}$')
                               marketType:
                                 description: |-
-                                  marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values are OnDemand, CapacityBlocks and omitted:
+                                  marketType specifies the market type of the CapacityReservation for the EC2 instances.
+
+                                  Deprecated: Use placement.marketType instead. This field is maintained for backward compatibility.
+                                  When both placement.marketType and capacityReservation.marketType are set, placement.marketType takes precedence.
+
+                                  Valid values are OnDemand, CapacityBlocks and omitted:
                                   - "OnDemand": EC2 instances run as standard On-Demand instances.
-                                  - "CapacityBlocks": scheduled pre-purchased compute capacity. Capacity Blocks is recommended when GPUs are needed to support ML workloads.
-                                  When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
-                                  The current default value is CapacityBlocks.
+                                  - "CapacityBlocks": scheduled pre-purchased compute capacity. Recommended for GPU/ML workloads.
 
                                   When set to 'CapacityBlocks', a specific Capacity Reservation ID must be provided.
                                 enum:
@@ -499,6 +504,46 @@ spec:
                                 requires a Capacity Reservation ID
                               rule: 'has(self.marketType) && self.marketType == ''CapacityBlocks''
                                 ? has(self.id) : true'
+                          marketType:
+                            description: |-
+                              marketType specifies the EC2 instance purchasing model.
+
+                              Possible values:
+                              - "OnDemand": Standard on-demand instances (default if unset)
+                              - "Spot": Spot instances using spare EC2 capacity at reduced prices but may be interrupted.
+                                        Requires spot options and terminationHandlerQueueURL on the HostedCluster.
+                              - "CapacityBlocks": Scheduled pre-purchased compute capacity. Recommended for GPU/ML workloads.
+                                                  Requires capacityReservation with a specific reservation ID.
+
+                              When omitted, the backend will use "OnDemand" as the default.
+                            enum:
+                            - OnDemand
+                            - Spot
+                            - CapacityBlocks
+                            type: string
+                          spot:
+                            description: |-
+                              spot configures Spot instance options.
+                              Required when marketType is "Spot".
+
+                              Spot instances use spare EC2 capacity at reduced prices but may be interrupted
+                              with a 2-minute warning. Requires terminationHandlerQueueURL to be set on the
+                              HostedCluster's AWS platform spec for graceful handling of interruptions.
+                            properties:
+                              maxPrice:
+                                description: |-
+                                  maxPrice defines the maximum price the user is willing to pay for Spot instances.
+                                  If not specified, the on-demand price is used as the maximum (you pay the actual spot price).
+                                  The value should be a decimal number representing the price per hour in USD.
+                                  For example, "0.50" means 50 cents per hour.
+
+                                  Note: AWS recommends NOT setting maxPrice to reduce interruption frequency.
+                                  When omitted, you pay the current Spot price (capped at On-Demand price).
+                                  AWS minimum allowed value is $0.001.
+                                maxLength: 20
+                                pattern: ^[0-9]+(\.[0-9]+)?$
+                                type: string
+                            type: object
                           tenancy:
                             description: |-
                               tenancy indicates if instance should run on shared or single-tenant hardware.
@@ -521,6 +566,26 @@ spec:
                             Hosts (tenancy 'host')
                           rule: 'has(self.tenancy) && self.tenancy == ''host'' ? !has(self.capacityReservation)
                             : true'
+                        - message: Spot instances cannot be combined with Capacity
+                            Reservations
+                          rule: '!has(self.marketType) || self.marketType != ''Spot''
+                            || !has(self.capacityReservation)'
+                        - message: Spot instances require tenancy 'default' or unset
+                          rule: '!has(self.marketType) || self.marketType != ''Spot''
+                            || !has(self.tenancy) || self.tenancy == '''' || self.tenancy
+                            == ''default'''
+                        - message: CapacityBlocks market type requires capacityReservation
+                            to be specified
+                          rule: '!has(self.marketType) || self.marketType != ''CapacityBlocks''
+                            || has(self.capacityReservation)'
+                        - message: spot options can only be specified when marketType
+                            is 'Spot'
+                          rule: '!has(self.spot) || (has(self.marketType) && self.marketType
+                            == ''Spot'')'
+                        - message: spot options must be specified when marketType
+                            is 'Spot'
+                          rule: 'has(self.marketType) && self.marketType == ''Spot''
+                            ? has(self.spot) : true'
                       resourceTags:
                         description: |-
                           resourceTags is an optional list of additional tags to apply to AWS node

@@ -20,6 +20,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -27,9 +28,6 @@ import (
 const (
 	// AnnotationEnableSpot is the annotation key to enable spot instances on a NodePool.
 	AnnotationEnableSpot = "hypershift.openshift.io/enable-spot"
-
-	// AnnotationTerminationHandlerQueueURL is the annotation key for the SQS queue URL on HostedCluster.
-	AnnotationTerminationHandlerQueueURL = "hypershift.openshift.io/aws-termination-handler-queue-url"
 
 	// interruptibleInstanceLabel is the label applied to spot instance machines.
 	interruptibleInstanceLabel = "hypershift.openshift.io/interruptible-instance"
@@ -88,9 +86,6 @@ func (s *SpotTerminationHandlerTest) Setup(t *testing.T) {
 	if globalOpts.Platform != hyperv1.AWSPlatform {
 		t.Skip("test only supported on platform AWS")
 	}
-	if e2eutil.IsLessThan(e2eutil.Version422) {
-		t.Skip("test only supported on version 4.22 and above")
-	}
 }
 
 func (s *SpotTerminationHandlerTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
@@ -98,6 +93,8 @@ func (s *SpotTerminationHandlerTest) BuildNodePoolManifest(defaultNodepool hyper
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      s.hostedCluster.Name + "-" + "test-spot-termination",
 			Namespace: s.hostedCluster.Namespace,
+			// We use the annotation to enable spot instances for the e2e test
+			// since real spot instances are not reliable for CI.
 			Annotations: map[string]string{
 				AnnotationEnableSpot: "true",
 			},
@@ -146,7 +143,7 @@ func (s *SpotTerminationHandlerTest) Run(t *testing.T, nodePool hyperv1.NodePool
 			}
 		}()
 
-		// Step 1: Discover SQS queue URL and add annotation to HostedCluster
+		// Step 1: Discover SQS queue URL and add it to the HostedCluster spec
 		sqsClient := e2eutil.GetSQSClient(s.clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, s.clusterOpts.AWSPlatform.Region)
 		queueURLResult, err := sqsClient.GetQueueUrl(&sqs.GetQueueUrlInput{
 			QueueName: aws.String(testSQSQueueName),
@@ -157,15 +154,15 @@ func (s *SpotTerminationHandlerTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		sqsQueueURL := aws.StringValue(queueURLResult.QueueUrl)
 		t.Logf("Discovered SQS queue URL: %s", sqsQueueURL)
 
-		t.Logf("Adding SQS queue URL annotation to HostedCluster %s/%s", s.hostedCluster.Namespace, s.hostedCluster.Name)
+		t.Logf("Adding SQS queue URL to HostedCluster spec %s/%s", s.hostedCluster.Namespace, s.hostedCluster.Name)
 		err = e2eutil.UpdateObject(t, s.ctx, s.mgmtClient, s.hostedCluster, func(obj *hyperv1.HostedCluster) {
-			if obj.Annotations == nil {
-				obj.Annotations = make(map[string]string)
+			if obj.Spec.Platform.AWS == nil {
+				obj.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{}
 			}
-			obj.Annotations[AnnotationTerminationHandlerQueueURL] = sqsQueueURL
+			obj.Spec.Platform.AWS.TerminationHandlerQueueURL = ptr.To(sqsQueueURL)
 		})
 		if err != nil {
-			t.Fatalf("failed to update HostedCluster with SQS queue URL annotation: %v", err)
+			t.Fatalf("failed to update HostedCluster with SQS queue URL: %v", err)
 		}
 
 		// Step 2: Wait for the aws-node-termination-handler deployment to be ready
@@ -287,13 +284,15 @@ func (s *SpotTerminationHandlerTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		)
 		t.Logf("Node %s has the rebalance recommendation taint", spotNode.Name)
 
-		// Step 7: Clean up - remove the SQS annotation
-		t.Logf("Cleaning up: removing SQS queue URL annotation from HostedCluster")
+		// Step 7: Clean up - remove the SQS queue URL from spec
+		t.Logf("Cleaning up: removing SQS queue URL from HostedCluster spec")
 		err = e2eutil.UpdateObject(t, s.ctx, s.mgmtClient, s.hostedCluster, func(obj *hyperv1.HostedCluster) {
-			delete(obj.Annotations, AnnotationTerminationHandlerQueueURL)
+			if obj.Spec.Platform.AWS != nil {
+				obj.Spec.Platform.AWS.TerminationHandlerQueueURL = nil
+			}
 		})
 		if err != nil {
-			t.Fatalf("failed to remove SQS queue URL annotation from HostedCluster: %v", err)
+			t.Fatalf("failed to remove SQS queue URL from HostedCluster: %v", err)
 		}
 	})
 }
