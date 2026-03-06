@@ -31,6 +31,14 @@ func GetClient() (crclient.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes config: %w", err)
 	}
+	return GetClientFromConfig(config)
+}
+
+// GetClientFromConfig creates a controller-runtime client from the given REST config.
+func GetClientFromConfig(config *rest.Config) (crclient.Client, error) {
+	if config == nil {
+		return nil, fmt.Errorf("unable to get kubernetes client: nil REST config")
+	}
 	client, err := crclient.New(config, crclient.Options{Scheme: scheme})
 	if err != nil {
 		return nil, fmt.Errorf("unable to get kubernetes client: %w", err)

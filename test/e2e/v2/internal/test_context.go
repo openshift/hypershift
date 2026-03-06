@@ -20,10 +20,16 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/tools/clientcmd"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -41,6 +47,8 @@ type TestContext struct {
 	ControlPlaneNamespace string
 	hostedCluster         *hyperv1.HostedCluster
 	hostedClusterOnce     sync.Once
+	guestClient           crclient.Client
+	guestClientOnce       sync.Once
 }
 
 // GetHostedCluster returns the HostedCluster associated with this test context.
@@ -70,6 +78,64 @@ func (tc *TestContext) GetHostedCluster() *hyperv1.HostedCluster {
 		tc.hostedCluster = hostedCluster
 	})
 	return tc.hostedCluster
+}
+
+// GetGuestClient returns a controller-runtime client for the guest (hosted) cluster.
+// It fetches the admin kubeconfig from the HostedCluster status lazily on first call via sync.Once.
+// Retries handle transient DNS propagation failures when connecting to the guest API server.
+// Panics if the guest client cannot be created, as tests cannot proceed without it.
+func (tc *TestContext) GetGuestClient() crclient.Client {
+	tc.guestClientOnce.Do(func() {
+		hc := tc.GetHostedCluster()
+		if hc == nil || hc.Status.KubeConfig == nil {
+			panic("HostedCluster has no kubeconfig in status")
+		}
+
+		var secret corev1.Secret
+		err := tc.MgmtClient.Get(context.Background(), crclient.ObjectKey{
+			Namespace: hc.Namespace,
+			Name:      hc.Status.KubeConfig.Name,
+		}, &secret)
+		if err != nil {
+			panic(fmt.Sprintf("failed to get kubeconfig secret: %v", err))
+		}
+
+		kubeconfigData, ok := secret.Data["kubeconfig"]
+		if !ok {
+			panic("kubeconfig secret does not contain 'kubeconfig' key")
+		}
+
+		restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigData)
+		if err != nil {
+			panic(fmt.Sprintf("failed to parse guest kubeconfig: %v", err))
+		}
+		restConfig.QPS = -1
+		restConfig.Burst = -1
+
+		var guestClient crclient.Client
+		var lastErr error
+		err = wait.PollUntilContextTimeout(tc.Context, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+			guestClient, err = e2eutil.GetClientFromConfig(restConfig)
+			if err != nil {
+				lastErr = fmt.Errorf("build guest client: %w", err)
+				return false, nil
+			}
+			_, apiErr := discovery.NewDiscoveryClientForConfigOrDie(restConfig).ServerVersion()
+			if apiErr != nil {
+				lastErr = fmt.Errorf("discover guest API server version: %w", apiErr)
+				return false, nil
+			}
+			return true, nil
+		})
+		if err != nil {
+			if lastErr != nil {
+				panic(fmt.Sprintf("failed to connect to guest cluster: %v (last error: %v)", err, lastErr))
+			}
+			panic(fmt.Sprintf("failed to connect to guest cluster: %v", err))
+		}
+		tc.guestClient = guestClient
+	})
+	return tc.guestClient
 }
 
 var (
