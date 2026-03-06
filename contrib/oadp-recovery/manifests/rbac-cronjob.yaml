@@ -10,7 +10,7 @@ metadata:
   name: oadp-recovery
 rules:
 - apiGroups: ["hypershift.openshift.io"]
-  resources: ["hostedclusters", "nodepools"]
+  resources: ["hostedclusters", "nodepools", "hostedcontrolplanes"]
   verbs: ["get", "list", "patch", "update"]
 - apiGroups: ["velero.io"]
   resources: ["backups"]
@@ -18,6 +18,9 @@ rules:
 - apiGroups: [""]
   resources: ["namespaces"]
   verbs: ["get"]
+- apiGroups: ["cluster.x-k8s.io"]
+  resources: ["machinedeployments", "clusters"]
+  verbs: ["get", "list", "patch", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
