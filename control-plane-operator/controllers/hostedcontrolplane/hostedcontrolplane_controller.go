@@ -1148,53 +1148,32 @@ func (r *HostedControlPlaneReconciler) reconcile(ctx context.Context, hostedCont
 		}
 	}
 
-	if _, exists := hostedControlPlane.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
-		r.Log.Info("Reconciling ignition server")
-		var mirroredReleaseImage string
-
-		// Get pull secret for image availability verification
-		pullSecret := common.PullSecret(hostedControlPlane.Namespace)
-		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
-			return fmt.Errorf("failed to get pull secret: %w", err)
-		}
-		pullSecretBytes := pullSecret.Data[corev1.DockerConfigJsonKey]
-
-		// Get the specific effective image for the control plane release image
-		controlPlaneReleaseImage := util.HCPControlPlaneReleaseImage(hostedControlPlane)
-		parsedImageRef, err := reference.Parse(controlPlaneReleaseImage)
-		if err == nil {
-			effectiveImageRef := util.SeekOverride(ctx, r.ReleaseProvider.GetOpenShiftImageRegistryOverrides(), parsedImageRef, pullSecretBytes)
-			effectiveImage := effectiveImageRef.String()
-
-			// Only set MIRRORED_RELEASE_IMAGE if we're using a mirror
-			if effectiveImage != controlPlaneReleaseImage {
-				mirroredReleaseImage = effectiveImage
+	if !r.IsCPOV2 {
+		if _, exists := hostedControlPlane.Annotations[hyperv1.DisableIgnitionServerAnnotation]; !exists {
+			r.Log.Info("Reconciling ignition server")
+			if err := ignitionserver.ReconcileIgnitionServer(ctx,
+				r.Client,
+				createOrUpdate,
+				releaseImageProvider.Version(),
+				releaseImageProvider.GetImage(util.CPOImageName),
+				releaseImageProvider.ComponentImages(),
+				hostedControlPlane,
+				r.DefaultIngressDomain,
+				// The healthz handler was added before the CPO started to manage the ignition server, and it's the same binary,
+				// so we know it always exists here.
+				true,
+				r.ReleaseProvider.GetRegistryOverrides(),
+				util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
+				r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
+				config.OwnerRefFrom(hostedControlPlane),
+				openShiftTrustedCABundleConfigMapForCPOExists,
+				labelHCPRoutes(hostedControlPlane),
+			); err != nil {
+				return fmt.Errorf("failed to reconcile ignition server: %w", err)
 			}
+		} else {
+			r.Log.Info("Skipping ignition server reconciliation as specified")
 		}
-
-		if err := ignitionserver.ReconcileIgnitionServer(ctx,
-			r.Client,
-			createOrUpdate,
-			releaseImageProvider.Version(),
-			releaseImageProvider.GetImage(util.CPOImageName),
-			releaseImageProvider.ComponentImages(),
-			hostedControlPlane,
-			r.DefaultIngressDomain,
-			// The healthz handler was added before the CPO started to manage the ignition server, and it's the same binary,
-			// so we know it always exists here.
-			true,
-			r.ReleaseProvider.GetRegistryOverrides(),
-			util.ConvertOpenShiftImageRegistryOverridesToCommandLineFlag(r.ReleaseProvider.GetOpenShiftImageRegistryOverrides()),
-			r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint),
-			config.OwnerRefFrom(hostedControlPlane),
-			openShiftTrustedCABundleConfigMapForCPOExists,
-			mirroredReleaseImage,
-			labelHCPRoutes(hostedControlPlane),
-		); err != nil {
-			return fmt.Errorf("failed to reconcile ignition server: %w", err)
-		}
-	} else {
-		r.Log.Info("Skipping ignition server reconciliation as specified")
 	}
 
 	// Reconcile Konnectivity

@@ -25,7 +25,6 @@ type syncGlobalPullSecretOptions struct {
 	kubeletConfigJsonPath string
 }
 
-//go:generate ../hack/tools/bin/mockgen -destination=sync-global-pullsecret_mock.go -package=syncglobalpullsecret . dbusConn
 type dbusConn interface {
 	RestartUnit(name string, mode string, ch chan<- string) (int, error)
 	Close()
