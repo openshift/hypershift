@@ -22,6 +22,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
+// RemoveLabelMarker is a sentinel value that can be set on a label to indicate
+// that the label should be removed during metadata preservation in ApplyManifest.
+// This allows adapt functions to explicitly request label removal even when using
+// ApplyManifest which normally preserves existing metadata.
+const RemoveLabelMarker = "__REMOVE_LABEL__"
+
 type ApplyProvider interface {
 	ApplyManifest(ctx context.Context, c crclient.Client, obj crclient.Object) (controllerutil.OperationResult, error)
 	ValidateUpdateEvents(threshold int) error
@@ -179,7 +185,7 @@ func cleanupRemovalMarkers(obj crclient.Object) {
 	}
 	filteredLabels := make(map[string]string)
 	for k, v := range labels {
-		if v != util.RemoveLabelMarker {
+		if v != RemoveLabelMarker {
 			filteredLabels[k] = v
 		}
 	}
@@ -198,7 +204,7 @@ func preserveOriginalMetadata(original, mutated crclient.Object) {
 
 	// Process mutated labels: add/update new labels, remove labels marked with RemoveLabelMarker
 	for k, v := range mutated.GetLabels() {
-		if v == util.RemoveLabelMarker {
+		if v == RemoveLabelMarker {
 			delete(labels, k)
 		} else {
 			labels[k] = v

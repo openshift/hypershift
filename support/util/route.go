@@ -17,11 +17,10 @@ import (
 const HCPRouteLabel = "hypershift.openshift.io/hosted-control-plane"
 const InternalRouteLabel = "hypershift.openshift.io/internal-route"
 
-// RemoveLabelMarker is a sentinel value that can be set on a label to indicate
-// that the label should be removed during metadata preservation in ApplyManifest.
-// This allows adapt functions to explicitly request label removal even when using
-// ApplyManifest which normally preserves existing metadata.
-const RemoveLabelMarker = "__REMOVE_LABEL__"
+// removeLabelMarkerValue is the sentinel value for label removal used by ApplyManifest.
+// The canonical constant is defined in support/upsert.RemoveLabelMarker.
+// It is duplicated here to avoid a circular import (upsert imports util).
+const removeLabelMarkerValue = "__REMOVE_LABEL__"
 
 // ShortenRouteHostnameIfNeeded will return a shortened hostname if the route hostname will exceed
 // the allowed DNS name size. If the hostname is not too long, an empty string is returned so that
@@ -165,7 +164,7 @@ func MarkHCPRouteLabelForRemoval(target crclient.Object) {
 	}
 	// Set the label to the removal marker so that preserveOriginalMetadata
 	// will delete it from the existing object's labels
-	labels[HCPRouteLabel] = RemoveLabelMarker
+	labels[HCPRouteLabel] = removeLabelMarkerValue
 	target.SetLabels(labels)
 }
 

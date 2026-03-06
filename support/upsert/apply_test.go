@@ -126,8 +126,8 @@ func TestApplyManifestLabelRemoval(t *testing.T) {
 			Name:      routeName,
 			Namespace: namespace,
 			Labels: map[string]string{
-				util.HCPRouteLabel: util.RemoveLabelMarker, // Mark for removal
-				"other-label":      "keep-me",              // Keep this label
+				util.HCPRouteLabel: RemoveLabelMarker, // Mark for removal
+				"other-label":      "keep-me",         // Keep this label
 			},
 		},
 		Spec: routev1.RouteSpec{
@@ -208,7 +208,7 @@ func TestApplyManifestLabelRemovalWithEmptyLabels(t *testing.T) {
 			Name:      routeName,
 			Namespace: namespace,
 			Labels: map[string]string{
-				util.HCPRouteLabel: util.RemoveLabelMarker,
+				util.HCPRouteLabel: RemoveLabelMarker,
 			},
 		},
 		Spec: routev1.RouteSpec{
@@ -270,8 +270,8 @@ func TestApplyManifestLabelRemovalOnCreate(t *testing.T) {
 			Name:      routeName,
 			Namespace: namespace,
 			Labels: map[string]string{
-				util.HCPRouteLabel: util.RemoveLabelMarker, // Mark for removal
-				"other-label":      "keep-me",              // Keep this label
+				util.HCPRouteLabel: RemoveLabelMarker, // Mark for removal
+				"other-label":      "keep-me",         // Keep this label
 			},
 		},
 		Spec: routev1.RouteSpec{
