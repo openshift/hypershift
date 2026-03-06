@@ -146,4 +146,9 @@ func init() {
 		"When set to any non-empty value, displays environment variable help and exits without running tests.",
 		false,
 	)
+	RegisterEnvVar(
+		"AWS_CREDENTIALS_FILE",
+		"Path to an AWS credentials file. Required for AWS-specific tests that need EC2, IAM, or SQS clients.",
+		false,
+	)
 }
