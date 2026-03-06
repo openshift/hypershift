@@ -1,6 +1,7 @@
 package controlplanecomponent
 
 import (
+	"context"
 	"crypto/x509/pkix"
 	"fmt"
 	"reflect"
@@ -48,7 +49,7 @@ func (r *testComponent) NeedsManagementKASAccess() bool {
 	return false
 }
 
-func NewComponent() ControlPlaneComponent {
+func newDeploymentComponentForTest() ControlPlaneComponent {
 	return NewDeploymentComponent(testComponentName, &testComponent{}).
 		InjectServiceAccountKubeConfig(
 			ServiceAccountKubeConfigOpts{
@@ -64,14 +65,76 @@ func NewComponent() ControlPlaneComponent {
 		Build()
 }
 
+func newStatefulSetComponentForTest() ControlPlaneComponent {
+	return NewStatefulSetComponent(testComponentName, &testComponent{}).
+		InjectServiceAccountKubeConfig(
+			ServiceAccountKubeConfigOpts{
+				Name:      testComponentName,
+				Namespace: "sa-namespace",
+				MountPath: "/test",
+			},
+		).
+		WithManifestAdapter(
+			"serviceaccount.yaml",
+			SetHostedClusterAnnotation(),
+		).
+		Build()
+}
+
+// workloadResult holds the common fields extracted from a reconciled workload
+// so that validation logic can be shared across Deployment and StatefulSet test cases.
+type workloadResult struct {
+	labels      map[string]string
+	podTemplate corev1.PodTemplateSpec
+	replicas    int32
+}
+
 func TestReconcile(t *testing.T) {
 	tests := []struct {
-		name string
+		name         string
+		newComponent func() ControlPlaneComponent
+		getWorkload  func(ctx context.Context, g Gomega, cl client.Client) workloadResult
 	}{
 		{
-			name: "when reconciling a Deployment workload it should enforce builtin hypershift opinions",
+			name:         "when reconciling a Deployment workload it should enforce builtin hypershift opinions",
+			newComponent: newDeploymentComponentForTest,
+			getWorkload: func(ctx context.Context, g Gomega, cl client.Client) workloadResult {
+				got := &appsv1.Deployment{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testComponentName,
+						Namespace: testComponentNamespace,
+					},
+				}
+				err := cl.Get(ctx, client.ObjectKeyFromObject(got), got)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(got.Spec.Replicas).NotTo(BeNil(), "deployment replicas should not be nil")
+				return workloadResult{
+					labels:      got.Labels,
+					podTemplate: got.Spec.Template,
+					replicas:    *got.Spec.Replicas,
+				}
+			},
 		},
-		// TODO(alberto): add StatefulSet test case.
+		{
+			name:         "when reconciling a StatefulSet workload it should enforce builtin hypershift opinions",
+			newComponent: newStatefulSetComponentForTest,
+			getWorkload: func(ctx context.Context, g Gomega, cl client.Client) workloadResult {
+				got := &appsv1.StatefulSet{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      testComponentName,
+						Namespace: testComponentNamespace,
+					},
+				}
+				err := cl.Get(ctx, client.ObjectKeyFromObject(got), got)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(got.Spec.Replicas).NotTo(BeNil(), "statefulset replicas should not be nil")
+				return workloadResult{
+					labels:      got.Labels,
+					podTemplate: got.Spec.Template,
+					replicas:    *got.Spec.Replicas,
+				}
+			},
+		},
 	}
 
 	scheme := runtime.NewScheme()
@@ -111,44 +174,36 @@ func TestReconcile(t *testing.T) {
 					WithObjects(fakeObjects...).Build(),
 			}
 
-			c := NewComponent()
+			c := tc.newComponent()
 			err = c.Reconcile(cpContext)
 			g.Expect(err).NotTo(HaveOccurred())
 
-			got := &appsv1.Deployment{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      testComponentName,
-					Namespace: testComponentNamespace,
-				},
-			}
-
-			err = cpContext.Client.Get(t.Context(), client.ObjectKeyFromObject(got), got)
-			g.Expect(err).NotTo(HaveOccurred())
+			result := tc.getWorkload(t.Context(), g, cpContext.Client)
 
 			// builtin reconciliation must pass the following validations:
 			// core labels.
-			g.Expect(got.Labels).To(HaveKeyWithValue("hypershift.openshift.io/managed-by", "control-plane-operator"))
+			g.Expect(result.labels).To(HaveKeyWithValue("hypershift.openshift.io/managed-by", "control-plane-operator"))
 
 			// pod template labels
-			g.Expect(got.Spec.Template.Labels).To(HaveKeyWithValue(hyperv1.ControlPlaneComponentLabel, testComponentName))
-			g.Expect(got.Spec.Template.Labels).To(HaveKeyWithValue("test-label", "test"))
+			g.Expect(result.podTemplate.Labels).To(HaveKeyWithValue(hyperv1.ControlPlaneComponentLabel, testComponentName))
+			g.Expect(result.podTemplate.Labels).To(HaveKeyWithValue("test-label", "test"))
 
 			// pod template annotations
-			g.Expect(got.Spec.Template.Annotations).To(HaveKey(hyperv1.ReleaseImageAnnotation))
+			g.Expect(result.podTemplate.Annotations).To(HaveKey(hyperv1.ReleaseImageAnnotation))
 
 			// PriorityClassName should be set
-			g.Expect(got.Spec.Template.Spec.PriorityClassName).ToNot(BeEmpty())
+			g.Expect(result.podTemplate.Spec.PriorityClassName).ToNot(BeEmpty())
 
 			// enforce image pull policy.
-			for _, container := range got.Spec.Template.Spec.Containers {
+			for _, container := range result.podTemplate.Spec.Containers {
 				g.Expect(container.ImagePullPolicy).To(Equal(corev1.PullIfNotPresent))
 			}
 
 			// honor replicas in the yaml.
-			g.Expect(*got.Spec.Replicas).To(Equal(int32(1)))
+			g.Expect(result.replicas).To(Equal(int32(1)))
 
 			// enforce volume permissions.
-			for _, volume := range got.Spec.Template.Spec.Volumes {
+			for _, volume := range result.podTemplate.Spec.Volumes {
 				if volume.ConfigMap != nil {
 					g.Expect(volume.ConfigMap.DefaultMode).To(HaveValue(BeEquivalentTo(420)))
 				}
@@ -157,9 +212,11 @@ func TestReconcile(t *testing.T) {
 				}
 			}
 			// enforce automount token sa is false.
-			g.Expect(*got.Spec.Template.Spec.AutomountServiceAccountToken).To(BeFalse())
+			g.Expect(result.podTemplate.Spec.AutomountServiceAccountToken).NotTo(BeNil(), "AutomountServiceAccountToken should be set")
+			g.Expect(*result.podTemplate.Spec.AutomountServiceAccountToken).To(BeFalse())
 
 			// enforce affinity rules.
+			g.Expect(result.podTemplate.Spec.Affinity).NotTo(BeNil(), "affinity should be set")
 			nodeAffinity := &corev1.NodeAffinity{
 				PreferredDuringSchedulingIgnoredDuringExecution: []corev1.PreferredSchedulingTerm{
 					{
@@ -203,8 +260,8 @@ func TestReconcile(t *testing.T) {
 					},
 				},
 			}
-			g.Expect(got.Spec.Template.Spec.Affinity.NodeAffinity).To(Equal(nodeAffinity), "node affinity does not match")
-			g.Expect(got.Spec.Template.Spec.Affinity.PodAffinity).To(Equal(podAffinity), "pod affinity does not match")
+			g.Expect(result.podTemplate.Spec.Affinity.NodeAffinity).To(Equal(nodeAffinity), "node affinity does not match")
+			g.Expect(result.podTemplate.Spec.Affinity.PodAffinity).To(Equal(podAffinity), "pod affinity does not match")
 
 			// enforce Service Account Kubeconfig volume mounts
 			expectedVolume := corev1.Volume{
@@ -217,7 +274,7 @@ func TestReconcile(t *testing.T) {
 				},
 			}
 			foundVolume := false
-			for _, v := range got.Spec.Template.Spec.Volumes {
+			for _, v := range result.podTemplate.Spec.Volumes {
 				if reflect.DeepEqual(v, expectedVolume) {
 					foundVolume = true
 					break
@@ -230,7 +287,7 @@ func TestReconcile(t *testing.T) {
 				MountPath: "/test",
 			}
 			found := false
-			for _, container := range got.Spec.Template.Spec.Containers {
+			for _, container := range result.podTemplate.Spec.Containers {
 				found = false
 				for _, volumeMount := range container.VolumeMounts {
 					if volumeMount.Name == expectedVolumeMount.Name &&
