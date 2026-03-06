@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
@@ -136,6 +138,8 @@ func returnCacheFile(fullCacheFileName string, out io.Writer) error {
 	return nil
 }
 
+var shaRegex = regexp.MustCompile(`\ssha256:[a-fA-F0-9]{64}`)
+
 func downloadImageFile(ctx context.Context, regClient regClient, imageRef string, pullSecret []byte, imageFile string, cacheDir string) (_ string, err error) {
 	newFile, err := os.CreateTemp(cacheDir, filepath.Base(imageFile)+"-*")
 	if err != nil {
@@ -150,7 +154,10 @@ func downloadImageFile(ctx context.Context, regClient regClient, imageRef string
 	}()
 
 	if err = regClient(ctx, imageRef, pullSecret, imageFile, newFile); err != nil {
-		return "", fmt.Errorf("failed to extract image file: %w", err)
+		// Generalize the error by removing any layer specific sha256 values to avoid
+		// cascading reconciliations caused by small hash changes in the resource status repeatedly.
+		genericErrStr := shaRegex.ReplaceAllString(err.Error(), "")
+		return "", fmt.Errorf("failed to extract image file: %w", errors.New(genericErrStr))
 	}
 
 	return newFile.Name(), nil
