@@ -498,7 +498,8 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 						"x86_64": {
 							Images: releaseinfo.CoreOSImages{
 								GCP: releaseinfo.CoreOSGCPImage{
-									Image: "projects/rhcos-cloud/global/images/rhcos-x86-64-418",
+									Project: "rhcos-cloud",
+									Name:    "rhcos-x86-64-418",
 								},
 							},
 						},
@@ -538,7 +539,7 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 		expectedErrMsg string
 	}{
 		{
-			name: "When architecture is x86_64 with valid release metadata, it should return correct image",
+			name: "When stream metadata has project and name for amd64, it should construct image path",
 			arch: hyperv1.ArchitectureAMD64,
 			releaseImage: &releaseinfo.ReleaseImage{
 				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
@@ -546,18 +547,19 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 						"x86_64": {
 							Images: releaseinfo.CoreOSImages{
 								GCP: releaseinfo.CoreOSGCPImage{
-									Image: "projects/rhcos-cloud/global/images/rhcos-x86-64-418",
+									Project: "rhcos-cloud",
+									Name:    "rhcos-9-6-20251023-0-gcp-x86-64",
 								},
 							},
 						},
 					},
 				},
 			},
-			expectedImage: "projects/rhcos-cloud/global/images/rhcos-x86-64-418",
+			expectedImage: "projects/rhcos-cloud/global/images/rhcos-9-6-20251023-0-gcp-x86-64",
 			expectedErr:   false,
 		},
 		{
-			name: "When architecture is aarch64 with valid release metadata, it should return correct image",
+			name: "When stream metadata has project and name for arm64, it should construct image path",
 			arch: hyperv1.ArchitectureARM64,
 			releaseImage: &releaseinfo.ReleaseImage{
 				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
@@ -565,14 +567,15 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 						"aarch64": {
 							Images: releaseinfo.CoreOSImages{
 								GCP: releaseinfo.CoreOSGCPImage{
-									Image: "projects/rhcos-cloud/global/images/rhcos-aarch64-418",
+									Project: "rhcos-cloud",
+									Name:    "rhcos-9-6-20251023-0-gcp-aarch64",
 								},
 							},
 						},
 					},
 				},
 			},
-			expectedImage: "projects/rhcos-cloud/global/images/rhcos-aarch64-418",
+			expectedImage: "projects/rhcos-cloud/global/images/rhcos-9-6-20251023-0-gcp-aarch64",
 			expectedErr:   false,
 		},
 		{
@@ -584,7 +587,8 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 						"x86_64": {
 							Images: releaseinfo.CoreOSImages{
 								GCP: releaseinfo.CoreOSGCPImage{
-									Image: "projects/rhcos-cloud/global/images/rhcos-x86-64-418",
+									Project: "rhcos-cloud",
+									Name:    "rhcos-9-6-20251023-0-gcp-x86-64",
 								},
 							},
 						},
@@ -595,7 +599,24 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 			expectedErrMsg: "couldn't find OS metadata for architecture \"unsupported-arch\"",
 		},
 		{
-			name: "When GCP image is empty in release metadata, it should return error",
+			name: "When GCP project and name are empty, it should return error",
+			arch: hyperv1.ArchitectureAMD64,
+			releaseImage: &releaseinfo.ReleaseImage{
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+						"x86_64": {
+							Images: releaseinfo.CoreOSImages{
+								GCP: releaseinfo.CoreOSGCPImage{},
+							},
+						},
+					},
+				},
+			},
+			expectedErr:    true,
+			expectedErrMsg: "release image metadata has no GCP image for architecture \"amd64\"",
+		},
+		{
+			name: "When GCP project is empty but name is set, it should return error",
 			arch: hyperv1.ArchitectureAMD64,
 			releaseImage: &releaseinfo.ReleaseImage{
 				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
@@ -603,7 +624,26 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 						"x86_64": {
 							Images: releaseinfo.CoreOSImages{
 								GCP: releaseinfo.CoreOSGCPImage{
-									Image: "", // Empty image
+									Name: "rhcos-x86-64",
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedErr:    true,
+			expectedErrMsg: "release image metadata has no GCP image for architecture \"amd64\"",
+		},
+		{
+			name: "When GCP name is empty but project is set, it should return error",
+			arch: hyperv1.ArchitectureAMD64,
+			releaseImage: &releaseinfo.ReleaseImage{
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+						"x86_64": {
+							Images: releaseinfo.CoreOSImages{
+								GCP: releaseinfo.CoreOSGCPImage{
+									Project: "rhcos-cloud",
 								},
 							},
 						},
