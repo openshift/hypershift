@@ -8,12 +8,19 @@ import (
 	"k8s.io/utils/ptr"
 )
 
-func UseSharedIngress() bool {
-	managedService, _ := os.LookupEnv("MANAGED_SERVICE")
-	return managedService == hyperv1.AroHCP
+const managedServiceEnvVar = "MANAGED_SERVICE"
+
+func isAroHCP() bool {
+	return os.Getenv(managedServiceEnvVar) == hyperv1.AroHCP
 }
 
 func IsPrivateHCP(hcp *hyperv1.HostedControlPlane) bool {
+	// ARO always have swift enabled.
+	// We still check the annotation to keep CI working.
+	// TODO(alberto): Remove this once CI has swift enabled.
+	if isAroHCP() && hcp.Annotations[hyperv1.SwiftPodNetworkInstanceAnnotation] != "" {
+		return true
+	}
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
 		access := ptr.Deref(hcp.Spec.Platform.AWS, hyperv1.AWSPlatformSpec{}).EndpointAccess
 		return access == hyperv1.PublicAndPrivate || access == hyperv1.Private
@@ -39,6 +46,12 @@ func IsPublicHCP(hcp *hyperv1.HostedControlPlane) bool {
 }
 
 func IsPrivateHC(hc *hyperv1.HostedCluster) bool {
+	// ARO always have swift enabled.
+	// We still check the annotation to keep CI working.
+	// TODO(alberto): Remove this once CI has swift enabled.
+	if isAroHCP() && hc.Annotations[hyperv1.SwiftPodNetworkInstanceAnnotation] != "" {
+		return true
+	}
 	if hc.Spec.Platform.Type == hyperv1.AWSPlatform {
 		access := ptr.Deref(hc.Spec.Platform.AWS, hyperv1.AWSPlatformSpec{}).EndpointAccess
 		return access == hyperv1.PublicAndPrivate || access == hyperv1.Private
@@ -118,7 +131,7 @@ func IsPublicHC(hc *hyperv1.HostedCluster) bool {
 func LabelHCPRoutes(hcp *hyperv1.HostedControlPlane) bool {
 	// When shared ingress is active (e.g., ARO HCP), all routes must be labeled
 	// so the SharedIngressReconciler can discover and admit them.
-	if UseSharedIngress() {
+	if isAroHCP() {
 		return true
 	}
 

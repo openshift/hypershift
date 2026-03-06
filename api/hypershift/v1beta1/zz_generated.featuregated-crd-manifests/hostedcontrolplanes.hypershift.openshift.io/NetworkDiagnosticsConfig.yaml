@@ -5564,6 +5564,18 @@ spec:
                             - keyVaultName
                             - keyVersion
                             type: object
+                          keyVaultAccess:
+                            description: |-
+                              keyVaultAccess specifies how the Key Vault should be accessed.
+                              When set to "Private", the control plane routes Key Vault traffic through
+                              the private router to reach the Key Vault's private endpoint in the customer VNet.
+                              When set to "Public" or omitted (empty), the Key Vault is accessed via its public endpoint.
+                              Controllers treat an empty value the same as "Public".
+                            enum:
+                            - Public
+                            - Private
+                            - ""
+                            type: string
                           kms:
                             description: kms is a pre-existing managed identity used
                               to authenticate with Azure KMS.
@@ -5625,6 +5637,11 @@ spec:
                         - activeKey
                         - kms
                         type: object
+                        x-kubernetes-validations:
+                        - message: backupKey.keyVaultName must match activeKey.keyVaultName;
+                            both keys must reside in the same Key Vault
+                          rule: '!has(self.backupKey) || self.backupKey.keyVaultName
+                            == self.activeKey.keyVaultName'
                       ibmcloud:
                         description: ibmcloud defines metadata for the IBM Cloud KMS
                           encryption strategy

@@ -430,6 +430,11 @@ const (
 	// SkipKASCertificateConflicSANValidation allows skipping the validation of the KAS certificate SANs so they do not conflict with ServicePublishingStrategy Hostname.
 	// This annotation is useful as a escape hatch, that IBM could use.
 	SkipKASConflicSANValidation = "hypershift.openshift.io/skip-kas-conflict-san-validation"
+
+	// SwiftPodNetworkInstanceAnnotation indicates that Swift networking is enabled for the HostedCluster.
+	// This is used by ARO. The value of this annotation is the name of the Swift pod network instance to be attached to the router pods.
+	// We still support absence of this annotation in ARO to keep CI working until swift is available there.
+	SwiftPodNetworkInstanceAnnotation = "hypershift.openshift.io/swift-pod-network-instance"
 )
 
 // RetentionPolicy defines the policy for handling resources associated with a cluster when the cluster is deleted.
