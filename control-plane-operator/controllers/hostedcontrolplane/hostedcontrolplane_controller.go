@@ -154,6 +154,8 @@ const (
 type HostedControlPlaneReconciler struct {
 	client.Client
 
+	GVKAccessChecker component.GVKAccessChecker
+
 	components []component.ControlPlaneComponent
 
 	// ManagementClusterCapabilities can be asked for support of optional management cluster capabilities
@@ -1173,6 +1175,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 	cpContext := component.ControlPlaneContext{
 		Context:                   ctx,
 		Client:                    r.Client,
+		GVKAccessChecker:          r.GVKAccessChecker,
 		HCP:                       hcp,
 		ApplyProvider:             upsert.NewApplyProvider(r.EnableCIDebugOutput),
 		InfraStatus:               infraStatus,

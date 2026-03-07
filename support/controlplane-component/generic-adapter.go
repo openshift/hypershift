@@ -48,6 +48,16 @@ func (ga *genericAdapter) reconcile(cpContext ControlPlaneContext, obj client.Ob
 	workloadContext := cpContext.workloadContext()
 
 	if ga.predicate != nil && !ga.predicate(workloadContext) {
+		if cpContext.GVKAccessChecker != nil {
+			accessible, err := cpContext.GVKAccessChecker.GetOrProbe(cpContext, obj)
+			if err != nil {
+				return err
+			}
+			if !accessible {
+				return nil
+			}
+		}
+
 		// get the existing object to read its ownerRefs
 		existing := obj.DeepCopyObject().(client.Object)
 		err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(obj), existing)

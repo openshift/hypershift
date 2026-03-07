@@ -60,6 +60,10 @@ type ControlPlaneContext struct {
 	// This is useful when the component is not managed by the same HostedControlPlane controller like capi and the CPO itself.
 	OmitOwnerReference bool
 
+	// GVKAccessChecker caches GVK accessibility to avoid repeated probes.
+	// It uses an uncached reader internally to probe without creating informers.
+	GVKAccessChecker GVKAccessChecker
+
 	// SkipPredicate is used for the generic unit test, so we can always generate a fixture for the components deployment/statefulset.
 	SkipPredicate bool
 	// SkipCertificateSigning is used for the generic unit test to skip the signing of certificates and maintain a stable output.
@@ -208,6 +212,16 @@ func (c *controlPlaneWorkload[T]) delete(cpContext ControlPlaneContext) error {
 			return err
 		}
 		obj.SetNamespace(cpContext.HCP.Namespace)
+
+		if cpContext.GVKAccessChecker != nil {
+			accessible, err := cpContext.GVKAccessChecker.GetOrProbe(cpContext, obj)
+			if err != nil {
+				return err
+			}
+			if !accessible {
+				return nil
+			}
+		}
 
 		_, err = util.DeleteIfNeeded(cpContext, cpContext.Client, obj)
 		return err
