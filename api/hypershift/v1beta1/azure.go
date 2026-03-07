@@ -462,6 +462,14 @@ type AzurePlatformSpec struct {
 	// +required
 	// +kubebuilder:validation:MaxLength=255
 	TenantID string `json:"tenantID"`
+
+	// endpointAccess specifies the visibility of the API server endpoint and private connectivity
+	// configuration for the hosted cluster. When nil, the API server is publicly accessible (equivalent
+	// to setting type to Public). When specified with type set to Private or PublicAndPrivate, Azure
+	// Private Link Service infrastructure will be created to enable private connectivity.
+	//
+	// +optional
+	EndpointAccess *AzureEndpointAccessSpec `json:"endpointAccess,omitempty"`
 }
 
 // objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
@@ -601,6 +609,64 @@ type WorkloadIdentity struct {
 	//
 	// +required
 	ClientID AzureClientID `json:"clientID"`
+}
+
+// AzureEndpointAccessType specifies the visibility of the Azure API server endpoint.
+// +kubebuilder:validation:Enum=Public;PublicAndPrivate;Private
+type AzureEndpointAccessType string
+
+const (
+	// AzureEndpointAccessPublic indicates the API server is publicly accessible.
+	AzureEndpointAccessPublic AzureEndpointAccessType = "Public"
+	// AzureEndpointAccessPublicAndPrivate indicates the API server is accessible via both public and private endpoints.
+	AzureEndpointAccessPublicAndPrivate AzureEndpointAccessType = "PublicAndPrivate"
+	// AzureEndpointAccessPrivate indicates the API server is only accessible via a private endpoint.
+	AzureEndpointAccessPrivate AzureEndpointAccessType = "Private"
+)
+
+// AzureEndpointAccessSpec specifies the endpoint access configuration for an Azure hosted cluster,
+// including the visibility type of the API server endpoint and optional private connectivity settings.
+// When the spec is nil on AzurePlatformSpec, the cluster defaults to public access.
+//
+// +kubebuilder:validation:XValidation:rule="self.type == 'Public' || has(self.private)",message="private is required when type is not Public"
+type AzureEndpointAccessSpec struct {
+	// type specifies the visibility of the API server endpoint for the hosted cluster.
+	// Valid values are Public, PublicAndPrivate, and Private.
+	// When set to Private or PublicAndPrivate, the private field must be provided with
+	// Azure Private Link Service configuration.
+	//
+	// +required
+	Type AzureEndpointAccessType `json:"type"`
+
+	// private specifies configuration for Azure Private Link connectivity.
+	// This field is required when type is set to Private or PublicAndPrivate, and
+	// must not be set when type is Public.
+	//
+	// +optional
+	Private *AzurePrivateConnectivityConfig `json:"private,omitempty"`
+}
+
+// AzurePrivateConnectivityConfig specifies configuration for Azure Private Link connectivity.
+type AzurePrivateConnectivityConfig struct {
+	// natSubnetID is the Azure resource ID of the subnet used for Private Link Service NAT IP allocation.
+	// This subnet must have privateLinkServiceNetworkPolicies disabled.
+	//
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=355
+	// +kubebuilder:validation:Pattern=`^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Network/virtualNetworks/[^/]+/subnets/[^/]+$`
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="NATSubnetID is immutable"
+	NATSubnetID string `json:"natSubnetID"`
+
+	// additionalAllowedSubscriptions is an optional list of additional Azure subscription IDs
+	// permitted to create Private Endpoints to the Private Link Service. The guest cluster's
+	// own subscription is always automatically allowed, so it does not need to be listed here.
+	//
+	// +optional
+	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:items:MaxLength=255
+	// +kubebuilder:validation:items:Pattern=`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`
+	AdditionalAllowedSubscriptions []string `json:"additionalAllowedSubscriptions,omitempty"`
 }
 
 // ControlPlaneManagedIdentities contains the managed identities on the HCP control plane needing to authenticate with

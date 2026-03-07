@@ -30,6 +30,13 @@ func IsPrivateHCP(hcp *hyperv1.HostedControlPlane) bool {
 		access := ptr.Deref(hcp.Spec.Platform.GCP, hyperv1.GCPPlatformSpec{}).EndpointAccess
 		return access == hyperv1.GCPEndpointAccessPublicAndPrivate || access == hyperv1.GCPEndpointAccessPrivate
 	}
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
+		ea := ptr.Deref(hcp.Spec.Platform.Azure, hyperv1.AzurePlatformSpec{}).EndpointAccess
+		if ea == nil {
+			return false
+		}
+		return ea.Type == hyperv1.AzureEndpointAccessPublicAndPrivate || ea.Type == hyperv1.AzureEndpointAccessPrivate
+	}
 	return false
 }
 
@@ -41,6 +48,13 @@ func IsPublicHCP(hcp *hyperv1.HostedControlPlane) bool {
 	if hcp.Spec.Platform.Type == hyperv1.GCPPlatform {
 		access := ptr.Deref(hcp.Spec.Platform.GCP, hyperv1.GCPPlatformSpec{}).EndpointAccess
 		return access == hyperv1.GCPEndpointAccessPublicAndPrivate
+	}
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
+		ea := ptr.Deref(hcp.Spec.Platform.Azure, hyperv1.AzurePlatformSpec{}).EndpointAccess
+		if ea == nil {
+			return true // nil means Public
+		}
+		return ea.Type == hyperv1.AzureEndpointAccessPublicAndPrivate || ea.Type == hyperv1.AzureEndpointAccessPublic
 	}
 	return true
 }
@@ -60,6 +74,13 @@ func IsPrivateHC(hc *hyperv1.HostedCluster) bool {
 		access := ptr.Deref(hc.Spec.Platform.GCP, hyperv1.GCPPlatformSpec{}).EndpointAccess
 		return access == hyperv1.GCPEndpointAccessPublicAndPrivate || access == hyperv1.GCPEndpointAccessPrivate
 	}
+	if hc.Spec.Platform.Type == hyperv1.AzurePlatform {
+		ea := ptr.Deref(hc.Spec.Platform.Azure, hyperv1.AzurePlatformSpec{}).EndpointAccess
+		if ea == nil {
+			return false
+		}
+		return ea.Type == hyperv1.AzureEndpointAccessPublicAndPrivate || ea.Type == hyperv1.AzureEndpointAccessPrivate
+	}
 	return false
 }
 
@@ -71,6 +92,13 @@ func IsPublicHC(hc *hyperv1.HostedCluster) bool {
 	if hc.Spec.Platform.Type == hyperv1.GCPPlatform {
 		access := ptr.Deref(hc.Spec.Platform.GCP, hyperv1.GCPPlatformSpec{}).EndpointAccess
 		return access == hyperv1.GCPEndpointAccessPublicAndPrivate
+	}
+	if hc.Spec.Platform.Type == hyperv1.AzurePlatform {
+		ea := ptr.Deref(hc.Spec.Platform.Azure, hyperv1.AzurePlatformSpec{}).EndpointAccess
+		if ea == nil {
+			return true // nil means Public
+		}
+		return ea.Type == hyperv1.AzureEndpointAccessPublicAndPrivate || ea.Type == hyperv1.AzureEndpointAccessPublic
 	}
 	return true
 }
@@ -101,6 +129,9 @@ func IsPublicHC(hc *hyperv1.HostedCluster) bool {
 //
 // GCP Platform:
 //   - Same behavior as AWS platform
+//
+// Azure Platform:
+//   - Same behavior as AWS platform (supports endpoint access modes)
 //
 // Agent Platform (bare metal):
 //   - No EndpointAccess field (no Private/PublicAndPrivate concept)
@@ -136,8 +167,8 @@ func LabelHCPRoutes(hcp *hyperv1.HostedControlPlane) bool {
 	}
 
 	switch hcp.Spec.Platform.Type {
-	case hyperv1.AWSPlatform, hyperv1.GCPPlatform:
-		// AWS and GCP support endpoint access modes (Private/PublicAndPrivate/Public).
+	case hyperv1.AWSPlatform, hyperv1.GCPPlatform, hyperv1.AzurePlatform:
+		// AWS, GCP, and Azure support endpoint access modes (Private/PublicAndPrivate/Public).
 		// Label routes for HCP router when:
 		// 1. Cluster has no public access (Private-only), OR
 		// 2. Public cluster with dedicated DNS for KAS (KAS uses Route with hostname)
@@ -148,7 +179,7 @@ func LabelHCPRoutes(hcp *hyperv1.HostedControlPlane) bool {
 		// This avoids creating an unnecessary public LoadBalancer service.
 		return !IsPublicHCP(hcp) || UseDedicatedDNSForKAS(hcp)
 
-	case hyperv1.AzurePlatform, hyperv1.AgentPlatform, hyperv1.KubevirtPlatform, hyperv1.OpenStackPlatform, hyperv1.NonePlatform:
+	case hyperv1.AgentPlatform, hyperv1.KubevirtPlatform, hyperv1.OpenStackPlatform, hyperv1.NonePlatform:
 		// These platforms do not have endpoint access mode concepts (no Private/PublicAndPrivate).
 		// Label routes for HCP router ONLY when KAS explicitly uses Route with a hostname.
 		//

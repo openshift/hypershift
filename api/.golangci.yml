@@ -45,6 +45,9 @@ linters:
         path-except: hypershift//*
       - linters:
           - kubeapilinter
+        path: _test\.go
+      - linters:
+          - kubeapilinter
         path: hypershift/v1beta1/aws.go
         text: 'nobools: field Volume.Encrypted pointer should not use a bool. Use a string type with meaningful constant values as an enum'
       - linters:

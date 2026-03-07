@@ -5,6 +5,7 @@ go 1.25.3
 require (
 	github.com/aws/karpenter-provider-aws v1.8.6
 	github.com/openshift/api v0.0.0-20260120150926-4c643a652d54
+	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.34.3
 	k8s.io/apimachinery v0.34.3
 )
@@ -72,7 +73,6 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiextensions-apiserver v0.34.3 // indirect
 	k8s.io/client-go v0.34.3 // indirect
 	k8s.io/cloud-provider v0.34.1 // indirect

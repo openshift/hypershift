@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
@@ -20,9 +21,10 @@ import (
 )
 
 const (
-	VirtualNetworkAddressPrefix       = "10.0.0.0/16"
-	VirtualNetworkLinkLocation        = "global"
-	VirtualNetworkSubnetAddressPrefix = "10.0.0.0/24"
+	VirtualNetworkAddressPrefix          = "10.0.0.0/16"
+	VirtualNetworkLinkLocation           = "global"
+	VirtualNetworkSubnetAddressPrefix    = "10.0.0.0/24"
+	VirtualNetworkNATSubnetAddressPrefix = "10.0.1.0/24"
 )
 
 // NewCreateCommand creates a new cobra command for creating Azure infrastructure resources for a HostedCluster
@@ -59,6 +61,10 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.DNSZoneRG, "dns-zone-rg-name", opts.DNSZoneRG, util.DNSZoneRGNameDescription)
 	cmd.Flags().BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, util.AssignCustomHCPRolesDescription)
 	cmd.Flags().StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", opts.DisableClusterCapabilities, util.DisableClusterCapabilitiesDescription)
+
+	// Endpoint access flags
+	cmd.Flags().StringVar(&opts.EndpointAccess, "endpoint-access", string(hyperv1.AzureEndpointAccessPublic), "API server endpoint access type: Public, PublicAndPrivate, or Private")
+	cmd.Flags().StringVar(&opts.NATSubnetID, "endpoint-access-private-nat-subnet-id", "", "Pre-existing Azure NAT subnet ID for Private Link Service; if not provided, a NAT subnet will be created when endpoint access is not Public")
 
 	_ = cmd.MarkFlagRequired("infra-id")
 	_ = cmd.MarkFlagRequired("azure-creds")
@@ -118,6 +124,10 @@ func BindProductFlags(opts *CreateInfraOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.DNSZoneRG, "dns-zone-rg-name", opts.DNSZoneRG, util.DNSZoneRGNameDescription)
 	flags.BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, util.AssignCustomHCPRolesDescription)
 	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", opts.DisableClusterCapabilities, util.DisableClusterCapabilitiesDescription)
+
+	// Endpoint access
+	flags.StringVar(&opts.EndpointAccess, "endpoint-access", string(hyperv1.AzureEndpointAccessPublic), "API server endpoint access type: Public, PublicAndPrivate, or Private")
+	flags.StringVar(&opts.NATSubnetID, "endpoint-access-private-nat-subnet-id", "", "Pre-existing Azure NAT subnet ID for Private Link Service; if not provided, a NAT subnet will be created when endpoint access is not Public")
 
 	// Output
 	flags.StringVar(&opts.OutputFile, "output-file", opts.OutputFile, util.InfraOutputFileDescription)
@@ -216,6 +226,26 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		result.SubnetID = *vnet.Properties.Subnets[0].ID
 		result.VNetID = *vnet.ID
 		l.Info("Successfully created vnet", "ID", result.VNetID)
+	}
+
+	// Handle NAT subnet for private endpoint access
+	if o.EndpointAccess != "" && o.EndpointAccess != string(hyperv1.AzureEndpointAccessPublic) {
+		if o.NATSubnetID != "" {
+			result.NATSubnetID = o.NATSubnetID
+			l.Info("Using existing NAT subnet", "ID", result.NATSubnetID)
+		} else {
+			vnetName, vnetRG, err := azureutil.GetVnetNameAndResourceGroupFromVnetID(result.VNetID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse VNet ID for NAT subnet creation: %w", err)
+			}
+			natSubnetName := o.InfraID + "-pls-nat"
+			natSubnetID, err := netMgr.CreateNATSubnet(ctx, vnetRG, vnetName, natSubnetName)
+			if err != nil {
+				return nil, err
+			}
+			result.NATSubnetID = natSubnetID
+			l.Info("Successfully created NAT subnet for Private Link Service", "ID", result.NATSubnetID, "vnet", vnetName)
+		}
 	}
 
 	// Handle managed identities and RBAC
@@ -318,6 +348,19 @@ func (o *CreateInfraOptions) Validate() error {
 	if o.BaseDomain == "" {
 		return fmt.Errorf("--base-domain is required")
 	}
+
+	// Validate endpoint access value
+	if o.EndpointAccess != "" {
+		validValues := []string{
+			string(hyperv1.AzureEndpointAccessPublic),
+			string(hyperv1.AzureEndpointAccessPublicAndPrivate),
+			string(hyperv1.AzureEndpointAccessPrivate),
+		}
+		if !slices.Contains(validValues, o.EndpointAccess) {
+			return fmt.Errorf("--endpoint-access must be one of: %v", validValues)
+		}
+	}
+
 	return nil
 }
 
