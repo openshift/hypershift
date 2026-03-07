@@ -651,6 +651,7 @@ kind: Config`),
 		g.Expect(versionCondition).NotTo(BeNil(), "VersionResolved condition should be set")
 		g.Expect(versionCondition.Status).To(Equal(metav1.ConditionFalse))
 		g.Expect(versionCondition.Reason).To(Equal("ResolutionFailed"))
+
 	})
 
 	t.Run("When channel is set it should pass HCP channel to resolver", func(t *testing.T) {

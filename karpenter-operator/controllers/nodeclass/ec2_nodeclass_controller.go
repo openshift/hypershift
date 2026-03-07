@@ -349,6 +349,11 @@ func (r *EC2NodeClassReconciler) reconcileStatus(ctx context.Context, ec2NodeCla
 		meta.SetStatusCondition(&openshiftNodeClass.Status.Conditions, metav1.Condition(condition))
 	}
 
+	// Compute the top-level Ready condition atomically by combining EC2 readiness
+	// with version resolution status. This ensures a single controller owns the
+	// Ready semantic rather than having multiple controllers race to set it.
+	r.computeReadyCondition(openshiftNodeClass)
+
 	if !reflect.DeepEqual(originalObj.Status, openshiftNodeClass.Status) {
 		if err := r.guestClient.Status().Patch(ctx, openshiftNodeClass, client.MergeFrom(originalObj)); err != nil {
 			return fmt.Errorf("failed to update status: %v", err)
@@ -357,6 +362,23 @@ func (r *EC2NodeClassReconciler) reconcileStatus(ctx context.Context, ec2NodeCla
 
 	log.Info("Reconciled OpenshiftEC2NodeClass status")
 	return nil
+}
+
+// computeReadyCondition computes the top-level Ready condition by combining
+// the upstream EC2NodeClass Ready status with the VersionResolved condition.
+// If VersionResolved is False, Ready is set to False regardless of EC2 readiness.
+func (r *EC2NodeClassReconciler) computeReadyCondition(openshiftNodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass) {
+	versionResolved := meta.FindStatusCondition(openshiftNodeClass.Status.Conditions, hyperkarpenterv1.ConditionTypeVersionResolved)
+	if versionResolved != nil && versionResolved.Status == metav1.ConditionFalse {
+		meta.SetStatusCondition(&openshiftNodeClass.Status.Conditions, metav1.Condition{
+			Type:               hyperkarpenterv1.ConditionTypeReady,
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: openshiftNodeClass.Generation,
+			LastTransitionTime: metav1.Now(),
+			Reason:             hyperkarpenterv1.ConditionReasonResolutionFailed,
+			Message:            fmt.Sprintf("Version resolution failed: %s", versionResolved.Message),
+		})
+	}
 }
 
 func (r *EC2NodeClassReconciler) reconcileVAP(ctx context.Context) error {

@@ -531,6 +531,7 @@ func (r *KarpenterIgnitionReconciler) updateVersionStatus(ctx context.Context, o
 	}
 
 	conditionChanged := meta.SetStatusCondition(&openshiftEC2NodeClass.Status.Conditions, condition)
+
 	releaseImageChanged := original.Status.ReleaseImage != resolvedImage
 	versionChanged := original.Status.Version != resolvedVersion
 	if conditionChanged || releaseImageChanged || versionChanged {
