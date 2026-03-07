@@ -19,6 +19,7 @@ package internal
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -145,5 +146,17 @@ func init() {
 		"E2E_SHOW_ENV_HELP",
 		"When set to any non-empty value, displays environment variable help and exits without running tests.",
 		false,
+	)
+	RegisterEnvVarWithDefault(
+		"ARTIFACT_DIR",
+		"Directory for test artifacts. Defaults to /tmp/artifacts.",
+		false,
+		"/tmp/artifacts",
+	)
+	RegisterEnvVarWithDefault(
+		"AWS_GUEST_INFRA_CREDENTIALS_FILE",
+		"Path to the AWS guest infrastructure credentials file. Defaults to ~/.aws/credentials.",
+		false,
+		filepath.Join(os.Getenv("HOME"), ".aws", "credentials"),
 	)
 }

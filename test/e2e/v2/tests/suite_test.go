@@ -24,6 +24,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
+	ctrl "sigs.k8s.io/controller-runtime"
+	zap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 // TestShowEnvHelp is a convenience test that prints environment variable help.
@@ -49,6 +51,8 @@ func TestE2EV2(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	ctx := context.Background()
+
+	ctrl.SetLogger(zap.New())
 
 	// Setup test context from environment variables
 	// This creates a common context for all tests

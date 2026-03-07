@@ -88,9 +88,9 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	return cmd
 }
 
-// generateRestoreName creates a restore name using the format: {hcName}-{hcNamespace}-{randomSuffix}
+// GenerateRestoreName creates a restore name using the format: {hcName}-{hcNamespace}-{randomSuffix}
 // If the name is too long, it uses utils.ShortenName to ensure it doesn't exceed 63 characters
-func generateRestoreName(hcName, hcNamespace string) string {
+func GenerateRestoreName(hcName, hcNamespace string) string {
 	randomSuffix := utilrand.String(6)
 	baseName := fmt.Sprintf("%s-%s", hcName, hcNamespace)
 	// Use ShortenName to ensure it doesn't exceed DNS1123 subdomain max length (63 chars)
@@ -332,7 +332,7 @@ func (o *CreateOptions) GenerateRestoreObject() (*unstructured.Unstructured, str
 	// Use the name from flag, or generate if empty
 	restoreName := o.RestoreName
 	if restoreName == "" {
-		restoreName = generateRestoreName(o.HCName, o.HCNamespace)
+		restoreName = GenerateRestoreName(o.HCName, o.HCNamespace)
 	}
 
 	// Build included namespaces list
