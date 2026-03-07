@@ -7,6 +7,7 @@ require (
 	github.com/openshift/api v0.0.0-20260120150926-4c643a652d54
 	k8s.io/api v0.34.3
 	k8s.io/apimachinery v0.34.3
+	k8s.io/utils v0.0.0-20260108192941-914a6e750570
 )
 
 require (
@@ -81,7 +82,6 @@ require (
 	k8s.io/csi-translation-lib v0.34.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250710124328-f3f2b991d03b // indirect
-	k8s.io/utils v0.0.0-20260108192941-914a6e750570 // indirect
 	sigs.k8s.io/controller-runtime v0.22.4 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/karpenter v1.8.2 // indirect
