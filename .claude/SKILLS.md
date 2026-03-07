@@ -78,6 +78,31 @@ This directory contains Claude Code skills that are automatically applied when w
 - Promotes best practices for concurrency and error handling
 - Provides quick reference during code reviews
 
+### HyperShift Backport
+
+**Location:** `.claude/skills/hypershift-backport/`
+
+**Description:** HyperShift backport conventions and cherry-pick workflows for release branches.
+
+**Auto-applies when:**
+- Discussing backports or cherry-picks to release branches
+- Resolving cherry-pick conflicts
+- Creating backport PRs
+
+**Covers:**
+- Branch naming convention: `bp<version>/<JIRA-ID>`
+- PR title format with Jira ID: `OCPBUGS-XXXXX: <title>`
+- Jira integration via `/jira backport` Prow command
+- Cherry-pick process and conflict resolution guidelines
+- Automatic vs manual backport workflows
+
+**Benefits:**
+- Consistent backport branch and PR naming
+- Proper Jira issue linking
+- Structured conflict resolution approach
+
+**Related command:** Use `/hypershift-backport <PR> <branches>` to execute the full backport workflow.
+
 ### Debug Cluster
 
 **Location:** `.claude/skills/debug-cluster/`
@@ -112,6 +137,7 @@ Skills are automatically invoked by Claude based on context. You don't need to d
 - Create commits → Git Commit Format applies automatically
 - Create tests → Code Formatting ("When...it should..." convention) applies
 - Debug hosted-cluster issues → Debug Cluster applies automatically
+- Backport PRs to release branches → HyperShift Backport applies automatically, or use `/hypershift-backport`
 
 ## Available Commands
 
@@ -147,6 +173,25 @@ Commands are manually invoked using `/command-name` syntax.
 - Only processes PRs with `is_bot: true`
 - Never closes original PR if validation fails
 - Atomic: Original PR only closed after new PR is created
+
+### HyperShift Backport
+
+**Location:** `.claude/commands/hypershift-backport.md`
+
+**Description:** Backport a merged PR to one or more release branches, handling Jira integration, automatic/manual cherry-picks, and conflict resolution.
+
+**Usage:**
+```
+/hypershift-backport 7730 release-4.21
+/hypershift-backport 7730 release-4.21,release-4.20
+```
+
+**What it does:**
+1. Validates the source PR is merged
+2. Posts `/jira backport <branches>` comment on the source PR
+3. Waits for Prow CI to create Jira issues (OCPBUGS-XXXXX)
+4. Waits for automatic cherry-pick PRs
+5. If auto cherry-pick fails: manually cherry-picks, resolves conflicts, runs `make build` and `make test`, and creates the backport PR
 
 ### Update Konflux Tasks
 
