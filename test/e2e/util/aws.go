@@ -83,6 +83,12 @@ func GetIAMClient(ctx context.Context, awsCreds, awsRegion string) awsapi.IAMAPI
 	})
 }
 
+func GetEC2Client(awsCreds, awsRegion string) *ec2.EC2 {
+	awsSession := awsutil.NewSession("e2e-ec2", awsCreds, "", "", awsRegion)
+	awsConfig := awsutil.NewConfig()
+	return ec2.New(awsSession, awsConfig)
+}
+
 func GetSQSClient(awsCreds, awsRegion string) *sqs.SQS {
 	awsSession := awsutil.NewSession("e2e-sqs", awsCreds, "", "", awsRegion)
 	awsConfig := awsutil.NewConfig()
