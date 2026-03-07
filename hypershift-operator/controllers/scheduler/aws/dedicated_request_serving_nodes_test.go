@@ -528,6 +528,21 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 		}
 		return result
 	}
+	pairConfigMap := func(hc *hyperv1.HostedCluster, pairLabel string) *corev1.ConfigMap {
+		return &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: placeholderNamespace,
+				Name:      pairLabel,
+				Labels: map[string]string{
+					pairLabelKey: pairLabel,
+				},
+			},
+			Data: map[string]string{
+				clusterNamespaceKey: hc.Namespace,
+				clusterNameKey:      hc.Name,
+			},
+		}
+	}
 
 	tests := []struct {
 		name                  string
@@ -549,6 +564,31 @@ func TestHostedClusterSchedulerAndSizer(t *testing.T) {
 			),
 			checkScheduledCluster: true,
 			checkScheduledNodes:   true,
+		},
+		{
+			name: "When a scheduled hosted cluster loses one node from its pair, it should claim and label an available replacement node from the same pair",
+			hc:   hostedcluster(scheduledHC),
+			nodes: nodes(
+				node("n1", "zone-a", "small", "id1", withCluster(hostedcluster())),
+				node("n3", "zone-b", "small", "id1"),
+			),
+			additionalObjects: []client.Object{
+				pairConfigMap(hostedcluster(), "id1"),
+			},
+			checkScheduledCluster: true,
+			checkScheduledNodes:   true,
+		},
+		{
+			name: "When a scheduled hosted cluster loses one node and no same-pair replacement is available, it should create placeholder deployment",
+			hc:   hostedcluster(scheduledHC),
+			nodes: nodes(
+				node("n1", "zone-a", "small", "id1", withCluster(hostedcluster())),
+				node("n4", "zone-b", "small", "id2"),
+			),
+			additionalObjects: []client.Object{
+				pairConfigMap(hostedcluster(), "id1"),
+			},
+			expectPlaceholder: true,
 		},
 		{
 			name: "ensure allocated cluster node is labeled for cluster",
