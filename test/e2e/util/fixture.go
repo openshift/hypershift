@@ -326,9 +326,8 @@ func validateAWSGuestResourcesDeletedFunc(ctx context.Context, t *testing.T, inf
 
 			return true, nil
 		})
-
 		if wait.Interrupted(err) {
-			t.Errorf("Failed to wait for infra resources in guest cluster to be deleted: %v", err)
+			t.Fatalf("Failed to wait for infra resources in guest cluster to be deleted: %v", err)
 		} else if err != nil {
 			// Failing to list tagged resource is not fatal, but we should log it
 			t.Logf("Failed to list resources by tag: %v. Not verifying cluster is cleaned up.", err)
