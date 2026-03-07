@@ -330,7 +330,6 @@ func delegateNames(delegates aws.ServicesByDelegate) []string {
 // As services are migrated to v2, remove them from this list.
 // When this list is empty, all services have been migrated and this logic can be removed.
 var v1Services = []string{
-	"ec2",
 	"sqs",
 }
 
@@ -492,6 +491,29 @@ var extendedAPIs = map[string][]string{
 		"DisassociateVPCFromHostedZone",
 		"GetHostedZone",
 		"ListHostedZonesByVPC",
+	},
+	"ec2": {
+		"AllocateAddress",
+		"AssociateDhcpOptions",
+		"CreateDhcpOptions",
+		"CreateVpc",
+		"CreateVpcEndpointServiceConfiguration",
+		"DeleteDhcpOptions",
+		"DeleteKeyPair",
+		"DeleteVpc",
+		"DeleteVpcEndpointServiceConfigurations",
+		"DescribeKeyPairs",
+		"DescribeVpcEndpointConnections",
+		"DescribeVpcEndpointServiceConfigurations",
+		"DescribeVpcEndpointServicePermissions",
+		"GetConsoleOutput",
+		"GetEbsDefaultKmsKeyId",
+		"ImportKeyPair",
+		"ModifyVpcAttribute",
+		"ModifyVpcEndpointServicePermissions",
+		"ReleaseAddress",
+		"RejectVpcEndpointConnections",
+		"ReplaceRouteTableAssociation",
 	},
 }
 
