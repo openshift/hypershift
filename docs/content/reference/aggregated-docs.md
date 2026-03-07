@@ -13882,6 +13882,7 @@ By default, the backup includes the following resources. The exact set of resour
 
 **Additional Resources (always included):**
 - Routes (`routes.route.openshift.io`), ClusterDeployments (`clusterdeployments.hive.openshift.io`)
+- NMStateConfig (`nmstateconfigs.agent-install.openshift.io`)
 
 **Platform-Specific Resources (automatically detected):**
 
@@ -13951,6 +13952,7 @@ The following table lists all available resource types for the `--included-resou
 | | `machines.cluster.x-k8s.io` | Machine resources |
 | **OpenShift** | `routes.route.openshift.io` | OpenShift Routes |
 | | `clusterdeployments.hive.openshift.io` | ClusterDeployment resources |
+| | `nmstateconfigs.agent-install.openshift.io` | NMStateConfig resources |
 
 > **Platform Detection**: When using default resources (no `--included-resources` flag), only the platform-specific resources matching your HostedCluster's platform will be included automatically.
 
