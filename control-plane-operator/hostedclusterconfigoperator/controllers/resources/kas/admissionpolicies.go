@@ -47,6 +47,7 @@ var (
 	// that needs to modify the Spec after/during the HostedCluster is created.
 	userWhiteList = []string{
 		fmt.Sprintf("system:%s", config.HCCOUser),
+		fmt.Sprintf("system:%s", config.KASBootstrapContainerUser),
 	}
 	allAdmissionPoliciesOperations = []k8sadmissionv1.OperationType{"*"}
 	defaultMatchResourcesScope     = k8sadmissionv1.ScopeType("*")
