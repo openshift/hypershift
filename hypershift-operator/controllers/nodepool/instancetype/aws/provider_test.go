@@ -9,57 +9,35 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
+	"github.com/openshift/hypershift/support/awsapi"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+
+	"go.uber.org/mock/gomock"
 )
 
-// mockEC2Client is a configurable mock for ec2iface.EC2API.
-type mockEC2Client struct {
-	ec2iface.EC2API
-	describeInstanceTypesFunc func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error)
-}
-
-func (m *mockEC2Client) DescribeInstanceTypesWithContext(ctx aws.Context, input *ec2.DescribeInstanceTypesInput, opts ...request.Option) (*ec2.DescribeInstanceTypesOutput, error) {
-	if m.describeInstanceTypesFunc != nil {
-		return m.describeInstanceTypesFunc(input)
-	}
-	return &ec2.DescribeInstanceTypesOutput{}, nil
-}
-
-// newMockEC2Client creates a mock client with customizable behavior.
-func newMockEC2Client(instanceTypes []*ec2.InstanceTypeInfo) *mockEC2Client {
-	return &mockEC2Client{
-		describeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-			return &ec2.DescribeInstanceTypesOutput{
-				InstanceTypes: instanceTypes,
-			}, nil
+// makeInstanceTypeInfo creates an ec2types.InstanceTypeInfo for testing.
+func makeInstanceTypeInfo(name, arch string, vcpu int32, memoryMb int64, gpuCount int32) ec2types.InstanceTypeInfo {
+	info := ec2types.InstanceTypeInfo{
+		InstanceType: ec2types.InstanceType(name),
+		VCpuInfo: &ec2types.VCpuInfo{
+			DefaultVCpus: aws.Int32(vcpu),
 		},
-	}
-}
-
-// makeInstanceTypeInfo creates an ec2.InstanceTypeInfo for testing.
-func makeInstanceTypeInfo(name, arch string, vcpu int64, memoryMb int64, gpuCount int64) *ec2.InstanceTypeInfo {
-	info := &ec2.InstanceTypeInfo{
-		InstanceType: aws.String(name),
-		VCpuInfo: &ec2.VCpuInfo{
-			DefaultVCpus: aws.Int64(vcpu),
-		},
-		MemoryInfo: &ec2.MemoryInfo{
+		MemoryInfo: &ec2types.MemoryInfo{
 			SizeInMiB: aws.Int64(memoryMb),
 		},
 	}
 	if arch != "" {
-		info.ProcessorInfo = &ec2.ProcessorInfo{
-			SupportedArchitectures: []*string{aws.String(arch)},
+		info.ProcessorInfo = &ec2types.ProcessorInfo{
+			SupportedArchitectures: []ec2types.ArchitectureType{ec2types.ArchitectureType(arch)},
 		}
 	}
 	if gpuCount > 0 {
-		info.GpuInfo = &ec2.GpuInfo{
-			Gpus: []*ec2.GpuDeviceInfo{
-				{Count: aws.Int64(gpuCount)},
+		info.GpuInfo = &ec2types.GpuInfo{
+			Gpus: []ec2types.GpuDeviceInfo{
+				{Count: aws.Int32(gpuCount)},
 			},
 		}
 	}
@@ -69,44 +47,44 @@ func makeInstanceTypeInfo(name, arch string, vcpu int64, memoryMb int64, gpuCoun
 func TestGetGpuCount(t *testing.T) {
 	tests := []struct {
 		name     string
-		gpuInfo  *ec2.GpuInfo
+		gpuInfo  *ec2types.GpuInfo
 		expected int32
 	}{
 		{
 			name: "When single GPU type it should return that count",
-			gpuInfo: &ec2.GpuInfo{
-				Gpus: []*ec2.GpuDeviceInfo{
-					{Count: aws.Int64(4)},
+			gpuInfo: &ec2types.GpuInfo{
+				Gpus: []ec2types.GpuDeviceInfo{
+					{Count: aws.Int32(4)},
 				},
 			},
 			expected: 4,
 		},
 		{
 			name: "When multiple GPU types it should sum all counts",
-			gpuInfo: &ec2.GpuInfo{
-				Gpus: []*ec2.GpuDeviceInfo{
-					{Count: aws.Int64(4)},
-					{Count: aws.Int64(2)},
-					{Count: aws.Int64(8)},
+			gpuInfo: &ec2types.GpuInfo{
+				Gpus: []ec2types.GpuDeviceInfo{
+					{Count: aws.Int32(4)},
+					{Count: aws.Int32(2)},
+					{Count: aws.Int32(8)},
 				},
 			},
 			expected: 14,
 		},
 		{
 			name: "When GPU has nil count it should skip it",
-			gpuInfo: &ec2.GpuInfo{
-				Gpus: []*ec2.GpuDeviceInfo{
-					{Count: aws.Int64(4)},
+			gpuInfo: &ec2types.GpuInfo{
+				Gpus: []ec2types.GpuDeviceInfo{
+					{Count: aws.Int32(4)},
 					{Count: nil},
-					{Count: aws.Int64(2)},
+					{Count: aws.Int32(2)},
 				},
 			},
 			expected: 6,
 		},
 		{
 			name: "When gpuInfo has empty Gpus slice it should return 0",
-			gpuInfo: &ec2.GpuInfo{
-				Gpus: []*ec2.GpuDeviceInfo{},
+			gpuInfo: &ec2types.GpuInfo{
+				Gpus: []ec2types.GpuDeviceInfo{},
 			},
 			expected: 0,
 		},
@@ -117,21 +95,10 @@ func TestGetGpuCount(t *testing.T) {
 		},
 		{
 			name: "When gpuInfo.Gpus is nil it should return 0",
-			gpuInfo: &ec2.GpuInfo{
+			gpuInfo: &ec2types.GpuInfo{
 				Gpus: nil,
 			},
 			expected: 0,
-		},
-		{
-			name: "When Gpus array contains nil entries it should skip them",
-			gpuInfo: &ec2.GpuInfo{
-				Gpus: []*ec2.GpuDeviceInfo{
-					{Count: aws.Int64(4)},
-					nil,
-					{Count: aws.Int64(2)},
-				},
-			},
-			expected: 6,
 		},
 	}
 
@@ -147,21 +114,16 @@ func TestGetGpuCount(t *testing.T) {
 func TestTransformInstanceTypeInfo_WhenMissingRequiredFields_ItShouldReturnError(t *testing.T) {
 	tests := []struct {
 		name          string
-		input         *ec2.InstanceTypeInfo
+		input         ec2types.InstanceTypeInfo
 		expectedError string
 	}{
 		{
-			name:          "When input is nil it should return error",
-			input:         nil,
-			expectedError: "rawInstanceType is nil",
-		},
-		{
-			name: "When InstanceType name is nil it should return error",
-			input: &ec2.InstanceTypeInfo{
-				VCpuInfo: &ec2.VCpuInfo{
-					DefaultVCpus: aws.Int64(4),
+			name: "When InstanceType name is empty it should return error",
+			input: ec2types.InstanceTypeInfo{
+				VCpuInfo: &ec2types.VCpuInfo{
+					DefaultVCpus: aws.Int32(4),
 				},
-				MemoryInfo: &ec2.MemoryInfo{
+				MemoryInfo: &ec2types.MemoryInfo{
 					SizeInMiB: aws.Int64(16384),
 				},
 			},
@@ -169,9 +131,9 @@ func TestTransformInstanceTypeInfo_WhenMissingRequiredFields_ItShouldReturnError
 		},
 		{
 			name: "When VCpuInfo is nil it should return error",
-			input: &ec2.InstanceTypeInfo{
-				InstanceType: aws.String("test.xlarge"),
-				MemoryInfo: &ec2.MemoryInfo{
+			input: ec2types.InstanceTypeInfo{
+				InstanceType: ec2types.InstanceType("test.xlarge"),
+				MemoryInfo: &ec2types.MemoryInfo{
 					SizeInMiB: aws.Int64(16384),
 				},
 			},
@@ -179,10 +141,10 @@ func TestTransformInstanceTypeInfo_WhenMissingRequiredFields_ItShouldReturnError
 		},
 		{
 			name: "When DefaultVCpus is nil it should return error",
-			input: &ec2.InstanceTypeInfo{
-				InstanceType: aws.String("test.xlarge"),
-				VCpuInfo:     &ec2.VCpuInfo{},
-				MemoryInfo: &ec2.MemoryInfo{
+			input: ec2types.InstanceTypeInfo{
+				InstanceType: ec2types.InstanceType("test.xlarge"),
+				VCpuInfo:     &ec2types.VCpuInfo{},
+				MemoryInfo: &ec2types.MemoryInfo{
 					SizeInMiB: aws.Int64(16384),
 				},
 			},
@@ -190,12 +152,12 @@ func TestTransformInstanceTypeInfo_WhenMissingRequiredFields_ItShouldReturnError
 		},
 		{
 			name: "When vCPU count is zero it should return error",
-			input: &ec2.InstanceTypeInfo{
-				InstanceType: aws.String("test.xlarge"),
-				VCpuInfo: &ec2.VCpuInfo{
-					DefaultVCpus: aws.Int64(0),
+			input: ec2types.InstanceTypeInfo{
+				InstanceType: ec2types.InstanceType("test.xlarge"),
+				VCpuInfo: &ec2types.VCpuInfo{
+					DefaultVCpus: aws.Int32(0),
 				},
-				MemoryInfo: &ec2.MemoryInfo{
+				MemoryInfo: &ec2types.MemoryInfo{
 					SizeInMiB: aws.Int64(16384),
 				},
 			},
@@ -203,33 +165,33 @@ func TestTransformInstanceTypeInfo_WhenMissingRequiredFields_ItShouldReturnError
 		},
 		{
 			name: "When MemoryInfo is nil it should return error",
-			input: &ec2.InstanceTypeInfo{
-				InstanceType: aws.String("test.xlarge"),
-				VCpuInfo: &ec2.VCpuInfo{
-					DefaultVCpus: aws.Int64(4),
+			input: ec2types.InstanceTypeInfo{
+				InstanceType: ec2types.InstanceType("test.xlarge"),
+				VCpuInfo: &ec2types.VCpuInfo{
+					DefaultVCpus: aws.Int32(4),
 				},
 			},
 			expectedError: "missing memory information",
 		},
 		{
 			name: "When SizeInMiB is nil it should return error",
-			input: &ec2.InstanceTypeInfo{
-				InstanceType: aws.String("test.xlarge"),
-				VCpuInfo: &ec2.VCpuInfo{
-					DefaultVCpus: aws.Int64(4),
+			input: ec2types.InstanceTypeInfo{
+				InstanceType: ec2types.InstanceType("test.xlarge"),
+				VCpuInfo: &ec2types.VCpuInfo{
+					DefaultVCpus: aws.Int32(4),
 				},
-				MemoryInfo: &ec2.MemoryInfo{},
+				MemoryInfo: &ec2types.MemoryInfo{},
 			},
 			expectedError: "missing memory information",
 		},
 		{
 			name: "When memory size is zero it should return error",
-			input: &ec2.InstanceTypeInfo{
-				InstanceType: aws.String("test.xlarge"),
-				VCpuInfo: &ec2.VCpuInfo{
-					DefaultVCpus: aws.Int64(4),
+			input: ec2types.InstanceTypeInfo{
+				InstanceType: ec2types.InstanceType("test.xlarge"),
+				VCpuInfo: &ec2types.VCpuInfo{
+					DefaultVCpus: aws.Int32(4),
 				},
-				MemoryInfo: &ec2.MemoryInfo{
+				MemoryInfo: &ec2types.MemoryInfo{
 					SizeInMiB: aws.Int64(0),
 				},
 			},
@@ -237,12 +199,12 @@ func TestTransformInstanceTypeInfo_WhenMissingRequiredFields_ItShouldReturnError
 		},
 		{
 			name: "When ProcessorInfo is nil it should return error",
-			input: &ec2.InstanceTypeInfo{
-				InstanceType: aws.String("test.xlarge"),
-				VCpuInfo: &ec2.VCpuInfo{
-					DefaultVCpus: aws.Int64(4),
+			input: ec2types.InstanceTypeInfo{
+				InstanceType: ec2types.InstanceType("test.xlarge"),
+				VCpuInfo: &ec2types.VCpuInfo{
+					DefaultVCpus: aws.Int32(4),
 				},
-				MemoryInfo: &ec2.MemoryInfo{
+				MemoryInfo: &ec2types.MemoryInfo{
 					SizeInMiB: aws.Int64(16384),
 				},
 			},
@@ -250,24 +212,8 @@ func TestTransformInstanceTypeInfo_WhenMissingRequiredFields_ItShouldReturnError
 		},
 		{
 			name:          "When architecture is unsupported it should return error",
-			input:         makeInstanceTypeInfo("t2.micro", ec2.ArchitectureTypeI386, 1, 1024, 0),
+			input:         makeInstanceTypeInfo("t2.micro", string(ec2types.ArchitectureTypeI386), 1, 1024, 0),
 			expectedError: "unsupported CPU architecture",
-		},
-		{
-			name: "When SupportedArchitectures[0] is nil it should return error",
-			input: &ec2.InstanceTypeInfo{
-				InstanceType: aws.String("test.xlarge"),
-				VCpuInfo: &ec2.VCpuInfo{
-					DefaultVCpus: aws.Int64(4),
-				},
-				MemoryInfo: &ec2.MemoryInfo{
-					SizeInMiB: aws.Int64(16384),
-				},
-				ProcessorInfo: &ec2.ProcessorInfo{
-					SupportedArchitectures: []*string{nil},
-				},
-			},
-			expectedError: "CPU architecture is nil",
 		},
 	}
 
@@ -284,21 +230,21 @@ func TestTransformInstanceTypeInfo_WhenMissingRequiredFields_ItShouldReturnError
 func TestTransformInstanceTypeInfo_WhenValidInput_ItShouldTransformCorrectly(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    *ec2.InstanceTypeInfo
+		input    ec2types.InstanceTypeInfo
 		expected *instancetype.InstanceTypeInfo
 	}{
 		{
 			name: "When all fields are present it should transform correctly",
-			input: &ec2.InstanceTypeInfo{
-				InstanceType: aws.String("m6i.xlarge"),
-				VCpuInfo: &ec2.VCpuInfo{
-					DefaultVCpus: aws.Int64(4),
+			input: ec2types.InstanceTypeInfo{
+				InstanceType: ec2types.InstanceType("m6i.xlarge"),
+				VCpuInfo: &ec2types.VCpuInfo{
+					DefaultVCpus: aws.Int32(4),
 				},
-				MemoryInfo: &ec2.MemoryInfo{
+				MemoryInfo: &ec2types.MemoryInfo{
 					SizeInMiB: aws.Int64(16384),
 				},
-				ProcessorInfo: &ec2.ProcessorInfo{
-					SupportedArchitectures: []*string{aws.String(ec2.ArchitectureTypeX8664)},
+				ProcessorInfo: &ec2types.ProcessorInfo{
+					SupportedArchitectures: []ec2types.ArchitectureType{ec2types.ArchitectureTypeX8664},
 				},
 			},
 			expected: &instancetype.InstanceTypeInfo{
@@ -311,7 +257,7 @@ func TestTransformInstanceTypeInfo_WhenValidInput_ItShouldTransformCorrectly(t *
 		},
 		{
 			name:  "When instance has GPU it should set GPU count",
-			input: makeInstanceTypeInfo("p3.2xlarge", ec2.ArchitectureTypeX8664, 8, 61440, 1),
+			input: makeInstanceTypeInfo("p3.2xlarge", string(ec2types.ArchitectureTypeX8664), 8, 61440, 1),
 			expected: &instancetype.InstanceTypeInfo{
 				InstanceType:    "p3.2xlarge",
 				VCPU:            8,
@@ -322,7 +268,7 @@ func TestTransformInstanceTypeInfo_WhenValidInput_ItShouldTransformCorrectly(t *
 		},
 		{
 			name:  "When instance is ARM it should set correct architecture",
-			input: makeInstanceTypeInfo("m6g.xlarge", ec2.ArchitectureTypeArm64, 4, 16384, 0),
+			input: makeInstanceTypeInfo("m6g.xlarge", string(ec2types.ArchitectureTypeArm64), 4, 16384, 0),
 			expected: &instancetype.InstanceTypeInfo{
 				InstanceType:    "m6g.xlarge",
 				VCPU:            4,
@@ -346,16 +292,17 @@ func TestTransformInstanceTypeInfo_WhenValidInput_ItShouldTransformCorrectly(t *
 func TestGetInstanceTypeInfo(t *testing.T) {
 	tests := []struct {
 		name          string
-		mockClient    *mockEC2Client
+		instanceTypes []ec2types.InstanceTypeInfo
+		describeErr   error
 		instanceType  string
 		expected      *instancetype.InstanceTypeInfo
 		expectedError string
 	}{
 		{
 			name: "When instance type exists it should return info",
-			mockClient: newMockEC2Client([]*ec2.InstanceTypeInfo{
-				makeInstanceTypeInfo("m6i.xlarge", ec2.ArchitectureTypeX8664, 4, 16384, 0),
-			}),
+			instanceTypes: []ec2types.InstanceTypeInfo{
+				makeInstanceTypeInfo("m6i.xlarge", string(ec2types.ArchitectureTypeX8664), 4, 16384, 0),
+			},
 			instanceType: "m6i.xlarge",
 			expected: &instancetype.InstanceTypeInfo{
 				InstanceType:    "m6i.xlarge",
@@ -367,17 +314,13 @@ func TestGetInstanceTypeInfo(t *testing.T) {
 		},
 		{
 			name:          "When instance type not found it should return error",
-			mockClient:    newMockEC2Client([]*ec2.InstanceTypeInfo{}),
+			instanceTypes: []ec2types.InstanceTypeInfo{},
 			instanceType:  "nonexistent.xlarge",
 			expectedError: "not found",
 		},
 		{
-			name: "When API returns error it should propagate error",
-			mockClient: &mockEC2Client{
-				describeInstanceTypesFunc: func(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-					return nil, fmt.Errorf("API error: throttling")
-				},
-			},
+			name:          "When API returns error it should propagate error",
+			describeErr:   fmt.Errorf("API error: throttling"),
 			instanceType:  "m6i.xlarge",
 			expectedError: "describeInstanceTypes request failed",
 		},
@@ -386,7 +329,13 @@ func TestGetInstanceTypeInfo(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			provider := NewProvider(tt.mockClient)
+			mockEC2 := awsapi.NewMockEC2API(gomock.NewController(t))
+			mockEC2.EXPECT().DescribeInstanceTypes(gomock.Any(), gomock.Any()).Return(
+				&ec2.DescribeInstanceTypesOutput{InstanceTypes: tt.instanceTypes},
+				tt.describeErr,
+			)
+
+			provider := NewProvider(mockEC2)
 			result, err := provider.GetInstanceTypeInfo(context.Background(), tt.instanceType)
 
 			if tt.expectedError != "" {

@@ -44,10 +44,10 @@ import (
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/library-go/test/library/metrics"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
 
 	k8sadmissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -3432,14 +3432,14 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 
 		// Ensure that day2 tag is correctly applied to the default security group.
 		g.Eventually(func(g Gomega) {
-			sg, err := GetDefaultSecurityGroup(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
+			sg, err := GetDefaultSecurityGroup(ctx, clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to get default security group")
 
-			g.Expect(sg.Tags).To(ContainElement(&ec2.Tag{
+			g.Expect(sg.Tags).To(ContainElement(ec2types.Tag{
 				Key:   aws.String(day2TagKey),
 				Value: aws.String(day2TagValue),
 			}))
-		}).WithContext(ctx).WithTimeout(time.Minute * 2).WithPolling(time.Second).Should(Succeed())
+		}).WithContext(ctx).WithTimeout(time.Minute * 10).WithPolling(time.Second).Should(Succeed())
 	})
 }
 

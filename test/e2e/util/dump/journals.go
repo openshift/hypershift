@@ -3,6 +3,7 @@ package dump
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,9 +16,10 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	cmdutil "github.com/openshift/hypershift/cmd/util"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	"github.com/aws/smithy-go"
 
 	corev1 "k8s.io/api/core/v1"
 
@@ -127,15 +129,17 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 	}
 
 	// Find worker machine IPs
-	awsSession := awsutil.NewSession("cli-destroy-bastion", awsCreds, "", "", hc.Spec.Platform.AWS.Region)
-	awsConfig := awsutil.NewConfig()
-	ec2Client := ec2.New(awsSession, awsConfig)
+	awsSession := awsutil.NewSessionV2(ctx, "cli-destroy-bastion", awsCreds, "", "", hc.Spec.Platform.AWS.Region)
+	awsConfig := awsutil.NewConfigV2()
+	ec2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+		o.Retryer = awsConfig()
+	})
 
-	result, err := ec2Client.DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
-		Filters: []*ec2.Filter{
+	result, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("tag:kubernetes.io/cluster/" + hc.Spec.InfraID),
-				Values: []*string{aws.String("owned")},
+				Values: []string{"owned"},
 			},
 		},
 	})
@@ -143,13 +147,13 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 		return err
 	}
 	var machineIPs []string
-	var machineInstances []*ec2.Instance
+	var machineInstances []ec2types.Instance
 	var sgID string
 	for _, reservation := range result.Reservations {
 		for _, instance := range reservation.Instances {
 			skip := false
 			for _, tag := range instance.Tags {
-				if aws.StringValue(tag.Key) == "Name" && aws.StringValue(tag.Value) == (hc.Spec.InfraID+"-bastion") {
+				if aws.ToString(tag.Key) == "Name" && aws.ToString(tag.Value) == (hc.Spec.InfraID+"-bastion") {
 					skip = true
 					break
 				}
@@ -158,16 +162,16 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 				continue
 			}
 
-			if *instance.State.Name == "running" {
+			if string(instance.State.Name) == "running" {
 				if hc.Annotations[hyperv1.AWSMachinePublicIPs] == "true" {
-					if aws.StringValue(instance.PublicIpAddress) != "" {
+					if aws.ToString(instance.PublicIpAddress) != "" {
 						if sgID == "" && len(instance.SecurityGroups) > 0 {
-							sgID = aws.StringValue(instance.SecurityGroups[0].GroupId)
+							sgID = aws.ToString(instance.SecurityGroups[0].GroupId)
 						}
-						machineIPs = append(machineIPs, aws.StringValue(instance.PublicIpAddress))
+						machineIPs = append(machineIPs, aws.ToString(instance.PublicIpAddress))
 					}
 				} else {
-					machineIPs = append(machineIPs, aws.StringValue(instance.PrivateIpAddress))
+					machineIPs = append(machineIPs, aws.ToString(instance.PrivateIpAddress))
 				}
 				machineInstances = append(machineInstances, instance)
 			}
@@ -180,25 +184,26 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 		if sourceCIDR == "" {
 			sourceCIDR = "0.0.0.0/0"
 		}
-		permissions := []*ec2.IpPermission{
+		permissions := []ec2types.IpPermission{
 			{
 				IpProtocol: aws.String("tcp"),
-				IpRanges: []*ec2.IpRange{
+				IpRanges: []ec2types.IpRange{
 					{
 						CidrIp: aws.String(sourceCIDR),
 					},
 				},
-				FromPort: aws.Int64(22),
-				ToPort:   aws.Int64(22),
+				FromPort: aws.Int32(22),
+				ToPort:   aws.Int32(22),
 			},
 		}
-		_, err = ec2Client.AuthorizeSecurityGroupIngressWithContext(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
+		_, err = ec2Client.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
 			GroupId:       aws.String(sgID),
 			IpPermissions: permissions,
 		})
 		if err != nil {
 			// Tolerate duplicate rules to make this idempotent
-			if aerr, ok := err.(awserr.Error); !ok || aerr.Code() != "InvalidPermission.Duplicate" {
+			var apiErr smithy.APIError
+			if !errors.As(err, &apiErr) || apiErr.ErrorCode() != "InvalidPermission.Duplicate" {
 				return fmt.Errorf("failed to authorize security group: %w", err)
 			}
 		}
@@ -233,7 +238,7 @@ func DumpJournals(t *testing.T, ctx context.Context, hc *hyperv1.HostedCluster, 
 		var errorList []string
 		t.Logf("Error copying machine journals to artifacts directory: %v", err)
 		for _, instance := range machineInstances {
-			err = os.WriteFile(filepath.Join(outputDir, fmt.Sprintf("instance-%s.txt", aws.StringValue(instance.InstanceId))), []byte(instance.String()), 0644)
+			err = os.WriteFile(filepath.Join(outputDir, fmt.Sprintf("instance-%s.txt", aws.ToString(instance.InstanceId))), []byte(fmt.Sprintf("%+v", instance)), 0644)
 			if err != nil {
 				errorList = append(errorList, fmt.Sprintf("failed to write file to artifacts directory: %v. ", err))
 			}

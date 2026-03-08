@@ -12,9 +12,11 @@ import (
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/awsapi"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -80,12 +82,14 @@ func (o *ConsoleLogOpts) Run(ctx context.Context) error {
 	infraID := hostedCluster.Spec.InfraID
 	region := hostedCluster.Spec.Platform.AWS.Region
 
-	awsSession, err := o.AWSCredentialsOpts.GetSession("cli-console-logs", nil, region)
+	awsSession, err := o.AWSCredentialsOpts.GetSessionV2(ctx, "cli-console-logs", nil, region)
 	if err != nil {
 		return err
 	}
-	awsConfig := awsutil.NewConfig()
-	ec2Client := ec2.New(awsSession, awsConfig)
+	awsConfig := awsutil.NewConfigV2()
+	ec2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+		o.Retryer = awsConfig()
+	})
 
 	// Fetch any instances belonging to the cluster
 	instances, err := getEC2Instances(ctx, ec2Client, infraID)
@@ -100,16 +104,16 @@ func (o *ConsoleLogOpts) Run(ctx context.Context) error {
 	return nil
 }
 
-func getEC2Instances(ctx context.Context, ec2Client *ec2.EC2, infraID string) (map[string]string, error) {
+func getEC2Instances(ctx context.Context, ec2Client awsapi.EC2API, infraID string) (map[string]string, error) {
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	clusterTagFilter := fmt.Sprintf("tag:kubernetes.io/cluster/%s", infraID)
 	clusterTagValue := "owned"
-	output, err := ec2Client.DescribeInstancesWithContext(ctxWithTimeout, &ec2.DescribeInstancesInput{
-		Filters: []*ec2.Filter{
+	output, err := ec2Client.DescribeInstances(ctxWithTimeout, &ec2.DescribeInstancesInput{
+		Filters: []ec2types.Filter{
 			{
 				Name:   &clusterTagFilter,
-				Values: []*string{&clusterTagValue},
+				Values: []string{clusterTagValue},
 			},
 		},
 	})
@@ -119,36 +123,36 @@ func getEC2Instances(ctx context.Context, ec2Client *ec2.EC2, infraID string) (m
 	instances := map[string]string{}
 	for _, r := range output.Reservations {
 		for _, instance := range r.Instances {
-			if aws.StringValue(instance.State.Name) == "running" {
-				nameKey := aws.StringValue(instance.InstanceId)
+			if instance.State.Name == ec2types.InstanceStateNameRunning {
+				nameKey := aws.ToString(instance.InstanceId)
 				for _, tag := range instance.Tags {
-					if aws.StringValue(tag.Key) == "Name" {
-						nameKey = aws.StringValue(tag.Value)
+					if aws.ToString(tag.Key) == "Name" {
+						nameKey = aws.ToString(tag.Value)
 					}
 				}
-				instances[nameKey] = aws.StringValue(instance.InstanceId)
+				instances[nameKey] = aws.ToString(instance.InstanceId)
 			}
 		}
 	}
 	return instances, nil
 }
 
-func getInstanceConsoleOutput(ctx context.Context, ec2Client *ec2.EC2, instances map[string]string, outputDir string) error {
+func getInstanceConsoleOutput(ctx context.Context, ec2Client awsapi.EC2API, instances map[string]string, outputDir string) error {
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
 		return err
 	}
 	var errs []error
 	for name, instanceID := range instances {
 		ctxWithTimeout, cancel := context.WithTimeout(ctx, 2*time.Minute)
-		defer cancel()
-		output, err := ec2Client.GetConsoleOutputWithContext(ctxWithTimeout, &ec2.GetConsoleOutputInput{
+		output, err := ec2Client.GetConsoleOutput(ctxWithTimeout, &ec2.GetConsoleOutputInput{
 			InstanceId: aws.String(instanceID),
 		})
+		cancel()
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
-		logOutput, err := base64.StdEncoding.DecodeString(aws.StringValue(output.Output))
+		logOutput, err := base64.StdEncoding.DecodeString(aws.ToString(output.Output))
 		if err != nil {
 			errs = append(errs, err)
 			continue
