@@ -163,20 +163,20 @@ func (o *DestroyInfraOptions) DestroyDNS(ctx context.Context, client awsapi.ROUT
 	return errs
 }
 
-func (o *DestroyInfraOptions) DestroyPrivateZones(ctx context.Context, listClient, recordsClient awsapi.ROUTE53API, vpcID *string) []error {
+func (o *DestroyInfraOptions) DestroyPrivateZones(ctx context.Context, listClient, recordsClient awsapi.ROUTE53API, vpcID string) []error {
 	var output *route53.ListHostedZonesByVPCOutput
 	if err := retryRoute53WithBackoff(ctx, func() (err error) {
-		output, err = listClient.ListHostedZonesByVPC(ctx, &route53.ListHostedZonesByVPCInput{VPCId: vpcID, VPCRegion: route53types.VPCRegion(o.Region)})
+		output, err = listClient.ListHostedZonesByVPC(ctx, &route53.ListHostedZonesByVPCInput{VPCId: aws.String(vpcID), VPCRegion: route53types.VPCRegion(o.Region)})
 		return err
 	}); err != nil {
-		return []error{fmt.Errorf("failed to list hosted zones for vpc %s: %w", *vpcID, err)}
+		return []error{fmt.Errorf("failed to list hosted zones for vpc %s: %w", vpcID, err)}
 	}
 
 	var errs []error
 	for _, zone := range output.HostedZoneSummaries {
 		id := cleanZoneID(aws.ToString(zone.HostedZoneId))
 		if err := deleteZone(ctx, id, recordsClient, o.Log); err != nil {
-			return []error{fmt.Errorf("failed to delete private hosted zones for vpc %s: %w", *vpcID, err)}
+			return []error{fmt.Errorf("failed to delete private hosted zones for vpc %s: %w", vpcID, err)}
 		}
 		o.Log.Info("Deleted private hosted zone", "id", id, "name", aws.ToString(zone.Name))
 	}

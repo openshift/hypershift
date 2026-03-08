@@ -23,6 +23,7 @@ import (
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/azureutil"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/certs"
@@ -40,10 +41,7 @@ import (
 	"github.com/openshift/api/image/docker10"
 	routev1 "github.com/openshift/api/route/v1"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -69,14 +67,6 @@ import (
 	"go.uber.org/mock/gomock"
 	"go.uber.org/zap/zaptest"
 )
-
-type fakeEC2Client struct {
-	ec2iface.EC2API
-}
-
-func (*fakeEC2Client) DescribeVpcEndpointsWithContext(aws.Context, *ec2.DescribeVpcEndpointsInput, ...request.Option) (*ec2.DescribeVpcEndpointsOutput, error) {
-	return &ec2.DescribeVpcEndpointsOutput{}, fmt.Errorf("not ready")
-}
 
 func TestReconcileKubeadminPassword(t *testing.T) {
 	targetNamespace := "test"
@@ -724,6 +714,8 @@ func TestEventHandling(t *testing.T) {
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
 		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+	mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+	mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2.DescribeVpcEndpointsOutput{}, fmt.Errorf("not ready")).AnyTimes()
 
 	r := &HostedControlPlaneReconciler{
 		Client:                        c,
@@ -734,7 +726,7 @@ func TestEventHandling(t *testing.T) {
 			return readyInfraStatus, nil
 		},
 		SetDefaultSecurityContext: false,
-		ec2Client:                 &fakeEC2Client{},
+		ec2Client:                 mockEC2,
 	}
 	r.setup(controllerutil.CreateOrUpdate)
 
@@ -803,6 +795,8 @@ func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 	mockedProviderWithOpenshiftImageRegistryOverrides.EXPECT().
 		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(testutils.InitReleaseImageOrDie("4.15.0"), nil).AnyTimes()
+	mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+	mockEC2.EXPECT().DescribeVpcEndpoints(gomock.Any(), gomock.Any()).Return(&ec2.DescribeVpcEndpointsOutput{}, fmt.Errorf("not ready")).AnyTimes()
 	hcp := sampleHCP(t)
 	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp, pullSecret).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
@@ -814,7 +808,7 @@ func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
 			return infra.InfrastructureStatus{}, nil
 		},
-		ec2Client: &fakeEC2Client{},
+		ec2Client: mockEC2,
 	}
 	r.setup(controllerutil.CreateOrUpdate)
 	ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))

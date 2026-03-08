@@ -12,14 +12,14 @@ import (
 	"github.com/openshift/hypershift/support/oidc"
 	"github.com/openshift/hypershift/support/util"
 
-	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/sqs"
 
 	"github.com/go-logr/logr"
@@ -27,7 +27,7 @@ import (
 
 func GetKMSKeyArn(ctx context.Context, awsCreds, awsRegion, alias string) (*string, error) {
 	if alias == "" {
-		return awsv2.String(""), nil
+		return aws.String(""), nil
 	}
 
 	awsSession := awsutil.NewSessionV2(ctx, "e2e-kms", awsCreds, "", "", awsRegion)
@@ -37,7 +37,7 @@ func GetKMSKeyArn(ctx context.Context, awsCreds, awsRegion, alias string) (*stri
 	})
 
 	input := &kms.DescribeKeyInput{
-		KeyId: awsv2.String(alias),
+		KeyId: aws.String(alias),
 	}
 	out, err := kmsClient.DescribeKey(ctx, input)
 	if err != nil {
@@ -50,13 +50,15 @@ func GetKMSKeyArn(ctx context.Context, awsCreds, awsRegion, alias string) (*stri
 	return out.KeyMetadata.Arn, nil
 }
 
-func GetDefaultSecurityGroup(awsCreds, awsRegion, sgID string) (*ec2.SecurityGroup, error) {
-	awsSession := awsutil.NewSession("e2e-ec2", awsCreds, "", "", awsRegion)
-	awsConfig := awsutil.NewConfig()
-	ec2Client := ec2.New(awsSession, awsConfig)
+func GetDefaultSecurityGroup(ctx context.Context, awsCreds, awsRegion, sgID string) (*ec2types.SecurityGroup, error) {
+	awsSession := awsutil.NewSessionV2(ctx, "e2e-ec2", awsCreds, "", "", awsRegion)
+	awsConfig := awsutil.NewConfigV2()
+	ec2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+		o.Retryer = awsConfig()
+	})
 
-	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{
-		GroupIds: []*string{aws.String(sgID)},
+	describeSGResult, err := ec2Client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
+		GroupIds: []string{sgID},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get security group: %w", err)
@@ -64,7 +66,7 @@ func GetDefaultSecurityGroup(awsCreds, awsRegion, sgID string) (*ec2.SecurityGro
 	if len(describeSGResult.SecurityGroups) == 0 {
 		return nil, fmt.Errorf("no security group found with ID %s", sgID)
 	}
-	return describeSGResult.SecurityGroups[0], nil
+	return &describeSGResult.SecurityGroups[0], nil
 }
 
 func GetS3Client(ctx context.Context, awsCreds, awsRegion string) awsapi.S3API {
@@ -95,9 +97,9 @@ func PutRolePolicy(ctx context.Context, awsCreds, awsRegion, roleARN string, pol
 	policyName := util.HashSimple(policy)
 
 	_, err := iamClient.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
-		RoleName:       awsv2.String(roleName),
-		PolicyName:     awsv2.String(policyName),
-		PolicyDocument: awsv2.String(policy),
+		RoleName:       aws.String(roleName),
+		PolicyName:     aws.String(policyName),
+		PolicyDocument: aws.String(policy),
 	})
 	if err != nil {
 		var nse *iamtypes.NoSuchEntityException
@@ -111,8 +113,8 @@ func PutRolePolicy(ctx context.Context, awsCreds, awsRegion, roleARN string, pol
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		_, err := iamClient.DeleteRolePolicy(ctx, &iam.DeleteRolePolicyInput{
-			RoleName:   awsv2.String(roleName),
-			PolicyName: awsv2.String(policyName),
+			RoleName:   aws.String(roleName),
+			PolicyName: aws.String(policyName),
 		})
 		if err != nil {
 			var nse *iamtypes.NoSuchEntityException
@@ -159,15 +161,15 @@ func CleanupOIDCBucketObjects(ctx context.Context, log logr.Logger, s3Client aws
 
 	objectsToDelete := []s3types.ObjectIdentifier{
 		{
-			Key: awsv2.String(providerID + "/.well-known/openid-configuration"),
+			Key: aws.String(providerID + "/.well-known/openid-configuration"),
 		},
 		{
-			Key: awsv2.String(providerID + oidc.JWKSURI),
+			Key: aws.String(providerID + oidc.JWKSURI),
 		},
 	}
 
 	if _, err := s3Client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
-		Bucket: awsv2.String(bucketName),
+		Bucket: aws.String(bucketName),
 		Delete: &s3types.Delete{Objects: objectsToDelete},
 	}); err != nil {
 		var nsbErr *s3types.NoSuchBucket
