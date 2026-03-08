@@ -149,6 +149,7 @@ spec:
         - mountPath: /tmp
           name: tmp-dir
       priorityClassName: hypershift-control-plane
+      serviceAccountName: konnectivity-agent
       tolerations:
       - effect: NoSchedule
         key: hypershift.openshift.io/control-plane

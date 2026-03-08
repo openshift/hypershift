@@ -299,6 +299,172 @@ spec:
 			}
 		})
 	}
+
+	t.Run("When the hosted cluster is not found it should clean up token secret", func(t *testing.T) {
+		// Create a client with the nodePool but without the hostedCluster.
+		noHCClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(nodePool).Build()
+		noHCReconciler := secretJanitor{
+			NodePoolReconciler: &NodePoolReconciler{
+				Client: noHCClient,
+			},
+			now: fakeClock.Now,
+		}
+
+		tokenSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "token-nodepool-name-oldhash",
+				Namespace: "myns",
+				Annotations: map[string]string{
+					nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+				},
+			},
+		}
+		if err := noHCClient.Create(ctx, tokenSecret); err != nil {
+			t.Fatalf("failed to create token secret: %v", err)
+		}
+
+		key := client.ObjectKeyFromObject(tokenSecret)
+		if _, err := noHCReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key}); err != nil {
+			t.Fatalf("failed to reconcile: %v", err)
+		}
+
+		got := &corev1.Secret{}
+		if err := noHCClient.Get(ctx, key, got); err != nil {
+			t.Fatalf("failed to get token secret: %v", err)
+		}
+		expectedAnnotations := map[string]string{
+			nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+			hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: "2006-01-02T17:04:05Z",
+		}
+		if diff := cmp.Diff(got.Annotations, expectedAnnotations); diff != "" {
+			t.Errorf("unexpected annotations: %v", diff)
+		}
+	})
+
+	t.Run("When the hosted cluster is not found it should clean up userdata secret", func(t *testing.T) {
+		// Create a client with the nodePool but without the hostedCluster.
+		noHCClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(nodePool).Build()
+		noHCReconciler := secretJanitor{
+			NodePoolReconciler: &NodePoolReconciler{
+				Client: noHCClient,
+			},
+			now: fakeClock.Now,
+		}
+
+		userdataSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "user-data-nodepool-name-oldhash",
+				Namespace: "myns",
+				Annotations: map[string]string{
+					nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+				},
+			},
+		}
+		if err := noHCClient.Create(ctx, userdataSecret); err != nil {
+			t.Fatalf("failed to create userdata secret: %v", err)
+		}
+
+		key := client.ObjectKeyFromObject(userdataSecret)
+		if _, err := noHCReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key}); err != nil {
+			t.Fatalf("failed to reconcile: %v", err)
+		}
+
+		got := &corev1.Secret{}
+		err := noHCClient.Get(ctx, key, got)
+		if !apierrors.IsNotFound(err) {
+			t.Errorf("expected userdata secret to be deleted, got error: %v", err)
+		}
+	})
+
+	t.Run("When the hosted cluster is being deleted it should clean up token secret", func(t *testing.T) {
+		now := metav1.Now()
+		deletingHC := hostedCluster.DeepCopy()
+		deletingHC.DeletionTimestamp = &now
+		deletingHC.Finalizers = []string{"test-finalizer"}
+
+		deletingHCClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+			nodePool,
+			deletingHC,
+		).Build()
+		deletingHCReconciler := secretJanitor{
+			NodePoolReconciler: &NodePoolReconciler{
+				Client: deletingHCClient,
+			},
+			now: fakeClock.Now,
+		}
+
+		tokenSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "token-nodepool-name-oldhash",
+				Namespace: "myns",
+				Annotations: map[string]string{
+					nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+				},
+			},
+		}
+		if err := deletingHCClient.Create(ctx, tokenSecret); err != nil {
+			t.Fatalf("failed to create token secret: %v", err)
+		}
+
+		key := client.ObjectKeyFromObject(tokenSecret)
+		if _, err := deletingHCReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key}); err != nil {
+			t.Fatalf("failed to reconcile: %v", err)
+		}
+
+		got := &corev1.Secret{}
+		if err := deletingHCClient.Get(ctx, key, got); err != nil {
+			t.Fatalf("failed to get token secret: %v", err)
+		}
+		expectedAnnotations := map[string]string{
+			nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+			hyperv1.IgnitionServerTokenExpirationTimestampAnnotation: "2006-01-02T17:04:05Z",
+		}
+		if diff := cmp.Diff(got.Annotations, expectedAnnotations); diff != "" {
+			t.Errorf("unexpected annotations: %v", diff)
+		}
+	})
+
+	t.Run("When the hosted cluster is being deleted it should clean up userdata secret", func(t *testing.T) {
+		now := metav1.Now()
+		deletingHC := hostedCluster.DeepCopy()
+		deletingHC.DeletionTimestamp = &now
+		deletingHC.Finalizers = []string{"test-finalizer"}
+
+		deletingHCClient := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
+			nodePool,
+			deletingHC,
+		).Build()
+		deletingHCReconciler := secretJanitor{
+			NodePoolReconciler: &NodePoolReconciler{
+				Client: deletingHCClient,
+			},
+			now: fakeClock.Now,
+		}
+
+		userdataSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "user-data-nodepool-name-oldhash",
+				Namespace: "myns",
+				Annotations: map[string]string{
+					nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+				},
+			},
+		}
+		if err := deletingHCClient.Create(ctx, userdataSecret); err != nil {
+			t.Fatalf("failed to create userdata secret: %v", err)
+		}
+
+		key := client.ObjectKeyFromObject(userdataSecret)
+		if _, err := deletingHCReconciler.Reconcile(ctx, reconcile.Request{NamespacedName: key}); err != nil {
+			t.Fatalf("failed to reconcile: %v", err)
+		}
+
+		got := &corev1.Secret{}
+		err := deletingHCClient.Get(ctx, key, got)
+		if !apierrors.IsNotFound(err) {
+			t.Errorf("expected userdata secret to be deleted, got error: %v", err)
+		}
+	})
 }
 
 func TestShouldKeepOldUserData(t *testing.T) {

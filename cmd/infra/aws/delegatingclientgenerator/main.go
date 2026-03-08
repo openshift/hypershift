@@ -45,6 +45,9 @@ func main() {
 	client, err := template.New("client").Funcs(
 		template.FuncMap{
 			"ToIfaceName": func(input string) string {
+				if name, ok := serviceIfaceNames[input]; ok {
+					return name
+				}
 				return strings.ToUpper(input)
 			},
 			"ToName": func(input string) string { // snake-case to camelCase
@@ -101,7 +104,7 @@ import (
 	"github.com/aws/smithy-go/middleware"
 {{- range $service := .Services }}
 	{{- if IsV2Service $service }}
-	{{$service}}v2 "github.com/aws/aws-sdk-go-v2/service/{{$service}}"
+	"github.com/aws/aws-sdk-go-v2/service/{{$service}}"
 	{{- else }}
 	"github.com/aws/aws-sdk-go/service/{{$service}}"
 	"github.com/aws/aws-sdk-go/service/{{$service}}/{{$service}}iface"
@@ -152,7 +155,7 @@ func NewDelegatingClient (
 	{{$name | ToName}} := &{{$name | ToName}}ClientDelegate{
 {{- range $service, $apis := $services }}
 		{{- if IsV2Service $service }}
-		{{$service}}Client: {{$service}}v2.NewFromConfig({{$name | ToName}}Cfg, func(o *{{$service}}v2.Options) {
+		{{$service}}Client: {{$service}}.NewFromConfig({{$name | ToName}}Cfg, func(o *{{$service}}.Options) {
 			o.Retryer = awsConfigv2()
 		}),
 		{{- else }}
@@ -225,7 +228,7 @@ type {{$service}}Client struct {
 {{- with $apis := $name | index $delegates }}
 {{ range $api := $apis }}
 {{- if IsV2Service $service }}
-func (c *{{$service}}Client) {{$api}}(ctx context.Context, input *{{$service}}v2.{{$api}}Input, optFns ...func(*{{$service}}v2.Options)) (*{{$service}}v2.{{$api}}Output, error) {
+func (c *{{$service}}Client) {{$api}}(ctx context.Context, input *{{$service}}.{{$api}}Input, optFns ...func(*{{$service}}.Options)) (*{{$service}}.{{$api}}Output, error) {
 	return c.{{$name | ToName}}.{{$service}}Client.{{$api}}(ctx, input, optFns...)
 }
 {{- else }}
@@ -328,8 +331,6 @@ func delegateNames(delegates aws.ServicesByDelegate) []string {
 // When this list is empty, all services have been migrated and this logic can be removed.
 var v1Services = []string{
 	"ec2",
-	"elb",
-	"elbv2",
 	"sqs",
 }
 
@@ -344,12 +345,19 @@ func isV2Service(service string) bool {
 	return true
 }
 
+// serviceIfaceNames maps full service names to short interface name prefixes.
+// Used by ToIfaceName to produce readable type names (e.g. ELBAPI, ELBV2API).
+var serviceIfaceNames = map[string]string{
+	"elasticloadbalancing":   "ELB",
+	"elasticloadbalancingv2": "ELBV2",
+}
+
 // adjustServices maps permission attestation names to the Go SDK names, as necessary, and
 // ignores services we do not care about.
 func adjustServices(delegates aws.ServicesByDelegate) aws.ServicesByDelegate {
 	// some services are named differently in the Go SDK
 	serviceOverrides := map[string][]string{
-		"elasticloadbalancing": {"elb", "elbv2"},
+		"elasticloadbalancing": {"elasticloadbalancing", "elasticloadbalancingv2"},
 	}
 	// some services we just don't care about
 	serviceIgnores := sets.New[string]("kms", "autoscaling", "iam", "tag")
@@ -382,7 +390,7 @@ func adjustAPIs(delegates aws.ServicesByDelegate) aws.ServicesByDelegate {
 	// some APIs exist for the ELBv1 or v2 group, but not both, and the privilege attestations do not
 	// distinguish between them
 	apiRemovals := map[string]sets.Set[string]{
-		"elb": sets.New(
+		"elasticloadbalancing": sets.New(
 			"RegisterTargets",
 			"CreateListener",
 			"CreateTargetGroup",
@@ -397,7 +405,7 @@ func adjustAPIs(delegates aws.ServicesByDelegate) aws.ServicesByDelegate {
 			"ModifyTargetGroup",
 			"ModifyTargetGroupAttributes",
 		),
-		"elbv2": sets.New(
+		"elasticloadbalancingv2": sets.New(
 			"ApplySecurityGroupsToLoadBalancer",
 			"AttachLoadBalancerToSubnets",
 			"ConfigureHealthCheck",
@@ -563,7 +571,7 @@ package awsapi
 import (
 	"context"
 
-	{{.Service}}v2 "github.com/aws/aws-sdk-go-v2/service/{{.Service}}"
+	"github.com/aws/aws-sdk-go-v2/service/{{.Service}}"
 )
 
 {{- if .HasExtended }}
@@ -586,16 +594,21 @@ import (
 {{- end }}
 type {{.Service | ToUpper}}API interface {
 {{- range .APIs }}
-	{{.}}(ctx context.Context, input *{{$.Service}}v2.{{.}}Input, optFns ...func(*{{$.Service}}v2.Options)) (*{{$.Service}}v2.{{.}}Output, error)
+	{{.}}(ctx context.Context, input *{{$.Service}}.{{.}}Input, optFns ...func(*{{$.Service}}.Options)) (*{{$.Service}}.{{.}}Output, error)
 {{- end }}
 }
 
-// Ensure *{{.Service}}v2.Client implements {{.Service | ToUpper}}API
-var _ {{.Service | ToUpper}}API = (*{{.Service}}v2.Client)(nil)
+// Ensure *{{.Service}}.Client implements {{.Service | ToUpper}}API
+var _ {{.Service | ToUpper}}API = (*{{.Service}}.Client)(nil)
 `
 
 	tmpl, err := template.New("interface").Funcs(template.FuncMap{
-		"ToUpper": strings.ToUpper,
+		"ToUpper": func(s string) string {
+			if name, ok := serviceIfaceNames[s]; ok {
+				return name
+			}
+			return strings.ToUpper(s)
+		},
 	}).Parse(interfaceTemplate)
 	if err != nil {
 		return fmt.Errorf("unable to parse interface template: %w", err)

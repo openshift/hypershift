@@ -14,8 +14,10 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
+	"github.com/blang/semver"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	karpentercpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenter"
 	karpenteroperatorcpov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -50,6 +52,7 @@ func TestKarpenter(t *testing.T) {
 
 	clusterOpts := globalOpts.DefaultClusterOptions(t)
 	clusterOpts.AWSPlatform.AutoNode = true
+	clusterOpts.AWSPlatform.PublicOnly = false
 	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.HighlyAvailable)
 	clusterOpts.ReleaseImage = globalOpts.PreviousReleaseImage
 
@@ -375,10 +378,287 @@ func TestKarpenter(t *testing.T) {
 			t.Logf("EC2NodeClass InstanceProfile cleared successfully")
 		})
 
+		t.Run("OpenshiftEC2NodeClass version field", func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Re-fetch the hosted cluster to get the latest version status
+			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(hostedCluster.Status.Version).NotTo(BeNil(), "hostedCluster.Status.Version should not be nil")
+			g.Expect(hostedCluster.Status.Version.Desired.Version).NotTo(BeEmpty(), "hostedCluster.Status.Version.Desired.Version should not be empty")
+
+			cpVersion, err := semver.Parse(hostedCluster.Status.Version.Desired.Version)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to parse control plane version")
+			t.Logf("Control plane version: %s", cpVersion.String())
+
+			// Verify the default OpenshiftEC2NodeClass (version unset) uses the control plane release image
+			t.Log("Verifying default OpenshiftEC2NodeClass uses control plane release image")
+			e2eutil.EventuallyObject(t, ctx, "default OpenshiftEC2NodeClass to have VersionResolved=True",
+				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
+					nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+					err := guestClient.Get(ctx, crclient.ObjectKey{Name: "default"}, nc)
+					return nc, err
+				},
+				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+						Type:   hyperkarpenterv1.ConditionTypeVersionResolved,
+						Status: metav1.ConditionTrue,
+						Reason: "VersionNotSpecified",
+					}),
+					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+						Type:   hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
+						Status: metav1.ConditionTrue,
+						Reason: "VersionNotSpecified",
+					}),
+					e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (done bool, reasons string, err error) {
+						if nc.Status.ReleaseImage == "" {
+							return false, "status.releaseImage is empty", nil
+						}
+						if nc.Status.ReleaseImage != hostedCluster.Spec.Release.Image {
+							return false, fmt.Sprintf("expected status.releaseImage %q to match hostedCluster.Spec.Release.Image %q", nc.Status.ReleaseImage, hostedCluster.Spec.Release.Image), nil
+						}
+						return true, fmt.Sprintf("status.releaseImage matches control plane: %s", nc.Status.ReleaseImage), nil
+					}),
+				},
+				e2eutil.WithTimeout(2*time.Minute),
+			)
+			t.Log("Default OpenshiftEC2NodeClass has correct version status")
+
+			// Use previous minor version (e.g., 4.21.0 for CP 4.22.x) to test a genuinely different version.
+			nodeClassVersion := fmt.Sprintf("%d.%d.0", cpVersion.Major, cpVersion.Minor-1)
+
+			// Create a custom OpenshiftEC2NodeClass with the version field set to the previous minor.
+			nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "version-test",
+				},
+				Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+					Version: nodeClassVersion,
+					SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
+						{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
+					},
+					SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
+						{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
+					},
+				},
+			}
+			g.Expect(guestClient.Create(ctx, nc)).To(Succeed())
+			t.Logf("Created OpenshiftEC2NodeClass %q with version %s (CP version: %s)", nc.Name, nodeClassVersion, cpVersion)
+			defer func() {
+				_ = guestClient.Delete(ctx, nc)
+			}()
+
+			// Wait for version resolution and get the resolved release image
+			var resolvedReleaseImage string
+			t.Log("Waiting for OpenshiftEC2NodeClass version resolution")
+			e2eutil.EventuallyObject(t, ctx, "OpenshiftEC2NodeClass version-test to resolve version",
+				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
+					result := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+					err := guestClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, result)
+					return result, err
+				},
+				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+						Type:   hyperkarpenterv1.ConditionTypeVersionResolved,
+						Status: metav1.ConditionTrue,
+						Reason: "VersionResolved",
+					}),
+					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+						Type:   hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
+						Status: metav1.ConditionTrue,
+						Reason: "AsExpected",
+					}),
+					e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (done bool, reasons string, err error) {
+						if nc.Status.ReleaseImage == "" {
+							return false, "status.releaseImage is empty", nil
+						}
+						resolvedReleaseImage = nc.Status.ReleaseImage
+						return true, fmt.Sprintf("status.releaseImage resolved to: %s", nc.Status.ReleaseImage), nil
+					}),
+				},
+				e2eutil.WithTimeout(5*time.Minute),
+			)
+			t.Log("OpenshiftEC2NodeClass version resolved successfully")
+
+			// Look up the expected kubelet version from the resolved release image
+			pullSecret, err := os.ReadFile(clusterOpts.PullSecretFile)
+			g.Expect(err).NotTo(HaveOccurred())
+			releaseProvider := &releaseinfo.RegistryClientProvider{}
+			resolvedRelease, err := releaseProvider.Lookup(ctx, resolvedReleaseImage, pullSecret)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to look up resolved release image %s", resolvedReleaseImage)
+			componentVersions, err := resolvedRelease.ComponentVersions()
+			g.Expect(err).NotTo(HaveOccurred(), "failed to get component versions from resolved release")
+			expectedKubeletVersion := componentVersions["kubernetes"]
+			g.Expect(expectedKubeletVersion).NotTo(BeEmpty(), "resolved release should have a kubernetes version")
+			t.Logf("Expected kubelet version for %s: v%s", nodeClassVersion, expectedKubeletVersion)
+
+			// Create a Karpenter NodePool that references the custom EC2NodeClass
+			testNodePool := karpenterNodePool.DeepCopy()
+			testNodePool.SetResourceVersion("")
+			testNodePool.SetName("version-test")
+			spec := testNodePool.Object["spec"].(map[string]interface{})
+			template := spec["template"].(map[string]interface{})
+			templateSpec := template["spec"].(map[string]interface{})
+			templateSpec["nodeClassRef"] = map[string]interface{}{
+				"group": "karpenter.k8s.aws",
+				"kind":  "EC2NodeClass",
+				"name":  nc.Name,
+			}
+
+			// Create workload to trigger provisioning
+			testWorkLoads := workLoads.DeepCopy()
+			testWorkLoads.SetResourceVersion("")
+			testWorkLoads.SetName("version-test-app")
+			replicas := 1
+			testWorkLoads.Object["spec"].(map[string]interface{})["replicas"] = replicas
+
+			g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
+			t.Logf("Created Karpenter NodePool %q", testNodePool.GetName())
+			g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
+			t.Logf("Created workload %q with %d replica(s)", testWorkLoads.GetName(), replicas)
+
+			defer func() {
+				_ = guestClient.Delete(ctx, testWorkLoads)
+				_ = guestClient.Delete(ctx, testNodePool)
+			}()
+
+			// Use only the nodepool label to select nodes exclusively tied to our version-test nodeclass.
+			testNodeLabels := map[string]string{
+				"karpenter.sh/nodepool": testNodePool.GetName(),
+			}
+
+			// Log diagnostic info about the version-test NodeClass infrastructure.
+			hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+			secretList := &corev1.SecretList{}
+			if err := mgtClient.List(ctx, secretList,
+				crclient.InNamespace(hcpNamespace),
+				crclient.MatchingLabels{"hypershift.openshift.io/managed-by-karpenter": "true"},
+			); err != nil {
+				t.Logf("WARNING: failed to list karpenter secrets in %s: %v", hcpNamespace, err)
+			} else {
+				foundUserData := false
+				for _, s := range secretList.Items {
+					npAnnotation := s.Annotations["hypershift.openshift.io/nodePool"]
+					if strings.Contains(npAnnotation, "version-test") {
+						t.Logf("Found karpenter secret %q for nodepool %q (labels: %v)", s.Name, npAnnotation, s.Labels)
+						foundUserData = true
+					}
+				}
+				if !foundUserData {
+					t.Log("WARNING: no user-data secret found for version-test NodeClass. Token creation may be failing - check karpenter-operator logs.")
+				}
+			}
+
+			// Wait for node to be provisioned and verify it has the correct kubelet version
+			_ = e2eutil.WaitForNReadyNodesWithOptions(t, ctx, guestClient, int32(replicas), hyperv1.AWSPlatform, "",
+				e2eutil.WithClientOptions(
+					crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(testNodeLabels))},
+				),
+				e2eutil.WithPredicates(
+					e2eutil.Predicate[*corev1.Node](func(node *corev1.Node) (done bool, reasons string, err error) {
+						kubeletVersion := node.Status.NodeInfo.KubeletVersion
+						if !strings.Contains(kubeletVersion, expectedKubeletVersion) {
+							return false, fmt.Sprintf("node %s kubelet version %q does not contain expected %q", node.Name, kubeletVersion, expectedKubeletVersion), nil
+						}
+						return true, fmt.Sprintf("node %s has expected kubelet version %s", node.Name, kubeletVersion), nil
+					}),
+				),
+			)
+			t.Logf("Node provisioned with correct kubelet version (v%s) for NodeClass version %s", expectedKubeletVersion, nodeClassVersion)
+
+			// Clean up
+			g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
+			g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
+			t.Log("Waiting for version-test nodes to be removed")
+			_ = e2eutil.WaitForNReadyNodesWithOptions(t, ctx, guestClient, 0, hyperv1.AWSPlatform, "",
+				e2eutil.WithClientOptions(
+					crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(testNodeLabels))},
+				),
+			)
+			t.Log("Version-test nodes removed successfully")
+		})
+
+		t.Run("OpenshiftEC2NodeClass with version exceeding allowed skew sets SupportedVersionSkew condition", func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Re-fetch the hosted cluster to get the latest version status
+			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(hostedCluster.Status.Version).NotTo(BeNil(), "hostedCluster.Status.Version should not be nil")
+			g.Expect(hostedCluster.Status.Version.Desired.Version).NotTo(BeEmpty(), "hostedCluster.Status.Version.Desired.Version should not be empty")
+
+			cpVersion, err := semver.Parse(hostedCluster.Status.Version.Desired.Version)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to parse control plane version")
+
+			// Compute a version that exceeds the n-3 skew (cpMinor - 4)
+			skewMinor := cpVersion.Minor - 4
+			if skewMinor <= 14 {
+				t.Skipf("Skipping: computed skew version 4.%d.0 would be at or below MinSupportedVersion (4.14.0), which would be caught by minimum version check instead", skewMinor)
+			}
+			skewPatch := 1 // There are cases where x.y.0 doesn't exist, so arbitrarily stick with x.y.1 for test consistency
+			skewVersion := fmt.Sprintf("%d.%d.%d", cpVersion.Major, skewMinor, skewPatch)
+
+			nc := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "version-skew-test",
+				},
+				Spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+					Version: skewVersion,
+					SubnetSelectorTerms: []hyperkarpenterv1.SubnetSelectorTerm{
+						{Tags: map[string]string{"test": "version-skew"}},
+					},
+					SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
+						{Tags: map[string]string{"test": "version-skew"}},
+					},
+				},
+			}
+			g.Expect(guestClient.Create(ctx, nc)).To(Succeed())
+			t.Logf("Created OpenshiftEC2NodeClass %q with version %s (CP version: %s)", nc.Name, skewVersion, cpVersion)
+			defer func() {
+				_ = guestClient.Delete(ctx, nc)
+				t.Logf("Cleaned up OpenshiftEC2NodeClass %q", nc.Name)
+			}()
+
+			// Version should still resolve successfully despite the skew
+			t.Log("Waiting for VersionResolved=True and SupportedVersionSkew=False")
+			e2eutil.EventuallyObject(t, ctx, "OpenshiftEC2NodeClass version-skew-test to have SupportedVersionSkew=False",
+				func(ctx context.Context) (*hyperkarpenterv1.OpenshiftEC2NodeClass, error) {
+					result := &hyperkarpenterv1.OpenshiftEC2NodeClass{}
+					err := guestClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, result)
+					return result, err
+				},
+				[]e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass]{
+					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+						Type:   hyperkarpenterv1.ConditionTypeVersionResolved,
+						Status: metav1.ConditionTrue,
+						Reason: "VersionResolved",
+					}),
+					e2eutil.ConditionPredicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](e2eutil.Condition{
+						Type:   hyperkarpenterv1.ConditionTypeSupportedVersionSkew,
+						Status: metav1.ConditionFalse,
+						Reason: "UnsupportedSkew",
+					}),
+					e2eutil.Predicate[*hyperkarpenterv1.OpenshiftEC2NodeClass](func(nc *hyperkarpenterv1.OpenshiftEC2NodeClass) (done bool, reasons string, err error) {
+						for _, c := range nc.Status.Conditions {
+							if c.Type == hyperkarpenterv1.ConditionTypeSupportedVersionSkew && c.Status == metav1.ConditionFalse {
+								if strings.Contains(c.Message, "minor version") {
+									return true, fmt.Sprintf("SupportedVersionSkew condition message describes skew issue: %s", c.Message), nil
+								}
+								return false, fmt.Sprintf("expected SupportedVersionSkew message to mention version skew, got %q", c.Message), nil
+							}
+						}
+						return false, "SupportedVersionSkew=False condition not found", nil
+					}),
+				},
+				e2eutil.WithTimeout(2*time.Minute),
+			)
+			t.Logf("OpenshiftEC2NodeClass %q has SupportedVersionSkew=False for version %s (exceeds n-3 skew from CP %s)", nc.Name, skewVersion, cpVersion)
+		})
+
 		// TODO(jkyros): This test doesn't clean up after itself (I think intentionally) so we can test general cluster
 		// cleanup, but as a result it needs to run last, otherwise it will pollute any other cases that come after it
 		// and its "on-demand" nodepool may service requests that are not intended for it
-		t.Run("Test basic provisioning and deprovising", func(t *testing.T) {
+		t.Run("Test basic provisioning and de-provisioning", func(t *testing.T) {
 			// Test that we can provision as many nodes as needed (in this case, we need 3 nodes for 3 replicas)
 			replicas := 3
 			workLoads.Object["spec"].(map[string]interface{})["replicas"] = replicas

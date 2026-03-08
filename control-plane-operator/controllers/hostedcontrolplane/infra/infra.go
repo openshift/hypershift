@@ -13,6 +13,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oapi"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/oauth"
+	routerutil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router/util"
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
@@ -440,7 +441,7 @@ func (r *Reconciler) reconcileOLMPackageServerService(ctx context.Context, hcp *
 func (r *Reconciler) reconcileHCPRouterServices(ctx context.Context, hcp *hyperv1.HostedControlPlane, createOrUpdate upsert.CreateOrUpdateFN) error {
 	pubSvc := manifests.RouterPublicService(hcp.Namespace)
 	privSvc := manifests.PrivateRouterService(hcp.Namespace)
-	if sharedingress.UseSharedIngress() || hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform || (!util.IsPrivateHCP(hcp) && !util.LabelHCPRoutes(hcp)) {
+	if !routerutil.UseHCPRouter(hcp) {
 		if _, err := util.DeleteIfNeeded(ctx, r.Client, pubSvc); err != nil {
 			return fmt.Errorf("failed to delete public router service: %w", err)
 		}

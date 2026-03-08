@@ -207,6 +207,136 @@ check_oadp_recovery() {
     return 1
 }
 
+# Function to unpause cascading objects (HCP, MachineDeployments, CAPI Cluster)
+# These objects can retain paused state due to OCPBUGS-77530
+# Returns 0 if leaked pauses were found (and acted on), 1 if none were found.
+resume_cascading_objects() {
+    local cluster_name="$1"
+    local cluster_namespace="$2"
+    local hcp_namespace="${cluster_namespace}-${cluster_name}"
+
+    if ! kubectl get namespace "$hcp_namespace" &>/dev/null; then
+        log_verbose "Control plane namespace $hcp_namespace does not exist for cluster $cluster_name, skipping cascading unpause"
+        return 1
+    fi
+
+    log_info "Checking cascading objects in namespace $hcp_namespace for cluster $cluster_name (OCPBUGS-77530)"
+
+    local found_leaked_pause=false
+
+    # 1. Unpause HostedControlPlane
+    local hcp_paused
+    hcp_paused=$(kubectl get hostedcontrolplane "$cluster_name" -n "$hcp_namespace" \
+        -o jsonpath="{.spec.pausedUntil}" 2>/dev/null || echo "")
+
+    if [[ -n "$hcp_paused" ]]; then
+        found_leaked_pause=true
+        log_info "HostedControlPlane $cluster_name has leaked pausedUntil=\"$hcp_paused\""
+
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log_info "DRY RUN: Would remove spec.pausedUntil from HostedControlPlane $cluster_name"
+        else
+            if kubectl patch hostedcontrolplane "$cluster_name" -n "$hcp_namespace" \
+                --type=json -p='[{"op":"remove","path":"/spec/pausedUntil"}]'; then
+                log_info "Successfully removed pausedUntil from HostedControlPlane $cluster_name"
+            else
+                log_error "Failed to remove pausedUntil from HostedControlPlane $cluster_name"
+                MARK_AS_FAILED=true
+            fi
+        fi
+    else
+        log_debug "HostedControlPlane $cluster_name is not paused"
+    fi
+
+    # 2. Unpause MachineDeployments
+    local md_names
+    md_names=$(kubectl get machinedeployment -n "$hcp_namespace" --no-headers \
+        -o custom-columns=NAME:.metadata.name 2>/dev/null || echo "")
+
+    if [[ -n "$md_names" ]]; then
+        while read -r md; do
+            if [[ -z "$md" ]]; then
+                continue
+            fi
+
+            local md_paused
+            md_paused=$(kubectl get machinedeployment "$md" -n "$hcp_namespace" \
+                -o jsonpath="{.metadata.annotations.cluster\.x-k8s\.io/paused}" 2>/dev/null || echo "")
+
+            if [[ -n "$md_paused" ]]; then
+                found_leaked_pause=true
+                log_info "MachineDeployment $md has leaked paused annotation=\"$md_paused\""
+
+                if [[ "$DRY_RUN" == "true" ]]; then
+                    log_info "DRY RUN: Would remove cluster.x-k8s.io/paused annotation from MachineDeployment $md"
+                else
+                    if kubectl annotate machinedeployment "$md" -n "$hcp_namespace" \
+                        cluster.x-k8s.io/paused-; then
+                        log_info "Successfully removed paused annotation from MachineDeployment $md"
+                    else
+                        log_error "Failed to remove paused annotation from MachineDeployment $md"
+                        MARK_AS_FAILED=true
+                    fi
+                fi
+            else
+                log_debug "MachineDeployment $md is not paused"
+            fi
+        done <<< "$md_names"
+    else
+        log_debug "No MachineDeployments found in namespace $hcp_namespace"
+    fi
+
+    # 3. Unpause CAPI Cluster
+    local cc_anno_paused cc_spec_paused
+    cc_anno_paused=$(kubectl get cluster.cluster.x-k8s.io "$cluster_name" -n "$hcp_namespace" \
+        -o jsonpath="{.metadata.annotations.cluster\.x-k8s\.io/paused}" 2>/dev/null || echo "")
+    cc_spec_paused=$(kubectl get cluster.cluster.x-k8s.io "$cluster_name" -n "$hcp_namespace" \
+        -o jsonpath="{.spec.paused}" 2>/dev/null || echo "")
+
+    if [[ -n "$cc_anno_paused" ]]; then
+        found_leaked_pause=true
+        log_info "CAPI Cluster $cluster_name has leaked paused annotation=\"$cc_anno_paused\""
+
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log_info "DRY RUN: Would remove cluster.x-k8s.io/paused annotation from CAPI Cluster $cluster_name"
+        else
+            if kubectl annotate cluster.cluster.x-k8s.io "$cluster_name" -n "$hcp_namespace" \
+                cluster.x-k8s.io/paused-; then
+                log_info "Successfully removed paused annotation from CAPI Cluster $cluster_name"
+            else
+                log_error "Failed to remove paused annotation from CAPI Cluster $cluster_name"
+                MARK_AS_FAILED=true
+            fi
+        fi
+    else
+        log_debug "CAPI Cluster $cluster_name does not have paused annotation"
+    fi
+
+    if [[ "$cc_spec_paused" == "true" ]]; then
+        found_leaked_pause=true
+        log_info "CAPI Cluster $cluster_name has leaked spec.paused=true"
+
+        if [[ "$DRY_RUN" == "true" ]]; then
+            log_info "DRY RUN: Would set spec.paused=false on CAPI Cluster $cluster_name"
+        else
+            if kubectl patch cluster.cluster.x-k8s.io "$cluster_name" -n "$hcp_namespace" \
+                --type=merge -p='{"spec":{"paused":false}}'; then
+                log_info "Successfully set spec.paused=false on CAPI Cluster $cluster_name"
+            else
+                log_error "Failed to set spec.paused=false on CAPI Cluster $cluster_name"
+                MARK_AS_FAILED=true
+            fi
+        fi
+    else
+        log_debug "CAPI Cluster $cluster_name does not have spec.paused=true"
+    fi
+
+    if [[ "$found_leaked_pause" == "true" ]]; then
+        return 0
+    fi
+    return 1
+}
+
 # Function to resume cluster from OADP pause
 resume_cluster_from_oadp() {
     local cluster_name="$1"
@@ -276,15 +406,17 @@ process_clusters() {
     local total_clusters=0
     local processed_clusters=0
     local recovered_clusters=0
+    local unblocked_clusters=0
     local error_count=0
     local -a recovered_cluster_names=()
+    local -a unblocked_cluster_names=()
 
     log_info "Starting OADP recovery check (oadp-namespace: $OADP_NAMESPACE, dry-run: $DRY_RUN)"
 
     # Get all hosted clusters - simplified approach
     local clusters_output
     if ! clusters_output=$(kubectl get hostedclusters --all-namespaces --no-headers \
-        -o custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name 2>/dev/null); then
+        -o custom-columns=NAMESPACE:.metadata.namespace,NAME:.metadata.name,DELETED:.metadata.deletionTimestamp 2>/dev/null); then
         log_error "Failed to list hosted clusters"
         return 1
     fi
@@ -300,13 +432,17 @@ process_clusters() {
             continue
         fi
 
-        # Parse namespace and name with explicit field extraction
-        local cluster_namespace cluster_name
+        local cluster_namespace cluster_name deletion_ts
         cluster_namespace=$(echo "$line" | awk '{print $1}')
         cluster_name=$(echo "$line" | awk '{print $2}')
+        deletion_ts=$(echo "$line" | awk '{print $3}')
 
         if [[ -z "$cluster_name" ]]; then
             continue
+        fi
+
+        if [[ "$deletion_ts" == "<none>" ]]; then
+            deletion_ts=""
         fi
 
         total_clusters=$((total_clusters + 1))
@@ -325,6 +461,16 @@ process_clusters() {
             fi
         fi
 
+        # OCPBUGS-77530: for deleting clusters, check child objects for
+        # leaked paused state that the operator failed to propagate.
+        if [[ -n "$deletion_ts" ]]; then
+            log_verbose "Cluster $cluster_name is being deleted (since $deletion_ts), checking child objects for leaked pauses"
+            if resume_cascading_objects "$cluster_name" "$cluster_namespace"; then
+                unblocked_clusters=$((unblocked_clusters + 1))
+                unblocked_cluster_names+=("$cluster_name")
+            fi
+        fi
+
         processed_clusters=$((processed_clusters + 1))
 
     done <<< "$clusters_output"
@@ -333,6 +479,10 @@ process_clusters() {
 
     if [[ ${#recovered_cluster_names[@]} -gt 0 ]]; then
         log_info "Recovered clusters: ${recovered_cluster_names[*]}"
+    fi
+
+    if [[ ${#unblocked_cluster_names[@]} -gt 0 ]]; then
+        log_info "Unblocked $unblocked_clusters deleting cluster(s) with leaked pauses (OCPBUGS-77530): ${unblocked_cluster_names[*]}"
     fi
 
     # Check if any operation failed during recovery

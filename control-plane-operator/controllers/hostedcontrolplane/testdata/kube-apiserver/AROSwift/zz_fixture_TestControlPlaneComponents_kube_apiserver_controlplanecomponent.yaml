@@ -28,6 +28,9 @@ status:
   - group: ""
     kind: Secret
     name: kas-authentication-token-webhook-config
+  - group: secrets-store.csi.x-k8s.io
+    kind: SecretProviderClass
+    name: managed-azure-kms
   - group: ""
     kind: Secret
     name: bootstrap-kubeconfig
@@ -61,6 +64,9 @@ status:
   - group: monitoring.coreos.com
     kind: PrometheusRule
     name: recording-rules
+  - group: ""
+    kind: Secret
+    name: kas-secret-encryption-config
   - group: ""
     kind: Secret
     name: service-network-admin-kubeconfig

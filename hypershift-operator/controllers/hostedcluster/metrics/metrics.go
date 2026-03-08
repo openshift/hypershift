@@ -43,7 +43,7 @@ const (
 
 	// Per hosted cluster metrics - name & help
 
-	WaitingInitialAvailabilityDurationMetricName = "hypershift_cluster_waiting_initial_avaibility_duration_seconds"
+	WaitingInitialAvailabilityDurationMetricName = "hypershift_cluster_waiting_initial_availability_duration_seconds"
 	waitingInitialAvailabilityDurationMetricHelp = "Time in seconds it is taking to get the HostedClusterAvailable condition becoming true since the creation of the HostedCluster. " +
 		"Undefined if the condition has already become true once or if the cluster no longer exists."
 
@@ -489,7 +489,7 @@ func (c *hostedClustersMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 			// clusterSizeOverrideMetric
 			{
 				metricLabels := make(map[string]string, 0)
-				if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform && hcluster.Spec.Platform.AWS.ResourceTags != nil {
+				if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform && hcluster.Spec.Platform.AWS != nil && hcluster.Spec.Platform.AWS.ResourceTags != nil {
 					for _, resourceTag := range hcluster.Spec.Platform.AWS.ResourceTags {
 						switch resourceTag.Key {
 						case "api.openshift.com/environment":

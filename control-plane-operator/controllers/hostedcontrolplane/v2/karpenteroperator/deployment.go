@@ -5,6 +5,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
+	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/util"
 
@@ -21,6 +22,7 @@ func (karp *KarpenterOperatorOptions) adaptDeployment(cpContext component.Worklo
 			"--hypershift-operator-image="+karp.HyperShiftOperatorImage,
 			"--ignition-endpoint="+karp.IgnitionEndpoint,
 		)
+		proxy.SetEnvVars(&c.Env)
 	})
 
 	switch hcp.Spec.Platform.Type {

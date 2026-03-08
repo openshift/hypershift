@@ -2,7 +2,7 @@ apiVersion: v1
 data:
   cloud.conf: |-
     {
-      "cloud": "",
+      "cloud": "AzurePublicCloud",
       "tenantId": "",
       "useManagedIdentityExtension": true,
       "useFederatedWorkloadIdentityExtension": false,

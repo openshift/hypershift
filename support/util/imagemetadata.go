@@ -110,8 +110,19 @@ type ImageMetadataProvider interface {
 	GetOverride(ctx context.Context, imageRef string, pullSecret []byte) (*reference.DockerImageReference, error)
 }
 
+//go:generate ../../hack/tools/bin/mockgen -package=util -destination=imagemetadata_mock.go github.com/docker/distribution Repository,TagService,ManifestService
+
 type RegistryClientImageMetadataProvider struct {
 	OpenShiftImageRegistryOverrides map[string][]string
+	// repoSetupFn overrides GetRepoSetup for testing; nil means use the real implementation.
+	repoSetupFn func(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error)
+}
+
+func (r *RegistryClientImageMetadataProvider) getRepoSetup(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Repository, *reference.DockerImageReference, error) {
+	if r.repoSetupFn != nil {
+		return r.repoSetupFn(ctx, imageRef, pullSecret)
+	}
+	return GetRepoSetup(ctx, imageRef, pullSecret)
 }
 
 // ImageMetadata returns metadata for a given image using the given pull secret to authenticate.
@@ -211,7 +222,7 @@ func (r *RegistryClientImageMetadataProvider) GetDigest(ctx context.Context, ima
 		return imageDigest.(digest.Digest), ref, nil
 	}
 
-	repo, composedParsedRef, err := GetRepoSetup(ctx, composedRef, pullSecret)
+	repo, composedParsedRef, err := r.getRepoSetup(ctx, composedRef, pullSecret)
 	if err != nil || repo == nil {
 		return "", nil, fmt.Errorf("failed to create repository client for %s: %w", ref.DockerClientDefaults().RegistryURL(), err)
 	}
@@ -256,7 +267,7 @@ func (r *RegistryClientImageMetadataProvider) GetManifest(ctx context.Context, i
 	}
 
 	// Look up the manifest
-	manifest, _, err := getManifest(ctx, ref.String(), pullSecret)
+	manifest, _, err := r.getManifest(ctx, ref.String(), pullSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -291,8 +302,8 @@ func (r *RegistryClientImageMetadataProvider) GetMetadata(ctx context.Context, i
 }
 
 // getManifest gets the manifest from an image
-func getManifest(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Manifest, digest.Digest, error) {
-	repo, ref, err := GetRepoSetup(ctx, imageRef, pullSecret)
+func (r *RegistryClientImageMetadataProvider) getManifest(ctx context.Context, imageRef string, pullSecret []byte) (distribution.Manifest, digest.Digest, error) {
+	repo, ref, err := r.getRepoSetup(ctx, imageRef, pullSecret)
 	if err != nil {
 		return nil, "", err
 	}
@@ -543,9 +554,10 @@ func SeekOverride(ctx context.Context, openshiftImageRegistryOverrides map[strin
 
 				// Cache miss - verify mirror availability with 15s timeout
 				verifyCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-				defer cancel()
+				_, _, _, err = getMetadata(verifyCtx, mirrorURL, pullSecret)
+				cancel()
 
-				if _, _, _, err = getMetadata(verifyCtx, mirrorURL, pullSecret); err == nil {
+				if err == nil {
 					log.Info("Mirror verified as available", "mirror", mirrorURL, "timeout", "15s")
 					mirrorCache.set(mirrorURL, pullSecret, true)
 					return ref

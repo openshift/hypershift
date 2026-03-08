@@ -42,6 +42,7 @@ import (
 	kubevirtcsiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/csi/kubevirt"
 	cvov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cvo"
 	dnsoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/dnsoperator"
+	endpointresolverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/endpoint_resolver"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	fgv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
@@ -62,6 +63,7 @@ import (
 	registryoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/registryoperator"
 	routecmv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/routecm"
 	routerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router"
+	routerutil "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/router/util"
 	snapshotcontrollerv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/snapshotcontroller"
 	storagev2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/storage"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
@@ -86,13 +88,12 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	credentialsv2 "github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/kms"
 	awssdk "github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
-	v1credentials "github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/kms"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -177,7 +178,6 @@ type HostedControlPlaneReconciler struct {
 	MetricsSet                              metrics.MetricsSet
 	SREConfigHash                           string
 	ec2Client                               ec2iface.EC2API
-	awsSession                              *session.Session
 	awsSessionv2                            *awsv2.Config
 	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error)
 	EnableCVOManagementClusterMetricsAccess bool
@@ -207,7 +207,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 	r.reconcileInfrastructureStatus = r.defaultReconcileInfrastructureStatus
 
-	r.ec2Client, r.awsSession, r.awsSessionv2 = GetEC2Client(context.Background())
+	r.ec2Client, r.awsSessionv2 = GetEC2Client(context.Background())
 
 	r.registerComponents(hcp)
 
@@ -266,13 +266,14 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 		konnectivityv2.NewComponent(),
 		ignitionserverv2.NewComponent(r.ReleaseProvider, r.DefaultIngressDomain),
 		ignitionproxyv2.NewComponent(r.DefaultIngressDomain),
+		endpointresolverv2.NewComponent(),
 	)
 	r.components = append(r.components,
 		olmv2.NewComponents(r.ManagementClusterCapabilities.Has(capabilities.CapabilityImageStream))...,
 	)
 }
 
-func GetEC2Client(ctx context.Context) (ec2iface.EC2API, *session.Session, *awsv2.Config) {
+func GetEC2Client(ctx context.Context) (ec2iface.EC2API, *awsv2.Config) {
 	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
 	// when reconciling an AWS hosted control plane
 	if os.Getenv("AWS_SHARED_CREDENTIALS_FILE") != "" {
@@ -282,9 +283,9 @@ func GetEC2Client(ctx context.Context) (ec2iface.EC2API, *session.Session, *awsv
 		ec2Client := ec2.New(awsSession, awsConfig)
 		// v2
 		awsSessionV2 := awsutil.NewSessionV2(ctx, "control-plane-operator", "", "", "", "")
-		return ec2Client, awsSession, awsSessionV2
+		return ec2Client, awsSessionV2
 	}
-	return nil, nil, nil
+	return nil, nil
 }
 
 func isScrapeConfig(obj client.Object) bool {
@@ -700,10 +701,6 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	// Reconcile hostedcontrolplane availability and Ready flag
 	{
-		infrastructureCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.InfrastructureReady))
-		kubeConfigAvailable := hostedControlPlane.Status.KubeConfig != nil
-		etcdCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.EtcdAvailable))
-		kubeAPIServerCondition := meta.FindStatusCondition(hostedControlPlane.Status.Conditions, string(hyperv1.KubeAPIServerAvailable))
 		healthCheckErr := r.healthCheckKASLoadBalancers(ctx, hostedControlPlane)
 
 		// Check control plane components availability only if the HCP is not already marked as available
@@ -715,46 +712,15 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 			componentsNotAvailableMsg, componentsErr = r.controlPlaneComponentsAvailable(ctx, hostedControlPlane)
 		}
 
-		status := metav1.ConditionFalse
-		var reason, message string
-		switch {
-		case infrastructureCondition == nil && etcdCondition == nil && kubeAPIServerCondition == nil:
-			reason = hyperv1.StatusUnknownReason
-			message = ""
-		case infrastructureCondition != nil && infrastructureCondition.Status == metav1.ConditionFalse:
-			reason = infrastructureCondition.Reason
-			message = infrastructureCondition.Message
-		case !kubeConfigAvailable:
-			reason = hyperv1.KubeconfigWaitingForCreateReason
-			message = "Waiting for hosted control plane kubeconfig to be created"
-		case etcdCondition != nil && etcdCondition.Status == metav1.ConditionFalse:
-			reason = etcdCondition.Reason
-			message = etcdCondition.Message
-		case kubeAPIServerCondition != nil && kubeAPIServerCondition.Status == metav1.ConditionFalse:
-			reason = kubeAPIServerCondition.Reason
-			message = kubeAPIServerCondition.Message
-		case healthCheckErr != nil:
-			reason = hyperv1.KASLoadBalancerNotReachableReason
-			message = healthCheckErr.Error()
-		case componentsErr != nil:
-			reason = hyperv1.ControlPlaneComponentsNotAvailable
-			message = fmt.Sprintf("Failed to check control plane component availability: %v", componentsErr)
-		case componentsNotAvailableMsg != "":
-			reason = hyperv1.ControlPlaneComponentsNotAvailable
-			message = componentsNotAvailableMsg
-		default:
-			reason = hyperv1.AsExpectedReason
-			message = ""
-			status = metav1.ConditionTrue
-		}
-		hostedControlPlane.Status.Ready = status == metav1.ConditionTrue
-		condition := metav1.Condition{
-			Type:               string(hyperv1.HostedControlPlaneAvailable),
-			Status:             status,
-			Reason:             reason,
-			Message:            message,
-			ObservedGeneration: hostedControlPlane.Generation,
-		}
+		ready, condition := reconcileAvailabilityStatus(
+			hostedControlPlane.Status.Conditions,
+			hostedControlPlane.Status.KubeConfig != nil,
+			healthCheckErr,
+			componentsNotAvailableMsg,
+			componentsErr,
+			hostedControlPlane.Generation,
+		)
+		hostedControlPlane.Status.Ready = ready
 		meta.SetStatusCondition(&hostedControlPlane.Status.Conditions, condition)
 	}
 
@@ -841,6 +807,64 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	return ctrl.Result{RequeueAfter: hcpReadyRequeueInterval}, nil
+}
+
+// reconcileAvailabilityStatus determines the HostedControlPlane availability condition
+// and Ready flag based on the current state of all prerequisite conditions.
+// It evaluates conditions in priority order: infrastructure, kubeconfig, etcd, KAS,
+// health check, and control plane components.
+func reconcileAvailabilityStatus(
+	conditions []metav1.Condition,
+	kubeConfigAvailable bool,
+	healthCheckErr error,
+	componentsNotAvailableMsg string,
+	componentsErr error,
+	generation int64,
+) (bool, metav1.Condition) {
+	infrastructureCondition := meta.FindStatusCondition(conditions, string(hyperv1.InfrastructureReady))
+	etcdCondition := meta.FindStatusCondition(conditions, string(hyperv1.EtcdAvailable))
+	kubeAPIServerCondition := meta.FindStatusCondition(conditions, string(hyperv1.KubeAPIServerAvailable))
+
+	status := metav1.ConditionFalse
+	var reason, message string
+	switch {
+	case infrastructureCondition == nil && etcdCondition == nil && kubeAPIServerCondition == nil:
+		reason = hyperv1.StatusUnknownReason
+		message = ""
+	case infrastructureCondition != nil && infrastructureCondition.Status == metav1.ConditionFalse:
+		reason = infrastructureCondition.Reason
+		message = infrastructureCondition.Message
+	case !kubeConfigAvailable:
+		reason = hyperv1.KubeconfigWaitingForCreateReason
+		message = "Waiting for hosted control plane kubeconfig to be created"
+	case etcdCondition != nil && etcdCondition.Status == metav1.ConditionFalse:
+		reason = etcdCondition.Reason
+		message = etcdCondition.Message
+	case kubeAPIServerCondition != nil && kubeAPIServerCondition.Status == metav1.ConditionFalse:
+		reason = kubeAPIServerCondition.Reason
+		message = kubeAPIServerCondition.Message
+	case healthCheckErr != nil:
+		reason = hyperv1.KASLoadBalancerNotReachableReason
+		message = healthCheckErr.Error()
+	case componentsErr != nil:
+		reason = hyperv1.ControlPlaneComponentsNotAvailable
+		message = fmt.Sprintf("Failed to check control plane component availability: %v", componentsErr)
+	case componentsNotAvailableMsg != "":
+		reason = hyperv1.ControlPlaneComponentsNotAvailable
+		message = componentsNotAvailableMsg
+	default:
+		reason = hyperv1.AsExpectedReason
+		message = ""
+		status = metav1.ConditionTrue
+	}
+
+	return status == metav1.ConditionTrue, metav1.Condition{
+		Type:               string(hyperv1.HostedControlPlaneAvailable),
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: generation,
+	}
 }
 
 // healthCheckKASLoadBalancers performs a health check on the KubeAPI server /healthz endpoint using the public and private load balancers hostnames directly
@@ -1102,7 +1126,7 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		return fmt.Errorf("failed to reconcile metrics config: %w", err)
 	}
 
-	if routerv2.UseHCPRouter(hcp) {
+	if routerutil.UseHCPRouter(hcp) {
 		if err := infra.NewReconciler(r.Client, r.DefaultIngressDomain).
 			AdmitHCPManagedRoutes(ctx, hcp, infraStatus.InternalHCPRouterHost, infraStatus.ExternalHCPRouterHost); err != nil {
 			return fmt.Errorf("failed to admit HCP managed routes: %w", err)
@@ -2801,8 +2825,8 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 		return
 	}
 
-	// Convert v2 credentials to v1 credentials for KMS client
-	creds := v1credentials.NewStaticCredentials(
+	awsSessionv2 := *r.awsSessionv2
+	awsSessionv2.Credentials = credentialsv2.NewStaticCredentialsProvider(
 		v2creds.AccessKeyID,
 		v2creds.SecretAccessKey,
 		v2creds.SessionToken,
@@ -2816,13 +2840,13 @@ func (r *HostedControlPlaneReconciler) validateAWSKMSConfig(ctx context.Context,
 		Reason:             hyperv1.AsExpectedReason,
 	}
 
-	kmsService := kms.New(r.awsSession, awssdk.NewConfig().WithCredentials(creds))
+	kmsService := kms.NewFromConfig(awsSessionv2)
 
 	input := &kms.EncryptInput{
-		KeyId:     awssdk.String(kmsKeyArn),
+		KeyId:     awsv2.String(kmsKeyArn),
 		Plaintext: []byte("text"),
 	}
-	if _, err = kmsService.Encrypt(input); err != nil {
+	if _, err = kmsService.Encrypt(ctx, input); err != nil {
 		condition = metav1.Condition{
 			Type:               string(hyperv1.ValidAWSKMSConfig),
 			ObservedGeneration: hcp.Generation,

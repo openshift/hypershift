@@ -9,17 +9,15 @@ import (
 
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	configv2 "github.com/aws/aws-sdk-go-v2/config"
-	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
-	s3v2 "github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
+	"github.com/aws/aws-sdk-go-v2/service/route53"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
-	"github.com/aws/aws-sdk-go/service/elb"
-	"github.com/aws/aws-sdk-go/service/elb/elbiface"
-	"github.com/aws/aws-sdk-go/service/elbv2"
-	"github.com/aws/aws-sdk-go/service/elbv2/elbv2iface"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
 	"github.com/aws/smithy-go/middleware"
@@ -56,10 +54,22 @@ func NewDelegatingClient(
 		Name: "openshift.io/hypershift",
 		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", "cloud-controller"),
 	})
+	cloudControllerCfg, err := configv2.LoadDefaultConfig(ctx,
+		configv2.WithSharedConfigFiles([]string{cloudControllerCredentialsFile}),
+		configv2.WithAPIOptions([]func(*middleware.Stack) error{
+			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", "cloud-controller"),
+		}))
+	if err != nil {
+		return nil, fmt.Errorf("error loading AWS config for cloudController: %w", err)
+	}
 	cloudController := &cloudControllerClientDelegate{
-		ec2Client:   ec2.New(cloudControllerSession, awsConfig),
-		elbClient:   elb.New(cloudControllerSession, awsConfig),
-		elbv2Client: elbv2.New(cloudControllerSession, awsConfig),
+		ec2Client: ec2.New(cloudControllerSession, awsConfig),
+		elasticloadbalancingClient: elasticloadbalancing.NewFromConfig(cloudControllerCfg, func(o *elasticloadbalancing.Options) {
+			o.Retryer = awsConfigv2()
+		}),
+		elasticloadbalancingv2Client: elasticloadbalancingv2.NewFromConfig(cloudControllerCfg, func(o *elasticloadbalancingv2.Options) {
+			o.Retryer = awsConfigv2()
+		}),
 	}
 	cloudNetworkConfigControllerSession, err := session.NewSessionWithOptions(session.Options{SharedConfigFiles: []string{cloudNetworkConfigControllerCredentialsFile}})
 	if err != nil {
@@ -90,7 +100,7 @@ func NewDelegatingClient(
 	}
 	controlPlaneOperator := &controlPlaneOperatorClientDelegate{
 		ec2Client: ec2.New(controlPlaneOperatorSession, awsConfig),
-		route53Client: route53v2.NewFromConfig(controlPlaneOperatorCfg, func(o *route53v2.Options) {
+		route53Client: route53.NewFromConfig(controlPlaneOperatorCfg, func(o *route53.Options) {
 			o.Retryer = awsConfigv2()
 		}),
 	}
@@ -115,7 +125,7 @@ func NewDelegatingClient(
 		return nil, fmt.Errorf("error loading AWS config for openshiftImageRegistry: %w", err)
 	}
 	openshiftImageRegistry := &openshiftImageRegistryClientDelegate{
-		s3Client: s3v2.NewFromConfig(openshiftImageRegistryCfg, func(o *s3v2.Options) {
+		s3Client: s3.NewFromConfig(openshiftImageRegistryCfg, func(o *s3.Options) {
 			o.Retryer = awsConfigv2()
 		}),
 	}
@@ -128,11 +138,11 @@ func NewDelegatingClient(
 			controlPlaneOperator:         controlPlaneOperator,
 			nodePool:                     nodePool,
 		},
-		ELBAPI: &elbClient{
+		ELBClient: &elasticloadbalancingClient{
 			ELBAPI:          nil,
 			cloudController: cloudController,
 		},
-		ELBV2API: &elbv2Client{
+		ELBV2Client: &elasticloadbalancingv2Client{
 			ELBV2API:        nil,
 			cloudController: cloudController,
 		},
@@ -156,9 +166,9 @@ type awsEbsCsiDriverControllerClientDelegate struct {
 }
 
 type cloudControllerClientDelegate struct {
-	ec2Client   ec2iface.EC2API
-	elbClient   elbiface.ELBAPI
-	elbv2Client elbv2iface.ELBV2API
+	ec2Client                    ec2iface.EC2API
+	elasticloadbalancingClient   awsapi.ELBAPI
+	elasticloadbalancingv2Client awsapi.ELBV2API
 }
 
 type cloudNetworkConfigControllerClientDelegate struct {
@@ -182,8 +192,8 @@ type openshiftImageRegistryClientDelegate struct {
 // DelegatingClient embeds clients for AWS services we have privileges to use with guest cluster component roles.
 type DelegatingClient struct {
 	ec2iface.EC2API
-	elbiface.ELBAPI
-	elbv2iface.ELBV2API
+	ELBClient     awsapi.ELBAPI
+	ELBV2Client   awsapi.ELBV2API
 	ROUTE53Client awsapi.ROUTE53API
 	S3Client      awsapi.S3API
 	sqsiface.SQSAPI
@@ -419,133 +429,133 @@ func (c *ec2Client) TerminateInstancesWithContext(ctx aws.Context, input *ec2.Te
 	return c.nodePool.ec2Client.TerminateInstancesWithContext(ctx, input, opts...)
 }
 
-// elbClient delegates to individual component clients for API calls we know those components will have privileges to make.
-type elbClient struct {
+// elasticloadbalancingClient delegates to individual component clients for API calls we know those components will have privileges to make.
+type elasticloadbalancingClient struct {
 	// embedding this fulfills the interface and falls back to a panic for APIs we don't have privileges for
-	elbiface.ELBAPI
+	awsapi.ELBAPI
 
 	cloudController *cloudControllerClientDelegate
 }
 
-func (c *elbClient) AddTagsWithContext(ctx aws.Context, input *elb.AddTagsInput, opts ...request.Option) (*elb.AddTagsOutput, error) {
-	return c.cloudController.elbClient.AddTagsWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) AddTags(ctx context.Context, input *elasticloadbalancing.AddTagsInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.AddTagsOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.AddTags(ctx, input, optFns...)
 }
-func (c *elbClient) ApplySecurityGroupsToLoadBalancerWithContext(ctx aws.Context, input *elb.ApplySecurityGroupsToLoadBalancerInput, opts ...request.Option) (*elb.ApplySecurityGroupsToLoadBalancerOutput, error) {
-	return c.cloudController.elbClient.ApplySecurityGroupsToLoadBalancerWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) ApplySecurityGroupsToLoadBalancer(ctx context.Context, input *elasticloadbalancing.ApplySecurityGroupsToLoadBalancerInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.ApplySecurityGroupsToLoadBalancerOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.ApplySecurityGroupsToLoadBalancer(ctx, input, optFns...)
 }
-func (c *elbClient) AttachLoadBalancerToSubnetsWithContext(ctx aws.Context, input *elb.AttachLoadBalancerToSubnetsInput, opts ...request.Option) (*elb.AttachLoadBalancerToSubnetsOutput, error) {
-	return c.cloudController.elbClient.AttachLoadBalancerToSubnetsWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) AttachLoadBalancerToSubnets(ctx context.Context, input *elasticloadbalancing.AttachLoadBalancerToSubnetsInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.AttachLoadBalancerToSubnetsOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.AttachLoadBalancerToSubnets(ctx, input, optFns...)
 }
-func (c *elbClient) ConfigureHealthCheckWithContext(ctx aws.Context, input *elb.ConfigureHealthCheckInput, opts ...request.Option) (*elb.ConfigureHealthCheckOutput, error) {
-	return c.cloudController.elbClient.ConfigureHealthCheckWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) ConfigureHealthCheck(ctx context.Context, input *elasticloadbalancing.ConfigureHealthCheckInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.ConfigureHealthCheckOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.ConfigureHealthCheck(ctx, input, optFns...)
 }
-func (c *elbClient) CreateLoadBalancerWithContext(ctx aws.Context, input *elb.CreateLoadBalancerInput, opts ...request.Option) (*elb.CreateLoadBalancerOutput, error) {
-	return c.cloudController.elbClient.CreateLoadBalancerWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) CreateLoadBalancer(ctx context.Context, input *elasticloadbalancing.CreateLoadBalancerInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.CreateLoadBalancerOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.CreateLoadBalancer(ctx, input, optFns...)
 }
-func (c *elbClient) CreateLoadBalancerListenersWithContext(ctx aws.Context, input *elb.CreateLoadBalancerListenersInput, opts ...request.Option) (*elb.CreateLoadBalancerListenersOutput, error) {
-	return c.cloudController.elbClient.CreateLoadBalancerListenersWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) CreateLoadBalancerListeners(ctx context.Context, input *elasticloadbalancing.CreateLoadBalancerListenersInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.CreateLoadBalancerListenersOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.CreateLoadBalancerListeners(ctx, input, optFns...)
 }
-func (c *elbClient) CreateLoadBalancerPolicyWithContext(ctx aws.Context, input *elb.CreateLoadBalancerPolicyInput, opts ...request.Option) (*elb.CreateLoadBalancerPolicyOutput, error) {
-	return c.cloudController.elbClient.CreateLoadBalancerPolicyWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) CreateLoadBalancerPolicy(ctx context.Context, input *elasticloadbalancing.CreateLoadBalancerPolicyInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.CreateLoadBalancerPolicyOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.CreateLoadBalancerPolicy(ctx, input, optFns...)
 }
-func (c *elbClient) DeleteLoadBalancerWithContext(ctx aws.Context, input *elb.DeleteLoadBalancerInput, opts ...request.Option) (*elb.DeleteLoadBalancerOutput, error) {
-	return c.cloudController.elbClient.DeleteLoadBalancerWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) DeleteLoadBalancer(ctx context.Context, input *elasticloadbalancing.DeleteLoadBalancerInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DeleteLoadBalancerOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.DeleteLoadBalancer(ctx, input, optFns...)
 }
-func (c *elbClient) DeleteLoadBalancerListenersWithContext(ctx aws.Context, input *elb.DeleteLoadBalancerListenersInput, opts ...request.Option) (*elb.DeleteLoadBalancerListenersOutput, error) {
-	return c.cloudController.elbClient.DeleteLoadBalancerListenersWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) DeleteLoadBalancerListeners(ctx context.Context, input *elasticloadbalancing.DeleteLoadBalancerListenersInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DeleteLoadBalancerListenersOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.DeleteLoadBalancerListeners(ctx, input, optFns...)
 }
-func (c *elbClient) DeregisterInstancesFromLoadBalancerWithContext(ctx aws.Context, input *elb.DeregisterInstancesFromLoadBalancerInput, opts ...request.Option) (*elb.DeregisterInstancesFromLoadBalancerOutput, error) {
-	return c.cloudController.elbClient.DeregisterInstancesFromLoadBalancerWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) DeregisterInstancesFromLoadBalancer(ctx context.Context, input *elasticloadbalancing.DeregisterInstancesFromLoadBalancerInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DeregisterInstancesFromLoadBalancerOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.DeregisterInstancesFromLoadBalancer(ctx, input, optFns...)
 }
-func (c *elbClient) DescribeLoadBalancerAttributesWithContext(ctx aws.Context, input *elb.DescribeLoadBalancerAttributesInput, opts ...request.Option) (*elb.DescribeLoadBalancerAttributesOutput, error) {
-	return c.cloudController.elbClient.DescribeLoadBalancerAttributesWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) DescribeLoadBalancerAttributes(ctx context.Context, input *elasticloadbalancing.DescribeLoadBalancerAttributesInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DescribeLoadBalancerAttributesOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.DescribeLoadBalancerAttributes(ctx, input, optFns...)
 }
-func (c *elbClient) DescribeLoadBalancerPoliciesWithContext(ctx aws.Context, input *elb.DescribeLoadBalancerPoliciesInput, opts ...request.Option) (*elb.DescribeLoadBalancerPoliciesOutput, error) {
-	return c.cloudController.elbClient.DescribeLoadBalancerPoliciesWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) DescribeLoadBalancerPolicies(ctx context.Context, input *elasticloadbalancing.DescribeLoadBalancerPoliciesInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DescribeLoadBalancerPoliciesOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.DescribeLoadBalancerPolicies(ctx, input, optFns...)
 }
-func (c *elbClient) DescribeLoadBalancersWithContext(ctx aws.Context, input *elb.DescribeLoadBalancersInput, opts ...request.Option) (*elb.DescribeLoadBalancersOutput, error) {
-	return c.cloudController.elbClient.DescribeLoadBalancersWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) DescribeLoadBalancers(ctx context.Context, input *elasticloadbalancing.DescribeLoadBalancersInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DescribeLoadBalancersOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.DescribeLoadBalancers(ctx, input, optFns...)
 }
-func (c *elbClient) DetachLoadBalancerFromSubnetsWithContext(ctx aws.Context, input *elb.DetachLoadBalancerFromSubnetsInput, opts ...request.Option) (*elb.DetachLoadBalancerFromSubnetsOutput, error) {
-	return c.cloudController.elbClient.DetachLoadBalancerFromSubnetsWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) DetachLoadBalancerFromSubnets(ctx context.Context, input *elasticloadbalancing.DetachLoadBalancerFromSubnetsInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.DetachLoadBalancerFromSubnetsOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.DetachLoadBalancerFromSubnets(ctx, input, optFns...)
 }
-func (c *elbClient) ModifyLoadBalancerAttributesWithContext(ctx aws.Context, input *elb.ModifyLoadBalancerAttributesInput, opts ...request.Option) (*elb.ModifyLoadBalancerAttributesOutput, error) {
-	return c.cloudController.elbClient.ModifyLoadBalancerAttributesWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) ModifyLoadBalancerAttributes(ctx context.Context, input *elasticloadbalancing.ModifyLoadBalancerAttributesInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.ModifyLoadBalancerAttributesOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.ModifyLoadBalancerAttributes(ctx, input, optFns...)
 }
-func (c *elbClient) RegisterInstancesWithLoadBalancerWithContext(ctx aws.Context, input *elb.RegisterInstancesWithLoadBalancerInput, opts ...request.Option) (*elb.RegisterInstancesWithLoadBalancerOutput, error) {
-	return c.cloudController.elbClient.RegisterInstancesWithLoadBalancerWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) RegisterInstancesWithLoadBalancer(ctx context.Context, input *elasticloadbalancing.RegisterInstancesWithLoadBalancerInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.RegisterInstancesWithLoadBalancerOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.RegisterInstancesWithLoadBalancer(ctx, input, optFns...)
 }
-func (c *elbClient) SetLoadBalancerPoliciesForBackendServerWithContext(ctx aws.Context, input *elb.SetLoadBalancerPoliciesForBackendServerInput, opts ...request.Option) (*elb.SetLoadBalancerPoliciesForBackendServerOutput, error) {
-	return c.cloudController.elbClient.SetLoadBalancerPoliciesForBackendServerWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) SetLoadBalancerPoliciesForBackendServer(ctx context.Context, input *elasticloadbalancing.SetLoadBalancerPoliciesForBackendServerInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.SetLoadBalancerPoliciesForBackendServerOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.SetLoadBalancerPoliciesForBackendServer(ctx, input, optFns...)
 }
-func (c *elbClient) SetLoadBalancerPoliciesOfListenerWithContext(ctx aws.Context, input *elb.SetLoadBalancerPoliciesOfListenerInput, opts ...request.Option) (*elb.SetLoadBalancerPoliciesOfListenerOutput, error) {
-	return c.cloudController.elbClient.SetLoadBalancerPoliciesOfListenerWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingClient) SetLoadBalancerPoliciesOfListener(ctx context.Context, input *elasticloadbalancing.SetLoadBalancerPoliciesOfListenerInput, optFns ...func(*elasticloadbalancing.Options)) (*elasticloadbalancing.SetLoadBalancerPoliciesOfListenerOutput, error) {
+	return c.cloudController.elasticloadbalancingClient.SetLoadBalancerPoliciesOfListener(ctx, input, optFns...)
 }
 
-// elbv2Client delegates to individual component clients for API calls we know those components will have privileges to make.
-type elbv2Client struct {
+// elasticloadbalancingv2Client delegates to individual component clients for API calls we know those components will have privileges to make.
+type elasticloadbalancingv2Client struct {
 	// embedding this fulfills the interface and falls back to a panic for APIs we don't have privileges for
-	elbv2iface.ELBV2API
+	awsapi.ELBV2API
 
 	cloudController *cloudControllerClientDelegate
 }
 
-func (c *elbv2Client) AddTagsWithContext(ctx aws.Context, input *elbv2.AddTagsInput, opts ...request.Option) (*elbv2.AddTagsOutput, error) {
-	return c.cloudController.elbv2Client.AddTagsWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) AddTags(ctx context.Context, input *elasticloadbalancingv2.AddTagsInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.AddTagsOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.AddTags(ctx, input, optFns...)
 }
-func (c *elbv2Client) CreateListenerWithContext(ctx aws.Context, input *elbv2.CreateListenerInput, opts ...request.Option) (*elbv2.CreateListenerOutput, error) {
-	return c.cloudController.elbv2Client.CreateListenerWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) CreateListener(ctx context.Context, input *elasticloadbalancingv2.CreateListenerInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.CreateListenerOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.CreateListener(ctx, input, optFns...)
 }
-func (c *elbv2Client) CreateLoadBalancerWithContext(ctx aws.Context, input *elbv2.CreateLoadBalancerInput, opts ...request.Option) (*elbv2.CreateLoadBalancerOutput, error) {
-	return c.cloudController.elbv2Client.CreateLoadBalancerWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) CreateLoadBalancer(ctx context.Context, input *elasticloadbalancingv2.CreateLoadBalancerInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.CreateLoadBalancerOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.CreateLoadBalancer(ctx, input, optFns...)
 }
-func (c *elbv2Client) CreateTargetGroupWithContext(ctx aws.Context, input *elbv2.CreateTargetGroupInput, opts ...request.Option) (*elbv2.CreateTargetGroupOutput, error) {
-	return c.cloudController.elbv2Client.CreateTargetGroupWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) CreateTargetGroup(ctx context.Context, input *elasticloadbalancingv2.CreateTargetGroupInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.CreateTargetGroupOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.CreateTargetGroup(ctx, input, optFns...)
 }
-func (c *elbv2Client) DeleteListenerWithContext(ctx aws.Context, input *elbv2.DeleteListenerInput, opts ...request.Option) (*elbv2.DeleteListenerOutput, error) {
-	return c.cloudController.elbv2Client.DeleteListenerWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) DeleteListener(ctx context.Context, input *elasticloadbalancingv2.DeleteListenerInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DeleteListenerOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.DeleteListener(ctx, input, optFns...)
 }
-func (c *elbv2Client) DeleteLoadBalancerWithContext(ctx aws.Context, input *elbv2.DeleteLoadBalancerInput, opts ...request.Option) (*elbv2.DeleteLoadBalancerOutput, error) {
-	return c.cloudController.elbv2Client.DeleteLoadBalancerWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) DeleteLoadBalancer(ctx context.Context, input *elasticloadbalancingv2.DeleteLoadBalancerInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DeleteLoadBalancerOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.DeleteLoadBalancer(ctx, input, optFns...)
 }
-func (c *elbv2Client) DeleteTargetGroupWithContext(ctx aws.Context, input *elbv2.DeleteTargetGroupInput, opts ...request.Option) (*elbv2.DeleteTargetGroupOutput, error) {
-	return c.cloudController.elbv2Client.DeleteTargetGroupWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) DeleteTargetGroup(ctx context.Context, input *elasticloadbalancingv2.DeleteTargetGroupInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DeleteTargetGroupOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.DeleteTargetGroup(ctx, input, optFns...)
 }
-func (c *elbv2Client) DeregisterTargetsWithContext(ctx aws.Context, input *elbv2.DeregisterTargetsInput, opts ...request.Option) (*elbv2.DeregisterTargetsOutput, error) {
-	return c.cloudController.elbv2Client.DeregisterTargetsWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) DeregisterTargets(ctx context.Context, input *elasticloadbalancingv2.DeregisterTargetsInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DeregisterTargetsOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.DeregisterTargets(ctx, input, optFns...)
 }
-func (c *elbv2Client) DescribeListenersWithContext(ctx aws.Context, input *elbv2.DescribeListenersInput, opts ...request.Option) (*elbv2.DescribeListenersOutput, error) {
-	return c.cloudController.elbv2Client.DescribeListenersWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) DescribeListeners(ctx context.Context, input *elasticloadbalancingv2.DescribeListenersInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeListenersOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.DescribeListeners(ctx, input, optFns...)
 }
-func (c *elbv2Client) DescribeLoadBalancerAttributesWithContext(ctx aws.Context, input *elbv2.DescribeLoadBalancerAttributesInput, opts ...request.Option) (*elbv2.DescribeLoadBalancerAttributesOutput, error) {
-	return c.cloudController.elbv2Client.DescribeLoadBalancerAttributesWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) DescribeLoadBalancerAttributes(ctx context.Context, input *elasticloadbalancingv2.DescribeLoadBalancerAttributesInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeLoadBalancerAttributesOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.DescribeLoadBalancerAttributes(ctx, input, optFns...)
 }
-func (c *elbv2Client) DescribeLoadBalancersWithContext(ctx aws.Context, input *elbv2.DescribeLoadBalancersInput, opts ...request.Option) (*elbv2.DescribeLoadBalancersOutput, error) {
-	return c.cloudController.elbv2Client.DescribeLoadBalancersWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) DescribeLoadBalancers(ctx context.Context, input *elasticloadbalancingv2.DescribeLoadBalancersInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeLoadBalancersOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.DescribeLoadBalancers(ctx, input, optFns...)
 }
-func (c *elbv2Client) DescribeTargetGroupAttributesWithContext(ctx aws.Context, input *elbv2.DescribeTargetGroupAttributesInput, opts ...request.Option) (*elbv2.DescribeTargetGroupAttributesOutput, error) {
-	return c.cloudController.elbv2Client.DescribeTargetGroupAttributesWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) DescribeTargetGroupAttributes(ctx context.Context, input *elasticloadbalancingv2.DescribeTargetGroupAttributesInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeTargetGroupAttributesOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.DescribeTargetGroupAttributes(ctx, input, optFns...)
 }
-func (c *elbv2Client) DescribeTargetGroupsWithContext(ctx aws.Context, input *elbv2.DescribeTargetGroupsInput, opts ...request.Option) (*elbv2.DescribeTargetGroupsOutput, error) {
-	return c.cloudController.elbv2Client.DescribeTargetGroupsWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) DescribeTargetGroups(ctx context.Context, input *elasticloadbalancingv2.DescribeTargetGroupsInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeTargetGroupsOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.DescribeTargetGroups(ctx, input, optFns...)
 }
-func (c *elbv2Client) DescribeTargetHealthWithContext(ctx aws.Context, input *elbv2.DescribeTargetHealthInput, opts ...request.Option) (*elbv2.DescribeTargetHealthOutput, error) {
-	return c.cloudController.elbv2Client.DescribeTargetHealthWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) DescribeTargetHealth(ctx context.Context, input *elasticloadbalancingv2.DescribeTargetHealthInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.DescribeTargetHealthOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.DescribeTargetHealth(ctx, input, optFns...)
 }
-func (c *elbv2Client) ModifyListenerWithContext(ctx aws.Context, input *elbv2.ModifyListenerInput, opts ...request.Option) (*elbv2.ModifyListenerOutput, error) {
-	return c.cloudController.elbv2Client.ModifyListenerWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) ModifyListener(ctx context.Context, input *elasticloadbalancingv2.ModifyListenerInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.ModifyListenerOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.ModifyListener(ctx, input, optFns...)
 }
-func (c *elbv2Client) ModifyLoadBalancerAttributesWithContext(ctx aws.Context, input *elbv2.ModifyLoadBalancerAttributesInput, opts ...request.Option) (*elbv2.ModifyLoadBalancerAttributesOutput, error) {
-	return c.cloudController.elbv2Client.ModifyLoadBalancerAttributesWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) ModifyLoadBalancerAttributes(ctx context.Context, input *elasticloadbalancingv2.ModifyLoadBalancerAttributesInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.ModifyLoadBalancerAttributesOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.ModifyLoadBalancerAttributes(ctx, input, optFns...)
 }
-func (c *elbv2Client) ModifyTargetGroupWithContext(ctx aws.Context, input *elbv2.ModifyTargetGroupInput, opts ...request.Option) (*elbv2.ModifyTargetGroupOutput, error) {
-	return c.cloudController.elbv2Client.ModifyTargetGroupWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) ModifyTargetGroup(ctx context.Context, input *elasticloadbalancingv2.ModifyTargetGroupInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.ModifyTargetGroupOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.ModifyTargetGroup(ctx, input, optFns...)
 }
-func (c *elbv2Client) ModifyTargetGroupAttributesWithContext(ctx aws.Context, input *elbv2.ModifyTargetGroupAttributesInput, opts ...request.Option) (*elbv2.ModifyTargetGroupAttributesOutput, error) {
-	return c.cloudController.elbv2Client.ModifyTargetGroupAttributesWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) ModifyTargetGroupAttributes(ctx context.Context, input *elasticloadbalancingv2.ModifyTargetGroupAttributesInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.ModifyTargetGroupAttributesOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.ModifyTargetGroupAttributes(ctx, input, optFns...)
 }
-func (c *elbv2Client) RegisterTargetsWithContext(ctx aws.Context, input *elbv2.RegisterTargetsInput, opts ...request.Option) (*elbv2.RegisterTargetsOutput, error) {
-	return c.cloudController.elbv2Client.RegisterTargetsWithContext(ctx, input, opts...)
+func (c *elasticloadbalancingv2Client) RegisterTargets(ctx context.Context, input *elasticloadbalancingv2.RegisterTargetsInput, optFns ...func(*elasticloadbalancingv2.Options)) (*elasticloadbalancingv2.RegisterTargetsOutput, error) {
+	return c.cloudController.elasticloadbalancingv2Client.RegisterTargets(ctx, input, optFns...)
 }
 
 // route53Client delegates to individual component clients for API calls we know those components will have privileges to make.
@@ -556,13 +566,13 @@ type route53Client struct {
 	controlPlaneOperator *controlPlaneOperatorClientDelegate
 }
 
-func (c *route53Client) ChangeResourceRecordSets(ctx context.Context, input *route53v2.ChangeResourceRecordSetsInput, optFns ...func(*route53v2.Options)) (*route53v2.ChangeResourceRecordSetsOutput, error) {
+func (c *route53Client) ChangeResourceRecordSets(ctx context.Context, input *route53.ChangeResourceRecordSetsInput, optFns ...func(*route53.Options)) (*route53.ChangeResourceRecordSetsOutput, error) {
 	return c.controlPlaneOperator.route53Client.ChangeResourceRecordSets(ctx, input, optFns...)
 }
-func (c *route53Client) ListHostedZones(ctx context.Context, input *route53v2.ListHostedZonesInput, optFns ...func(*route53v2.Options)) (*route53v2.ListHostedZonesOutput, error) {
+func (c *route53Client) ListHostedZones(ctx context.Context, input *route53.ListHostedZonesInput, optFns ...func(*route53.Options)) (*route53.ListHostedZonesOutput, error) {
 	return c.controlPlaneOperator.route53Client.ListHostedZones(ctx, input, optFns...)
 }
-func (c *route53Client) ListResourceRecordSets(ctx context.Context, input *route53v2.ListResourceRecordSetsInput, optFns ...func(*route53v2.Options)) (*route53v2.ListResourceRecordSetsOutput, error) {
+func (c *route53Client) ListResourceRecordSets(ctx context.Context, input *route53.ListResourceRecordSetsInput, optFns ...func(*route53.Options)) (*route53.ListResourceRecordSetsOutput, error) {
 	return c.controlPlaneOperator.route53Client.ListResourceRecordSets(ctx, input, optFns...)
 }
 
@@ -574,61 +584,61 @@ type s3Client struct {
 	openshiftImageRegistry *openshiftImageRegistryClientDelegate
 }
 
-func (c *s3Client) AbortMultipartUpload(ctx context.Context, input *s3v2.AbortMultipartUploadInput, optFns ...func(*s3v2.Options)) (*s3v2.AbortMultipartUploadOutput, error) {
+func (c *s3Client) AbortMultipartUpload(ctx context.Context, input *s3.AbortMultipartUploadInput, optFns ...func(*s3.Options)) (*s3.AbortMultipartUploadOutput, error) {
 	return c.openshiftImageRegistry.s3Client.AbortMultipartUpload(ctx, input, optFns...)
 }
-func (c *s3Client) CreateBucket(ctx context.Context, input *s3v2.CreateBucketInput, optFns ...func(*s3v2.Options)) (*s3v2.CreateBucketOutput, error) {
+func (c *s3Client) CreateBucket(ctx context.Context, input *s3.CreateBucketInput, optFns ...func(*s3.Options)) (*s3.CreateBucketOutput, error) {
 	return c.openshiftImageRegistry.s3Client.CreateBucket(ctx, input, optFns...)
 }
-func (c *s3Client) DeleteBucket(ctx context.Context, input *s3v2.DeleteBucketInput, optFns ...func(*s3v2.Options)) (*s3v2.DeleteBucketOutput, error) {
+func (c *s3Client) DeleteBucket(ctx context.Context, input *s3.DeleteBucketInput, optFns ...func(*s3.Options)) (*s3.DeleteBucketOutput, error) {
 	return c.openshiftImageRegistry.s3Client.DeleteBucket(ctx, input, optFns...)
 }
-func (c *s3Client) DeleteObject(ctx context.Context, input *s3v2.DeleteObjectInput, optFns ...func(*s3v2.Options)) (*s3v2.DeleteObjectOutput, error) {
+func (c *s3Client) DeleteObject(ctx context.Context, input *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error) {
 	return c.openshiftImageRegistry.s3Client.DeleteObject(ctx, input, optFns...)
 }
-func (c *s3Client) DeleteObjects(ctx context.Context, input *s3v2.DeleteObjectsInput, optFns ...func(*s3v2.Options)) (*s3v2.DeleteObjectsOutput, error) {
+func (c *s3Client) DeleteObjects(ctx context.Context, input *s3.DeleteObjectsInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectsOutput, error) {
 	return c.openshiftImageRegistry.s3Client.DeleteObjects(ctx, input, optFns...)
 }
-func (c *s3Client) GetBucketEncryption(ctx context.Context, input *s3v2.GetBucketEncryptionInput, optFns ...func(*s3v2.Options)) (*s3v2.GetBucketEncryptionOutput, error) {
+func (c *s3Client) GetBucketEncryption(ctx context.Context, input *s3.GetBucketEncryptionInput, optFns ...func(*s3.Options)) (*s3.GetBucketEncryptionOutput, error) {
 	return c.openshiftImageRegistry.s3Client.GetBucketEncryption(ctx, input, optFns...)
 }
-func (c *s3Client) GetBucketLifecycleConfiguration(ctx context.Context, input *s3v2.GetBucketLifecycleConfigurationInput, optFns ...func(*s3v2.Options)) (*s3v2.GetBucketLifecycleConfigurationOutput, error) {
+func (c *s3Client) GetBucketLifecycleConfiguration(ctx context.Context, input *s3.GetBucketLifecycleConfigurationInput, optFns ...func(*s3.Options)) (*s3.GetBucketLifecycleConfigurationOutput, error) {
 	return c.openshiftImageRegistry.s3Client.GetBucketLifecycleConfiguration(ctx, input, optFns...)
 }
-func (c *s3Client) GetBucketLocation(ctx context.Context, input *s3v2.GetBucketLocationInput, optFns ...func(*s3v2.Options)) (*s3v2.GetBucketLocationOutput, error) {
+func (c *s3Client) GetBucketLocation(ctx context.Context, input *s3.GetBucketLocationInput, optFns ...func(*s3.Options)) (*s3.GetBucketLocationOutput, error) {
 	return c.openshiftImageRegistry.s3Client.GetBucketLocation(ctx, input, optFns...)
 }
-func (c *s3Client) GetBucketTagging(ctx context.Context, input *s3v2.GetBucketTaggingInput, optFns ...func(*s3v2.Options)) (*s3v2.GetBucketTaggingOutput, error) {
+func (c *s3Client) GetBucketTagging(ctx context.Context, input *s3.GetBucketTaggingInput, optFns ...func(*s3.Options)) (*s3.GetBucketTaggingOutput, error) {
 	return c.openshiftImageRegistry.s3Client.GetBucketTagging(ctx, input, optFns...)
 }
-func (c *s3Client) GetObject(ctx context.Context, input *s3v2.GetObjectInput, optFns ...func(*s3v2.Options)) (*s3v2.GetObjectOutput, error) {
+func (c *s3Client) GetObject(ctx context.Context, input *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error) {
 	return c.openshiftImageRegistry.s3Client.GetObject(ctx, input, optFns...)
 }
-func (c *s3Client) GetPublicAccessBlock(ctx context.Context, input *s3v2.GetPublicAccessBlockInput, optFns ...func(*s3v2.Options)) (*s3v2.GetPublicAccessBlockOutput, error) {
+func (c *s3Client) GetPublicAccessBlock(ctx context.Context, input *s3.GetPublicAccessBlockInput, optFns ...func(*s3.Options)) (*s3.GetPublicAccessBlockOutput, error) {
 	return c.openshiftImageRegistry.s3Client.GetPublicAccessBlock(ctx, input, optFns...)
 }
-func (c *s3Client) ListBuckets(ctx context.Context, input *s3v2.ListBucketsInput, optFns ...func(*s3v2.Options)) (*s3v2.ListBucketsOutput, error) {
+func (c *s3Client) ListBuckets(ctx context.Context, input *s3.ListBucketsInput, optFns ...func(*s3.Options)) (*s3.ListBucketsOutput, error) {
 	return c.openshiftImageRegistry.s3Client.ListBuckets(ctx, input, optFns...)
 }
-func (c *s3Client) ListMultipartUploads(ctx context.Context, input *s3v2.ListMultipartUploadsInput, optFns ...func(*s3v2.Options)) (*s3v2.ListMultipartUploadsOutput, error) {
+func (c *s3Client) ListMultipartUploads(ctx context.Context, input *s3.ListMultipartUploadsInput, optFns ...func(*s3.Options)) (*s3.ListMultipartUploadsOutput, error) {
 	return c.openshiftImageRegistry.s3Client.ListMultipartUploads(ctx, input, optFns...)
 }
-func (c *s3Client) ListObjectsV2(ctx context.Context, input *s3v2.ListObjectsV2Input, optFns ...func(*s3v2.Options)) (*s3v2.ListObjectsV2Output, error) {
+func (c *s3Client) ListObjectsV2(ctx context.Context, input *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error) {
 	return c.openshiftImageRegistry.s3Client.ListObjectsV2(ctx, input, optFns...)
 }
-func (c *s3Client) PutBucketEncryption(ctx context.Context, input *s3v2.PutBucketEncryptionInput, optFns ...func(*s3v2.Options)) (*s3v2.PutBucketEncryptionOutput, error) {
+func (c *s3Client) PutBucketEncryption(ctx context.Context, input *s3.PutBucketEncryptionInput, optFns ...func(*s3.Options)) (*s3.PutBucketEncryptionOutput, error) {
 	return c.openshiftImageRegistry.s3Client.PutBucketEncryption(ctx, input, optFns...)
 }
-func (c *s3Client) PutBucketLifecycleConfiguration(ctx context.Context, input *s3v2.PutBucketLifecycleConfigurationInput, optFns ...func(*s3v2.Options)) (*s3v2.PutBucketLifecycleConfigurationOutput, error) {
+func (c *s3Client) PutBucketLifecycleConfiguration(ctx context.Context, input *s3.PutBucketLifecycleConfigurationInput, optFns ...func(*s3.Options)) (*s3.PutBucketLifecycleConfigurationOutput, error) {
 	return c.openshiftImageRegistry.s3Client.PutBucketLifecycleConfiguration(ctx, input, optFns...)
 }
-func (c *s3Client) PutBucketTagging(ctx context.Context, input *s3v2.PutBucketTaggingInput, optFns ...func(*s3v2.Options)) (*s3v2.PutBucketTaggingOutput, error) {
+func (c *s3Client) PutBucketTagging(ctx context.Context, input *s3.PutBucketTaggingInput, optFns ...func(*s3.Options)) (*s3.PutBucketTaggingOutput, error) {
 	return c.openshiftImageRegistry.s3Client.PutBucketTagging(ctx, input, optFns...)
 }
-func (c *s3Client) PutObject(ctx context.Context, input *s3v2.PutObjectInput, optFns ...func(*s3v2.Options)) (*s3v2.PutObjectOutput, error) {
+func (c *s3Client) PutObject(ctx context.Context, input *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error) {
 	return c.openshiftImageRegistry.s3Client.PutObject(ctx, input, optFns...)
 }
-func (c *s3Client) PutPublicAccessBlock(ctx context.Context, input *s3v2.PutPublicAccessBlockInput, optFns ...func(*s3v2.Options)) (*s3v2.PutPublicAccessBlockOutput, error) {
+func (c *s3Client) PutPublicAccessBlock(ctx context.Context, input *s3.PutPublicAccessBlockInput, optFns ...func(*s3.Options)) (*s3.PutPublicAccessBlockOutput, error) {
 	return c.openshiftImageRegistry.s3Client.PutPublicAccessBlock(ctx, input, optFns...)
 }
 

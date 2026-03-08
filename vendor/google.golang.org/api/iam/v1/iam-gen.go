@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC.
+// Copyright 2026 Google LLC.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -3828,12 +3828,12 @@ type WorkforcePoolProvider struct {
 	// referenced in IAM bindings. * `google.posix_username`: The Linux username
 	// used by OS Login. This is an optional field and the mapped POSIX username
 	// cannot exceed 32 characters. The key must match the regex
-	// "^a-zA-Z0-9._{0,31}$". This attribute cannot be referenced in IAM bindings.
+	// `^a-zA-Z0-9._{0,31}$`. This attribute cannot be referenced in IAM bindings.
 	// You can also provide custom attributes by specifying
 	// `attribute.{custom_attribute}`, where {custom_attribute} is the name of the
 	// custom attribute to be mapped. You can define a maximum of 50 custom
 	// attributes. The maximum length of a mapped attribute key is 100 characters,
-	// and the key may only contain the characters [a-z0-9_]. You can reference
+	// and the key may only contain the characters `[a-z0-9_]`. You can reference
 	// these attributes in IAM policies to define fine-grained access for a
 	// workforce pool to Google Cloud resources. For example: * `google.subject`:
 	// `principal://iam.googleapis.com/locations/global/workforcePools/{pool}/subjec
@@ -3882,10 +3882,12 @@ type WorkforcePoolProvider struct {
 	// intervals during the user's active session. Each user identity in the
 	// workforce identity pool must map to a unique Microsoft Entra ID user.
 	ExtendedAttributesOauth2Client *GoogleIamAdminV1WorkforcePoolProviderExtraAttributesOAuth2Client `json:"extendedAttributesOauth2Client,omitempty"`
-	// ExtraAttributesOauth2Client: Optional. The configuration for OAuth 2.0
-	// client used to get the additional user attributes. This should be used when
-	// users can't get the desired claims in authentication credentials. Currently,
-	// this configuration is only supported with OIDC protocol.
+	// ExtraAttributesOauth2Client: Optional. Defines the configuration for the
+	// OAuth 2.0 client that is used to get the additional user attributes in a
+	// separate backchannel call to the identity provider. This should be used when
+	// users can't get the required claims in authentication credentials.
+	// Currently, the OAuth 2.0 protocol is the only supported authorization method
+	// for this backchannel call.
 	ExtraAttributesOauth2Client *GoogleIamAdminV1WorkforcePoolProviderExtraAttributesOAuth2Client `json:"extraAttributesOauth2Client,omitempty"`
 	// Name: Identifier. The resource name of the provider. Format:
 	// `locations/{location}/workforcePools/{workforce_pool_id}/providers/{provider_
@@ -4142,19 +4144,22 @@ type WorkloadIdentityPool struct {
 	//   "MODE_UNSPECIFIED" - State unspecified. New pools should not use this
 	// mode. Pools with an unspecified mode will operate as if they are in
 	// federation-only mode.
-	//   "FEDERATION_ONLY" - Federation-only mode. Federation-only pools can only
-	// be used for federating external workload identities into Google Cloud.
+	//   "FEDERATION_ONLY" - Federation-only mode. FEDERATION_ONLY mode pools can
+	// only be used for federating external workload identities into Google Cloud.
 	// Unless otherwise noted, no structure or format constraints are applied to
-	// workload identities in a federation-only pool, and you cannot create any
-	// resources within the pool besides providers.
-	//   "TRUST_DOMAIN" - Trust-domain mode. Trust-domain pools can be used to
-	// assign identities to Google Cloud workloads. All identities within a
-	// trust-domain pool must consist of a single namespace and individual workload
-	// identifier. The subject identifier for all identities must conform to the
-	// following format: `ns//sa/` WorkloadIdentityPoolProviders cannot be created
-	// within trust-domain pools.
+	// workload identities in a FEDERATION_ONLY mode pool, and you cannot create
+	// any resources within the pool besides providers.
+	//   "TRUST_DOMAIN" - Trust-domain mode. TRUST_DOMAIN mode pools can be used to
+	// assign identities to Google Cloud workloads. Identities within a
+	// TRUST_DOMAIN mode pool share the same root of trust.
+	// WorkloadIdentityPoolProviders cannot be created within trust-domain pools.
+	//   "SYSTEM_TRUST_DOMAIN" - SYSTEM_TRUST_DOMAIN mode pools are managed by
+	// Google Cloud services. Neither WorkloadIdentityPoolNamespaces nor
+	// WorkloadIdentityPoolProviders can be created within SYSTEM_TRUST_DOMAIN mode
+	// pools. All identities within a SYSTEM_TRUST_DOMAIN mode pool are in one of
+	// the following formats: * `spiffe:///ns//sa/` * `spiffe:///resources//`
 	Mode string `json:"mode,omitempty"`
-	// Name: Output only. The resource name of the pool.
+	// Name: Identifier. The resource name of the pool.
 	Name string `json:"name,omitempty"`
 	// State: Output only. The state of the pool.
 	//
@@ -4202,7 +4207,7 @@ type WorkloadIdentityPoolManagedIdentity struct {
 	// ExpireTime: Output only. Time after which the managed identity will be
 	// permanently purged and cannot be recovered.
 	ExpireTime string `json:"expireTime,omitempty"`
-	// Name: Output only. The resource name of the managed identity.
+	// Name: Identifier. The resource name of the managed identity.
 	Name string `json:"name,omitempty"`
 	// State: Output only. The state of the managed identity.
 	//
@@ -4249,7 +4254,7 @@ type WorkloadIdentityPoolNamespace struct {
 	// ExpireTime: Output only. Time after which the namespace will be permanently
 	// purged and cannot be recovered.
 	ExpireTime string `json:"expireTime,omitempty"`
-	// Name: Output only. The resource name of the namespace.
+	// Name: Identifier. The resource name of the namespace.
 	Name string `json:"name,omitempty"`
 	// OwnerService: Output only. The Google Cloud service that owns this
 	// namespace.
@@ -4365,7 +4370,7 @@ type WorkloadIdentityPoolProvider struct {
 	// ExpireTime: Output only. Time after which the workload identity pool
 	// provider will be permanently purged and cannot be recovered.
 	ExpireTime string `json:"expireTime,omitempty"`
-	// Name: Output only. The resource name of the provider.
+	// Name: Identifier. The resource name of the provider.
 	Name string `json:"name,omitempty"`
 	// Oidc: An OpenId Connect 1.0 identity provider.
 	Oidc *Oidc `json:"oidc,omitempty"`
@@ -4416,7 +4421,7 @@ type WorkloadIdentityPoolProviderKey struct {
 	ExpireTime string `json:"expireTime,omitempty"`
 	// KeyData: Immutable. Public half of the asymmetric key.
 	KeyData *KeyData `json:"keyData,omitempty"`
-	// Name: Output only. The resource name of the key.
+	// Name: Identifier. The resource name of the key.
 	Name string `json:"name,omitempty"`
 	// State: Output only. The state of the key.
 	//
@@ -5844,7 +5849,7 @@ func (r *LocationsWorkforcePoolsProvidersService) Create(parent string, workforc
 // WorkforcePoolProviderId sets the optional parameter
 // "workforcePoolProviderId": Required. The ID for the provider, which becomes
 // the final component of the resource name. This value must be 4-32
-// characters, and may contain the characters [a-z0-9-]. The prefix `gcp-` is
+// characters, and may contain the characters `[a-z0-9-]`. The prefix `gcp-` is
 // reserved for use by Google, and may not be specified.
 func (c *LocationsWorkforcePoolsProvidersCreateCall) WorkforcePoolProviderId(workforcePoolProviderId string) *LocationsWorkforcePoolsProvidersCreateCall {
 	c.urlParams_.Set("workforcePoolProviderId", workforcePoolProviderId)
@@ -6546,7 +6551,7 @@ func (r *LocationsWorkforcePoolsProvidersKeysService) Create(parent string, work
 // WorkforcePoolProviderKeyId sets the optional parameter
 // "workforcePoolProviderKeyId": Required. The ID to use for the key, which
 // becomes the final component of the resource name. This value must be 4-32
-// characters, and may contain the characters [a-z0-9-].
+// characters, and may contain the characters `[a-z0-9-]`.
 func (c *LocationsWorkforcePoolsProvidersKeysCreateCall) WorkforcePoolProviderKeyId(workforcePoolProviderKeyId string) *LocationsWorkforcePoolsProvidersKeysCreateCall {
 	c.urlParams_.Set("workforcePoolProviderKeyId", workforcePoolProviderKeyId)
 	return c
@@ -7354,7 +7359,7 @@ func (r *LocationsWorkforcePoolsProvidersScimTenantsService) Create(parent strin
 // "workforcePoolProviderScimTenantId": Required. Gemini Enterprise only. The
 // ID to use for the SCIM tenant, which becomes the final component of the
 // resource name. This value should be 4-32 characters, containing the
-// characters [a-z0-9-].
+// characters `[a-z0-9-]`.
 func (c *LocationsWorkforcePoolsProvidersScimTenantsCreateCall) WorkforcePoolProviderScimTenantId(workforcePoolProviderScimTenantId string) *LocationsWorkforcePoolsProvidersScimTenantsCreateCall {
 	c.urlParams_.Set("workforcePoolProviderScimTenantId", workforcePoolProviderScimTenantId)
 	return c
@@ -8078,8 +8083,8 @@ func (r *LocationsWorkforcePoolsProvidersScimTenantsTokensService) Create(parent
 // WorkforcePoolProviderScimTokenId sets the optional parameter
 // "workforcePoolProviderScimTokenId": Required. Gemini Enterprise only. The ID
 // to use for the SCIM token, which becomes the final component of the resource
-// name. This value should be 4-32 characters and follow the pattern: "(a-z
-// ([a-z0-9\\-]{2,30}[a-z0-9]))"
+// name. This value should be 4-32 characters and follow the pattern: `(a-z
+// ([a-z0-9\\-]{2,30}[a-z0-9]))`
 func (c *LocationsWorkforcePoolsProvidersScimTenantsTokensCreateCall) WorkforcePoolProviderScimTokenId(workforcePoolProviderScimTokenId string) *LocationsWorkforcePoolsProvidersScimTenantsTokensCreateCall {
 	c.urlParams_.Set("workforcePoolProviderScimTokenId", workforcePoolProviderScimTokenId)
 	return c
@@ -11921,7 +11926,7 @@ type ProjectsLocationsWorkloadIdentityPoolsPatchCall struct {
 
 // Patch: Updates an existing WorkloadIdentityPool.
 //
-// - name: Output only. The resource name of the pool.
+// - name: Identifier. The resource name of the pool.
 func (r *ProjectsLocationsWorkloadIdentityPoolsService) Patch(name string, workloadidentitypool *WorkloadIdentityPool) *ProjectsLocationsWorkloadIdentityPoolsPatchCall {
 	c := &ProjectsLocationsWorkloadIdentityPoolsPatchCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -12829,7 +12834,7 @@ type ProjectsLocationsWorkloadIdentityPoolsNamespacesPatchCall struct {
 // Patch: Updates an existing WorkloadIdentityPoolNamespace in a
 // WorkloadIdentityPool.
 //
-// - name: Output only. The resource name of the namespace.
+// - name: Identifier. The resource name of the namespace.
 func (r *ProjectsLocationsWorkloadIdentityPoolsNamespacesService) Patch(name string, workloadidentitypoolnamespace *WorkloadIdentityPoolNamespace) *ProjectsLocationsWorkloadIdentityPoolsNamespacesPatchCall {
 	c := &ProjectsLocationsWorkloadIdentityPoolsNamespacesPatchCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -13790,7 +13795,7 @@ type ProjectsLocationsWorkloadIdentityPoolsNamespacesManagedIdentitiesPatchCall 
 // Patch: Updates an existing WorkloadIdentityPoolManagedIdentity in a
 // WorkloadIdentityPoolNamespace.
 //
-// - name: Output only. The resource name of the managed identity.
+// - name: Identifier. The resource name of the managed identity.
 func (r *ProjectsLocationsWorkloadIdentityPoolsNamespacesManagedIdentitiesService) Patch(name string, workloadidentitypoolmanagedidentity *WorkloadIdentityPoolManagedIdentity) *ProjectsLocationsWorkloadIdentityPoolsNamespacesManagedIdentitiesPatchCall {
 	c := &ProjectsLocationsWorkloadIdentityPoolsNamespacesManagedIdentitiesPatchCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -15141,7 +15146,7 @@ type ProjectsLocationsWorkloadIdentityPoolsProvidersPatchCall struct {
 
 // Patch: Updates an existing WorkloadIdentityPoolProvider.
 //
-// - name: Output only. The resource name of the provider.
+// - name: Identifier. The resource name of the provider.
 func (r *ProjectsLocationsWorkloadIdentityPoolsProvidersService) Patch(name string, workloadidentitypoolprovider *WorkloadIdentityPoolProvider) *ProjectsLocationsWorkloadIdentityPoolsProvidersPatchCall {
 	c := &ProjectsLocationsWorkloadIdentityPoolsProvidersPatchCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name

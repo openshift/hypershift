@@ -11,6 +11,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/proxy"
@@ -23,6 +24,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -105,8 +108,32 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	}
 
 	// Pre-pull images to avoid startup delays between containers and timeout errors.
-	// Avoids flakiness in tests: https://issues.redhat.com/browse/OCPBUGS-62760
+	// Avoids flakiness in e2e tests
 	addImagePrePullInitContainers(&deployment.Spec.Template.Spec)
+
+	// When running on ARO HCP, add a hostAlias so the azure-kms-provider
+	// sidecar resolves the Key Vault FQDN to the private-router Service ClusterIP.
+	// The private router has access to the customer VNet (via Swift) and can reach the
+	// Key Vault's private endpoint, acting as a TCP passthrough relay.
+	if azureutil.IsAroHCP() && azureutil.IsPrivateKeyVault(hcp) {
+		kvFQDN, err := azureutil.GetKeyVaultFQDN(hcp)
+		if err != nil {
+			return fmt.Errorf("failed to get Key Vault FQDN for hostAlias: %w", err)
+		}
+
+		routerSvc := manifests.PrivateRouterService(hcp.Namespace)
+		if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(routerSvc), routerSvc); err != nil {
+			return fmt.Errorf("failed to get private-router service: %w", err)
+		}
+
+		deployment.Spec.Template.Spec.HostAliases = append(
+			deployment.Spec.Template.Spec.HostAliases,
+			corev1.HostAlias{
+				IP:        routerSvc.Spec.ClusterIP,
+				Hostnames: []string{kvFQDN},
+			},
+		)
+	}
 
 	return nil
 }
@@ -299,42 +326,30 @@ func buildKASAuditWebhookConfigFileVolume(auditWebhookRef *corev1.LocalObjectRef
 	return v
 }
 
-// addImagePrePullInitContainers adds init containers to pre-pull images for all regular containers
-// in the kube-apiserver pod. These init containers ensure images are cached on the node before
-// the regular containers start, reducing startup time.
-// Images that are already used by existing init containers are excluded since those init containers
-// will already cause the images to be pulled before the regular containers run.
+// addImagePrePullInitContainers adds an init container to pre-pull the kube-apiserver image.
+// This ensures the image is cached on the node before the regular containers start, reducing startup time.
 func addImagePrePullInitContainers(podSpec *corev1.PodSpec) {
-	// Build set of images already used by init containers (these don't need pre-pulling)
-	initImages := make(map[string]bool)
-	for _, c := range podSpec.InitContainers {
-		initImages[c.Image] = true
-	}
-
-	// Collect unique images from regular containers, excluding init container images
-	seen := make(map[string]bool)
-	var imagesToPrePull []string
+	image := ""
 	for _, c := range podSpec.Containers {
-		if c.Image != "" && !seen[c.Image] && !initImages[c.Image] {
-			seen[c.Image] = true
-			imagesToPrePull = append(imagesToPrePull, c.Image)
+		if c.Name == ComponentName {
+			image = c.Image
 		}
 	}
 
-	// Create pre-pull init containers - one for each unique image
-	prePullInitContainers := make([]corev1.Container, 0, len(imagesToPrePull))
-	for _, image := range imagesToPrePull {
-		prePullInitContainers = append(prePullInitContainers, corev1.Container{
-			Name:            fmt.Sprintf("pre-pull-image-%s", image),
-			Image:           image,
-			ImagePullPolicy: corev1.PullIfNotPresent,
-			Command:         []string{"/bin/sh", "-c", fmt.Sprintf("echo 'Image pre-pulled: %s'; exit 0", image)},
-		})
+	if image == "" {
+		return
 	}
 
-	// Prepend the pre-pull init containers to the existing init containers.
-	// This ensures images are pulled before any other init containers run.
-	podSpec.InitContainers = append(prePullInitContainers, podSpec.InitContainers...)
+	prePullInitContainer := corev1.Container{
+		Name:            fmt.Sprintf("pre-pull-image-%s", ComponentName),
+		Image:           image,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-c", fmt.Sprintf("echo 'Image for %s pre-pulled: %s'; exit 0", ComponentName, image)},
+	}
+
+	// Prepend the pre-pull init container to the existing init containers.
+	// This ensures the image is pulled before any other init containers run.
+	podSpec.InitContainers = append([]corev1.Container{prePullInitContainer}, podSpec.InitContainers...)
 }
 
 const (

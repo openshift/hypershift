@@ -57,6 +57,7 @@ func TestOnCreateAPIUX(t *testing.T) {
 					ControlPlane:    "controlplane@my-project-123.iam.gserviceaccount.com",
 					CloudController: "cloudcontroller@my-project-123.iam.gserviceaccount.com",
 					Storage:         "storage@my-project-123.iam.gserviceaccount.com",
+					ImageRegistry:   "imageregistry@my-project-123.iam.gserviceaccount.com",
 				},
 			},
 		}
@@ -2496,7 +2497,7 @@ func TestCreateCluster(t *testing.T) {
 		e2eutil.EnsureCAPIFinalizers(t, ctx, mgtClient, hostedCluster)
 
 		// ensure KAS DNS name is configured with a KAS Serving cert
-		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster)
+		e2eutil.EnsureKubeAPIDNSNameCustomCert(t, ctx, mgtClient, hostedCluster, clusterOpts)
 		e2eutil.EnsureDefaultSecurityGroupTags(t, ctx, mgtClient, hostedCluster, clusterOpts)
 
 		if globalOpts.Platform == hyperv1.AzurePlatform {
@@ -2682,9 +2683,9 @@ func TestCreateClusterCustomConfig(t *testing.T) {
 	switch globalOpts.Platform {
 	case hyperv1.AWSPlatform:
 		// find kms key ARN using alias
-		kmsKeyArn, err = e2eutil.GetKMSKeyArn(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.ConfigurableClusterOptions.AWSKmsKeyAlias)
+		kmsKeyArn, err = e2eutil.GetKMSKeyArn(ctx, clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, globalOpts.ConfigurableClusterOptions.AWSKmsKeyAlias)
 		if err != nil || kmsKeyArn == nil {
-			t.Fatal("failed to retrieve kms key arn: %w", err)
+			t.Fatalf("failed to retrieve kms key arn: %v", err)
 		}
 		clusterOpts.AWSPlatform.EtcdKMSKeyARN = *kmsKeyArn
 	case hyperv1.AzurePlatform:

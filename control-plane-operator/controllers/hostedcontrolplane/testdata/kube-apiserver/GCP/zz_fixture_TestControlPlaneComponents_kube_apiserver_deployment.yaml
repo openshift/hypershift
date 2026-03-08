@@ -324,40 +324,10 @@ spec:
       - command:
         - /bin/sh
         - -c
-        - 'echo ''Image pre-pulled: hyperkube''; exit 0'
+        - 'echo ''Image for kube-apiserver pre-pulled: hyperkube''; exit 0'
         image: hyperkube
         imagePullPolicy: IfNotPresent
-        name: pre-pull-image-hyperkube
-        resources: {}
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
-          runAsNonRoot: true
-        terminationMessagePolicy: FallbackToLogsOnError
-      - command:
-        - /bin/sh
-        - -c
-        - 'echo ''Image pre-pulled: controlplane-operator''; exit 0'
-        image: controlplane-operator
-        imagePullPolicy: IfNotPresent
-        name: pre-pull-image-controlplane-operator
-        resources: {}
-        securityContext:
-          allowPrivilegeEscalation: false
-          capabilities:
-            drop:
-            - ALL
-          runAsNonRoot: true
-        terminationMessagePolicy: FallbackToLogsOnError
-      - command:
-        - /bin/sh
-        - -c
-        - 'echo ''Image pre-pulled: apiserver-network-proxy''; exit 0'
-        image: apiserver-network-proxy
-        imagePullPolicy: IfNotPresent
-        name: pre-pull-image-apiserver-network-proxy
+        name: pre-pull-image-kube-apiserver
         resources: {}
         securityContext:
           allowPrivilegeEscalation: false

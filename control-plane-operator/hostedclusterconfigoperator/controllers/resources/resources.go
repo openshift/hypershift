@@ -1325,6 +1325,13 @@ func (r *reconciler) reconcileKonnectivityAgent(ctx context.Context, hcp *hyperv
 		errs = append(errs, fmt.Errorf("failed to get proxy config: %w", err))
 	}
 
+	agentServiceAccount := manifests.KonnectivityAgentServiceAccount()
+	if _, err := r.CreateOrUpdate(ctx, r.client, agentServiceAccount, func() error {
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent service account: %w", err))
+	}
+
 	agentDaemonset := manifests.KonnectivityAgentDaemonSet()
 	if _, err := r.CreateOrUpdate(ctx, r.client, agentDaemonset, func() error {
 		konnectivity.ReconcileAgentDaemonSet(agentDaemonset, p, hcp.Spec.Platform, proxy.Status)
@@ -2451,6 +2458,11 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 				Namespace: ConfigManagedNamespace,
 			},
 		}
+
+		if err := r.deleteImmutableConfigMapIfNeeded(ctx, log, hostedClusterCM); err != nil {
+			return err
+		}
+
 		if result, err := r.CreateOrUpdate(ctx, r.client, hostedClusterCM, func() error {
 			return mutateKubeletConfig(&cm, hostedClusterCM)
 		}); err != nil {
@@ -2480,8 +2492,29 @@ func (r *reconciler) reconcileKubeletConfig(ctx context.Context) error {
 	return nil
 }
 
+// deleteImmutableConfigMapIfNeeded checks if a ConfigMap exists and is immutable,
+// and deletes it if necessary to allow recreation as a mutable ConfigMap.
+// This handles migration from immutable ConfigMaps to mutable ones.
+func (r *reconciler) deleteImmutableConfigMapIfNeeded(ctx context.Context, log logr.Logger, cm *corev1.ConfigMap) error {
+	existingCM := &corev1.ConfigMap{}
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(cm), existingCM); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to get ConfigMap %s: %w", client.ObjectKeyFromObject(cm).String(), err)
+	}
+
+	if existingCM.Immutable != nil && *existingCM.Immutable {
+		log.Info("deleting immutable KubeletConfig ConfigMap to recreate as mutable", "configMap", client.ObjectKeyFromObject(existingCM).String())
+		if _, err := util.DeleteIfNeeded(ctx, r.client, existingCM); err != nil {
+			return fmt.Errorf("failed to delete immutable ConfigMap %s: %w", client.ObjectKeyFromObject(existingCM).String(), err)
+		}
+	}
+
+	return nil
+}
+
 func mutateKubeletConfig(controlPlaneConfigMap, hostedClusterConfigMap *corev1.ConfigMap) error {
-	hostedClusterConfigMap.Immutable = ptr.To(true)
 	hostedClusterConfigMap.Labels = labels.Merge(hostedClusterConfigMap.Labels, map[string]string{
 		nodepool.KubeletConfigConfigMapLabel: "true",
 		hyperv1.NodePoolLabel:                controlPlaneConfigMap.Labels[hyperv1.NodePoolLabel],

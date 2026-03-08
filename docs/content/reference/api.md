@@ -3216,7 +3216,48 @@ ManagedIdentity
 <p>kms is a pre-existing managed identity used to authenticate with Azure KMS.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>keyVaultAccess</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKeyVaultAccessType">
+AzureKeyVaultAccessType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>keyVaultAccess specifies how the Key Vault should be accessed.
+When set to &ldquo;Private&rdquo;, the control plane routes Key Vault traffic through
+the private router to reach the Key Vault&rsquo;s private endpoint in the customer VNet.
+When set to &ldquo;Public&rdquo; or omitted, the Key Vault is accessed via its public endpoint.</p>
+</td>
+</tr>
 </tbody>
+</table>
+###AzureKeyVaultAccessType { #hypershift.openshift.io/v1beta1.AzureKeyVaultAccessType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>)
+</p>
+<p>
+<p>AzureKeyVaultAccessType specifies the access method for the Azure Key Vault.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Private&#34;</p></td>
+<td><p>AzureKeyVaultPrivate indicates the Key Vault is behind a private endpoint
+and traffic must be routed through the private router (Swift).</p>
+</td>
+</tr><tr><td><p>&#34;Public&#34;</p></td>
+<td><p>AzureKeyVaultPublic indicates the Key Vault is accessible via its public endpoint.</p>
+</td>
+</tr></tbody>
 </table>
 ###AzureMarketplaceImage { #hypershift.openshift.io/v1beta1.AzureMarketplaceImage }
 <p>
@@ -6884,6 +6925,25 @@ This GSA requires the following IAM roles:
 - roles/compute.instanceAdmin.v1 (Compute Instance Admin - for attaching disks to VMs)
 - roles/iam.serviceAccountUser (Service Account User - for impersonation)
 - roles/resourcemanager.tagUser (Tag User - for applying resource tags to disks)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageRegistry</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>imageRegistry is the Google Service Account email for the Image Registry Operator
+that manages GCS storage for the internal container image registry.
+This GSA requires the following IAM roles:
+- roles/storage.admin (Storage Admin - for creating and managing GCS buckets and objects)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
@@ -12125,7 +12185,7 @@ PowerVSPlatformSpec
 <td>
 <em>(Optional)</em>
 <p>powervs specifies configuration for clusters running on IBMCloud Power VS Service.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -12594,7 +12654,7 @@ string
 </td>
 <td>
 <p>accountID is the IBMCloud account id.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -12606,7 +12666,7 @@ string
 </td>
 <td>
 <p>cisInstanceCRN is the IBMCloud CIS Service Instance&rsquo;s Cloud Resource Name
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -12618,7 +12678,7 @@ string
 </td>
 <td>
 <p>resourceGroup is the IBMCloud Resource Group in which the cluster resides.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -12632,7 +12692,7 @@ string
 <p>region is the IBMCloud region in which the cluster resides. This configures the
 OCP control plane cloud integrations, and is used by NodePool to resolve
 the correct boot image for a given release.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -12645,7 +12705,7 @@ string
 <td>
 <p>zone is the availability zone where control plane cloud resources are
 created.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -12659,7 +12719,7 @@ PowerVSResourceReference
 </td>
 <td>
 <p>subnet is the subnet to use for control plane cloud resources.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -12676,7 +12736,7 @@ serviceInstance can be created via IBM Cloud catalog or CLI.
 ServiceInstanceID is the unique identifier that can be obtained from IBM Cloud UI or IBM Cloud cli.</p>
 <p>More detail about Power VS service instance.
 <a href="https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-creating-power-virtual-server">https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-creating-power-virtual-server</a></p>
-<p>This field is immutable. Once set, It can&rsquo;t be changed.</p>
+<p>This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -12691,7 +12751,7 @@ PowerVSVPC
 <td>
 <p>vpc specifies IBM Cloud PowerVS Load Balancing configuration for the control
 plane.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -12706,8 +12766,32 @@ Kubernetes core/v1.LocalObjectReference
 <td>
 <p>kubeCloudControllerCreds is a reference to a secret containing cloud
 credentials with permissions matching the cloud controller policy.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
-<p>TODO(dan): document the &ldquo;cloud controller policy&rdquo;</p>
+This field is immutable. Once set, it cannot be changed.</p>
+<p>The secret must contain the key <code>ibmcloud_api_key</code> whose value is
+an IBM Cloud API key with the following IAM policies:</p>
+<ol>
+<li><p>Resource Group: Viewer role</p>
+<ul>
+<li>Attribute: resourceType=resource-group</li>
+<li>Role: crn:v1:bluemix:public:iam::::role:Viewer</li>
+</ul></li>
+<li><p>VPC Infrastructure Services: Editor, Operator, and Viewer roles</p>
+<ul>
+<li>Attribute: serviceName=is</li>
+<li>Roles: crn:v1:bluemix:public:iam::::role:Editor,
+crn:v1:bluemix:public:iam::::role:Operator,
+crn:v1:bluemix:public:iam::::role:Viewer</li>
+</ul></li>
+<li><p>Power Virtual Server (PowerVS): Viewer role, Reader and Manager service roles
+(scoped to the PowerVS service instance identified by <code>serviceInstanceID</code>)</p>
+<ul>
+<li>Attributes: serviceName=power-iaas,
+serviceInstance={serviceInstanceID}</li>
+<li>Roles: crn:v1:bluemix:public:iam::::role:Viewer,
+crn:v1:bluemix:public:iam::::serviceRole:Reader,
+crn:v1:bluemix:public:iam::::serviceRole:Manager</li>
+</ul></li>
+</ol>
 </td>
 </tr>
 <tr>
@@ -12722,8 +12806,19 @@ Kubernetes core/v1.LocalObjectReference
 <td>
 <p>nodePoolManagementCreds is a reference to a secret containing cloud
 credentials with permissions matching the node pool management policy.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
-<p>TODO(dan): document the &ldquo;node pool management policy&rdquo;</p>
+This field is immutable. Once set, it cannot be changed.</p>
+<p>The secret must contain the key <code>ibmcloud_api_key</code> whose value is
+an IBM Cloud API key with the following IAM policies:</p>
+<ol>
+<li>Power Virtual Server (PowerVS): Manager service role and Editor role
+(scoped to the PowerVS service instance identified by <code>serviceInstanceID</code>)
+<ul>
+<li>Attributes: serviceName=power-iaas,
+serviceInstance={serviceInstanceID}</li>
+<li>Roles: crn:v1:bluemix:public:iam::::serviceRole:Manager,
+crn:v1:bluemix:public:iam::::role:Editor</li>
+</ul></li>
+</ol>
 </td>
 </tr>
 <tr>
@@ -12736,8 +12831,19 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>ingressOperatorCloudCreds is a reference to a secret containing ibm cloud
-credentials for ingress operator to get authenticated with ibm cloud.</p>
+<p>ingressOperatorCloudCreds is a reference to a secret containing IBM Cloud
+credentials for the ingress operator to get authenticated with IBM Cloud.
+This field is immutable. Once set, it cannot be changed.</p>
+<p>The secret must contain the key <code>ibmcloud_api_key</code> whose value is
+an IBM Cloud API key with the following IAM policies:</p>
+<ol>
+<li>Internet Services (CIS): Manager service role and Editor role
+<ul>
+<li>Attribute: serviceName=internet-svcs</li>
+<li>Roles: crn:v1:bluemix:public:iam::::serviceRole:Manager,
+crn:v1:bluemix:public:iam::::role:Editor</li>
+</ul></li>
+</ol>
 </td>
 </tr>
 <tr>
@@ -12750,8 +12856,26 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>storageOperatorCloudCreds is a reference to a secret containing ibm cloud
-credentials for storage operator to get authenticated with ibm cloud.</p>
+<p>storageOperatorCloudCreds is a reference to a secret containing IBM Cloud
+credentials for the storage operator to get authenticated with IBM Cloud.
+This field is immutable. Once set, it cannot be changed.</p>
+<p>The secret must contain the key <code>ibmcloud_api_key</code> whose value is
+an IBM Cloud API key with the following IAM policies:</p>
+<ol>
+<li><p>Power Virtual Server (PowerVS): Manager service role and Editor role
+(scoped to the PowerVS service instance identified by <code>serviceInstanceID</code>)</p>
+<ul>
+<li>Attributes: serviceName=power-iaas,
+serviceInstance={serviceInstanceID}</li>
+<li>Roles: crn:v1:bluemix:public:iam::::serviceRole:Manager,
+crn:v1:bluemix:public:iam::::role:Editor</li>
+</ul></li>
+<li><p>Resource Group: Viewer role</p>
+<ul>
+<li>Attribute: resourceType=resource-group</li>
+<li>Role: crn:v1:bluemix:public:iam::::role:Viewer</li>
+</ul></li>
+</ol>
 </td>
 </tr>
 <tr>
@@ -12764,8 +12888,24 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>imageRegistryOperatorCloudCreds is a reference to a secret containing ibm cloud
-credentials for image registry operator to get authenticated with ibm cloud.</p>
+<p>imageRegistryOperatorCloudCreds is a reference to a secret containing IBM Cloud
+credentials for the image registry operator to get authenticated with IBM Cloud.
+This field is immutable. Once set, it cannot be changed.</p>
+<p>The secret must contain the key <code>ibmcloud_api_key</code> whose value is
+an IBM Cloud API key with the following IAM policies:</p>
+<ol>
+<li><p>Cloud Object Storage: Administrator (platform) and Manager (service) roles</p>
+<ul>
+<li>Attribute: serviceName=cloud-object-storage</li>
+<li>Roles: crn:v1:bluemix:public:iam::::role:Administrator,
+crn:v1:bluemix:public:iam::::serviceRole:Manager</li>
+</ul></li>
+<li><p>Resource Group: Viewer role</p>
+<ul>
+<li>Attribute: resourceType=resource-group</li>
+<li>Role: crn:v1:bluemix:public:iam::::role:Viewer</li>
+</ul></li>
+</ol>
 </td>
 </tr>
 </tbody>
@@ -12841,7 +12981,7 @@ string
 </td>
 <td>
 <p>name for VPC to used for all the service load balancer.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -12854,7 +12994,7 @@ string
 <td>
 <p>region is the IBMCloud region in which VPC gets created, this VPC used for all the ingress traffic
 into the OCP cluster.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -12868,7 +13008,7 @@ string
 <em>(Optional)</em>
 <p>zone is the availability zone where load balancer cloud resources are
 created.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -12881,7 +13021,7 @@ string
 <td>
 <em>(Optional)</em>
 <p>subnet is the subnet to use for load balancer.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 </tbody>

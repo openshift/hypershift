@@ -155,7 +155,7 @@ type PowerVSNodePoolPlatform struct {
 // PowerVSPlatformSpec defines IBMCloud PowerVS specific settings for components
 type PowerVSPlatformSpec struct {
 	// accountID is the IBMCloud account id.
-	// This field is immutable. Once set, It can't be changed.
+	// This field is immutable. Once set, it cannot be changed.
 	//
 	// +immutable
 	// +kubebuilder:validation:MaxLength=255
@@ -163,7 +163,7 @@ type PowerVSPlatformSpec struct {
 	AccountID string `json:"accountID"`
 
 	// cisInstanceCRN is the IBMCloud CIS Service Instance's Cloud Resource Name
-	// This field is immutable. Once set, It can't be changed.
+	// This field is immutable. Once set, it cannot be changed.
 	//
 	// +kubebuilder:validation:Pattern=`^crn:`
 	// +kubebuilder:validation:MaxLength=255
@@ -172,7 +172,7 @@ type PowerVSPlatformSpec struct {
 	CISInstanceCRN string `json:"cisInstanceCRN"`
 
 	// resourceGroup is the IBMCloud Resource Group in which the cluster resides.
-	// This field is immutable. Once set, It can't be changed.
+	// This field is immutable. Once set, it cannot be changed.
 	//
 	// +immutable
 	// +kubebuilder:validation:MaxLength=255
@@ -182,7 +182,7 @@ type PowerVSPlatformSpec struct {
 	// region is the IBMCloud region in which the cluster resides. This configures the
 	// OCP control plane cloud integrations, and is used by NodePool to resolve
 	// the correct boot image for a given release.
-	// This field is immutable. Once set, It can't be changed.
+	// This field is immutable. Once set, it cannot be changed.
 	//
 	// +immutable
 	// +kubebuilder:validation:MaxLength=255
@@ -191,7 +191,7 @@ type PowerVSPlatformSpec struct {
 
 	// zone is the availability zone where control plane cloud resources are
 	// created.
-	// This field is immutable. Once set, It can't be changed.
+	// This field is immutable. Once set, it cannot be changed.
 	//
 	// +immutable
 	// +kubebuilder:validation:MaxLength=255
@@ -199,7 +199,7 @@ type PowerVSPlatformSpec struct {
 	Zone string `json:"zone"`
 
 	// subnet is the subnet to use for control plane cloud resources.
-	// This field is immutable. Once set, It can't be changed.
+	// This field is immutable. Once set, it cannot be changed.
 	//
 	// +immutable
 	// +required
@@ -213,7 +213,7 @@ type PowerVSPlatformSpec struct {
 	// More detail about Power VS service instance.
 	// https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-creating-power-virtual-server
 	//
-	// This field is immutable. Once set, It can't be changed.
+	// This field is immutable. Once set, it cannot be changed.
 	//
 	// +immutable
 	// +kubebuilder:validation:MaxLength=255
@@ -222,7 +222,7 @@ type PowerVSPlatformSpec struct {
 
 	// vpc specifies IBM Cloud PowerVS Load Balancing configuration for the control
 	// plane.
-	// This field is immutable. Once set, It can't be changed.
+	// This field is immutable. Once set, it cannot be changed.
 	//
 	// +immutable
 	// +required
@@ -230,9 +230,28 @@ type PowerVSPlatformSpec struct {
 
 	// kubeCloudControllerCreds is a reference to a secret containing cloud
 	// credentials with permissions matching the cloud controller policy.
-	// This field is immutable. Once set, It can't be changed.
+	// This field is immutable. Once set, it cannot be changed.
 	//
-	// TODO(dan): document the "cloud controller policy"
+	// The secret must contain the key `ibmcloud_api_key` whose value is
+	// an IBM Cloud API key with the following IAM policies:
+	//
+	// 1. Resource Group: Viewer role
+	//    - Attribute: resourceType=resource-group
+	//    - Role: crn:v1:bluemix:public:iam::::role:Viewer
+	//
+	// 2. VPC Infrastructure Services: Editor, Operator, and Viewer roles
+	//    - Attribute: serviceName=is
+	//    - Roles: crn:v1:bluemix:public:iam::::role:Editor,
+	//      crn:v1:bluemix:public:iam::::role:Operator,
+	//      crn:v1:bluemix:public:iam::::role:Viewer
+	//
+	// 3. Power Virtual Server (PowerVS): Viewer role, Reader and Manager service roles
+	//    (scoped to the PowerVS service instance identified by `serviceInstanceID`)
+	//    - Attributes: serviceName=power-iaas,
+	//      serviceInstance={serviceInstanceID}
+	//    - Roles: crn:v1:bluemix:public:iam::::role:Viewer,
+	//      crn:v1:bluemix:public:iam::::serviceRole:Reader,
+	//      crn:v1:bluemix:public:iam::::serviceRole:Manager
 	//
 	// +immutable
 	// +required
@@ -240,30 +259,75 @@ type PowerVSPlatformSpec struct {
 
 	// nodePoolManagementCreds is a reference to a secret containing cloud
 	// credentials with permissions matching the node pool management policy.
-	// This field is immutable. Once set, It can't be changed.
+	// This field is immutable. Once set, it cannot be changed.
 	//
-	// TODO(dan): document the "node pool management policy"
+	// The secret must contain the key `ibmcloud_api_key` whose value is
+	// an IBM Cloud API key with the following IAM policies:
+	//
+	// 1. Power Virtual Server (PowerVS): Manager service role and Editor role
+	//    (scoped to the PowerVS service instance identified by `serviceInstanceID`)
+	//    - Attributes: serviceName=power-iaas,
+	//      serviceInstance={serviceInstanceID}
+	//    - Roles: crn:v1:bluemix:public:iam::::serviceRole:Manager,
+	//      crn:v1:bluemix:public:iam::::role:Editor
 	//
 	// +immutable
 	// +required
 	NodePoolManagementCreds corev1.LocalObjectReference `json:"nodePoolManagementCreds"`
 
-	// ingressOperatorCloudCreds is a reference to a secret containing ibm cloud
-	// credentials for ingress operator to get authenticated with ibm cloud.
+	// ingressOperatorCloudCreds is a reference to a secret containing IBM Cloud
+	// credentials for the ingress operator to get authenticated with IBM Cloud.
+	// This field is immutable. Once set, it cannot be changed.
+	//
+	// The secret must contain the key `ibmcloud_api_key` whose value is
+	// an IBM Cloud API key with the following IAM policies:
+	//
+	// 1. Internet Services (CIS): Manager service role and Editor role
+	//    - Attribute: serviceName=internet-svcs
+	//    - Roles: crn:v1:bluemix:public:iam::::serviceRole:Manager,
+	//      crn:v1:bluemix:public:iam::::role:Editor
 	//
 	// +immutable
 	// +required
 	IngressOperatorCloudCreds corev1.LocalObjectReference `json:"ingressOperatorCloudCreds"`
 
-	// storageOperatorCloudCreds is a reference to a secret containing ibm cloud
-	// credentials for storage operator to get authenticated with ibm cloud.
+	// storageOperatorCloudCreds is a reference to a secret containing IBM Cloud
+	// credentials for the storage operator to get authenticated with IBM Cloud.
+	// This field is immutable. Once set, it cannot be changed.
+	//
+	// The secret must contain the key `ibmcloud_api_key` whose value is
+	// an IBM Cloud API key with the following IAM policies:
+	//
+	// 1. Power Virtual Server (PowerVS): Manager service role and Editor role
+	//    (scoped to the PowerVS service instance identified by `serviceInstanceID`)
+	//    - Attributes: serviceName=power-iaas,
+	//      serviceInstance={serviceInstanceID}
+	//    - Roles: crn:v1:bluemix:public:iam::::serviceRole:Manager,
+	//      crn:v1:bluemix:public:iam::::role:Editor
+	//
+	// 2. Resource Group: Viewer role
+	//    - Attribute: resourceType=resource-group
+	//    - Role: crn:v1:bluemix:public:iam::::role:Viewer
 	//
 	// +immutable
 	// +required
 	StorageOperatorCloudCreds corev1.LocalObjectReference `json:"storageOperatorCloudCreds"`
 
-	// imageRegistryOperatorCloudCreds is a reference to a secret containing ibm cloud
-	// credentials for image registry operator to get authenticated with ibm cloud.
+	// imageRegistryOperatorCloudCreds is a reference to a secret containing IBM Cloud
+	// credentials for the image registry operator to get authenticated with IBM Cloud.
+	// This field is immutable. Once set, it cannot be changed.
+	//
+	// The secret must contain the key `ibmcloud_api_key` whose value is
+	// an IBM Cloud API key with the following IAM policies:
+	//
+	// 1. Cloud Object Storage: Administrator (platform) and Manager (service) roles
+	//    - Attribute: serviceName=cloud-object-storage
+	//    - Roles: crn:v1:bluemix:public:iam::::role:Administrator,
+	//      crn:v1:bluemix:public:iam::::serviceRole:Manager
+	//
+	// 2. Resource Group: Viewer role
+	//    - Attribute: resourceType=resource-group
+	//    - Role: crn:v1:bluemix:public:iam::::role:Viewer
 	//
 	// +immutable
 	// +required
@@ -274,7 +338,7 @@ type PowerVSPlatformSpec struct {
 // plane.
 type PowerVSVPC struct {
 	// name for VPC to used for all the service load balancer.
-	// This field is immutable. Once set, It can't be changed.
+	// This field is immutable. Once set, it cannot be changed.
 	//
 	// +immutable
 	// +kubebuilder:validation:MaxLength=255
@@ -283,7 +347,7 @@ type PowerVSVPC struct {
 
 	// region is the IBMCloud region in which VPC gets created, this VPC used for all the ingress traffic
 	// into the OCP cluster.
-	// This field is immutable. Once set, It can't be changed.
+	// This field is immutable. Once set, it cannot be changed.
 	//
 	// +immutable
 	// +kubebuilder:validation:MaxLength=255
@@ -292,7 +356,7 @@ type PowerVSVPC struct {
 
 	// zone is the availability zone where load balancer cloud resources are
 	// created.
-	// This field is immutable. Once set, It can't be changed.
+	// This field is immutable. Once set, it cannot be changed.
 	//
 	// +immutable
 	// +optional
@@ -300,7 +364,7 @@ type PowerVSVPC struct {
 	Zone string `json:"zone,omitempty"`
 
 	// subnet is the subnet to use for load balancer.
-	// This field is immutable. Once set, It can't be changed.
+	// This field is immutable. Once set, it cannot be changed.
 	//
 	// +immutable
 	// +optional

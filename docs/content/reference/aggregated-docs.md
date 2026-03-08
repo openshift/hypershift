@@ -20941,6 +20941,125 @@ This document describes how internal control plane certificates are managed in H
 
 The control-plane-operator (CPO) manages all internal PKI for the hosted control plane. These certificates secure communication between control plane components and are separate from break-glass credentials, which are managed by the control-plane-pki-operator.
 
+## CA Hierarchy
+
+Each hosted control plane namespace contains **multiple independent self-signed Certificate Authorities**, each governing a distinct trust domain. There is no single shared CA — the `root-ca` signs the majority of serving certificates, while specialized CAs exist for etcd, konnectivity, KAS client authentication, and CPOv2 components.
+
+### Two PKI Management Patterns
+
+Certificates are managed through two distinct patterns:
+
+| Pattern | Location | Description |
+|---------|----------|-------------|
+| **Central PKI Reconciler** | `pki/*.go` in the HCP controller | Manages the `root-ca` and all signers/certs listed in `pki/ca.go`. Runs during the main HCP reconciliation loop. |
+| **CPOv2 Manifest Adapters** | Each component's `certs.go` | Components like ignition-server create their own self-signed CA via `WithManifestAdapter`. These are independent of the central PKI reconciler. |
+
+### CA Trust Diagram
+
+```mermaid
+graph LR
+    subgraph CAS["Central PKI · Self-Signed CAs · 10-year validity · one-shot creation"]
+        RCA(["root-ca"])
+        ETCD_CA(["etcd-signer"])
+        ETCD_M_CA(["etcd-metrics-signer"])
+        KONN_CA(["konnectivity-signer"])
+        AGG_CA(["aggregator-client-signer"])
+        KCP_CA(["kube-control-plane-signer"])
+        K2K_CA(["kube-apiserver-to-kubelet-signer"])
+        ADMIN_CA(["system-admin-signer"])
+        HCCO_CA(["hcco-signer"])
+        CSR_CA(["csr-signer"])
+    end
+
+    subgraph CPOV2["CPOv2 Component CAs · self-signed · managed per-component"]
+        IGN_CA(["ignition-server-ca"])
+    end
+
+    RCA -->|"signs ~24 serving certs"| ROOT_CERTS["kas-server-crt · kas-server-private-crt
+    openshift-apiserver-cert
+    openshift-oauth-apiserver-cert
+    openshift-controller-manager-cert
+    route-controller-manager-cert
+    cluster-policy-controller-cert
+    kcm-server · cvo-server
+    ingress-crt · oauth-server-crt · mcs-crt
+    node-tuning-operator-tls
+    olm-operator · catalog-operator · packageserver
+    multus · network-node-identity · ovn-metrics
+    csi-metrics (AWS/Azure) · aws-pod-identity"]
+
+    RCA -.->|"public cert via ConfigMap"| TRUST["Consumers:
+    kube-controller-manager
+    hosted-cluster-config-operator
+    ignition-server-proxy
+    cluster-network-operator
+    cluster-image-registry-operator"]
+
+    ETCD_CA -->|signs| ETCD_CERTS["etcd-client-tls
+    etcd-server-tls
+    etcd-peer-tls"]
+    ETCD_M_CA -->|signs| ETCD_M_CERTS["etcd-metrics-client-tls"]
+    KONN_CA -->|signs| KONN_CERTS["konnectivity-server
+    konnectivity-cluster
+    konnectivity-client
+    konnectivity-agent"]
+    AGG_CA -->|signs| AGG_CERT["kas-aggregator-crt"]
+    KCP_CA -->|signs| KCP_CERTS["kube-scheduler-client
+    kube-controller-manager-client"]
+    K2K_CA -->|signs| K2K_CERT["kas-kubelet-client-crt"]
+    ADMIN_CA -->|signs| ADMIN_CERT["system-admin-client"]
+    HCCO_CA -->|signs| HCCO_CERT["hcco-client"]
+    CSR_CA -->|signs| CSR_CERTS["kas-bootstrap-client
+    openshift-authenticator
+    metrics-client"]
+    IGN_CA -->|signs| IGN_CERT["ignition-server-serving-cert"]
+```
+
+### Root CAs
+
+All root CAs are self-signed with a **10-year validity** and are generated once (never auto-rotated). The `ReconcileSelfSignedCA` function in `support/certs/tls.go` is idempotent — if the CA secret already contains `ca.crt` and `ca.key`, reconciliation is a no-op.
+
+| CA Secret | Trust Domain | Certs Signed |
+|-----------|-------------|--------------|
+| `root-ca` | Most serving certs | ~24 serving certificates (KAS, OpenShift API servers, OAuth, ingress, OLM, network, CSI, etc.) |
+| `etcd-signer` | etcd cluster communication | etcd client, server, and peer TLS |
+| `etcd-metrics-signer` | etcd metrics scraping | etcd metrics client TLS |
+| `konnectivity-signer` | Konnectivity tunnel | server, cluster, client, and agent certs |
+| `aggregator-client-signer` | KAS aggregation layer | KAS aggregator client cert |
+| `kube-control-plane-signer` | Control plane clients | kube-scheduler and kube-controller-manager client certs |
+| `kube-apiserver-to-kubelet-signer` | KAS-to-kubelet auth | KAS kubelet client cert |
+| `system-admin-signer` | Admin access | system:admin client cert |
+| `hcco-signer` | HCCO auth | hosted-cluster-config-operator client cert |
+| `csr-signer` | Bootstrap and authenticator | KAS bootstrap client, openshift-authenticator, metrics client |
+
+### CPOv2 Component CAs
+
+Some CPOv2 components create their own independent self-signed CA via `WithManifestAdapter` in their component definition. These CAs are managed during the component's own reconciliation, not by the central PKI reconciler.
+
+| CA Secret | Component | Serving Cert |
+|-----------|-----------|-------------|
+| `ignition-server-ca` | ignition-server | `ignition-server-serving-cert` |
+
+### Trust Distribution
+
+The `root-ca` public certificate is distributed via a **ConfigMap** (not the Secret) so pods can verify root-ca-signed serving certs without access to the private key:
+
+| Resource | Content | Mounted By |
+|----------|---------|------------|
+| Secret `root-ca` | `ca.crt` (public) + `ca.key` (private) | Used by PKI reconciler for signing only |
+| ConfigMap `root-ca` | `ca-bundle.crt` (public only) | kube-controller-manager, hosted-cluster-config-operator, ignition-server-proxy, cluster-network-operator, cluster-image-registry-operator |
+
+Other CAs distribute their trust via dedicated ConfigMaps:
+
+| ConfigMap | Contains | Purpose |
+|-----------|----------|---------|
+| `etcd-ca` | etcd-signer public cert | etcd client verification |
+| `etcd-metrics-ca` | etcd-metrics-signer public cert | etcd metrics client verification |
+| `konnectivity-ca-bundle` | konnectivity-signer public cert | Konnectivity tunnel verification |
+| `aggregator-client-ca` | aggregator-client-signer public cert | KAS aggregation layer |
+| `client-ca` | Aggregate of all KAS client signers | KAS client certificate verification |
+| `kubelet-client-ca` | kube-apiserver-to-kubelet-signer + csr-signer | Kubelet client verification |
+
 ## Certificates Managed
 
 The CPO manages certificates for:
@@ -32032,7 +32151,48 @@ ManagedIdentity
 <p>kms is a pre-existing managed identity used to authenticate with Azure KMS.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>keyVaultAccess</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKeyVaultAccessType">
+AzureKeyVaultAccessType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>keyVaultAccess specifies how the Key Vault should be accessed.
+When set to &ldquo;Private&rdquo;, the control plane routes Key Vault traffic through
+the private router to reach the Key Vault&rsquo;s private endpoint in the customer VNet.
+When set to &ldquo;Public&rdquo; or omitted, the Key Vault is accessed via its public endpoint.</p>
+</td>
+</tr>
 </tbody>
+</table>
+###AzureKeyVaultAccessType { #hypershift.openshift.io/v1beta1.AzureKeyVaultAccessType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureKMSSpec">AzureKMSSpec</a>)
+</p>
+<p>
+<p>AzureKeyVaultAccessType specifies the access method for the Azure Key Vault.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Private&#34;</p></td>
+<td><p>AzureKeyVaultPrivate indicates the Key Vault is behind a private endpoint
+and traffic must be routed through the private router (Swift).</p>
+</td>
+</tr><tr><td><p>&#34;Public&#34;</p></td>
+<td><p>AzureKeyVaultPublic indicates the Key Vault is accessible via its public endpoint.</p>
+</td>
+</tr></tbody>
 </table>
 ###AzureMarketplaceImage { #hypershift.openshift.io/v1beta1.AzureMarketplaceImage }
 <p>
@@ -35700,6 +35860,25 @@ This GSA requires the following IAM roles:
 - roles/compute.instanceAdmin.v1 (Compute Instance Admin - for attaching disks to VMs)
 - roles/iam.serviceAccountUser (Service Account User - for impersonation)
 - roles/resourcemanager.tagUser (Tag User - for applying resource tags to disks)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageRegistry</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>imageRegistry is the Google Service Account email for the Image Registry Operator
+that manages GCS storage for the internal container image registry.
+This GSA requires the following IAM roles:
+- roles/storage.admin (Storage Admin - for creating and managing GCS buckets and objects)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
@@ -40941,7 +41120,7 @@ PowerVSPlatformSpec
 <td>
 <em>(Optional)</em>
 <p>powervs specifies configuration for clusters running on IBMCloud Power VS Service.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -41410,7 +41589,7 @@ string
 </td>
 <td>
 <p>accountID is the IBMCloud account id.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -41422,7 +41601,7 @@ string
 </td>
 <td>
 <p>cisInstanceCRN is the IBMCloud CIS Service Instance&rsquo;s Cloud Resource Name
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -41434,7 +41613,7 @@ string
 </td>
 <td>
 <p>resourceGroup is the IBMCloud Resource Group in which the cluster resides.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -41448,7 +41627,7 @@ string
 <p>region is the IBMCloud region in which the cluster resides. This configures the
 OCP control plane cloud integrations, and is used by NodePool to resolve
 the correct boot image for a given release.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -41461,7 +41640,7 @@ string
 <td>
 <p>zone is the availability zone where control plane cloud resources are
 created.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -41475,7 +41654,7 @@ PowerVSResourceReference
 </td>
 <td>
 <p>subnet is the subnet to use for control plane cloud resources.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -41492,7 +41671,7 @@ serviceInstance can be created via IBM Cloud catalog or CLI.
 ServiceInstanceID is the unique identifier that can be obtained from IBM Cloud UI or IBM Cloud cli.</p>
 <p>More detail about Power VS service instance.
 <a href="https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-creating-power-virtual-server">https://cloud.ibm.com/docs/power-iaas?topic=power-iaas-creating-power-virtual-server</a></p>
-<p>This field is immutable. Once set, It can&rsquo;t be changed.</p>
+<p>This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -41507,7 +41686,7 @@ PowerVSVPC
 <td>
 <p>vpc specifies IBM Cloud PowerVS Load Balancing configuration for the control
 plane.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -41522,8 +41701,32 @@ Kubernetes core/v1.LocalObjectReference
 <td>
 <p>kubeCloudControllerCreds is a reference to a secret containing cloud
 credentials with permissions matching the cloud controller policy.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
-<p>TODO(dan): document the &ldquo;cloud controller policy&rdquo;</p>
+This field is immutable. Once set, it cannot be changed.</p>
+<p>The secret must contain the key <code>ibmcloud_api_key</code> whose value is
+an IBM Cloud API key with the following IAM policies:</p>
+<ol>
+<li><p>Resource Group: Viewer role</p>
+<ul>
+<li>Attribute: resourceType=resource-group</li>
+<li>Role: crn:v1:bluemix:public:iam::::role:Viewer</li>
+</ul></li>
+<li><p>VPC Infrastructure Services: Editor, Operator, and Viewer roles</p>
+<ul>
+<li>Attribute: serviceName=is</li>
+<li>Roles: crn:v1:bluemix:public:iam::::role:Editor,
+crn:v1:bluemix:public:iam::::role:Operator,
+crn:v1:bluemix:public:iam::::role:Viewer</li>
+</ul></li>
+<li><p>Power Virtual Server (PowerVS): Viewer role, Reader and Manager service roles
+(scoped to the PowerVS service instance identified by <code>serviceInstanceID</code>)</p>
+<ul>
+<li>Attributes: serviceName=power-iaas,
+serviceInstance={serviceInstanceID}</li>
+<li>Roles: crn:v1:bluemix:public:iam::::role:Viewer,
+crn:v1:bluemix:public:iam::::serviceRole:Reader,
+crn:v1:bluemix:public:iam::::serviceRole:Manager</li>
+</ul></li>
+</ol>
 </td>
 </tr>
 <tr>
@@ -41538,8 +41741,19 @@ Kubernetes core/v1.LocalObjectReference
 <td>
 <p>nodePoolManagementCreds is a reference to a secret containing cloud
 credentials with permissions matching the node pool management policy.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
-<p>TODO(dan): document the &ldquo;node pool management policy&rdquo;</p>
+This field is immutable. Once set, it cannot be changed.</p>
+<p>The secret must contain the key <code>ibmcloud_api_key</code> whose value is
+an IBM Cloud API key with the following IAM policies:</p>
+<ol>
+<li>Power Virtual Server (PowerVS): Manager service role and Editor role
+(scoped to the PowerVS service instance identified by <code>serviceInstanceID</code>)
+<ul>
+<li>Attributes: serviceName=power-iaas,
+serviceInstance={serviceInstanceID}</li>
+<li>Roles: crn:v1:bluemix:public:iam::::serviceRole:Manager,
+crn:v1:bluemix:public:iam::::role:Editor</li>
+</ul></li>
+</ol>
 </td>
 </tr>
 <tr>
@@ -41552,8 +41766,19 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>ingressOperatorCloudCreds is a reference to a secret containing ibm cloud
-credentials for ingress operator to get authenticated with ibm cloud.</p>
+<p>ingressOperatorCloudCreds is a reference to a secret containing IBM Cloud
+credentials for the ingress operator to get authenticated with IBM Cloud.
+This field is immutable. Once set, it cannot be changed.</p>
+<p>The secret must contain the key <code>ibmcloud_api_key</code> whose value is
+an IBM Cloud API key with the following IAM policies:</p>
+<ol>
+<li>Internet Services (CIS): Manager service role and Editor role
+<ul>
+<li>Attribute: serviceName=internet-svcs</li>
+<li>Roles: crn:v1:bluemix:public:iam::::serviceRole:Manager,
+crn:v1:bluemix:public:iam::::role:Editor</li>
+</ul></li>
+</ol>
 </td>
 </tr>
 <tr>
@@ -41566,8 +41791,26 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>storageOperatorCloudCreds is a reference to a secret containing ibm cloud
-credentials for storage operator to get authenticated with ibm cloud.</p>
+<p>storageOperatorCloudCreds is a reference to a secret containing IBM Cloud
+credentials for the storage operator to get authenticated with IBM Cloud.
+This field is immutable. Once set, it cannot be changed.</p>
+<p>The secret must contain the key <code>ibmcloud_api_key</code> whose value is
+an IBM Cloud API key with the following IAM policies:</p>
+<ol>
+<li><p>Power Virtual Server (PowerVS): Manager service role and Editor role
+(scoped to the PowerVS service instance identified by <code>serviceInstanceID</code>)</p>
+<ul>
+<li>Attributes: serviceName=power-iaas,
+serviceInstance={serviceInstanceID}</li>
+<li>Roles: crn:v1:bluemix:public:iam::::serviceRole:Manager,
+crn:v1:bluemix:public:iam::::role:Editor</li>
+</ul></li>
+<li><p>Resource Group: Viewer role</p>
+<ul>
+<li>Attribute: resourceType=resource-group</li>
+<li>Role: crn:v1:bluemix:public:iam::::role:Viewer</li>
+</ul></li>
+</ol>
 </td>
 </tr>
 <tr>
@@ -41580,8 +41823,24 @@ Kubernetes core/v1.LocalObjectReference
 </em>
 </td>
 <td>
-<p>imageRegistryOperatorCloudCreds is a reference to a secret containing ibm cloud
-credentials for image registry operator to get authenticated with ibm cloud.</p>
+<p>imageRegistryOperatorCloudCreds is a reference to a secret containing IBM Cloud
+credentials for the image registry operator to get authenticated with IBM Cloud.
+This field is immutable. Once set, it cannot be changed.</p>
+<p>The secret must contain the key <code>ibmcloud_api_key</code> whose value is
+an IBM Cloud API key with the following IAM policies:</p>
+<ol>
+<li><p>Cloud Object Storage: Administrator (platform) and Manager (service) roles</p>
+<ul>
+<li>Attribute: serviceName=cloud-object-storage</li>
+<li>Roles: crn:v1:bluemix:public:iam::::role:Administrator,
+crn:v1:bluemix:public:iam::::serviceRole:Manager</li>
+</ul></li>
+<li><p>Resource Group: Viewer role</p>
+<ul>
+<li>Attribute: resourceType=resource-group</li>
+<li>Role: crn:v1:bluemix:public:iam::::role:Viewer</li>
+</ul></li>
+</ol>
 </td>
 </tr>
 </tbody>
@@ -41657,7 +41916,7 @@ string
 </td>
 <td>
 <p>name for VPC to used for all the service load balancer.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -41670,7 +41929,7 @@ string
 <td>
 <p>region is the IBMCloud region in which VPC gets created, this VPC used for all the ingress traffic
 into the OCP cluster.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -41684,7 +41943,7 @@ string
 <em>(Optional)</em>
 <p>zone is the availability zone where load balancer cloud resources are
 created.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 <tr>
@@ -41697,7 +41956,7 @@ string
 <td>
 <em>(Optional)</em>
 <p>subnet is the subnet to use for load balancer.
-This field is immutable. Once set, It can&rsquo;t be changed.</p>
+This field is immutable. Once set, it cannot be changed.</p>
 </td>
 </tr>
 </tbody>
