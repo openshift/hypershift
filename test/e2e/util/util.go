@@ -591,7 +591,11 @@ func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crc
 	return nodes.Items
 }
 
-func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+// WaitForDataPlaneRollout waits for the data plane (CVO) version to reach Completed state.
+// This was renamed from WaitForImageRollout to clarify that it checks HC.Status.Version
+// (data-plane CVO rollout), in contrast to WaitForControlPlaneRollout which checks
+// HC.Status.ControlPlaneVersion (management-side components).
+func WaitForDataPlaneRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	var lastVersionCompletionTime *metav1.Time
 	if hostedCluster.Status.Version != nil &&
 		len(hostedCluster.Status.Version.History) > 0 {
@@ -634,34 +638,24 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 	)
 }
 
-func WaitForControlPlaneComponentRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, initialVersion string) {
-	controlPlaneComponents := &hyperv1.ControlPlaneComponentList{}
-	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-	EventuallyObjects(t, ctx, "control plane components to complete rollout",
-		func(ctx context.Context) ([]*hyperv1.ControlPlaneComponent, error) {
-			err := client.List(ctx, controlPlaneComponents, crclient.InNamespace(controlPlaneNamespace))
-			items := make([]*hyperv1.ControlPlaneComponent, len(controlPlaneComponents.Items))
-			for i := range controlPlaneComponents.Items {
-				items[i] = &controlPlaneComponents.Items[i]
-			}
-			return items, err
+// WaitForImageRollout is a deprecated alias for WaitForDataPlaneRollout.
+// Deprecated: Use WaitForDataPlaneRollout instead.
+func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	WaitForDataPlaneRollout(t, ctx, client, hostedCluster)
+}
+
+// WaitForControlPlaneRollout waits for HC.Status.ControlPlaneVersion to reach Completed state
+// with the desired image. This checks management-side component rollout independently from CVO.
+// Must be gated with AtLeast(t, Version422) at call sites since older clusters lack this field.
+func WaitForControlPlaneRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s controlPlaneVersion to complete", hostedCluster.Namespace, hostedCluster.Name),
+		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+			hc := &hyperv1.HostedCluster{}
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+			return hc, err
 		},
-		[]Predicate[[]*hyperv1.ControlPlaneComponent]{
-			func(cpComponents []*hyperv1.ControlPlaneComponent) (done bool, reasons string, err error) {
-				return len(cpComponents) > 10, "expecting more than 10 control plane components", nil
-			},
-		},
-		[]Predicate[*hyperv1.ControlPlaneComponent]{
-			ConditionPredicate[*hyperv1.ControlPlaneComponent](Condition{
-				Type:   string(hyperv1.ControlPlaneComponentRolloutComplete),
-				Status: metav1.ConditionTrue,
-			}),
-			func(cpComponent *hyperv1.ControlPlaneComponent) (done bool, reasons string, err error) {
-				if initialVersion != "" && cpComponent.Status.Version == initialVersion {
-					return false, fmt.Sprintf("component %s is still on version %s", cpComponent.Name, cpComponent.Status.Version), nil
-				}
-				return true, fmt.Sprintf("component %s has version: %s", cpComponent.Name, cpComponent.Status.Version), nil
-			},
+		[]Predicate[*hyperv1.HostedCluster]{
+			isControlPlaneVersionCompleted,
 		},
 		WithTimeout(30*time.Minute),
 		WithInterval(10*time.Second),
@@ -2978,6 +2972,16 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 			Status: conditionStatus,
 		}))
 	}
+
+	if IsGreaterThanOrEqualTo(Version422) {
+		predicates = append(predicates, func(hc *hyperv1.HostedCluster) (done bool, reasons string, err error) {
+			if !isControlPlaneVersionSteadyState(hc, hasWorkerNodes) {
+				return false, "controlPlaneVersion is not in steady state (expected Completed)", nil
+			}
+			return true, "controlPlaneVersion is in steady state", nil
+		})
+	}
+
 	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have valid conditions", hostedCluster.Namespace, hostedCluster.Name),
 		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
 			hc := &hyperv1.HostedCluster{}
