@@ -237,18 +237,38 @@ func (r *EC2NodeClassReconciler) reconcileCRDs(ctx context.Context, onlyCreate b
 	return nil
 }
 
+func AMISelectorTerms(userDataSecret *corev1.Secret, platform hyperv1.PlatformType) ([]awskarpenterv1.AMISelectorTerm, error) {
+	// Only AMD64 and ARM64 AMIs are supported for HCP AWS
+	terms := []awskarpenterv1.AMISelectorTerm{}
+	supportedArchitectures, err := karpenterutil.SupportedArchitectures(platform)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get supported architectures: %w", err)
+	}
+	for _, arch := range supportedArchitectures {
+		labelKey := karpenterutil.ArchToAMILabelKey(arch)
+		if ami, ok := userDataSecret.Labels[labelKey]; ok {
+			terms = append(terms, awskarpenterv1.AMISelectorTerm{ID: ami})
+		}
+	}
+	if len(terms) == 0 {
+		return nil, fmt.Errorf("no AMIs found for supported architectures: %v", supportedArchitectures)
+	}
+	return terms, nil
+}
+
 func reconcileEC2NodeClass(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2NodeClass, openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass, hcp *hyperv1.HostedControlPlane, userDataSecret *corev1.Secret) error {
 	ownerRef := config.OwnerRefFrom(openshiftEC2NodeClass)
 	ownerRef.ApplyTo(ec2NodeClass)
 
+	amiSelectorTerms, err := AMISelectorTerms(userDataSecret, hcp.Spec.Platform.Type)
+	if err != nil {
+		return fmt.Errorf("failed to get AMISelectorTerms: %w", err)
+	}
+
 	ec2NodeClass.Spec = awskarpenterv1.EC2NodeClassSpec{
-		UserData:  ptr.To(string(userDataSecret.Data["value"])),
-		AMIFamily: ptr.To("Custom"),
-		AMISelectorTerms: []awskarpenterv1.AMISelectorTerm{
-			{
-				ID: string(userDataSecret.Labels[hyperkarpenterv1.UserDataAMILabel]),
-			},
-		},
+		UserData:                 ptr.To(string(userDataSecret.Data["value"])),
+		AMIFamily:                ptr.To("Custom"),
+		AMISelectorTerms:         amiSelectorTerms,
 		AssociatePublicIPAddress: openshiftEC2NodeClass.Spec.AssociatePublicIPAddress,
 		Tags:                     mergeEC2NodeClassTags(ctx, openshiftEC2NodeClass, hcp),
 		DetailedMonitoring:       openshiftEC2NodeClass.Spec.DetailedMonitoring,
