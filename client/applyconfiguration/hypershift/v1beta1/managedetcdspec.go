@@ -21,6 +21,7 @@ package v1beta1
 // with apply.
 type ManagedEtcdSpecApplyConfiguration struct {
 	Storage *ManagedEtcdStorageSpecApplyConfiguration `json:"storage,omitempty"`
+	Backup  *HCPEtcdBackupConfigApplyConfiguration    `json:"backup,omitempty"`
 }
 
 // ManagedEtcdSpecApplyConfiguration constructs a declarative configuration of the ManagedEtcdSpec type for use with
@@ -34,5 +35,13 @@ func ManagedEtcdSpec() *ManagedEtcdSpecApplyConfiguration {
 // If called multiple times, the Storage field is set to the value of the last call.
 func (b *ManagedEtcdSpecApplyConfiguration) WithStorage(value *ManagedEtcdStorageSpecApplyConfiguration) *ManagedEtcdSpecApplyConfiguration {
 	b.Storage = value
+	return b
+}
+
+// WithBackup sets the Backup field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Backup field is set to the value of the last call.
+func (b *ManagedEtcdSpecApplyConfiguration) WithBackup(value *HCPEtcdBackupConfigApplyConfiguration) *ManagedEtcdSpecApplyConfiguration {
+	b.Backup = value
 	return b
 }
