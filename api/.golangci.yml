@@ -24,7 +24,7 @@ linters:
             # Reference for v0.0.0-20260114104534-18147eee9c49: https://github.com/kubernetes-sigs/kube-api-linter/blob/18147eee9c49/docs/linters.md
               - forbiddenmarkers
               - maxlength
-              - minlength
+              # - minlength
               - namingconventions
               - nobools
               - preferredmarkers
@@ -111,6 +111,1910 @@ linters:
       - linters:
           - kubeapilinter
         path-except: hypershift//*
+      # arrayofstruct
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'arrayofstruct: AWSNodePoolPlatform.SecurityGroups is an array of structs'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'arrayofstruct: OpenStackNodePoolPlatform.AdditionalPorts is an array of structs'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'arrayofstruct: OpenStackPlatformSpec.ManagedSubnets is an array of structs'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'arrayofstruct: OpenStackPlatformSpec.Subnets is an array of structs'
+      # conditions
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'conditions: Conditions field in NodePoolStatus must be a slice of metav1.Condition'
+      # defaultorrequired
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'defaultorrequired: field AzurePlatformSpec.ResourceGroupName has conflicting markers'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'defaultorrequired: field ManagedIdentity.ObjectEncoding has conflicting markers'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'defaultorrequired: field HostedControlPlaneStatus.Ready has conflicting markers'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'defaultorrequired: field HostedControlPlaneStatus.Initialized has conflicting markers'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaultorrequired: field HostedClusterSpec.Networking has conflicting markers'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaultorrequired: field HostedClusterSpec.Etcd has conflicting markers'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaultorrequired: field KubevirtCachingStrategy.Type has conflicting markers'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaultorrequired: field KubevirtNodePoolPlatform.RootVolume has conflicting markers'
+      # defaults
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'defaults: field AWSPlatformSpec.EndpointAccess should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'defaults: field AWSPlatformSpec.MultiArch should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'defaults: field AzureMarketplaceImage.ImageGeneration should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'defaults: field Diagnostics.StorageAccountType should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'defaults: field AzurePlatformSpec.Cloud should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'defaults: field AzureNodePoolPlatform.EncryptionAtHost should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'defaults: field HostedControlPlaneSpec.ControllerAvailabilityPolicy should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'defaults: field HostedControlPlaneSpec.InfrastructureAvailabilityPolicy should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'defaults: field HostedControlPlaneSpec.OLMCatalogPlacement should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'defaults: field HostedControlPlaneSpec.Capabilities should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'defaults: field HostedControlPlaneStatus.ExternalManagedControlPlane should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field ClusterNetworking.ClusterNetwork should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field ClusterNetworking.ServiceNetwork should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field ClusterNetworking.NetworkType should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field ClusterAutoscaling.Scaling should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field PersistentVolumeEtcdStorageSpec.Size should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field HostedClusterSpec.ControllerAvailabilityPolicy should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field HostedClusterSpec.InfrastructureAvailabilityPolicy should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field HostedClusterSpec.IssuerURL should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field HostedClusterSpec.OLMCatalogPlacement should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field HostedClusterSpec.Capabilities should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaults: field KubevirtVolume.Type should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaults: field KubevirtNodePoolPlatform.Compute should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaults: field KubevirtNodePoolPlatform.NetworkInterfaceMultiQueue should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaults: field KubevirtNodePoolPlatform.AttachDefaultNetwork should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaults: field KubevirtCompute.Memory should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaults: field KubevirtHostDevice.Count should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaults: field KubevirtStorageDriverSpec.Type should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaults: field KubevirtCompute.QosClass should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaults: field KubevirtPersistentVolume.Size should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'defaults: field NodePoolSpec.Arch should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'defaults: field NodePoolManagement.Replace should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'defaults: field NodePoolManagement.AutoRepair should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/operator.go
+        text: 'defaults: field ClusterVersionOperatorSpec.OperatorLogLevel should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'defaults: field PowerVSNodePoolPlatform.Processors should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'defaults: field PowerVSNodePoolPlatform.MemoryGiB should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'defaults: field PowerVSNodePoolPlatform.StorageType should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'defaults: field PowerVSNodePoolPlatform.ImageDeletePolicy should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'defaults: field PowerVSNodePoolPlatform.SystemType should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'defaults: field PowerVSNodePoolPlatform.ProcessorType should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'defaults: field AWSPlatformSpec.MultiArch has a default value but does not have omitempty'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'defaults: field AzurePlatformSpec.ResourceGroupName should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'defaults: field HostedControlPlaneStatus.Ready should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'defaults: field HostedControlPlaneStatus.Initialized should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field HostedClusterSpec.Networking should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field HostedClusterSpec.Etcd should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaults: field KubevirtCachingStrategy.Type should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaults: field KubevirtNodePoolPlatform.RootVolume should use \+default marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'defaults: field NodePoolManagement.AutoRepair has a default value but does not have omitempty'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'defaults: field AzurePlatformSpec.ResourceGroupName has a default value but is marked as required'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'defaults: field HostedControlPlaneStatus.Ready has a default value but is marked as required'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'defaults: field HostedControlPlaneStatus.Initialized has a default value but is marked as required'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field HostedClusterSpec.Networking has a default value but is marked as required'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field HostedClusterSpec.Etcd has a default value but is marked as required'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaults: field KubevirtCachingStrategy.Type has a default value but is marked as required'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaults: field KubevirtNodePoolPlatform.RootVolume has a default value but is marked as required'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'defaults: field AzurePlatformSpec.ResourceGroupName has a default value but does not have omitempty'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'defaults: field HostedControlPlaneStatus.Ready has a default value but does not have omitempty'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'defaults: field HostedControlPlaneStatus.Initialized has a default value but does not have omitempty'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field HostedClusterSpec.Networking has a default value but does not have omitzero'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'defaults: field HostedClusterSpec.Etcd has a default value but does not have omitzero'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaults: field KubevirtCachingStrategy.Type has a default value but does not have omitempty'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'defaults: field KubevirtNodePoolPlatform.RootVolume has a default value but does not have omitempty'
+      # integers
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'integers: field HostedControlPlaneStatus.NodeCount'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'integers: field IBMCloudKMSKeyEntry.KeyVersion'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'integers: field KubevirtCompute.Cores'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'integers: field SubnetFilter.IPVersion'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'integers: field OpenStackPlatformSpec.NetworkMTU'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'integers: field KubevirtHostDevice.Count'
+      # maxlength
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'maxlength: field ClusterVersionStatus.History must have a maximum items'
+      # namingconventions
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'namingconventions: naming convention "nokind": field ComponentResource.Kind'
+      # nobools
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'nobools: field Volume.Encrypted'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'nobools: field HostedControlPlaneSpec.FIPS'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'nobools: field HostedClusterSpec.FIPS'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'nobools: field KubevirtPlatformSpec.BaseDomainPassthrough'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'nobools: field OpenStackPlatformSpec.DisableExternalNetwork'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'nobools: field AWSPlatformSpec.MultiArch'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'nobools: field HostedControlPlaneStatus.ExternalManagedControlPlane'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'nobools: field KubevirtNodePoolPlatform.AttachDefaultNetwork'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'nobools: field NodePoolManagement.AutoRepair'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'nobools: field HostedControlPlaneStatus.Ready'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'nobools: field HostedControlPlaneStatus.Initialized'
+      # nonullable
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'nonullable: field ClusterVersionStatus.AvailableUpdates has forbidden marker'
+      # nodurations
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'nodurations: field NodePoolSpec.NodeDrainTimeout'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'nodurations: field NodePoolSpec.NodeVolumeDetachTimeout'
+      # noreferences
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'noreferences: naming convention "no-references": field AWSPlatformSpec.RolesRef'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'noreferences: naming convention "no-references": field AWSSharedVPC.RolesRef'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'noreferences: naming convention "no-references": field OpenStackPlatformSpec.IdentityRef'
+      # optionalfields
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field CapacityReservationOptions.Preference'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field Volume.IOPS'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field AWSNodePoolPlatform.RootVolume'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field AzureVMImage.AzureMarketplace'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field ControlPlaneManagedIdentities.ImageRegistry'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field AzureKMSSpec.KeyVaultAccess'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field AzureAuthenticationConfiguration.ManagedIdentities'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field AzureAuthenticationConfiguration.WorkloadIdentities'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'optionalfields: field AWSEndpointService.Spec'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field HostedControlPlaneSpec.SecretEncryption'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field HostedControlPlaneSpec.AutoNode'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field HostedControlPlaneStatus.ControlPlaneEndpoint'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field HostedControlPlane.Spec'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field HostedControlPlaneStatus.VersionStatus'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field HostedControlPlane.Status'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field ClusterNetworking.AllocateNodeCIDRs'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field ClusterNetworkEntry.HostPrefix'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field PlatformSpec.Azure'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field PlatformSpec.PowerVS'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field PlatformSpec.GCP'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field EtcdSpec.Managed'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field EtcdSpec.Unmanaged'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field SecretEncryptionSpec.KMS'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field SecretEncryptionSpec.AESCBC'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field KMSSpec.IBMCloud'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field KMSSpec.Azure'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedClusterStatus.Version'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedClusterStatus.ControlPlaneEndpoint'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedCluster.Spec'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedClusterSpec.ControlPlaneRelease'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedClusterSpec.DNS'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedClusterSpec.AutoNode'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedClusterSpec.SSHKey'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedClusterSpec.SecretEncryption'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedClusterSpec.PausedUntil'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field ServicePublishingStrategy.NodePort'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field NodePortPublishingStrategy.Port'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'optionalfields: field IBMCloudKMSAuthSpec.Unmanaged'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'optionalfields: field KubevirtRootVolume.CacheStrategy'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field NodePoolSpec.AutoScaling'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field NodePoolSpec.PausedUntil'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field NodePoolStatus.Replicas'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field NodePoolPlatform.Kubevirt'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field NodePoolPlatform.Azure'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field NodePoolPlatform.GCP'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field NodePoolCondition.ObservedGeneration'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field NodePool.Spec'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field OpenStackPlatformSpec.ExternalNetwork'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field PortSpec.Network'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field PortSpec.PortSecurityPolicy'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field OpenStackPlatformSpec.Router'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field OpenStackPlatformSpec.Network'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/operator.go
+        text: 'optionalfields: field ClusterNetworkOperatorSpec.OVNKubernetesConfig'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/operator.go
+        text: 'optionalfields: field OVNKubernetesConfig.IPv4'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field AWSNodePoolPlatform.InstanceProfile'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field AWSNodePoolPlatform.AMI'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field Volume.EncryptionKey'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field AWSCloudProviderConfig.Zone'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field AWSPlatformSpec.MultiArch'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'optionalfields: field AWSPlatformStatus.DefaultWorkerSecurityGroupID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field AzureNodePoolPlatform.AvailabilityZone'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field AzureMarketplaceImage.ImageGeneration'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/certificatesigningrequestapproval_types.go
+        text: 'optionalfields: field CertificateSigningRequestApproval.Spec'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/certificatesigningrequestapproval_types.go
+        text: 'optionalfields: field CertificateSigningRequestApproval.Status'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'optionalfields: field ControlPlaneComponentStatus.Version'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'optionalfields: field ControlPlaneComponent.Spec'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'optionalfields: field ControlPlaneComponent.Status'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'optionalfields: field AWSEndpointServiceStatus.EndpointServiceName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'optionalfields: field AWSEndpointServiceStatus.EndpointID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'optionalfields: field AWSEndpointServiceStatus.DNSZoneID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'optionalfields: field AWSEndpointServiceStatus.SecurityGroupID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'optionalfields: field AWSEndpointService.Status'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field HostedControlPlaneSpec.Channel'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field HostedControlPlaneSpec.Networking'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field HostedControlPlaneSpec.ClusterID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field HostedControlPlaneSpec.FIPS'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field HostedControlPlaneSpec.KubeAPIServerDNSName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field HostedControlPlaneSpec.Autoscaling'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field HostedControlPlaneStatus.OAuthCallbackURLTemplate'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field HostedControlPlaneStatus.ReleaseImage'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedClusterSpec.KubeAPIServerDNSName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedClusterSpec.Autoscaling'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedClusterSpec.IssuerURL'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedClusterSpec.FIPS'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field ClusterAutoscaling.MaxNodeProvisionTime'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedClusterStatus.IgnitionEndpoint'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedClusterStatus.OAuthCallbackURLTemplate'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'optionalfields: field HostedCluster.Status'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'optionalfields: field KubevirtCompute.Cores'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'optionalfields: field KubevirtCompute.QosClass'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'optionalfields: field KubevirtNodePoolPlatform.NetworkInterfaceMultiQueue'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'optionalfields: field KubeVirtNodePoolStatus.CacheName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'optionalfields: field KubevirtPlatformSpec.GenerateID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'optionalfields: field KubevirtStorageClassMapping.Group'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'optionalfields: field KubevirtVolumeSnapshotClassMapping.Group'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field NodePool.Status'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field NodePoolStatus.Version'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field NodePoolManagement.AutoRepair'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field NodePoolCondition.Severity'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field NodePoolCondition.Reason'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field NodePoolCondition.Message'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'optionalfields: field Taint.Value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field OpenStackNodePoolPlatform.ImageName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field OpenStackPlatformSpec.IngressFloatingIP'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field RouterFilter.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field RouterFilter.Description'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field RouterFilter.ProjectID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field NetworkFilter.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field NetworkFilter.Description'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field NetworkFilter.ProjectID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field SubnetFilter.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field SubnetFilter.Description'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field SubnetFilter.ProjectID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field SubnetFilter.IPVersion'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field SubnetFilter.GatewayIP'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field SubnetFilter.CIDR'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field SubnetFilter.IPv6AddressMode'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field SubnetFilter.IPv6RAMode'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field PortSpec.Description'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'optionalfields: field PortSpec.VNICType'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/operator.go
+        text: 'optionalfields: field ClusterVersionOperatorSpec.OperatorLogLevel'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'optionalfields: field PowerVSNodePoolPlatform.SystemType'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'optionalfields: field PowerVSNodePoolPlatform.MemoryGiB'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'optionalfields: field PowerVSVPC.Zone'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'optionalfields: field PowerVSVPC.Subnet'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'optionalfields: field HostedControlPlaneStatus.Version'
+      # preferredmarkers
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'preferredmarkers: field AWSResourceTag.Key uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'preferredmarkers: field AWSResourceTag.Value uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'preferredmarkers: field AzureMarketplaceImage.Publisher uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'preferredmarkers: field AzureMarketplaceImage.SKU uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'preferredmarkers: field AzureMarketplaceImage.Version uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'preferredmarkers: type AzureClientID uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'preferredmarkers: field ManagedIdentity.CredentialsSecretName uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'preferredmarkers: type NeutronTag uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'preferredmarkers: field OpenStackNodePoolPlatform.AvailabilityZone uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'preferredmarkers: field AWSSharedVPCRolesRef.IngressARN uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'preferredmarkers: field AWSSharedVPCRolesRef.ControlPlaneARN uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'preferredmarkers: field AWSServiceEndpoint.URL uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'preferredmarkers: field AWSKMSKeyEntry.ARN uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'preferredmarkers: field AzureNodePoolPlatform.VMSize uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'preferredmarkers: field ClusterAutoscaling.MaxNodeProvisionTime uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'preferredmarkers: field UnmanagedEtcdSpec.Endpoint uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'preferredmarkers: field IBMCloudKMSKeyEntry.URL uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'preferredmarkers: field PowerVSPlatformSpec.CISInstanceCRN uses marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'preferredmarkers: field AzurePlatformSpec.ResourceGroupName uses marker'
+      # requiredfields
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Volume.Size'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSKMSSpec.ActiveKey'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSKMSSpec.Auth'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureNodePoolPlatform.SubnetID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureVMImage.Type'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzurePlatformSpec.SubnetID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzurePlatformSpec.AzureAuthenticationConfig'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureResourceManagedIdentities.ControlPlane'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureResourceManagedIdentities.DataPlane'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureWorkloadIdentities.ImageRegistry'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureWorkloadIdentities.Ingress'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureWorkloadIdentities.File'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureWorkloadIdentities.Disk'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureWorkloadIdentities.NodePoolManagement'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureWorkloadIdentities.CloudProvider'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureWorkloadIdentities.Network'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureNodePoolPlatform.Image'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field WorkloadIdentity.ClientID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ControlPlaneManagedIdentities.ManagedIdentitiesKeyVault'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ControlPlaneManagedIdentities.CloudProvider'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ControlPlaneManagedIdentities.NodePoolManagement'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ControlPlaneManagedIdentities.ControlPlaneOperator'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ControlPlaneManagedIdentities.Ingress'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ControlPlaneManagedIdentities.Network'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ControlPlaneManagedIdentities.Disk'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ControlPlaneManagedIdentities.File'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureKMSSpec.ActiveKey'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureKMSSpec.KMS'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureAuthenticationConfiguration.AzureAuthenticationConfigType'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field HostedControlPlaneSpec.Platform'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field HostedControlPlaneSpec.DNS'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field HostedControlPlaneSpec.Etcd'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field APIEndpoint.Port'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field HostedControlPlaneSpec.PullSecret'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field HostedControlPlaneSpec.SSHKey'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field MachineNetworkEntry.CIDR'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ClusterNetworkEntry.CIDR'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ServiceNetworkEntry.CIDR'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field Release.Image'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field AutoNode.Provisioner'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ProvisionerConfig.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field EtcdSpec.ManagementType'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ManagedEtcdSpec.Storage'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ManagedEtcdStorageSpec.Type'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field UnmanagedEtcdSpec.TLS'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field EtcdTLSConfig.ClientSecret'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field SecretEncryptionSpec.Type'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field KMSSpec.Provider'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field AESCBCSpec.ActiveKey'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ClusterVersionStatus.Desired'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ClusterVersionStatus.ObservedGeneration'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field HostedClusterSpec.Release'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field HostedClusterSpec.Platform'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field HostedClusterSpec.PullSecret'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ServicePublishingStrategyMapping.Service'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ServicePublishingStrategy.Type'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field NodePortPublishingStrategy.Address'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field IBMCloudKMSSpec.Auth'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field IBMCloudKMSAuthSpec.Type'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field IBMCloudKMSUnmanagedAuthSpec.Credentials'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field NodePoolSpec.ClusterName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field NodePoolSpec.Release'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field NodePoolSpec.Platform'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field NodePoolSpec.Management'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field NodePoolManagement.UpgradeType'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field NodePoolAutoScaling.Min'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field NodePoolAutoScaling.Max'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field NodePoolCondition.Status'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field NodePoolCondition.LastTransitionTime'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field Taint.Key'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field Taint.Effect'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field PowerVSPlatformSpec.VPC'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field PowerVSPlatformSpec.KubeCloudControllerCreds'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field PowerVSPlatformSpec.NodePoolManagementCreds'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field PowerVSPlatformSpec.IngressOperatorCloudCreds'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field PowerVSPlatformSpec.StorageOperatorCloudCreds'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field PowerVSPlatformSpec.ImageRegistryOperatorCloudCreds'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/agent.go
+        text: 'requiredfields: field AgentPlatformSpec.AgentNamespace'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSNodePoolPlatform.InstanceType'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSNodePoolPlatform.Subnet'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Filter.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Filter.Values'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field Volume.Type'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSCloudProviderConfig.VPC'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSPlatformSpec.Region'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSPlatformSpec.RolesRef'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSSharedVPC.RolesRef'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSSharedVPC.LocalZoneID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSRoleCredentials.ARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSRoleCredentials.Namespace'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSRoleCredentials.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSResourceTag.Key'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSResourceTag.Value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSRolesRef.IngressARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSRolesRef.ImageRegistryARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSRolesRef.StorageARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSRolesRef.NetworkARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSRolesRef.KubeCloudControllerARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSRolesRef.NodePoolManagementARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSRolesRef.ControlPlaneOperatorARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSSharedVPCRolesRef.IngressARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSSharedVPCRolesRef.ControlPlaneARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSServiceEndpoint.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSServiceEndpoint.URL'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSKMSSpec.Region'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSKMSAuthSpec.AWSKMSRoleARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'requiredfields: field AWSKMSKeyEntry.ARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureNodePoolPlatform.VMSize'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureNodePoolPlatform.OSDisk'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field UserManagedDiagnostics.StorageAccountURI'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzurePlatformSpec.Location'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzurePlatformSpec.VnetID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzurePlatformSpec.SubscriptionID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzurePlatformSpec.SecurityGroupID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzurePlatformSpec.TenantID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ManagedAzureKeyVault.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ManagedAzureKeyVault.TenantID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ManagedIdentity.ObjectEncoding'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field ManagedIdentity.CredentialsSecretName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field DataPlaneManagedIdentities.ImageRegistryMSIClientID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field DataPlaneManagedIdentities.DiskMSIClientID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field DataPlaneManagedIdentities.FileMSIClientID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureKMSKey.KeyVaultName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureKMSKey.KeyName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzureKMSKey.KeyVersion'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'requiredfields: field ComponentResource.Kind'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'requiredfields: field ComponentResource.Group'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'requiredfields: field ComponentResource.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'requiredfields: field AWSEndpointServiceSpec.NetworkLoadBalancerName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field HostedControlPlaneSpec.ReleaseImage'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field HostedControlPlaneSpec.IssuerURL'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field HostedControlPlaneSpec.InfraID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field HostedControlPlaneSpec.Services'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field KubeconfigSecretRef.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field KubeconfigSecretRef.Key'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field APIEndpoint.Host'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field HostedClusterSpec.Services'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ImageContentSource.Source'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field DNSSpec.BaseDomain'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field PlatformSpec.Type'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field KarpenterConfig.Platform'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field KarpenterAWSConfig.RoleARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field UnmanagedEtcdSpec.Endpoint'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field ClusterVersionStatus.AvailableUpdates'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field IBMCloudKMSSpec.Region'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field IBMCloudKMSSpec.KeyList'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field IBMCloudKMSKeyEntry.CRKID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field IBMCloudKMSKeyEntry.InstanceID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field IBMCloudKMSKeyEntry.CorrelationID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field IBMCloudKMSKeyEntry.URL'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'requiredfields: field IBMCloudKMSKeyEntry.KeyVersion'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field KubevirtNetwork.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field KubevirtHostDevice.DeviceName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field KubevirtPlatformCredentials.InfraNamespace'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field KubevirtStorageClassMapping.InfraStorageClassName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field KubevirtStorageClassMapping.GuestStorageClassName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field KubevirtVolumeSnapshotClassMapping.InfraVolumeSnapshotClassName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field KubevirtVolumeSnapshotClassMapping.GuestVolumeSnapshotClassName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field NodePoolPlatform.Type'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'requiredfields: field NodePoolCondition.Type'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field OpenStackNodePoolPlatform.Flavor'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field OpenStackPlatformSpec.IdentityRef'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field OpenStackIdentityReference.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field OpenStackIdentityReference.CloudName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field AllocationPool.Start'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field AllocationPool.End'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'requiredfields: field AddressPair.IPAddress'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field PowerVSPlatformSpec.AccountID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field PowerVSPlatformSpec.CISInstanceCRN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field PowerVSPlatformSpec.ResourceGroup'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field PowerVSPlatformSpec.Region'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field PowerVSPlatformSpec.Zone'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field PowerVSPlatformSpec.Subnet'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field PowerVSPlatformSpec.ServiceInstanceID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field PowerVSVPC.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'requiredfields: field PowerVSVPC.Region'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field HostedClusterSpec.Networking has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field HostedClusterSpec.Etcd does not allow the zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field KubevirtCachingStrategy.Type should have the omitempty'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'requiredfields: field KubevirtNodePoolPlatform.RootVolume should have the omitempty'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzurePlatformSpec.ResourceGroupName has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field HostedControlPlaneStatus.Ready has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field HostedControlPlaneStatus.Initialized has a valid zero value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'requiredfields: field HostedClusterSpec.Networking should have the omitempty'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'requiredfields: field AzurePlatformSpec.ResourceGroupName should have the omitempty'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field HostedControlPlaneStatus.Ready should have the omitempty'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'requiredfields: field HostedControlPlaneStatus.Initialized should have the omitempty'
+      # ssatags
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: ClusterNetworking.MachineNetwork should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: ClusterAutoscaling.Expanders should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'ssatags: AWSNodePoolPlatform.SecurityGroups should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'ssatags: AWSNodePoolPlatform.ResourceTags should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'ssatags: AWSResourceReference.Filters should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'ssatags: Filter.Values should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'ssatags: AWSPlatformSpec.ServiceEndpoints should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'ssatags: AWSPlatformSpec.ResourceTags should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'ssatags: AWSPlatformSpec.AdditionalAllowedPrincipals should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'ssatags: ControlPlaneComponentStatus.Resources should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'ssatags: AWSEndpointServiceSpec.SubnetIDs should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'ssatags: AWSEndpointServiceSpec.ResourceTags should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'ssatags: AWSEndpointServiceStatus.DNSNames should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'ssatags: HostedControlPlaneSpec.Services should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'ssatags: HostedControlPlaneSpec.ImageContentSources should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'ssatags: HostedControlPlaneSpec.Tolerations should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: HostedClusterSpec.Services should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: HostedClusterSpec.ImageContentSources should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: HostedClusterSpec.Tolerations should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: ClusterNetworking.ClusterNetwork should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: ClusterNetworking.ServiceNetwork should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: ClusterAutoscaling.BalancingIgnoredLabels should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: ClusterVersionStatus.History should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'ssatags: ClusterVersionStatus.AvailableUpdates should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'ssatags: IBMCloudKMSSpec.KeyList should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'ssatags: KubevirtPersistentVolume.AccessModes should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'ssatags: KubevirtNodePoolPlatform.AdditionalNetworks should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'ssatags: KubevirtNodePoolPlatform.KubevirtHostDevices should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'ssatags: KubevirtManualStorageDriverConfig.StorageClassMapping should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'ssatags: KubevirtManualStorageDriverConfig.VolumeSnapshotClassMapping should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'ssatags: NodePoolSpec.Config should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'ssatags: NodePoolSpec.Taints should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'ssatags: NodePoolSpec.TuningConfig should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'ssatags: NodePoolStatus.Conditions should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'ssatags: OpenStackNodePoolPlatform.AdditionalPorts should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'ssatags: SubnetSpec.DNSNameservers should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'ssatags: SubnetSpec.AllocationPools should have a listType marker'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'ssatags: PortSpec.AllowedAddressPairs should have a listType marker'
+      # statussubresource
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/certificatesigningrequestapproval_types.go
+        text: 'statussubresource: root object type "CertificateSigningRequestApproval" has a status field'
     paths:
       - third_party$
       - builtin$
