@@ -3262,6 +3262,76 @@ spec:
                     description: managed specifies the behavior of an etcd cluster
                       managed by HyperShift.
                     properties:
+                      backup:
+                        description: |-
+                          backup defines the backup configuration for managed etcd, including
+                          optional KMS key settings for artifact encryption in cloud storage.
+                        properties:
+                          aws:
+                            description: |-
+                              aws contains AWS-specific backup encryption configuration.
+                              Required when platform is "AWS", and forbidden otherwise.
+                            properties:
+                              kmsKeyARN:
+                                description: |-
+                                  kmsKeyARN is the ARN of the AWS KMS key to use for encrypting etcd backup artifacts in S3.
+                                  Must be a valid AWS KMS key ARN in the format
+                                  "arn:<partition>:kms:<region>:<account-id>:key/<key-id>"
+                                  where partition is one of aws, aws-cn, or aws-us-gov.
+                                maxLength: 256
+                                minLength: 1
+                                type: string
+                                x-kubernetes-validations:
+                                - message: kmsKeyARN must be a valid AWS KMS key ARN
+                                    (arn:<partition>:kms:<region>:<account-id>:key/<key-id>)
+                                  rule: self.matches('^arn:(aws|aws-cn|aws-us-gov):kms:[a-z0-9-]+:[0-9]{12}:key/[a-zA-Z0-9-]+$')
+                            required:
+                            - kmsKeyARN
+                            type: object
+                          azure:
+                            description: |-
+                              azure contains Azure-specific backup encryption configuration.
+                              Required when platform is "Azure", and forbidden otherwise.
+                            properties:
+                              encryptionKeyURL:
+                                description: |-
+                                  encryptionKeyURL is the URL of the Azure Key Vault key to use for encrypting etcd backup artifacts.
+                                  Must be a valid Azure Key Vault key URL in the format
+                                  "https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]".
+                                maxLength: 512
+                                minLength: 1
+                                type: string
+                                x-kubernetes-validations:
+                                - message: encryptionKeyURL must be a valid HTTPS
+                                    URL
+                                  rule: isURL(self) && url(self).getScheme() == 'https'
+                                - message: encryptionKeyURL must point to an Azure
+                                    Key Vault (*.vault.azure.net)
+                                  rule: url(self).getHostname().matches('[a-zA-Z0-9-]+\\.vault\\.azure\\.net$')
+                                - message: encryptionKeyURL path must be /keys/<key-name>
+                                    or /keys/<key-name>/<key-version>
+                                  rule: url(self).getEscapedPath().matches('^/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')
+                            required:
+                            - encryptionKeyURL
+                            type: object
+                          platform:
+                            description: |-
+                              platform specifies the cloud platform for backup encryption configuration.
+                              Valid values are "AWS" for AWS KMS encryption and "Azure" for Azure Key Vault encryption.
+                            enum:
+                            - AWS
+                            - Azure
+                            type: string
+                        required:
+                        - platform
+                        type: object
+                        x-kubernetes-validations:
+                        - message: aws configuration is required when platform is
+                            AWS, and forbidden otherwise
+                          rule: 'self.platform == ''AWS'' ? has(self.aws) : !has(self.aws)'
+                        - message: azure configuration is required when platform is
+                            Azure, and forbidden otherwise
+                          rule: 'self.platform == ''Azure'' ? has(self.azure) : !has(self.azure)'
                       storage:
                         description: storage specifies how etcd data is persisted.
                         properties:

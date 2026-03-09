@@ -70,6 +70,8 @@ func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1beta1().CertificateSigningRequestApprovals().Informer()}, nil
 	case v1beta1.SchemeGroupVersion.WithResource("gcpprivateserviceconnects"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1beta1().GCPPrivateServiceConnects().Informer()}, nil
+	case v1beta1.SchemeGroupVersion.WithResource("hcpetcdbackups"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1beta1().HCPEtcdBackups().Informer()}, nil
 	case v1beta1.SchemeGroupVersion.WithResource("hostedclusters"):
 		return &genericInformer{resource: resource.GroupResource(), informer: f.Hypershift().V1beta1().HostedClusters().Informer()}, nil
 	case v1beta1.SchemeGroupVersion.WithResource("hostedcontrolplanes"):
