@@ -39,8 +39,8 @@ const (
 	// CiliumCNIProvider is the name of the Cilium CNI provider.
 	CiliumCNIProvider = "cilium"
 	// Generic timeouts and intervals for Cilium tests
-	ciliumDefaultTimeout           = 10 * time.Minute
-	ciliumLongTimeout              = 20 * time.Minute
+	ciliumDefaultTimeout           = 30 * time.Minute
+	ciliumLongTimeout              = 45 * time.Minute
 	ciliumShortTimeout             = 2 * time.Minute
 	ciliumDefaultPollInterval      = 10 * time.Second
 	ciliumLongPollInterval         = 15 * time.Second

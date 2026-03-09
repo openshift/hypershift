@@ -2780,7 +2780,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 ## Cilium
 ### Deployment
 
-In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
+In this scenario we are using the Cilium version v1.15.1 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
@@ -2804,7 +2804,7 @@ In this scenario we are using the Cilium version v1.14.5 which is the last one a
     ~~~sh
     #!/bin/bash
 
-    version="1.14.5"
+    version="1.15.1"
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-03-cilium-ciliumconfigs-crd.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00000-cilium-namespace.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00001-cilium-olm-serviceaccount.yaml
@@ -3059,7 +3059,7 @@ In order for Cilium connectivity test pods to run on OpenShift, a simple custom 
   ~~~
 
   ~~~sh
-  version="1.14.5"
+  version="1.15.1"
   oc apply -n cilium-test -f https://raw.githubusercontent.com/cilium/cilium/${version}/examples/kubernetes/connectivity-check/connectivity-check.yaml
   ~~~
 
@@ -6819,7 +6819,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 ## Cilium
 ### Deployment
 
-In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
+In this scenario we are using the Cilium version v1.15.1 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
@@ -6843,7 +6843,7 @@ In this scenario we are using the Cilium version v1.14.5 which is the last one a
     ~~~sh
     #!/bin/bash
 
-    version="1.14.5"
+    version="1.15.1"
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-03-cilium-ciliumconfigs-crd.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00000-cilium-namespace.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00001-cilium-olm-serviceaccount.yaml
@@ -7098,7 +7098,7 @@ In order for Cilium connectivity test pods to run on OpenShift, a simple custom 
   ~~~
 
   ~~~sh
-  version="1.14.5"
+  version="1.15.1"
   oc apply -n cilium-test -f https://raw.githubusercontent.com/cilium/cilium/${version}/examples/kubernetes/connectivity-check/connectivity-check.yaml
   ~~~
 
@@ -21771,7 +21771,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 ## Cilium
 ### Deployment
 
-In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
+In this scenario we are using the Cilium version v1.15.1 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
@@ -21795,7 +21795,7 @@ In this scenario we are using the Cilium version v1.14.5 which is the last one a
     ~~~sh
     #!/bin/bash
 
-    version="1.14.5"
+    version="1.15.1"
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-03-cilium-ciliumconfigs-crd.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00000-cilium-namespace.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00001-cilium-olm-serviceaccount.yaml
@@ -22050,7 +22050,7 @@ In order for Cilium connectivity test pods to run on OpenShift, a simple custom 
   ~~~
 
   ~~~sh
-  version="1.14.5"
+  version="1.15.1"
   oc apply -n cilium-test -f https://raw.githubusercontent.com/cilium/cilium/${version}/examples/kubernetes/connectivity-check/connectivity-check.yaml
   ~~~
 
