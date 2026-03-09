@@ -857,6 +857,9 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		hcluster.Status.Platform = hcp.Status.Platform
 	}
 
+	// Copy the control plane version status from the hostedcontrolplane
+	propagateControlPlaneVersion(hcluster, hcp)
+
 	// Copy the AWSDefaultSecurityGroupCreated condition from the hostedcontrolplane
 	if hcluster.Spec.Platform.Type == hyperv1.AWSPlatform {
 		if hcp != nil {
@@ -5171,4 +5174,15 @@ func computeGCPPSCCondition(gcpPSCList hyperv1.GCPPrivateServiceConnectList, con
 		Reason:  hyperv1.GCPSuccessReason,
 		Message: hyperv1.AllIsWellMessage,
 	}
+}
+
+// propagateControlPlaneVersion copies the ControlPlaneVersion status from the
+// HostedControlPlane to the HostedCluster using DeepCopy for pointer safety.
+// When HCP is nil (not yet created) the existing HC value is preserved.
+// When HCP's ControlPlaneVersion is nil (older CPO), HC's is set to nil.
+func propagateControlPlaneVersion(hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane) {
+	if hcp == nil {
+		return
+	}
+	hcluster.Status.ControlPlaneVersion = hcp.Status.ControlPlaneVersion.DeepCopy()
 }
