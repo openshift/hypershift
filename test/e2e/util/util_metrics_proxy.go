@@ -20,7 +20,6 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/certs"
 
-	routev1 "github.com/openshift/api/route/v1"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
@@ -34,7 +33,7 @@ import (
 // EnsureMetricsProxyWorking enables metrics forwarding on the HostedCluster,
 // waits for the metrics-proxy and endpoint-resolver deployments to become
 // available, then verifies the metrics-proxy is returning Prometheus metrics
-// with the expected injected labels through its route.
+// with the expected injected labels through its in-cluster service.
 func EnsureMetricsProxyWorking(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureMetricsProxyWorking", func(t *testing.T) {
 		AtLeast(t, Version422)
@@ -58,19 +57,15 @@ func EnsureMetricsProxyWorking(t *testing.T, ctx context.Context, client crclien
 		t.Log("Waiting for metrics-proxy deployment")
 		WaitForDeploymentAvailable(ctx, t, client, "metrics-proxy", hcpNamespace, 5*time.Minute, 10*time.Second)
 
-		// 3. Build an mTLS HTTP client to access the metrics-proxy route.
+		// 3. Build an mTLS HTTP client to access the metrics-proxy service.
 		httpClient := buildMetricsProxyClient(t, ctx, g, client, hcpNamespace)
 
-		// 4. Get the metrics-proxy route hostname.
-		route := &routev1.Route{}
-		err = client.Get(ctx, crclient.ObjectKey{Namespace: hcpNamespace, Name: "metrics-proxy"}, route)
-		g.Expect(err).NotTo(HaveOccurred(), "metrics-proxy route should exist")
-		g.Expect(route.Spec.Host).NotTo(BeEmpty(), "metrics-proxy route should have a hostname")
-		routeHost := route.Spec.Host
-
+		// 4. Access the metrics-proxy via its in-cluster service rather than through the
+		// route, because private HCPs use .hypershift.local domains that aren't resolvable
+		// from the test pod's DNS.
 		// 5. Scrape metrics for kube-apiserver through the proxy and verify labels.
 		t.Log("Verifying metrics-proxy returns scraped metrics with correct labels for kube-apiserver")
-		metricsURL := fmt.Sprintf("https://%s/metrics/kube-apiserver", routeHost)
+		metricsURL := fmt.Sprintf("https://metrics-proxy.%s.svc.cluster.local/metrics/kube-apiserver", hcpNamespace)
 
 		var families map[string]*dto.MetricFamily
 		err = wait.PollUntilContextTimeout(ctx, 15*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
