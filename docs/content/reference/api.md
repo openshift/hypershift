@@ -5503,6 +5503,155 @@ ManagedIdentity
 </tr>
 </tbody>
 </table>
+###ControlPlaneUpdateHistory { #hypershift.openshift.io/v1beta1.ControlPlaneUpdateHistory }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneVersionStatus">ControlPlaneVersionStatus</a>)
+</p>
+<p>
+<p>ControlPlaneUpdateHistory is a record of a single version transition for management-side
+control plane components. Each entry captures the target version, its release image, when
+the rollout started, and when (or whether) it completed.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>state</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.UpdateState
+</a>
+</em>
+</td>
+<td>
+<p>state reflects whether the update was fully applied. The Partial state
+indicates the update is not fully applied, while the Completed state
+indicates the update was successfully rolled out.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>startedTime,omitzero</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
+Kubernetes meta/v1.Time
+</a>
+</em>
+</td>
+<td>
+<p>startedTime is the time at which the update was started.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>completionTime</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
+Kubernetes meta/v1.Time
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>completionTime is the time at which the update completed. It is set
+when all management-side components have reached the target version.
+It is not set while the update is in progress.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>version</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>version is a semantic version string identifying the update version
+(e.g. &ldquo;4.20.1&rdquo;).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>image</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>image is the release image pullspec used for this update.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ControlPlaneVersionStatus { #hypershift.openshift.io/v1beta1.ControlPlaneVersionStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>ControlPlaneVersionStatus tracks the rollout state of management-side control plane components.
+It records the desired release, a pruned history of version transitions (newest first), and
+the last observed generation of the HostedControlPlane spec.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>desired,omitzero</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.Release
+</a>
+</em>
+</td>
+<td>
+<p>desired is the release version that the control plane is reconciling towards.
+It is derived from the HostedControlPlane release image fields.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>history</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneUpdateHistory">
+[]ControlPlaneUpdateHistory
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>history contains a list of versions applied to management-side control plane components. The newest entry is
+first in the list. Entries have state Completed when all ControlPlaneComponent resources report the target
+version with RolloutComplete=True. Entries have state Partial when the rollout is in progress or has failed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>observedGeneration</code></br>
+<em>
+int64
+</em>
+</td>
+<td>
+<p>observedGeneration reports which generation of the HostedControlPlane spec is being synced.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###DNSSpec { #hypershift.openshift.io/v1beta1.DNSSpec }
 <p>
 (<em>Appears on:</em>
@@ -7617,6 +7766,22 @@ plane&rsquo;s current state.</p>
 </tr>
 <tr>
 <td>
+<code>controlPlaneVersion</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneVersionStatus">
+ControlPlaneVersionStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneVersion tracks the rollout status of the control plane
+components running on the management cluster, independently from
+the data-plane version reported in the version field.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>version</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ClusterVersionStatus">
@@ -8368,6 +8533,22 @@ string
 for identity providers. The [identity-provider-name] placeholder must be replaced
 with the name of an identity provider defined on the HostedCluster.
 This is populated after the infrastructure is ready.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneVersion</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneVersionStatus">
+ControlPlaneVersionStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneVersion tracks the rollout status of the control plane
+components running on the management cluster, independently from
+the data-plane version reported in the version field.</p>
 </td>
 </tr>
 <tr>
