@@ -3187,7 +3187,8 @@ func (r *HostedClusterReconciler) deleteNodePools(ctx context.Context, c client.
 }
 
 // deleteAWSEndpointServices loops over AWSEndpointServiceList items and sends a delete request for each.
-// If the HC has no valid aws credentials it removes the CPO finalizer for each AWSEndpointService.
+// If the HC has invalid aws credentials for longer than awsEndpointDeletionGracePeriod, it removes
+// the CPO finalizer for each AWSEndpointService so deletion can proceed.
 // It returns true if len(awsEndpointServiceList.Items) != 0.
 func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, namespace string) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
@@ -3195,13 +3196,17 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 	if err := c.List(ctx, &awsEndpointServiceList, &client.ListOptions{Namespace: namespace}); err != nil && !apierrors.IsNotFound(err) {
 		return false, fmt.Errorf("error listing awsendpointservices in namespace %s: %w", namespace, err)
 	}
+	credentialStatus := platformaws.GetCredentialStatus(hc)
 	for _, ep := range awsEndpointServiceList.Items {
 		if ep.DeletionTimestamp != nil {
-			if platformaws.GetCredentialStatus(hc) == platformaws.CredentialStatusValid && time.Since(ep.DeletionTimestamp.Time) < awsEndpointDeletionGracePeriod {
+			if credentialStatus != platformaws.CredentialStatusInvalid {
+				continue
+			}
+			if time.Since(ep.DeletionTimestamp.Time) < awsEndpointDeletionGracePeriod {
 				continue
 			}
 
-			// We remove the CPO finalizer if there's no valid credentials so deletion can proceed.
+			// We remove the CPO finalizer if credentials are invalid so deletion can proceed.
 			cpoFinalizer := "hypershift.openshift.io/control-plane-operator-finalizer"
 			if controllerutil.ContainsFinalizer(&ep, cpoFinalizer) {
 				controllerutil.RemoveFinalizer(&ep, cpoFinalizer)
@@ -3209,7 +3214,7 @@ func deleteAWSEndpointServices(ctx context.Context, c client.Client, hc *hyperv1
 					return false, fmt.Errorf("failed to remove finalizer from awsendpointservice: %w", err)
 				}
 			}
-			log.Info("Removed CPO finalizer for awsendpointservice because the HC has no valid aws credentials", "name", ep.Name, "endpoint-id", ep.Status.EndpointID)
+			log.Info("Removed CPO finalizer for awsendpointservice because the HC has invalid aws credentials", "name", ep.Name, "endpoint-id", ep.Status.EndpointID, "credentialStatus", credentialStatus)
 			continue
 		}
 
