@@ -6204,7 +6204,6 @@ spec:
                             when all management-side components have reached the target version.
                             It is not set while the update is in progress.
                           format: date-time
-                          nullable: true
                           type: string
                         image:
                           description: image is the release image pullspec used for
@@ -6231,6 +6230,7 @@ spec:
                             version is a semantic version string identifying the update version
                             (e.g. "4.20.1").
                           maxLength: 64
+                          minLength: 1
                           type: string
                       required:
                       - image
@@ -6239,12 +6239,14 @@ spec:
                       - version
                       type: object
                     maxItems: 100
+                    minItems: 0
                     type: array
                     x-kubernetes-list-type: atomic
                   observedGeneration:
                     description: observedGeneration reports which generation of the
                       HostedControlPlane spec is being synced.
                     format: int64
+                    minimum: 0
                     type: integer
                 required:
                 - desired

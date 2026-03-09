@@ -1835,7 +1835,7 @@ type HostedClusterStatus struct {
 	// components running on the management cluster, independently from
 	// the data-plane version reported in the version field.
 	// +optional
-	ControlPlaneVersion *ControlPlaneVersionStatus `json:"controlPlaneVersion,omitempty"`
+	ControlPlaneVersion *ControlPlaneVersionStatus `json:"controlPlaneVersion,omitzero"`
 
 	// version is the status of the release version applied to the
 	// HostedCluster.

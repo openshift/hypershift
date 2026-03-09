@@ -5538,7 +5538,7 @@ indicates the update was successfully rolled out.</p>
 </tr>
 <tr>
 <td>
-<code>startedTime,omitzero</code></br>
+<code>startedTime</code></br>
 <em>
 <a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
 Kubernetes meta/v1.Time
@@ -5611,7 +5611,7 @@ the last observed generation of the HostedControlPlane spec.</p>
 <tbody>
 <tr>
 <td>
-<code>desired,omitzero</code></br>
+<code>desired</code></br>
 <em>
 <a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
 github.com/openshift/api/config/v1.Release
@@ -7766,7 +7766,7 @@ plane&rsquo;s current state.</p>
 </tr>
 <tr>
 <td>
-<code>controlPlaneVersion</code></br>
+<code>controlPlaneVersion,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ControlPlaneVersionStatus">
 ControlPlaneVersionStatus
@@ -8537,7 +8537,7 @@ This is populated after the infrastructure is ready.</p>
 </tr>
 <tr>
 <td>
-<code>controlPlaneVersion</code></br>
+<code>controlPlaneVersion,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ControlPlaneVersionStatus">
 ControlPlaneVersionStatus
