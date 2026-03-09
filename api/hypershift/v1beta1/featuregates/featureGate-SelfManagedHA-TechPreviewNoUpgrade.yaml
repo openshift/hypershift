@@ -42,6 +42,9 @@
                     },
                     {
                         "name": "GCPPlatform"
+                    },
+                    {
+                        "name": "HCPEtcdBackup"
                     }
                 ],
                 "version": ""
