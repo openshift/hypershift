@@ -24,7 +24,7 @@ linters:
             # Reference for v0.0.0-20260114104534-18147eee9c49: https://github.com/kubernetes-sigs/kube-api-linter/blob/18147eee9c49/docs/linters.md
               - forbiddenmarkers
               - maxlength
-              # - minlength
+              - minlength
               - namingconventions
               - nobools
               - preferredmarkers
@@ -449,6 +449,1071 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/hostedcluster_types.go
         text: 'maxlength: field ClusterVersionStatus.History must have a maximum items'
+      # minlength
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/agent.go
+        text: 'minlength: field AgentPlatformSpec.AgentNamespace'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSNodePoolPlatform.InstanceType'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSNodePoolPlatform.InstanceProfile'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSNodePoolPlatform.Subnet'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSNodePoolPlatform.AMI'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSNodePoolPlatform.SecurityGroups'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSNodePoolPlatform.ResourceTags'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSNodePoolPlatform.Placement'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field PlacementOptions.CapacityReservation'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field CapacityReservationOptions.ID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSResourceReference.ID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSResourceReference.Filters'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field Filter.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field Filter.Values'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field Volume.Type'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field Volume.EncryptionKey'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSCloudProviderConfig.Subnet'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSCloudProviderConfig.Zone'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSCloudProviderConfig.VPC'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSPlatformSpec.Region'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSPlatformSpec.ServiceEndpoints'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSPlatformSpec.ResourceTags'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSPlatformSpec.AdditionalAllowedPrincipals'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSSharedVPC.LocalZoneID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSRoleCredentials.ARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSRoleCredentials.Namespace'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSRoleCredentials.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSRolesRef.IngressARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSRolesRef.ImageRegistryARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSRolesRef.StorageARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSRolesRef.NetworkARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSRolesRef.KubeCloudControllerARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSRolesRef.NodePoolManagementARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSRolesRef.ControlPlaneOperatorARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSSharedVPCRolesRef.IngressARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSSharedVPCRolesRef.ControlPlaneARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSServiceEndpoint.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSServiceEndpoint.URL'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSKMSSpec.Region'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSKMSAuthSpec.AWSKMSRoleARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSKMSKeyEntry.ARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/aws.go
+        text: 'minlength: field AWSPlatformStatus.DefaultWorkerSecurityGroupID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field AzureNodePoolPlatform.VMSize'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field AzureNodePoolPlatform.OSDisk'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field AzureNodePoolPlatform.AvailabilityZone'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field AzureNodePoolPlatform.Diagnostics'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field AzureVMImage.ImageID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field UserManagedDiagnostics.StorageAccountURI'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field AzurePlatformSpec.Location'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field AzurePlatformSpec.ResourceGroupName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field AzurePlatformSpec.VnetID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field AzurePlatformSpec.SubscriptionID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field AzurePlatformSpec.SecurityGroupID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field AzurePlatformSpec.TenantID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field ManagedAzureKeyVault.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field ManagedAzureKeyVault.TenantID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field DataPlaneManagedIdentities.ImageRegistryMSIClientID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field DataPlaneManagedIdentities.DiskMSIClientID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field DataPlaneManagedIdentities.FileMSIClientID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field AzureKMSKey.KeyVaultName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field AzureKMSKey.KeyName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'minlength: field AzureKMSKey.KeyVersion'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/certificatesigningrequestapproval_types.go
+        text: 'minlength: field CertificateSigningRequestApproval.Spec'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/certificatesigningrequestapproval_types.go
+        text: 'minlength: field CertificateSigningRequestApproval.Status'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'minlength: field ComponentResource.Kind'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'minlength: field ComponentResource.Group'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'minlength: field ComponentResource.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'minlength: field ControlPlaneComponentStatus.Conditions'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'minlength: field ControlPlaneComponentStatus.Version'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'minlength: field ControlPlaneComponentStatus.Resources'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'minlength: field ControlPlaneComponent.Spec'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/controlplanecomponent_types.go
+        text: 'minlength: field ControlPlaneComponent.Status'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'minlength: field AWSEndpointServiceSpec.NetworkLoadBalancerName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'minlength: field AWSEndpointServiceSpec.SubnetIDs'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'minlength: field AWSEndpointServiceSpec.ResourceTags'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'minlength: field AWSEndpointServiceStatus.Conditions'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'minlength: field AWSEndpointServiceStatus.EndpointServiceName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'minlength: field AWSEndpointServiceStatus.EndpointID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'minlength: field AWSEndpointServiceStatus.DNSNames'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'minlength: field AWSEndpointServiceStatus.DNSZoneID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'minlength: field AWSEndpointServiceStatus.SecurityGroupID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/endpointservice_types.go
+        text: 'minlength: field AWSEndpointService.Status'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.ReleaseImage'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.ControlPlaneReleaseImage'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.Channel'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.IssuerURL'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.Networking'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.ClusterID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.InfraID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.KubeAPIServerDNSName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.Services'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.Configuration'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.OperatorConfiguration'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.ImageContentSources'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.PausedUntil'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.Autoscaling'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.NodeSelector'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.Tolerations'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.Labels'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneSpec.Capabilities'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field KubeconfigSecretRef.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field KubeconfigSecretRef.Key'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneStatus.Conditions'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneStatus.OAuthCallbackURLTemplate'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneStatus.Version'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneStatus.ReleaseImage'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneStatus.Platform'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field HostedControlPlaneStatus.Configuration'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hosted_controlplane.go
+        text: 'minlength: field APIEndpoint.Host'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field Capabilities.Enabled'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field Capabilities.Disabled'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterSpec.KubeAPIServerDNSName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterSpec.Networking'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterSpec.Autoscaling'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterSpec.Services'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterSpec.IssuerURL'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterSpec.Configuration'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterSpec.OperatorConfiguration'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterSpec.ImageContentSources'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterSpec.NodeSelector'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterSpec.Tolerations'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterSpec.Labels'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterSpec.Capabilities'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field ImageContentSource.Source'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field ImageContentSource.Mirrors'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field ServicePublishingStrategy.LoadBalancer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field ServicePublishingStrategy.Route'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field DNSSpec.BaseDomain'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field DNSSpec.BaseDomainPrefix'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field ClusterNetworking.APIServer'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field APIServerNetworking.AdvertiseAddress'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field APIServerNetworking.AllowedCIDRBlocks'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field PlatformSpec.Type'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field PlatformSpec.IBMCloud'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field PlatformSpec.Kubevirt'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field KarpenterConfig.Platform'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field KarpenterAWSConfig.RoleARN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field ClusterAutoscaling.ScaleDown'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field ClusterAutoscaling.BalancingIgnoredLabels'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field ClusterAutoscaling.MaxNodeProvisionTime'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field ManagedEtcdStorageSpec.PersistentVolume'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field ManagedEtcdStorageSpec.RestoreSnapshotURL'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field PersistentVolumeEtcdStorageSpec.StorageClassName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field UnmanagedEtcdSpec.Endpoint'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterStatus.Conditions'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterStatus.IgnitionEndpoint'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterStatus.OAuthCallbackURLTemplate'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterStatus.Platform'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedClusterStatus.Configuration'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field PlatformStatus.AWS'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field ClusterVersionStatus.History'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field ClusterVersionStatus.AvailableUpdates'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field ClusterVersionStatus.ConditionalUpdates'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field OperatorConfiguration.ClusterVersionOperator'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field OperatorConfiguration.ClusterNetworkOperator'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field OperatorConfiguration.IngressOperator'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/hostedcluster_types.go
+        text: 'minlength: field HostedCluster.Status'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'minlength: field IBMCloudKMSSpec.Region'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'minlength: field IBMCloudKMSSpec.KeyList'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'minlength: field IBMCloudKMSKeyEntry.CRKID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'minlength: field IBMCloudKMSKeyEntry.InstanceID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'minlength: field IBMCloudKMSKeyEntry.CorrelationID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'minlength: field IBMCloudKMSKeyEntry.URL'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/ibmcloud.go
+        text: 'minlength: field IBMCloudKMSAuthSpec.Managed'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtPersistentVolume.StorageClass'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtPersistentVolume.AccessModes'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtRootVolume.Image'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtRootVolume.KubevirtVolume'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtVolume.Persistent'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtDiskImage.ContainerDiskImage'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtNodePoolPlatform.RootVolume'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtNodePoolPlatform.Compute'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtNodePoolPlatform.AdditionalNetworks'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtNodePoolPlatform.NodeSelector'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtNodePoolPlatform.KubevirtHostDevices'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtNetwork.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtHostDevice.DeviceName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubeVirtNodePoolStatus.CacheName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtPlatformCredentials.InfraNamespace'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtPlatformSpec.GenerateID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtPlatformSpec.StorageDriver'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtStorageDriverSpec.Manual'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtManualStorageDriverConfig.StorageClassMapping'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtManualStorageDriverConfig.VolumeSnapshotClassMapping'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtStorageClassMapping.Group'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtStorageClassMapping.InfraStorageClassName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtStorageClassMapping.GuestStorageClassName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtVolumeSnapshotClassMapping.Group'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtVolumeSnapshotClassMapping.InfraVolumeSnapshotClassName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/kubevirt.go
+        text: 'minlength: field KubevirtVolumeSnapshotClassMapping.GuestVolumeSnapshotClassName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePool.Status'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolSpec.Config'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolSpec.NodeLabels'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolSpec.Taints'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolSpec.TuningConfig'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolStatus.Version'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolStatus.Platform'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolStatus.Conditions'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field ReplaceUpgrade.RollingUpdate'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolManagement.Replace'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolManagement.InPlace'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolPlatform.Type'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolPlatform.IBMCloud'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolPlatform.Agent'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolPlatform.PowerVS'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolCondition.Type'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolCondition.Severity'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolCondition.Reason'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolCondition.Message'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field Taint.Value'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/nodepool_types.go
+        text: 'minlength: field NodePoolPlatformStatus.KubeVirt'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field OpenStackNodePoolPlatform.Flavor'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field OpenStackNodePoolPlatform.ImageName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field OpenStackNodePoolPlatform.AdditionalPorts'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field OpenStackPlatformSpec.ManagedSubnets'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field OpenStackPlatformSpec.Subnets'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field OpenStackPlatformSpec.Tags'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field OpenStackPlatformSpec.IngressFloatingIP'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field OpenStackIdentityReference.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field OpenStackIdentityReference.CloudName'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field SubnetSpec.DNSNameservers'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field SubnetSpec.AllocationPools'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field AllocationPool.Start'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field AllocationPool.End'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field RouterParam.ID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field RouterFilter.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field RouterFilter.Description'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field RouterFilter.ProjectID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field RouterFilter.FilterByNeutronTags'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field NetworkParam.ID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field NetworkFilter.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field NetworkFilter.Description'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field NetworkFilter.ProjectID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field NetworkFilter.FilterByNeutronTags'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field FilterByNeutronTags.Tags'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field FilterByNeutronTags.TagsAny'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field FilterByNeutronTags.NotTags'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field FilterByNeutronTags.NotTagsAny'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field SubnetParam.ID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field SubnetFilter.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field SubnetFilter.Description'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field SubnetFilter.ProjectID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field SubnetFilter.GatewayIP'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field SubnetFilter.CIDR'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field SubnetFilter.IPv6AddressMode'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field SubnetFilter.IPv6RAMode'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field SubnetFilter.FilterByNeutronTags'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field PortSpec.Description'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field PortSpec.AllowedAddressPairs'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field PortSpec.VNICType'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/openstack.go
+        text: 'minlength: field AddressPair.IPAddress'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'minlength: field PowerVSNodePoolPlatform.SystemType'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'minlength: field PowerVSNodePoolPlatform.Image'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'minlength: field PowerVSPlatformSpec.AccountID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'minlength: field PowerVSPlatformSpec.CISInstanceCRN'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'minlength: field PowerVSPlatformSpec.ResourceGroup'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'minlength: field PowerVSPlatformSpec.Region'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'minlength: field PowerVSPlatformSpec.Zone'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'minlength: field PowerVSPlatformSpec.Subnet'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'minlength: field PowerVSPlatformSpec.ServiceInstanceID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'minlength: field PowerVSVPC.Name'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'minlength: field PowerVSVPC.Region'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'minlength: field PowerVSVPC.Zone'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'minlength: field PowerVSVPC.Subnet'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'minlength: field PowerVSResourceReference.ID'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/powervs.go
+        text: 'minlength: field PowerVSResourceReference.Name'
       # namingconventions
       - linters:
           - kubeapilinter
