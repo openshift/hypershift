@@ -50,9 +50,9 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Authentication is handled at the TLS layer via mTLS (RequireAndVerifyClientCert).
-	// By the time a request reaches this handler, the client certificate has already
-	// been verified against the cluster-signer-ca CA bundle.
+	// Authentication is enforced by the requireClientCert middleware which
+	// verifies a client certificate was presented and validated against the
+	// cluster-signer-ca CA bundle (via VerifyClientCertIfGiven at the TLS layer).
 
 	// Discover pods
 	targets, err := h.targetDiscoverer.Discover(ctx, componentConfig.ServiceName, componentConfig.MetricsPort)

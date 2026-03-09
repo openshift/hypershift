@@ -21,6 +21,19 @@ import (
 	"go.uber.org/zap/zapcore"
 )
 
+// requireClientCert is a middleware that rejects requests without a verified
+// client certificate. Used with VerifyClientCertIfGiven to enforce mTLS on
+// metrics endpoints while allowing unauthenticated access to health probes.
+func requireClientCert(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.TLS == nil || len(r.TLS.VerifiedChains) == 0 {
+			http.Error(w, "client certificate required", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func NewStartCommand() *cobra.Command {
 	log.SetLogger(zap.New(zap.JSONEncoder(func(o *zapcore.EncoderConfig) {
 		o.EncodeTime = zapcore.RFC3339TimeEncoder
@@ -98,7 +111,7 @@ func NewStartCommand() *cobra.Command {
 
 		handler := NewProxyHandler(l, configReader, resolverClient, scraper, filter, labeler)
 		mux := http.NewServeMux()
-		mux.Handle("/", handler)
+		mux.Handle("/metrics/", requireClientCert(handler))
 		mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
@@ -109,12 +122,15 @@ func NewStartCommand() *cobra.Command {
 			os.Exit(1)
 		}
 
+		// Use VerifyClientCertIfGiven so the TLS handshake succeeds without
+		// a client certificate (needed for kubelet health probes), while
+		// the requireClientCert middleware enforces mTLS on /metrics/ paths.
 		server := &http.Server{
 			Addr:    fmt.Sprintf(":%d", servingPort),
 			Handler: mux,
 			TLSConfig: &tls.Config{
 				Certificates: []tls.Certificate{tlsCert},
-				ClientAuth:   tls.RequireAndVerifyClientCert,
+				ClientAuth:   tls.VerifyClientCertIfGiven,
 				ClientCAs:    clientCAPool,
 				MinVersion:   tls.VersionTLS12,
 			},
