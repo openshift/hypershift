@@ -94,13 +94,15 @@ func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 			expectedError: `invalid memory quantity "not-a-quantity": quantities must match the regular expression '^([+-]?[0-9.]+)([eEinumkKMGTP]*[-+]?[0-9]*)$'`,
 		},
 	} {
-		var errString string
-		if _, err := test.input.Validate(t.Context(), nil); err != nil {
-			errString = err.Error()
-		}
-		if diff := cmp.Diff(test.expectedError, errString); diff != "" {
-			t.Errorf("got incorrect error: %v", diff)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			var errString string
+			if _, err := test.input.Validate(t.Context(), nil); err != nil {
+				errString = err.Error()
+			}
+			if diff := cmp.Diff(test.expectedError, errString); diff != "" {
+				t.Errorf("got incorrect error: %v", diff)
+			}
+		})
 	}
 }
 
