@@ -69,3 +69,14 @@ func AzureFileCSICloudCredsSecret() *corev1.Secret {
 		},
 	}
 }
+
+// GCP credential secrets for hosted cluster operators
+
+func GCPImageRegistryCloudCredsSecret() *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "openshift-image-registry",
+			Name:      "installer-cloud-credentials",
+		},
+	}
+}
