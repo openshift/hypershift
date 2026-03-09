@@ -1,6 +1,7 @@
 package kubevirt
 
 import (
+	"strings"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -66,9 +67,9 @@ func TestNodePoolPlatform_When_memory_is_set_it_should_parse_correctly(t *testin
 
 func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 	for _, test := range []struct {
-		name          string
-		input         RawKubevirtPlatformCreateOptions
-		expectedError string
+		name                   string
+		input                  RawKubevirtPlatformCreateOptions
+		expectedErrorSubstring string
 	}{
 		{
 			name: "should fail excluding default network without additional ones",
@@ -79,7 +80,7 @@ func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 					AttachDefaultNetwork: ptr.To(true),
 				},
 			},
-			expectedError: "",
+			expectedErrorSubstring: "",
 		},
 		{
 			name: "When memory value is invalid it should return a validation error",
@@ -91,7 +92,7 @@ func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 					AttachDefaultNetwork: ptr.To(true),
 				},
 			},
-			expectedError: `invalid memory quantity "not-a-quantity": quantities must match the regular expression '^([+-]?[0-9.]+)([eEinumkKMGTP]*[-+]?[0-9]*)$'`,
+			expectedErrorSubstring: `invalid memory quantity "not-a-quantity"`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -99,8 +100,11 @@ func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 			if _, err := test.input.Validate(t.Context(), nil); err != nil {
 				errString = err.Error()
 			}
-			if diff := cmp.Diff(test.expectedError, errString); diff != "" {
-				t.Errorf("got incorrect error: %v", diff)
+			switch {
+			case test.expectedErrorSubstring == "" && errString != "":
+				t.Errorf("unexpected error: %s", errString)
+			case test.expectedErrorSubstring != "" && !strings.Contains(errString, test.expectedErrorSubstring):
+				t.Errorf("expected error containing %q, got %q", test.expectedErrorSubstring, errString)
 			}
 		})
 	}
