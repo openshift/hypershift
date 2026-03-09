@@ -13,6 +13,55 @@ import (
 	"github.com/spf13/pflag"
 )
 
+func TestNodePoolPlatform_When_memory_value_is_invalid_it_should_fall_back_to_default(t *testing.T) {
+	opts := &CompletedKubevirtPlatformCreateOptions{
+		completedKubevirtPlatformCreateOptions: &completedKubevirtPlatformCreateOptions{
+			KubevirtPlatformOptions: &KubevirtPlatformOptions{
+				Memory:               "not-a-quantity",
+				Cores:                2,
+				RootVolumeSize:       32,
+				AttachDefaultNetwork: ptr.To(true),
+			},
+		},
+	}
+
+	platform := opts.NodePoolPlatform()
+	if platform.Compute == nil {
+		t.Fatal("expected Compute to be set")
+	}
+	if platform.Compute.Memory == nil {
+		t.Fatal("expected Compute.Memory to be set even with invalid input")
+	}
+	if !platform.Compute.Memory.IsZero() {
+		t.Errorf("expected Compute.Memory to be zero when input is invalid, got %s", platform.Compute.Memory.String())
+	}
+}
+
+func TestNodePoolPlatform_When_memory_value_is_valid_it_should_parse_correctly(t *testing.T) {
+	opts := &CompletedKubevirtPlatformCreateOptions{
+		completedKubevirtPlatformCreateOptions: &completedKubevirtPlatformCreateOptions{
+			KubevirtPlatformOptions: &KubevirtPlatformOptions{
+				Memory:               "8Gi",
+				Cores:                2,
+				RootVolumeSize:       32,
+				AttachDefaultNetwork: ptr.To(true),
+			},
+		},
+	}
+
+	platform := opts.NodePoolPlatform()
+	if platform.Compute == nil {
+		t.Fatal("expected Compute to be set")
+	}
+	if platform.Compute.Memory == nil {
+		t.Fatal("expected Compute.Memory to be set")
+	}
+	expected := "8Gi"
+	if platform.Compute.Memory.String() != expected {
+		t.Errorf("expected Compute.Memory to be %s, got %s", expected, platform.Compute.Memory.String())
+	}
+}
+
 func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 	for _, test := range []struct {
 		name          string

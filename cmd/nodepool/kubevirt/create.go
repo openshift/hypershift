@@ -15,6 +15,7 @@ import (
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
 
+	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/spf13/cobra"
@@ -297,8 +298,10 @@ func (o *CompletedKubevirtPlatformCreateOptions) NodePoolPlatform() *hyperv1.Kub
 	}
 
 	if o.Memory != "" {
-		// TODO: add a debug trace for this error
-		memory, _ := apiresource.ParseQuantity(o.Memory)
+		memory, err := apiresource.ParseQuantity(o.Memory)
+		if err != nil {
+			ctrl.Log.V(2).Info("Failed to parse memory quantity, falling back to default", "input", o.Memory, "error", err.Error())
+		}
 		platform.Compute.Memory = &memory
 	}
 	if o.Cores != 0 {
