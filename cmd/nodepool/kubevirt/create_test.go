@@ -13,52 +13,54 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func TestNodePoolPlatform_When_memory_value_is_invalid_it_should_fall_back_to_default(t *testing.T) {
-	opts := &CompletedKubevirtPlatformCreateOptions{
-		completedKubevirtPlatformCreateOptions: &completedKubevirtPlatformCreateOptions{
-			KubevirtPlatformOptions: &KubevirtPlatformOptions{
-				Memory:               "not-a-quantity",
-				Cores:                2,
-				RootVolumeSize:       32,
-				AttachDefaultNetwork: ptr.To(true),
-			},
+func TestNodePoolPlatform_When_memory_is_set_it_should_parse_correctly(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		memory         string
+		expectMemory   bool
+		expectedString string
+	}{
+		{
+			name:           "When memory value is valid it should parse correctly",
+			memory:         "8Gi",
+			expectMemory:   true,
+			expectedString: "8Gi",
 		},
-	}
-
-	platform := opts.NodePoolPlatform()
-	if platform.Compute == nil {
-		t.Fatal("expected Compute to be set")
-	}
-	if platform.Compute.Memory == nil {
-		t.Fatal("expected Compute.Memory to be set even with invalid input")
-	}
-	if !platform.Compute.Memory.IsZero() {
-		t.Errorf("expected Compute.Memory to be zero when input is invalid, got %s", platform.Compute.Memory.String())
-	}
-}
-
-func TestNodePoolPlatform_When_memory_value_is_valid_it_should_parse_correctly(t *testing.T) {
-	opts := &CompletedKubevirtPlatformCreateOptions{
-		completedKubevirtPlatformCreateOptions: &completedKubevirtPlatformCreateOptions{
-			KubevirtPlatformOptions: &KubevirtPlatformOptions{
-				Memory:               "8Gi",
-				Cores:                2,
-				RootVolumeSize:       32,
-				AttachDefaultNetwork: ptr.To(true),
-			},
+		{
+			name:         "When memory is empty it should leave Compute.Memory nil",
+			memory:       "",
+			expectMemory: false,
 		},
-	}
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := &CompletedKubevirtPlatformCreateOptions{
+				completedKubevirtPlatformCreateOptions: &completedKubevirtPlatformCreateOptions{
+					KubevirtPlatformOptions: &KubevirtPlatformOptions{
+						Memory:               tc.memory,
+						Cores:                2,
+						RootVolumeSize:       32,
+						AttachDefaultNetwork: ptr.To(true),
+					},
+				},
+			}
 
-	platform := opts.NodePoolPlatform()
-	if platform.Compute == nil {
-		t.Fatal("expected Compute to be set")
-	}
-	if platform.Compute.Memory == nil {
-		t.Fatal("expected Compute.Memory to be set")
-	}
-	expected := "8Gi"
-	if platform.Compute.Memory.String() != expected {
-		t.Errorf("expected Compute.Memory to be %s, got %s", expected, platform.Compute.Memory.String())
+			platform := opts.NodePoolPlatform()
+			if platform.Compute == nil {
+				t.Fatal("expected Compute to be set")
+			}
+			if tc.expectMemory {
+				if platform.Compute.Memory == nil {
+					t.Fatal("expected Compute.Memory to be set")
+				}
+				if platform.Compute.Memory.String() != tc.expectedString {
+					t.Errorf("expected Compute.Memory to be %s, got %s", tc.expectedString, platform.Compute.Memory.String())
+				}
+			} else {
+				if platform.Compute.Memory != nil {
+					t.Errorf("expected Compute.Memory to be nil, got %s", platform.Compute.Memory.String())
+				}
+			}
+		})
 	}
 }
 
@@ -78,6 +80,18 @@ func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 				},
 			},
 			expectedError: "",
+		},
+		{
+			name: "When memory value is invalid it should return a validation error",
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
+					Memory:               "not-a-quantity",
+					Cores:                2,
+					RootVolumeSize:       32,
+					AttachDefaultNetwork: ptr.To(true),
+				},
+			},
+			expectedError: `invalid memory quantity "not-a-quantity": quantities must match the regular expression '^([+-]?[0-9.]+)([eEinumkKMGTP]*[-+]?[0-9]*)$'`,
 		},
 	} {
 		var errString string
