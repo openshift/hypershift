@@ -136,9 +136,11 @@ func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
 
 	// Find the current (latest revision) MachineSet for the MachineDeployment.
-	// After a rolling upgrade completes, the old MachineSet may still have machines
-	// that are being scaled down. We must only verify machines belonging to the
+	// Currently in CAPI v1.11, after a rolling upgrade completes, the old MachineSet may still have machines
+	// that are being scaled down. As a temporary workaround We only verify machines belonging to the
 	// current MachineSet to avoid false failures from stale machines.
+	// TODO(bclement): Revert this change once the root cause is found and fixed:
+	// https://issues.redhat.com/browse/OCPBUGS-77922
 	currentMachineSetName := currentMachineSetForDeployment(t, k.ctx, k.mgmtClient, controlPlaneNamespace, nodePool.Name)
 	machineLabels := crclient.MatchingLabels{
 		capiv1.MachineDeploymentNameLabel: nodePool.Name,
