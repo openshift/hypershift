@@ -785,10 +785,11 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
 			return reconcile.Result{}, fmt.Errorf("failed to get pull secret for version reconciliation: %w", err)
 		}
-		resolvedImage, err := util.HCPControlPlaneReleaseImageDigest(ctx, hostedControlPlane, r.ImageMetadataProvider, pullSecret.Data[corev1.DockerConfigJsonKey])
+		_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, util.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecret.Data[corev1.DockerConfigJsonKey])
 		if err != nil {
-			return reconcile.Result{}, err
+			return reconcile.Result{}, fmt.Errorf("failed to resolve control plane release image digest: %w", err)
 		}
+		resolvedImage := resolvedRef.String()
 
 		componentsList := &hyperv1.ControlPlaneComponentList{}
 		if listErr := r.Client.List(ctx, componentsList, client.InNamespace(hostedControlPlane.Namespace)); listErr != nil {

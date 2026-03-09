@@ -26,8 +26,8 @@ const (
 
 // ensureControlPlaneVersionPartial ensures a Partial history entry exists for the
 // desired version without updating observedGeneration. This is called on list
-// failure so consumers know an upgrade was attempted, consistent with CVO's
-// syncFailingStatus pattern.
+// failure so consumers know an upgrade was attempted, consistent with
+// CVO's syncFailingStatus pattern.
 func ensureControlPlaneVersionPartial(
 	hcp *hyperv1.HostedControlPlane,
 	clk clock.Clock,
@@ -217,7 +217,7 @@ func pruneHistoryWithMax(history []hyperv1.ControlPlaneUpdateHistory, maxSize in
 
 	for i := range history {
 		rank := 0.0
-		if i == maxSize || i <= maxFinalEntryIndex || i == mostRecentCompletedIdx {
+		if isTheInitialEntry(i, maxSize) || isAFinalEntry(i) || isTheMostRecentCompletedEntry(i, mostRecentCompletedIdx) {
 			rank = mostImportantWeight
 		} else if isTheFirstOrLastCompletedInAMinor(i, history, maxSize) {
 			rank += interestingWeight
@@ -238,6 +238,21 @@ func pruneHistoryWithMax(history []hyperv1.ControlPlaneUpdateHistory, maxSize in
 		return history[:maxSize]
 	}
 	return append(history[:lowestRankIdx], history[lowestRankIdx+1:]...)
+}
+
+// isTheInitialEntry returns true if the entry is the oldest entry (at the max history boundary).
+func isTheInitialEntry(entryIndex, maxHistorySize int) bool {
+	return entryIndex == maxHistorySize
+}
+
+// isAFinalEntry returns true if the entry is among the most recent entries.
+func isAFinalEntry(entryIndex int) bool {
+	return entryIndex <= maxFinalEntryIndex
+}
+
+// isTheMostRecentCompletedEntry returns true if the entry is the most recent completed entry.
+func isTheMostRecentCompletedEntry(entryIndex, mostRecentCompletedEntryIndex int) bool {
+	return entryIndex == mostRecentCompletedEntryIndex
 }
 
 // isTheFirstOrLastCompletedInAMinor returns true if the entry at idx is the first or last
