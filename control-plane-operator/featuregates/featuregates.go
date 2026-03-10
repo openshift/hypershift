@@ -56,3 +56,57 @@ func ConfigureFeatureSet(featureSet string) {
 
 	globalGate = featureGate
 }
+
+// IsFeatureEnabledInFeatureGateSpec checks if a feature gate is enabled based on a FeatureGateSpec.
+// This allows checking feature gates for a given configuration without changing the global gate.
+// It handles both fixed feature sets (Default, TechPreviewNoUpgrade, DevPreviewNoUpgrade) and
+// custom feature sets (CustomNoUpgrade) where features are explicitly enabled/disabled.
+// If the feature gate spec is nil, it falls back to checking the global gate.
+func IsFeatureEnabledInFeatureGateSpec(featureGateSpec *configv1.FeatureGateSpec, feature featuregate.Feature) bool {
+	if featureGateSpec == nil {
+		// No feature gate configuration, fall back to global gate
+		return globalGate.Enabled(feature)
+	}
+
+	featureSet := featureGateSpec.FeatureSet
+
+	// Handle CustomNoUpgrade feature sets by checking the explicit enabled/disabled lists
+	if featureSet == configv1.CustomNoUpgrade {
+		if featureGateSpec.CustomNoUpgrade == nil {
+			// CustomNoUpgrade without custom configuration, fall back to global gate
+			return globalGate.Enabled(feature)
+		}
+
+		featureName := configv1.FeatureGateName(feature)
+
+		// Check if explicitly disabled
+		for _, disabled := range featureGateSpec.CustomNoUpgrade.Disabled {
+			if disabled == featureName {
+				return false
+			}
+		}
+
+		// Check if explicitly enabled
+		for _, enabled := range featureGateSpec.CustomNoUpgrade.Enabled {
+			if enabled == featureName {
+				return true
+			}
+		}
+
+		// Not in either list, fall back to the feature's default for Default feature set
+		featureGate, err := allFeatures.FeatureGatesForFeatureSet(configv1.Default)
+		if err != nil {
+			return globalGate.Enabled(feature)
+		}
+		return featureGate.Enabled(feature)
+	}
+
+	// Handle fixed feature sets (Default, TechPreviewNoUpgrade, DevPreviewNoUpgrade)
+	featureGate, err := allFeatures.FeatureGatesForFeatureSet(featureSet)
+	if err != nil {
+		// If there's an error (e.g., unknown feature set), fall back to checking the global gate
+		return globalGate.Enabled(feature)
+	}
+
+	return featureGate.Enabled(feature)
+}
