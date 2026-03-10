@@ -170,6 +170,46 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: true,
 		},
+		"When Azure private platform with managed identity and creds file it should error": {
+			inputOptions: Options{
+				PrivatePlatform:                 string(hyperv1.AzurePlatform),
+				AzurePrivateCreds:               "/path/to/credentials",
+				AzurePLSManagedIdentityClientID: "client-id",
+				AzurePLSSubscriptionID:          "sub-id",
+			},
+			expectError: true,
+		},
+		"When Azure private platform with managed identity and secret it should error": {
+			inputOptions: Options{
+				PrivatePlatform:                 string(hyperv1.AzurePlatform),
+				AzurePrivateCredentialsSecret:   "my-secret",
+				AzurePLSManagedIdentityClientID: "client-id",
+				AzurePLSSubscriptionID:          "sub-id",
+			},
+			expectError: true,
+		},
+		"When Azure private platform with managed identity but no subscription ID it should error": {
+			inputOptions: Options{
+				PrivatePlatform:                 string(hyperv1.AzurePlatform),
+				AzurePLSManagedIdentityClientID: "client-id",
+			},
+			expectError: true,
+		},
+		"When Azure private platform with managed identity and subscription ID it should succeed": {
+			inputOptions: Options{
+				PrivatePlatform:                 string(hyperv1.AzurePlatform),
+				AzurePLSManagedIdentityClientID: "client-id",
+				AzurePLSSubscriptionID:          "sub-id",
+			},
+			expectError: false,
+		},
+		"When Azure private platform with creds file it should succeed": {
+			inputOptions: Options{
+				PrivatePlatform:   string(hyperv1.AzurePlatform),
+				AzurePrivateCreds: "/path/to/credentials",
+			},
+			expectError: false,
+		},
 		"when scale-from-zero provider is missing but creds provided it errors": {
 			inputOptions: Options{
 				PrivatePlatform:    string(hyperv1.AWSPlatform),
