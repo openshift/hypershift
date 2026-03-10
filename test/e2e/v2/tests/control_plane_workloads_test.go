@@ -56,7 +56,8 @@ func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
 	Context("Deployment generation", func() {
 		BeforeEach(func() {
 			testCtx := getTestCtx()
-			hostedCluster := testCtx.GetHostedCluster()
+			hostedCluster, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 			if hostedCluster == nil || hostedCluster.CreationTimestamp.IsZero() || time.Since(hostedCluster.CreationTimestamp.Time) > 4*time.Hour {
 				Skip("Deployment generation test is only for recently created hosted clusters")
 			}
@@ -72,13 +73,14 @@ func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
 
 			It(fmt.Sprintf("should not indicate rapid rollouts for %s", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
 
 				deployment := &appsv1.Deployment{}
-				err := testCtx.MgmtClient.Get(context.Background(), crclient.ObjectKey{
+				err = testCtx.MgmtClient.Get(context.Background(), crclient.ObjectKey{
 					Namespace: testCtx.ControlPlaneNamespace,
 					Name:      workload.Name,
 				}, deployment)
@@ -123,7 +125,8 @@ func SafeToEvictAnnotationsTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should exist for pods with emptyDir or hostPath volumes belonging to %s", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -216,7 +219,8 @@ func ReadOnlyRootFilesystemTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should have read-only root filesystem for %s containers", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -287,7 +291,8 @@ func ReadOnlyRootFilesystemTmpDirMountTest(getTestCtx internal.TestContextGetter
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should have /tmp mounted for %s containers", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -327,7 +332,8 @@ func ContainerImagePullPolicyTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should have IfNotPresent pull policy for %s containers", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -375,7 +381,8 @@ func ContainerTerminationMessagePolicyTest(getTestCtx internal.TestContextGetter
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should have FallbackToLogsOnError termination message policy for %s containers", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -415,7 +422,8 @@ func ContainerResourceRequestsTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should have resource requests for %s containers", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -450,7 +458,8 @@ func PodPriorityTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should not have too high priority for %s pods", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -533,7 +542,8 @@ func ServiceAccountTokenMountingTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should not mount service account token unless necessary for %s pods", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -565,7 +575,8 @@ func PodAffinitiesAndTolerationsTest(getTestCtx internal.TestContextGetter) {
 		// EnsureHCPPodsAffinitiesAndTolerations
 		BeforeEach(func() {
 			testCtx := getTestCtx()
-			hostedCluster := testCtx.GetHostedCluster()
+			hostedCluster, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 			if hostedCluster == nil || hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
 				Skip("Pod affinities and tolerations test is only for AWS platform")
 			}
@@ -574,7 +585,8 @@ func PodAffinitiesAndTolerationsTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should have correct affinities and tolerations for %s pods", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -695,10 +707,11 @@ func WorkloadRegistryValidationTest(getTestCtx internal.TestContextGetter) {
 		// Label("Informing"): failures skip (non-blocking) until registry is complete
 		It("all pods should belong to predefined workloads", Label("Informing"), func() {
 			testCtx := getTestCtx()
-			_ = testCtx.GetHostedCluster() // unused but kept for consistency
+			_, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 			// List all pods in control plane namespace
 			podList := &corev1.PodList{}
-			err := testCtx.MgmtClient.List(context.Background(), podList, &crclient.ListOptions{
+			err = testCtx.MgmtClient.List(context.Background(), podList, &crclient.ListOptions{
 				Namespace: testCtx.ControlPlaneNamespace,
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to list pods in control plane namespace")
@@ -744,14 +757,15 @@ func SecurityContextUIDTest(getTestCtx internal.TestContextGetter) {
 
 		BeforeEach(func() {
 			testCtx := getTestCtx()
-			hostedCluster := testCtx.GetHostedCluster()
+			hostedCluster, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 			if hostedCluster == nil || hostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform {
 				Skip("Security context UID test is only for Azure platform")
 			}
 
 			// Get the control plane namespace to check for UID annotation
 			controlPlaneNamespace := &corev1.Namespace{}
-			err := testCtx.MgmtClient.Get(context.Background(), crclient.ObjectKey{Name: testCtx.ControlPlaneNamespace}, controlPlaneNamespace)
+			err = testCtx.MgmtClient.Get(context.Background(), crclient.ObjectKey{Name: testCtx.ControlPlaneNamespace}, controlPlaneNamespace)
 			Expect(err).NotTo(HaveOccurred(), "failed to get namespace %s", testCtx.ControlPlaneNamespace)
 
 			uid, ok := controlPlaneNamespace.Annotations["hypershift.openshift.io/default-security-context-uid"]
@@ -780,7 +794,8 @@ func SecurityContextUIDTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should have expected RunAsUser UID for %s pods", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
