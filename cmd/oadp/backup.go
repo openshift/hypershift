@@ -181,9 +181,9 @@ func (o *CreateOptions) RunBackup(ctx context.Context) error {
 
 // Note: randomStringGenerator type is now in types.go
 
-// generateBackupName creates a backup name using the format: {hcName}-{hcNamespace}-{randomSuffix}
+// GenerateBackupName creates a backup name using the format: {hcName}-{hcNamespace}-{randomSuffix}
 // If the name is too long, it uses utils.ShortenName to ensure it doesn't exceed 63 characters
-func generateBackupName(hcName, hcNamespace string) string {
+func GenerateBackupName(hcName, hcNamespace string) string {
 	randomSuffix := utilrand.String(6)
 	baseName := fmt.Sprintf("%s-%s", hcName, hcNamespace)
 	// Use ShortenName to ensure it doesn't exceed DNS1123 subdomain max length (63 chars)
@@ -220,7 +220,7 @@ func (o *CreateOptions) GenerateBackupObjectWithPlatform(platform string) (*unst
 	// Use the name from flag, or generate if empty
 	backupName := o.BackupCustomName
 	if backupName == "" {
-		backupName = generateBackupName(o.HCName, o.HCNamespace)
+		backupName = GenerateBackupName(o.HCName, o.HCNamespace)
 	}
 
 	var includedResources []string

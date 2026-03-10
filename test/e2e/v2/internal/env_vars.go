@@ -146,4 +146,10 @@ func init() {
 		"When set to any non-empty value, displays environment variable help and exits without running tests.",
 		false,
 	)
+	RegisterEnvVarWithDefault(
+		"ARTIFACT_DIR",
+		"Directory for test artifacts. Defaults to /tmp/artifacts.",
+		false,
+		"/tmp/artifacts",
+	)
 }

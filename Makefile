@@ -9,6 +9,7 @@ CRD_OPTIONS ?= "crd"
 # Runtime CLI to use for building and pushing images
 RUNTIME ?= $(shell sh hack/utils.sh get_container_engine)
 
+ARTIFACT_DIR ?= /tmp/artifacts
 TOOLS_DIR=./hack/tools
 BIN_DIR=bin
 TOOLS_BIN_DIR := $(TOOLS_DIR)/$(BIN_DIR)
@@ -40,6 +41,7 @@ GO_BUILD_RECIPE=CGO_ENABLED=1 $(GO) build $(GO_GCFLAGS) $(GO_LDFLAGS)
 GO_CLI_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS) -ldflags '-X $(VERSION_PKG).commitHash=$(COMMIT_HASH) -extldflags "-static"'
 GO_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2e -c
 GO_E2EV2_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2ev2 -c
+GO_BACKUPRESTORE_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2ev2,backuprestore -c
 GO_REQSERVING_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags reqserving -c
 
 OUT_DIR ?= bin
@@ -47,6 +49,14 @@ OUT_DIR ?= bin
 # run the HO locally
 HYPERSHIFT_INSTALL_AWS := ./hack/dev/aws/hypershft-install-aws.sh
 RUN_OPERATOR_LOCALLY_AWS := ./hack/dev/aws/run-operator-locally-aws-dev.sh
+
+OPENSHIFT_CI ?= false
+FAIL_FAST ?= true
+
+# Do not fail fast in OpenShift CI, it's expensive to start the cluster, run all tests and report the results.
+ifeq ($(OPENSHIFT_CI),true)
+	FAIL_FAST = false
+endif
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -285,7 +295,7 @@ test: generate
 	$(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
 
 .PHONY: e2e
-e2e: reqserving-e2e e2ev2
+e2e: reqserving-e2e e2ev2 backuprestore-e2e
 	$(GO_E2E_RECIPE) -o bin/test-e2e ./test/e2e
 	$(GO_BUILD_RECIPE) -o bin/test-setup ./test/setup
 	cd $(TOOLS_DIR); GO111MODULE=on GOFLAGS=-mod=vendor GOWORK=off go build -tags=tools -o ../../bin/gotestsum gotest.tools/gotestsum
@@ -300,6 +310,21 @@ reqserving-e2e:
 e2ev2:
 	$(GO_E2EV2_RECIPE) -o bin/test-e2e-v2 ./test/e2e/v2/tests
 
+.PHONY: backuprestore-e2e
+backuprestore-e2e:
+	$(GO_BACKUPRESTORE_E2E_RECIPE) -o bin/test-backuprestore ./test/e2e/v2/tests
+
+.PHONY: test-backup-restore
+test-backup-restore: backuprestore-e2e
+	mkdir -p $(ARTIFACT_DIR)
+	ARTIFACT_DIR=$(ARTIFACT_DIR) bin/test-backuprestore \
+	  --ginkgo.v \
+	  --ginkgo.no-color=$(OPENSHIFT_CI) \
+	  --ginkgo.junit-report="$(ARTIFACT_DIR)/junit.xml" \
+	  --ginkgo.label-filter="backup-restore" \
+	  --ginkgo.fail-fast=$(FAIL_FAST) \
+	  --ginkgo.timeout=2h
+
 # Run go fmt against code
 .PHONY: fmt
 fmt:
@@ -308,7 +333,7 @@ fmt:
 # Run go vet against code
 .PHONY: vet
 vet:
-	$(GO) vet -tags integration,e2e,reqserving ./...
+	$(GO) vet -tags integration,e2e,reqserving,e2ev2,backuprestore ./...
 
 # jparrill: The RHTAP tool is breaking the RHTAP builds from Feb 27th, so we're stop using it for now
 # more info here https://redhat-internal.slack.com/archives/C031USXS2FJ/p1710177462151639
