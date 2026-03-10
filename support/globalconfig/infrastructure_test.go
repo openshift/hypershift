@@ -15,6 +15,30 @@ import (
 	"k8s.io/utils/ptr"
 )
 
+// assertOnlyExpectedPlatformStatus verifies that only the platform status matching
+// the given platform type is set, and all others are nil.
+func assertOnlyExpectedPlatformStatus(g Gomega, infra *configv1.Infrastructure, platform hyperv1.PlatformType) {
+	type platformCheck struct {
+		name   string
+		field  any
+		expect bool
+	}
+	checks := []platformCheck{
+		{"AWS", infra.Status.PlatformStatus.AWS, platform == hyperv1.AWSPlatform},
+		{"Azure", infra.Status.PlatformStatus.Azure, platform == hyperv1.AzurePlatform},
+		{"GCP", infra.Status.PlatformStatus.GCP, platform == hyperv1.GCPPlatform},
+		{"PowerVS", infra.Status.PlatformStatus.PowerVS, platform == hyperv1.PowerVSPlatform},
+		{"OpenStack", infra.Status.PlatformStatus.OpenStack, platform == hyperv1.OpenStackPlatform},
+	}
+	for _, c := range checks {
+		if c.expect {
+			g.Expect(c.field).ToNot(BeNil(), "expected %s platform status to be set", c.name)
+		} else {
+			g.Expect(c.field).To(BeNil(), "expected %s platform status to be nil when platform is %s", c.name, platform)
+		}
+	}
+}
+
 func TestReconcileInfrastructure(t *testing.T) {
 	const (
 		fakeHCPName          = "test-cluster"
@@ -190,23 +214,6 @@ func TestReconcileInfrastructure(t *testing.T) {
 					{Key: "team", Value: "platform"},
 					{Key: "env", Value: "prod"},
 				}))
-			},
-		},
-		{
-			name:       "When AWS platform is specified, it should not set other platform statuses",
-			inputInfra: InfrastructureConfig(),
-			inputHCP: func() *hyperv1.HostedControlPlane {
-				hcp := baseHCP(hyperv1.AWSPlatform)
-				hcp.Spec.Platform.AWS = &hyperv1.AWSPlatformSpec{
-					Region: "us-east-1",
-				}
-				return hcp
-			}(),
-			verify: func(g Gomega, infra *configv1.Infrastructure) {
-				g.Expect(infra.Status.PlatformStatus.GCP).To(BeNil())
-				g.Expect(infra.Status.PlatformStatus.Azure).To(BeNil())
-				g.Expect(infra.Status.PlatformStatus.PowerVS).To(BeNil())
-				g.Expect(infra.Status.PlatformStatus.OpenStack).To(BeNil())
 			},
 		},
 
@@ -387,6 +394,7 @@ func TestReconcileInfrastructure(t *testing.T) {
 			g := NewGomegaWithT(t)
 			ReconcileInfrastructure(tc.inputInfra, tc.inputHCP)
 			tc.verify(g, tc.inputInfra)
+			assertOnlyExpectedPlatformStatus(g, tc.inputInfra, tc.inputHCP.Spec.Platform.Type)
 		})
 	}
 }
