@@ -13,8 +13,8 @@ type GCPResourceReference struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
-	Name string `json:"name"`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')",message="name must conform to GCP resource naming standards"
+	Name string `json:"name,omitempty"`
 }
 
 // GCPResourceLabel is a label to apply to GCP resources created for the cluster.
@@ -33,9 +33,9 @@ type GCPResourceLabel struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')",message="key must match GCP label format: lowercase letters, digits, underscores, or hyphens"
 	// +kubebuilder:validation:XValidation:rule="!self.startsWith('goog')",message="Label keys starting with the reserved 'goog' prefix are not allowed"
-	Key string `json:"key"`
+	Key string `json:"key,omitempty"`
 
 	// value is the value part of the label. A label value can have a maximum of 63 characters.
 	// Empty values are allowed by GCP. If non-empty, it must start with a lowercase letter,
@@ -45,7 +45,7 @@ type GCPResourceLabel struct {
 	// +optional
 	// +kubebuilder:validation:MinLength=0
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^$|^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')",message="value must match GCP label format: lowercase letters, digits, underscores, or hyphens"
 	Value *string `json:"value,omitempty"`
 }
 
@@ -93,13 +93,13 @@ type GCPNetworkConfig struct {
 	// +required
 	// +immutable
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Network is immutable"
-	Network GCPResourceReference `json:"network"`
+	Network GCPResourceReference `json:"network,omitzero"`
 
 	// privateServiceConnectSubnet is the subnet for Private Service Connect endpoints
 	// +required
 	// +immutable
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Private Service Connect subnet is immutable"
-	PrivateServiceConnectSubnet GCPResourceReference `json:"privateServiceConnectSubnet"`
+	PrivateServiceConnectSubnet GCPResourceReference `json:"privateServiceConnectSubnet,omitzero"`
 }
 
 // GCPPlatformSpec specifies configuration for clusters running on Google Cloud Platform.
@@ -120,9 +120,9 @@ type GCPPlatformSpec struct {
 	// +immutable
 	// +kubebuilder:validation:MinLength=6
 	// +kubebuilder:validation:MaxLength=30
-	// +kubebuilder:validation:Pattern=`^[a-z]([a-z0-9-]{4,28}[a-z0-9])$`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')",message="project must match GCP label format: lowercase letters, digits, underscores, or hyphens"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Project is immutable"
-	Project string `json:"project"`
+	Project string `json:"project,omitempty"`
 
 	// region is the GCP region in which the cluster resides.
 	// Must be in the form of <geographic-area>-<location><number> (e.g., us-central1, europe-west12).
@@ -136,19 +136,19 @@ type GCPPlatformSpec struct {
 	// +immutable
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-z]+-[a-z]+[0-9]+$`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')",message="region must match GCP label format: lowercase letters, digits, underscores, or hyphens"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Region is immutable"
-	Region string `json:"region"`
+	Region string `json:"region,omitempty"`
 
 	// networkConfig specifies VPC configuration for Private Service Connect.
 	// Required for VPC configuration in Private Service Connect deployments.
 	// +required
-	NetworkConfig GCPNetworkConfig `json:"networkConfig"`
+	NetworkConfig GCPNetworkConfig `json:"networkConfig,omitzero"`
 
 	// endpointAccess controls API endpoint accessibility for the HostedControlPlane on GCP.
 	// Allowed values: "Private", "PublicAndPrivate". Defaults to "Private".
 	// +kubebuilder:validation:Enum=PublicAndPrivate;Private
-	// +kubebuilder:default=Private
+	// +default="Private"
 	// +optional
 	EndpointAccess GCPEndpointAccessType `json:"endpointAccess,omitempty"`
 
@@ -161,6 +161,7 @@ type GCPPlatformSpec struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=key
+	// +kubebuilder:validation:MinItems=0
 	// +kubebuilder:validation:MaxItems=60
 	ResourceLabels []GCPResourceLabel `json:"resourceLabels,omitempty"`
 
@@ -195,9 +196,9 @@ type GCPWorkloadIdentityConfig struct {
 	//
 	// +required
 	// +immutable
-	// +kubebuilder:validation:Pattern=`^[0-9]+$`
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=25
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]+$')",message="projectNumber must be a numeric string"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Project number is immutable"
 	ProjectNumber string `json:"projectNumber,omitempty"`
 
@@ -216,7 +217,7 @@ type GCPWorkloadIdentityConfig struct {
 	// +immutable
 	// +kubebuilder:validation:MinLength=4
 	// +kubebuilder:validation:MaxLength=32
-	// +kubebuilder:validation:Pattern=`^[a-z]([a-z0-9-]{2,30}[a-z0-9])$`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([a-z0-9-]{2,30}[a-z0-9])$')",message="poolID must start with a lowercase letter and contain only lowercase letters, digits, or hyphens"
 	// +kubebuilder:validation:XValidation:rule="!self.startsWith('gcp-')", message="Pool ID cannot start with reserved prefix 'gcp-'"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Pool ID is immutable"
 	PoolID string `json:"poolID,omitempty"`
@@ -235,7 +236,7 @@ type GCPWorkloadIdentityConfig struct {
 	// +immutable
 	// +kubebuilder:validation:MinLength=4
 	// +kubebuilder:validation:MaxLength=32
-	// +kubebuilder:validation:Pattern=`^[a-z]([a-z0-9-]{2,30}[a-z0-9])$`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([a-z0-9-]{2,30}[a-z0-9])$')",message="providerID must start with a lowercase letter and contain only lowercase letters, digits, or hyphens"
 	// +kubebuilder:validation:XValidation:rule="!self.startsWith('gcp-')", message="Provider ID cannot start with reserved prefix 'gcp-'"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Provider ID is immutable"
 	ProviderID string `json:"providerID,omitempty"`
@@ -267,9 +268,9 @@ type GCPServiceAccountsEmails struct {
 	//
 	// +required
 	// +immutable
-	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`
 	// +kubebuilder:validation:MinLength=37
 	// +kubebuilder:validation:MaxLength=100
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')",message="nodePool must be a valid GCP service account email"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="NodePool is immutable"
 	NodePool string `json:"nodePool,omitempty"`
 
@@ -288,9 +289,9 @@ type GCPServiceAccountsEmails struct {
 	//
 	// +required
 	// +immutable
-	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`
 	// +kubebuilder:validation:MinLength=37
 	// +kubebuilder:validation:MaxLength=100
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')",message="controlPlane must be a valid GCP service account email"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ControlPlane is immutable"
 	ControlPlane string `json:"controlPlane,omitempty"`
 
@@ -309,9 +310,9 @@ type GCPServiceAccountsEmails struct {
 	//
 	// +required
 	// +immutable
-	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`
 	// +kubebuilder:validation:MinLength=37
 	// +kubebuilder:validation:MaxLength=100
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')",message="cloudController must be a valid GCP service account email"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="CloudController is immutable"
 	CloudController string `json:"cloudController,omitempty"`
 
@@ -331,9 +332,9 @@ type GCPServiceAccountsEmails struct {
 	//
 	// +required
 	// +immutable
-	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`
 	// +kubebuilder:validation:MinLength=37
 	// +kubebuilder:validation:MaxLength=100
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')",message="storage must be a valid GCP service account email"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Storage is immutable"
 	Storage string `json:"storage,omitempty"`
 
@@ -350,10 +351,10 @@ type GCPServiceAccountsEmails struct {
 	//
 	// +required
 	// +immutable
-	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`
 	// +kubebuilder:validation:MinLength=37
 	// +kubebuilder:validation:MaxLength=100
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ImageRegistry is immutable"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')",message="imageRegistry must be a valid GCP service account email"
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="imageRegistry is immutable"
 	ImageRegistry string `json:"imageRegistry,omitempty"`
 }
 
@@ -384,8 +385,8 @@ type GCPNodePoolPlatform struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]+(-[a-z0-9]+)*$`
-	MachineType string `json:"machineType"`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]+(-[a-z0-9]+)*$')",message="machineType must follow GCP machine type naming conventions"
+	MachineType string `json:"machineType,omitempty"`
 
 	// zone is the GCP zone where node instances will be created.
 	// Must be a valid zone within the cluster's region.
@@ -395,8 +396,8 @@ type GCPNodePoolPlatform struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-z]+(?:-[a-z0-9]+)*-[a-z]$`
-	Zone string `json:"zone"`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]+(?:-[a-z0-9]+)*-[a-z]$')",message="zone must be a valid GCP zone format (e.g. us-central1-a)"
+	Zone string `json:"zone,omitempty"`
 
 	// subnet is the name of the subnet where node instances will be created.
 	// Must be a subnet within the VPC network specified in the HostedCluster's
@@ -406,8 +407,8 @@ type GCPNodePoolPlatform struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
-	Subnet string `json:"subnet"`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')",message="subnet must conform to GCP resource naming standards"
+	Subnet string `json:"subnet,omitempty"`
 
 	// image specifies the boot image for node instances.
 	// If unspecified, the default RHCOS image will be used based on the NodePool release payload.
@@ -417,6 +418,7 @@ type GCPNodePoolPlatform struct {
 	//   - A full resource URL: https://www.googleapis.com/compute/v1/projects/rhel-cloud/global/images/rhel-8-v20231010
 	//
 	// +optional
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
 	Image *string `json:"image,omitempty"`
 
@@ -444,6 +446,7 @@ type GCPNodePoolPlatform struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=key
+	// +kubebuilder:validation:MinItems=0
 	// +kubebuilder:validation:MaxItems=60
 	ResourceLabels []GCPResourceLabel `json:"resourceLabels,omitempty"`
 
@@ -457,6 +460,7 @@ type GCPNodePoolPlatform struct {
 	//
 	// +optional
 	// +listType=set
+	// +kubebuilder:validation:MinItems=0
 	// +kubebuilder:validation:MaxItems=64
 	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=63
@@ -470,7 +474,7 @@ type GCPNodePoolPlatform struct {
 	// If not specified, defaults to "Standard".
 	//
 	// +optional
-	// +kubebuilder:default=Standard
+	// +default="Standard"
 	// +kubebuilder:validation:Enum=Standard;Spot;Preemptible
 	ProvisioningModel *GCPProvisioningModel `json:"provisioningModel,omitempty"`
 
@@ -490,7 +494,7 @@ type GCPBootDisk struct {
 	// Must be at least 20 GB for RHCOS images.
 	//
 	// +optional
-	// +kubebuilder:default=64
+	// +default=64
 	// +kubebuilder:validation:Minimum=20
 	// +kubebuilder:validation:Maximum=65536
 	DiskSizeGB *int64 `json:"diskSizeGB,omitempty"`
@@ -503,7 +507,7 @@ type GCPBootDisk struct {
 	// If not specified, defaults to "pd-balanced".
 	//
 	// +optional
-	// +kubebuilder:default="pd-balanced"
+	// +default="pd-balanced"
 	// +kubebuilder:validation:Enum=pd-standard;pd-ssd;pd-balanced
 	DiskType *string `json:"diskType,omitempty"`
 
@@ -511,7 +515,7 @@ type GCPBootDisk struct {
 	// If not specified, Google-managed encryption keys are used.
 	//
 	// +optional
-	EncryptionKey *GCPDiskEncryptionKey `json:"encryptionKey,omitempty"`
+	EncryptionKey *GCPDiskEncryptionKey `json:"encryptionKey,omitzero"`
 }
 
 // GCPDiskEncryptionKey specifies configuration for customer-managed encryption keys.
@@ -522,8 +526,8 @@ type GCPDiskEncryptionKey struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
-	// +kubebuilder:validation:Pattern=`^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/locations\/[a-z0-9-]+\/keyRings\/[a-zA-Z0-9_-]+\/cryptoKeys\/[a-zA-Z0-9_-]+$`
-	KMSKeyName string `json:"kmsKeyName"`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/locations/[a-z0-9-]+/keyRings/[a-zA-Z0-9_-]+/cryptoKeys/[a-zA-Z0-9_-]+$')",message="kmsKeyName must be a valid Cloud KMS key resource name"
+	KMSKeyName string `json:"kmsKeyName,omitempty"`
 }
 
 // GCPNodeServiceAccount specifies the Google Service Account configuration for node instances.
@@ -536,8 +540,9 @@ type GCPNodeServiceAccount struct {
 	//   - Storage object viewer (for pulling container images)
 	//
 	// +optional
+	// +kubebuilder:validation:MinLength=37
 	// +kubebuilder:validation:MaxLength=254
-	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')",message="email must be a valid GCP service account email"
 	Email *string `json:"email,omitempty"`
 
 	// scopes specifies the access scopes for the service account.
@@ -550,7 +555,9 @@ type GCPNodeServiceAccount struct {
 	//
 	// +optional
 	// +listType=set
+	// +kubebuilder:validation:MinItems=0
 	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=512
 	Scopes []string `json:"scopes,omitempty"`
 }
