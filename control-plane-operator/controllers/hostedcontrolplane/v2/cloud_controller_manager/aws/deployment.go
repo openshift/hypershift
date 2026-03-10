@@ -9,7 +9,7 @@ import (
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	if cpContext.HCP.Spec.AdditionalTrustBundle != nil {
-		util.DeploymentAddAWSCABundleVolume(cpContext.HCP.Spec.AdditionalTrustBundle, deployment)
+		util.DeploymentAddAWSCABundleVolume(cpContext.HCP.Spec.AdditionalTrustBundle, deployment, cpContext.ReleaseImageProvider.GetImage(util.CPOImageName))
 	}
 	return nil
 }

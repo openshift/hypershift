@@ -13,26 +13,31 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type fakeReleaseProvider struct{}
+
+func (f *fakeReleaseProvider) GetImage(key string) string           { return "test-cpo-image" }
+func (f *fakeReleaseProvider) ImageExist(key string) (string, bool) { return "", false }
+func (f *fakeReleaseProvider) Version() string                      { return "4.17.0" }
+func (f *fakeReleaseProvider) ComponentVersions() (map[string]string, error) {
+	return nil, nil
+}
+func (f *fakeReleaseProvider) ComponentImages() map[string]string { return nil }
+
 func TestAdaptDeploymentTrustBundle(t *testing.T) {
 	testCases := []struct {
-		name                string
-		additionalTrust     *corev1.LocalObjectReference
-		expectVolume        bool
-		expectEnvVar        bool
-		expectedEnvVarValue string
+		name            string
+		additionalTrust *corev1.LocalObjectReference
+		expectCABundle  bool
 	}{
 		{
-			name:            "no additional trust bundle",
+			name:            "When no additional trust bundle is set it should not add CA bundle resources",
 			additionalTrust: nil,
-			expectVolume:    false,
-			expectEnvVar:    false,
+			expectCABundle:  false,
 		},
 		{
-			name:                "with additional trust bundle",
-			additionalTrust:     &corev1.LocalObjectReference{Name: "user-ca-bundle"},
-			expectVolume:        true,
-			expectEnvVar:        true,
-			expectedEnvVarValue: "/etc/pki/ca-trust/extracted/hypershift/user-ca-bundle.pem",
+			name:            "When additional trust bundle is set it should add combined CA bundle with init container",
+			additionalTrust: &corev1.LocalObjectReference{Name: "user-ca-bundle"},
+			expectCABundle:  true,
 		},
 	}
 
@@ -54,8 +59,9 @@ func TestAdaptDeploymentTrustBundle(t *testing.T) {
 			}
 
 			cpContext := controlplanecomponent.WorkloadContext{
-				Context: t.Context(),
-				HCP:     hcp,
+				Context:              t.Context(),
+				HCP:                  hcp,
+				ReleaseImageProvider: &fakeReleaseProvider{},
 			}
 
 			deployment, err := assets.LoadDeploymentManifest(ComponentName)
@@ -66,16 +72,43 @@ func TestAdaptDeploymentTrustBundle(t *testing.T) {
 
 			container := deployment.Spec.Template.Spec.Containers[0]
 			volumes := deployment.Spec.Template.Spec.Volumes
+			initContainers := deployment.Spec.Template.Spec.InitContainers
 
-			hasVolume := false
+			// Verify user-ca-bundle ConfigMap volume.
+			hasUserCAVolume := false
 			for _, v := range volumes {
-				if v.Name == "aws-ca-bundle" {
-					hasVolume = true
+				if v.Name == "user-ca-bundle" {
+					hasUserCAVolume = true
+					g.Expect(v.VolumeSource.ConfigMap).ToNot(BeNil())
+					g.Expect(v.VolumeSource.ConfigMap.Name).To(Equal("user-ca-bundle"))
 					break
 				}
 			}
-			g.Expect(hasVolume).To(Equal(tc.expectVolume))
+			g.Expect(hasUserCAVolume).To(Equal(tc.expectCABundle))
 
+			// Verify aws-ca-bundle EmptyDir volume.
+			hasCombinedVolume := false
+			for _, v := range volumes {
+				if v.Name == "aws-ca-bundle" {
+					hasCombinedVolume = true
+					g.Expect(v.VolumeSource.EmptyDir).ToNot(BeNil())
+					break
+				}
+			}
+			g.Expect(hasCombinedVolume).To(Equal(tc.expectCABundle))
+
+			// Verify setup-aws-ca-bundle init container.
+			hasInitContainer := false
+			for _, ic := range initContainers {
+				if ic.Name == "setup-aws-ca-bundle" {
+					hasInitContainer = true
+					g.Expect(ic.Image).To(Equal("test-cpo-image"))
+					break
+				}
+			}
+			g.Expect(hasInitContainer).To(Equal(tc.expectCABundle))
+
+			// Verify main container volume mount.
 			hasMount := false
 			for _, vm := range container.VolumeMounts {
 				if vm.Name == "aws-ca-bundle" {
@@ -85,17 +118,18 @@ func TestAdaptDeploymentTrustBundle(t *testing.T) {
 					break
 				}
 			}
-			g.Expect(hasMount).To(Equal(tc.expectVolume))
+			g.Expect(hasMount).To(Equal(tc.expectCABundle))
 
+			// Verify AWS_CA_BUNDLE env var points to the combined CA file.
 			hasEnvVar := false
 			for _, env := range container.Env {
 				if env.Name == "AWS_CA_BUNDLE" {
 					hasEnvVar = true
-					g.Expect(env.Value).To(Equal(tc.expectedEnvVarValue))
+					g.Expect(env.Value).To(Equal("/etc/pki/ca-trust/extracted/hypershift/combined-ca-bundle.pem"))
 					break
 				}
 			}
-			g.Expect(hasEnvVar).To(Equal(tc.expectEnvVar))
+			g.Expect(hasEnvVar).To(Equal(tc.expectCABundle))
 		})
 	}
 }

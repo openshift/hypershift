@@ -22,7 +22,7 @@ func (capi *CAPIProviderOptions) adaptDeployment(cpContext component.WorkloadCon
 	proxy.SetEnvVars(&deployment.Spec.Template.Spec.Containers[0].Env)
 
 	if cpContext.HCP.Spec.Platform.Type == hyperv1.AWSPlatform && cpContext.HCP.Spec.AdditionalTrustBundle != nil {
-		util.DeploymentAddAWSCABundleVolume(cpContext.HCP.Spec.AdditionalTrustBundle, deployment)
+		util.DeploymentAddAWSCABundleVolume(cpContext.HCP.Spec.AdditionalTrustBundle, deployment, cpContext.ReleaseImageProvider.GetImage(util.CPOImageName))
 	}
 
 	if deployment.Annotations == nil {

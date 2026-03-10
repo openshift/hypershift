@@ -41,7 +41,7 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 	})
 
 	if cpContext.HCP.Spec.Platform.Type == hyperv1.AWSPlatform && cpContext.HCP.Spec.AdditionalTrustBundle != nil {
-		util.DeploymentAddAWSCABundleVolume(cpContext.HCP.Spec.AdditionalTrustBundle, deployment)
+		util.DeploymentAddAWSCABundleVolume(cpContext.HCP.Spec.AdditionalTrustBundle, deployment, cpContext.ReleaseImageProvider.GetImage(util.CPOImageName))
 	}
 
 	return nil
