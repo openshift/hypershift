@@ -68,7 +68,6 @@ import (
 	storagev2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/storage"
 	pkimanifests "github.com/openshift/hypershift/control-plane-pki-operator/manifests"
 	ignitionmanifests "github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
-	"github.com/openshift/hypershift/support/awsapi"
 	supportawsutil "github.com/openshift/hypershift/support/awsutil"
 	hyperazureutil "github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
@@ -89,9 +88,15 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/service/ec2"
-	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
+	stsv2 "github.com/aws/aws-sdk-go-v2/service/sts"
+	awssdk "github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	stsv1 "github.com/aws/aws-sdk-go/service/sts"
+	"github.com/openshift/hypershift/support/awsapi"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -175,7 +180,8 @@ type HostedControlPlaneReconciler struct {
 	DefaultIngressDomain                    string
 	MetricsSet                              metrics.MetricsSet
 	SREConfigHash                           string
-	ec2Client                               awsapi.EC2API
+	ec2Client                               ec2iface.EC2API
+	ec2ClientV2                             awsapi.EC2API
 	awsSession                              *aws.Config
 	reconcileInfrastructureStatus           func(ctx context.Context, hcp *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error)
 	EnableCVOManagementClusterMetricsAccess bool
@@ -205,7 +211,7 @@ func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, create
 
 	r.reconcileInfrastructureStatus = r.defaultReconcileInfrastructureStatus
 
-	r.ec2Client, r.awsSession = GetEC2Client(context.Background())
+	r.ec2ClientV2, r.ec2Client, r.awsSession = GetEC2Client(context.Background())
 
 	r.registerComponents(hcp)
 
@@ -271,19 +277,49 @@ func (r *HostedControlPlaneReconciler) registerComponents(hcp *hyperv1.HostedCon
 	)
 }
 
-func GetEC2Client(ctx context.Context) (awsapi.EC2API, *aws.Config) {
+func GetEC2Client(ctx context.Context) (awsapi.EC2API, ec2iface.EC2API, *aws.Config) {
 	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
 	// when reconciling an AWS hosted control plane
-	if os.Getenv("AWS_SHARED_CREDENTIALS_FILE") != "" {
-		// v2
+	log := ctrl.Log.WithName("GetEC2Client")
+	if credFile := os.Getenv("AWS_SHARED_CREDENTIALS_FILE"); credFile != "" {
+		log.Info("bisect: creating both v1 and v2 EC2 clients",
+			"credFile", credFile,
+			"region", os.Getenv("AWS_REGION"))
+		// v1 session + v1 ec2 client
+		awsSession := awsutil.NewSession("control-plane-operator", "", "", "", "")
+		awsConfig := awssdk.NewConfig()
+		ec2ClientV1 := ec2.New(awsSession, awsConfig)
+		// v2 session + v2 ec2 client
 		awsSessionV2 := awsutil.NewSessionV2(ctx, "control-plane-operator", "", "", "", "")
 		awsConfigV2 := awsutil.NewConfigV2()
-		ec2Client := ec2.NewFromConfig(*awsSessionV2, func(o *ec2.Options) {
+		ec2ClientV2 := ec2v2.NewFromConfig(*awsSessionV2, func(o *ec2v2.Options) {
 			o.Retryer = awsConfigV2()
 		})
-		return ec2Client, awsSessionV2
+		// bisect: log v1 caller identity
+		stsClientV1 := stsv1.New(awsSession)
+		if identity, err := stsClientV1.GetCallerIdentityWithContext(ctx, &stsv1.GetCallerIdentityInput{}); err != nil {
+			log.Info("bisect: v1 GetCallerIdentity failed", "error", err.Error())
+		} else {
+			log.Info("bisect: v1 caller identity",
+				"arn", *identity.Arn,
+				"userId", *identity.UserId,
+				"account", *identity.Account)
+		}
+
+		// bisect: log v2 caller identity to compare with v1
+		stsClientV2 := stsv2.NewFromConfig(*awsSessionV2)
+		if identity, err := stsClientV2.GetCallerIdentity(ctx, &stsv2.GetCallerIdentityInput{}); err != nil {
+			log.Info("bisect: v2 GetCallerIdentity failed", "error", err.Error())
+		} else {
+			log.Info("bisect: v2 caller identity",
+				"arn", aws.ToString(identity.Arn),
+				"userId", aws.ToString(identity.UserId),
+				"account", aws.ToString(identity.Account))
+		}
+		log.Info("bisect: v1 and v2 EC2 clients created successfully")
+		return ec2ClientV2, ec2ClientV1, awsSessionV2
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
 func isScrapeConfig(obj client.Object) bool {
@@ -2409,7 +2445,7 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 
 		// if we failed to apply the annotation prviously, fallback to fetching the current tags from the SG resource directly.
 		if lastAppliedTags == nil {
-			sg, err := supportawsutil.GetSecurityGroupById(ctx, r.ec2Client, hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
+			sg, err := supportawsutil.GetSecurityGroupById(r.ec2Client, hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
 			if err != nil {
 				return fmt.Errorf("failed to get default security group: %w", err)
 			}
@@ -2423,7 +2459,8 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 		}
 
 		logger.Info("Security group tags have changed", "changed", changed, "deleted", deleted)
-		if err := supportawsutil.UpdateResourceTags(ctx, r.ec2Client, hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID, changed, deleted); err != nil {
+		// bisect: use v2 ec2 client (r.ec2ClientV2) for CreateTags to test if v2 client is the issue
+		if err := supportawsutil.UpdateResourceTags(ctx, r.ec2ClientV2, hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID, changed, deleted); err != nil {
 			if supportawsutil.IsPermissionsError(err) {
 				logger.Info("insufficient permissions to update security group tags",
 					"sg", hcp.Status.Platform.AWS.DefaultWorkerSecurityGroupID,
@@ -2498,15 +2535,15 @@ func (r *HostedControlPlaneReconciler) reconcileDefaultSecurityGroup(ctx context
 	return creationErr
 }
 
-func awsSecurityGroupFilters(infraID string) []ec2types.Filter {
-	return []ec2types.Filter{
+func awsSecurityGroupFilters(infraID string) []*ec2.Filter {
+	return []*ec2.Filter{
 		{
 			Name:   aws.String(fmt.Sprintf("tag:kubernetes.io/cluster/%s", infraID)),
-			Values: []string{"owned"},
+			Values: []*string{aws.String("owned")},
 		},
 		{
 			Name:   aws.String("tag:Name"),
-			Values: []string{awsSecurityGroupName(infraID)},
+			Values: []*string{aws.String(awsSecurityGroupName(infraID))},
 		},
 	}
 }
@@ -2515,7 +2552,7 @@ func awsSecurityGroupName(infraID string) string {
 	return fmt.Sprintf("%s-default-sg", infraID)
 }
 
-func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client awsapi.EC2API, hcp *hyperv1.HostedControlPlane) (string, map[string]string, error) {
+func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, hcp *hyperv1.HostedControlPlane) (string, map[string]string, error) {
 	logger := ctrl.LoggerFrom(ctx)
 
 	var (
@@ -2524,8 +2561,8 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client awsapi.EC2API,
 	)
 
 	// Validate VPC exists
-	vpcResult, err := ec2Client.DescribeVpcs(ctx, &ec2.DescribeVpcsInput{
-		VpcIds: []string{vpcID},
+	vpcResult, err := ec2Client.DescribeVpcsWithContext(ctx, &ec2.DescribeVpcsInput{
+		VpcIds: []*string{aws.String(vpcID)},
 	})
 	if err != nil {
 		logger.Error(err, "Failed to describe vpc", "vpcID", vpcID)
@@ -2545,14 +2582,14 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client awsapi.EC2API,
 	}
 
 	// Search for an existing default worker security group and create one if not found
-	describeSGResult, err := ec2Client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(infraID)})
+	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{Filters: awsSecurityGroupFilters(infraID)})
 	if err != nil {
 		return "", nil, fmt.Errorf("cannot list security groups, code: %s", supportawsutil.AWSErrorCode(err))
 	}
 	sgID := ""
-	var sg *ec2types.SecurityGroup
+	var sg *ec2.SecurityGroup
 	if len(describeSGResult.SecurityGroups) > 0 {
-		sg = &describeSGResult.SecurityGroups[0]
+		sg = describeSGResult.SecurityGroups[0]
 		sgID = aws.ToString(sg.GroupId)
 	}
 
@@ -2561,13 +2598,13 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client awsapi.EC2API,
 		// Create a security group if one is not found
 		tags = awsSecurityGroupTags(hcp)
 
-		createSGResult, err := ec2Client.CreateSecurityGroup(ctx, &ec2.CreateSecurityGroupInput{
+		createSGResult, err := ec2Client.CreateSecurityGroup(&ec2.CreateSecurityGroupInput{
 			GroupName:   aws.String(awsSecurityGroupName(infraID)),
 			Description: aws.String("default worker security group"),
 			VpcId:       aws.String(vpcID),
-			TagSpecifications: []ec2types.TagSpecification{
+			TagSpecifications: []*ec2.TagSpecification{
 				{
-					ResourceType: ec2types.ResourceTypeSecurityGroup,
+					ResourceType: aws.String("security-group"),
 					Tags:         supportawsutil.MapToEC2Tags(tags),
 				},
 			},
@@ -2577,29 +2614,27 @@ func createAWSDefaultSecurityGroup(ctx context.Context, ec2Client awsapi.EC2API,
 		}
 		sgID = aws.ToString(createSGResult.GroupId)
 
-		// Fetch just-created SG. Use 30s to match the v1 SDK default (MaxAttempts: 6, Delay: 5s).
-		waiter := ec2.NewSecurityGroupExistsWaiter(ec2Client)
-		if err = waiter.Wait(ctx, &ec2.DescribeSecurityGroupsInput{
-			GroupIds: []string{sgID},
-		}, 30*time.Second); err != nil {
+		// Fetch just-created SG
+		describeSGInput := &ec2.DescribeSecurityGroupsInput{
+			GroupIds: []*string{aws.String(sgID)},
+		}
+		if err = ec2Client.WaitUntilSecurityGroupExistsWithContext(ctx, describeSGInput); err != nil {
 			return "", nil, fmt.Errorf("failed to find created security group (id: %s), code: %s", sgID, supportawsutil.AWSErrorCode(err))
 		}
 
-		describeSGResult, err = ec2Client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
-			GroupIds: []string{sgID},
-		})
+		describeSGResult, err = ec2Client.DescribeSecurityGroups(describeSGInput)
 		if err != nil || len(describeSGResult.SecurityGroups) == 0 {
 			return "", nil, fmt.Errorf("failed to fetch security group (id: %s), code: %s", sgID, supportawsutil.AWSErrorCode(err))
 		}
 
-		sg = &describeSGResult.SecurityGroups[0]
+		sg = describeSGResult.SecurityGroups[0]
 		logger.Info("Created security group", "id", sgID)
 	} else {
 		tags = supportawsutil.EC2TagsToMap(sg.Tags)
 	}
 
 	ingressPermissions := supportawsutil.DefaultWorkerSGIngressRules(machineCIDRs, sgID, aws.ToString(sg.OwnerId))
-	_, err = ec2Client.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
+	_, err = ec2Client.AuthorizeSecurityGroupIngress(&ec2.AuthorizeSecurityGroupIngressInput{
 		GroupId:       aws.String(sgID),
 		IpPermissions: ingressPermissions,
 	})
@@ -2676,7 +2711,7 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 	}
 
 	// Get the security group to delete. If it no longer exists, then there's nothing to do
-	sg, err := supportawsutil.GetSecurityGroup(ctx, r.ec2Client, awsSecurityGroupFilters(hcp.Spec.InfraID))
+	sg, err := supportawsutil.GetSecurityGroup(r.ec2Client, awsSecurityGroupFilters(hcp.Spec.InfraID))
 	if err != nil {
 		return "", err
 	}
@@ -2685,11 +2720,14 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 	}
 
 	if len(sg.IpPermissions) > 0 {
-		if _, err = r.ec2Client.RevokeSecurityGroupIngress(ctx, &ec2.RevokeSecurityGroupIngressInput{
+		if _, err = r.ec2Client.RevokeSecurityGroupIngressWithContext(ctx, &ec2.RevokeSecurityGroupIngressInput{
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissions,
 		}); err != nil {
-			code := supportawsutil.AWSErrorCode(err)
+			code := "UnknownError"
+			if awsErr, ok := err.(awserr.Error); ok {
+				code = awsErr.Code()
+			}
 			log.Error(err, "failed to revoke security group ingress permissions", "SecurityGroupID", aws.ToString(sg.GroupId), "code", code)
 
 			return code, fmt.Errorf("failed to revoke security group ingress rules: %s", code)
@@ -2697,21 +2735,27 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 	}
 
 	if len(sg.IpPermissionsEgress) > 0 {
-		if _, err = r.ec2Client.RevokeSecurityGroupEgress(ctx, &ec2.RevokeSecurityGroupEgressInput{
+		if _, err = r.ec2Client.RevokeSecurityGroupEgressWithContext(ctx, &ec2.RevokeSecurityGroupEgressInput{
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissionsEgress,
 		}); err != nil {
-			code := supportawsutil.AWSErrorCode(err)
+			code := "UnknownError"
+			if awsErr, ok := err.(awserr.Error); ok {
+				code = awsErr.Code()
+			}
 			log.Error(err, "failed to revoke security group egress permissions", "SecurityGroupID", aws.ToString(sg.GroupId), "code", code)
 
 			return code, fmt.Errorf("failed to revoke security group egress rules: %s", code)
 		}
 	}
 
-	if _, err = r.ec2Client.DeleteSecurityGroup(ctx, &ec2.DeleteSecurityGroupInput{
+	if _, err = r.ec2Client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
 		GroupId: sg.GroupId,
 	}); err != nil {
-		code := supportawsutil.AWSErrorCode(err)
+		code := "UnknownError"
+		if awsErr, ok := err.(awserr.Error); ok {
+			code = awsErr.Code()
+		}
 		log.Error(err, "failed to delete security group", "SecurityGroupID", aws.ToString(sg.GroupId), "code", code)
 
 		return code, fmt.Errorf("failed to delete security group %s: %s", aws.ToString(sg.GroupId), code)
@@ -2720,7 +2764,7 @@ func (r *HostedControlPlaneReconciler) destroyAWSDefaultSecurityGroup(ctx contex
 	// Once the security group delete function has been invoked, attempt to get the security group again
 	// to ensure that it no longer exists. If it does still exist, then return an error so that we can retry
 	// the delete until it's no longer there.
-	sg, err = supportawsutil.GetSecurityGroup(ctx, r.ec2Client, awsSecurityGroupFilters(hcp.Spec.InfraID))
+	sg, err = supportawsutil.GetSecurityGroup(r.ec2Client, awsSecurityGroupFilters(hcp.Spec.InfraID))
 	if err != nil {
 		return "", err
 	}

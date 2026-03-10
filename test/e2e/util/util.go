@@ -46,6 +46,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	iamv2 "github.com/aws/aws-sdk-go-v2/service/iam"
 	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 
@@ -3399,8 +3400,29 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 			]
 		}`, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
 
+		t.Logf("debug: applying PutRolePolicy to CPO role: %s", hostedCluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN)
+		t.Logf("debug: default worker SG: %s", hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
+
 		cleanup, err := PutRolePolicy(ctx, clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, tagsPolicy)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to put role policy for tagging default security group")
+
+		// Verify the policy was actually applied and is visible
+		iamClient := GetIAMClient(ctx, clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+		roleName := hostedCluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN
+		roleName = roleName[strings.LastIndex(roleName, "/")+1:]
+		policyName := hyperutil.HashSimple(tagsPolicy)
+		t.Logf("debug: checking role=%s policyName=%s", roleName, policyName)
+
+		getRolePolicyOut, getRolePolicyErr := iamClient.GetRolePolicy(ctx, &iamv2.GetRolePolicyInput{
+			RoleName:   aws.String(roleName),
+			PolicyName: aws.String(policyName),
+		})
+		if getRolePolicyErr != nil {
+			t.Logf("debug: GetRolePolicy FAILED (policy NOT found on role): %v", getRolePolicyErr)
+		} else {
+			t.Logf("debug: GetRolePolicy SUCCESS - policy IS on the role, document: %s", aws.ToString(getRolePolicyOut.PolicyDocument))
+		}
+
 		defer func() {
 			err := cleanup()
 			g.Expect(err).NotTo(HaveOccurred(), "failed to cleanup role policy for tagging default security group")

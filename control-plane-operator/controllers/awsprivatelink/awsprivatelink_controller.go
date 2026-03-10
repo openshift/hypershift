@@ -779,7 +779,7 @@ func (r *AWSEndpointServiceReconciler) reconcileAWSEndpointSecurityGroup(ctx con
 
 	log := ctrl.LoggerFrom(ctx)
 	var err error
-	sg, err = supportawsutil.GetSecurityGroup(ctx, ec2Client, vpcEndpointSecurityGroupFilter(hcp.Spec.InfraID, awsEndpointService.Name))
+	sg, err = supportawsutil.GetSecurityGroupV2(ctx, ec2Client, vpcEndpointSecurityGroupFilter(hcp.Spec.InfraID, awsEndpointService.Name))
 	if err != nil {
 		log.Error(err, "failed to get security group for endpoint", "infraID", hcp.Spec.InfraID, "name", awsEndpointService.Name)
 		return err
@@ -882,7 +882,7 @@ func (r *AWSEndpointServiceReconciler) createSecurityGroup(ctx context.Context, 
 		log.Error(err, "failed to wait for security group to exist", "id", sgID)
 		return nil, fmt.Errorf("failed to wait for security group to exist (id: %s), code: %s", sgID, supportawsutil.AWSErrorCode(err))
 	}
-	sg, err := supportawsutil.GetSecurityGroupById(ctx, ec2Client, sgID)
+	sg, err := supportawsutil.GetSecurityGroupByIdV2(ctx, ec2Client, sgID)
 	if err != nil {
 		log.Error(err, "failed to fetch security group by ID", "id", sgID)
 		return nil, err
