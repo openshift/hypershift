@@ -292,6 +292,7 @@ nav:
   - 'Common':
     - 'Expose Data Plane Ingress via MetalLB': recipes/common/exposing-dataplane-with-metallb.md
     - 'Replace the default CRI-O runtime': recipes/common/replace-crio-runtime.md
+    - 'Configure SPO with Audit Logging and Seccomp': recipes/common/spo-audit-logging-seccomp.md
 - 'Reference':
   - 'Architecture':
     - reference/architecture/index.md
