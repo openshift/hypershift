@@ -14,7 +14,7 @@ type ComponentProvider interface {
 // ComponentConfig describes how to scrape a single control plane component,
 // including the per-component TLS configuration derived from its ServiceMonitor.
 type ComponentConfig struct {
-	ServiceName   string
+	Selector      map[string]string
 	MetricsPort   int32
 	MetricsPath   string
 	MetricsScheme string
@@ -30,7 +30,7 @@ type ComponentConfig struct {
 
 // TargetDiscoverer discovers scrape targets (pod endpoints) for a given service.
 type TargetDiscoverer interface {
-	Discover(ctx context.Context, serviceName string, port int32) ([]ScrapeTarget, error)
+	Discover(ctx context.Context, selector map[string]string, port int32) ([]ScrapeTarget, error)
 }
 
 // ScrapeTarget represents a single pod endpoint to scrape.
@@ -59,17 +59,18 @@ type ComponentFileConfig struct {
 	// or PodMonitor name). Components are sorted by this field for deterministic
 	// serialization.
 	Name string `json:"name"`
-	// ServiceName is the component name used for endpoint-resolver lookup.
-	// For ServiceMonitor components this matches the service name by convention.
-	// For PodMonitor components this is the PodMonitor/component name.
-	ServiceName   string `json:"serviceName"`
-	MetricsPort   int32  `json:"metricsPort"`
-	MetricsPath   string `json:"metricsPath"`
-	MetricsScheme string `json:"metricsScheme"`
-	TLSServerName string `json:"tlsServerName"`
-	CAFile        string `json:"caFile,omitempty"`
-	CertFile      string `json:"certFile,omitempty"`
-	KeyFile       string `json:"keyFile,omitempty"`
+	// Selector is the pod label selector used by the endpoint-resolver to find
+	// matching pods. For ServiceMonitor components this comes from the Service's
+	// Spec.Selector; for PodMonitor components from the PodMonitor's
+	// Spec.Selector.MatchLabels.
+	Selector      map[string]string `json:"selector,omitempty"`
+	MetricsPort   int32             `json:"metricsPort"`
+	MetricsPath   string            `json:"metricsPath"`
+	MetricsScheme string            `json:"metricsScheme"`
+	TLSServerName string            `json:"tlsServerName"`
+	CAFile        string            `json:"caFile,omitempty"`
+	CertFile      string            `json:"certFile,omitempty"`
+	KeyFile       string            `json:"keyFile,omitempty"`
 
 	// Label overrides from SM/PM annotations for standalone OCP compatibility.
 	MetricsJob       string `json:"metricsJob,omitempty"`

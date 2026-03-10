@@ -55,7 +55,7 @@ func adaptScrapeConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap
 		}
 		ep := sm.Spec.Endpoints[0]
 
-		serviceName, err := findServiceForMonitor(cpContext, namespace, sm.Name, sm.Spec.Selector)
+		serviceName, podSelector, err := findServiceForMonitor(cpContext, namespace, sm.Name, sm.Spec.Selector)
 		if err != nil {
 			log.V(4).Info("skipping ServiceMonitor: service not found", "serviceMonitor", sm.Name, "error", err)
 			continue
@@ -92,7 +92,7 @@ func adaptScrapeConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap
 		}
 
 		comp := metricsproxybin.ComponentFileConfig{
-			ServiceName:   serviceName,
+			Selector:      podSelector,
 			MetricsPort:   port,
 			MetricsPath:   metricsPath,
 			MetricsScheme: scheme,
@@ -157,9 +157,8 @@ func adaptScrapeConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap
 			serverName = *ep.TLSConfig.ServerName
 		}
 
-		// For PodMonitors, the component name is used for endpoint-resolver lookup.
 		comp := metricsproxybin.ComponentFileConfig{
-			ServiceName:   pm.Name,
+			Selector:      pm.Spec.Selector.MatchLabels,
 			MetricsPort:   port,
 			MetricsPath:   metricsPath,
 			MetricsScheme: scheme,
@@ -209,33 +208,34 @@ func certFilePathFromSecretOrConfigMap(ref prometheusoperatorv1.SecretOrConfigMa
 	return ""
 }
 
-// findServiceForMonitor finds the Service for a ServiceMonitor. It first tries
-// a direct lookup by the ServiceMonitor's name (which by convention matches the
-// target service in HyperShift). If no service with that name exists, it falls
-// back to the label selector.
-func findServiceForMonitor(cpContext component.WorkloadContext, namespace, smName string, selector metav1.LabelSelector) (string, error) {
+// findServiceForMonitor finds the Service for a ServiceMonitor and returns its
+// name along with its pod selector (Spec.Selector). It first tries a direct
+// lookup by the ServiceMonitor's name (which by convention matches the target
+// service in HyperShift). If no service with that name exists, it falls back
+// to the label selector.
+func findServiceForMonitor(cpContext component.WorkloadContext, namespace, smName string, selector metav1.LabelSelector) (string, map[string]string, error) {
 	// Try direct lookup by ServiceMonitor name first.
 	svc := &corev1.Service{}
 	if err := cpContext.Client.Get(cpContext, client.ObjectKey{Namespace: namespace, Name: smName}, svc); err == nil {
-		return svc.Name, nil
+		return svc.Name, svc.Spec.Selector, nil
 	}
 
 	// Fall back to label selector.
 	sel, err := metav1.LabelSelectorAsSelector(&selector)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse label selector: %w", err)
+		return "", nil, fmt.Errorf("failed to parse label selector: %w", err)
 	}
 
 	svcList := &corev1.ServiceList{}
 	if err := cpContext.Client.List(cpContext, svcList, client.InNamespace(namespace), client.MatchingLabelsSelector{Selector: sel}); err != nil {
-		return "", fmt.Errorf("failed to list services: %w", err)
+		return "", nil, fmt.Errorf("failed to list services: %w", err)
 	}
 
 	if len(svcList.Items) == 0 {
-		return "", fmt.Errorf("no service found for ServiceMonitor %s", smName)
+		return "", nil, fmt.Errorf("no service found for ServiceMonitor %s", smName)
 	}
 
-	return svcList.Items[0].Name, nil
+	return svcList.Items[0].Name, svcList.Items[0].Spec.Selector, nil
 }
 
 // resolveServicePort reads a Service and resolves a named port to a numeric

@@ -50,7 +50,7 @@ func (r *ConfigFileReader) Load() error {
 		}
 
 		components[comp.Name] = ComponentConfig{
-			ServiceName:      comp.ServiceName,
+			Selector:         comp.Selector,
 			MetricsPort:      comp.MetricsPort,
 			MetricsPath:      comp.MetricsPath,
 			MetricsScheme:    comp.MetricsScheme,

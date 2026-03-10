@@ -17,8 +17,17 @@ func TestEndpointResolverClientDiscover(t *testing.T) {
 		t.Parallel()
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/resolve/kube-apiserver" {
+			if r.Method != http.MethodPost || r.URL.Path != "/resolve" {
 				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			var req endpointresolver.ResolveRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "bad request", http.StatusBadRequest)
+				return
+			}
+			if req.Selector["app"] != "kube-apiserver" {
+				http.Error(w, "no match", http.StatusNotFound)
 				return
 			}
 			resp := endpointresolver.ResolveResponse{
@@ -37,7 +46,7 @@ func TestEndpointResolverClientDiscover(t *testing.T) {
 			httpClient: server.Client(),
 		}
 
-		targets, err := client.Discover(context.Background(), "kube-apiserver", 6443)
+		targets, err := client.Discover(context.Background(), map[string]string{"app": "kube-apiserver"}, 6443)
 		if err != nil {
 			t.Fatalf("Discover() returned error: %v", err)
 		}
@@ -70,7 +79,7 @@ func TestEndpointResolverClientDiscover(t *testing.T) {
 			httpClient: server.Client(),
 		}
 
-		targets, err := client.Discover(context.Background(), "nonexistent", 8443)
+		targets, err := client.Discover(context.Background(), map[string]string{"app": "nonexistent"}, 8443)
 		if err != nil {
 			t.Fatalf("Discover() returned error: %v", err)
 		}
@@ -92,7 +101,7 @@ func TestEndpointResolverClientDiscover(t *testing.T) {
 			httpClient: server.Client(),
 		}
 
-		_, err := client.Discover(context.Background(), "kube-apiserver", 6443)
+		_, err := client.Discover(context.Background(), map[string]string{"app": "kube-apiserver"}, 6443)
 		if err == nil {
 			t.Fatal("expected error for 500 response, got nil")
 		}

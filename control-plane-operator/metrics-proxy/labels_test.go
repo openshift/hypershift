@@ -133,7 +133,7 @@ func TestInject(t *testing.T) {
 				Port:    8080,
 			},
 			componentName: "test-component",
-			cfg:           ComponentConfig{ServiceName: "test-service"},
+			cfg:           ComponentConfig{},
 			expected: map[string]*dto.MetricFamily{
 				"test_metric": {
 					Name: stringPtr("test_metric"),
@@ -144,7 +144,7 @@ func TestInject(t *testing.T) {
 								{Name: stringPtr("pod"), Value: stringPtr("test-pod")},
 								{Name: stringPtr("namespace"), Value: stringPtr("test-ns")},
 								{Name: stringPtr("job"), Value: stringPtr("test-component")},
-								{Name: stringPtr("service"), Value: stringPtr("test-service")},
+								{Name: stringPtr("service"), Value: stringPtr("test-component")},
 								{Name: stringPtr("endpoint"), Value: stringPtr("metrics")},
 								{Name: stringPtr("instance"), Value: stringPtr("10.0.0.1:8080")},
 							},
@@ -174,7 +174,6 @@ func TestInject(t *testing.T) {
 			},
 			componentName: "etcd",
 			cfg: ComponentConfig{
-				ServiceName:      "etcd-client",
 				MetricsJob:       "etcd",
 				MetricsNamespace: "openshift-etcd",
 				MetricsService:   "etcd",
@@ -222,7 +221,7 @@ func TestInject(t *testing.T) {
 				Port:    9090,
 			},
 			componentName: "test-component",
-			cfg:           ComponentConfig{ServiceName: "test-service"},
+			cfg:           ComponentConfig{},
 			expected: map[string]*dto.MetricFamily{
 				"test_metric": {
 					Name: stringPtr("test_metric"),
@@ -234,7 +233,7 @@ func TestInject(t *testing.T) {
 								{Name: stringPtr("pod"), Value: stringPtr("existing-pod")},
 								{Name: stringPtr("namespace"), Value: stringPtr("test-ns")},
 								{Name: stringPtr("job"), Value: stringPtr("test-component")},
-								{Name: stringPtr("service"), Value: stringPtr("test-service")},
+								{Name: stringPtr("service"), Value: stringPtr("test-component")},
 								{Name: stringPtr("endpoint"), Value: stringPtr("metrics")},
 								{Name: stringPtr("instance"), Value: stringPtr("10.0.0.2:9090")},
 							},
@@ -253,7 +252,7 @@ func TestInject(t *testing.T) {
 				Port:    7070,
 			},
 			componentName: "test-component",
-			cfg:           ComponentConfig{ServiceName: "test-service"},
+			cfg:           ComponentConfig{},
 			expected:      map[string]*dto.MetricFamily{},
 		},
 		{
@@ -275,7 +274,7 @@ func TestInject(t *testing.T) {
 				Port:    3000,
 			},
 			componentName: "multi-component",
-			cfg:           ComponentConfig{ServiceName: "multi-service"},
+			cfg:           ComponentConfig{},
 			expected: map[string]*dto.MetricFamily{
 				"test_metric": {
 					Name: stringPtr("test_metric"),
@@ -286,7 +285,7 @@ func TestInject(t *testing.T) {
 								{Name: stringPtr("pod"), Value: stringPtr("multi-pod")},
 								{Name: stringPtr("namespace"), Value: stringPtr("prod-ns")},
 								{Name: stringPtr("job"), Value: stringPtr("multi-component")},
-								{Name: stringPtr("service"), Value: stringPtr("multi-service")},
+								{Name: stringPtr("service"), Value: stringPtr("multi-component")},
 								{Name: stringPtr("endpoint"), Value: stringPtr("metrics")},
 								{Name: stringPtr("instance"), Value: stringPtr("192.168.1.1:3000")},
 							},
@@ -296,7 +295,7 @@ func TestInject(t *testing.T) {
 								{Name: stringPtr("pod"), Value: stringPtr("multi-pod")},
 								{Name: stringPtr("namespace"), Value: stringPtr("prod-ns")},
 								{Name: stringPtr("job"), Value: stringPtr("multi-component")},
-								{Name: stringPtr("service"), Value: stringPtr("multi-service")},
+								{Name: stringPtr("service"), Value: stringPtr("multi-component")},
 								{Name: stringPtr("endpoint"), Value: stringPtr("metrics")},
 								{Name: stringPtr("instance"), Value: stringPtr("192.168.1.1:3000")},
 							},
@@ -330,7 +329,7 @@ func TestInject(t *testing.T) {
 				Port:    8080,
 			},
 			componentName: "test-component",
-			cfg:           ComponentConfig{ServiceName: "test-service"},
+			cfg:           ComponentConfig{},
 			expected: map[string]*dto.MetricFamily{
 				"metric_one": {
 					Name: stringPtr("metric_one"),
@@ -341,7 +340,7 @@ func TestInject(t *testing.T) {
 								{Name: stringPtr("pod"), Value: stringPtr("test-pod")},
 								{Name: stringPtr("namespace"), Value: stringPtr("test-ns")},
 								{Name: stringPtr("job"), Value: stringPtr("test-component")},
-								{Name: stringPtr("service"), Value: stringPtr("test-service")},
+								{Name: stringPtr("service"), Value: stringPtr("test-component")},
 								{Name: stringPtr("endpoint"), Value: stringPtr("metrics")},
 								{Name: stringPtr("instance"), Value: stringPtr("10.0.0.1:8080")},
 							},
@@ -357,7 +356,7 @@ func TestInject(t *testing.T) {
 								{Name: stringPtr("pod"), Value: stringPtr("test-pod")},
 								{Name: stringPtr("namespace"), Value: stringPtr("test-ns")},
 								{Name: stringPtr("job"), Value: stringPtr("test-component")},
-								{Name: stringPtr("service"), Value: stringPtr("test-service")},
+								{Name: stringPtr("service"), Value: stringPtr("test-component")},
 								{Name: stringPtr("endpoint"), Value: stringPtr("metrics")},
 								{Name: stringPtr("instance"), Value: stringPtr("10.0.0.1:8080")},
 							},

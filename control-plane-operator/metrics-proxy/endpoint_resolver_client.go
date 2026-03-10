@@ -1,6 +1,7 @@
 package metricsproxy
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -40,20 +41,27 @@ func NewEndpointResolverClient(baseURL, caFile string) (*EndpointResolverClient,
 	}, nil
 }
 
-// Discover queries the endpoint-resolver for pod endpoints for the given component.
-// The serviceName parameter is the component name used for endpoint-resolver lookup
-// (which resolves pods by the hypershift.openshift.io/control-plane-component label).
-func (c *EndpointResolverClient) Discover(ctx context.Context, serviceName string, port int32) ([]ScrapeTarget, error) {
-	url := fmt.Sprintf("%s/resolve/%s", c.baseURL, serviceName)
+// Discover queries the endpoint-resolver for pod endpoints matching the given
+// label selector. The endpoint-resolver expects a POST to /resolve with a JSON
+// body containing the selector map.
+func (c *EndpointResolverClient) Discover(ctx context.Context, selector map[string]string, port int32) ([]ScrapeTarget, error) {
+	reqBody := endpointresolver.ResolveRequest{Selector: selector}
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal resolve request: %w", err)
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	url := fmt.Sprintf("%s/resolve", c.baseURL)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request for %s: %w", url, err)
 	}
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query endpoint-resolver for %s: %w", serviceName, err)
+		return nil, fmt.Errorf("failed to query endpoint-resolver: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -62,7 +70,7 @@ func (c *EndpointResolverClient) Discover(ctx context.Context, serviceName strin
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("endpoint-resolver returned status %d for %s", resp.StatusCode, serviceName)
+		return nil, fmt.Errorf("endpoint-resolver returned status %d for selector %v", resp.StatusCode, selector)
 	}
 
 	var resolveResp endpointresolver.ResolveResponse

@@ -25,7 +25,7 @@ func (l *Labeler) Inject(families map[string]*dto.MetricFamily, target ScrapeTar
 	}
 	service := cfg.MetricsService
 	if service == "" {
-		service = cfg.ServiceName
+		service = componentName
 	}
 	endpoint := cfg.MetricsEndpoint
 	if endpoint == "" {

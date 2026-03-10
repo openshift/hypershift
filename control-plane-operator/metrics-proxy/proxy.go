@@ -55,7 +55,7 @@ func (h *ProxyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// cluster-signer-ca CA bundle (via VerifyClientCertIfGiven at the TLS layer).
 
 	// Discover pods
-	targets, err := h.targetDiscoverer.Discover(ctx, componentConfig.ServiceName, componentConfig.MetricsPort)
+	targets, err := h.targetDiscoverer.Discover(ctx, componentConfig.Selector, componentConfig.MetricsPort)
 	if err != nil {
 		h.log.Error(err, "discovery error", "component", componentName)
 		http.Error(w, "failed to discover targets", http.StatusInternalServerError)

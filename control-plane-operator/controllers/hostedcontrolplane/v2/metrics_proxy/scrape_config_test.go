@@ -82,6 +82,7 @@ func newService(name, namespace, appLabel, portName string, portNum int32) *core
 			Labels:    map[string]string{"app": appLabel},
 		},
 		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{"app": appLabel},
 			Ports: []corev1.ServicePort{
 				{Name: portName, Port: portNum, TargetPort: intstr.FromInt32(portNum)},
 			},
@@ -246,7 +247,7 @@ func TestAdaptScrapeConfig(t *testing.T) {
 		}
 	})
 
-	t.Run("When kube-apiserver config is generated, it should have correct port and certs", func(t *testing.T) {
+	t.Run("When kube-apiserver config is generated, it should have correct port, certs and selector", func(t *testing.T) {
 		t.Parallel()
 		kas, ok := findComponent(cfg.Components, "kube-apiserver")
 		if !ok {
@@ -262,6 +263,9 @@ func TestAdaptScrapeConfig(t *testing.T) {
 		expectedCert := certBasePath + "/metrics-client/tls.crt"
 		if kas.CertFile != expectedCert {
 			t.Errorf("expected cert file %q, got %q", expectedCert, kas.CertFile)
+		}
+		if kas.Selector == nil || kas.Selector["app"] != "kube-apiserver" {
+			t.Errorf("expected selector {app: kube-apiserver}, got %v", kas.Selector)
 		}
 	})
 
@@ -438,7 +442,7 @@ func TestAdaptScrapeConfigWithPodMonitors(t *testing.T) {
 		}
 	})
 
-	t.Run("When cluster-autoscaler config is generated, it should have correct port and scheme", func(t *testing.T) {
+	t.Run("When cluster-autoscaler config is generated, it should have correct port, scheme and selector", func(t *testing.T) {
 		t.Parallel()
 		ca, ok := findComponent(cfg.Components, "cluster-autoscaler")
 		if !ok {
@@ -450,8 +454,8 @@ func TestAdaptScrapeConfigWithPodMonitors(t *testing.T) {
 		if ca.MetricsScheme != "http" {
 			t.Errorf("expected scheme http, got %q", ca.MetricsScheme)
 		}
-		if ca.ServiceName != "cluster-autoscaler" {
-			t.Errorf("expected service name cluster-autoscaler, got %q", ca.ServiceName)
+		if ca.Selector == nil || ca.Selector["app"] != "cluster-autoscaler" {
+			t.Errorf("expected selector {app: cluster-autoscaler}, got %v", ca.Selector)
 		}
 	})
 

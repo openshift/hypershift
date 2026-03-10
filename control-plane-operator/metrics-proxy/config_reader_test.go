@@ -17,7 +17,8 @@ endpointResolver:
   caFile: /tmp/test-ca/tls.crt
 components:
   - name: etcd
-    serviceName: etcd-client
+    selector:
+      app: etcd
     metricsPort: 2381
     metricsPath: /metrics
     metricsScheme: https
@@ -30,7 +31,8 @@ components:
     metricsService: etcd
     metricsEndpoint: etcd-metrics
   - name: kube-apiserver
-    serviceName: kube-apiserver
+    selector:
+      app: kube-apiserver
     metricsPort: 6443
     metricsPath: /metrics
     metricsScheme: https
@@ -72,9 +74,6 @@ components:
 		if kas.MetricsPort != 6443 {
 			t.Errorf("expected port 6443, got %d", kas.MetricsPort)
 		}
-		if kas.ServiceName != "kube-apiserver" {
-			t.Errorf("expected service name kube-apiserver, got %s", kas.ServiceName)
-		}
 		if kas.MetricsJob != "apiserver" {
 			t.Errorf("expected metricsJob apiserver, got %s", kas.MetricsJob)
 		}
@@ -86,6 +85,9 @@ components:
 		}
 		if kas.MetricsEndpoint != "https" {
 			t.Errorf("expected metricsEndpoint https, got %s", kas.MetricsEndpoint)
+		}
+		if kas.Selector == nil || kas.Selector["app"] != "kube-apiserver" {
+			t.Errorf("expected selector {app: kube-apiserver}, got %v", kas.Selector)
 		}
 
 		etcd, ok := r.GetComponent("etcd")
