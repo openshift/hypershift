@@ -1,4 +1,4 @@
-package awsnodeterminationhandler
+package karpenteroperator
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	assets "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/assets"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 
 	corev1 "k8s.io/api/core/v1"
@@ -23,126 +23,29 @@ func (f *fakeReleaseProvider) ComponentVersions() (map[string]string, error) {
 }
 func (f *fakeReleaseProvider) ComponentImages() map[string]string { return nil }
 
-func TestAdaptDeployment(t *testing.T) {
-	testCases := []struct {
-		name             string
-		hcpAnnotations   map[string]string
-		awsRegion        string
-		issuerURL        string
-		expectedReplicas int32
-		expectedRegion   string
-		expectedQueueURL string
-	}{
-		{
-			name:             "When no annotations it should set replicas to 1",
-			hcpAnnotations:   nil,
-			awsRegion:        "us-east-1",
-			expectedReplicas: 1,
-			expectedRegion:   "us-east-1",
-			expectedQueueURL: "",
-		},
-		{
-			name: "When queue URL annotation is set it should configure the queue URL",
-			hcpAnnotations: map[string]string{
-				AnnotationTerminationHandlerQueueURL: "https://sqs.us-west-2.amazonaws.com/123456789/my-queue",
-			},
-			awsRegion:        "us-west-2",
-			expectedReplicas: 1,
-			expectedRegion:   "us-west-2",
-			expectedQueueURL: "https://sqs.us-west-2.amazonaws.com/123456789/my-queue",
-		},
-		{
-			name: "When disable annotation is set it should set replicas to 0",
-			hcpAnnotations: map[string]string{
-				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
-			},
-			awsRegion:        "us-east-1",
-			expectedReplicas: 0,
-			expectedRegion:   "us-east-1",
-		},
-		{
-			name: "When both queue URL and disable annotations are set it should set replicas to 0",
-			hcpAnnotations: map[string]string{
-				AnnotationTerminationHandlerQueueURL:               "https://sqs.us-east-1.amazonaws.com/123456789/my-queue",
-				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
-			},
-			awsRegion:        "us-east-1",
-			expectedReplicas: 0,
-			expectedRegion:   "us-east-1",
-			expectedQueueURL: "https://sqs.us-east-1.amazonaws.com/123456789/my-queue",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			g := NewGomegaWithT(t)
-
-			hcp := &hyperv1.HostedControlPlane{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hcp",
-					Namespace:   "hcp-namespace",
-					Annotations: tc.hcpAnnotations,
-				},
-				Spec: hyperv1.HostedControlPlaneSpec{
-					InfraID:   "test-infra-id",
-					IssuerURL: tc.issuerURL,
-					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AWSPlatform,
-						AWS: &hyperv1.AWSPlatformSpec{
-							Region: tc.awsRegion,
-						},
-					},
-				},
-			}
-
-			cpContext := controlplanecomponent.WorkloadContext{
-				Context: t.Context(),
-				HCP:     hcp,
-			}
-
-			deployment, err := assets.LoadDeploymentManifest(ComponentName)
-			g.Expect(err).ToNot(HaveOccurred())
-
-			err = adaptDeployment(cpContext, deployment)
-			g.Expect(err).ToNot(HaveOccurred())
-
-			g.Expect(deployment.Spec.Replicas).To(HaveValue(Equal(tc.expectedReplicas)))
-
-			// Check env vars in the aws-node-termination-handler container
-			var regionValue, queueURLValue string
-			for _, container := range deployment.Spec.Template.Spec.Containers {
-				if container.Name == ComponentName {
-					for _, env := range container.Env {
-						switch env.Name {
-						case "AWS_REGION":
-							regionValue = env.Value
-						case "QUEUE_URL":
-							queueURLValue = env.Value
-						}
-					}
-				}
-			}
-
-			g.Expect(regionValue).To(Equal(tc.expectedRegion))
-			g.Expect(queueURLValue).To(Equal(tc.expectedQueueURL))
-		})
-	}
-}
-
 func TestAdaptDeploymentAWSCABundle(t *testing.T) {
 	testCases := []struct {
 		name            string
+		platformType    hyperv1.PlatformType
 		additionalTrust *corev1.LocalObjectReference
 		expectCABundle  bool
 	}{
 		{
-			name:            "When additional trust bundle is set it should add combined CA bundle with init container",
+			name:            "When AWS platform with additional trust bundle it should add combined CA bundle",
+			platformType:    hyperv1.AWSPlatform,
 			additionalTrust: &corev1.LocalObjectReference{Name: "user-ca-bundle"},
 			expectCABundle:  true,
 		},
 		{
-			name:            "When no additional trust bundle is set it should not add CA bundle resources",
+			name:            "When AWS platform without additional trust bundle it should not add CA bundle",
+			platformType:    hyperv1.AWSPlatform,
 			additionalTrust: nil,
+			expectCABundle:  false,
+		},
+		{
+			name:            "When non-AWS platform with additional trust bundle it should not add CA bundle",
+			platformType:    hyperv1.KubevirtPlatform,
+			additionalTrust: &corev1.LocalObjectReference{Name: "user-ca-bundle"},
 			expectCABundle:  false,
 		},
 	}
@@ -151,21 +54,31 @@ func TestAdaptDeploymentAWSCABundle(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
+			awsSpec := &hyperv1.AWSPlatformSpec{
+				Region: "us-east-1",
+			}
+			if tc.platformType != hyperv1.AWSPlatform {
+				awsSpec = nil
+			}
+
 			hcp := &hyperv1.HostedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-cluster",
 					Namespace: "clusters-test-cluster",
 				},
 				Spec: hyperv1.HostedControlPlaneSpec{
-					InfraID: "test-infra-id",
 					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AWSPlatform,
-						AWS: &hyperv1.AWSPlatformSpec{
-							Region: "us-east-1",
-						},
+						Type: tc.platformType,
+						AWS:  awsSpec,
 					},
 					AdditionalTrustBundle: tc.additionalTrust,
 				},
+			}
+
+			karp := &KarpenterOperatorOptions{
+				HyperShiftOperatorImage:   "test-hypershift-operator-image",
+				ControlPlaneOperatorImage: "test-cpo-image",
+				IgnitionEndpoint:          "https://ignition.example.com",
 			}
 
 			cpContext := controlplanecomponent.WorkloadContext{
@@ -177,7 +90,7 @@ func TestAdaptDeploymentAWSCABundle(t *testing.T) {
 			deployment, err := assets.LoadDeploymentManifest(ComponentName)
 			g.Expect(err).ToNot(HaveOccurred())
 
-			err = adaptDeployment(cpContext, deployment)
+			err = karp.adaptDeployment(cpContext, deployment)
 			g.Expect(err).ToNot(HaveOccurred())
 
 			container := deployment.Spec.Template.Spec.Containers[0]

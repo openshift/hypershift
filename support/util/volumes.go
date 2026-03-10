@@ -37,6 +37,12 @@ func DeploymentAddTrustBundleVolume(trustBundleConfigMap *corev1.LocalObjectRefe
 // the first container. An init container concatenates /etc/pki/tls/certs/ca-bundle.crt (system CAs)
 // with the user CAs into a single file. This is necessary because the AWS SDK replaces the default
 // system CA bundle when AWS_CA_BUNDLE is set, rather than appending to it.
+//
+// This helper is used by both external third-party binaries (karpenter, aws-cloud-controller-manager,
+// aws-node-termination-handler) and internal HyperShift binaries (karpenter-operator, capi-provider,
+// ingress-operator). Even though internal binaries could handle CA loading in Go code, using the
+// same environment-variable-based approach keeps the fix uniform across all AWS components.
+//
 // The initContainerImage should be a RHEL-based image that has /bin/sh and cat available
 // (e.g. the control-plane-operator image).
 func DeploymentAddAWSCABundleVolume(trustBundleConfigMap *corev1.LocalObjectReference, deployment *appsv1.Deployment, initContainerImage string) {
