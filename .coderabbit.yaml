@@ -1,0 +1,61 @@
+inheritance: true
+language: en-US
+reviews:
+  profile: chill
+  high_level_summary: false
+  review_status: true
+  commit_status: true
+  collapse_walkthrough: true
+  changed_files_summary: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  poem: false
+  suggested_labels: false
+  path_filters:
+    # Vendor directories (managed by go mod vendor)
+    - "!vendor/**"
+    - "!**/vendor/**"
+
+    # Generated deepcopy, defaults, conversion, and other zz_generated files
+    - "!**/zz_generated*.go"
+    - "!**/zz_generated.crd-manifests/**"
+    - "!**/zz_generated.featuregated-crd-manifests/**"
+
+    # Generated CRD manifests and install assets
+    - "!cmd/install/assets/**/*.yaml"
+    - "!karpenter-operator/controllers/karpenter/assets/*.yaml"
+
+    # Generated client code (clientsets, informers, listers, apply configurations)
+    - "!client/**"
+
+    # Generated mock files
+    - "!**/*_mock.go"
+
+    # Generated protobuf files
+    - "!**/*.pb.go"
+    - "!**/*.pb.gw.go"
+    - "!**/generated.proto"
+
+    # Generated swagger doc files
+    - "!**/types_swagger_doc_generated.go"
+    - "!**/zz_generated.swagger_doc_generated.go"
+
+    # Generated API documentation
+    - "!docs/content/reference/api.md"
+    - "!docs/content/reference/aggregated-docs.md"
+
+    # Generated delegating client
+    - "!cmd/infra/aws/delegating_client.go"
+
+    # Generated stringer files
+    - "!**/*_string.go"
+  tools:
+    golangci-lint:
+      enabled: true
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - AGENTS.md
+  learnings:
+    scope: local
