@@ -47,6 +47,9 @@ reviews:
 
     # Generated stringer files
     - "!**/*_string.go"
+
+    # Test fixtures and data
+    - "!**/testdata/**"
   tools:
     golangci-lint:
       enabled: true
