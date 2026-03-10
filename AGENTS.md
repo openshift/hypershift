@@ -159,6 +159,6 @@ in this project.
     - Required footers
     - No trailing whitespace
 
-### Code conventions
+## Code conventions
 - Prefer Gherkin Syntax to define unit test cases, e.g. "When... it should..."
 - Prefer gomega for unit test assertions
