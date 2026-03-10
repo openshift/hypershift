@@ -51,6 +51,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/awsutil"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/certs"
@@ -2488,7 +2489,7 @@ func (r *HostedClusterReconciler) reconcileControlPlaneOperator(ctx context.Cont
 	}
 	controlPlaneOperatorRole := controlplaneoperator.OperatorRole(controlPlaneNamespace.Name)
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneOperatorRole, func() error {
-		return reconcileControlPlaneOperatorRole(controlPlaneOperatorRole, r.EnableCVOManagementClusterMetricsAccess, needsHostNetwork)
+		return reconcileControlPlaneOperatorRole(controlPlaneOperatorRole, r.EnableCVOManagementClusterMetricsAccess, needsHostNetwork, awsutil.IsROSAHCP(hostedControlPlane))
 	})
 	if err != nil {
 		return fmt.Errorf("failed to reconcile controlplane operator role: %w", err)
@@ -3172,7 +3173,7 @@ func reconcileControlPlaneOperatorDeployment(
 	return nil
 }
 
-func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClusterMetricsAccess bool, hostNetwork bool) error {
+func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClusterMetricsAccess bool, hostNetwork bool, isROSAHCP bool) error {
 	role.Rules = []rbacv1.PolicyRule{
 		{
 			APIGroups: []string{"hypershift.openshift.io"},
@@ -3341,6 +3342,14 @@ func reconcileControlPlaneOperatorRole(role *rbacv1.Role, enableCVOManagementClu
 		},
 	}
 	if enableCVOManagementClusterMetricsAccess {
+		role.Rules = append(role.Rules,
+			rbacv1.PolicyRule{
+				APIGroups: []string{"metrics.k8s.io"},
+				Resources: []string{"pods"},
+				Verbs:     []string{"get"},
+			})
+	}
+	if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" && isROSAHCP {
 		role.Rules = append(role.Rules,
 			rbacv1.PolicyRule{
 				APIGroups: []string{"metrics.k8s.io"},
