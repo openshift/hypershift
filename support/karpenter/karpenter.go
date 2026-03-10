@@ -22,11 +22,10 @@ const KarpenterTaintConfigMapName = "set-karpenter-taint"
 // ErrHCPNotFound is returned when no HostedControlPlane is found in the namespace.
 var ErrHCPNotFound = errors.New("hostedcontrolplane not found")
 
-// IsKarpenterEnabled checks if Karpenter is enabled for the given AutoNode configuration
+// IsKarpenterEnabled checks if Karpenter is enabled for the given AutoNode configuration.
 // Note that we may eventually support other platforms, but for now we only support AWS.
 func IsKarpenterEnabled(autoNode *hyperv1.AutoNode) bool {
 	return autoNode != nil &&
-		autoNode.Provisioner != nil &&
 		autoNode.Provisioner.Name == hyperv1.ProvisionerKarpenter &&
 		autoNode.Provisioner.Karpenter != nil &&
 		autoNode.Provisioner.Karpenter.Platform == hyperv1.AWSPlatform
