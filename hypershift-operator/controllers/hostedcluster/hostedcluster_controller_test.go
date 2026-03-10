@@ -4799,3 +4799,103 @@ func TestReconcileAdditionalTrustBundle(t *testing.T) {
 		})
 	}
 }
+
+func TestReconcileCustomExternalKubeconfig(t *testing.T) {
+	hcpNamespace := "test-hcp-ns"
+	hclusterNamespace := "test-hc-ns"
+	hclusterName := "test-cluster"
+
+	tests := []struct {
+		name           string
+		hcpStatus      *hyperv1.KubeconfigSecretRef
+		secretExists   bool
+		expectRequeue  bool
+		expectError    bool
+		expectDestCopy bool
+	}{
+		{
+			name:      "When CustomKubeconfig status is nil it should be a no-op",
+			hcpStatus: nil,
+		},
+		{
+			name: "When CustomKubeconfig references a non-existent secret it should continue and requeue",
+			hcpStatus: &hyperv1.KubeconfigSecretRef{
+				Name: "custom-admin-kubeconfig",
+				Key:  "kubeconfig",
+			},
+			secretExists:  false,
+			expectRequeue: true,
+		},
+		{
+			name: "When CustomKubeconfig references an existing secret it should copy it",
+			hcpStatus: &hyperv1.KubeconfigSecretRef{
+				Name: "custom-admin-kubeconfig",
+				Key:  "kubeconfig",
+			},
+			secretExists:   true,
+			expectDestCopy: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: hcpNamespace,
+					Name:      hclusterName,
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					CustomKubeconfig: tc.hcpStatus,
+				},
+			}
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: hclusterNamespace,
+					Name:      hclusterName,
+					UID:       "test-uid",
+				},
+			}
+
+			objs := []crclient.Object{hcp}
+			if tc.secretExists {
+				objs = append(objs, &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: hcpNamespace,
+						Name:      "custom-admin-kubeconfig",
+					},
+					Data: map[string][]byte{
+						"kubeconfig": []byte("test-kubeconfig-data"),
+					},
+				})
+			}
+
+			cli := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
+			r := &HostedClusterReconciler{Client: cli}
+			ctx := ctrl.LoggerInto(t.Context(), zap.New(zap.UseDevMode(true), zap.Level(zapcore.DebugLevel)))
+
+			requeue, err := r.reconcileCustomExternalKubeconfig(ctx, ctrl.CreateOrUpdate, hcp, hcluster)
+
+			if tc.expectError {
+				g.Expect(err).ToNot(BeNil())
+				return
+			}
+			g.Expect(err).To(BeNil())
+
+			if tc.expectRequeue {
+				g.Expect(requeue).ToNot(BeNil(), "expected a requeue duration")
+			} else {
+				g.Expect(requeue).To(BeNil(), "did not expect a requeue")
+			}
+
+			if tc.expectDestCopy {
+				dest := &corev1.Secret{}
+				err := cli.Get(ctx, crclient.ObjectKey{Namespace: hclusterNamespace, Name: hclusterName + "-custom-admin-kubeconfig"}, dest)
+				g.Expect(err).To(BeNil(), "expected destination secret to exist")
+				g.Expect(dest.Data["kubeconfig"]).To(Equal([]byte("test-kubeconfig-data")))
+			}
+		})
+	}
+}
