@@ -33,8 +33,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/discovery"
+	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
+	cr "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -54,6 +56,8 @@ type TestContext struct {
 	hostedClusterMu       sync.RWMutex
 	guestClient           crclient.Client
 	guestClientOnce       sync.Once
+	kubeClient            *kubeclient.Clientset
+	kubeClientOnce        sync.Once
 	awsCredentialsFile    string
 	awsRegion             string
 	awsRegionMu           sync.RWMutex
@@ -273,6 +277,20 @@ func (tc *TestContext) GetGuestClient() crclient.Client {
 		tc.guestClient = guestClient
 	})
 	return tc.guestClient
+}
+
+// GetKubeClient returns a kubernetes.Clientset for the management cluster.
+// It is lazy-initialized on first call via sync.Once using the same REST config as MgmtClient.
+// Useful for operations like streaming pod logs that require the typed client.
+func (tc *TestContext) GetKubeClient() *kubeclient.Clientset {
+	tc.kubeClientOnce.Do(func() {
+		cfg, err := cr.GetConfig()
+		if err != nil {
+			panic(fmt.Sprintf("failed to get REST config for kube client: %v", err))
+		}
+		tc.kubeClient = kubeclient.NewForConfigOrDie(cfg)
+	})
+	return tc.kubeClient
 }
 
 var (
