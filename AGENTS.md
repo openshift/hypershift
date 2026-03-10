@@ -158,3 +158,7 @@ in this project.
     - Proper line length limits
     - Required footers
     - No trailing whitespace
+
+### Code conventions
+- Prefer Gherkin Syntax to define unit test cases, e.g. "When... it should..."
+- Prefer gomega for unit test assertions
