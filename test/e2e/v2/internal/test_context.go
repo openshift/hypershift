@@ -20,10 +20,20 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
+
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/sqs"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/awsapi"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/tools/clientcmd"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -40,36 +50,228 @@ type TestContext struct {
 	ClusterNamespace      string
 	ControlPlaneNamespace string
 	hostedCluster         *hyperv1.HostedCluster
-	hostedClusterOnce     sync.Once
+	hostedClusterMu       sync.RWMutex
+	guestClient           crclient.Client
+	guestClientOnce       sync.Once
+	awsCredentialsFile    string
+	awsRegion             string
+	awsRegionMu           sync.RWMutex
+}
+
+// GetNodePools returns all NodePools associated with this HostedCluster.
+// It performs a fresh list on each call (NodePools are mutable during test execution).
+// Filters by Spec.ClusterName to ensure only NodePools for this HostedCluster are returned.
+func (tc *TestContext) GetNodePools() ([]*hyperv1.NodePool, error) {
+	nodePools := &hyperv1.NodePoolList{}
+	if err := tc.MgmtClient.List(tc.Context, nodePools, crclient.InNamespace(tc.ClusterNamespace)); err != nil {
+		return nil, fmt.Errorf("failed to list NodePools in namespace %s: %w", tc.ClusterNamespace, err)
+	}
+
+	var result []*hyperv1.NodePool
+	for i := range nodePools.Items {
+		if nodePools.Items[i].Spec.ClusterName == tc.ClusterName {
+			result = append(result, &nodePools.Items[i])
+		}
+	}
+	return result, nil
+}
+
+// GetNodePool returns a specific NodePool by name.
+// Performs a direct Get rather than listing.
+func (tc *TestContext) GetNodePool(name string) (*hyperv1.NodePool, error) {
+	np := &hyperv1.NodePool{}
+	if err := tc.MgmtClient.Get(tc.Context, crclient.ObjectKey{
+		Namespace: tc.ClusterNamespace,
+		Name:      name,
+	}, np); err != nil {
+		return nil, fmt.Errorf("failed to get NodePool %s/%s: %w", tc.ClusterNamespace, name, err)
+	}
+	if np.Spec.ClusterName != tc.ClusterName {
+		return nil, fmt.Errorf(
+			"NodePool %s/%s belongs to cluster %q, not %q",
+			tc.ClusterNamespace, name, np.Spec.ClusterName, tc.ClusterName,
+		)
+	}
+	return np, nil
 }
 
 // GetHostedCluster returns the HostedCluster associated with this test context.
-// It fetches the HostedCluster lazily on first call if ClusterName and ClusterNamespace are set.
-// Returns nil if the HostedCluster cannot be fetched or if ClusterName/ClusterNamespace are not set.
-func (tc *TestContext) GetHostedCluster() *hyperv1.HostedCluster {
-	tc.hostedClusterOnce.Do(func() {
-		if tc.ClusterName == "" || tc.ClusterNamespace == "" {
-			return
-		}
+// It fetches the HostedCluster lazily on first call if ClusterName and ClusterNamespace are set,
+// caching the result for subsequent calls. Pass refresh=true to bypass the cache and fetch a
+// fresh copy (e.g. to pick up status changes).
+// Returns (nil, nil) if ClusterName/ClusterNamespace are not set.
+func (tc *TestContext) GetHostedCluster(refresh ...bool) (*hyperv1.HostedCluster, error) {
+	shouldRefresh := len(refresh) > 0 && refresh[0]
 
-		hostedCluster := &hyperv1.HostedCluster{}
-		err := tc.MgmtClient.Get(context.Background(), crclient.ObjectKey{
-			Namespace: tc.ClusterNamespace,
-			Name:      tc.ClusterName,
-		}, hostedCluster)
+	if !shouldRefresh {
+		tc.hostedClusterMu.RLock()
+		if tc.hostedCluster != nil {
+			hc := tc.hostedCluster
+			tc.hostedClusterMu.RUnlock()
+			return hc, nil
+		}
+		tc.hostedClusterMu.RUnlock()
+	}
+
+	if tc.ClusterName == "" || tc.ClusterNamespace == "" {
+		return nil, nil
+	}
+
+	hostedCluster := &hyperv1.HostedCluster{}
+	err := tc.MgmtClient.Get(context.Background(), crclient.ObjectKey{
+		Namespace: tc.ClusterNamespace,
+		Name:      tc.ClusterName,
+	}, hostedCluster)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get HostedCluster %s/%s: %w", tc.ClusterNamespace, tc.ClusterName, err)
+	}
+
+	err = e2eutil.SetReleaseVersionFromHostedCluster(context.Background(), hostedCluster)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set release version from HostedCluster: %w", err)
+	}
+
+	tc.hostedClusterMu.Lock()
+	tc.hostedCluster = hostedCluster
+	tc.hostedClusterMu.Unlock()
+
+	return hostedCluster, nil
+}
+
+// GetAWSRegion returns the AWS region from the HostedCluster spec.
+// Returns an error if the HostedCluster is not available or is not an AWS platform.
+func (tc *TestContext) GetAWSRegion() (string, error) {
+	tc.awsRegionMu.RLock()
+	if tc.awsRegion != "" {
+		region := tc.awsRegion
+		tc.awsRegionMu.RUnlock()
+		return region, nil
+	}
+	tc.awsRegionMu.RUnlock()
+
+	hc, err := tc.GetHostedCluster()
+	if err != nil {
+		return "", fmt.Errorf("cannot resolve AWS region: %w", err)
+	}
+	if hc == nil {
+		return "", fmt.Errorf("cannot resolve AWS region: HostedCluster is not available")
+	}
+	if hc.Spec.Platform.AWS == nil {
+		return "", fmt.Errorf("cannot resolve AWS region: HostedCluster %s/%s is not an AWS platform", hc.Namespace, hc.Name)
+	}
+	region := hc.Spec.Platform.AWS.Region
+
+	tc.awsRegionMu.Lock()
+	if tc.awsRegion == "" {
+		tc.awsRegion = region
+	}
+	region = tc.awsRegion
+	tc.awsRegionMu.Unlock()
+	return region, nil
+}
+
+func (tc *TestContext) requireAWSCredentials() error {
+	if tc.awsCredentialsFile == "" {
+		return fmt.Errorf("AWS_CREDENTIALS_FILE environment variable is not set. It is required for AWS-specific tests")
+	}
+	return nil
+}
+
+// GetEC2Client returns an EC2 client configured for the HostedCluster's region.
+func (tc *TestContext) GetEC2Client() (*ec2.EC2, error) {
+	if err := tc.requireAWSCredentials(); err != nil {
+		return nil, err
+	}
+	region, err := tc.GetAWSRegion()
+	if err != nil {
+		return nil, err
+	}
+	return e2eutil.GetEC2Client(tc.awsCredentialsFile, region), nil
+}
+
+// GetIAMClient returns an IAM client configured for the HostedCluster's region.
+func (tc *TestContext) GetIAMClient() (awsapi.IAMAPI, error) {
+	if err := tc.requireAWSCredentials(); err != nil {
+		return nil, err
+	}
+	region, err := tc.GetAWSRegion()
+	if err != nil {
+		return nil, err
+	}
+	return e2eutil.GetIAMClient(tc.Context, tc.awsCredentialsFile, region), nil
+}
+
+// GetSQSClient returns an SQS client configured for the HostedCluster's region.
+func (tc *TestContext) GetSQSClient() (*sqs.SQS, error) {
+	if err := tc.requireAWSCredentials(); err != nil {
+		return nil, err
+	}
+	region, err := tc.GetAWSRegion()
+	if err != nil {
+		return nil, err
+	}
+	return e2eutil.GetSQSClient(tc.awsCredentialsFile, region), nil
+}
+
+// GetGuestClient returns a controller-runtime client for the guest (hosted) cluster.
+// It fetches the admin kubeconfig from the HostedCluster status lazily on first call via sync.Once.
+// Retries handle transient DNS propagation failures when connecting to the guest API server.
+// Panics if the guest client cannot be created, as tests cannot proceed without it.
+func (tc *TestContext) GetGuestClient() crclient.Client {
+	tc.guestClientOnce.Do(func() {
+		hc, err := tc.GetHostedCluster()
 		if err != nil {
-			// In test code, panicking is acceptable and will fail the test appropriately
-			panic(fmt.Sprintf("failed to get HostedCluster %s/%s: %v", tc.ClusterNamespace, tc.ClusterName, err))
+			panic(fmt.Sprintf("failed to get HostedCluster: %v", err))
+		}
+		if hc == nil || hc.Status.KubeConfig == nil {
+			panic("HostedCluster has no kubeconfig in status")
 		}
 
-		err = e2eutil.SetReleaseVersionFromHostedCluster(context.Background(), hostedCluster)
+		var secret corev1.Secret
+		err = tc.MgmtClient.Get(context.Background(), crclient.ObjectKey{
+			Namespace: hc.Namespace,
+			Name:      hc.Status.KubeConfig.Name,
+		}, &secret)
 		if err != nil {
-			panic(fmt.Sprintf("failed to set release version from HostedCluster: %v", err))
+			panic(fmt.Sprintf("failed to get kubeconfig secret: %v", err))
 		}
 
-		tc.hostedCluster = hostedCluster
+		kubeconfigData, ok := secret.Data["kubeconfig"]
+		if !ok {
+			panic("kubeconfig secret does not contain 'kubeconfig' key")
+		}
+
+		restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigData)
+		if err != nil {
+			panic(fmt.Sprintf("failed to parse guest kubeconfig: %v", err))
+		}
+		restConfig.QPS = -1
+		restConfig.Burst = -1
+
+		var guestClient crclient.Client
+		var lastErr error
+		err = wait.PollUntilContextTimeout(tc.Context, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+			guestClient, err = e2eutil.GetClientFromConfig(restConfig)
+			if err != nil {
+				lastErr = fmt.Errorf("build guest client: %w", err)
+				return false, nil
+			}
+			_, apiErr := discovery.NewDiscoveryClientForConfigOrDie(restConfig).ServerVersion()
+			if apiErr != nil {
+				lastErr = fmt.Errorf("discover guest API server version: %w", apiErr)
+				return false, nil
+			}
+			return true, nil
+		})
+		if err != nil {
+			if lastErr != nil {
+				panic(fmt.Sprintf("failed to connect to guest cluster: %v (last error: %v)", err, lastErr))
+			}
+			panic(fmt.Sprintf("failed to connect to guest cluster: %v", err))
+		}
+		tc.guestClient = guestClient
 	})
-	return tc.hostedCluster
+	return tc.guestClient
 }
 
 var (
@@ -101,6 +303,7 @@ func SetupTestContext(ctx context.Context, hostedClusterName, hostedClusterNames
 		ClusterName:           hostedClusterName,
 		ClusterNamespace:      hostedClusterNamespace,
 		ControlPlaneNamespace: manifests.HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName),
+		awsCredentialsFile:    GetEnvVarValue("AWS_CREDENTIALS_FILE"),
 	}
 
 	return testCtx, nil
@@ -130,6 +333,9 @@ func SetupTestContextFromEnv(ctx context.Context) (*TestContext, error) {
 		testCtx.ClusterNamespace = hostedClusterNamespace
 		testCtx.ControlPlaneNamespace = manifests.HostedControlPlaneNamespace(hostedClusterNamespace, hostedClusterName)
 	}
+
+	// AWS credentials file path from environment (optional, required only for AWS-specific tests)
+	testCtx.awsCredentialsFile = GetEnvVarValue("AWS_CREDENTIALS_FILE")
 
 	return testCtx, nil
 }
