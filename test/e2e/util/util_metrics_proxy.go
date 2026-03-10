@@ -3,12 +3,14 @@
 package util
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"strings"
 	"testing"
@@ -19,6 +21,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/support/certs"
+	supportforwarder "github.com/openshift/hypershift/support/forwarder"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -26,6 +29,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -33,7 +37,7 @@ import (
 // EnsureMetricsProxyWorking enables metrics forwarding on the HostedCluster,
 // waits for the metrics-proxy and endpoint-resolver deployments to become
 // available, then verifies the metrics-proxy is returning Prometheus metrics
-// with the expected injected labels through its in-cluster service.
+// with the expected injected labels via port-forward to the metrics-proxy pod.
 func EnsureMetricsProxyWorking(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	t.Run("EnsureMetricsProxyWorking", func(t *testing.T) {
 		AtLeast(t, Version422)
@@ -57,15 +61,25 @@ func EnsureMetricsProxyWorking(t *testing.T, ctx context.Context, client crclien
 		t.Log("Waiting for metrics-proxy deployment")
 		WaitForDeploymentAvailable(ctx, t, client, "metrics-proxy", hcpNamespace, 5*time.Minute, 10*time.Second)
 
-		// 3. Build an mTLS HTTP client to access the metrics-proxy service.
-		httpClient := buildMetricsProxyClient(t, ctx, g, client, hcpNamespace)
+		// 3. Build an mTLS TLS config for the metrics-proxy.
+		tlsConfig := buildMetricsProxyTLSConfig(t, ctx, g, client, hcpNamespace)
 
-		// 4. Access the metrics-proxy via its in-cluster service rather than through the
-		// route, because private HCPs use .hypershift.local domains that aren't resolvable
-		// from the test pod's DNS.
+		// 4. Port-forward to the metrics-proxy pod since the test binary runs
+		// outside the management cluster and cannot resolve in-cluster service DNS
+		// or private route hostnames (.hypershift.local).
+		localPort, stopChan := setupMetricsProxyPortForward(t, ctx, g, client, hcpNamespace)
+		defer close(stopChan)
+
+		metricsURL := fmt.Sprintf("https://localhost:%d/metrics/kube-apiserver", localPort)
+		httpClient := &http.Client{
+			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: tlsConfig,
+			},
+		}
+
 		// 5. Scrape metrics for kube-apiserver through the proxy and verify labels.
 		t.Log("Verifying metrics-proxy returns scraped metrics with correct labels for kube-apiserver")
-		metricsURL := fmt.Sprintf("https://metrics-proxy.%s.svc.cluster.local/metrics/kube-apiserver", hcpNamespace)
 
 		var families map[string]*dto.MetricFamily
 		err = wait.PollUntilContextTimeout(ctx, 15*time.Second, 5*time.Minute, true, func(ctx context.Context) (bool, error) {
@@ -123,12 +137,60 @@ func EnsureMetricsProxyWorking(t *testing.T, ctx context.Context, client crclien
 	})
 }
 
-// buildMetricsProxyClient creates an HTTP client configured with mTLS for
+// setupMetricsProxyPortForward finds a running metrics-proxy pod and sets up a
+// port-forward to it using support/forwarder.
+// Returns the local port and a stop channel; close the stop channel to terminate the forward.
+func setupMetricsProxyPortForward(t *testing.T, ctx context.Context, g Gomega, c crclient.Client, hcpNamespace string) (int, chan struct{}) {
+	t.Helper()
+
+	// Find a running metrics-proxy pod.
+	podList := &corev1.PodList{}
+	err := c.List(ctx, podList,
+		crclient.InNamespace(hcpNamespace),
+		crclient.MatchingLabels{hyperv1.ControlPlaneComponentLabel: "metrics-proxy"})
+	g.Expect(err).NotTo(HaveOccurred(), "failed to list metrics-proxy pods")
+
+	var podName string
+	for i := range podList.Items {
+		if podList.Items[i].Status.Phase == corev1.PodRunning {
+			podName = podList.Items[i].Name
+			break
+		}
+	}
+	g.Expect(podName).NotTo(BeEmpty(), "no running metrics-proxy pod found")
+
+	restConfig, err := GetConfig()
+	g.Expect(err).NotTo(HaveOccurred(), "failed to get REST config")
+
+	kubeClient, err := kubernetes.NewForConfig(restConfig)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to create kubernetes client")
+
+	localPort := rand.IntN(45000-32767) + 32767
+	forwarderOutput := &bytes.Buffer{}
+	fwd := supportforwarder.PortForwarder{
+		Namespace: hcpNamespace,
+		PodName:   podName,
+		Config:    restConfig,
+		Client:    kubeClient,
+		Out:       forwarderOutput,
+		ErrOut:    forwarderOutput,
+	}
+
+	stopChan := make(chan struct{})
+	err = fwd.ForwardPorts([]string{fmt.Sprintf("%d:9443", localPort)}, stopChan)
+	g.Expect(err).NotTo(HaveOccurred(), "failed to set up port-forward to metrics-proxy: %s", forwarderOutput.String())
+
+	t.Logf("Port-forward established: localhost:%d -> %s/%s:9443", localPort, hcpNamespace, podName)
+	return localPort, stopChan
+}
+
+// buildMetricsProxyTLSConfig creates a TLS config with mTLS credentials for
 // accessing the metrics-proxy. It reads the cluster-signer-ca secret (used as
 // the client CA by the metrics-proxy) and generates an ephemeral client cert
 // signed by that CA. It also reads the metrics-proxy-ca-cert to verify the
-// server certificate.
-func buildMetricsProxyClient(t *testing.T, ctx context.Context, g Gomega, client crclient.Client, hcpNamespace string) *http.Client {
+// server certificate. ServerName is set to "metrics-proxy" (a SAN in the
+// serving cert) since we connect via port-forward to localhost.
+func buildMetricsProxyTLSConfig(t *testing.T, ctx context.Context, g Gomega, client crclient.Client, hcpNamespace string) *tls.Config {
 	t.Helper()
 
 	// Read the cluster-signer-ca secret (contains the CA cert + key).
@@ -165,15 +227,13 @@ func buildMetricsProxyClient(t *testing.T, ctx context.Context, g Gomega, client
 	ok := serverCAPool.AppendCertsFromPEM(proxyCASecret.Data[corev1.TLSCertKey])
 	g.Expect(ok).To(BeTrue(), "failed to parse metrics-proxy-ca-cert")
 
-	return &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				Certificates: []tls.Certificate{clientTLSCert},
-				RootCAs:      serverCAPool,
-				MinVersion:   tls.VersionTLS12,
-			},
-		},
+	return &tls.Config{
+		Certificates: []tls.Certificate{clientTLSCert},
+		RootCAs:      serverCAPool,
+		// Connect via port-forward to localhost, but the serving cert has
+		// "metrics-proxy" as a SAN, so use that for TLS verification.
+		ServerName: "metrics-proxy",
+		MinVersion: tls.VersionTLS12,
 	}
 }
 
