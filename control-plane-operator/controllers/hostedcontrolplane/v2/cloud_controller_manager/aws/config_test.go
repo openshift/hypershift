@@ -166,14 +166,16 @@ func TestConfigWithCustomAnnotations(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Ensure global feature gate is set to Default to verify that adaptConfig
+			// reads the feature set from HCP.Spec.Configuration, not the global gate.
+			// This proves the fix for the issue where the global gate was incorrectly
+			// used instead of the per-cluster configuration.
+			featuregates.ConfigureFeatureSet(string(configv1.Default))
+
 			cm := &corev1.ConfigMap{}
 			_, _, err := assets.LoadManifestInto(ComponentName, "config.yaml", cm)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
-			}
-			// Configure global feature gate based on HCP spec
-			if tt.hcp.Spec.Configuration != nil && tt.hcp.Spec.Configuration.FeatureGate != nil {
-				featuregates.ConfigureFeatureSet(string(tt.hcp.Spec.Configuration.FeatureGate.FeatureSet))
 			}
 
 			cpContext := component.WorkloadContext{
