@@ -548,6 +548,124 @@ func TestGetUserDataSecret(t *testing.T) {
 	}
 }
 
+func TestComputeReadyCondition(t *testing.T) {
+	testCases := []struct {
+		name                string
+		conditions          []metav1.Condition
+		expectedReadyStatus metav1.ConditionStatus
+		expectedReadyReason string
+		readyShouldChange   bool
+	}{
+		{
+			name: "When VersionResolved is False it should set Ready to False",
+			conditions: []metav1.Condition{
+				{
+					Type:    hyperkarpenterv1.ConditionTypeReady,
+					Status:  metav1.ConditionTrue,
+					Reason:  "Ready",
+					Message: "EC2NodeClass is ready",
+				},
+				{
+					Type:    hyperkarpenterv1.ConditionTypeVersionResolved,
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperkarpenterv1.ConditionReasonResolutionFailed,
+					Message: "Failed to resolve version \"4.17.0\": Cincinnati API unavailable",
+				},
+			},
+			expectedReadyStatus: metav1.ConditionFalse,
+			expectedReadyReason: hyperkarpenterv1.ConditionReasonResolutionFailed,
+			readyShouldChange:   true,
+		},
+		{
+			name: "When VersionResolved is True it should not override Ready",
+			conditions: []metav1.Condition{
+				{
+					Type:    hyperkarpenterv1.ConditionTypeReady,
+					Status:  metav1.ConditionTrue,
+					Reason:  "Ready",
+					Message: "EC2NodeClass is ready",
+				},
+				{
+					Type:    hyperkarpenterv1.ConditionTypeVersionResolved,
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperkarpenterv1.ConditionReasonVersionResolved,
+					Message: "Version resolved",
+				},
+			},
+			expectedReadyStatus: metav1.ConditionTrue,
+			expectedReadyReason: "Ready",
+			readyShouldChange:   false,
+		},
+		{
+			name: "When VersionResolved condition is absent it should set Ready to False",
+			conditions: []metav1.Condition{
+				{
+					Type:    hyperkarpenterv1.ConditionTypeReady,
+					Status:  metav1.ConditionTrue,
+					Reason:  "Ready",
+					Message: "EC2NodeClass is ready",
+				},
+			},
+			expectedReadyStatus: metav1.ConditionFalse,
+			expectedReadyReason: hyperkarpenterv1.ConditionReasonResolutionFailed,
+			readyShouldChange:   true,
+		},
+		{
+			name: "When VersionResolved is Unknown it should set Ready to False",
+			conditions: []metav1.Condition{
+				{
+					Type:    hyperkarpenterv1.ConditionTypeReady,
+					Status:  metav1.ConditionTrue,
+					Reason:  "Ready",
+					Message: "EC2NodeClass is ready",
+				},
+				{
+					Type:    hyperkarpenterv1.ConditionTypeVersionResolved,
+					Status:  metav1.ConditionUnknown,
+					Reason:  "Unknown",
+					Message: "Version resolution status is unknown",
+				},
+			},
+			expectedReadyStatus: metav1.ConditionFalse,
+			expectedReadyReason: "Unknown",
+			readyShouldChange:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			openshiftNodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-nodeclass",
+					Generation: 1,
+				},
+				Status: hyperkarpenterv1.OpenshiftEC2NodeClassStatus{
+					Conditions: tc.conditions,
+				},
+			}
+
+			r := &EC2NodeClassReconciler{}
+			r.computeReadyCondition(openshiftNodeClass)
+
+			readyCond := findCondition(openshiftNodeClass.Status.Conditions, hyperkarpenterv1.ConditionTypeReady)
+			g.Expect(readyCond).NotTo(BeNil())
+			g.Expect(readyCond.Status).To(Equal(tc.expectedReadyStatus))
+			g.Expect(readyCond.Reason).To(Equal(tc.expectedReadyReason))
+		})
+	}
+}
+
+func findCondition(conditions []metav1.Condition, condType string) *metav1.Condition {
+	for i, c := range conditions {
+		if c.Type == condType {
+			return &conditions[i]
+		}
+	}
+	return nil
+}
+
 func TestKarpenterSecretPredicate(t *testing.T) {
 	testCases := []struct {
 		name           string
