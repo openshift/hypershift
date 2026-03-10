@@ -1039,8 +1039,11 @@ spec:
                                   Format: projects/{project}/locations/{location}/keyRings/{keyRing}/cryptoKeys/{key}
                                 maxLength: 2048
                                 minLength: 1
-                                pattern: ^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/locations\/[a-z0-9-]+\/keyRings\/[a-zA-Z0-9_-]+\/cryptoKeys\/[a-zA-Z0-9_-]+$
                                 type: string
+                                x-kubernetes-validations:
+                                - message: kmsKeyName must be a valid Cloud KMS key
+                                    resource name
+                                  rule: self.matches('^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/locations/[a-z0-9-]+/keyRings/[a-zA-Z0-9_-]+/cryptoKeys/[a-zA-Z0-9_-]+$')
                             required:
                             - kmsKeyName
                             type: object
@@ -1054,6 +1057,7 @@ spec:
                             - A specific image: projects/rhel-cloud/global/images/rhel-8-v20231010
                             - A full resource URL: https://www.googleapis.com/compute/v1/projects/rhel-cloud/global/images/rhel-8-v20231010
                         maxLength: 2048
+                        minLength: 1
                         type: string
                       machineType:
                         description: |-
@@ -1067,8 +1071,11 @@ spec:
                             - custom with extended memory: custom-{cpus}-{memory}-ext (e.g. custom-2-13312-ext)
                         maxLength: 255
                         minLength: 1
-                        pattern: ^[a-z0-9]+(-[a-z0-9]+)*$
                         type: string
+                        x-kubernetes-validations:
+                        - message: machineType must follow GCP machine type naming
+                            conventions
+                          rule: self.matches('^[a-z0-9]+(-[a-z0-9]+)*$')
                       networkTags:
                         description: |-
                           networkTags is an optional list of network tags to apply to node instances.
@@ -1084,6 +1091,7 @@ spec:
                           pattern: ^[a-z][a-z0-9-]*[a-z0-9]$|^[a-z]$
                           type: string
                         maxItems: 64
+                        minItems: 0
                         type: array
                         x-kubernetes-list-type: set
                       onHostMaintenance:
@@ -1138,9 +1146,11 @@ spec:
                                 See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
                               maxLength: 63
                               minLength: 1
-                              pattern: ^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$
                               type: string
                               x-kubernetes-validations:
+                              - message: 'key must match GCP label format: lowercase
+                                  letters, digits, underscores, or hyphens'
+                                rule: self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')
                               - message: Label keys starting with the reserved 'goog'
                                   prefix are not allowed
                                 rule: '!self.startsWith(''goog'')'
@@ -1152,12 +1162,16 @@ spec:
                                 See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
                               maxLength: 63
                               minLength: 0
-                              pattern: ^$|^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$
                               type: string
+                              x-kubernetes-validations:
+                              - message: 'value must match GCP label format: lowercase
+                                  letters, digits, underscores, or hyphens'
+                                rule: self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')
                           required:
                           - key
                           type: object
                         maxItems: 60
+                        minItems: 0
                         type: array
                         x-kubernetes-list-map-keys:
                         - key
@@ -1176,8 +1190,11 @@ spec:
                                 - Monitoring metric writer
                                 - Storage object viewer (for pulling container images)
                             maxLength: 254
-                            pattern: ^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$
+                            minLength: 37
                             type: string
+                            x-kubernetes-validations:
+                            - message: email must be a valid GCP service account email
+                              rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$')
                           scopes:
                             description: |-
                               scopes specifies the access scopes for the service account.
@@ -1189,8 +1206,10 @@ spec:
                                 - "https://www.googleapis.com/auth/cloud-platform" - Full access (use with caution)
                             items:
                               maxLength: 512
+                              minLength: 1
                               type: string
                             maxItems: 50
+                            minItems: 0
                             type: array
                             x-kubernetes-list-type: set
                         type: object
@@ -1202,8 +1221,10 @@ spec:
                           The subnet must have enough IP addresses available for the expected number of nodes.
                         maxLength: 63
                         minLength: 1
-                        pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
                         type: string
+                        x-kubernetes-validations:
+                        - message: subnet must conform to GCP resource naming standards
+                          rule: self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')
                       zone:
                         description: |-
                           zone is the GCP zone where node instances will be created.
@@ -1212,8 +1233,10 @@ spec:
                           See https://cloud.google.com/compute/docs/regions-zones for available zones.
                         maxLength: 63
                         minLength: 1
-                        pattern: ^[a-z]+(?:-[a-z0-9]+)*-[a-z]$
                         type: string
+                        x-kubernetes-validations:
+                        - message: zone must be a valid GCP zone format (e.g. us-central1-a)
+                          rule: self.matches('^[a-z]+(?:-[a-z0-9]+)*-[a-z]$')
                     required:
                     - machineType
                     - subnet

@@ -148,7 +148,7 @@ Refer to the Kubernetes API documentation for the fields of the
 </tr>
 <tr>
 <td>
-<code>spec</code></br>
+<code>spec,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectSpec">
 GCPPrivateServiceConnectSpec
@@ -158,61 +158,6 @@ GCPPrivateServiceConnectSpec
 <td>
 <em>(Optional)</em>
 <p>spec is the specification for the GCPPrivateServiceConnect.</p>
-<br/>
-<br/>
-<table>
-<tr>
-<td>
-<code>loadBalancerIP</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>loadBalancerIP is the IP address of the Internal Load Balancer
-Populated by the observer from service status
-This value must be a valid IPv4 or IPv6 address.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>forwardingRuleName</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>forwardingRuleName is the name of the Internal Load Balancer forwarding rule
-Populated by the reconciler via GCP API lookup</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>consumerAcceptList</code></br>
-<em>
-[]string
-</em>
-</td>
-<td>
-<p>consumerAcceptList specifies which customer projects can connect
-Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers (e.g. &ldquo;123456789012&rdquo;)</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>natSubnet</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>natSubnet is the subnet used for NAT by the Service Attachment
-Auto-populated by the HyperShift Operator</p>
-</td>
-</tr>
-</table>
 </td>
 </tr>
 <tr>
@@ -6039,7 +5984,7 @@ If not specified, defaults to &ldquo;pd-balanced&rdquo;.</p>
 </tr>
 <tr>
 <td>
-<code>encryptionKey</code></br>
+<code>encryptionKey,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPDiskEncryptionKey">
 GCPDiskEncryptionKey
@@ -6128,7 +6073,7 @@ private node communication with the control plane via Private Service Connect.</
 <tbody>
 <tr>
 <td>
-<code>network</code></br>
+<code>network,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
 GCPResourceReference
@@ -6141,7 +6086,7 @@ GCPResourceReference
 </tr>
 <tr>
 <td>
-<code>privateServiceConnectSubnet</code></br>
+<code>privateServiceConnectSubnet,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
 GCPResourceReference
@@ -6459,7 +6404,7 @@ For a full list of valid regions, see: <a href="https://cloud.google.com/compute
 </tr>
 <tr>
 <td>
-<code>networkConfig</code></br>
+<code>networkConfig,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPNetworkConfig">
 GCPNetworkConfig
@@ -6676,6 +6621,7 @@ This value must be a valid IPv4 or IPv6 address.</p>
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>dnsZones contains DNS zone information created for this cluster</p>
 </td>
 </tr>

@@ -64,24 +64,34 @@ spec:
                   Accepts both project IDs (e.g. "my-project-123") and project numbers (e.g. "123456789012")
                 items:
                   maxLength: 30
-                  pattern: ^([a-z][a-z0-9-]{4,28}[a-z0-9]|[0-9]{6,12})$
+                  minLength: 1
                   type: string
+                  x-kubernetes-validations:
+                  - message: each entry must be a valid GCP project ID or project
+                      number
+                    rule: self.matches('^([a-z][a-z0-9-]{4,28}[a-z0-9]|[0-9]{6,12})$')
                 maxItems: 50
                 minItems: 1
                 type: array
+                x-kubernetes-list-type: set
               forwardingRuleName:
                 description: |-
                   forwardingRuleName is the name of the Internal Load Balancer forwarding rule
                   Populated by the reconciler via GCP API lookup
                 maxLength: 63
-                pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
+                minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: forwardingRuleName must conform to GCP resource naming
+                    standards
+                  rule: self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')
               loadBalancerIP:
                 description: |-
                   loadBalancerIP is the IP address of the Internal Load Balancer
                   Populated by the observer from service status
                   This value must be a valid IPv4 or IPv6 address.
                 maxLength: 45
+                minLength: 7
                 type: string
                 x-kubernetes-validations:
                 - message: loadBalancerIP must be a valid IPv4 or IPv6 address
@@ -91,8 +101,11 @@ spec:
                   natSubnet is the subnet used for NAT by the Service Attachment
                   Auto-populated by the HyperShift Operator
                 maxLength: 63
-                pattern: ^[a-z]([-a-z0-9]*[a-z0-9])?$
+                minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: natSubnet must conform to GCP resource naming standards
+                  rule: self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')
             required:
             - consumerAcceptList
             - loadBalancerIP
@@ -159,6 +172,7 @@ spec:
                   - type
                   type: object
                 maxItems: 10
+                minItems: 0
                 type: array
                 x-kubernetes-list-map-keys:
                 - type
@@ -179,14 +193,17 @@ spec:
                       description: records lists the DNS records created in this zone
                       items:
                         maxLength: 253
+                        minLength: 1
                         type: string
                       maxItems: 10
+                      minItems: 0
                       type: array
                       x-kubernetes-list-type: atomic
                   required:
                   - name
                   type: object
                 maxItems: 5
+                minItems: 0
                 type: array
                 x-kubernetes-list-type: atomic
               endpointIP:
@@ -194,6 +211,7 @@ spec:
                   endpointIP is the reserved IP address for the PSC endpoint
                   This value must be a valid IPv4 or IPv6 address.
                 maxLength: 45
+                minLength: 0
                 type: string
                 x-kubernetes-validations:
                 - message: endpointIP must be a valid IPv4 or IPv6 address
@@ -203,14 +221,19 @@ spec:
                 description: serviceAttachmentName is the name of the created Service
                   Attachment
                 maxLength: 63
+                minLength: 1
                 type: string
               serviceAttachmentURI:
                 description: |-
                   serviceAttachmentURI is the URI customers use to connect
                   Format: projects/{project}/regions/{region}/serviceAttachments/{name}
                 maxLength: 2048
-                pattern: ^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/regions/[a-z]+-[a-z0-9]+[0-9]/serviceAttachments/[a-z]([-a-z0-9]*[a-z0-9])?$
+                minLength: 1
                 type: string
+                x-kubernetes-validations:
+                - message: serviceAttachmentURI must be a valid GCP service attachment
+                    URI
+                  rule: self.matches('^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/regions/[a-z]+-[a-z0-9]+[0-9]/serviceAttachments/[a-z]([-a-z0-9]*[a-z0-9])?$')
             type: object
         type: object
     served: true
