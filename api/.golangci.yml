@@ -778,6 +778,19 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/endpointservice_types.go
         text: 'minlength: field AWSEndpointService.Status'
+      # MinProperties is not applicable on pointer/non-pointer structs with omitempty (codegen generates $ref, not inline object)
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'minlength: field GCPNodePoolPlatform.BootDisk'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'minlength: field GCPNodePoolPlatform.ServiceAccount'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'minlength: field GCPPrivateServiceConnect.Status'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hosted_controlplane.go
@@ -962,10 +975,6 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/hostedcluster_types.go
         text: 'minlength: field DNSSpec.BaseDomain'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/hostedcluster_types.go
-        text: 'minlength: field DNSSpec.BaseDomainPrefix'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hostedcluster_types.go
@@ -1393,15 +1402,7 @@ linters:
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/openstack.go
-        text: 'minlength: field FilterByNeutronTags.TagsAny'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/openstack.go
         text: 'minlength: field FilterByNeutronTags.NotTags'
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/openstack.go
-        text: 'minlength: field FilterByNeutronTags.NotTagsAny'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/openstack.go
@@ -2096,6 +2097,42 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/hosted_controlplane.go
         text: 'optionalfields: field HostedControlPlaneStatus.Version'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'optionalfields: field GCPNodePoolPlatform.Image'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'optionalfields: field GCPNodePoolPlatform.ProvisioningModel'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'optionalfields: field GCPNodePoolPlatform.OnHostMaintenance'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'optionalfields: field GCPBootDisk.DiskSizeGB'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'optionalfields: field GCPBootDisk.DiskType'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'optionalfields: field GCPBootDisk.EncryptionKey'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcp.go
+        text: 'optionalfields: field GCPNodeServiceAccount.Email'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'optionalfields: field GCPPrivateServiceConnectStatus.EndpointIP'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/gcpprivateserviceconnect_types.go
+        text: 'optionalfields: field GCPPrivateServiceConnect.Status'
       # preferredmarkers
       - linters:
           - kubeapilinter
@@ -3080,10 +3117,6 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/certificatesigningrequestapproval_types.go
         text: 'statussubresource: root object type "CertificateSigningRequestApproval" has a status field'
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
 formatters:
   enable:
     - gci
@@ -3103,7 +3136,3 @@ formatters:
   exclusions:
     warn-unused: true
     generated: lax
-    paths:
-      - third_party$
-      - builtin$
-      - examples$
