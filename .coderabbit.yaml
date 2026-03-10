@@ -2,12 +2,10 @@ inheritance: true
 language: en-US
 reviews:
   profile: chill
-  high_level_summary: false
-  review_status: true
-  commit_status: true
+  high_level_summary: true
   collapse_walkthrough: true
   changed_files_summary: false
-  sequence_diagrams: false
+  sequence_diagrams: true
   estimate_code_review_effort: false
   poem: false
   suggested_labels: false
@@ -52,10 +50,14 @@ reviews:
   tools:
     golangci-lint:
       enabled: true
+    gitleaks:
+      enabled: true
 knowledge_base:
   code_guidelines:
     enabled: true
     filePatterns:
       - AGENTS.md
+      - .claude/agents/*.md
+      - .cursor/rules/*.mdc
   learnings:
     scope: local
