@@ -45,6 +45,7 @@ tools/bin
 
 # Claude Code working directory
 .work/
+.claude/worktrees/
 
 # dev
 /dev/
