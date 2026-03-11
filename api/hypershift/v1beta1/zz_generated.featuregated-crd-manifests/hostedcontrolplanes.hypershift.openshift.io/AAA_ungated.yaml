@@ -4483,6 +4483,27 @@ spec:
                                 required:
                                 - clientID
                                 type: object
+                              controlPlaneOperator:
+                                description: |-
+                                  controlPlaneOperator is the client ID of a federated managed identity, associated with control-plane-operator,
+                                  used in workload identity authentication for Azure Private Link Service operations.
+                                properties:
+                                  clientID:
+                                    description: clientID is client ID of a federated
+                                      managed identity used in workload identity authentication
+                                    maxLength: 36
+                                    minLength: 36
+                                    pattern: ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$
+                                    type: string
+                                    x-kubernetes-validations:
+                                    - message: the client ID of a managed identity
+                                        must be a valid UUID. It should be 5 groups
+                                        of hyphen separated hexadecimal characters
+                                        in the form 8-4-4-4-12.
+                                      rule: self.matches('^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$')
+                                required:
+                                - clientID
+                                type: object
                               disk:
                                 description: |-
                                   disk is the client ID of a federated managed identity, associated with cluster-storage-operator-disk,
@@ -4641,6 +4662,67 @@ spec:
                         - AzureGermanCloud
                         - AzureStackCloud
                         type: string
+                      endpointAccess:
+                        description: |-
+                          endpointAccess specifies the visibility of the API server endpoint and private connectivity
+                          configuration for the hosted cluster. When nil, the API server is publicly accessible (equivalent
+                          to setting type to Public). When specified with type set to Private or PublicAndPrivate, Azure
+                          Private Link Service infrastructure will be created to enable private connectivity.
+                        properties:
+                          private:
+                            description: |-
+                              private specifies configuration for Azure Private Link connectivity.
+                              This field is required when type is set to Private or PublicAndPrivate, and
+                              must not be set when type is Public.
+                            properties:
+                              additionalAllowedSubscriptions:
+                                description: |-
+                                  additionalAllowedSubscriptions is an optional list of additional Azure subscription IDs
+                                  permitted to create Private Endpoints to the Private Link Service. The guest cluster's
+                                  own subscription is always automatically allowed, so it does not need to be listed here.
+                                items:
+                                  maxLength: 255
+                                  pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                                  type: string
+                                maxItems: 50
+                                type: array
+                              natSubnetID:
+                                description: |-
+                                  natSubnetID is the Azure resource ID of the subnet used for Private Link Service NAT IP allocation.
+                                  This subnet must have privateLinkServiceNetworkPolicies disabled.
+                                maxLength: 355
+                                minLength: 1
+                                pattern: ^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\.Network/virtualNetworks/[^/]+/subnets/[^/]+$
+                                type: string
+                                x-kubernetes-validations:
+                                - message: natSubnetID is immutable once set
+                                  rule: self == oldSelf
+                            required:
+                            - natSubnetID
+                            type: object
+                          type:
+                            description: |-
+                              type specifies the visibility of the API server endpoint for the hosted cluster.
+                              Valid values are Public, PublicAndPrivate, and Private.
+                              When set to Private or PublicAndPrivate, the private field must be provided with
+                              Azure Private Link Service configuration.
+                              Transitions between PublicAndPrivate and Private are supported after creation.
+                            enum:
+                            - Public
+                            - PublicAndPrivate
+                            - Private
+                            type: string
+                        required:
+                        - type
+                        type: object
+                        x-kubernetes-validations:
+                        - message: private is required when type is not Public
+                          rule: self.type == 'Public' || has(self.private)
+                        - message: transitions between Public and non-Public endpoint
+                            access types are not supported
+                          rule: (self.type == 'Public') == (oldSelf.type == 'Public')
+                        - message: private must not be set when type is Public
+                          rule: self.type != 'Public' || !has(self.private)
                       location:
                         description: |-
                           location is the Azure region in where all the cloud infrastructure resources will be created.
@@ -4757,6 +4839,18 @@ spec:
                     - tenantID
                     - vnetID
                     type: object
+                    x-kubernetes-validations:
+                    - message: workloadIdentities.controlPlaneOperator is required
+                        when endpointAccess is Private or PublicAndPrivate with WorkloadIdentities
+                        authentication
+                      rule: '!has(self.endpointAccess) || self.endpointAccess.type
+                        == ''Public'' || self.azureAuthenticationConfig.azureAuthenticationConfigType
+                        != ''WorkloadIdentities'' || has(self.azureAuthenticationConfig.workloadIdentities.controlPlaneOperator)'
+                    - message: transitions between Public and non-Public endpoint
+                        access types are not supported
+                      rule: ((!has(self.endpointAccess) || self.endpointAccess.type
+                        == 'Public') == (!has(oldSelf.endpointAccess) || oldSelf.endpointAccess.type
+                        == 'Public'))
                   ibmcloud:
                     description: ibmcloud defines IBMCloud specific settings for components
                     properties:
