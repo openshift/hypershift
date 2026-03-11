@@ -406,6 +406,6 @@ func validateNodePoolConditions(t *testing.T, ctx context.Context, client crclie
 			err := client.Get(ctx, crclient.ObjectKeyFromObject(nodePool), nodePool)
 			return nodePool, err
 		},
-		predicates, e2eutil.WithoutConditionDump(),
+		predicates, e2eutil.WithoutConditionDump(), e2eutil.WithTimeout(20*time.Minute),
 	)
 }
