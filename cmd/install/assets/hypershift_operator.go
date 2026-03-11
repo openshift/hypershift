@@ -211,15 +211,17 @@ const (
 )
 
 type ExternalDNSDeployment struct {
-	Namespace         *corev1.Namespace
-	Image             string
-	ServiceAccount    *corev1.ServiceAccount
-	Provider          ExternalDNSProvider
-	DomainFilter      string
-	CredentialsSecret *corev1.Secret
-	TxtOwnerId        string
-	Proxy             *configv1.Proxy
-	GoogleProject     string
+	Namespace             *corev1.Namespace
+	Image                 string
+	ServiceAccount        *corev1.ServiceAccount
+	Provider              ExternalDNSProvider
+	DomainFilter          string
+	CredentialsSecret     *corev1.Secret
+	TxtOwnerId            string
+	Proxy                 *configv1.Proxy
+	GoogleProject         string
+	Interval              string
+	AWSZonesCacheDuration string
 }
 
 func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
@@ -227,6 +229,14 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 	txtOwnerId := o.TxtOwnerId
 	if txtOwnerId == "" {
 		txtOwnerId = uuid.NewString()
+	}
+	interval := o.Interval
+	if interval == "" {
+		interval = "1m"
+	}
+	awsZonesCacheDuration := o.AWSZonesCacheDuration
+	if awsZonesCacheDuration == "" {
+		awsZonesCacheDuration = "1h"
 	}
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
@@ -270,7 +280,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 								"--txt-suffix=-external-dns",
 								fmt.Sprintf("--txt-owner-id=%s", txtOwnerId),
 								fmt.Sprintf("--label-filter=%s!=%s", hyperv1.RouteVisibilityLabel, hyperv1.RouteVisibilityPrivate),
-								"--interval=1m",
+								fmt.Sprintf("--interval=%s", interval),
 								"--txt-cache-interval=1h",
 							},
 							Ports: []corev1.ContainerPort{{Name: "metrics", ContainerPort: 7979}},
@@ -351,7 +361,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
 			"--aws-zone-type=public",
 			"--aws-batch-change-interval=10s",
-			"--aws-zones-cache-duration=1h",
+			fmt.Sprintf("--aws-zones-cache-duration=%s", awsZonesCacheDuration),
 		)
 	case AzureExternalDNSProvider:
 		deployment.Spec.Template.Spec.Containers[0].Args = append(deployment.Spec.Template.Spec.Containers[0].Args,
