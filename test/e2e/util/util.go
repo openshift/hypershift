@@ -3378,26 +3378,10 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 		}
 		g := NewWithT(t)
 
-		tagsPolicy := fmt.Sprintf(`{
-			"Version": "2012-10-17",
-			"Statement": [
-				{
-					"Effect": "Allow",
-					"Action": [
-						"ec2:CreateTags",
-						"ec2:DeleteTags"
-					],
-					"Resource": "arn:aws:ec2:*:*:security-group/%s"
-				}
-			]
-		}`, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
-
-		cleanup, err := PutRolePolicy(ctx, clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, tagsPolicy)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to put role policy for tagging default security group")
-		defer func() {
-			err := cleanup()
-			g.Expect(err).NotTo(HaveOccurred(), "failed to cleanup role policy for tagging default security group")
-		}()
+		// PutRolePolicy intentionally removed to verify that v1 passes WITHOUT
+		// explicitly granting ec2:CreateTags to the CPO role.
+		// If PASS: proves v1 relied on IMDS fallback (management cluster instance role),
+		// not on the CPO role's permissions - PutRolePolicy was never actually needed.
 
 		day2TagKey := "test-day2-tag"
 		day2TagValue := "test-day2-value"
