@@ -18,10 +18,6 @@ const (
 	// AnnotationTerminationHandlerQueueURL specifies the SQS queue URL for spot interruption events.
 	// This annotation is required on the HostedCluster to enable the termination handler component.
 	AnnotationTerminationHandlerQueueURL = "hypershift.openshift.io/aws-termination-handler-queue-url"
-
-	// DefaultAWSNodeTerminationHandlerImage is the default image for the AWS Node Termination Handler.
-	// TODO(alberto): Replace this with mirror image or payload once available.
-	DefaultAWSNodeTerminationHandlerImage = "public.ecr.aws/aws-ec2/aws-node-termination-handler:v1.25.3"
 )
 
 var _ component.ComponentOptions = &options{}

@@ -40,9 +40,6 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 
 	// Update the aws-node-termination-handler container environment variables and image
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
-		// Set the image - AWS Node Termination Handler is not in the OCP release payload
-		c.Image = DefaultAWSNodeTerminationHandlerImage
-
 		for i := range c.Env {
 			switch c.Env[i].Name {
 			case "AWS_REGION":
