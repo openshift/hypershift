@@ -3,7 +3,7 @@
 This file contains all HyperShift documentation aggregated into a single file
 for use with AI tools like NotebookLM.
 
-Total documents: 261
+Total documents: 263
 
 ---
 
@@ -8260,6 +8260,37 @@ Running this command creates:
     - Network Operator
 * Federated Identity Credentials for each identity, configured with the OIDC issuer
 
+## Private Endpoint Access
+
+When creating workload identities for a private cluster, add `--endpoint-access Private`
+to create an additional identity for the Control Plane Operator:
+
+```bash
+hypershift create iam azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --location LOCATION \
+    --resource-group-name RESOURCE_GROUP \
+    --oidc-issuer-url OIDC_ISSUER_URL \
+    --output-file workload-identities.json \
+    --endpoint-access Private
+```
+
+This creates **8 identities** (the 7 above plus):
+
+* **Control Plane Operator** — manages Private Endpoints, Private DNS zones, VNet links,
+    and DNS A records in the guest subscription
+
+The CPO identity is assigned the **Contributor** role by default, scoped to the managed
+resource group, NSG resource group, and VNet resource group. When using
+`--assign-custom-hcp-roles`, a more restrictive custom role is used instead.
+
+!!! note
+
+    The `--endpoint-access` flag accepts `Public` (default), `PublicAndPrivate`, or
+    `Private`. The CPO identity is only created when the value is not `Public`.
+
 ## Output Format
 
 The output file contains the workload identities in JSON format, directly consumable by the
@@ -8281,9 +8312,15 @@ The output file contains the workload identities in JSON format, directly consum
   "ingress": { ... },
   "cloudProvider": { ... },
   "nodePoolManagement": { ... },
-  "network": { ... }
+  "network": { ... },
+  "controlPlaneOperator": { ... }
 }
 ```
+
+!!! note
+
+    The `controlPlaneOperator` entry is only present when `--endpoint-access` is not
+    `Public`. For public clusters, the output contains 7 entries.
 
 ## Using Pre-created Identities
 
@@ -8354,6 +8391,7 @@ Both the managed identities and their federated credentials are removed.
 | `--resource-group-name` | Resource group for identities | `{name}-{infra-id}` |
 | `--output-file` | Output file path | `{name}-iam-output.json` |
 | `--cloud` | Azure cloud environment | `AzurePublicCloud` |
+| `--endpoint-access` | API server endpoint visibility: `Public`, `PublicAndPrivate`, or `Private`. Creates an additional CPO identity when not `Public`. | `Public` |
 
 ### Required Flags for `destroy iam azure`
 
@@ -8436,6 +8474,7 @@ hypershift destroy iam azure \
 - Create Azure Infrastructure Separately
 - Azure Workload Identity Setup
 - Self-Managed Azure Overview
+- Deploy Azure Private Clusters — End-to-end guide for private endpoint access
 
 
 ---
@@ -8563,6 +8602,50 @@ where:
 * `--assign-identity-roles` enables automatic RBAC role assignment for workload identities
 * `DNS_ZONE_RG` is the name of the resource group containing your public DNS zone
 
+## Creating Infrastructure for Private Clusters
+
+To create infrastructure for a private cluster using Azure Private Link, add the
+`--endpoint-access` and `--endpoint-access-private-nat-subnet-id` flags:
+
+```bash
+hypershift create infra azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --base-domain BASE_DOMAIN \
+    --location LOCATION \
+    --workload-identities-file WORKLOAD_IDENTITIES_FILE \
+    --assign-identity-roles \
+    --dns-zone-rg-name DNS_ZONE_RG \
+    --endpoint-access Private \
+    --endpoint-access-private-nat-subnet-id NAT_SUBNET_ID \
+    --output-file OUTPUT_INFRA_FILE
+```
+
+where:
+
+* `--endpoint-access` specifies the API server endpoint visibility: `Public` (default),
+    `PublicAndPrivate`, or `Private`
+* `NAT_SUBNET_ID` is the Azure resource ID of a pre-existing subnet in the **management
+    cluster's VNet** used for Private Link Service NAT IP allocation. This subnet must
+    have `privateLinkServiceNetworkPolicies` disabled.
+
+The infrastructure output file will include a `natSubnetID` field when private endpoint
+access is configured.
+
+!!! important
+
+    The NAT subnet is **not created** by `create infra azure` — it must already exist in
+    the management cluster's VNet. See Deploy Azure Private Clusters
+    for step-by-step instructions on preparing the NAT subnet.
+
+!!! note
+
+    When using `--endpoint-access Private`, your workload identities must also have been
+    created with `--endpoint-access Private` (via `hypershift create iam azure`) to include
+    the additional Control Plane Operator identity required for private endpoint management.
+    See Create Azure IAM Resources Separately.
+
 ## Create Workload Identities Separately
 
 If you want to create workload identities separately before creating infrastructure, use the
@@ -8663,6 +8746,8 @@ See Create Azure IAM Resources Separately.
 | `--dns-zone-rg-name` | DNS zone resource group (for role assignment) |
 | `--assign-custom-hcp-roles` | Use custom HCP roles instead of Contributor |
 | `--disable-cluster-capabilities` | Disable specific cluster capabilities |
+| `--endpoint-access` | API server endpoint visibility: `Public` (default), `PublicAndPrivate`, or `Private` |
+| `--endpoint-access-private-nat-subnet-id` | NAT subnet ID in management cluster VNet (required when `--endpoint-access` is not `Public`) |
 | `--output-file` | Output file for infrastructure details |
 
 
@@ -8713,6 +8798,18 @@ Your Azure service principal must have the following permissions:
     - `Application.ReadWrite.OwnedBy` permission (requires DPTP request in most cases)
 
 ## Creating the Self-Managed Azure HostedCluster
+
+!!! tip "Alternative: Use `create infra azure` and `create iam azure`"
+
+    This guide creates Azure infrastructure manually with `az` CLI commands for
+    transparency. Alternatively, you can use the HyperShift CLI to automate
+    infrastructure and IAM creation:
+
+    - Create Azure IAM Resources Separately — `hypershift create iam azure`
+    - Create Azure Infrastructure Separately — `hypershift create infra azure`
+
+    The private cluster guide (Deploy Azure Private Clusters)
+    uses these automated commands and is the recommended approach for private topology.
 
 ### Infrastructure Setup
 
@@ -8819,6 +8916,14 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
     --workload-identities-file ./workload-identities.json \
     --diagnostics-storage-account-type Managed
 ```
+
+!!! tip "Private Clusters"
+
+    To create a private cluster with Azure Private Link, see
+    Deploy Azure Private Clusters.
+    Private clusters require additional setup: a NAT subnet in the management
+    cluster's VNet, `--endpoint-access Private` flag, and HyperShift operator
+    installation with `--private-platform Azure`.
 
 ### Configuring Azure Marketplace Images
 
@@ -8957,6 +9062,501 @@ hypershift destroy cluster azure \
 
 1. Azure Workload Identity Setup - Workload identities and OIDC issuer setup
 2. Setup Azure Management Cluster for HyperShift - DNS and HyperShift operator setup
+
+---
+
+## Source: docs/content/how-to/azure/deploy-azure-private-clusters.md
+
+---
+title: Deploy Azure private clusters
+---
+
+# Deploying Azure Private Clusters
+
+By default, HyperShift guest clusters are publicly accessible through public DNS
+and the management cluster's default router.
+
+For private clusters on Azure, all communication between worker nodes and the hosted
+control plane occurs over Azure Private Link.
+This guide walks through the process of configuring HyperShift for private cluster
+support on Azure.
+
+!!! note "Tech Preview in OCP 4.22"
+
+    Private self-managed Azure HostedClusters are planned as a Tech Preview feature in OpenShift Container Platform 4.22.
+
+## Before You Begin
+
+This guide assumes you have completed the self-managed Azure setup described in the
+Self-Managed Azure Overview, including:
+
+- Azure Workload Identity and OIDC issuer configuration
+- Management cluster with HyperShift operator installed (will be reinstalled with private support)
+- Azure CLI (`az`), HyperShift CLI (`hypershift`), `oc`/`kubectl`, `jq`, and `yq`
+
+## Overview
+
+Private endpoint access uses Azure Private Link Service (PLS) to expose the hosted
+control plane's internal load balancer to the guest cluster's VNet through a Private
+Endpoint. Worker nodes resolve the API server hostname via Private DNS zones that
+point to the Private Endpoint IP.
+
+The workflow has five steps:
+
+1. Prepare a NAT subnet in the management cluster's VNet
+2. Install the HyperShift operator with private platform support
+3. Create IAM resources with private endpoint access
+4. Create infrastructure with private endpoint access
+5. Create the private HostedCluster
+
+## Step 1: Prepare the NAT Subnet
+
+Azure Private Link Service requires a dedicated subnet for NAT IP allocation. This
+subnet must be in the **management cluster's VNet** and must have
+`privateLinkServiceNetworkPolicies` disabled.
+
+First, identify the management cluster's VNet:
+
+```bash
+# Get the management cluster's infrastructure resource group
+MGMT_INFRA_RG=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.azure.resourceGroupName}')
+
+# Find the VNet in the infrastructure resource group
+MGMT_VNET_NAME=$(az network vnet list --resource-group "${MGMT_INFRA_RG}" --query "[0].name" -o tsv)
+MGMT_VNET_RG="${MGMT_INFRA_RG}"
+```
+
+Create the NAT subnet:
+
+```bash
+NAT_SUBNET_NAME="pls-nat-subnet"
+
+# Check existing address space and subnets to choose a non-overlapping CIDR
+az network vnet show \
+    --resource-group "${MGMT_VNET_RG}" \
+    --name "${MGMT_VNET_NAME}" \
+    --query '{addressSpace: addressSpace.addressPrefixes, subnets: subnets[].{name: name, prefix: addressPrefix}}' \
+    -o table
+
+az network vnet subnet create \
+    --resource-group "${MGMT_VNET_RG}" \
+    --vnet-name "${MGMT_VNET_NAME}" \
+    --name "${NAT_SUBNET_NAME}" \
+    --address-prefixes 10.1.64.0/24 \
+    --disable-private-link-service-network-policies true
+```
+
+!!! warning "Choose a Non-Overlapping CIDR"
+
+    The `10.1.64.0/24` address prefix above is an **example only**. You must choose a
+    CIDR range that does not overlap with any existing subnets in the management cluster's
+    VNet. Check the VNet's address space and existing subnets before creating the NAT
+    subnet. If the management cluster's VNet uses `10.0.0.0/16`, the NAT subnet must
+    fall within that range (e.g., `10.0.64.0/24`) or you must first expand the VNet's
+    address space.
+
+Get the NAT subnet resource ID for later use:
+
+```bash
+NAT_SUBNET_ID=$(az network vnet subnet show \
+    --resource-group "${MGMT_VNET_RG}" \
+    --vnet-name "${MGMT_VNET_NAME}" \
+    --name "${NAT_SUBNET_NAME}" \
+    --query id -o tsv)
+```
+
+!!! important
+
+    The NAT subnet **must** be in the management cluster's VNet, not the guest VNet.
+    This is because the Private Link Service is created alongside the management
+    cluster's internal load balancer.
+
+!!! note
+
+    The `--disable-private-link-service-network-policies true` flag is required.
+    Without it, Azure will reject PLS creation on this subnet.
+
+## Step 2: Install HyperShift Operator with Private Platform Support
+
+To support private clusters, the HyperShift operator must be installed with
+additional flags that configure Azure Private Link Service management.
+
+You need credentials that allow the operator to manage PLS resources:
+
+```bash
+# Azure credentials file for PLS management (same format as standard Azure creds)
+AZURE_PRIVATE_CREDS="/path/to/azure-private-credentials.json"
+
+# Management cluster's infrastructure resource group
+MGMT_INFRA_RG=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.azure.resourceGroupName}')
+```
+
+Install the operator with private platform support. The private-specific flags are
+added **in addition to** the standard install flags (External DNS, pull secret, etc.):
+
+```bash
+hypershift install \
+    --pull-secret ${PULL_SECRET} \
+    --private-platform Azure \
+    --azure-private-creds ${AZURE_PRIVATE_CREDS} \
+    --azure-pls-resource-group ${MGMT_INFRA_RG} \
+    # ... include your standard install flags (External DNS, etc.)
+```
+
+| Flag | Description |
+|------|-------------|
+| `--private-platform Azure` | Enables Azure Private Link Service management in the operator |
+| `--azure-private-creds` | Path to Azure credentials file used for PLS operations |
+| `--azure-pls-resource-group` | Resource group where PLS resources will be created (the management cluster's infrastructure RG) |
+
+**Alternative authentication methods** (use one of these instead of `--azure-private-creds`):
+
+| Flag | Description |
+|------|-------------|
+| `--azure-private-secret` | Name of an existing Kubernetes secret containing Azure credentials (use with `--azure-private-secret-key` to specify the key, default: `credentials`) |
+| `--azure-pls-managed-identity-client-id` | Client ID of a managed identity for PLS operations via Azure Workload Identity federation (requires `--azure-pls-subscription-id`) |
+| `--azure-pls-subscription-id` | Azure subscription ID for PLS operations (required with `--azure-pls-managed-identity-client-id`) |
+
+!!! warning "Choose One Authentication Method"
+
+    The three authentication methods (`--azure-private-creds`, `--azure-private-secret`,
+    `--azure-pls-managed-identity-client-id`) are **mutually exclusive**. Use exactly one.
+
+!!! important "Re-install Required for Private Support"
+
+    If you already installed HyperShift without `--private-platform Azure`, you **must**
+    re-run `hypershift install` with the private platform flags before creating any
+    private clusters. The operator will not watch `AzurePrivateLinkService` CRs until
+    configured with private platform support. You can safely re-run `hypershift install`
+    to update the existing installation.
+
+## Step 3: Create IAM with Private Endpoint Access
+
+When creating IAM resources for a private cluster, use `--endpoint-access Private`.
+This creates an additional workload identity for the control plane operator, which
+needs Azure permissions to manage Private Endpoints and Private DNS zones in the
+guest subscription.
+
+```bash
+PREFIX="your-prefix"
+CLUSTER_NAME="${PREFIX}-hc"
+RESOURCE_GROUP_NAME="${CLUSTER_NAME}-${PREFIX}"
+LOCATION="eastus"
+AZURE_CREDS="/path/to/azure-credentials.json"
+OIDC_ISSUER_URL="https://yourstorageaccount.blob.core.windows.net/yourstorageaccount"
+WORKLOAD_IDENTITIES_FILE="./workload-identities.json"
+
+hypershift create iam azure \
+    --name "${CLUSTER_NAME}" \
+    --infra-id "${PREFIX}" \
+    --azure-creds "${AZURE_CREDS}" \
+    --location "${LOCATION}" \
+    --resource-group-name "${RESOURCE_GROUP_NAME}" \
+    --oidc-issuer-url "${OIDC_ISSUER_URL}" \
+    --output-file "${WORKLOAD_IDENTITIES_FILE}" \
+    --endpoint-access Private
+```
+
+For public clusters, 7 workload identities are created. For private clusters, an 8th
+identity is added:
+
+| Identity | Operator | Azure Role | Scopes |
+|----------|----------|------------|--------|
+| **Control Plane Operator** | CPO | Contributor (default) or Custom HCP Role | Managed RG, NSG RG, VNet RG |
+
+This identity is **only created for private endpoint access** and is not needed for
+public topology clusters. It allows the CPO to create and manage Private Endpoints,
+Private DNS zones, VNet links, and DNS A records in the guest subscription.
+
+!!! note
+
+    The CPO identity is assigned the **Contributor** role by default. When using
+    `--assign-custom-hcp-roles`, a more restrictive custom role is used instead.
+
+## Step 4: Create Infrastructure
+
+Create the Azure infrastructure with private endpoint access. The `--endpoint-access Private`
+flag and `--endpoint-access-private-nat-subnet-id` are required:
+
+```bash
+DNS_ZONE_RG_NAME="os4-common"
+PARENT_DNS_ZONE="your-base.domain.com"
+INFRA_OUTPUT_FILE="${PREFIX}-infra-output.json"
+
+hypershift create infra azure \
+    --azure-creds "${AZURE_CREDS}" \
+    --infra-id "${PREFIX}" \
+    --name "${CLUSTER_NAME}" \
+    --location "${LOCATION}" \
+    --base-domain "${PARENT_DNS_ZONE}" \
+    --dns-zone-rg-name "${DNS_ZONE_RG_NAME}" \
+    --workload-identities-file "${WORKLOAD_IDENTITIES_FILE}" \
+    --assign-identity-roles \
+    --endpoint-access Private \
+    --endpoint-access-private-nat-subnet-id "${NAT_SUBNET_ID}" \
+    --output-file "${INFRA_OUTPUT_FILE}"
+```
+
+The infrastructure output file will include a `natSubnetID` field that carries through
+to cluster creation.
+
+## Step 5: Create the Private HostedCluster
+
+Read the infrastructure output to get the resource IDs created in Step 4:
+
+```bash
+MANAGED_RG_NAME=$(yq -r -p yaml '.resourceGroupName' "${INFRA_OUTPUT_FILE}")
+VNET_ID=$(yq -r -p yaml '.vnetID' "${INFRA_OUTPUT_FILE}")
+SUBNET_ID=$(yq -r -p yaml '.subnetID' "${INFRA_OUTPUT_FILE}")
+NSG_ID=$(yq -r -p yaml '.securityGroupID' "${INFRA_OUTPUT_FILE}")
+NAT_SUBNET_ID=$(yq -r -p yaml '.natSubnetID' "${INFRA_OUTPUT_FILE}")
+```
+
+Create the private HostedCluster:
+
+```bash
+hypershift create cluster azure \
+    --name "$CLUSTER_NAME" \
+    --namespace "clusters" \
+    --azure-creds ${AZURE_CREDS} \
+    --location ${LOCATION} \
+    --node-pool-replicas 2 \
+    --base-domain ${PARENT_DNS_ZONE} \
+    --pull-secret ${PULL_SECRET} \
+    --generate-ssh \
+    --release-image ${RELEASE_IMAGE} \
+    --resource-group-name "${MANAGED_RG_NAME}" \
+    --vnet-id "${VNET_ID}" \
+    --subnet-id "${SUBNET_ID}" \
+    --network-security-group-id "${NSG_ID}" \
+    --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
+    --oidc-issuer-url "${OIDC_ISSUER_URL}" \
+    --dns-zone-rg-name ${DNS_ZONE_RG_NAME} \
+    --assign-service-principal-roles \
+    --workload-identities-file ${WORKLOAD_IDENTITIES_FILE} \
+    --diagnostics-storage-account-type Managed \
+    --external-dns-domain ${DNS_ZONE_NAME} \
+    --endpoint-access Private \
+    --endpoint-access-private-nat-subnet-id "${NAT_SUBNET_ID}"
+```
+
+!!! note
+
+    The `--endpoint-access` flag accepts three values:
+
+    - `Public` (default): API server accessible via public endpoint only
+    - `PublicAndPrivate`: API server accessible via both public and private endpoints
+    - `Private`: API server accessible only via Private Link (private endpoint)
+
+!!! warning "Endpoint Access Type is Immutable"
+
+    You **cannot** change a cluster between `Public` and non-Public (`Private` or
+    `PublicAndPrivate`) after creation. Transitions between `PublicAndPrivate` and
+    `Private` are allowed, but switching from `Public` to `Private` (or vice versa)
+    requires creating a new cluster.
+
+!!! tip "Additional Allowed Subscriptions"
+
+    If you need to allow Private Endpoint connections from Azure subscriptions other
+    than the guest cluster's own subscription, use the
+    `--endpoint-access-private-additional-allowed-subscriptions` flag:
+
+    ```bash
+    --endpoint-access-private-additional-allowed-subscriptions "sub-id-1,sub-id-2"
+    ```
+
+## Verify Private Connectivity
+
+After creating the cluster, monitor the Private Link Service setup progress:
+
+```bash
+# Check AzurePrivateLinkService resources
+oc get azureprivatelinkservices -n clusters-${CLUSTER_NAME}
+
+# Check detailed status and conditions
+oc get azureprivatelinkservices -n clusters-${CLUSTER_NAME} -o yaml
+```
+
+The conditions should progress through these stages:
+
+| Condition | Description |
+|-----------|-------------|
+| `AzureInternalLoadBalancerAvailable` | Internal load balancer has a frontend IP |
+| `AzurePLSCreated` | Private Link Service created in management cluster |
+| `AzurePrivateEndpointAvailable` | Private Endpoint created in guest VNet |
+| `AzurePrivateDNSAvailable` | Private DNS zones and A records created |
+| `AzurePrivateLinkServiceAvailable` | All components ready, private connectivity available |
+
+Check overall cluster status:
+
+```bash
+oc get hostedcluster ${CLUSTER_NAME} -n clusters
+oc wait --for=condition=Available hostedcluster/${CLUSTER_NAME} -n clusters --timeout=30m
+```
+
+## Access a Private HostedCluster
+
+### Generate a Kubeconfig
+
+```bash
+hypershift create kubeconfig --name ${CLUSTER_NAME} > ${CLUSTER_NAME}-kubeconfig
+```
+
+### Port-Forward Method
+
+If you have access to the management cluster, you can port-forward to the API server:
+
+```bash
+# Port-forward the kube-apiserver service
+kubectl port-forward svc/kube-apiserver -n clusters-${CLUSTER_NAME} 6443:6443 &
+
+# Use the kubeconfig (it will connect via localhost:6443)
+KUBECONFIG=${CLUSTER_NAME}-kubeconfig oc get nodes
+```
+
+### VNet-Peered Access
+
+If you have a VM in a VNet that is peered with the guest VNet, you can access the
+API server, but you must first link the Private DNS zones to the peered VNet:
+
+```bash
+# Link the hypershift.local Private DNS zone to your peered VNet
+PEERED_VNET_ID="/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<vnet>"
+
+az network private-dns link vnet create \
+    --resource-group "${MANAGED_RG_NAME}" \
+    --zone-name "${CLUSTER_NAME}.hypershift.local" \
+    --name "peered-vnet-link" \
+    --virtual-network "${PEERED_VNET_ID}" \
+    --registration-enabled false
+
+# If you also need base domain resolution (for OAuth/console):
+az network private-dns link vnet create \
+    --resource-group "${MANAGED_RG_NAME}" \
+    --zone-name "${PARENT_DNS_ZONE}" \
+    --name "peered-vnet-basedomain-link" \
+    --virtual-network "${PEERED_VNET_ID}" \
+    --registration-enabled false
+
+# Then access the cluster
+KUBECONFIG=${CLUSTER_NAME}-kubeconfig oc get nodes
+```
+
+!!! warning "Private DNS Zones Are Only Linked to the Guest VNet"
+
+    The CPO only links Private DNS zones to the **guest cluster's VNet**. If you want
+    to resolve the API server hostname from a peered VNet, you must manually link the
+    Private DNS zones to that VNet as shown above. Without this step, DNS resolution
+    will fail from the peered VNet.
+
+## Cleanup
+
+To delete a private HostedCluster:
+
+```bash
+hypershift destroy cluster azure \
+    --name ${CLUSTER_NAME} \
+    --azure-creds ${AZURE_CREDS} \
+    --resource-group-name ${MANAGED_RG_NAME}
+```
+
+The deletion process automatically cleans up Private Link resources in the correct order:
+
+1. The control plane operator removes the Private Endpoint, Private DNS zones, VNet links, and A records
+2. The HyperShift operator removes the Private Link Service
+
+!!! note "Cleanup Order"
+
+    The dual-finalizer pattern ensures resources are deleted in the correct dependency
+    order. The CPO finalizer runs first (removing guest-side resources), then the HO
+    finalizer runs (removing management-side resources).
+
+## Gotchas and Troubleshooting
+
+### Management Cluster Requirements
+
+- The management cluster **must be an OpenShift cluster**, not AKS. Commands like
+  `oc get infrastructure cluster` are used to discover the management cluster's Azure
+  resource group, and these only work on OpenShift. For AKS-based management clusters,
+  use managed Azure HyperShift (ARO HCP) instead.
+
+- The HyperShift operator **must be installed with `--private-platform Azure`** before
+  creating any private clusters. If you followed the
+  management cluster setup guide without private flags,
+  re-run `hypershift install` with the additional private platform flags.
+
+### NAT Subnet
+
+- The NAT subnet CIDR (`--address-prefixes`) must fall within the management cluster's
+  VNet address space. If the VNet uses `10.0.0.0/16`, a NAT subnet of `10.1.64.0/24`
+  will fail unless you first expand the VNet address space.
+
+- The `--disable-private-link-service-network-policies true` flag is **required** on
+  the NAT subnet. If omitted, Azure will reject PLS creation with an error about
+  network policies. This error is not always obvious — if PLS creation fails, check
+  this setting first:
+
+    ```bash
+    az network vnet subnet show \
+        --resource-group "${MGMT_VNET_RG}" \
+        --vnet-name "${MGMT_VNET_NAME}" \
+        --name "${NAT_SUBNET_NAME}" \
+        --query privateLinkServiceNetworkPolicies
+    ```
+
+    The value must be `"Disabled"`.
+
+### Endpoint Access Immutability
+
+- You **cannot** change a cluster from `Public` to `Private` (or `Private` to `Public`)
+  after creation. The API validation rejects this transition. You can only switch between
+  `PublicAndPrivate` and `Private`.
+
+- If you need to change a public cluster to private, you must create a new cluster with
+  `--endpoint-access Private` from the start.
+
+### Cross-Subscription Scenarios
+
+- If the management cluster and guest cluster are in **different Azure subscriptions**,
+  you must include the guest subscription in the PLS auto-approval list using
+  `--endpoint-access-private-additional-allowed-subscriptions` with the guest's
+  subscription ID.
+
+- The CPO workload identity must also have permissions (Contributor or custom role) in
+  the guest subscription's resource groups to create Private Endpoints and DNS resources.
+
+### Private DNS Resolution
+
+- Private DNS zones are only linked to the **guest cluster's VNet**. If you need to
+  access the API server from a peered VNet, you must manually link the Private DNS
+  zones to that VNet (see VNet-Peered Access above).
+
+- Two Private DNS zones are created:
+    1. `<clusterName>.hypershift.local` — synthetic internal zone with `api` and `*.apps` records
+    2. `<baseDomain>` — base domain zone with `api-<clusterName>` and `oauth-<clusterName>` records
+
+### Condition Debugging
+
+If the cluster gets stuck, check the `AzurePrivateLinkService` CR conditions:
+
+```bash
+oc get azureprivatelinkservices -n clusters-${CLUSTER_NAME} -o jsonpath='{.items[0].status.conditions}' | jq .
+```
+
+| Stuck Condition | Likely Cause |
+|-----------------|-------------|
+| `AzureInternalLoadBalancerAvailable` = False | The `private-router` Service hasn't received an ILB IP yet. Check the Service status and Azure networking. |
+| `AzurePLSCreated` = False | PLS creation failed. Check NAT subnet policies, credentials, and the HO operator logs. |
+| `AzurePrivateEndpointAvailable` = False | PE creation failed or connection not approved. Check the PLS auto-approval list and CPO logs. |
+| `AzurePrivateDNSAvailable` = False | DNS zone or record creation failed. Check CPO identity permissions in the guest subscription. |
+
+## Related Documentation
+
+- Azure Private Link Architecture - Detailed architecture reference
+- Self-Managed Azure Overview - Complete self-managed Azure guide
+- Create a Self-Managed Azure HostedCluster - Standard (public) cluster creation
+- Azure Self-Managed Infrastructure Reference - Infrastructure details
+
 
 ---
 
@@ -9666,6 +10266,7 @@ This phase creates your actual hosted OpenShift clusters:
 - **Infrastructure Provisioning**: Creates resource groups, VNets, subnets, and network security groups
 - **HostedCluster Creation**: Deploys the control plane on the management cluster and worker nodes in your Azure subscription
 - **Workload Identity Integration**: Links the hosted cluster to the workload identities created in Phase 1
+- **Private Endpoint Access** (Optional): Configures Azure Private Link for private API server connectivity
 
 **Why This Matters**: This is where you deploy the actual OpenShift clusters that your applications will run on. Each hosted cluster gets its own control plane running on the management cluster and its own set of worker node VMs in Azure. The cluster uses the workload identities from Phase 1 to securely access Azure services without storing credentials.
 
@@ -9731,6 +10332,7 @@ Self-managed Azure HyperShift implements several security best practices:
 2. **Least Privilege Access**: Each component gets its own managed identity with minimal required permissions
 3. **Network Isolation**: Custom VNets and NSGs allow you to implement network segmentation and security policies
 4. **Federated Credentials**: Trust relationships are scoped to specific service accounts, preventing unauthorized access
+5. **Private Connectivity** (Optional): Azure Private Link provides private API server access, ensuring control plane traffic never traverses the public internet. See Deploy Azure Private Clusters
 
 ## Next Steps
 
@@ -9739,6 +10341,7 @@ Begin your self-managed Azure HyperShift deployment by following the guides in o
 1. **Azure Workload Identity Setup** - Set up managed identities and OIDC federation (or use Create Azure IAM Resources Separately for CLI-based setup)
 2. **Setup Azure Management Cluster for HyperShift** - Install HyperShift operator (with or without External DNS)
 3. **Create a Self-Managed Azure HostedCluster** - Deploy your first hosted cluster
+4. **Deploy Azure Private Clusters** (Optional) - Configure private endpoint access with Azure Private Link
 
 Each guide includes sections for both DNS approaches - simply follow the sections that match your choice.
 
@@ -9989,11 +10592,36 @@ Verify your installation:
     # operator-xxxxx-xxxxx     1/1     Running   0          1m
     ```
 
+## Private Cluster Support (Optional)
+
+If you plan to create private clusters with Azure Private Link, the HyperShift operator
+must be installed with additional flags for Private Link Service management. See
+Deploy Azure Private Clusters for the full guide,
+but the key difference is adding these flags to the `hypershift install` command:
+
+```bash
+hypershift install \
+    --private-platform Azure \
+    --azure-private-creds /path/to/azure-private-credentials.json \
+    --azure-pls-resource-group ${MGMT_INFRA_RG} \
+    # ... include your standard install flags from above
+```
+
+!!! important
+
+    The `--private-platform Azure` flag **must** be set during operator installation.
+    If you install without it, you must re-run `hypershift install` with the private
+    flags before creating any private clusters.
+
+See Deploy Azure Private Clusters - Step 2
+for complete details and alternative authentication methods.
+
 ## Next Steps
 
 Once the management cluster is set up, create hosted clusters:
 
 - Create a Self-Managed Azure HostedCluster - Includes guidance for both DNS approaches
+- Deploy Azure Private Clusters - Configure private endpoint access with Azure Private Link
 
 ---
 
@@ -28829,6 +29457,202 @@ OpenShift clusters at scale.</p>
 worker nodes and their kubelets, and the infrastructure on which they run). This
 enables &ldquo;hosted control plane as a service&rdquo; use cases.</p>
 </p>
+##AzurePrivateLinkService { #hypershift.openshift.io/v1beta1.AzurePrivateLinkService }
+<p>
+<p>AzurePrivateLinkService represents Azure Private Link Service infrastructure
+for private connectivity to hosted cluster API servers.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>apiVersion</code></br>
+string</td>
+<td>
+<code>
+hypershift.openshift.io/v1beta1
+</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>kind</code></br>
+string
+</td>
+<td><code>AzurePrivateLinkService</code></td>
+</tr>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metadata is the metadata for the AzurePrivateLinkService.</p>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec">
+AzurePrivateLinkServiceSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>spec is the specification for the AzurePrivateLinkService.</p>
+<br/>
+<br/>
+<table>
+<tr>
+<td>
+<code>loadBalancerIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>loadBalancerIP is the frontend IP address of the internal load balancer.
+This field is populated by the CPO observer from the KAS service status,
+not supplied by users. It is placed in Spec rather than Status because:
+- It follows the same pattern as GCP Private Service Connect (GCPPrivateServiceConnect.Spec.LoadBalancerIP)
+- It enables the HO controller to consume this value through normal Spec watches
+without requiring a status subresource watch
+This value must be a valid IPv4 or IPv6 address.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>subscriptionID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>subscriptionID is the Azure subscription ID where the PLS will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourceGroupName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>resourceGroupName is the Azure resource group where the PLS will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>location</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>location is the Azure region where the PLS will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>natSubnetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>natSubnetID is the Azure resource ID of the subnet used for PLS NAT IP allocation.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalAllowedSubscriptions</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>additionalAllowedSubscriptions is an optional list of additional Azure subscription IDs
+permitted to create Private Endpoints. The guest cluster&rsquo;s own subscription (derived from
+guestSubnetID) is always automatically allowed, so it does not need to be listed here.
+This field is intentionally mutable (no immutability constraint) to allow operators to
+grant or revoke Private Endpoint access without recreating the resource. This follows
+the same pattern as AWS additionalAllowedPrincipals.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestSubnetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>guestSubnetID is the Azure resource ID of the subnet in the guest VNet where the Private Endpoint will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestVNetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>guestVNetID is the Azure resource ID of the guest VNet for DNS zone linking.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>baseDomain</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>baseDomain is the cluster&rsquo;s base domain (e.g., &ldquo;example.hypershift.azure.devcluster.openshift.com&rdquo;).
+Used to create a Private DNS Zone so that worker VMs can resolve the API and OAuth
+hostnames (api-<name>.<baseDomain>, oauth-<name>.<baseDomain>) to the Private Endpoint IP.
+Persisted in spec so that deletion does not depend on the HostedControlPlane still existing.</p>
+</td>
+</tr>
+</table>
+</td>
+</tr>
+<tr>
+<td>
+<code>status</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceStatus">
+AzurePrivateLinkServiceStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>status is the status of the AzurePrivateLinkService.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ##CertificateSigningRequestApproval { #hypershift.openshift.io/v1beta1.CertificateSigningRequestApproval }
 <p>
 <p>CertificateSigningRequestApproval defines the desired state of CertificateSigningRequestApproval</p>
@@ -29325,8 +30149,7 @@ AutoNode
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoNode specifies the configuration for automatic node provisioning and lifecycle management.
-When set, the provisioner(e.g. Karpenter) will be used to provision nodes for targeted workloads.</p>
+<p>autoNode specifies the configuration for the autoNode feature.</p>
 </td>
 </tr>
 <tr>
@@ -31656,7 +32479,7 @@ string
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>AutoNode specifies the configuration for automatic node provisioning and lifecycle management.</p>
+<p>We expose here internal configuration knobs that won&rsquo;t be exposed to the service.</p>
 </p>
 <table>
 <thead>
@@ -31668,7 +32491,7 @@ string
 <tbody>
 <tr>
 <td>
-<code>provisionerConfig,omitzero</code></br>
+<code>provisionerConfig</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">
 ProvisionerConfig
@@ -31676,7 +32499,7 @@ ProvisionerConfig
 </em>
 </td>
 <td>
-<p>provisionerConfig specifies the provisioner used for automatic node management.</p>
+<p>provisionerConfig is the implementation used for Node auto provisioning.</p>
 </td>
 </tr>
 </tbody>
@@ -31889,6 +32712,87 @@ access.</p>
 </tr><tr><td><p>&#34;StandardSSD_LRS&#34;</p></td>
 <td><p>DiskStorageAccountTypesStandardSSDLRS - Standard SSD locally redundant storage. Best for web servers, lightly used enterprise
 applications and dev/test.</p>
+</td>
+</tr></tbody>
+</table>
+###AzureEndpointAccessSpec { #hypershift.openshift.io/v1beta1.AzureEndpointAccessSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>AzureEndpointAccessSpec specifies the endpoint access configuration for an Azure hosted cluster,
+including the visibility type of the API server endpoint and optional private connectivity settings.
+When the spec is nil on AzurePlatformSpec, the cluster defaults to public access.
+Transitions between PublicAndPrivate and Private are supported after creation, but transitions
+from or to Public are not allowed.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureEndpointAccessType">
+AzureEndpointAccessType
+</a>
+</em>
+</td>
+<td>
+<p>type specifies the visibility of the API server endpoint for the hosted cluster.
+Valid values are Public, PublicAndPrivate, and Private.
+When set to Private or PublicAndPrivate, the private field must be provided with
+Azure Private Link Service configuration.
+Transitions between PublicAndPrivate and Private are supported after creation.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>private</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateConnectivityConfig">
+AzurePrivateConnectivityConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>private specifies configuration for Azure Private Link connectivity.
+This field is required when type is set to Private or PublicAndPrivate, and
+must not be set when type is Public.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzureEndpointAccessType { #hypershift.openshift.io/v1beta1.AzureEndpointAccessType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureEndpointAccessSpec">AzureEndpointAccessSpec</a>)
+</p>
+<p>
+<p>AzureEndpointAccessType specifies the visibility of the Azure API server endpoint.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Private&#34;</p></td>
+<td><p>AzureEndpointAccessPrivate indicates the API server is only accessible via a private endpoint.</p>
+</td>
+</tr><tr><td><p>&#34;Public&#34;</p></td>
+<td><p>AzureEndpointAccessPublic indicates the API server is publicly accessible.</p>
+</td>
+</tr><tr><td><p>&#34;PublicAndPrivate&#34;</p></td>
+<td><p>AzureEndpointAccessPublicAndPrivate indicates the API server is accessible via both public and private endpoints.</p>
 </td>
 </tr></tbody>
 </table>
@@ -32510,6 +33414,333 @@ string
 <p>tenantID is a unique identifier for the tenant where Azure resources will be created and managed in.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>endpointAccess</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureEndpointAccessSpec">
+AzureEndpointAccessSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>endpointAccess specifies the visibility of the API server endpoint and private connectivity
+configuration for the hosted cluster. When nil, the API server is publicly accessible (equivalent
+to setting type to Public). When specified with type set to Private or PublicAndPrivate, Azure
+Private Link Service infrastructure will be created to enable private connectivity.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateConnectivityConfig { #hypershift.openshift.io/v1beta1.AzurePrivateConnectivityConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzureEndpointAccessSpec">AzureEndpointAccessSpec</a>)
+</p>
+<p>
+<p>AzurePrivateConnectivityConfig specifies configuration for Azure Private Link connectivity.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>natSubnetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>natSubnetID is the Azure resource ID of the subnet used for Private Link Service NAT IP allocation.
+This subnet must have privateLinkServiceNetworkPolicies disabled.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalAllowedSubscriptions</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>additionalAllowedSubscriptions is an optional list of additional Azure subscription IDs
+permitted to create Private Endpoints to the Private Link Service. The guest cluster&rsquo;s
+own subscription is always automatically allowed, so it does not need to be listed here.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateLinkServiceSpec { #hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkService">AzurePrivateLinkService</a>)
+</p>
+<p>
+<p>AzurePrivateLinkServiceSpec defines the desired state of AzurePrivateLinkService</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>loadBalancerIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>loadBalancerIP is the frontend IP address of the internal load balancer.
+This field is populated by the CPO observer from the KAS service status,
+not supplied by users. It is placed in Spec rather than Status because:
+- It follows the same pattern as GCP Private Service Connect (GCPPrivateServiceConnect.Spec.LoadBalancerIP)
+- It enables the HO controller to consume this value through normal Spec watches
+without requiring a status subresource watch
+This value must be a valid IPv4 or IPv6 address.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>subscriptionID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>subscriptionID is the Azure subscription ID where the PLS will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourceGroupName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>resourceGroupName is the Azure resource group where the PLS will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>location</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>location is the Azure region where the PLS will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>natSubnetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>natSubnetID is the Azure resource ID of the subnet used for PLS NAT IP allocation.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalAllowedSubscriptions</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>additionalAllowedSubscriptions is an optional list of additional Azure subscription IDs
+permitted to create Private Endpoints. The guest cluster&rsquo;s own subscription (derived from
+guestSubnetID) is always automatically allowed, so it does not need to be listed here.
+This field is intentionally mutable (no immutability constraint) to allow operators to
+grant or revoke Private Endpoint access without recreating the resource. This follows
+the same pattern as AWS additionalAllowedPrincipals.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestSubnetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>guestSubnetID is the Azure resource ID of the subnet in the guest VNet where the Private Endpoint will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestVNetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>guestVNetID is the Azure resource ID of the guest VNet for DNS zone linking.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>baseDomain</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>baseDomain is the cluster&rsquo;s base domain (e.g., &ldquo;example.hypershift.azure.devcluster.openshift.com&rdquo;).
+Used to create a Private DNS Zone so that worker VMs can resolve the API and OAuth
+hostnames (api-<name>.<baseDomain>, oauth-<name>.<baseDomain>) to the Private Endpoint IP.
+Persisted in spec so that deletion does not depend on the HostedControlPlane still existing.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateLinkServiceStatus { #hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkService">AzurePrivateLinkService</a>)
+</p>
+<p>
+<p>AzurePrivateLinkServiceStatus defines the observed state of AzurePrivateLinkService</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>conditions represent the current state of PLS infrastructure.
+Current condition types are: &ldquo;AzurePrivateLinkServiceAvailable&rdquo;, &ldquo;AzureInternalLoadBalancerAvailable&rdquo;,
+&ldquo;AzurePLSCreated&rdquo;, &ldquo;AzurePrivateEndpointAvailable&rdquo;, &ldquo;AzurePrivateDNSAvailable&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>internalLoadBalancerID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>internalLoadBalancerID is the Azure resource ID of the internal load balancer.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateLinkServiceID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateLinkServiceID is the Azure resource ID of the Private Link Service.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateLinkServiceAlias</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateLinkServiceAlias is the globally unique alias for the Private Link Service.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateEndpointID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateEndpointID is the Azure resource ID of the Private Endpoint.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateEndpointIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateEndpointIP is the private IP address assigned to the Private Endpoint.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateDNSZoneID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateDNSZoneID is the Azure resource ID of the Private DNS Zone.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dnsZoneName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>dnsZoneName is the Private DNS zone name (derived from the KAS hostname).
+Persisted at creation time so that deletion does not depend on the
+HostedControlPlane still existing.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>baseDomainDNSZoneID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>baseDomainDNSZoneID is the Azure resource ID of the base domain Private DNS Zone.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AzureResourceManagedIdentities { #hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities }
@@ -32785,6 +34016,21 @@ WorkloadIdentity
 <td>
 <p>network is the client ID of a federated managed identity, associated with cluster-network-operator, used in
 workload identity authentication.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneOperator</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneOperator is the client ID of a federated managed identity, associated with control-plane-operator,
+used in workload identity authentication for Azure Private Link Service operations.</p>
 </td>
 </tr>
 </tbody>
@@ -33769,6 +35015,21 @@ created in the guest VPC</p>
 </tr><tr><td><p>&#34;AWSEndpointServiceAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 has been created for the specified NLB in the management VPC</p>
+</td>
+</tr><tr><td><p>&#34;AzureInternalLoadBalancerAvailable&#34;</p></td>
+<td><p>AzureInternalLoadBalancerAvailable indicates the ILB has been provisioned with a frontend IP</p>
+</td>
+</tr><tr><td><p>&#34;AzurePLSCreated&#34;</p></td>
+<td><p>AzurePLSCreated indicates the Azure Private Link Service has been created in the management cluster resource group</p>
+</td>
+</tr><tr><td><p>&#34;AzurePrivateDNSAvailable&#34;</p></td>
+<td><p>AzurePrivateDNSAvailable indicates the Private DNS zone and A records have been created</p>
+</td>
+</tr><tr><td><p>&#34;AzurePrivateEndpointAvailable&#34;</p></td>
+<td><p>AzurePrivateEndpointAvailable indicates the Private Endpoint has been created in the guest VNet</p>
+</td>
+</tr><tr><td><p>&#34;AzurePrivateLinkServiceAvailable&#34;</p></td>
+<td><p>AzurePrivateLinkServiceAvailable indicates overall PLS infrastructure availability</p>
 </td>
 </tr><tr><td><p>&#34;CVOScaledDown&#34;</p></td>
 <td></td>
@@ -36062,8 +37323,7 @@ AutoNode
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoNode specifies the configuration for automatic node provisioning and lifecycle management.
-When set, the provisioner(e.g. Karpenter) will be used to provision nodes for targeted workloads.</p>
+<p>autoNode specifies the configuration for the autoNode feature.</p>
 </td>
 </tr>
 <tr>
@@ -37016,10 +38276,7 @@ AutoNode
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoNode specifies the configuration for automatic node provisioning
-and lifecycle management. When set, nodes are automatically provisioned
-using the specified provisioner (e.g. Karpenter) instead of requiring
-manual NodePool management.</p>
+<p>autoNode specifies the configuration for the autoNode feature.</p>
 </td>
 </tr>
 <tr>
@@ -37889,7 +39146,6 @@ AzureKMSSpec
 <a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">KarpenterConfig</a>)
 </p>
 <p>
-<p>KarpenterAWSConfig specifies AWS-specific configuration for the Karpenter provisioner.</p>
 </p>
 <table>
 <thead>
@@ -37907,237 +39163,7 @@ string
 </em>
 </td>
 <td>
-<p>roleARN specifies the ARN of the IAM role that Karpenter assumes to provision
-and manage EC2 instances in the hosted cluster&rsquo;s AWS account.</p>
-<p>The referenced role must have a trust relationship that allows it to be assumed
-by the karpenter service account in the hosted cluster via OIDC.
-Example:
-{
-&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
-&ldquo;Statement&rdquo;: [
-{
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Principal&rdquo;: {
-&ldquo;Federated&rdquo;: &ldquo;<oidc-provider-arn>&rdquo;
-},
-&ldquo;Action&rdquo;: &ldquo;sts:AssumeRoleWithWebIdentity&rdquo;,
-&ldquo;Condition&rdquo;: {
-&ldquo;StringEquals&rdquo;: {
-&ldquo;<oidc-provider-name>:sub&rdquo;: &ldquo;system:serviceaccount:kube-system:karpenter&rdquo;
-}
-}
-}
-]
-}</p>
-<p>The following is an example of the policy document for this role.</p>
-<p>{
-&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
-&ldquo;Statement&rdquo;: [
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowScopedEC2InstanceAccessActions&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: [
-&ldquo;arn:<em>:ec2:</em>::image/<em>&rdquo;,
-&ldquo;arn:</em>:ec2:<em>::snapshot/</em>&rdquo;,
-&ldquo;arn:<em>:ec2:</em>:<em>:security-group/</em>&rdquo;,
-&ldquo;arn:<em>:ec2:</em>:<em>:subnet/</em>&rdquo;
-],
-&ldquo;Action&rdquo;: [
-&ldquo;ec2:RunInstances&rdquo;,
-&ldquo;ec2:CreateFleet&rdquo;
-]
-},
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowScopedEC2LaunchTemplateAccessActions&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: &ldquo;arn:<em>:ec2:</em>:<em>:launch-template/</em>&rdquo;,
-&ldquo;Action&rdquo;: [
-&ldquo;ec2:RunInstances&rdquo;,
-&ldquo;ec2:CreateFleet&rdquo;
-]
-},
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowScopedEC2InstanceActionsWithTags&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: [
-&ldquo;arn:<em>:ec2:</em>:<em>:fleet/</em>&rdquo;,
-&ldquo;arn:<em>:ec2:</em>:<em>:instance/</em>&rdquo;,
-&ldquo;arn:<em>:ec2:</em>:<em>:volume/</em>&rdquo;,
-&ldquo;arn:<em>:ec2:</em>:<em>:network-interface/</em>&rdquo;,
-&ldquo;arn:<em>:ec2:</em>:<em>:launch-template/</em>&rdquo;,
-&ldquo;arn:<em>:ec2:</em>:<em>:spot-instances-request/</em>&rdquo;
-],
-&ldquo;Action&rdquo;: [
-&ldquo;ec2:RunInstances&rdquo;,
-&ldquo;ec2:CreateFleet&rdquo;,
-&ldquo;ec2:CreateLaunchTemplate&rdquo;
-],
-&ldquo;Condition&rdquo;: {
-&ldquo;StringLike&rdquo;: {
-&ldquo;aws:RequestTag/karpenter.sh/nodepool&rdquo;: &ldquo;<em>&rdquo;
-}
-}
-},
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowScopedResourceCreationTagging&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: [
-&ldquo;arn:</em>:ec2:<em>:</em>:fleet/<em>&rdquo;,
-&ldquo;arn:</em>:ec2:<em>:</em>:instance/<em>&rdquo;,
-&ldquo;arn:</em>:ec2:<em>:</em>:volume/<em>&rdquo;,
-&ldquo;arn:</em>:ec2:<em>:</em>:network-interface/<em>&rdquo;,
-&ldquo;arn:</em>:ec2:<em>:</em>:launch-template/<em>&rdquo;,
-&ldquo;arn:</em>:ec2:<em>:</em>:spot-instances-request/<em>&rdquo;
-],
-&ldquo;Action&rdquo;: &ldquo;ec2:CreateTags&rdquo;,
-&ldquo;Condition&rdquo;: {
-&ldquo;StringEquals&rdquo;: {
-&ldquo;ec2:CreateAction&rdquo;: [
-&ldquo;RunInstances&rdquo;,
-&ldquo;CreateFleet&rdquo;,
-&ldquo;CreateLaunchTemplate&rdquo;
-]
-},
-&ldquo;StringLike&rdquo;: {
-&ldquo;aws:RequestTag/karpenter.sh/nodepool&rdquo;: &ldquo;</em>&rdquo;
-}
-}
-},
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowScopedResourceTagging&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: &ldquo;arn:<em>:ec2:</em>:<em>:instance/</em>&rdquo;,
-&ldquo;Action&rdquo;: &ldquo;ec2:CreateTags&rdquo;,
-&ldquo;Condition&rdquo;: {
-&ldquo;StringLike&rdquo;: {
-&ldquo;aws:ResourceTag/karpenter.sh/nodepool&rdquo;: &ldquo;<em>&rdquo;
-}
-}
-},
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowScopedDeletion&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: [
-&ldquo;arn:</em>:ec2:<em>:</em>:instance/<em>&rdquo;,
-&ldquo;arn:</em>:ec2:<em>:</em>:launch-template/<em>&rdquo;
-],
-&ldquo;Action&rdquo;: [
-&ldquo;ec2:TerminateInstances&rdquo;,
-&ldquo;ec2:DeleteLaunchTemplate&rdquo;
-],
-&ldquo;Condition&rdquo;: {
-&ldquo;StringLike&rdquo;: {
-&ldquo;aws:ResourceTag/karpenter.sh/nodepool&rdquo;: &ldquo;</em>&rdquo;
-}
-}
-},
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowRegionalReadActions&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: &ldquo;<em>&rdquo;,
-&ldquo;Action&rdquo;: [
-&ldquo;ec2:DescribeImages&rdquo;,
-&ldquo;ec2:DescribeInstances&rdquo;,
-&ldquo;ec2:DescribeInstanceTypeOfferings&rdquo;,
-&ldquo;ec2:DescribeInstanceTypes&rdquo;,
-&ldquo;ec2:DescribeLaunchTemplates&rdquo;,
-&ldquo;ec2:DescribeSecurityGroups&rdquo;,
-&ldquo;ec2:DescribeSpotPriceHistory&rdquo;,
-&ldquo;ec2:DescribeSubnets&rdquo;
-]
-},
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowSSMReadActions&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: &ldquo;arn:</em>:ssm:<em>::parameter/aws/service/</em>&rdquo;,
-&ldquo;Action&rdquo;: &ldquo;ssm:GetParameter&rdquo;
-},
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowPricingReadActions&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: &ldquo;<em>&rdquo;,
-&ldquo;Action&rdquo;: &ldquo;pricing:GetProducts&rdquo;
-},
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowInterruptionQueueActions&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: &ldquo;</em>&rdquo;,
-&ldquo;Action&rdquo;: [
-&ldquo;sqs:DeleteMessage&rdquo;,
-&ldquo;sqs:GetQueueUrl&rdquo;,
-&ldquo;sqs:ReceiveMessage&rdquo;
-]
-},
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowPassingInstanceRole&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: &ldquo;arn:<em>:iam::</em>:role/<em>&rdquo;,
-&ldquo;Action&rdquo;: &ldquo;iam:PassRole&rdquo;,
-&ldquo;Condition&rdquo;: {
-&ldquo;StringEquals&rdquo;: {
-&ldquo;iam:PassedToService&rdquo;: [
-&ldquo;ec2.amazonaws.com&rdquo;,
-&ldquo;ec2.amazonaws.com.cn&rdquo;
-]
-}
-}
-},
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowScopedInstanceProfileCreationActions&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: &ldquo;arn:</em>:iam::<em>:instance-profile/</em>&rdquo;,
-&ldquo;Action&rdquo;: [
-&ldquo;iam:CreateInstanceProfile&rdquo;
-],
-&ldquo;Condition&rdquo;: {
-&ldquo;StringLike&rdquo;: {
-&ldquo;aws:RequestTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;<em>&rdquo;
-}
-}
-},
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowScopedInstanceProfileTagActions&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: &ldquo;arn:</em>:iam::<em>:instance-profile/</em>&rdquo;,
-&ldquo;Action&rdquo;: [
-&ldquo;iam:TagInstanceProfile&rdquo;
-],
-&ldquo;Condition&rdquo;: {
-&ldquo;StringLike&rdquo;: {
-&ldquo;aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;<em>&rdquo;,
-&ldquo;aws:RequestTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;</em>&rdquo;
-}
-}
-},
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowScopedInstanceProfileActions&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: &ldquo;arn:<em>:iam::</em>:instance-profile/<em>&rdquo;,
-&ldquo;Action&rdquo;: [
-&ldquo;iam:AddRoleToInstanceProfile&rdquo;,
-&ldquo;iam:RemoveRoleFromInstanceProfile&rdquo;,
-&ldquo;iam:DeleteInstanceProfile&rdquo;
-],
-&ldquo;Condition&rdquo;: {
-&ldquo;StringLike&rdquo;: {
-&ldquo;aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;</em>&rdquo;
-}
-}
-},
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowInstanceProfileReadActions&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: &ldquo;arn:<em>:iam::</em>:instance-profile/<em>&rdquo;,
-&ldquo;Action&rdquo;: &ldquo;iam:GetInstanceProfile&rdquo;
-},
-{
-&ldquo;Sid&rdquo;: &ldquo;AllowUnscopedInstanceProfileListAction&rdquo;,
-&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
-&ldquo;Resource&rdquo;: &ldquo;</em>&rdquo;,
-&ldquo;Action&rdquo;: &ldquo;iam:ListInstanceProfiles&rdquo;
-}
-]
-}</p>
+<p>roleARN specifies the ARN of the Karpenter provisioner.</p>
 </td>
 </tr>
 </tbody>
@@ -38148,8 +39174,6 @@ Example:
 <a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">ProvisionerConfig</a>)
 </p>
 <p>
-<p>KarpenterConfig specifies the configuration for the Karpenter provisioner
-including the target platform and platform-specific settings.</p>
 </p>
 <table>
 <thead>
@@ -38169,7 +39193,7 @@ PlatformType
 </em>
 </td>
 <td>
-<p>platform specifies the infrastructure platform that Karpenter should provision nodes on.</p>
+<p>platform specifies the platform-specific configuration for Karpenter.</p>
 </td>
 </tr>
 <tr>
@@ -42011,7 +43035,7 @@ This field is immutable. Once set, it cannot be changed.</p>
 <a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">ProvisionerConfig</a>)
 </p>
 <p>
-<p>Provisioner is the name of a supported node provisioner.</p>
+<p>provisioner is a enum specifying the strategy for auto managing Nodes.</p>
 </p>
 <table>
 <thead>
@@ -42021,8 +43045,7 @@ This field is immutable. Once set, it cannot be changed.</p>
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;Karpenter&#34;</p></td>
-<td><p>ProvisionerKarpenter indicates that Karpenter is used for automatic node provisioning.</p>
-</td>
+<td></td>
 </tr></tbody>
 </table>
 ###ProvisionerConfig { #hypershift.openshift.io/v1beta1.ProvisionerConfig }
@@ -42031,8 +43054,7 @@ This field is immutable. Once set, it cannot be changed.</p>
 <a href="#hypershift.openshift.io/v1beta1.AutoNode">AutoNode</a>)
 </p>
 <p>
-<p>ProvisionerConfig specifies the provisioner used for automatic node management
-and its associated configuration.</p>
+<p>ProvisionerConfig is a enum specifying the strategy for auto managing Nodes.</p>
 </p>
 <table>
 <thead>
@@ -42052,7 +43074,7 @@ Provisioner
 </em>
 </td>
 <td>
-<p>name specifies the name of the provisioner to use for automatic node management.</p>
+<p>name specifies the name of the provisioner to use.</p>
 </td>
 </tr>
 <tr>
@@ -43448,6 +44470,186 @@ graph TB
 - **hypershift-operator AWS controller**: `hypershift-operator/controllers/platform/aws/controller.go`
 - **control-plane-operator PrivateLink controller**: `control-plane-operator/controllers/awsprivatelink/awsprivatelink_controller.go`
 - **AWSEndpointService API types**: `api/hypershift/v1beta1/endpointservice_types.go`
+
+
+---
+
+## Source: docs/content/reference/architecture/azure/privatelink.md
+
+---
+title: Azure Private Link
+---
+
+# Azure Private Link Architecture in HyperShift
+
+## Overview
+
+HyperShift uses Azure Private Link Service (PLS) to establish secure connectivity between worker nodes in the guest cluster VNet and the hosted control plane in the management cluster. This is used when `EndpointAccess` is set to `Private` or `PublicAndPrivate`.
+
+Unlike AWS PrivateLink which uses VPC Endpoint Services, Azure Private Link uses a dedicated Private Link Service resource backed by an internal load balancer with NAT IP translation.
+
+## Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph MC["Management Cluster"]
+        subgraph HO["hypershift-operator"]
+            HO_Controller["AzurePLSController
+            - Watches: AzurePrivateLinkService CR
+            - Waits for LoadBalancerIP in Spec
+            - Finds ILB by frontend IP
+            - Creates PLS with NAT subnet
+            - Writes PLS alias to Status"]
+        end
+
+        subgraph HCP["HCP Namespace (e.g., clusters-foo)"]
+            subgraph CPO["control-plane-operator"]
+                Observer["AzurePLSObserver
+                - Watches: private-router Service
+                - Waits for ILB frontend IP
+                - Creates AzurePrivateLinkService CR
+                - Writes LoadBalancerIP to Spec"]
+                Reconciler["AzurePLSReconciler
+                - Waits for PLS alias in Status
+                - Creates Private Endpoint in guest VNet
+                - Creates Private DNS zones
+                - Creates VNet links and A records
+                - Writes PrivateEndpointIP to Status"]
+            end
+            ROUTER_SVC["private-router (Svc)
+            type: LoadBalancer
+            annotation: internal"]
+        end
+    end
+
+    subgraph MGMT_AZURE["Management Azure Subscription"]
+        ILB["Internal Load Balancer
+        Frontend IP from private-router"]
+        PLS["Private Link Service
+        NAT subnet for IP translation
+        Visibility: auto-approve guest sub"]
+    end
+
+    subgraph GUEST_AZURE["Guest Azure Subscription"]
+        subgraph GUEST_VNET["Guest VNet"]
+            PE["Private Endpoint
+            Connected to PLS alias
+            Gets private IP in guest VNet"]
+            DNS_LOCAL["Private DNS Zone
+            clusterName.hypershift.local"]
+            DNS_BASE["Private DNS Zone
+            baseDomain"]
+            VNET_LINK["VNet Links
+            Link DNS zones to guest VNet"]
+            A_LOCAL["A Records (hypershift.local)
+            api → PE IP
+            *.apps → PE IP"]
+            A_BASE["A Records (baseDomain)
+            api-clusterName → PE IP
+            oauth-clusterName → PE IP"]
+            WORKERS["Worker Nodes
+            Resolve API via Private DNS"]
+        end
+    end
+
+    Observer --> ROUTER_SVC
+    ROUTER_SVC --> ILB
+    HO_Controller -- "Creates PLS
+    Writes alias to Status" --> PLS
+    ILB --> PLS
+    PLS -- "Azure Private Link" --> PE
+    Reconciler -- "Creates PE, DNS zones,
+    VNet links, A records" --> PE
+    PE --> DNS_LOCAL
+    PE --> DNS_BASE
+    DNS_LOCAL --> VNET_LINK
+    DNS_BASE --> VNET_LINK
+    DNS_LOCAL --> A_LOCAL
+    DNS_BASE --> A_BASE
+    WORKERS -- "DNS resolution" --> A_LOCAL
+    WORKERS -- "DNS resolution" --> A_BASE
+    A_LOCAL -- "PE IP" --> PE
+    A_BASE -- "PE IP" --> PE
+```
+
+## Component Responsibilities
+
+### Azure Resources
+
+| Azure Resource | Created By | Description |
+|----------------|------------|-------------|
+| Internal Load Balancer | Azure (via `private-router` Service) | Fronts the KAS/router in the management cluster with an internal IP |
+| Private Link Service | HyperShift operator (HO controller) | Exposes the ILB via Private Link using NAT subnet for IP translation |
+| Private Endpoint | Control plane operator (CPO reconciler) | Connects guest VNet to PLS, receives a private IP in the guest subnet |
+| Private DNS Zone (local) | Control plane operator (CPO reconciler) | `<clusterName>.hypershift.local` - synthetic internal zone for KAS and apps resolution |
+| Private DNS Zone (base) | Control plane operator (CPO reconciler) | `<baseDomain>` - zone for API and OAuth hostname resolution via external names |
+| VNet Links | Control plane operator (CPO reconciler) | Links both Private DNS zones to the guest VNet |
+| A Records (local zone) | Control plane operator (CPO reconciler) | `api` and `*.apps` in the `hypershift.local` zone, pointing to the Private Endpoint IP |
+| A Records (base zone) | Control plane operator (CPO reconciler) | `api-<clusterName>` and `oauth-<clusterName>` in the base domain zone, pointing to the Private Endpoint IP |
+
+### Kubernetes Resources
+
+| Resource | Created By | Responsibility |
+|----------|------------|----------------|
+| `AzurePrivateLinkService` CR | CPO (Observer) | Tracks the PLS lifecycle and coordinates between HO and CPO |
+| `.spec.loadBalancerIP` | CPO (Observer) | ILB frontend IP, consumed by HO to find the correct load balancer |
+| `.status.privateLinkServiceAlias` | HO (Controller) | Globally unique PLS alias, consumed by CPO to create Private Endpoint |
+| `.status.privateEndpointIP` | CPO (Reconciler) | Private Endpoint IP, used for DNS A record creation |
+
+## Data Flow
+
+1. **CPO Observer watches `private-router` Service** - Waits for the Service to get an internal load balancer IP from its `status.loadBalancer.ingress`
+2. **CPO Observer creates `AzurePrivateLinkService` CR** - Populates `spec.loadBalancerIP` with the ILB frontend IP, along with subscription, resource group, location, NAT subnet, and guest VNet details
+3. **HO Controller finds the ILB** - Uses the `spec.loadBalancerIP` to locate the Azure internal load balancer resource by matching frontend IP configurations
+4. **HO Controller creates Private Link Service** - Creates PLS attached to the ILB with NAT IPs from the configured NAT subnet. Configures auto-approval for the guest subscription. Writes `status.privateLinkServiceAlias`
+5. **CPO Reconciler creates Private Endpoint** - Uses the PLS alias to create a PE in the guest VNet subnet. Waits for the PE to get a private IP. Writes `status.privateEndpointIP`
+6. **CPO Reconciler creates Private DNS (local zone)** - Creates a `<clusterName>.hypershift.local` Private DNS zone, links it to the guest VNet, and creates `api` and `*.apps` A records pointing to the PE IP. This is a synthetic internal domain that only exists within the guest VNet
+7. **CPO Reconciler creates Private DNS (base domain zone)** - Creates a `<baseDomain>` Private DNS zone, links it to the guest VNet, and creates `api-<clusterName>` and `oauth-<clusterName>` A records pointing to the PE IP. This enables the console OAuth flow and other services that use external API/OAuth hostnames from within the private network
+8. **Workers resolve API hostname** - Worker nodes use the Private DNS zones to resolve the API server hostname to the Private Endpoint IP, which routes through Azure Private Link to the ILB and ultimately to the KAS pods
+
+## Condition Progression
+
+The `AzurePrivateLinkService` CR tracks progress through status conditions:
+
+| Condition | Set By | Meaning |
+|-----------|--------|---------|
+| `AzureInternalLoadBalancerAvailable` | HO | ILB found with matching frontend IP |
+| `AzurePLSCreated` | HO | Private Link Service created in management RG |
+| `AzurePrivateEndpointAvailable` | CPO | Private Endpoint created and connected in guest VNet |
+| `AzurePrivateDNSAvailable` | CPO | DNS zones, VNet links, and A records created |
+| `AzurePrivateLinkServiceAvailable` | CPO | All components ready, full private connectivity established |
+
+## EndpointAccess Modes
+
+| Mode | Public LB | Internal LB | Private Link Service | Private Endpoint | Private DNS |
+|------|-----------|-------------|---------------------|-----------------|-------------|
+| `Public` | Yes | No | No | No | No |
+| `PublicAndPrivate` | Yes | Yes | Yes | Yes | Yes |
+| `Private` | No | Yes | Yes | Yes | Yes |
+
+## Deletion Flow
+
+Deletion uses a dual-finalizer pattern to ensure resources are cleaned up in the
+correct dependency order:
+
+1. **CPO finalizer runs first**: Removes the Private Endpoint, Private DNS zones (both `<clusterName>.hypershift.local` and `<baseDomain>`), VNet links, and A records from the guest subscription
+2. **HO finalizer runs second**: Removes the Private Link Service from the management cluster's resource group
+
+This ordering is critical because:
+
+- The Private Endpoint must be disconnected before the PLS can be deleted
+- DNS records must be removed before DNS zones can be deleted
+- VNet links must be removed before DNS zones can be deleted
+
+## Code References
+
+| Component | File |
+|-----------|------|
+| HO PLS Controller | `hypershift-operator/controllers/platform/azure/controller.go` |
+| CPO Observer | `control-plane-operator/controllers/azureprivatelinkservice/observer.go` |
+| CPO Reconciler | `control-plane-operator/controllers/azureprivatelinkservice/controller.go` |
+| AzurePrivateLinkService API | `api/hypershift/v1beta1/azureprivatelinkservice_types.go` |
+| Azure platform types | `api/hypershift/v1beta1/azure.go` |
 
 
 ---
@@ -46180,6 +47382,28 @@ The following resources are created and managed by Kubernetes controllers runnin
 - **Azure Virtual Machines**: Worker nodes managed by Cluster API Provider Azure
 - **Network Interfaces**: NICs attached to worker VMs
 - **OS Disks**: Managed disks for VM operating systems
+
+### Private Endpoint Access Infrastructure (Optional)
+
+When endpoint access is `Private` or `PublicAndPrivate`, additional Azure resources are created to establish private connectivity between the guest VNet and the management cluster:
+
+| Resource | Location | Created By | Description |
+|----------|----------|------------|-------------|
+| NAT Subnet | Management VNet | User (pre-existing) | Must have `privateLinkServiceNetworkPolicies` disabled |
+| Private Link Service | Management RG | HO controller | Exposes the internal load balancer via Private Link |
+| Private Endpoint | Guest VNet | CPO reconciler | Connects the guest VNet to the PLS |
+| Private DNS Zone (infra) | Guest subscription | CPO reconciler | `<infraID>.<baseDomain>` for infrastructure DNS |
+| Private DNS Zone (base) | Guest subscription | CPO reconciler | `<baseDomain>` for API/OAuth hostname resolution |
+| VNet Links | Guest subscription | CPO reconciler | Links Private DNS zones to the guest VNet |
+| A Records | Guest subscription | CPO reconciler | `api-<name>`, `oauth-<name>` pointing to PE IP |
+
+An additional workload identity is required for private clusters. This identity is **only created when endpoint access is `Private` or `PublicAndPrivate`** and is not needed for public topology:
+
+| Identity | Operator | Service Accounts | Azure Role |
+|----------|----------|------------------|------------|
+| **Control Plane Operator** | CPO | `control-plane-operator` | Contributor (`b24988ac-6180-42a0-ab88-20f7382dd24c`) |
+
+For the full architecture and data flow details, see Azure Private Link Architecture.
 
 ## Workload Identity Authentication
 
