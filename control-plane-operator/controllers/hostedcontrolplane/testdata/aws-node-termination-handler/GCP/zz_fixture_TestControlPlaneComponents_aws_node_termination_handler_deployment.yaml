@@ -111,7 +111,7 @@ spec:
           value: /etc/aws/credentials
         - name: ENABLE_KUBERNETES_EVENTS
           value: "true"
-        image: public.ecr.aws/aws-ec2/aws-node-termination-handler:v1.25.3
+        image: aws-node-termination-handler
         imagePullPolicy: IfNotPresent
         name: aws-node-termination-handler
         resources:
