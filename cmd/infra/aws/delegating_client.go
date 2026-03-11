@@ -214,6 +214,9 @@ type ec2Client struct {
 func (c *ec2Client) AttachVolumeWithContext(ctx aws.Context, input *ec2.AttachVolumeInput, opts ...request.Option) (*ec2.VolumeAttachment, error) {
 	return c.awsEbsCsiDriverController.ec2Client.AttachVolumeWithContext(ctx, input, opts...)
 }
+func (c *ec2Client) CopyVolumesWithContext(ctx aws.Context, input *ec2.CopyVolumesInput, opts ...request.Option) (*ec2.CopyVolumesOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.CopyVolumesWithContext(ctx, input, opts...)
+}
 func (c *ec2Client) CreateSnapshotWithContext(ctx aws.Context, input *ec2.CreateSnapshotInput, opts ...request.Option) (*ec2.Snapshot, error) {
 	return c.awsEbsCsiDriverController.ec2Client.CreateSnapshotWithContext(ctx, input, opts...)
 }
@@ -232,6 +235,9 @@ func (c *ec2Client) DeleteTagsWithContext(ctx aws.Context, input *ec2.DeleteTags
 func (c *ec2Client) DeleteVolumeWithContext(ctx aws.Context, input *ec2.DeleteVolumeInput, opts ...request.Option) (*ec2.DeleteVolumeOutput, error) {
 	return c.awsEbsCsiDriverController.ec2Client.DeleteVolumeWithContext(ctx, input, opts...)
 }
+func (c *ec2Client) DescribeAvailabilityZonesWithContext(ctx aws.Context, input *ec2.DescribeAvailabilityZonesInput, opts ...request.Option) (*ec2.DescribeAvailabilityZonesOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.DescribeAvailabilityZonesWithContext(ctx, input, opts...)
+}
 func (c *ec2Client) DescribeInstancesWithContext(ctx aws.Context, input *ec2.DescribeInstancesInput, opts ...request.Option) (*ec2.DescribeInstancesOutput, error) {
 	return c.awsEbsCsiDriverController.ec2Client.DescribeInstancesWithContext(ctx, input, opts...)
 }
@@ -241,6 +247,9 @@ func (c *ec2Client) DescribeSnapshotsWithContext(ctx aws.Context, input *ec2.Des
 func (c *ec2Client) DescribeTagsWithContext(ctx aws.Context, input *ec2.DescribeTagsInput, opts ...request.Option) (*ec2.DescribeTagsOutput, error) {
 	return c.awsEbsCsiDriverController.ec2Client.DescribeTagsWithContext(ctx, input, opts...)
 }
+func (c *ec2Client) DescribeVolumeStatusWithContext(ctx aws.Context, input *ec2.DescribeVolumeStatusInput, opts ...request.Option) (*ec2.DescribeVolumeStatusOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.DescribeVolumeStatusWithContext(ctx, input, opts...)
+}
 func (c *ec2Client) DescribeVolumesWithContext(ctx aws.Context, input *ec2.DescribeVolumesInput, opts ...request.Option) (*ec2.DescribeVolumesOutput, error) {
 	return c.awsEbsCsiDriverController.ec2Client.DescribeVolumesWithContext(ctx, input, opts...)
 }
@@ -249,6 +258,9 @@ func (c *ec2Client) DescribeVolumesModificationsWithContext(ctx aws.Context, inp
 }
 func (c *ec2Client) DetachVolumeWithContext(ctx aws.Context, input *ec2.DetachVolumeInput, opts ...request.Option) (*ec2.VolumeAttachment, error) {
 	return c.awsEbsCsiDriverController.ec2Client.DetachVolumeWithContext(ctx, input, opts...)
+}
+func (c *ec2Client) EnableFastSnapshotRestoresWithContext(ctx aws.Context, input *ec2.EnableFastSnapshotRestoresInput, opts ...request.Option) (*ec2.EnableFastSnapshotRestoresOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.EnableFastSnapshotRestoresWithContext(ctx, input, opts...)
 }
 func (c *ec2Client) ModifyVolumeWithContext(ctx aws.Context, input *ec2.ModifyVolumeInput, opts ...request.Option) (*ec2.ModifyVolumeOutput, error) {
 	return c.awsEbsCsiDriverController.ec2Client.ModifyVolumeWithContext(ctx, input, opts...)
@@ -268,9 +280,6 @@ func (c *ec2Client) DeleteRouteWithContext(ctx aws.Context, input *ec2.DeleteRou
 }
 func (c *ec2Client) DeleteSecurityGroupWithContext(ctx aws.Context, input *ec2.DeleteSecurityGroupInput, opts ...request.Option) (*ec2.DeleteSecurityGroupOutput, error) {
 	return c.cloudController.ec2Client.DeleteSecurityGroupWithContext(ctx, input, opts...)
-}
-func (c *ec2Client) DescribeAvailabilityZonesWithContext(ctx aws.Context, input *ec2.DescribeAvailabilityZonesInput, opts ...request.Option) (*ec2.DescribeAvailabilityZonesOutput, error) {
-	return c.cloudController.ec2Client.DescribeAvailabilityZonesWithContext(ctx, input, opts...)
 }
 func (c *ec2Client) DescribeImagesWithContext(ctx aws.Context, input *ec2.DescribeImagesInput, opts ...request.Option) (*ec2.DescribeImagesOutput, error) {
 	return c.cloudController.ec2Client.DescribeImagesWithContext(ctx, input, opts...)
