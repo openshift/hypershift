@@ -3,7 +3,7 @@
 This file contains all HyperShift documentation aggregated into a single file
 for use with AI tools like NotebookLM.
 
-Total documents: 261
+Total documents: 262
 
 ---
 
@@ -3873,35 +3873,14 @@ NodePools represent homogeneous groups of Nodes with a common lifecycle manageme
 
 ## Upgrades and data propagation
 
-There are three main areas that will trigger rolling upgrades across the Nodes when they are changed:
-
-- OCP Version dictated by `spec.release`.
-- Machine configuration via `spec.config`, a knob for `machineconfiguration.openshift.io`.
-- Platform specific changes via `.spec.platform`. Some fields might be immutable whereas other might allow changes e.g. aws instance type.
-
-Some cluster config changes (e.g. proxy, certs) may also trigger a rolling upgrade if the change needs to be propagated to the node.
-
-NodePools support two types of rolling upgrades: Replace and InPlace, specified via UpgradeType.
+NodePools support two types of rolling upgrades: **Replace** and **InPlace**, specified via UpgradeType.
 
 !!! important
 
-    You cannot switch the UpgradeType once the NodePool is created. You must specify UpgradeType during NodePool 
+    You cannot switch the UpgradeType once the NodePool is created. You must specify UpgradeType during NodePool
     creation. Modifying the field after the fact may cause nodes to become unmanaged.
 
-### Replace Upgrades
-
-This will create new instances in the new version while removing old nodes in a rolling fashion. This is usually a good choice in cloud environments where this level of immutability is cost effective.
-
-### InPlace Upgrades
-
-This will directly perform updates to the Operating System of the existing instances. This is usually a good choice for environments where the infrastructure constraints are higher e.g. bare metal.
-
-When you are using in place upgrades, Platform specific changes will only affect upcoming new Nodes.
-
-### Data propagation
-
-There some fields which will only propagate in place regardless of the upgrade strategy that is set.
-`.spec.nodeLabels` and `.spec.taints` will be propagated only to new upcoming machines.
+For a comprehensive reference on what triggers a rollout, upgrade strategies, rollout lifecycle, and monitoring, see NodePool Rollouts.
 
 
 ## Triggering Upgrades examples
@@ -22371,7 +22350,7 @@ HyperShift exposes available upgrades in HostedCluster.Status by bubbling up the
 ## NodePools
 `.spec.release` dictates the version of any particular NodePool.
 
-A NodePool will perform a Replace/InPlace rolling upgrade according to `.spec.management.upgradeType`. See NodePool Upgrades for details.
+A NodePool will perform a Replace/InPlace rolling upgrade according to `.spec.management.upgradeType`. See NodePool Rollouts for details on what triggers a rollout and how it is executed.
 
 
 ---
@@ -48352,6 +48331,196 @@ This document outlines the support matrix that involved these three entities.
 - Some HostedCluster features might dictate coupling with the management cluster, e.g. an AWS private HostedCluster requires an AWS management cluster.
 - For cloud provider platforms e.g. AWS, Azure, etc. HostedClusters are only tested with the same management cluster platform or a provider-agnostic platform e.g. Kubevirt, Agent, None. Mixed cloud providers e.g AWS management cluster and Azure HostedCluster is a best effort support level.
 - Non OCP management is a best effort support level. The HyperShift Operator will try to auto-discover the management clusters features it has available.
+
+
+---
+
+## Source: docs/content/reference/nodepool-rollouts.md
+
+---
+title: NodePool Rollouts
+---
+
+# NodePool Rollouts
+
+A NodePool rollout is the process by which existing Nodes are replaced or updated when a change in the NodePool or HostedCluster configuration requires it. Understanding what triggers a rollout and how it is executed helps you plan changes with minimal disruption to your workloads.
+
+## What Triggers a Rollout
+
+There are three independent categories of changes that trigger a rollout. A rollout occurs when any one of them detects a difference between the desired state and the current state.
+
+### OCP Release Version
+
+Changing `NodePool.spec.release.image` triggers a rollout. The controller extracts the OCP version from the release image metadata and compares it against the version currently running on the Nodes. If they differ, a rollout begins.
+
+!!! important
+
+    NodePool version must be compatible with the HostedCluster version. See Versioning Support for details on the version skew policy.
+
+### Node Configuration
+
+Changes to the following fields alter the configuration hash that the controller tracks. When the hash changes, a rollout is triggered:
+
+- **`NodePool.spec.config`** — ConfigMaps containing any of the supported machine configuration APIs:
+    - `MachineConfig`
+    - `KubeletConfig`
+    - `ContainerRuntimeConfig`
+    - `ImageContentSourcePolicy`
+    - `ImageDigestMirrorSet`
+    - `ClusterImagePolicy`
+
+- **`NodePool.spec.tuningConfig`** — references to `Tuned` resources that the Node Tuning Operator translates into `MachineConfig` objects.
+
+- **`HostedCluster.spec.pullSecret`** — a change in the **name** of the referenced Secret triggers a rollout. Changing the content of the Secret without changing the name does not trigger a rollout.
+
+- **`HostedCluster.spec.additionalTrustBundle`** — same behavior as `pullSecret`: only a change in the referenced ConfigMap **name** triggers a rollout.
+
+- **`HostedCluster.spec.imageContentSources`** — changes to image content source policies managed at the HostedCluster level produce an additional core ignition config that alters the configuration hash.
+
+### HostedCluster Global Configuration
+
+Some fields in `HostedCluster.spec.configuration` affect all Nodes and therefore trigger a rollout across **every NodePool** in the cluster when they change:
+
+- **`proxy`** — cluster-wide proxy settings (`httpProxy`, `httpsProxy`, `noProxy`, `trustedCA`). The controller also computes the full `noProxy` list automatically, adding the cluster, service, and machine network CIDRs, cloud metadata endpoints (e.g. `169.254.169.254` for AWS and Azure), and internal compute domains.
+
+- **`image`** — image registry policies (`allowedRegistriesForImport`, `externalRegistryHostnames`, `additionalTrustedCA`, `registrySources`). Although this configuration is served directly by the ignition server rather than embedded in the node user-data, a change still triggers a rollout so Nodes pick up the new configuration.
+
+!!! note
+
+    Other fields inside `HostedCluster.spec.configuration` such as `oauth`, `apiServer`, `authentication`, `scheduler`, or `ingress` do **not** trigger a NodePool rollout. They are reconciled through other control plane mechanisms.
+
+### Platform-Specific Machine Template
+
+Changes to platform-specific infrastructure fields produce a new machine template, which triggers a rollout. The exact fields depend on the platform:
+
+**AWS:**
+
+| Field | Description |
+|-------|-------------|
+| `spec.platform.aws.ami` | The AMI ID for the worker instances |
+| `spec.platform.aws.instanceType` | EC2 instance type |
+| `spec.platform.aws.instanceProfile` | IAM instance profile |
+| `spec.platform.aws.subnet` | Subnet configuration |
+| `spec.platform.aws.securityGroups` | Security group references |
+| `spec.platform.aws.rootVolume` | Root volume type, size, IOPS, encryption |
+| `spec.platform.aws.placement` | Tenancy and capacity reservation settings |
+
+!!! note
+
+    `spec.platform.aws.resourceTags` is explicitly **excluded** from rollout triggers. Changing tags alone does not cause Nodes to be replaced.
+
+**Other platforms (Azure, KubeVirt, OpenStack, Agent, PowerVS):**
+
+Any change to the platform-specific machine template spec triggers a rollout. Refer to the API reference for the full list of fields per platform.
+
+## What Does Not Trigger a Rollout
+
+The following fields are propagated in-place to existing Nodes without triggering a rollout:
+
+| Field | Behavior |
+|-------|----------|
+| `spec.nodeLabels` | Propagated directly to existing Machine objects |
+| `spec.taints` | Propagated directly to existing Machine objects |
+| `spec.replicas` / `spec.autoScaling` | Only changes the number of Nodes, no replacement |
+| `spec.nodeDrainTimeout` | Updated on existing Machines without replacement |
+| `spec.nodeVolumeDetachTimeout` | Updated on existing Machines without replacement |
+| `spec.management.replace.rollingUpdate` | Changes rollout parameters (maxSurge, maxUnavailable) but does not itself cause a rollout |
+| `spec.management.autoRepair` | Toggles MachineHealthCheck without replacing Nodes |
+
+## Upgrade Types
+
+The upgrade type determines **how** Nodes are replaced or updated during a rollout. It is set once at NodePool creation and **cannot be changed** afterward.
+
+### Replace
+
+Replace upgrades create new Node instances with the updated configuration and remove old ones. This is the default and recommended approach for cloud environments where creating and destroying instances is cost-effective.
+
+The replacement process is governed by the `spec.management.replace` field:
+
+#### RollingUpdate Strategy (default)
+
+New Nodes are created before old Nodes are removed, ensuring workload availability during the rollout.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `maxSurge` | `1` | Maximum number of Nodes that can be provisioned above the desired count during the rollout. Can be an absolute number or a percentage. |
+| `maxUnavailable` | `0` | Maximum number of Nodes that can be unavailable during the rollout. Can be an absolute number or a percentage. |
+
+With the defaults (`maxSurge=1`, `maxUnavailable=0`), one new Node is created at a time, and old Nodes are only removed after the new Node is ready. This is the safest configuration but also the slowest.
+
+To speed up the rollout, you can increase `maxSurge` (more Nodes created in parallel) or increase `maxUnavailable` (allow removing old Nodes before new ones are ready), at the cost of reduced capacity during the rollout.
+
+!!! important
+
+    `maxSurge` and `maxUnavailable` cannot both be `0`.
+
+#### OnDelete Strategy
+
+Old Nodes are only replaced when they are manually deleted. This gives you full control over the rollout pace and order. Once an old Node is deleted, a new Node with the updated configuration is created to replace it.
+
+### InPlace
+
+InPlace upgrades update the operating system of existing Node instances without creating new ones. This is the recommended approach for environments with high infrastructure constraints, such as bare metal.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `maxUnavailable` | `1` | Maximum number of Nodes that can be unavailable during the in-place update. Can be an absolute number or a percentage. The minimum enforced value is `1`. |
+
+!!! important
+
+    When using InPlace upgrades, platform-specific machine template changes (e.g. instance type, AMI) will **only apply to new Nodes** that are created after the change. Existing Nodes are not affected by platform changes.
+
+## Rollout Lifecycle
+
+When a rollout is triggered, the controller follows this sequence:
+
+1. **Change detection** — the controller compares the desired state (from the NodePool and HostedCluster specs) against the current state tracked in the NodePool status and annotations.
+
+2. **New configuration artifacts** — a new ignition token Secret and user-data Secret are generated with names derived from a hash of the new configuration. The previous token is marked as expired.
+
+3. **New machine template** (if platform fields changed) — a new platform-specific machine template is created. Its name includes a hash of the spec, so any change produces a distinct template.
+
+4. **Rollout execution**:
+      - **Replace:** the MachineDeployment is updated with the new user-data Secret, machine template, and version references. CAPI orchestrates Node creation and deletion according to the configured strategy (RollingUpdate or OnDelete).
+      - **InPlace:** the MachineSet is updated with the new target configuration. An in-place upgrader applies the changes to existing Nodes, respecting `maxUnavailable`.
+
+5. **Completion** — the rollout is considered complete when:
+      - **Replace:** all desired replicas are updated and available.
+      - **InPlace:** all Nodes report the target configuration version.
+
+6. **Status update** — `NodePool.status.version` is updated and the internal tracking annotations are set to the new values.
+
+### Monitoring Rollout Progress
+
+You can monitor rollout progress through the following NodePool conditions:
+
+| Condition | Meaning |
+|-----------|---------|
+| `UpdatingVersion` | A version rollout is in progress |
+| `UpdatingConfig` | A configuration rollout is in progress |
+| `UpdatingPlatformMachineTemplate` | A platform machine template rollout is in progress |
+
+These conditions are set to `True` while the corresponding rollout is in progress and are cleared when it completes.
+
+## Summary Table
+
+| Change | Triggers Rollout | Affects |
+|--------|:---:|---------|
+| `NodePool.spec.release.image` | Yes | The changed NodePool |
+| `NodePool.spec.config` | Yes | The changed NodePool |
+| `NodePool.spec.tuningConfig` | Yes | The changed NodePool |
+| `HostedCluster.spec.pullSecret` (name change) | Yes | All NodePools |
+| `HostedCluster.spec.additionalTrustBundle` (name change) | Yes | All NodePools |
+| `HostedCluster.spec.imageContentSources` | Yes | All NodePools |
+| `HostedCluster.spec.configuration.proxy` | Yes | All NodePools |
+| `HostedCluster.spec.configuration.image` | Yes | All NodePools |
+| Platform machine template fields | Yes | The changed NodePool |
+| `NodePool.spec.nodeLabels` | No | Propagated in-place |
+| `NodePool.spec.taints` | No | Propagated in-place |
+| `NodePool.spec.replicas` / `autoScaling` | No | Scale only |
+| `NodePool.spec.nodeDrainTimeout` | No | Propagated in-place |
+| `NodePool.spec.management.autoRepair` | No | MachineHealthCheck toggle |
+| AWS `spec.platform.aws.resourceTags` | No | Applied without rollout |
 
 
 ---
