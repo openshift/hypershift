@@ -53,6 +53,12 @@ const (
 
 	// PullSecretName is the name for the Secret containing a user's pull secret
 	PullSecretName = "pull-secret"
+
+	// DefaultExternalDNSInterval is the default polling interval for external-dns
+	DefaultExternalDNSInterval = "1m"
+
+	// DefaultExternalDNSAWSZonesCacheDuration is the default cache duration for AWS Route53 zones list
+	DefaultExternalDNSAWSZonesCacheDuration = "1h"
 )
 
 var (
@@ -232,11 +238,11 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 	}
 	interval := o.Interval
 	if interval == "" {
-		interval = "1m"
+		interval = DefaultExternalDNSInterval
 	}
 	awsZonesCacheDuration := o.AWSZonesCacheDuration
 	if awsZonesCacheDuration == "" {
-		awsZonesCacheDuration = "1h"
+		awsZonesCacheDuration = DefaultExternalDNSAWSZonesCacheDuration
 	}
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
