@@ -17,10 +17,16 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // PlacementOptionsApplyConfiguration represents a declarative configuration of the PlacementOptions type for use
 // with apply.
 type PlacementOptionsApplyConfiguration struct {
 	Tenancy             *string                                       `json:"tenancy,omitempty"`
+	MarketType          *hypershiftv1beta1.MarketType                 `json:"marketType,omitempty"`
+	Spot                *SpotOptionsApplyConfiguration                `json:"spot,omitempty"`
 	CapacityReservation *CapacityReservationOptionsApplyConfiguration `json:"capacityReservation,omitempty"`
 }
 
@@ -35,6 +41,22 @@ func PlacementOptions() *PlacementOptionsApplyConfiguration {
 // If called multiple times, the Tenancy field is set to the value of the last call.
 func (b *PlacementOptionsApplyConfiguration) WithTenancy(value string) *PlacementOptionsApplyConfiguration {
 	b.Tenancy = &value
+	return b
+}
+
+// WithMarketType sets the MarketType field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MarketType field is set to the value of the last call.
+func (b *PlacementOptionsApplyConfiguration) WithMarketType(value hypershiftv1beta1.MarketType) *PlacementOptionsApplyConfiguration {
+	b.MarketType = &value
+	return b
+}
+
+// WithSpot sets the Spot field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the Spot field is set to the value of the last call.
+func (b *PlacementOptionsApplyConfiguration) WithSpot(value *SpotOptionsApplyConfiguration) *PlacementOptionsApplyConfiguration {
+	b.Spot = value
 	return b
 }
 
