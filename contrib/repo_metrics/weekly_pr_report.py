@@ -304,9 +304,10 @@ class JiraClient:
 
 
 class PRReportGenerator:
-    def __init__(self, since_date: str, end_date: Optional[str] = None):
+    def __init__(self, since_date: str, end_date: Optional[str] = None, output_dir: str = '/tmp'):
         self.since_date = since_date
         self.end_date = end_date or datetime.now().strftime('%Y-%m-%d')
+        self.output_dir = output_dir
         self.github_token = os.getenv('GITHUB_TOKEN') or self._get_gh_token()
         self.jira_url = os.getenv('JIRA_URL', 'https://issues.redhat.com')
 
@@ -459,7 +460,8 @@ class PRReportGenerator:
                 response = requests.post(
                     'https://api.github.com/graphql',
                     json={"query": query, "variables": variables},
-                    headers=headers
+                    headers=headers,
+                    timeout=30
                 )
                 data = response.json()
 
@@ -506,6 +508,9 @@ class PRReportGenerator:
                 isDraft
                 body
                 files(first: {GITHUB_FILES_LIMIT}) {{
+                  pageInfo {{
+                    hasNextPage
+                  }}
                   nodes {{
                     path
                   }}
@@ -552,6 +557,38 @@ class PRReportGenerator:
                     return True
             return False
 
+        def files_incomplete(pr_data: Dict) -> bool:
+            """Check if files were truncated by the GraphQL limit."""
+            return pr_data.get('files', {}).get('pageInfo', {}).get('hasNextPage', False)
+
+        async def check_remaining_files_async(session, pr_number: int) -> bool:
+            """Use REST API to check all files when GraphQL result was truncated."""
+            page = 1
+            per_page = 100
+            while True:
+                url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/pulls/{pr_number}/files"
+                params = {"per_page": per_page, "page": page}
+                try:
+                    if HAS_AIOHTTP:
+                        async with session.get(url, headers=headers, params=params) as resp:
+                            if resp.status != 200:
+                                return False
+                            batch = await resp.json()
+                    else:
+                        resp = requests.get(url, headers=headers, params=params, timeout=30)
+                        if resp.status_code != 200:
+                            return False
+                        batch = resp.json()
+                except Exception:
+                    return False
+                for f in batch:
+                    if 'hypershift' in f.get('filename', '').lower():
+                        return True
+                if len(batch) < per_page:
+                    break
+                page += 1
+            return False
+
         if HAS_AIOHTTP:
             async with aiohttp.ClientSession() as session:
                 while True:
@@ -593,6 +630,9 @@ class PRReportGenerator:
                             total_scanned += 1
                             if is_hypershift_related(pr):
                                 prs.append(self._process_pr_data(pr, f"{repo_owner}/{repo_name}"))
+                            elif files_incomplete(pr):
+                                if await check_remaining_files_async(session, pr['number']):
+                                    prs.append(self._process_pr_data(pr, f"{repo_owner}/{repo_name}"))
 
                     page_info = data['data']['search']['pageInfo']
                     if not page_info['hasNextPage']:
@@ -604,7 +644,8 @@ class PRReportGenerator:
                 response = requests.post(
                     'https://api.github.com/graphql',
                     json={"query": query, "variables": variables},
-                    headers=headers
+                    headers=headers,
+                    timeout=30
                 )
                 data = response.json()
 
@@ -620,6 +661,10 @@ class PRReportGenerator:
                         total_scanned += 1
                         if is_hypershift_related(pr):
                             prs.append(self._process_pr_data(pr, f"{repo_owner}/{repo_name}"))
+                        elif files_incomplete(pr):
+                            # Files were truncated; check remaining via REST API
+                            if await check_remaining_files_async(None, pr['number']):
+                                prs.append(self._process_pr_data(pr, f"{repo_owner}/{repo_name}"))
 
                 page_info = data['data']['search']['pageInfo']
                 if not page_info['hasNextPage']:
@@ -768,19 +813,21 @@ class PRReportGenerator:
             self.jira_hierarchy = await jira_client.build_hierarchy(all_tickets)
 
             # Save to cache for future runs
+            jira_cache_path = os.path.join(self.output_dir, 'jira_hierarchy.json')
             if self.jira_hierarchy:
-                with open('/tmp/jira_hierarchy.json', 'w') as f:
+                with open(jira_cache_path, 'w') as f:
                     json.dump(self.jira_hierarchy, f, indent=2)
                 print(f"Saved Jira hierarchy to cache ({len(self.jira_hierarchy)} entries)")
         else:
             # Fall back to loading from cache
+            jira_cache_path = os.path.join(self.output_dir, 'jira_hierarchy.json')
             print("JIRA_TOKEN not set, loading from cache (use MCP tools to populate)")
             try:
-                with open('/tmp/jira_hierarchy.json', 'r') as f:
+                with open(jira_cache_path, 'r') as f:
                     self.jira_hierarchy = json.load(f)
                 print(f"Loaded Jira hierarchy cache with {len(self.jira_hierarchy)} entries")
             except FileNotFoundError:
-                print("Warning: Jira hierarchy cache not found at /tmp/jira_hierarchy.json")
+                print(f"Warning: Jira hierarchy cache not found at {jira_cache_path}")
                 print("Set JIRA_TOKEN or run /pr-report command to populate Jira data via MCP tools")
                 self.jira_hierarchy = {}
 
@@ -1356,29 +1403,43 @@ class PRReportGenerator:
         }
 
         async def fetch_single_diff(session, repo: str, number: int) -> Dict:
-            """Fetch diff for a single PR."""
+            """Fetch diff for a single PR with pagination."""
             url = f"https://api.github.com/repos/{repo}/pulls/{number}/files"
+            per_page = 100
 
             try:
-                if HAS_AIOHTTP:
-                    async with session.get(url, headers=headers) as response:
-                        if response.status != 200:
-                            return {'repo': repo, 'number': number, 'error': f"HTTP {response.status}"}
-                        files = await response.json()
-                else:
-                    response = requests.get(url, headers=headers, timeout=30)
-                    if response.status_code != 200:
-                        return {'repo': repo, 'number': number, 'error': f"HTTP {response.status_code}"}
-                    files = response.json()
+                files = []
+                page = 1
+                while True:
+                    params = {"per_page": per_page, "page": page}
+                    if HAS_AIOHTTP:
+                        async with session.get(url, headers=headers, params=params) as response:
+                            if response.status != 200:
+                                return {'repo': repo, 'number': number, 'error': f"HTTP {response.status}"}
+                            batch = await response.json()
+                    else:
+                        response = requests.get(url, headers=headers, params=params, timeout=30)
+                        if response.status_code != 200:
+                            return {'repo': repo, 'number': number, 'error': f"HTTP {response.status_code}"}
+                        batch = response.json()
 
-                # Process file patches, truncate large ones
+                    files.extend(batch)
+                    if len(batch) < per_page:
+                        break
+                    page += 1
+
+                # Process file patches, skip vendor dirs, truncate large ones
                 patches = []
                 for f in files:
+                    filename = f['filename']
+                    dirs = set(filename.split('/')[:-1])
+                    if 'vendor' in dirs:
+                        continue
                     patch = f.get('patch', '')
                     if len(patch) > 5000:
                         patch = patch[:5000] + "\n... [truncated]"
                     patches.append({
-                        'filename': f['filename'],
+                        'filename': filename,
                         'status': f['status'],
                         'additions': f['additions'],
                         'deletions': f['deletions'],
@@ -1531,6 +1592,12 @@ Scoring criteria (higher = more important):
         metavar='N',
         help='Number of PRs to include in scored output (default: 20)'
     )
+    parser.add_argument(
+        '--output-dir',
+        default='/tmp',
+        metavar='DIR',
+        help='Directory for output files (default: /tmp)'
+    )
     return parser.parse_args()
 
 
@@ -1544,6 +1611,8 @@ async def main():
     deep_prs = args.deep or []
     score_mode = args.score
     score_limit = args.score_limit
+    output_dir = args.output_dir
+    os.makedirs(output_dir, exist_ok=True)
 
     print(f"Generating PR report for: {since_date} to {end_date}")
     print(f"Using {'async (aiohttp)' if HAS_AIOHTTP else 'sync (requests)'} mode")
@@ -1553,16 +1622,16 @@ async def main():
         print(f"Score mode: will output top {score_limit} PRs by importance")
     print()
 
-    generator = PRReportGenerator(since_date, end_date)
+    generator = PRReportGenerator(since_date, end_date, output_dir=output_dir)
 
     # Fetch all data
     await generator.fetch_all_prs()
     await generator.load_jira_hierarchy()
 
     # Generate outputs
-    generator.generate_report('/tmp/weekly_pr_report_fast.md')
-    generator.save_raw_data('/tmp/hypershift_pr_details_fast.json')
-    generator.save_summary_data('/tmp/hypershift_pr_summary.json')
+    generator.generate_report(os.path.join(output_dir, 'weekly_pr_report_fast.md'))
+    generator.save_raw_data(os.path.join(output_dir, 'hypershift_pr_details_fast.json'))
+    generator.save_summary_data(os.path.join(output_dir, 'hypershift_pr_summary.json'))
 
     # Score mode: output scored PR list
     if score_mode:
@@ -1579,9 +1648,10 @@ async def main():
             'pr_id': f"{pr['repo']}#{pr['number']}"
         } for pr in scored_prs]
 
-        with open('/tmp/pr_scored.json', 'w') as f:
+        scored_path = os.path.join(output_dir, 'pr_scored.json')
+        with open(scored_path, 'w') as f:
             json.dump(scored_output, f, indent=2)
-        print(f"Scored PRs saved to /tmp/pr_scored.json")
+        print(f"Scored PRs saved to {scored_path}")
 
         # Print PR list ready for --deep flag
         print("\nPR list for --deep flag:")

@@ -24,6 +24,7 @@ Generate comprehensive PR reports for openshift/hypershift, openshift-eng/ai-hel
 - `--end` (optional): Ending date in YYYY-MM-DD format (e.g., `2026-02-12`). Defaults to today.
 - `--deep` (optional): Enable deep analysis mode that fetches and analyzes actual code diffs.
 - `--progress-report` (optional): Generate a narrative blog-style progress report (Dolphin Emulator style).
+- `--output-dir` (optional): Directory for output files. If not specified, ask the user with AskUserQuestion.
 
 ## What This Command Does
 
@@ -58,13 +59,15 @@ This command generates **two reports** (with two optional additions):
 
 | File | Description |
 |------|-------------|
-| `/tmp/weekly_pr_report_fast.md` | Data-focused report with metrics and PR listings |
-| `/tmp/hypershift_pr_details_fast.json` | Raw PR data in JSON format |
-| `/tmp/weekly_pr_report_impact.md` | LLM-generated impact analysis for contributors |
+| `$OUTPUT_DIR/weekly_pr_report_fast.md` | Data-focused report with metrics and PR listings |
+| `$OUTPUT_DIR/hypershift_pr_details_fast.json` | Raw PR data in JSON format |
+| `$OUTPUT_DIR/hypershift_pr_summary.json` | Compact summary data for LLM analysis |
+| `$OUTPUT_DIR/weekly_pr_report_impact.md` | LLM-generated impact analysis for contributors |
+| `$OUTPUT_DIR/pr_scored.json` | (--score) Ranked PR list for deep analysis |
 | `.work/pr_deep/*.json` | (--deep mode) Per-PR data with diffs for analysis |
 | `.work/pr_deep/*_analysis.json` | (--deep mode) Per-PR analysis results |
 | `.work/pr_deep_aggregated.json` | (--deep mode) Aggregated analysis findings |
-| `/tmp/hypershift_progress_report_YYYY-MM-DD.md` | (--progress-report) Narrative progress report (blog-style) |
+| `$OUTPUT_DIR/hypershift_progress_report_YYYY-MM-DD.md` | (--progress-report) Narrative progress report (blog-style) |
 
 ## Implementation
 
@@ -75,14 +78,15 @@ Parse the arguments and run the script. The script accepts:
 - `--end` flag for end date
 
 ```bash
-# Parse ARGUMENTS which may contain: --start YYYY-MM-DD --end YYYY-MM-DD --deep
-# Example: python3 contrib/repo_metrics/weekly_pr_report.py 2026-02-05 --end 2026-02-12
+# Parse ARGUMENTS which may contain: --start YYYY-MM-DD --end YYYY-MM-DD --deep --output-dir DIR
+# Example: python3 contrib/repo_metrics/weekly_pr_report.py 2026-02-05 --end 2026-02-12 --output-dir /tmp
 
-python3 contrib/repo_metrics/weekly_pr_report.py $ARGUMENTS
+python3 contrib/repo_metrics/weekly_pr_report.py $ARGUMENTS --output-dir $OUTPUT_DIR
 ```
 
 Note: The script's positional argument is the start date. The `--start` flag in the skill
-is mapped to this positional argument when invoking the script.
+is mapped to this positional argument when invoking the script. `$OUTPUT_DIR` is the
+directory chosen by the user. All output file paths below use this directory.
 
 ### Step 2: Jira Enrichment (Conditional)
 
@@ -100,14 +104,14 @@ Check the script output to determine if Jira data was fetched directly:
   - `customfield_12311140` = Epic Link field
   - `customfield_12313140` = OCPSTRAT Parent (e.g., "OCPSTRAT-2426")
 - Build hierarchy: ticket → Epic → OCPSTRAT
-- Save to `/tmp/jira_hierarchy.json`
+- Save to `$OUTPUT_DIR/jira_hierarchy.json`
 - Re-run the Python script to regenerate report with enriched data
 
 ### Step 3: Generate Impact Analysis Report
 
-Read `/tmp/hypershift_pr_details_fast.json` and `/tmp/jira_hierarchy.json`, then generate a rich impact analysis report for project contributors and followers.
+Read `$OUTPUT_DIR/hypershift_pr_details_fast.json` and `$OUTPUT_DIR/jira_hierarchy.json`, then generate a rich impact analysis report for project contributors and followers.
 
-**Write the report to `/tmp/weekly_pr_report_impact.md`** following this structure:
+**Write the report to `$OUTPUT_DIR/weekly_pr_report_impact.md`** following this structure:
 
 ```markdown
 # HyperShift Weekly Impact Report
@@ -256,7 +260,7 @@ If `--deep` flag is specified, perform deep code analysis after the standard rep
 
 Present the user with PR selection options using AskUserQuestion:
 
-1. Read `/tmp/hypershift_pr_details_fast.json` and `/tmp/jira_hierarchy.json` to categorize and score PRs.
+1. Read `$OUTPUT_DIR/hypershift_pr_details_fast.json` and `$OUTPUT_DIR/jira_hierarchy.json` to categorize and score PRs.
 
 2. **Score each PR using these criteria** (higher score = more important):
 
@@ -276,7 +280,7 @@ Present the user with PR selection options using AskUserQuestion:
    To score PRs, join PR data with Jira hierarchy to get priority:
    ```bash
    # Get priority for a ticket from jira_hierarchy.json
-   jq -r '."CNTRLPLANE-1708".priority' /tmp/jira_hierarchy.json
+   jq -r '."CNTRLPLANE-1708".priority' $OUTPUT_DIR/jira_hierarchy.json
    # Returns: "Critical"
    ```
 
@@ -405,7 +409,7 @@ After all agents complete, aggregate the analysis files:
 
 #### Step 4e: Enhanced Impact Report
 
-When generating `/tmp/weekly_pr_report_impact.md`, incorporate deep findings:
+When generating `$OUTPUT_DIR/weekly_pr_report_impact.md`, incorporate deep findings:
 
 - Use `actual_changes` instead of PR descriptions for accuracy
 - Highlight any `breaking_changes` prominently
@@ -415,14 +419,14 @@ When generating `/tmp/weekly_pr_report_impact.md`, incorporate deep findings:
 ### Step 5: Generate Dolphin-style Progress Report (--progress-report mode only)
 
 If `--progress-report` flag is specified, generate a narrative blog-post-style technical
-progress report. Write the report to `/tmp/hypershift_progress_report_YYYY-MM-DD.md`
+progress report. Write the report to `$OUTPUT_DIR/hypershift_progress_report_YYYY-MM-DD.md`
 where YYYY-MM-DD is the end date.
 
 **Data sources:**
-- `/tmp/hypershift_pr_details_fast.json` for PR data (including `author` field)
-- `/tmp/jira_hierarchy.json` for strategic context
+- `$OUTPUT_DIR/hypershift_pr_details_fast.json` for PR data (including `author` field)
+- `$OUTPUT_DIR/jira_hierarchy.json` for strategic context
 - `.work/pr_deep_aggregated.json` and `.work/pr_deep/*_analysis.json` (if --deep mode)
-- `/tmp/weekly_pr_report_impact.md` for the impact analysis already generated
+- `$OUTPUT_DIR/weekly_pr_report_impact.md` for the impact analysis already generated
 
 **CRITICAL: Author Attribution**
 Always use the `author` field from the PR data JSON for contributor attribution.
@@ -525,7 +529,7 @@ python3 contrib/repo_metrics/weekly_pr_report.py 2026-02-05 --end 2026-02-12 --s
 
 Output includes:
 - Scored PRs table with priority, repo, topic, and title
-- JSON file at `/tmp/pr_scored.json` for programmatic use
+- JSON file at `$OUTPUT_DIR/pr_scored.json` for programmatic use
 - Ready-to-use PR list for `--deep` flag
 
 ## Notes
