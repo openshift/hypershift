@@ -26,6 +26,8 @@ type CreateInfraOptions struct {
 	AssignCustomHCPRoles        bool
 	DisableClusterCapabilities  []string
 	Cloud                       string
+	EndpointAccess              string
+	NATSubnetID                 string
 }
 
 type CreateInfraOutput struct {
@@ -39,6 +41,7 @@ type CreateInfraOutput struct {
 	BootImageID         string                                  `json:"bootImageID"`
 	InfraID             string                                  `json:"infraID"`
 	SecurityGroupID     string                                  `json:"securityGroupID"`
+	NATSubnetID         string                                  `json:"natSubnetID,omitempty"`
 	ControlPlaneMIs     *hyperv1.AzureResourceManagedIdentities `json:"controlPlaneMIs"`
 	DataPlaneIdentities hyperv1.DataPlaneManagedIdentities      `json:"dataPlaneIdentities"`
 	WorkloadIdentities  *hyperv1.AzureWorkloadIdentities        `json:"workloadIdentities"`
@@ -55,6 +58,7 @@ type CreateIAMOptions struct {
 	OIDCIssuerURL     string
 	OutputFile        string
 	Cloud             string
+	EndpointAccess    string
 }
 
 // DestroyIAMOptions holds options for destroying Azure IAM resources

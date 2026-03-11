@@ -3,12 +3,21 @@ package azure
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+
+	"k8s.io/utils/ptr"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -34,6 +43,7 @@ func NewCreateIAMCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.OIDCIssuerURL, "oidc-issuer-url", opts.OIDCIssuerURL, util.OIDCIssuerURLDescription)
 	cmd.Flags().StringVar(&opts.OutputFile, "output-file", opts.OutputFile, util.WorkloadIdentitiesOutputFileDescription)
 	cmd.Flags().StringVar(&opts.Cloud, "cloud", opts.Cloud, util.CloudDescription)
+	cmd.Flags().StringVar(&opts.EndpointAccess, "endpoint-access", string(hyperv1.AzureEndpointAccessPublic), util.EndpointAccessDescription)
 
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("infra-id")
@@ -76,6 +86,7 @@ func BindCreateIAMProductFlags(opts *CreateIAMOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.OIDCIssuerURL, "oidc-issuer-url", opts.OIDCIssuerURL, util.OIDCIssuerURLDescription)
 	flags.StringVar(&opts.OutputFile, "output-file", opts.OutputFile, util.WorkloadIdentitiesOutputFileDescription)
 	flags.StringVar(&opts.Cloud, "cloud", opts.Cloud, util.CloudDescription)
+	flags.StringVar(&opts.EndpointAccess, "endpoint-access", string(hyperv1.AzureEndpointAccessPublic), util.EndpointAccessDescription)
 }
 
 // Validate validates the CreateIAMOptions
@@ -114,6 +125,11 @@ func (o *CreateIAMOptions) Run(ctx context.Context, l logr.Logger) error {
 		"infraID", o.InfraID,
 		"resourceGroup", o.ResourceGroupName,
 		"location", o.Location)
+
+	// Ensure the resource group exists
+	if err := o.ensureResourceGroup(ctx, l, subscriptionID, azureCreds); err != nil {
+		return err
+	}
 
 	// Create the identity manager
 	identityManager := NewIdentityManager(subscriptionID, azureCreds, o.Cloud)
@@ -162,5 +178,38 @@ func (o *CreateIAMOptions) writeOutput(workloadIdentities any) error {
 		return fmt.Errorf("failed to write output: %w", err)
 	}
 
+	return nil
+}
+
+// ensureResourceGroup creates the resource group if it doesn't already exist.
+func (o *CreateIAMOptions) ensureResourceGroup(ctx context.Context, l logr.Logger, subscriptionID string, creds azcore.TokenCredential) error {
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(o.Cloud)
+	if err != nil {
+		return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+	}
+	rgClient, err := armresources.NewResourceGroupsClient(subscriptionID, creds, &arm.ClientOptions{ClientOptions: azcore.ClientOptions{Cloud: cloudConfig}})
+	if err != nil {
+		return fmt.Errorf("failed to create resource groups client: %w", err)
+	}
+
+	_, err = rgClient.Get(ctx, o.ResourceGroupName, nil)
+	if err == nil {
+		l.Info("Resource group already exists", "name", o.ResourceGroupName)
+		return nil
+	}
+
+	var respErr *azcore.ResponseError
+	if !errors.As(err, &respErr) || respErr.StatusCode != 404 {
+		return fmt.Errorf("failed to check resource group %q: %w", o.ResourceGroupName, err)
+	}
+
+	l.Info("Creating resource group", "name", o.ResourceGroupName, "location", o.Location)
+	_, err = rgClient.CreateOrUpdate(ctx, o.ResourceGroupName, armresources.ResourceGroup{
+		Location: ptr.To(o.Location),
+	}, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create resource group %q: %w", o.ResourceGroupName, err)
+	}
+	l.Info("Successfully created resource group", "name", o.ResourceGroupName)
 	return nil
 }

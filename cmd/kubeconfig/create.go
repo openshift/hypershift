@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/util"
+	hyperutil "github.com/openshift/hypershift/support/util"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -117,6 +118,12 @@ func Render(ctx context.Context, namespace string, name string) error {
 		if !hasData || len(data) == 0 {
 			return fmt.Errorf("kubeconfig secret has no kubeconfig")
 		}
+		if hyperutil.IsPrivateHC(&cluster) {
+			data, err = rewriteServerForPrivateCluster(ctx, c, &cluster, data)
+			if err != nil {
+				return fmt.Errorf("failed to rewrite kubeconfig for private cluster: %w", err)
+			}
+		}
 		fmt.Print(string(data))
 		return nil
 	}
@@ -166,6 +173,14 @@ func buildCombinedConfig(ctx context.Context, c client.Client, namespace string)
 			log.Printf("missing kubeconfig contents")
 			continue
 		}
+		if hyperutil.IsPrivateHC(&cluster) {
+			var err error
+			data, err = rewriteServerForPrivateCluster(ctx, c, &cluster, data)
+			if err != nil {
+				log.Printf("failed to rewrite kubeconfig for private cluster %s: %s", cluster.Name, err)
+				continue
+			}
+		}
 		var kubeConfig clientcmdapiv1.Config
 		if err := yaml.Unmarshal(data, &kubeConfig); err != nil {
 			log.Printf("failed to load kubeconfig: %s\nraw data:\n%s\n", err, data)
@@ -190,6 +205,38 @@ func buildCombinedConfig(ctx context.Context, c client.Client, namespace string)
 	log.Printf("created kubeconfig with %d contexts", len(merged.Contexts))
 
 	return merged, nil
+}
+
+// rewriteServerForPrivateCluster rewrites the server URL in a kubeconfig to use
+// the KAS service ClusterIP on the management cluster. Private clusters don't
+// have a resolvable public API hostname, so the kubeconfig must point to the
+// KAS service directly.
+func rewriteServerForPrivateCluster(ctx context.Context, c client.Client, cluster *hyperv1.HostedCluster, data []byte) ([]byte, error) {
+	controlPlaneNamespace := fmt.Sprintf("%s-%s", cluster.Namespace, cluster.Name)
+	kasSvc := corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-apiserver",
+			Namespace: controlPlaneNamespace,
+		},
+	}
+	if err := c.Get(ctx, client.ObjectKeyFromObject(&kasSvc), &kasSvc); err != nil {
+		return nil, fmt.Errorf("failed to get kube-apiserver service in %s: %w", controlPlaneNamespace, err)
+	}
+	port := int32(6443)
+	if len(kasSvc.Spec.Ports) > 0 {
+		port = kasSvc.Spec.Ports[0].Port
+	}
+
+	var kubeConfig clientcmdapiv1.Config
+	if err := yaml.Unmarshal(data, &kubeConfig); err != nil {
+		return nil, fmt.Errorf("failed to parse kubeconfig: %w", err)
+	}
+	for i := range kubeConfig.Clusters {
+		kubeConfig.Clusters[i].Cluster.Server = fmt.Sprintf("https://localhost:%d", port)
+	}
+	log.Printf("NOTE: This is a private cluster. Run this port-forward in another terminal first:")
+	log.Printf("  kubectl port-forward -n %s svc/kube-apiserver %d:%d", controlPlaneNamespace, port, port)
+	return yaml.Marshal(&kubeConfig)
 }
 
 // mergeClusterKubeConfigs merges the given kubeconfigs by naming the cluster,

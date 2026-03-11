@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -95,7 +96,6 @@ func (r *RBACManager) AssignControlPlaneRoles(ctx context.Context, opts *CreateI
 // AssignControlPlaneRoles assigns roles to control plane managed identities
 func (r *RBACManager) AssignWorkloadIdentities(ctx context.Context, opts *CreateInfraOptions, workloadIdentities *hyperv1.AzureWorkloadIdentities, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName string) error {
 	components := map[string]hyperv1.AzureClientID{
-		config.CPO:           workloadIdentities.ImageRegistry.ClientID,
 		config.NodePoolMgmt:  workloadIdentities.NodePoolManagement.ClientID,
 		config.CloudProvider: workloadIdentities.CloudProvider.ClientID,
 		config.AzureFile:     workloadIdentities.File.ClientID,
@@ -106,6 +106,10 @@ func (r *RBACManager) AssignWorkloadIdentities(ctx context.Context, opts *Create
 
 	if !slices.Contains(opts.DisableClusterCapabilities, string(hyperv1.ImageRegistryCapability)) {
 		components[config.CIRO] = workloadIdentities.ImageRegistry.ClientID
+	}
+
+	if workloadIdentities.ControlPlaneOperator != nil {
+		components[config.CPO] = workloadIdentities.ControlPlaneOperator.ClientID
 	}
 
 	// Get an access token for Microsoft Graph API for getting the object IDs
@@ -266,6 +270,12 @@ func (r *RBACManager) getAzureToken() (azcore.AccessToken, error) {
 }
 
 func (r *RBACManager) getObjectIDFromClientID(clientID string, token azcore.AccessToken) (string, error) {
+	// Validate clientID is a UUID to prevent OData injection
+	uuidPattern := regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	if !uuidPattern.MatchString(clientID) {
+		return "", fmt.Errorf("invalid client ID format: must be a UUID")
+	}
+
 	filterQuery := "$filter=appId eq '" + clientID + "'"
 	url := graphAPIEndpoint + "?" + strings.ReplaceAll(filterQuery, " ", "%20")
 
@@ -288,6 +298,11 @@ func (r *RBACManager) getObjectIDFromClientID(clientID string, token azcore.Acce
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
 	}(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("graph API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
 
 	// Parse response
 	var result ServicePrincipalResponse
