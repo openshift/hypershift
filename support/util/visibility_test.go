@@ -13,6 +13,7 @@ type visibilityCase struct {
 	platformType hyperv1.PlatformType
 	awsAccess    *hyperv1.AWSEndpointAccessType
 	gcpAccess    *hyperv1.GCPEndpointAccessType
+	azureAccess  *hyperv1.AzureEndpointAccessSpec
 	wantPrivate  bool
 	wantPublic   bool
 	setupEnv     func(t *testing.T)
@@ -65,6 +66,34 @@ func baseVisibilityCases() []visibilityCase {
 			wantPublic:   true,
 		},
 		{
+			name:         "When Azure endpoint is public it should be public and not private",
+			platformType: hyperv1.AzurePlatform,
+			azureAccess:  &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
+			wantPrivate:  false,
+			wantPublic:   true,
+		},
+		{
+			name:         "When Azure endpoint is public and private it should be public and private",
+			platformType: hyperv1.AzurePlatform,
+			azureAccess:  &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublicAndPrivate},
+			wantPrivate:  true,
+			wantPublic:   true,
+		},
+		{
+			name:         "When Azure endpoint is private it should be private and not public",
+			platformType: hyperv1.AzurePlatform,
+			azureAccess:  &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPrivate},
+			wantPrivate:  true,
+			wantPublic:   false,
+		},
+		{
+			name:         "When Azure endpoint access is nil (default) it should be public and not private",
+			platformType: hyperv1.AzurePlatform,
+			azureAccess:  nil,
+			wantPrivate:  false,
+			wantPublic:   true,
+		},
+		{
 			name:         "When is ARO with no Swift annotation (CI) it should not be private",
 			platformType: hyperv1.NonePlatform,
 			setupEnv: func(t *testing.T) {
@@ -101,6 +130,13 @@ func platformSpecFromCase(tc visibilityCase) hyperv1.PlatformSpec {
 		spec.GCP = &hyperv1.GCPPlatformSpec{
 			EndpointAccess: *tc.gcpAccess,
 		}
+	}
+	if tc.azureAccess != nil {
+		spec.Azure = &hyperv1.AzurePlatformSpec{
+			EndpointAccess: tc.azureAccess,
+		}
+	} else if tc.platformType == hyperv1.AzurePlatform {
+		spec.Azure = &hyperv1.AzurePlatformSpec{}
 	}
 	return spec
 }
@@ -448,6 +484,146 @@ func TestLabelHCPRoutes(t *testing.T) {
 				Spec: hyperv1.HostedControlPlaneSpec{
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+
+		// Azure Platform Tests (Endpoint Access)
+		{
+			name: "When Azure cluster is Private, it should label routes for HCP router",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPrivate},
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When Azure cluster is PublicAndPrivate with KAS LoadBalancer, it should not label routes for HCP router",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublicAndPrivate},
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "When Azure cluster is PublicAndPrivate with KAS Route and hostname, it should label routes for HCP router",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublicAndPrivate},
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{
+									Hostname: "api.azure.example.com",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When Azure cluster is Public with KAS LoadBalancer, it should not label routes for HCP router",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+					},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "When Azure cluster is Public with KAS Route and hostname, it should label routes for HCP router",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
+						},
+					},
+					Services: []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{
+									Hostname: "api.azure.example.com",
+								},
+							},
+						},
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			name: "When Azure cluster is Public with KAS Route but no hostname, it should not label routes for HCP router",
+			hcp: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
+						},
 					},
 					Services: []hyperv1.ServicePublishingStrategyMapping{
 						{
