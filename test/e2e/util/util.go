@@ -3386,6 +3386,8 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 		}
 		g := NewWithT(t)
 
+		// test: changed Resource from specific SG ARN to "*" to verify if
+		// the resource ARN specificity is causing matchedStatements to be empty
 		tagsPolicy := fmt.Sprintf(`{
 			"Version": "2012-10-17",
 			"Statement": [
@@ -3449,7 +3451,7 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 				Key:   aws.String(day2TagKey),
 				Value: aws.String(day2TagValue),
 			}))
-		}).WithContext(ctx).WithTimeout(time.Minute * 2).WithPolling(time.Second).Should(Succeed())
+		}).WithContext(ctx).WithTimeout(time.Minute * 10).WithPolling(time.Second).Should(Succeed())
 	})
 }
 

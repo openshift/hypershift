@@ -167,6 +167,7 @@ func NewSessionV2(ctx context.Context, agent, credentialsFile, credKey, credSecr
 	}))
 
 	cfg, _ := configv2.LoadDefaultConfig(ctx, configOpts...)
+	cfg.Credentials = awsv2.NewCredentialsCache(cfg.Credentials)
 	return &cfg
 }
 
