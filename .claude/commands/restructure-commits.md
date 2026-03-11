@@ -22,19 +22,20 @@ Commits are created in this order. Each commit groups files by architectural bou
 | 1 | API | `api` | `api/` (types, deepcopy, CRD manifests, go.mod) — **excluding** `*_test.go` |
 | 2 | Vendor | `api` | `vendor/`, `client/`, `cmd/install/assets/hypershift-operator/zz_generated.crd-manifests/` |
 | 3 | CLI | `cli` | `cmd/cluster/`, `cmd/install/`, `cmd/nodepool/`, `product-cli/` (source, tests, testdata) |
-| 4 | HO | `hypershift-operator` | `hypershift-operator/`, `support/` |
-| 5 | CPO | `control-plane-operator` | `control-plane-operator/` (controllers, testdata, main.go) |
+| 4 | HO | `hypershift-operator` | `hypershift-operator/`, `support/`, `karpenter-operator/`, `kubevirtexternalinfra/`, `pkg/`, `manifests/`, `shared-ingress/`, `sharedingress-config-generator/` |
+| 5 | CPO | `control-plane-operator` | `control-plane-operator/`, `control-plane-pki-operator/`, `availability-prober/`, `dnsresolver/`, `etcd-backup/`, `etcd-defrag/`, `etcd-recovery/`, `ignition-server/`, `kas-bootstrap/`, `konnectivity-https-proxy/`, `konnectivity-socks5-proxy/`, `kubernetes-default-proxy/`, `sync-fg-configmap/`, `sync-global-pullsecret/`, `token-minter/` |
 | 6 | E2E | `e2e` | `test/`, `api/**/*_test.go` |
-| 7 | Docs | `docs` | `docs/` (mkdocs, how-to guides, reference, aggregated-docs) |
+| 7 | Docs | `docs` | `docs/`, `examples/` |
 
-**Uncategorized files:** If a file doesn't match any pattern, include it in the most relevant commit based on its purpose. When ambiguous, prefer HO.
+**Excluded from restructuring:** `bin/` (build output), `hack/`, `contrib/`, `hypershift-ci-python/`, `self-managed-azure-ci-setup/`, and `.claude*/` are build tooling, CI helpers, or dev config. If changed, include them in the most relevant commit based on their purpose. When ambiguous, prefer HO.
 
 ## Procedure
 
 ### 1. Identify merge base and changed files
 
 ```bash
-MERGE_BASE=$(git merge-base main HEAD)
+BASE_BRANCH=$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || echo "main")
+MERGE_BASE=$(git merge-base ${BASE_BRANCH} HEAD)
 git log --oneline ${MERGE_BASE}..HEAD          # review existing commits
 git diff ${MERGE_BASE}..HEAD --name-only | sort # all changed files
 ```
@@ -51,8 +52,8 @@ git reset HEAD                   # unstage everything
 For each component (in order), stage matching files and commit:
 
 ```bash
-# Example: API commit
-git add api/
+# Example: API commit (exclude test files — they belong in E2E)
+git add api/ && git reset HEAD 'api/**/*_test.go' 2>/dev/null || true
 git commit  # use conventional commit format
 
 # Example: Vendor commit
@@ -66,8 +67,8 @@ git commit
 ### 4. Verify and force push
 
 ```bash
-git status                        # must be clean
-git log --oneline main..HEAD      # verify commit structure
+git status                                  # must be clean
+git log --oneline ${BASE_BRANCH}..HEAD      # verify commit structure
 git push --force-with-lease       # requires user confirmation
 ```
 
@@ -106,15 +107,19 @@ Review the staged changes and write a body that describes *what* was added or ch
 
 - **Empty component:** Skip the commit if no files match that component.
 - **Support packages:** `support/` goes with HO (commit 4), not CPO.
+- **Control plane sidecars:** `control-plane-pki-operator/`, `availability-prober/`, `dnsresolver/`, `etcd-*`, `ignition-server/`, `kas-bootstrap/`, `konnectivity-*`, `kubernetes-default-proxy/`, `sync-fg-configmap/`, `sync-global-pullsecret/`, `token-minter/` all go with CPO (commit 5) since they are control plane components managed by CPO.
+- **Shared ingress:** `shared-ingress/` and `sharedingress-config-generator/` go with HO (commit 4), not CPO, since they are part of the hypershift-operator.
+- **Karpenter operator:** `karpenter-operator/` goes with HO (commit 4) since it is managed by the hypershift-operator.
 - **Shared test fixtures in CPO:** `control-plane-operator/**/testdata/` stays with CPO.
 - **Generated CRD install manifests:** `cmd/install/assets/hypershift-operator/zz_generated.crd-manifests/` goes with Vendor (commit 2), not CLI.
 - **API go.mod:** `api/go.mod` goes with API (commit 1), not Vendor.
 - **API test files:** `api/**/*_test.go` (UX API validation tests) go with E2E (commit 6), not API. Stage API non-test files first, then include API test files when staging E2E.
-- **Documentation files:** `docs/` goes with Docs (commit 7), not Vendor. This includes mkdocs config, how-to guides, architecture references, and aggregated docs. The `docs/content/reference/api.md` (generated API reference) also goes here.
+- **Documentation files:** `docs/` and `examples/` go with Docs (commit 7), not Vendor. This includes mkdocs config, how-to guides, architecture references, and aggregated docs. The `docs/content/reference/api.md` (generated API reference) also goes here.
+- **Build/CI tooling:** `hack/`, `contrib/`, `hypershift-ci-python/`, `self-managed-azure-ci-setup/` are not mapped to a default component. Include in the most relevant commit based on purpose, or HO when ambiguous.
 
 ## Quick Checklist
 
-- [ ] Found merge base with `git merge-base main HEAD`
+- [ ] Determined base branch from PR (defaults to `main`)
 - [ ] Reviewed all changed files before starting
 - [ ] Reset with `--soft` (no data loss)
 - [ ] Committed in correct order: API, Vendor, CLI, HO, CPO, E2E, Docs
