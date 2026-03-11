@@ -316,6 +316,63 @@ class PRReportGenerator:
         self.jira_hierarchy: Dict = {}
         self.hypershift_authors: Set[str] = set()
 
+    # Bot authors to tag in release repo PRs
+    RELEASE_BOT_AUTHORS = {'renovate[bot]', 'dependabot[bot]'}
+
+    async def _github_graphql_request(self, session, query: str, variables: Dict,
+                                       headers: Dict, max_retries: int = 3) -> Optional[Dict]:
+        """Make a GitHub GraphQL request with rate limit handling.
+
+        Handles 403/429 rate limit responses by respecting Retry-After headers.
+        Returns parsed JSON data or None on failure.
+        """
+        for attempt in range(max_retries + 1):
+            try:
+                if HAS_AIOHTTP and session is not None:
+                    async with session.post(
+                        'https://api.github.com/graphql',
+                        json={"query": query, "variables": variables},
+                        headers=headers
+                    ) as response:
+                        if response.status in (403, 429):
+                            retry_after = int(response.headers.get('Retry-After', 60))
+                            print(f"  Rate limited (HTTP {response.status}), waiting {retry_after}s...")
+                            await asyncio.sleep(retry_after)
+                            continue
+                        if response.status != 200:
+                            print(f"  GitHub API returned {response.status}")
+                            if attempt < max_retries:
+                                await asyncio.sleep(2)
+                                continue
+                            return None
+                        return await response.json()
+                else:
+                    response = requests.post(
+                        'https://api.github.com/graphql',
+                        json={"query": query, "variables": variables},
+                        headers=headers,
+                        timeout=30
+                    )
+                    if response.status_code in (403, 429):
+                        retry_after = int(response.headers.get('Retry-After', 60))
+                        print(f"  Rate limited (HTTP {response.status_code}), waiting {retry_after}s...")
+                        await asyncio.sleep(retry_after)
+                        continue
+                    if response.status_code != 200:
+                        print(f"  GitHub API returned {response.status_code}")
+                        if attempt < max_retries:
+                            await asyncio.sleep(2)
+                            continue
+                        return None
+                    return response.json()
+            except Exception as e:
+                print(f"  Request error: {e}")
+                if attempt < max_retries:
+                    await asyncio.sleep(2)
+                    continue
+                return None
+        return None
+
     def _get_gh_token(self) -> str:
         """Get GitHub token from gh CLI"""
         try:
@@ -432,40 +489,12 @@ class PRReportGenerator:
         prs = []
         cursor = None
 
-        if HAS_AIOHTTP:
-            async with aiohttp.ClientSession() as session:
-                while True:
-                    variables = {"searchQuery": search_query, "cursor": cursor}
-                    async with session.post(
-                        'https://api.github.com/graphql',
-                        json={"query": query, "variables": variables},
-                        headers=headers
-                    ) as response:
-                        data = await response.json()
-
-                    if 'data' not in data or not data['data']['search']:
-                        break
-
-                    for pr in data['data']['search']['nodes']:
-                        if pr:  # Skip null entries
-                            prs.append(self._process_pr_data(pr, f"{repo_owner}/{repo_name}"))
-
-                    page_info = data['data']['search']['pageInfo']
-                    if not page_info['hasNextPage']:
-                        break
-                    cursor = page_info['endCursor']
-        else:
+        session = aiohttp.ClientSession() if HAS_AIOHTTP else None
+        try:
             while True:
                 variables = {"searchQuery": search_query, "cursor": cursor}
-                response = requests.post(
-                    'https://api.github.com/graphql',
-                    json={"query": query, "variables": variables},
-                    headers=headers,
-                    timeout=30
-                )
-                data = response.json()
-
-                if 'data' not in data or not data['data']['search']:
+                data = await self._github_graphql_request(session, query, variables, headers)
+                if not data or 'data' not in data or not data['data']['search']:
                     break
 
                 for pr in data['data']['search']['nodes']:
@@ -476,6 +505,9 @@ class PRReportGenerator:
                 if not page_info['hasNextPage']:
                     break
                 cursor = page_info['endCursor']
+        finally:
+            if session:
+                await session.close()
 
         return prs
 
@@ -589,65 +621,14 @@ class PRReportGenerator:
                 page += 1
             return False
 
-        if HAS_AIOHTTP:
-            async with aiohttp.ClientSession() as session:
-                while True:
-                    variables = {"searchQuery": search_query, "cursor": cursor}
-                    async with session.post(
-                        'https://api.github.com/graphql',
-                        json={"query": query, "variables": variables},
-                        headers=headers
-                    ) as response:
-                        if response.status != 200:
-                            retry_count += 1
-                            if retry_count > max_retries:
-                                print(f"  GitHub API returned {response.status}, max retries exceeded")
-                                break
-                            print(f"  GitHub API returned {response.status}, retrying ({retry_count}/{max_retries})...")
-                            await asyncio.sleep(2)
-                            continue
-                        try:
-                            data = await response.json()
-                            retry_count = 0  # Reset on success
-                        except Exception as e:
-                            retry_count += 1
-                            if retry_count > max_retries:
-                                print(f"  Error parsing response: {e}, max retries exceeded")
-                                break
-                            print(f"  Error parsing response: {e}, retrying ({retry_count}/{max_retries})...")
-                            await asyncio.sleep(2)
-                            continue
-
-                    if 'errors' in data:
-                        print(f"GraphQL errors: {data['errors']}")
-                        break
-
-                    if 'data' not in data or not data['data']['search']:
-                        break
-
-                    for pr in data['data']['search']['nodes']:
-                        if pr:
-                            total_scanned += 1
-                            if is_hypershift_related(pr):
-                                prs.append(self._process_pr_data(pr, f"{repo_owner}/{repo_name}"))
-                            elif files_incomplete(pr):
-                                if await check_remaining_files_async(session, pr['number']):
-                                    prs.append(self._process_pr_data(pr, f"{repo_owner}/{repo_name}"))
-
-                    page_info = data['data']['search']['pageInfo']
-                    if not page_info['hasNextPage']:
-                        break
-                    cursor = page_info['endCursor']
-        else:
+        session = aiohttp.ClientSession() if HAS_AIOHTTP else None
+        bot_count = 0
+        try:
             while True:
                 variables = {"searchQuery": search_query, "cursor": cursor}
-                response = requests.post(
-                    'https://api.github.com/graphql',
-                    json={"query": query, "variables": variables},
-                    headers=headers,
-                    timeout=30
-                )
-                data = response.json()
+                data = await self._github_graphql_request(session, query, variables, headers)
+                if not data:
+                    break
 
                 if 'errors' in data:
                     print(f"GraphQL errors: {data['errors']}")
@@ -660,18 +641,32 @@ class PRReportGenerator:
                     if pr:
                         total_scanned += 1
                         if is_hypershift_related(pr):
-                            prs.append(self._process_pr_data(pr, f"{repo_owner}/{repo_name}"))
+                            pr_data = self._process_pr_data(pr, f"{repo_owner}/{repo_name}")
+                            # Tag bot-authored PRs
+                            author = pr.get('author', {}).get('login', '') if pr.get('author') else ''
+                            if author in self.RELEASE_BOT_AUTHORS:
+                                pr_data['is_bot'] = True
+                                bot_count += 1
+                            prs.append(pr_data)
                         elif files_incomplete(pr):
-                            # Files were truncated; check remaining via REST API
-                            if await check_remaining_files_async(None, pr['number']):
-                                prs.append(self._process_pr_data(pr, f"{repo_owner}/{repo_name}"))
+                            if await check_remaining_files_async(session, pr['number']):
+                                pr_data = self._process_pr_data(pr, f"{repo_owner}/{repo_name}")
+                                author = pr.get('author', {}).get('login', '') if pr.get('author') else ''
+                                if author in self.RELEASE_BOT_AUTHORS:
+                                    pr_data['is_bot'] = True
+                                    bot_count += 1
+                                prs.append(pr_data)
 
                 page_info = data['data']['search']['pageInfo']
                 if not page_info['hasNextPage']:
                     break
                 cursor = page_info['endCursor']
+        finally:
+            if session:
+                await session.close()
 
-        print(f"  Scanned {total_scanned} release PRs, found {len(prs)} HyperShift-related")
+        bot_note = f", {bot_count} bot-authored" if bot_count else ""
+        print(f"  Scanned {total_scanned} release PRs, found {len(prs)} HyperShift-related{bot_note}")
         return prs
 
     def _process_pr_data(self, pr: Dict, repo: str) -> Dict:
@@ -823,6 +818,14 @@ class PRReportGenerator:
             jira_cache_path = os.path.join(self.output_dir, 'jira_hierarchy.json')
             print("JIRA_TOKEN not set, loading from cache (use MCP tools to populate)")
             try:
+                # Check if cache is stale (older than report end date)
+                cache_mtime = datetime.fromtimestamp(os.path.getmtime(jira_cache_path))
+                report_end = datetime.strptime(self.end_date, '%Y-%m-%d')
+                if cache_mtime < report_end:
+                    print(f"Warning: Jira cache is stale (last updated {cache_mtime.strftime('%Y-%m-%d')}, "
+                          f"report ends {self.end_date}). Invalidating cache.")
+                    os.remove(jira_cache_path)
+                    raise FileNotFoundError
                 with open(jira_cache_path, 'r') as f:
                     self.jira_hierarchy = json.load(f)
                 print(f"Loaded Jira hierarchy cache with {len(self.jira_hierarchy)} entries")
@@ -1664,6 +1667,22 @@ async def main():
             print(f"\nFetching diffs for {len(pr_list)} PRs...")
             diffs = await generator.fetch_pr_diffs(pr_list)
             generator.write_deep_pr_files(diffs)
+
+            # Print deep analysis summary
+            successful = {k: v for k, v in diffs.items() if 'error' not in v}
+            failed = {k: v for k, v in diffs.items() if 'error' in v}
+            total_additions = sum(d.get('total_additions', 0) for d in successful.values())
+            total_deletions = sum(d.get('total_deletions', 0) for d in successful.values())
+            total_files = sum(d.get('total_files', 0) for d in successful.values())
+            total_patches = sum(len(d.get('files', [])) for d in successful.values())
+            vendor_skipped = total_files - total_patches
+
+            print(f"\n  Deep analysis summary:")
+            print(f"    PRs fetched:    {len(successful)}/{len(diffs)}")
+            print(f"    Total files:    {total_files} ({vendor_skipped} vendor files skipped)")
+            print(f"    Lines changed:  +{total_additions} -{total_deletions}")
+            if failed:
+                print(f"    Failed:         {', '.join(v.get('error', '?') for v in failed.values())}")
 
     elapsed = time.time() - start_time
     print(f"\nDone in {elapsed:.2f} seconds!")

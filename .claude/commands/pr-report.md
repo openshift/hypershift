@@ -14,7 +14,6 @@ Generate comprehensive PR reports for openshift/hypershift, openshift-eng/ai-hel
 /pr-report --start 2026-02-05                 # From date to today
 /pr-report --start 2026-02-05 --end 2026-02-12  # Specific date range
 /pr-report --start 2026-02-05 --end 2026-02-12 --deep  # With deep code analysis
-/pr-report --start 2026-02-05 --end 2026-02-12 --progress-report       # With narrative progress report
 /pr-report --start 2026-02-05 --end 2026-02-12 --deep --progress-report # Deep analysis + progress report
 ```
 
@@ -23,7 +22,7 @@ Generate comprehensive PR reports for openshift/hypershift, openshift-eng/ai-hel
 - `--start` (optional): Starting date in YYYY-MM-DD format (e.g., `2026-02-05`). Defaults to 7 days ago.
 - `--end` (optional): Ending date in YYYY-MM-DD format (e.g., `2026-02-12`). Defaults to today.
 - `--deep` (optional): Enable deep analysis mode that fetches and analyzes actual code diffs.
-- `--progress-report` (optional): Generate a narrative blog-style progress report (Dolphin Emulator style).
+- `--progress-report` (optional): Generate a narrative blog-style progress report (Dolphin Emulator style). **Requires `--deep`.**
 - `--output-dir` (optional): Directory for output files. If not specified, ask the user with AskUserQuestion.
 
 ## What This Command Does
@@ -70,6 +69,11 @@ This command generates **two reports** (with two optional additions):
 | `$OUTPUT_DIR/hypershift_progress_report_YYYY-MM-DD.md` | (--progress-report) Narrative progress report (blog-style) |
 
 ## Implementation
+
+### Step 0: Validate Arguments
+
+If `--progress-report` is specified without `--deep`, stop and inform the user:
+`--progress-report requires --deep mode for code-level analysis. Please add --deep to your command.`
 
 ### Step 1: Run the Python script to fetch PRs
 
@@ -504,7 +508,7 @@ After generating reports, provide the user with:
 1. A brief summary of what was generated
 2. Location of all report files
 3. Key highlights from the impact analysis
-4. (--deep mode) Summary of deep analysis findings
+4. (--deep mode) Summary of deep analysis findings (the script prints a summary table with PR count, files, lines changed, and vendor files skipped)
 5. (--progress-report mode) Mention the progress report location
 
 ## Script Features
