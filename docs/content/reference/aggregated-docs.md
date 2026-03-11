@@ -3,8 +3,6 @@
 This file contains all HyperShift documentation aggregated into a single file
 for use with AI tools like NotebookLM.
 
-Total documents: 260
-
 ---
 
 ## Source: docs/content/contribute/branch-process.md
@@ -431,40 +429,135 @@ To run override tests:
 title: Use custom operator images
 ---
 
-# How to install HyperShift with a custom image
+# Use custom operator images
 
-1. Build and push a custom image build to your own repository.
+This guide explains how to build and deploy custom HyperShift Operator (HO) and Control Plane Operator (CPO) images for development and testing.
 
-    ```shell linenums="1"
-      export QUAY_ACCOUNT=example
+## Background
 
-      make build
-      make RUNTIME=podman IMG=quay.io/${QUAY_ACCOUNT}/hypershift:latest docker-build docker-push
-    ```
+The HyperShift repository produces several binaries:
 
-1. Install HyperShift using the custom image:
+- **hypershift-operator** — manages `HostedCluster` and `NodePool` resources on the management cluster.
+- **control-plane-operator** — manages control plane components for each hosted cluster. In production, this image comes from the OpenShift release payload.
 
-    ```shell linenums="1"
-      hypershift install \
-        --oidc-storage-provider-s3-bucket-name $BUCKET_NAME \
-        --oidc-storage-provider-s3-credentials $AWS_CREDS \
-        --oidc-storage-provider-s3-region $REGION \
-        --hypershift-image quay.io/${QUAY_ACCOUNT}/hypershift:latest \
-    ```
+The repository includes a `Dockerfile.dev` that builds an **all-in-one development image** containing both the HO and CPO binaries (plus `hypershift`, `hcp`, `karpenter-operator`, and `control-plane-pki-operator`). This is the easiest way to build a custom image for development.
 
-1. (Optional) If your repository is private, create a secret:
+## Building a custom image
 
-    ```shell
-      oc create secret --namespace hypershift generic hypershift-operator-pull-secret \
-        --from-file=.dockerconfig=/my/pull-secret --type=kubernetes.io/dockerconfig
-    ```
+### Option 1: Using Dockerfile.dev (recommended for development)
 
-    Then update the operator ServiceAccount in the hypershift namespace:
+`Dockerfile.dev` compiles all binaries inside the container and produces a single image you can use for both the HO and CPO.
 
-    ```shell
-      oc patch serviceaccount --namespace hypershift operator \
-        -p '{"imagePullSecrets": [{"name": "hypershift-operator-pull-secret"}]}'
-    ```
+```shell
+export IMG=quay.io/<your-quay-account>/hypershift
+export TAG=my-feature-$(date +%Y-%m-%d)
+
+podman build -f ./Dockerfile.dev --platform=linux/amd64 -t ${IMG}:${TAG} .
+podman push ${IMG}:${TAG}
+```
+
+!!! tip
+
+    Use a descriptive tag (e.g. the Jira ticket and date) so you can easily identify the image later. For example: `quay.io/rh_ee_jdoe/hypershift:CNTRLPLANE-1234-2026-04-02`
+
+### Option 2: Using the Makefile
+
+```shell
+export QUAY_ACCOUNT=<your-quay-account>
+
+make build
+make RUNTIME=podman IMG=quay.io/${QUAY_ACCOUNT}/hypershift:latest docker-build docker-push
+```
+
+## Deploying a custom HyperShift Operator image
+
+Use the `hypershift install` command with the `--hypershift-image` flag to deploy the management cluster operator with your custom image:
+
+```shell
+hypershift install \
+  --hypershift-image quay.io/<your-quay-account>/hypershift:${TAG} \
+  ... # other platform-specific flags
+```
+
+See the platform-specific installation guides for the full set of required flags.
+
+### Private registries
+
+If your image repository is private, create a pull secret and patch the operator ServiceAccount:
+
+```shell
+oc create secret --namespace hypershift generic hypershift-operator-pull-secret \
+  --from-file=.dockerconfig=/path/to/pull-secret --type=kubernetes.io/dockerconfig
+
+oc patch serviceaccount --namespace hypershift operator \
+  -p '{"imagePullSecrets": [{"name": "hypershift-operator-pull-secret"}]}'
+```
+
+## Deploying a custom Control Plane Operator image
+
+The CPO image is normally resolved from the OpenShift release payload. To override it with your custom image on an existing `HostedCluster`, use the `hypershift.openshift.io/control-plane-operator-image` annotation:
+
+```shell
+oc annotate hostedcluster <cluster-name> -n <namespace> \
+  hypershift.openshift.io/control-plane-operator-image=quay.io/<your-quay-account>/hypershift:${TAG} \
+  --overwrite
+```
+
+For example:
+
+```shell
+oc annotate hostedcluster my-hosted-cluster -n clusters \
+  hypershift.openshift.io/control-plane-operator-image=quay.io/rh_ee_jdoe/hypershift:CNTRLPLANE-1234-2026-04-02 \
+  --overwrite
+```
+
+This triggers a rollout of the control plane with your custom CPO image. You can verify the new image is running:
+
+```shell
+# Find the control plane namespace (usually clusters-<cluster-name>)
+oc get pods -n clusters-<cluster-name> -l app=control-plane-operator -o jsonpath='{.items[0].spec.containers[0].image}'
+```
+
+To revert to the release payload CPO image, remove the annotation:
+
+```shell
+oc annotate hostedcluster <cluster-name> -n <namespace> \
+  hypershift.openshift.io/control-plane-operator-image-
+```
+
+!!! note
+
+    When using a `Dockerfile.dev` image, the same image works for both the HO and CPO because it contains all binaries.
+
+## Full development workflow example
+
+A typical workflow for testing a change across both operators:
+
+```shell
+# 1. Build and push the all-in-one dev image
+export IMG=quay.io/rh_ee_jdoe/hypershift
+export TAG=my-feature-$(date +%Y-%m-%d)
+podman build -f ./Dockerfile.dev --platform=linux/amd64 -t ${IMG}:${TAG} .
+podman push ${IMG}:${TAG}
+
+# 2. Install HyperShift with the custom HO image
+hypershift install \
+  --hypershift-image ${IMG}:${TAG} \
+  ... # other platform-specific flags
+
+# 3. Create a HostedCluster (or use an existing one)
+
+# 4. Override the CPO image on the HostedCluster
+oc annotate hostedcluster my-cluster -n clusters \
+  hypershift.openshift.io/control-plane-operator-image=${IMG}:${TAG} \
+  --overwrite
+```
+
+## See also
+
+- Develop in cluster — for rapid in-cluster iteration using `ko`
+- Run HyperShift operator locally — for running the operator outside the cluster
+- CPO Overrides — for production CPO image overrides by version and platform
 
 
 ---
@@ -2791,7 +2884,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 ## Cilium
 ### Deployment
 
-In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
+In this scenario we are using the Cilium version v1.15.1 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
@@ -2815,7 +2908,7 @@ In this scenario we are using the Cilium version v1.14.5 which is the last one a
     ~~~sh
     #!/bin/bash
 
-    version="1.14.5"
+    version="1.15.1"
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-03-cilium-ciliumconfigs-crd.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00000-cilium-namespace.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00001-cilium-olm-serviceaccount.yaml
@@ -3070,7 +3163,7 @@ In order for Cilium connectivity test pods to run on OpenShift, a simple custom 
   ~~~
 
   ~~~sh
-  version="1.14.5"
+  version="1.15.1"
   oc apply -n cilium-test -f https://raw.githubusercontent.com/cilium/cilium/${version}/examples/kubernetes/connectivity-check/connectivity-check.yaml
   ~~~
 
@@ -4166,35 +4259,14 @@ NodePools represent homogeneous groups of Nodes with a common lifecycle manageme
 
 ## Upgrades and data propagation
 
-There are three main areas that will trigger rolling upgrades across the Nodes when they are changed:
-
-- OCP Version dictated by `spec.release`.
-- Machine configuration via `spec.config`, a knob for `machineconfiguration.openshift.io`.
-- Platform specific changes via `.spec.platform`. Some fields might be immutable whereas other might allow changes e.g. aws instance type.
-
-Some cluster config changes (e.g. proxy, certs) may also trigger a rolling upgrade if the change needs to be propagated to the node.
-
-NodePools support two types of rolling upgrades: Replace and InPlace, specified via UpgradeType.
+NodePools support two types of rolling upgrades: **Replace** and **InPlace**, specified via UpgradeType.
 
 !!! important
 
-    You cannot switch the UpgradeType once the NodePool is created. You must specify UpgradeType during NodePool 
+    You cannot switch the UpgradeType once the NodePool is created. You must specify UpgradeType during NodePool
     creation. Modifying the field after the fact may cause nodes to become unmanaged.
 
-### Replace Upgrades
-
-This will create new instances in the new version while removing old nodes in a rolling fashion. This is usually a good choice in cloud environments where this level of immutability is cost effective.
-
-### InPlace Upgrades
-
-This will directly perform updates to the Operating System of the existing instances. This is usually a good choice for environments where the infrastructure constraints are higher e.g. bare metal.
-
-When you are using in place upgrades, Platform specific changes will only affect upcoming new Nodes.
-
-### Data propagation
-
-There some fields which will only propagate in place regardless of the upgrade strategy that is set.
-`.spec.nodeLabels` and `.spec.taints` will be propagated only to new upcoming machines.
+For a comprehensive reference on what triggers a rollout, upgrade strategies, rollout lifecycle, and monitoring, see NodePool Rollouts.
 
 
 ## Triggering Upgrades examples
@@ -6592,6 +6664,8 @@ The input for `hostedCluster.spec.services.routePublishingStrategy.hostname` dic
 
 Note: External DNS will only make a difference for setups with Public endpoints i.e. "Public" or "PublicAndPrivate". For a "Private" setup all endpoints will be accessible via `.hypershift.local`, which will contain CNAME records to the appropriate Private Link Endpoint Services.
 
+> **See Also:** For a comprehensive reference of service publishing strategies across all platforms, see Service Publishing Strategy Reference.
+
 # Use Service-level DNS for Control Plane Services
 There are four service that are exposed by a Hosted Control Plane (HCP)
 
@@ -6656,44 +6730,9 @@ hypershift create cluster aws --name=example --endpoint-access=PublicAndPrivate 
 
 > **NOTE:** The **external-dns-domain** should match the Public Hosted Zone created in the previous step
 
-The resulting HostedCluster `services` block looks like this:
+When the `Services` and `Routes` are created by the Control Plane Operator (CPO), it will annotate them with the `external-dns.alpha.kubernetes.io/hostname` annotation. The value will be the `hostname` field in the `servicePublishingStrategy` for that type. The CPO uses this name blindly for the service endpoints and assumes that if `hostname` is set, there is some mechanism external-dns or otherwise, that will create the DNS records.
 
-```
-  platform:
-    aws:
-      endpointAccess: PublicAndPrivate
-...
-  services:
-  - service: APIServer
-    servicePublishingStrategy:
-      route:
-        hostname: api-example.service-provider-domain.com
-      type: Route
-  - service: OAuthServer
-    servicePublishingStrategy:
-      route:
-        hostname: oauth-example.service-provider-domain.com
-      type: Route
-  - service: Konnectivity
-    servicePublishingStrategy:
-      type: Route
-  - service: Ignition
-    servicePublishingStrategy:
-      type: Route
-```
-
-When the `Services` and `Routes` are created by the Control Plane Operator (CPO), it will annotate them with the `external-dns.alpha.kubernetes.io/hostname` annotation. The value will be the `hostname` field in the `servicePublishingStrategy` for that type.  The CPO uses this name blindly for the service endpoints and assumes that if `hostname` is set, there is some mechanism external-dns or otherwise, that will create the DNS records.
-
-There is an interaction between the `spec.platform.aws.endpointAccess` and which services are permitted to set `hostname` when using AWS Private clustering.  Only *public* services can have service-level DNS indirection.  Private services use the `hypershift.local` private zone and it is not valid to set `hostname` for `services` that are private for a given `endpointAccess` type.
-
-The following table notes when it is valid to set hostname for a particular `service` and `endpointAccess` combination:
-
-|              | Public | PublicAndPrivate | Private |
-|--------------|--------|------------------|---------|
-| APIServer    | Y      | Y                | N       |
-| OAuthServer  | Y      | Y                | N       |
-| Konnectivity | Y      | N                | N       |
-| Ingition     | Y      | N                | N       |
+For detailed information about service publishing strategies and configuration examples for different endpoint access modes, see the Service Publishing Strategy Reference.
 
 ## Examples of how to deploy a cluster using the CLI and externalDNS
 
@@ -7271,7 +7310,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 ## Cilium
 ### Deployment
 
-In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
+In this scenario we are using the Cilium version v1.15.1 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
@@ -7295,7 +7334,7 @@ In this scenario we are using the Cilium version v1.14.5 which is the last one a
     ~~~sh
     #!/bin/bash
 
-    version="1.14.5"
+    version="1.15.1"
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-03-cilium-ciliumconfigs-crd.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00000-cilium-namespace.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00001-cilium-olm-serviceaccount.yaml
@@ -7550,7 +7589,7 @@ In order for Cilium connectivity test pods to run on OpenShift, a simple custom 
   ~~~
 
   ~~~sh
-  version="1.14.5"
+  version="1.15.1"
   oc apply -n cilium-test -f https://raw.githubusercontent.com/cilium/cilium/${version}/examples/kubernetes/connectivity-check/connectivity-check.yaml
   ~~~
 
@@ -8776,7 +8815,7 @@ where:
 
 Running this command creates:
 
-* 7 User-Assigned Managed Identities (one per cluster component):
+* 8 User-Assigned Managed Identities (one per cluster component):
     - Disk CSI driver
     - File CSI driver
     - Image Registry
@@ -8784,7 +8823,24 @@ Running this command creates:
     - Cloud Provider
     - NodePool Management
     - Network Operator
+    - Control Plane Operator
 * Federated Identity Credentials for each identity, configured with the OIDC issuer
+
+## Private Endpoint Access
+
+The **Control Plane Operator** identity is always created by `create iam azure`. For private
+clusters, this identity is used to manage Private Endpoints, Private DNS zones, VNet links,
+and DNS A records in the guest subscription.
+
+The CPO identity is assigned the **Contributor** role by default, scoped to the managed
+resource group, NSG resource group, and VNet resource group. When using
+`--assign-custom-hcp-roles`, a more restrictive custom role is used instead.
+
+!!! note
+
+    The private endpoint access topology is configured during cluster creation using
+    `--endpoint-access Private` on the `hypershift create cluster azure` command.
+    See Deploy Azure Private Clusters for details.
 
 ## Output Format
 
@@ -8807,9 +8863,15 @@ The output file contains the workload identities in JSON format, directly consum
   "ingress": { ... },
   "cloudProvider": { ... },
   "nodePoolManagement": { ... },
-  "network": { ... }
+  "network": { ... },
+  "controlPlaneOperator": { ... }
 }
 ```
+
+!!! note
+
+    The `controlPlaneOperator` entry is always present. For public clusters, this identity
+    is created but not used by the control plane operator.
 
 ## Using Pre-created Identities
 
@@ -8962,6 +9024,7 @@ hypershift destroy iam azure \
 - Create Azure Infrastructure Separately
 - Azure Workload Identity Setup
 - Self-Managed Azure Overview
+- Deploy Azure Private Clusters — End-to-end guide for private endpoint access
 
 
 ---
@@ -9088,6 +9151,15 @@ where:
 
 * `--assign-identity-roles` enables automatic RBAC role assignment for workload identities
 * `DNS_ZONE_RG` is the name of the resource group containing your public DNS zone
+
+## Creating Infrastructure for Private Clusters
+
+The `create infra azure` command creates the same infrastructure resources regardless of
+endpoint access topology. The private endpoint access topology is configured during cluster
+creation using `--endpoint-access Private` on the `hypershift create cluster azure` command.
+
+See Deploy Azure Private Clusters for the complete
+private cluster setup workflow.
 
 ## Create Workload Identities Separately
 
@@ -9240,6 +9312,18 @@ Your Azure service principal must have the following permissions:
 
 ## Creating the Self-Managed Azure HostedCluster
 
+!!! tip "Alternative: Use `create infra azure` and `create iam azure`"
+
+    This guide creates Azure infrastructure manually with `az` CLI commands for
+    transparency. Alternatively, you can use the HyperShift CLI to automate
+    infrastructure and IAM creation:
+
+    - Create Azure IAM Resources Separately — `hypershift create iam azure`
+    - Create Azure Infrastructure Separately — `hypershift create infra azure`
+
+    The private cluster guide (Deploy Azure Private Clusters)
+    uses these automated commands and is the recommended approach for private topology.
+
 ### Infrastructure Setup
 
 Before creating the HostedCluster, set up the necessary Azure infrastructure:
@@ -9345,6 +9429,14 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
     --workload-identities-file ./workload-identities.json \
     --diagnostics-storage-account-type Managed
 ```
+
+!!! tip "Private Clusters"
+
+    To create a private cluster with Azure Private Link, see
+    Deploy Azure Private Clusters.
+    Private clusters require additional setup: a NAT subnet in the management
+    cluster's VNet, `--endpoint-access Private` flag, and HyperShift operator
+    installation with `--private-platform Azure`.
 
 ### Configuring Azure Marketplace Images
 
@@ -9483,6 +9575,502 @@ hypershift destroy cluster azure \
 
 1. Azure Workload Identity Setup - Workload identities and OIDC issuer setup
 2. Setup Azure Management Cluster for HyperShift - DNS and HyperShift operator setup
+
+---
+
+## Source: docs/content/how-to/azure/deploy-azure-private-clusters.md
+
+---
+title: Deploy Azure private clusters
+---
+
+# Deploying Azure Private Clusters
+
+By default, HyperShift guest clusters are publicly accessible through public DNS
+and the management cluster's default router.
+
+For private clusters on Azure, all communication between worker nodes and the hosted
+control plane occurs over Azure Private Link.
+This guide walks through the process of configuring HyperShift for private cluster
+support on Azure.
+
+!!! note "Tech Preview in OCP 4.22"
+
+    Private self-managed Azure HostedClusters are planned as a Tech Preview feature in OpenShift Container Platform 4.22.
+
+## Before You Begin
+
+This guide assumes you have completed the self-managed Azure setup described in the
+Self-Managed Azure Overview, including:
+
+- An **OpenShift management cluster running on Azure** (not AKS). The private cluster
+  workflow uses `oc get infrastructure cluster` to discover the management cluster's
+  Azure resource group, VNet, and other platform details — these APIs are only available
+  on OpenShift. For AKS-based management clusters, use managed Azure HyperShift (ARO HCP) instead.
+- Azure Workload Identity and OIDC issuer configuration
+- Management cluster with HyperShift operator installed (will be reinstalled with private support)
+- Azure CLI (`az`), HyperShift CLI (`hypershift`), `oc`/`kubectl`, `jq`, and `yq`
+
+## Overview
+
+Private endpoint access uses Azure Private Link Service (PLS) to expose the hosted
+control plane's internal load balancer to the guest cluster's VNet through a Private
+Endpoint. Worker nodes resolve the API server hostname via Private DNS zones that
+point to the Private Endpoint IP.
+
+The workflow has five steps:
+
+1. Prepare a NAT subnet in the management cluster's VNet
+2. Install the HyperShift operator with private platform support
+3. Create IAM resources
+4. Create infrastructure
+5. Create the private HostedCluster
+
+## Step 1: Prepare the NAT Subnet
+
+Azure Private Link Service requires a dedicated subnet for NAT IP allocation. This
+subnet must be in the **management cluster's VNet** and must have
+`privateLinkServiceNetworkPolicies` disabled.
+
+!!! note "Region Requirement"
+
+    The Private Link Service, NAT subnet, and management cluster's internal load balancer
+    must all be in the **same Azure region**. The PLS is automatically created in the
+    HostedCluster's configured location. Azure will reject PLS creation if the NAT subnet
+    is in a different region.
+
+First, identify the management cluster's VNet:
+
+```bash
+# Get the management cluster's infrastructure resource group
+MGMT_INFRA_RG=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.azure.resourceGroupName}')
+
+# Find the VNet in the infrastructure resource group
+MGMT_VNET_NAME=$(az network vnet list --resource-group "${MGMT_INFRA_RG}" --query "[0].name" -o tsv)
+MGMT_VNET_RG="${MGMT_INFRA_RG}"
+```
+
+Create the NAT subnet:
+
+```bash
+NAT_SUBNET_NAME="pls-nat-subnet"
+
+# Check existing address space and subnets to choose a non-overlapping CIDR
+az network vnet show \
+    --resource-group "${MGMT_VNET_RG}" \
+    --name "${MGMT_VNET_NAME}" \
+    --query '{addressSpace: addressSpace.addressPrefixes, subnets: subnets[].{name: name, prefix: addressPrefix}}' \
+    -o json
+
+az network vnet subnet create \
+    --resource-group "${MGMT_VNET_RG}" \
+    --vnet-name "${MGMT_VNET_NAME}" \
+    --name "${NAT_SUBNET_NAME}" \
+    --address-prefixes 10.1.64.0/24 \
+    --disable-private-link-service-network-policies true
+```
+
+!!! warning "Choose a Non-Overlapping CIDR"
+
+    The `10.1.64.0/24` address prefix above is an **example only**. You must choose a
+    CIDR range that does not overlap with any existing subnets in the management cluster's
+    VNet. Check the VNet's address space and existing subnets before creating the NAT
+    subnet. If the management cluster's VNet uses `10.0.0.0/16`, the NAT subnet must
+    fall within that range (e.g., `10.0.64.0/24`) or you must first expand the VNet's
+    address space.
+
+Get the NAT subnet resource ID for later use:
+
+```bash
+NAT_SUBNET_ID=$(az network vnet subnet show \
+    --resource-group "${MGMT_VNET_RG}" \
+    --vnet-name "${MGMT_VNET_NAME}" \
+    --name "${NAT_SUBNET_NAME}" \
+    --query id -o tsv)
+```
+
+!!! important
+
+    The NAT subnet **must** be in the management cluster's VNet, not the guest VNet.
+    This is because the Private Link Service is created alongside the management
+    cluster's internal load balancer.
+
+!!! note
+
+    The `--disable-private-link-service-network-policies true` flag is required.
+    Without it, Azure will reject PLS creation on this subnet.
+
+## Step 2: Install HyperShift Operator with Private Platform Support
+
+To support private clusters, the HyperShift operator must be installed with
+additional flags that configure Azure Private Link Service management.
+
+You need credentials that allow the operator to manage PLS resources:
+
+```bash
+# Azure credentials file for PLS management (same format as standard Azure creds)
+AZURE_PRIVATE_CREDS="/path/to/azure-private-credentials.json"
+
+# Management cluster's infrastructure resource group
+MGMT_INFRA_RG=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.azure.resourceGroupName}')
+```
+
+Install the operator with private platform support. The private-specific flags are
+added **in addition to** the standard install flags (External DNS, pull secret, etc.):
+
+```bash
+hypershift install \
+    --pull-secret ${PULL_SECRET} \
+    --private-platform Azure \
+    --azure-private-creds ${AZURE_PRIVATE_CREDS} \
+    --azure-pls-resource-group ${MGMT_INFRA_RG} \
+    # ... include your standard install flags (External DNS, etc.)
+```
+
+| Flag | Description |
+|------|-------------|
+| `--private-platform Azure` | Enables Azure Private Link Service management in the operator |
+| `--azure-private-creds` | Path to Azure credentials file used for PLS operations |
+| `--azure-pls-resource-group` | Resource group where PLS resources will be created (the management cluster's infrastructure RG) |
+
+**Alternative authentication methods** (use one of these instead of `--azure-private-creds`):
+
+| Flag | Description |
+|------|-------------|
+| `--azure-private-secret` | Name of an existing Kubernetes secret containing Azure credentials (use with `--azure-private-secret-key` to specify the key, default: `credentials`) |
+| `--azure-pls-managed-identity-client-id` | Client ID of a managed identity for PLS operations via Azure Workload Identity federation (requires `--azure-pls-subscription-id`) |
+| `--azure-pls-subscription-id` | Azure subscription ID for PLS operations (required with `--azure-pls-managed-identity-client-id`) |
+
+!!! warning "Choose One Authentication Method"
+
+    The three authentication methods (`--azure-private-creds`, `--azure-private-secret`,
+    `--azure-pls-managed-identity-client-id`) are **mutually exclusive**. Use exactly one.
+
+!!! important "Re-install Required for Private Support"
+
+    If you already installed HyperShift without `--private-platform Azure`, you **must**
+    re-run `hypershift install` with the private platform flags before creating any
+    private clusters. The operator will not watch `AzurePrivateLinkService` CRs until
+    configured with private platform support. You can safely re-run `hypershift install`
+    to update the existing installation.
+
+## Step 3: Create IAM Resources
+
+Create workload identities for the cluster. The `create iam azure` command always creates
+a Control Plane Operator identity, which is used by private clusters to manage Private
+Endpoints and Private DNS zones in the guest subscription.
+
+```bash
+PREFIX="your-prefix"
+CLUSTER_NAME="${PREFIX}-hc"
+RESOURCE_GROUP_NAME="${CLUSTER_NAME}-${PREFIX}"
+LOCATION="eastus"
+AZURE_CREDS="/path/to/azure-credentials.json"
+OIDC_ISSUER_URL="https://yourstorageaccount.blob.core.windows.net/yourstorageaccount"
+WORKLOAD_IDENTITIES_FILE="./workload-identities.json"
+
+hypershift create iam azure \
+    --name "${CLUSTER_NAME}" \
+    --infra-id "${PREFIX}" \
+    --azure-creds "${AZURE_CREDS}" \
+    --location "${LOCATION}" \
+    --resource-group-name "${RESOURCE_GROUP_NAME}" \
+    --oidc-issuer-url "${OIDC_ISSUER_URL}" \
+    --output-file "${WORKLOAD_IDENTITIES_FILE}"
+```
+
+The command creates 8 workload identities, including the Control Plane Operator identity:
+
+| Identity | Operator | Azure Role | Scopes |
+|----------|----------|------------|--------|
+| **Control Plane Operator** | CPO | Contributor (default) or Custom HCP Role | Managed RG, NSG RG, VNet RG |
+
+This identity allows the CPO to create and manage Private Endpoints, Private DNS zones,
+VNet links, and DNS A records in the guest subscription.
+
+!!! note
+
+    The CPO identity is assigned the **Contributor** role by default. When using
+    `--assign-custom-hcp-roles`, a more restrictive custom role is used instead.
+
+## Step 4: Create Infrastructure
+
+Create the Azure infrastructure. The `create infra azure` command creates the same
+resources regardless of endpoint access topology:
+
+```bash
+DNS_ZONE_RG_NAME="os4-common"
+PARENT_DNS_ZONE="your-base.domain.com"
+INFRA_OUTPUT_FILE="${PREFIX}-infra-output.json"
+
+hypershift create infra azure \
+    --azure-creds "${AZURE_CREDS}" \
+    --infra-id "${PREFIX}" \
+    --name "${CLUSTER_NAME}" \
+    --location "${LOCATION}" \
+    --base-domain "${PARENT_DNS_ZONE}" \
+    --dns-zone-rg-name "${DNS_ZONE_RG_NAME}" \
+    --workload-identities-file "${WORKLOAD_IDENTITIES_FILE}" \
+    --assign-identity-roles \
+    --output-file "${INFRA_OUTPUT_FILE}"
+```
+
+## Step 5: Create the Private HostedCluster
+
+Read the infrastructure output to get the resource IDs created in Step 4:
+
+```bash
+MANAGED_RG_NAME=$(yq -r -p yaml '.resourceGroupName' "${INFRA_OUTPUT_FILE}")
+VNET_ID=$(yq -r -p yaml '.vnetID' "${INFRA_OUTPUT_FILE}")
+SUBNET_ID=$(yq -r -p yaml '.subnetID' "${INFRA_OUTPUT_FILE}")
+NSG_ID=$(yq -r -p yaml '.securityGroupID' "${INFRA_OUTPUT_FILE}")
+```
+
+Create the private HostedCluster:
+
+```bash
+hypershift create cluster azure \
+    --name "$CLUSTER_NAME" \
+    --namespace "clusters" \
+    --azure-creds ${AZURE_CREDS} \
+    --location ${LOCATION} \
+    --node-pool-replicas 2 \
+    --base-domain ${PARENT_DNS_ZONE} \
+    --pull-secret ${PULL_SECRET} \
+    --generate-ssh \
+    --release-image ${RELEASE_IMAGE} \
+    --resource-group-name "${MANAGED_RG_NAME}" \
+    --vnet-id "${VNET_ID}" \
+    --subnet-id "${SUBNET_ID}" \
+    --network-security-group-id "${NSG_ID}" \
+    --sa-token-issuer-private-key-path "${SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}" \
+    --oidc-issuer-url "${OIDC_ISSUER_URL}" \
+    --dns-zone-rg-name ${DNS_ZONE_RG_NAME} \
+    --assign-service-principal-roles \
+    --workload-identities-file ${WORKLOAD_IDENTITIES_FILE} \
+    --diagnostics-storage-account-type Managed \
+    --external-dns-domain ${DNS_ZONE_NAME} \
+    --endpoint-access Private \
+    --endpoint-access-private-nat-subnet-id "${NAT_SUBNET_ID}"
+```
+
+!!! note
+
+    The `--endpoint-access` flag accepts three values:
+
+    - `Public` (default): API server accessible via public endpoint only
+    - `PublicAndPrivate`: API server accessible via both public and private endpoints
+    - `Private`: API server accessible only via Private Link (private endpoint)
+
+!!! warning "Endpoint Access Type is Immutable"
+
+    You **cannot** change a cluster between `Public` and non-Public (`Private` or
+    `PublicAndPrivate`) after creation. Transitions between `PublicAndPrivate` and
+    `Private` are allowed, but switching from `Public` to `Private` (or vice versa)
+    requires creating a new cluster.
+
+!!! tip "Additional Allowed Subscriptions"
+
+    If you need to allow Private Endpoint connections from Azure subscriptions other
+    than the guest cluster's own subscription, use the
+    `--endpoint-access-private-additional-allowed-subscriptions` flag:
+
+    ```bash
+    --endpoint-access-private-additional-allowed-subscriptions "sub-id-1,sub-id-2"
+    ```
+
+## Verify Private Connectivity
+
+After creating the cluster, monitor the Private Link Service setup progress:
+
+```bash
+# Check AzurePrivateLinkService resources
+oc get azureprivatelinkservices -n clusters-${CLUSTER_NAME}
+
+# Check detailed status and conditions
+oc get azureprivatelinkservices -n clusters-${CLUSTER_NAME} -o yaml
+```
+
+The conditions should progress through these stages:
+
+| Condition | Description |
+|-----------|-------------|
+| `AzureInternalLoadBalancerAvailable` | Internal load balancer has a frontend IP |
+| `AzurePLSCreated` | Private Link Service created in management cluster |
+| `AzurePrivateEndpointAvailable` | Private Endpoint created in guest VNet |
+| `AzurePrivateDNSAvailable` | Private DNS zones and A records created |
+| `AzurePrivateLinkServiceAvailable` | All components ready, private connectivity available |
+
+Check overall cluster status:
+
+```bash
+oc get hostedcluster ${CLUSTER_NAME} -n clusters
+oc wait --for=condition=Available hostedcluster/${CLUSTER_NAME} -n clusters --timeout=30m
+```
+
+## Access a Private HostedCluster
+
+### Generate a Kubeconfig
+
+```bash
+hypershift create kubeconfig --name ${CLUSTER_NAME} --port-forward > ${CLUSTER_NAME}-kubeconfig
+```
+
+### Port-Forward Method
+
+If you have access to the management cluster, you can port-forward to the API server:
+
+```bash
+# Port-forward the kube-apiserver service
+kubectl port-forward svc/kube-apiserver -n clusters-${CLUSTER_NAME} 6443:6443 &
+
+# Use the kubeconfig (it will connect via localhost:6443)
+KUBECONFIG=${CLUSTER_NAME}-kubeconfig oc get nodes
+```
+
+### VNet-Peered Access
+
+If you have a VM in a VNet that is peered with the guest VNet, you can access the
+API server, but you must first link the Private DNS zones to the peered VNet:
+
+```bash
+# Link the hypershift.local Private DNS zone to your peered VNet
+PEERED_VNET_ID="/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<vnet>"
+
+az network private-dns link vnet create \
+    --resource-group "${MANAGED_RG_NAME}" \
+    --zone-name "${CLUSTER_NAME}.hypershift.local" \
+    --name "peered-vnet-link" \
+    --virtual-network "${PEERED_VNET_ID}" \
+    --registration-enabled false
+
+# If you also need base domain resolution (for OAuth/console):
+az network private-dns link vnet create \
+    --resource-group "${MANAGED_RG_NAME}" \
+    --zone-name "${PARENT_DNS_ZONE}" \
+    --name "peered-vnet-basedomain-link" \
+    --virtual-network "${PEERED_VNET_ID}" \
+    --registration-enabled false
+
+# Then access the cluster
+KUBECONFIG=${CLUSTER_NAME}-kubeconfig oc get nodes
+```
+
+!!! warning "Private DNS Zones Are Only Linked to the Guest VNet"
+
+    The CPO only links Private DNS zones to the **guest cluster's VNet**. If you want
+    to resolve the API server hostname from a peered VNet, you must manually link the
+    Private DNS zones to that VNet as shown above. Without this step, DNS resolution
+    will fail from the peered VNet.
+
+## Cleanup
+
+To delete a private HostedCluster:
+
+```bash
+hypershift destroy cluster azure \
+    --name ${CLUSTER_NAME} \
+    --azure-creds ${AZURE_CREDS} \
+    --resource-group-name ${MANAGED_RG_NAME}
+```
+
+The deletion process automatically cleans up Private Link resources in the correct order:
+
+1. The control plane operator removes the Private Endpoint, Private DNS zones, VNet links, and A records
+2. The HyperShift operator removes the Private Link Service
+
+!!! note "Cleanup Order"
+
+    The dual-finalizer pattern ensures resources are deleted in the correct dependency
+    order. The CPO finalizer runs first (removing guest-side resources), then the HO
+    finalizer runs (removing management-side resources).
+
+## Gotchas and Troubleshooting
+
+### Management Cluster Requirements
+
+- The management cluster **must be an OpenShift cluster running on Azure**, not AKS.
+  Commands like `oc get infrastructure cluster` are used to discover the management
+  cluster's Azure resource group and VNet, and these only work on OpenShift.
+  For AKS-based management clusters, use managed Azure HyperShift (ARO HCP) instead.
+
+- The HyperShift operator **must be installed with `--private-platform Azure`** before
+  creating any private clusters. If you followed the
+  management cluster setup guide without private flags,
+  re-run `hypershift install` with the additional private platform flags.
+
+### NAT Subnet
+
+- The NAT subnet CIDR (`--address-prefixes`) must fall within the management cluster's
+  VNet address space. If the VNet uses `10.0.0.0/16`, a NAT subnet of `10.1.64.0/24`
+  will fail unless you first expand the VNet address space.
+
+- The `--disable-private-link-service-network-policies true` flag is **required** on
+  the NAT subnet. If omitted, Azure will reject PLS creation with an error about
+  network policies. This error is not always obvious — if PLS creation fails, check
+  this setting first:
+
+    ```bash
+    az network vnet subnet show \
+        --resource-group "${MGMT_VNET_RG}" \
+        --vnet-name "${MGMT_VNET_NAME}" \
+        --name "${NAT_SUBNET_NAME}" \
+        --query privateLinkServiceNetworkPolicies
+    ```
+
+    The value must be `"Disabled"`.
+
+### Endpoint Access Immutability
+
+- You **cannot** change a cluster from `Public` to `Private` (or `Private` to `Public`)
+  after creation. The API validation rejects this transition. You can only switch between
+  `PublicAndPrivate` and `Private`.
+
+- If you need to change a public cluster to private, you must create a new cluster with
+  `--endpoint-access Private` from the start.
+
+### Cross-Subscription Scenarios
+
+- If the management cluster and guest cluster are in **different Azure subscriptions**,
+  you must include the guest subscription in the PLS auto-approval list using
+  `--endpoint-access-private-additional-allowed-subscriptions` with the guest's
+  subscription ID.
+
+- The CPO workload identity must also have permissions (Contributor or custom role) in
+  the guest subscription's resource groups to create Private Endpoints and DNS resources.
+
+### Private DNS Resolution
+
+- Private DNS zones are only linked to the **guest cluster's VNet**. If you need to
+  access the API server from a peered VNet, you must manually link the Private DNS
+  zones to that VNet (see VNet-Peered Access above).
+
+- Two Private DNS zones are created:
+    1. `<clusterName>.hypershift.local` — synthetic internal zone with `api` and `*.apps` records
+    2. `<baseDomain>` — base domain zone with `api-<clusterName>` and `oauth-<clusterName>` records
+
+### Condition Debugging
+
+If the cluster gets stuck, check the `AzurePrivateLinkService` CR conditions:
+
+```bash
+oc get azureprivatelinkservices -n clusters-${CLUSTER_NAME} -o jsonpath='{.items[0].status.conditions}' | jq .
+```
+
+| Stuck Condition | Likely Cause |
+|-----------------|-------------|
+| `AzureInternalLoadBalancerAvailable` = False | The `private-router` Service hasn't received an ILB IP yet. Check the Service status and Azure networking. |
+| `AzurePLSCreated` = False | PLS creation failed. Check NAT subnet policies, credentials, and the HO operator logs. |
+| `AzurePrivateEndpointAvailable` = False | PE creation failed or connection not approved. Check the PLS auto-approval list and CPO logs. |
+| `AzurePrivateDNSAvailable` = False | DNS zone or record creation failed. Check CPO identity permissions in the guest subscription. |
+
+## Related Documentation
+
+- Azure Private Link Architecture - Detailed architecture reference
+- Self-Managed Azure Overview - Complete self-managed Azure guide
+- Create a Self-Managed Azure HostedCluster - Standard (public) cluster creation
+- Azure Self-Managed Infrastructure Reference - Infrastructure details
+
 
 ---
 
@@ -10192,6 +10780,7 @@ This phase creates your actual hosted OpenShift clusters:
 - **Infrastructure Provisioning**: Creates resource groups, VNets, subnets, and network security groups
 - **HostedCluster Creation**: Deploys the control plane on the management cluster and worker nodes in your Azure subscription
 - **Workload Identity Integration**: Links the hosted cluster to the workload identities created in Phase 1
+- **Private Endpoint Access** (Optional): Configures Azure Private Link for private API server connectivity
 
 **Why This Matters**: This is where you deploy the actual OpenShift clusters that your applications will run on. Each hosted cluster gets its own control plane running on the management cluster and its own set of worker node VMs in Azure. The cluster uses the workload identities from Phase 1 to securely access Azure services without storing credentials.
 
@@ -10257,6 +10846,7 @@ Self-managed Azure HyperShift implements several security best practices:
 2. **Least Privilege Access**: Each component gets its own managed identity with minimal required permissions
 3. **Network Isolation**: Custom VNets and NSGs allow you to implement network segmentation and security policies
 4. **Federated Credentials**: Trust relationships are scoped to specific service accounts, preventing unauthorized access
+5. **Private Connectivity** (Optional): Azure Private Link provides private API server access, ensuring control plane traffic never traverses the public internet. See Deploy Azure Private Clusters
 
 ## Next Steps
 
@@ -10517,11 +11107,36 @@ Verify your installation:
     # operator-xxxxx-xxxxx     1/1     Running   0          1m
     ```
 
+## Private Cluster Support (Optional)
+
+If you plan to create private clusters with Azure Private Link, the HyperShift operator
+must be installed with additional flags for Private Link Service management. See
+Deploy Azure Private Clusters for the full guide,
+but the key difference is adding these flags to the `hypershift install` command:
+
+```bash
+hypershift install \
+    --private-platform Azure \
+    --azure-private-creds /path/to/azure-private-credentials.json \
+    --azure-pls-resource-group ${MGMT_INFRA_RG} \
+    # ... include your standard install flags from above
+```
+
+!!! important
+
+    The `--private-platform Azure` flag **must** be set during operator installation.
+    If you install without it, you must re-run `hypershift install` with the private
+    flags before creating any private clusters.
+
+See Deploy Azure Private Clusters - Step 2
+for complete details and alternative authentication methods.
+
 ## Next Steps
 
 Once the management cluster is set up, create hosted clusters:
 
 - Create a Self-Managed Azure HostedCluster - Includes guidance for both DNS approaches
+- Deploy Azure Private Clusters - Configure private endpoint access with Azure Private Link
 
 ---
 
@@ -10608,13 +11223,14 @@ This document describes the AI-assisted CI jobs that help automate issue resolut
 
 ## Overview
 
-HyperShift uses two AI-assisted CI jobs powered by Claude Code to help with development workflows:
+HyperShift uses AI-assisted CI jobs powered by Claude Code to help with development workflows:
 
 | Job | Purpose | Schedule |
 |-----|---------|----------|
 | `periodic-jira-agent` | Analyzes Jira issues and creates draft PRs with fixes | Weekly on Mondays at 8:30 AM UTC |
 | `periodic-review-agent` | Addresses PR review comments on agent-created PRs | Every 3 hours (8:00-23:00 UTC) daily |
 | `address-review-comments` | On-demand job to address review comments on a single PR | Triggered via `/test address-review-comments` |
+| `periodic-hypershift-dependabot-triage` | Consolidates open dependabot PRs into a single weekly PR | Weekly on Fridays at 12:00 UTC |
 
 ### Usage Scope
 
@@ -10808,6 +11424,100 @@ flowchart TD
 
 ---
 
+## Dependabot Triage Agent
+
+### Overview
+
+The Dependabot Triage Agent (`periodic-hypershift-dependabot-triage`) automatically consolidates open dependabot PRs into a single weekly pull request, reducing noise and simplifying dependency updates.
+
+- **Job name**: `periodic-hypershift-dependabot-triage`
+- **Schedule**: Weekly on Fridays at 12:00 UTC (`0 12 * * 5`)
+- **Process timeout**: 2 hours
+- **Max agentic turns**: 100
+- **Jira**: CNTRLPLANE-2588
+- **Prow config PR**: openshift/release#73790
+
+### How It Works
+
+1. **Setup**: Verifies Claude Code CLI availability
+2. **PR Discovery**: Queries all open dependabot PRs via `gh pr list` on the `openshift/hypershift` repository
+3. **Filtering**: Excludes PRs that bump `k8s.io` or `sigs.k8s.io` dependencies (these are managed manually as part of coordinated Kubernetes rebases)
+4. **Processing**: Invokes Claude Code to process each PR individually:
+      - Cherry-picks commits onto a consolidation branch
+      - Runs `make verify` and `make test` after each PR
+      - Resets and skips any PR that fails validation
+5. **Commit Reorganization** (deterministic bash, not LLM): Flattens all cherry-pick commits via `git reset` and reorganizes into logical groups:
+      1. Root `go.mod`/`go.sum`
+      2. Root `vendor/`
+      3. `api/go.mod`/`api/go.sum`
+      4. `api/vendor/`
+      5. `hack/tools/go.mod`/`hack/tools/go.sum`
+      6. `hack/tools/vendor/`
+      7. Regenerated CRD assets (`cmd/install/assets/`)
+      8. Remaining generated files
+      Empty groups are skipped automatically.
+6. **Final Validation**: Runs two-pass `make verify` and `make test` on the consolidated branch
+7. **Output**: Creates a single consolidated PR from `hypershift-community:fix/weekly-dependabot-consolidation` to `openshift/hypershift`
+8. **Reporting**: Generates an HTML report with token usage, cost breakdown, and detailed output
+
+### Data Flow
+
+```mermaid
+flowchart TD
+    subgraph "Prow CI Environment"
+        A[Periodic Job Trigger<br/>Weekly Friday 12:00 UTC] --> B[Setup Step]
+        B --> C[Process Step]
+        C --> D[Report Step]
+
+        subgraph "Process Step"
+            C --> E[Generate GitHub App Tokens]
+            E --> F[Clone Fork<br/>hypershift-community/hypershift]
+            F --> G[Query Open Dependabot PRs]
+            G --> H{PRs Found?}
+            H -->|No| I[Exit Successfully]
+            H -->|Yes| J[Filter Out k8s.io Bumps]
+            J --> K[For Each PR]
+            K --> L[Cherry-pick + Validate<br/>make verify & make test]
+            L --> M{Passed?}
+            M -->|Yes| N[Keep on Branch]
+            M -->|No| O[Reset & Skip]
+            N --> P{More PRs?}
+            O --> P
+            P -->|Yes| K
+            P -->|No| Q[Reorganize Commits<br/>Deterministic Bash]
+            Q --> R[Final Validation<br/>make verify & make test]
+            R --> S[Create PR]
+        end
+    end
+
+    subgraph "External Systems"
+        G <--> GH[(GitHub API<br/>github.com)]
+        L <--> CLAUDE[Claude API<br/>via Vertex AI]
+        S <--> FORK[(GitHub Fork<br/>hypershift-community)]
+        S <--> UPSTREAM[(GitHub Upstream<br/>openshift/hypershift)]
+    end
+```
+
+### Configuration
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| Schedule | `0 12 * * 5` | Fridays at 12:00 UTC (7:00 AM ET) |
+| Process timeout | 2 hours | Maximum time for the process step |
+| Max Claude turns | 100 | Maximum agentic turns per run |
+| Excluded deps | `k8s.io`, `sigs.k8s.io` | Dependencies managed via manual Kubernetes rebases |
+
+### What Gets Excluded
+
+Dependabot PRs bumping the following module prefixes are **automatically skipped**:
+
+- `k8s.io/*` - Core Kubernetes libraries
+- `sigs.k8s.io/*` - Kubernetes SIG libraries
+
+These dependencies are updated manually as part of coordinated Kubernetes version rebases to ensure compatibility across the full dependency tree.
+
+---
+
 ## User Guide
 
 ### Submitting Issues for Processing
@@ -10824,9 +11534,10 @@ The issue will be picked up on the next weekly run (Mondays at 8:30 AM UTC).
 
 ### Viewing AI-Generated Output
 
-Track PRs created by the Jira Agent:
+Track PRs created by the AI agents:
 
-- **PR List**: github.com/openshift/hypershift/pulls?q=is:pr+author:app/hypershift-jira-solve-ci
+- **Jira Agent PRs**: github.com/openshift/hypershift/pulls?q=is:pr+author:app/hypershift-jira-solve-ci
+- **Dependabot Triage PRs**: github.com/openshift/hypershift/pulls?q=is:pr+head:fix/weekly-dependabot-consolidation
 
 PRs are created as **drafts** and require human review before merging.
 
@@ -10853,7 +11564,7 @@ This runs the review agent for that specific PR only.
 
 - **AI may produce incorrect or incomplete solutions** - always review carefully
 - **Complex issues may not be fully addressed** - multi-faceted problems may need human intervention
-- **Rate limited**: 1 issue per weekly run (jira-agent), 10 PRs per run (review-agent)
+- **Rate limited**: 1 issue per weekly run (jira-agent), 10 PRs per run (review-agent), all non-k8s dependabot PRs per run (dependabot-triage)
 - **Cannot access private resources** - no access to internal systems beyond Jira/GitHub
 - **Cannot execute destructive operations** - no ability to delete resources or force-push
 - **Maximum agentic turns**: 100 per issue (jira-agent), 100 per PR (review-agent)
@@ -11120,6 +11831,104 @@ Understanding the CI infrastructure helps when:
 - Boskos configuration
 - HyperShift CI config
 - CI Dashboard
+
+
+---
+
+## Source: docs/content/how-to/ci/docs-preview.md
+
+# Documentation Preview
+
+When a pull request modifies files under `docs/`, a GitHub Actions workflow automatically builds the documentation and deploys a preview to Cloudflare Pages.
+
+## How It Works
+
+The workflow uses `pull_request_target` with two jobs to securely handle fork PRs:
+
+1. **Build** — checks out the PR code and builds the docs with MkDocs in strict mode. This job has no access to secrets.
+2. **Deploy** — downloads the built artifact and deploys it to Cloudflare Pages. This job has access to the `docs-preview` environment secrets but never executes PR code.
+
+GitHub shows a **View deployment** link in the PR timeline via the `docs-preview` environment.
+
+The preview is available at `https://pr-<number>.hypershift.pages.dev`.
+
+## Configuration
+
+The workflow is defined in `.github/workflows/docs-preview.yaml` and runs on self-hosted ARC runners.
+
+It requires two secrets configured on the `docs-preview` GitHub Environment:
+
+| Secret | Description |
+|--------|-------------|
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
+| `CLOUDFLARE_API_TOKEN` | API token with Cloudflare Pages edit permissions |
+
+## Local Preview
+
+To preview documentation locally:
+
+```bash
+cd docs
+pip install -r requirements.txt
+mkdocs serve
+```
+
+Then open http://127.0.0.1:8000.
+
+
+---
+
+## Source: docs/content/how-to/ci/sync-community-fork.md
+
+# Sync Community Fork
+
+A GitHub Actions workflow automatically pushes every commit on `main` to the hypershift-community/hypershift fork.
+
+## How It Works
+
+The workflow is defined in `.github/workflows/sync-community-fork.yaml`. On every push to `main` it checks out the repository using a fine-grained Personal Access Token (PAT) and runs `git push` to the community fork. The PAT is used instead of the default `GITHUB_TOKEN` because the latter only has access to the source repository.
+
+## Configuration
+
+The workflow requires one secret configured at the repository level:
+
+| Secret | Description |
+|--------|-------------|
+| `COMMUNITY_FORK_TOKEN` | Fine-grained GitHub PAT with push access to `hypershift-community/hypershift` |
+
+### Creating the Token
+
+1. Go to **Settings > Developer settings > Personal access tokens > Fine-grained tokens**.
+2. Click **Generate new token**.
+3. Set **Resource owner** to the `hypershift-community` organization.
+4. Under **Repository access**, select **Only select repositories** and choose `hypershift-community/hypershift`.
+5. Grant **no organization permissions**.
+6. Grant the following **repository permissions**:
+   - Metadata — **Read**
+   - Contents — **Read and write**
+   - Pull requests — **Read and write**
+   - Workflows — **Read and write**
+7. Click **Generate token** and copy the value.
+
+### Rotating the Token
+
+1. Create a new token following the steps above.
+2. Update the repository secret using one of the following options:
+
+   **Option A — GitHub CLI:**
+
+   ```bash
+   gh secret set COMMUNITY_FORK_TOKEN --repo openshift/hypershift
+   ```
+
+   This will prompt you to paste the new token value.
+
+   **Option B — Web UI:**
+
+   In the `openshift/hypershift` repository, go to **Settings > Secrets and variables > Actions** and update the `COMMUNITY_FORK_TOKEN` secret with the new token value.
+
+3. Verify the workflow runs successfully on the next push to `main`.
+4. Delete the old token from your GitHub account.
 
 
 ---
@@ -12374,32 +13183,7 @@ This guide outlines the steps for performing disaster recovery on a Hosted Clust
 
 ## Pre-requisites
 
-Ensure the following prerequisites are met on the Management cluster (connected or disconnected):
-
-- A valid StorageClass.
-- Cluster-admin access.
-- Access to the openshift-adp version 1.5+ subscription via a CatalogSource.
-- Access to online storage compatible with OpenShift ADP cloud storage providers (e.g., S3, Azure, GCP, MinIO).
-- HostedControlPlane pods are accessible and functioning correctly.
-- The HostedCluster should be PublicAndPrivate or Private.
-- The Public only clusters should have at least a hostname.
-
-!!! warning "⚠️ HostedCluster Configuration"
-
-    The HostedCluster must be configured as `PublicAndPrivate`, `Private`, or `Public` with a fixed hostname for the kube-api-server. Public clusters without a hostname will cause restore failures. See HostedCluster Configuration Requirements for details.
-
-!!! Note "Note for Bare Metal Providers"
-
-    Since the InfraEnv has a different lifecycle than the HostedCluster, it should reside in a separate namespace from the HostedControlPlane and must not be deleted during backup or restore procedures.
-
-
-!!! important
-
-    Before proceeding further, two crucial points must be noted:
-
-    1. Restoration will occur in a green field environment, signifying that after the HostedCluster has been backed up, it must be destroyed to initiate the restoration process.
-
-    2. Node reprovisioning will take place, necessitating the backup of workloads in the Data Plane before deleting the HostedCluster..
+Please review the Disaster Recovery Prerequisites page before proceeding. It covers all general requirements, HostedCluster service publishing strategy configuration (critical for cross-management-cluster restore), and platform-specific considerations.
 
 ## Deploying OpenShift ADP
 
@@ -13260,66 +14044,7 @@ velero delete backup hc-clusters-hosted-backup
 
 ## HostedCluster Configuration Requirements
 
-The HostedCluster must be configured as `PublicAndPrivate`, `Private`, or `Public` with a fixed hostname for backup/restore operations to work correctly. If the HostedCluster is configured as `Public` without a hostname in the ServicePublishingStrategy for the kube-api-server, the restore operation will fail with the following consequences:
-
-- **Nodes remain in NotReady state**
-- **NodePool scaling fails to generate new nodes**
-
-### Root Cause
-
-The issue occurs because:
-
-- Nodes store the ELB (Elastic Load Balancer) address in their kubelet configuration, which is ephemeral and changes when the cluster is deleted and restored
-- The SAN (Subject Alternative Name) in the certificate fails because the certificate name no longer matches the new ELB
-- Original nodes cannot connect to the ControlPlane because they point to the old ELB, and even if they pointed to the new one, the certificate would be incorrect
-
-### Solution
-
-Ensure your HostedCluster is configured with either:
-
-- `PublicAndPrivate` service publishing strategy, OR
-- `Private` service publishing strategy, OR
-- `Public` service publishing strategy with a **hostname** specified for the kube-api-server
-
-### AWS Self-Managed Platform Requirements
-
-!!! important "AWS Self-Managed Platforms"
-
-    When using AWS platform with self-managed infrastructure, the `Public` endpoint access option with a **Route** service publishing strategy and a **fixed hostname** is required. This is a specific case of the `Public` with hostname option described above.
-
-    This ensures that:
-    - Node workloads can be properly migrated to new nodes in the restored NodePools
-    - Service continuity is maintained during the disaster recovery process
-    - DNS resolution remains consistent for applications
-
-### Example Configuration
-
-**Public endpoint access with Route hostname (required for AWS self-managed platforms)**
-```yaml
-spec:
-  platform:
-    aws:
-      endpointAccess: Public
-  services:
-  - service: APIServer
-    servicePublishingStrategy:
-      type: Route
-      route:
-        hostname: api.example.com
-```
-
-### Fixing OIDC After Restore
-
-After completing the OADP restore, if the control-plane-operator reports `WebIdentityErr` errors or NodePool nodes remain not-ready due to a missing default security group, run the OIDC disaster recovery command:
-
-```bash
-hypershift fix dr-oidc-iam \
-  --hc-name <cluster-name> \
-  --hc-namespace <namespace> \
-  --aws-creds ~/.aws/credentials
-```
-
-This re-uploads the OIDC discovery documents using the existing cluster signing key and recreates the IAM OIDC provider if needed. See the AWS Disaster Recovery documentation for full details.
+For detailed information about HostedCluster service publishing strategy requirements, including example configurations and platform-specific considerations, see the Disaster Recovery Prerequisites page.
 
 
 ---
@@ -13336,25 +14061,7 @@ In this section, we will outline the procedures for performing disaster recovery
 
 ## Pre-requisites
 
-The first consideration is to ensure we meet the prerequisites. On the Management cluster, whether it is Connected or Disconnected, we require:
-
-- A valid StorageClass.
-- Cluster-admin access.
-- Access to the openshift-adp subscription through a CatalogSource.
-- Access to online storage compatible with the openshift-adp cloud storage providers (S3, Azure, GCP, Minio, etc.).
-- The HostedControlPlane pods should be accessible and functioning correctly.
-- **(Bare Metal Provider Only)** As the InfraEnv has a different lifecycle than the HostedCluster, it should reside in a namespace separate from that of the HostedControlPlane and should not be deleted during the backup/restore procedures.
-
-!!! warning "⚠️ HostedCluster Configuration"
-
-    The HostedCluster must be configured as `PublicAndPrivate`, `Private`, or `Public` with a fixed hostname for the kube-api-server. Public clusters without a hostname will cause restore failures. See HostedCluster Configuration Requirements for details.
-
-
-!!! important
-
-    Before proceeding further, two crucial points must be noted:
-    1. Restoration will occur in a green field environment, signifying that after the HostedCluster has been backed up, it must be destroyed to initiate the restoration process.
-    2. Node reprovisioning will take place, necessitating the backup of workloads in the Data Plane before deleting the HostedCluster..
+Please review the Disaster Recovery Prerequisites page before proceeding. It covers all general requirements, HostedCluster service publishing strategy configuration (critical for cross-management-cluster restore), and platform-specific considerations.
 
 ## Openshift-adp deployment
 
@@ -14210,68 +14917,9 @@ velero delete backup hc-clusters-hosted-backup
 
     If you modify the folder structure of the remote storage where your backups are hosted, you may encounter issues with `backuprepositories.velero.io`. In such cases, you will need to recreate all the associated objects, including DPAs, backups, restores, etc.
 
-## HostedCluster Configuration Requirements for AWS provider
+## HostedCluster Configuration Requirements
 
-The HostedCluster must be configured as `PublicAndPrivate`, `Private`, or `Public` with a fixed hostname for backup/restore operations to work correctly. If the HostedCluster is configured as `Public` without a hostname in the ServicePublishingStrategy for the kube-api-server, the restore operation will fail with the following consequences:
-
-- **Nodes remain in NotReady state**
-- **NodePool scaling fails to generate new nodes**
-
-### Root Cause
-
-The issue occurs because:
-
-- Nodes store the ELB (Elastic Load Balancer) address in their kubelet configuration, which is ephemeral and changes when the cluster is deleted and restored
-- The SAN (Subject Alternative Name) in the certificate fails because the certificate name no longer matches the new ELB
-- Original nodes cannot connect to the ControlPlane because they point to the old ELB, and even if they pointed to the new one, the certificate would be incorrect
-
-### Solution
-
-Ensure your HostedCluster is configured with either:
-
-- `PublicAndPrivate` service publishing strategy, OR
-- `Private` service publishing strategy, OR
-- `Public` service publishing strategy with a **hostname** specified for the kube-api-server
-
-### AWS Self-Managed Platform Requirements
-
-!!! important "AWS Self-Managed Platforms"
-
-    When using AWS platform with self-managed infrastructure, the `Public` endpoint access option with a **Route** service publishing strategy and a **fixed hostname** is required. This is a specific case of the `Public` with hostname option described above.
-
-    This ensures that:
-    - Node workloads can be properly migrated to new nodes in the restored NodePools
-    - Service continuity is maintained during the disaster recovery process
-    - DNS resolution remains consistent for applications
-
-### Example Configuration
-
-**Public endpoint access with Route hostname (required for AWS self-managed platforms)**
-```yaml
-spec:
-  platform:
-    aws:
-      endpointAccess: Public
-  services:
-  - service: APIServer
-    servicePublishingStrategy:
-      type: Route
-      route:
-        hostname: api.example.com
-```
-
-### Fixing OIDC After Restore
-
-After completing the OADP restore, if the control-plane-operator reports `WebIdentityErr` errors or NodePool nodes remain not-ready due to a missing default security group, run the OIDC disaster recovery command:
-
-```bash
-hypershift fix dr-oidc-iam \
-  --hc-name <cluster-name> \
-  --hc-namespace <namespace> \
-  --aws-creds ~/.aws/credentials
-```
-
-This re-uploads the OIDC discovery documents using the existing cluster signing key and recreates the IAM OIDC provider if needed. See the AWS Disaster Recovery documentation for full details.
+For detailed information about HostedCluster service publishing strategy requirements, including example configurations and platform-specific considerations, see the Disaster Recovery Prerequisites page.
 
 
 
@@ -14427,6 +15075,7 @@ By default, the backup includes the following resources. The exact set of resour
 
 **Additional Resources (always included):**
 - Routes (`routes.route.openshift.io`), ClusterDeployments (`clusterdeployments.hive.openshift.io`)
+- NMStateConfig (`nmstateconfigs.agent-install.openshift.io`)
 
 **Platform-Specific Resources (automatically detected):**
 
@@ -14496,6 +15145,7 @@ The following table lists all available resource types for the `--included-resou
 | | `machines.cluster.x-k8s.io` | Machine resources |
 | **OpenShift** | `routes.route.openshift.io` | OpenShift Routes |
 | | `clusterdeployments.hive.openshift.io` | ClusterDeployment resources |
+| | `nmstateconfigs.agent-install.openshift.io` | NMStateConfig resources |
 
 > **Platform Detection**: When using default resources (no `--included-resources` flag), only the platform-specific resources matching your HostedCluster's platform will be included automatically.
 
@@ -15828,6 +16478,9 @@ This section of the Hypershift documentation contains pages that show how to per
 
 ## Available Guides
 
+### Prerequisites
+Required prerequisites for all disaster recovery operations, including HostedCluster service publishing strategy requirements for cross-management-cluster restore.
+
 ### DR CLI Domain
 Use the HyperShift CLI disaster recovery commands with platform-aware backup creation and OADP integration.
 
@@ -15839,6 +16492,142 @@ Updated procedures and enhanced features for OADP version 1.5.
 
 ### ETCD Recovery
 ETCD disaster recovery procedures for control plane data backup and restoration.
+
+
+---
+
+## Source: docs/content/how-to/disaster-recovery/prerequisites.md
+
+# Disaster Recovery Prerequisites
+
+This page consolidates the prerequisites that must be met before performing any backup/restore operation on a HostedCluster. All disaster recovery guides in this section reference these prerequisites.
+
+## General Prerequisites
+
+Ensure the following requirements are met on the Management cluster (connected or disconnected):
+
+- A valid StorageClass configured in the Management cluster.
+- Cluster-admin access to the Management cluster.
+- Access to online storage compatible with OpenShift ADP cloud storage providers (e.g., S3, Azure, GCP, MinIO).
+- HostedControlPlane pods are accessible and functioning correctly.
+- Access to the `openshift-adp` subscription through a CatalogSource (version depends on the DR procedure you follow).
+
+!!! important
+
+    Before proceeding with any backup/restore procedure, keep in mind:
+
+    1. Restoration will occur in a green field environment. After the HostedCluster has been backed up, it must be destroyed to initiate the restoration process.
+    2. Node reprovisioning will take place. Back up workloads in the Data Plane before deleting the HostedCluster.
+
+## HostedCluster Service Publishing Strategy Requirements
+
+!!! warning "Critical Requirement for Backup/Restore to a Different Management Cluster"
+
+    When restoring a HostedCluster to a **different** Management cluster, all services in the HostedCluster **must** be configured with a fixed hostname in their `servicePublishingStrategy`. This applies to **all platforms** (AWS, Agent, KubeVirt, OpenStack, etc.).
+
+    The most critical service is the **APIServer**, which **must** have a fixed hostname. Without it, the restore will fail and nodes will be unable to rejoin the cluster.
+
+### Why Is This Required?
+
+When a HostedCluster is restored on a different Management cluster:
+
+- The infrastructure endpoints (e.g., Load Balancer addresses, Route URLs) change because they are ephemeral and tied to the original Management cluster.
+- Nodes store the KAS (Kube API Server) address in their kubelet configuration. If that address was an ephemeral Load Balancer or Route URL, nodes will point to the old address after restore.
+- TLS certificates (SAN - Subject Alternative Name) will not match the new ephemeral endpoints, causing certificate validation failures.
+- A fixed hostname configured via DNS allows you to update the DNS record to point to the new Management cluster's endpoint, making the migration transparent for existing nodes.
+
+### Minimum Required Configuration
+
+At a minimum, the **APIServer** service must have a fixed hostname:
+
+```yaml
+spec:
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+      loadBalancer:
+        hostname: api-int.example.com
+```
+
+### Recommended Production Configuration
+
+For production environments, it is strongly recommended to configure **all** services with fixed hostnames:
+
+```yaml
+spec:
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+      loadBalancer:
+        hostname: api-int.example.com
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: oauth.example.com
+  - service: OIDC
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: oidc.example.com
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: konnectivity.example.com
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: ignition.example.com
+```
+
+This ensures full service continuity and DNS consistency during the restore process on a different Management cluster.
+
+### AWS Self-Managed Platform Specifics
+
+When using AWS platform with self-managed infrastructure, the APIServer can also use a **Route** service publishing strategy with a fixed hostname:
+
+```yaml
+spec:
+  platform:
+    aws:
+      endpointAccess: Public
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api.example.com
+```
+
+## Platform-Specific Prerequisites
+
+### Bare Metal / Agent Provider
+
+!!! note "InfraEnv Lifecycle"
+
+    Since the InfraEnv has a different lifecycle than the HostedCluster, it should reside in a namespace separate from that of the HostedControlPlane and must not be deleted during backup or restore procedures.
+
+### AWS Provider
+
+- Ensure OIDC provider configuration is accessible for post-restore fixup (see Fixing OIDC After Restore).
+- If using S3 for backup storage, ensure IAM roles and policies are configured following the official documentation.
+
+## Fixing OIDC After Restore
+
+After completing an OADP restore on AWS, if the control-plane-operator reports `WebIdentityErr` errors or NodePool nodes remain not-ready due to a missing default security group, run the OIDC disaster recovery command:
+
+```bash
+hypershift fix dr-oidc-iam \
+  --hc-name <cluster-name> \
+  --hc-namespace <namespace> \
+  --aws-creds ~/.aws/credentials
+```
+
+This re-uploads the OIDC discovery documents using the existing cluster signing key and recreates the IAM OIDC provider if needed. See the AWS Disaster Recovery documentation for full details.
 
 
 ---
@@ -23157,7 +23946,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 ## Cilium
 ### Deployment
 
-In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
+In this scenario we are using the Cilium version v1.15.1 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
@@ -23181,7 +23970,7 @@ In this scenario we are using the Cilium version v1.14.5 which is the last one a
     ~~~sh
     #!/bin/bash
 
-    version="1.14.5"
+    version="1.15.1"
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-03-cilium-ciliumconfigs-crd.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00000-cilium-namespace.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00001-cilium-olm-serviceaccount.yaml
@@ -23436,7 +24225,7 @@ In order for Cilium connectivity test pods to run on OpenShift, a simple custom 
   ~~~
 
   ~~~sh
-  version="1.14.5"
+  version="1.15.1"
   oc apply -n cilium-test -f https://raw.githubusercontent.com/cilium/cilium/${version}/examples/kubernetes/connectivity-check/connectivity-check.yaml
   ~~~
 
@@ -23663,7 +24452,7 @@ HyperShift exposes available upgrades in HostedCluster.Status by bubbling up the
 ## NodePools
 `.spec.release` dictates the version of any particular NodePool.
 
-A NodePool will perform a Replace/InPlace rolling upgrade according to `.spec.management.upgradeType`. See NodePool Upgrades for details.
+A NodePool will perform a Replace/InPlace rolling upgrade according to `.spec.management.upgradeType`. See NodePool Rollouts for details on what triggers a rollout and how it is executed.
 
 
 ---
@@ -29494,6 +30283,134 @@ While our primary focus in this documentation is Virtual Machines, it is importa
 
 ---
 
+## Source: docs/content/recipes/common/acm-mce-hypershift-operator-overrides.md
+
+# Overriding HyperShift Operator Image and Flags in ACM/MCE
+
+## Overview
+
+When HyperShift is deployed via Advanced Cluster Management (ACM) or Multicluster Engine (MCE), the HyperShift addon manages the lifecycle of the HyperShift Operator (HO). In some scenarios, such as testing a hotfix or enabling/disabling specific features, you may need to override the default HO image or modify its install flags.
+
+This guide explains how to use ConfigMaps in the `local-cluster` namespace to customize the HyperShift Operator deployment managed by the ACM/MCE addon.
+
+!!! note
+
+    These overrides only apply when HyperShift is deployed through the ACM/MCE addon (hypershift-addon). They do not apply to standalone HyperShift installations.
+
+## Overriding the HyperShift Operator Image
+
+To deploy a custom HyperShift Operator image instead of the default one bundled with ACM/MCE, create the following ConfigMap:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hypershift-override-images
+  namespace: local-cluster
+data:
+  hypershift-operator: <your-custom-image>
+```
+
+### Example
+
+```bash
+export OVERRIDE_HO_IMAGE="quay.io/myorg/hypershift-operator:latest"
+
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hypershift-override-images
+  namespace: local-cluster
+data:
+  hypershift-operator: ${OVERRIDE_HO_IMAGE}
+EOF
+```
+
+!!! important
+
+    - The ConfigMap **must** be named `hypershift-override-images` and created in the `local-cluster` namespace.
+    - The key `hypershift-operator` maps to the HO image reference that the addon will use for deployment.
+    - Once the ConfigMap is created, the hypershift-addon will detect it and redeploy the HyperShift Operator with the specified image.
+
+### Verification
+
+After applying the ConfigMap, verify the operator is running the expected image:
+
+```bash
+kubectl get pods -n hypershift -o jsonpath='{.items[*].spec.containers[*].image}' | tr ' ' '\n' | grep hypershift
+```
+
+For more details on this mechanism, see the upstream community documentation.
+
+## Overriding HyperShift Operator Install Flags
+
+To add or remove install flags from the HyperShift Operator deployment managed by the addon, create the following ConfigMap:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hypershift-operator-install-flags
+  namespace: local-cluster
+data:
+  installFlagsToAdd: ""
+  installFlagsToRemove: ""
+```
+
+### Fields
+
+| Field | Description |
+|---|---|
+| `installFlagsToAdd` | Space-separated list of flags to add to the HO install command. |
+| `installFlagsToRemove` | Space-separated list of flags to remove from the HO install command. |
+
+### Example
+
+To enable the defaulting webhook and disable UWM telemetry remote write:
+
+```bash
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hypershift-operator-install-flags
+  namespace: local-cluster
+data:
+  installFlagsToAdd: --enable-defaulting-webhook true
+  installFlagsToRemove: --enable-uwm-telemetry-remote-write
+EOF
+```
+
+!!! important
+
+    - The ConfigMap **must** be named `hypershift-operator-install-flags` and created in the `local-cluster` namespace.
+    - Changes to this ConfigMap trigger a redeployment of the HyperShift Operator with the updated flags.
+
+### Verification
+
+Check the operator deployment args to confirm the flags are applied:
+
+```bash
+kubectl get deployment operator -n hypershift -o jsonpath='{.spec.template.spec.containers[0].args}' | jq .
+```
+
+For more details, see the upstream community documentation.
+
+## Cleanup
+
+To revert to the default behavior, simply delete the ConfigMaps:
+
+```bash
+kubectl delete configmap hypershift-override-images -n local-cluster
+kubectl delete configmap hypershift-operator-install-flags -n local-cluster
+```
+
+The addon will detect the removal and redeploy the HyperShift Operator with the default image and flags.
+
+
+---
+
 ## Source: docs/content/recipes/common/exposing-dataplane-with-metallb.md
 
 ## Configure MetalLB for HostedCluster's Data Plane
@@ -29885,6 +30802,172 @@ The following manifest sets `runc` as the default runtime.
 
 ---
 
+## Source: docs/content/recipes/common/spo-audit-logging-seccomp.md
+
+# Configuring Security Profiles Operator (SPO) in Hosted Control Planes
+
+The Security Profiles Operator (SPO) enables capturing `exec`, `rsh`, and `debug` sessions using advanced audit logging combined with seccomp log mode. The standard OCP documentation assumes a self-managed cluster where node-level components like CRI-O can be configured directly (e.g., `--privileged-seccomp-profile`). In a Hosted Control Plane (HCP) environment, the control plane and worker infrastructure are separated, so the configuration steps differ.
+
+This recipe covers the HCP-specific steps required to set up SPO with audit logging and seccomp log mode.
+
+## Prerequisites
+
+- A running HostedCluster managed by HyperShift
+- `oc` CLI with access to both the management cluster and the hosted cluster
+- Familiarity with the SPO documentation for standard OCP
+
+## Step 1: Configure the Audit Log Profile
+
+SPO requires an audit log profile that captures request bodies (e.g., `WriteRequestBodies` or `AllRequestBodies`). In HCP, the Kubernetes API Server (KAS) configuration is managed through the HostedCluster resource on the management cluster.
+
+Patch the HostedCluster to set the desired audit profile:
+
+```bash
+oc patch hostedcluster <hosted_cluster_name> \
+  -n <hosted_cluster_namespace> \
+  --type=merge \
+  -p '{"spec": {"configuration": {"apiServer": {"audit": {"profile": "AllRequestBodies"}}}}}'
+```
+
+!!! note
+    Replace `<hosted_cluster_name>` and `<hosted_cluster_namespace>` with the name and namespace of your HostedCluster resource on the management cluster.
+
+!!! tip
+    You can also use `WriteRequestBodies` if you only need to capture write operations. `AllRequestBodies` captures both read and write request bodies and generates more log data.
+
+After patching, the control plane operator will roll out the KAS pods with the updated audit configuration. You can monitor the rollout:
+
+```bash
+oc get pods -n <hosted_control_plane_namespace> -l app=kube-apiserver -w
+```
+
+## Step 2: Understanding Audit Log Location in HCP
+
+In a standard OCP cluster, audit logs are stored on the control plane nodes and are directly accessible by components running on the same cluster. In HCP, the architecture is fundamentally different: the KAS runs as pods on the **management cluster**, while SPO runs on the **hosted (guest) cluster**.
+
+!!! warning "Key Architectural Difference"
+    The KAS audit logs are **not accessible from the guest cluster**. The KAS pods reside in the HostedControlPlane namespace on the management cluster, and there is no direct path from the guest cluster's data plane to those logs. SPO, running on the guest cluster, cannot natively read the KAS audit logs the way it does on a standard OCP cluster.
+
+### Viewing Audit Logs from the Management Cluster
+
+An administrator with access to the management cluster can view the audit logs directly:
+
+```bash
+oc get pods -n <hosted_control_plane_namespace> -l app=kube-apiserver
+```
+
+```bash
+oc logs -n <hosted_control_plane_namespace> <kas_pod_name> -c kube-apiserver | grep audit
+```
+
+!!! note
+    The `<hosted_control_plane_namespace>` is typically `<hosted_cluster_namespace>-<hosted_cluster_name>` on the management cluster.
+
+### Making Audit Logs Available to SPO
+
+Since SPO on the guest cluster cannot directly access the KAS audit logs on the management cluster, you need to establish a mechanism to forward or expose those logs. Some approaches to consider:
+
+- **Log forwarding via ClusterLogForwarder**: Configure log forwarding on the management cluster to send KAS audit logs to a centralized logging backend (e.g., Elasticsearch, Loki, Splunk). SPO and security teams can then consume audit data from the shared logging infrastructure.
+- **Audit Log Persistence with external access**: Enable the Audit Log Persistence feature to store audit logs in PersistentVolumes on the management cluster, then export or sync them to a location accessible to the guest cluster or to your security tooling.
+- **Audit webhook backend**: Configure the KAS audit webhook backend to send audit events to an external endpoint that SPO or your security infrastructure can consume. This can be configured via the HostedCluster's `spec.configuration.apiServer.audit` settings.
+
+!!! tip
+    The specific approach depends on your organization's logging architecture and security requirements. In all cases, the audit logs must be forwarded or exported from the management cluster since the guest cluster has no direct access to the KAS pods.
+
+## Step 3: Configure Worker Nodes for Seccomp Logging
+
+SPO requires CRI-O configuration on worker nodes to enable the `--privileged-seccomp-profile` or seccomp log mode. In HCP, worker node configuration is applied via MachineConfig through the NodePool.
+
+### Creating the MachineConfig for Seccomp
+
+- Create a CRI-O configuration file that enables the seccomp log annotation:
+
+```bash
+cat <<EOF > crio-seccomp-config.conf
+[crio.runtime]
+seccomp_use_default_when_empty = false
+
+[crio.runtime.runtimes.runc]
+allowed_annotations = [
+    "io.containers.trace-syscall",
+]
+EOF
+```
+
+- Get the base64 encoding of the file content:
+
+```bash
+export SECCOMP_CONFIG_HASH=$(cat crio-seccomp-config.conf | base64 -w0)
+```
+
+- Create the MachineConfig manifest:
+
+```bash
+cat <<EOF > mc-seccomp-logging.yaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: 60-seccomp-logging
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      files:
+      - contents:
+          source: data:text/plain;charset=utf-8;base64,${SECCOMP_CONFIG_HASH}
+        mode: 420
+        path: /etc/crio/crio.conf.d/99-seccomp-logging.conf
+EOF
+```
+
+- Create a ConfigMap containing the MachineConfig in the HostedCluster namespace:
+
+```bash
+oc create -n <hosted_cluster_namespace> configmap mcp-seccomp-logging \
+  --from-file config=mc-seccomp-logging.yaml
+```
+
+- Patch the NodePool to apply the MachineConfig:
+
+```bash
+oc patch -n <hosted_cluster_namespace> nodepool <nodepool_name> \
+  --type=json \
+  -p='[{"op": "add", "path": "/spec/config", "value": [{"name": "mcp-seccomp-logging"}]}]'
+```
+
+!!! warning
+    If your NodePool already has existing config entries in `/spec/config`, use `"op": "add", "path": "/spec/config/-"` instead to append rather than replace the existing configuration.
+
+!!! note
+    After patching the NodePool, worker nodes will be rolled out with the new CRI-O configuration. This may cause temporary disruption as nodes are drained and replaced. For more details on MachineConfig management in HCP, see the Configure Machines documentation.
+
+## Step 4: Install and Configure SPO
+
+Once the audit profile and worker node seccomp configuration are in place, install and configure the Security Profiles Operator on the hosted cluster following the standard SPO installation guide.
+
+The SPO installation itself is the same as on a standard OCP cluster since it runs on the hosted cluster's data plane.
+
+## Summary of Differences from Standard OCP
+
+| Configuration | Standard OCP | HCP |
+|---|---|---|
+| Audit log profile | Configured via `openshift-kube-apiserver` operator | Patch HostedCluster resource on management cluster |
+| Audit log location | Control plane node filesystem (accessible by SPO) | KAS pod logs in HostedControlPlane namespace on management cluster (**not accessible from guest cluster**) |
+| Audit log access for SPO | Direct access on the same cluster | Requires log forwarding, audit webhook, or external export from management cluster |
+| CRI-O seccomp config | MachineConfigPool on cluster nodes | MachineConfig via ConfigMap + NodePool patch |
+| SPO installation | Standard OLM install | Same (runs on hosted cluster data plane) |
+
+## Related Documentation
+
+- Audit Log Persistence - Persistent storage for KAS audit logs in HCP
+- Configure Machines - Applying MachineConfig via NodePool
+- Replace CRI-O Runtime - Another recipe for CRI-O configuration in HCP
+- OCP Security Profiles Operator Documentation - Full SPO reference
+
+
+---
+
 ## Source: docs/content/recipes/index.md
 
 ---
@@ -29955,6 +31038,81 @@ OpenShift clusters at scale.</p>
 worker nodes and their kubelets, and the infrastructure on which they run). This
 enables &ldquo;hosted control plane as a service&rdquo; use cases.</p>
 </p>
+##AzurePrivateLinkService { #hypershift.openshift.io/v1beta1.AzurePrivateLinkService }
+<p>
+<p>AzurePrivateLinkService represents Azure Private Link Service infrastructure
+for private connectivity to hosted cluster API servers.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>apiVersion</code></br>
+string</td>
+<td>
+<code>
+hypershift.openshift.io/v1beta1
+</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>kind</code></br>
+string
+</td>
+<td><code>AzurePrivateLinkService</code></td>
+</tr>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metadata is the metadata for the AzurePrivateLinkService.</p>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec">
+AzurePrivateLinkServiceSpec
+</a>
+</em>
+</td>
+<td>
+<p>spec is the specification for the AzurePrivateLinkService.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>status,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceStatus">
+AzurePrivateLinkServiceStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>status is the status of the AzurePrivateLinkService.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ##CertificateSigningRequestApproval { #hypershift.openshift.io/v1beta1.CertificateSigningRequestApproval }
 <p>
 <p>CertificateSigningRequestApproval defines the desired state of CertificateSigningRequestApproval</p>
@@ -30112,7 +31270,9 @@ This value must be a valid IPv4 or IPv6 address.</p>
 <td>
 <code>forwardingRuleName</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -30129,15 +31289,19 @@ Populated by the reconciler via GCP API lookup</p>
 </em>
 </td>
 <td>
-<p>consumerAcceptList specifies which customer projects can connect
-Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers (e.g. &ldquo;123456789012&rdquo;)</p>
+<p>consumerAcceptList specifies which customer projects can connect.
+Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers (e.g. &ldquo;123456789012&rdquo;).
+A maximum of 50 entries are allowed.
+See <a href="https://cloud.google.com/resource-manager/docs/creating-managing-projects">https://cloud.google.com/resource-manager/docs/creating-managing-projects</a> for project ID and number formats.</p>
 </td>
 </tr>
 <tr>
 <td>
 <code>natSubnet</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -30161,6 +31325,81 @@ GCPPrivateServiceConnectStatus
 <td>
 <em>(Optional)</em>
 <p>status is the status of the GCPPrivateServiceConnect.</p>
+</td>
+</tr>
+</tbody>
+</table>
+##HCPEtcdBackup { #hypershift.openshift.io/v1beta1.HCPEtcdBackup }
+<p>
+<p>HCPEtcdBackup represents a request to back up etcd for a hosted control plane.
+This resource is feature-gated behind the HCPEtcdBackup feature gate.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>apiVersion</code></br>
+string</td>
+<td>
+<code>
+hypershift.openshift.io/v1beta1
+</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>kind</code></br>
+string
+</td>
+<td><code>HCPEtcdBackup</code></td>
+</tr>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metadata is the metadata for the HCPEtcdBackup.</p>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupSpec">
+HCPEtcdBackupSpec
+</a>
+</em>
+</td>
+<td>
+<p>spec is the specification for the HCPEtcdBackup.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>status,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStatus">
+HCPEtcdBackupStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>status is the status of the HCPEtcdBackup.</p>
 </td>
 </tr>
 </tbody>
@@ -30451,7 +31690,8 @@ AutoNode
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoNode specifies the configuration for the autoNode feature.</p>
+<p>autoNode specifies the configuration for automatic node provisioning and lifecycle management.
+When set, the provisioner(e.g. Karpenter) will be used to provision nodes for targeted workloads.</p>
 </td>
 </tr>
 <tr>
@@ -31796,6 +33036,25 @@ created in a different AWS account and is shared with the AWS account where the 
 will be created.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>terminationHandlerQueueURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>terminationHandlerQueueURL specifies the SQS queue URL for EC2 spot interruption events.
+This is required when using spot instances (marketType: Spot) in NodePools to enable
+graceful handling of spot instance terminations.</p>
+<p>The queue should be configured to receive EC2 Spot Instance Interruption Warnings
+and EC2 Instance Rebalance Recommendations via EventBridge rules.
+The AWS Node Termination Handler will poll this queue and cordon/drain nodes
+before they are terminated, providing a best effort for graceful shutdown.</p>
+<p>Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSPlatformStatus { #hypershift.openshift.io/v1beta1.AWSPlatformStatus }
@@ -32781,7 +34040,7 @@ string
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>We expose here internal configuration knobs that won&rsquo;t be exposed to the service.</p>
+<p>AutoNode specifies the configuration for automatic node provisioning and lifecycle management.</p>
 </p>
 <table>
 <thead>
@@ -32793,7 +34052,7 @@ string
 <tbody>
 <tr>
 <td>
-<code>provisionerConfig</code></br>
+<code>provisionerConfig,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">
 ProvisionerConfig
@@ -32801,7 +34060,52 @@ ProvisionerConfig
 </em>
 </td>
 <td>
-<p>provisionerConfig is the implementation used for Node auto provisioning.</p>
+<p>provisionerConfig specifies the provisioner used for automatic node management.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AutoNodeStatus { #hypershift.openshift.io/v1beta1.AutoNodeStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>AutoNodeStatus contains the observed state of the AutoNode provisioner.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nodeCount</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nodeCount is the number of nodes fully provisioned by Karpenter.
+These are node objects that exist in the cluster and carry the karpenter.sh/nodepool label.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>nodeClaimCount</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nodeClaimCount is the total number of NodeClaims managed by Karpenter.
+This represents what Karpenter intends to provision, whether or not the node object exists yet.</p>
 </td>
 </tr>
 </tbody>
@@ -33140,8 +34444,7 @@ AzureKeyVaultAccessType
 <p>keyVaultAccess specifies how the Key Vault should be accessed.
 When set to &ldquo;Private&rdquo;, the control plane routes Key Vault traffic through
 the private router to reach the Key Vault&rsquo;s private endpoint in the customer VNet.
-When set to &ldquo;Public&rdquo; or omitted (empty), the Key Vault is accessed via its public endpoint.
-Controllers treat an empty value the same as &ldquo;Public&rdquo;.</p>
+When set to &ldquo;Public&rdquo; or omitted, the Key Vault is accessed via its public endpoint.</p>
 </td>
 </tr>
 </tbody>
@@ -33636,7 +34939,493 @@ string
 <p>tenantID is a unique identifier for the tenant where Azure resources will be created and managed in.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>topology</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureTopologyType">
+AzureTopologyType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>topology specifies the network topology of the API server endpoint for the hosted cluster.
+- Public: The API server is accessible only via a public endpoint.
+- PublicAndPrivate: The API server is accessible via both public and private endpoints.
+- Private: The API server is accessible only via a private endpoint.
+When omitted, this means no opinion and the platform is left to choose a reasonable
+default, which is subject to change over time. The current default is Public.
+This field must be set explicitly for self-hosted environments (WorkloadIdentities).
+Transitions between PublicAndPrivate and Private are allowed after creation.
+Transitions from Public to non-Public (or vice versa) are not allowed.
+When set to Private or PublicAndPrivate, the private field must be provided.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>private,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateSpec">
+AzurePrivateSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>private configures private connectivity to the hosted cluster&rsquo;s API server.
+This field is required when topology is Private or PublicAndPrivate, and must
+not be set when topology is Public.
+Once set at cluster creation, this field cannot be removed, and it cannot be
+added to an existing cluster that was created without it.</p>
+</td>
+</tr>
 </tbody>
+</table>
+###AzurePrivateLinkServiceSpec { #hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkService">AzurePrivateLinkService</a>)
+</p>
+<p>
+<p>AzurePrivateLinkServiceSpec defines the desired state of AzurePrivateLinkService</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>loadBalancerIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>loadBalancerIP is the frontend IP address of the internal load balancer that
+fronts the hosted control plane&rsquo;s API server. This field is populated automatically
+by the control plane operator from the kube-apiserver service status.
+It is not set by users directly.
+When set, the value must be a valid IPv4 or IPv6 address.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>subscriptionID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureSubscriptionID">
+AzureSubscriptionID
+</a>
+</em>
+</td>
+<td>
+<p>subscriptionID is the Azure subscription ID where the Private Link Service
+resources will be created. Must be a valid UUID consisting of hexadecimal
+characters and hyphens in the format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+where x is a hexadecimal digit <a href="e.g.," title="550e8400-e29b-41d4-a716-446655440000">0-9a-f</a>.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourceGroupName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>resourceGroupName is the name of the Azure resource group where the Private Link
+Service resources will be created. Must be 1-90 characters consisting of
+alphanumerics, underscores, hyphens, periods, and parentheses. Cannot end with a period.
+See <a href="https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules">https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>location</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>location is the Azure region where the Private Link Service resources will be
+created (e.g., &ldquo;eastus&rdquo;, &ldquo;westeurope&rdquo;, &ldquo;centralus&rdquo;). Must match the region
+of the management cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>natSubnetID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureSubnetResourceID">
+AzureSubnetResourceID
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>natSubnetID is the full Azure resource ID of the subnet used for Private Link Service
+NAT IP allocation. This subnet must have privateLinkServiceNetworkPolicies disabled.
+If not provided, the controller will auto-create a NAT subnet in the HC&rsquo;s VNet.
+The expected format is:
+/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalAllowedSubscriptions</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureSubscriptionID">
+[]AzureSubscriptionID
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>additionalAllowedSubscriptions is an optional list of additional Azure subscription IDs
+permitted to create Private Endpoints to the Private Link Service. The guest cluster&rsquo;s
+own subscription (derived from guestSubnetID) is always automatically allowed, so it
+does not need to be listed here.
+Each entry must be a valid UUID of exactly 36 characters consisting of
+lowercase hexadecimal characters and hyphens in the format
+xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx where x is a hexadecimal digit <a href="e.g.," title="550e8400-e29b-41d4-a716-446655440000">0-9a-f</a>.
+A maximum of 50 subscriptions may be specified.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestSubnetID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureSubnetResourceID">
+AzureSubnetResourceID
+</a>
+</em>
+</td>
+<td>
+<p>guestSubnetID is the full Azure resource ID of the subnet in the guest VNet where
+the Private Endpoint will be created.
+The expected format is:
+/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestVNetID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureVNetResourceID">
+AzureVNetResourceID
+</a>
+</em>
+</td>
+<td>
+<p>guestVNetID is the full Azure resource ID of the guest VNet for Private DNS zone linking.
+The expected format is:
+/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>baseDomain</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>baseDomain is the cluster&rsquo;s base domain (e.g., &ldquo;example.hypershift.azure.devcluster.openshift.com&rdquo;).
+Used to create a Private DNS Zone so that worker VMs can resolve the API and OAuth
+hostnames (api-<name>.<baseDomain>, oauth-<name>.<baseDomain>) to the Private Endpoint IP.
+Persisted in spec so that deletion does not depend on the HostedControlPlane still existing.
+baseDomain must be at most 253 characters in length and must consist only of
+lowercase alphanumeric characters, hyphens, and periods. Each period-separated segment
+must start and end with an alphanumeric character.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateLinkServiceStatus { #hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkService">AzurePrivateLinkService</a>)
+</p>
+<p>
+<p>AzurePrivateLinkServiceStatus defines the observed state of AzurePrivateLinkService</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>conditions represent the current state of PLS infrastructure.
+Current condition types are: &ldquo;AzurePrivateLinkServiceAvailable&rdquo;, &ldquo;AzureInternalLoadBalancerAvailable&rdquo;,
+&ldquo;AzurePLSCreated&rdquo;, &ldquo;AzurePrivateEndpointAvailable&rdquo;, &ldquo;AzurePrivateDNSAvailable&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>internalLoadBalancerID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>internalLoadBalancerID is the Azure resource ID of the internal load balancer
+fronting the hosted control plane. The expected format is:
+/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/loadBalancers/{loadBalancerName}
+where subscriptionID is a UUID, resourceGroup is up to 90 characters, and
+loadBalancerName is up to 80 characters.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateLinkServiceID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateLinkServiceID is the Azure resource ID of the Private Link Service.
+The expected format is:
+/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/privateLinkServices/{plsName}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateLinkServiceAlias</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateLinkServiceAlias is the globally unique alias for the Private Link Service,
+auto-generated by Azure in the format {plsName}.{guid}.{region}.azure.privatelinkservice.
+MaxLength=170 covers: PLS name (80) + GUID (36) + region (19, e.g. &ldquo;southcentralusstage&rdquo;)</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateEndpointID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateEndpointID is the Azure resource ID of the Private Endpoint.
+The expected format is:
+/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/privateEndpoints/{endpointName}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateEndpointIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateEndpointIP is the private IP address assigned to the Private Endpoint.
+Must be a valid IPv4 (e.g., &ldquo;10.0.1.4&rdquo;) or IPv6 address.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateDNSZoneID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateDNSZoneID is the Azure resource ID of the Private DNS Zone.
+The expected format is:
+/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/privateDnsZones/{zoneName}</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dnsZoneName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>dnsZoneName is the Private DNS zone name (derived from the KAS hostname).
+Persisted at creation time so that deletion does not depend on the
+HostedControlPlane still existing.
+Must be a valid DNS domain name consisting of alphanumeric characters, hyphens,
+and periods, where each segment starts and ends with an alphanumeric character
+(e.g., &ldquo;api-mycluster.example.hypershift.azure.devcluster.openshift.com&rdquo;).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>baseDomainDNSZoneID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>baseDomainDNSZoneID is the Azure resource ID of the base domain Private DNS Zone.
+The expected format is:
+/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/privateDnsZones/{zoneName}</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateLinkSpec { #hypershift.openshift.io/v1beta1.AzurePrivateLinkSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateSpec">AzurePrivateSpec</a>)
+</p>
+<p>
+<p>AzurePrivateLinkSpec configures Azure Private Link Service connectivity.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>natSubnetID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureSubnetResourceID">
+AzureSubnetResourceID
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>natSubnetID is the Azure resource ID of the subnet used for Private Link Service NAT IP allocation.
+This subnet must have privateLinkServiceNetworkPolicies disabled.
+If not provided, the controller will auto-create a NAT subnet in the HC&rsquo;s VNet.
+The expected format is:
+/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
+The maximum length is 355 characters.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalAllowedSubscriptions</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureSubscriptionID">
+[]AzureSubscriptionID
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>additionalAllowedSubscriptions is an optional list of additional Azure subscription IDs
+permitted to create Private Endpoints to the Private Link Service. The guest cluster&rsquo;s
+own subscription is always automatically allowed, so it does not need to be listed here.
+Each item must be a valid UUID consisting of lowercase hexadecimal characters and hyphens,
+in the format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+(e.g., &ldquo;550e8400-e29b-41d4-a716-446655440000&rdquo;). A maximum of 50 subscriptions may be specified.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateSpec { #hypershift.openshift.io/v1beta1.AzurePrivateSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>AzurePrivateSpec configures private connectivity to an Azure hosted cluster&rsquo;s API server.
+It is a discriminated union keyed on the type field, which selects the private connectivity
+mechanism. Currently only PrivateLink is supported; additional mechanisms (e.g., Swift) may
+be added in the future.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateType">
+AzurePrivateType
+</a>
+</em>
+</td>
+<td>
+<p>type specifies the private connectivity mechanism used for the hosted cluster&rsquo;s API server.
+&ldquo;PrivateLink&rdquo; selects Azure Private Link Service for private API server access.
+This field is immutable once set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateLink,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkSpec">
+AzurePrivateLinkSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateLink configures Azure Private Link Service for private API server access.
+This field is required when type is &ldquo;PrivateLink&rdquo; and must not be set otherwise.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateType { #hypershift.openshift.io/v1beta1.AzurePrivateType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateSpec">AzurePrivateSpec</a>)
+</p>
+<p>
+<p>AzurePrivateType specifies the type of private connectivity mechanism used for the Azure
+hosted cluster&rsquo;s API server. This acts as the discriminator for the AzurePrivateSpec union.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;PrivateLink&#34;</p></td>
+<td><p>AzurePrivateTypePrivateLink specifies private connectivity using Azure Private Link Service.
+In this mode, the operator creates a Private Link Service backed by the management cluster&rsquo;s
+internal load balancer, and a Private Endpoint in the guest VNet for private API server access.</p>
+</td>
+</tr></tbody>
 </table>
 ###AzureResourceManagedIdentities { #hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities }
 <p>
@@ -33684,6 +35473,55 @@ Azure&rsquo;s API.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###AzureSubnetResourceID { #hypershift.openshift.io/v1beta1.AzureSubnetResourceID }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec">AzurePrivateLinkServiceSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkSpec">AzurePrivateLinkSpec</a>)
+</p>
+<p>
+<p>AzureSubnetResourceID is a full Azure resource ID for a subnet.
+The expected format is:</p>
+<pre><code>/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
+</code></pre>
+</p>
+###AzureSubscriptionID { #hypershift.openshift.io/v1beta1.AzureSubscriptionID }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec">AzurePrivateLinkServiceSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkSpec">AzurePrivateLinkSpec</a>)
+</p>
+<p>
+<p>AzureSubscriptionID is an Azure subscription ID in UUID format.
+Must be exactly 36 characters consisting of hexadecimal digits [0-9a-fA-F] and hyphens
+in the format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (e.g., &ldquo;550e8400-e29b-41d4-a716-446655440000&rdquo;).</p>
+</p>
+###AzureTopologyType { #hypershift.openshift.io/v1beta1.AzureTopologyType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>AzureTopologyType specifies the network topology of the Azure API server endpoint.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Private&#34;</p></td>
+<td><p>AzureTopologyPrivate indicates the API server is accessible only via a private endpoint.</p>
+</td>
+</tr><tr><td><p>&#34;Public&#34;</p></td>
+<td><p>AzureTopologyPublic indicates the API server is accessible only via a public endpoint.</p>
+</td>
+</tr><tr><td><p>&#34;PublicAndPrivate&#34;</p></td>
+<td><p>AzureTopologyPublicAndPrivate indicates the API server is accessible via both public and private endpoints.</p>
+</td>
+</tr></tbody>
 </table>
 ###AzureVMImage { #hypershift.openshift.io/v1beta1.AzureVMImage }
 <p>
@@ -33798,6 +35636,17 @@ Valid values are ImageID and AzureMarketplace.</p>
 </td>
 </tr></tbody>
 </table>
+###AzureVNetResourceID { #hypershift.openshift.io/v1beta1.AzureVNetResourceID }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec">AzurePrivateLinkServiceSpec</a>)
+</p>
+<p>
+<p>AzureVNetResourceID is a full Azure resource ID for a virtual network.
+The expected format is:</p>
+<pre><code>/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}
+</code></pre>
+</p>
 ###AzureWorkloadIdentities { #hypershift.openshift.io/v1beta1.AzureWorkloadIdentities }
 <p>
 (<em>Appears on:</em>
@@ -33913,6 +35762,21 @@ WorkloadIdentity
 workload identity authentication.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>controlPlaneOperator,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneOperator is the client ID of a federated managed identity, associated with control-plane-operator,
+used in workload identity authentication for Azure Private Link Service operations.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###CIDRBlock { #hypershift.openshift.io/v1beta1.CIDRBlock }
@@ -34019,11 +35883,12 @@ MarketType
 </td>
 <td>
 <em>(Optional)</em>
-<p>marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values are OnDemand, CapacityBlocks and omitted:
+<p>marketType specifies the market type of the CapacityReservation for the EC2 instances.</p>
+<p>Deprecated: Use placement.marketType instead. This field is maintained for backward compatibility.
+When both placement.marketType and capacityReservation.marketType are set, placement.marketType takes precedence.</p>
+<p>Valid values are OnDemand, CapacityBlocks and omitted:
 - &ldquo;OnDemand&rdquo;: EC2 instances run as standard On-Demand instances.
-- &ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Capacity Blocks is recommended when GPUs are needed to support ML workloads.
-When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
-The current default value is CapacityBlocks.</p>
+- &ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Recommended for GPU/ML workloads.</p>
 <p>When set to &lsquo;CapacityBlocks&rsquo;, a specific Capacity Reservation ID must be provided.</p>
 </td>
 </tr>
@@ -34903,6 +36768,30 @@ OAuth API Server (when enabled), and OLM PackageServer APIServices.
 This condition is an HCP implementation detail set by the HCCO and is not
 bubbled up to the HostedCluster level.</p>
 </td>
+</tr><tr><td><p>&#34;AutoNodeEnabled&#34;</p></td>
+<td><p>AutoNodeEnabled indicates whether AutoNode is configured and operational for this HostedCluster.
+<strong>True</strong> means AutoNode is configured in the HostedCluster spec and the Karpenter components are fully rolled out and ready.
+<strong>False / AutoNodeProgressing</strong> means AutoNode is being enabled or disabled — the operation is in progress.
+<strong>False / AutoNodeNotConfigured</strong> means AutoNode is not configured in the spec and all Karpenter components have been removed.</p>
+</td>
+</tr><tr><td><p>&#34;AzureInternalLoadBalancerAvailable&#34;</p></td>
+<td><p>AzureInternalLoadBalancerAvailable indicates the ILB has been provisioned with a frontend IP</p>
+</td>
+</tr><tr><td><p>&#34;AzurePLSCreated&#34;</p></td>
+<td><p>AzurePLSCreated indicates the Azure Private Link Service has been created in the management cluster resource group</p>
+</td>
+</tr><tr><td><p>&#34;AzurePrivateDNSAvailable&#34;</p></td>
+<td><p>AzurePrivateDNSAvailable indicates the Private DNS zone and A records have been created</p>
+</td>
+</tr><tr><td><p>&#34;AzurePrivateEndpointAvailable&#34;</p></td>
+<td><p>AzurePrivateEndpointAvailable indicates the Private Endpoint has been created in the guest VNet</p>
+</td>
+</tr><tr><td><p>&#34;AzurePrivateLinkServiceAvailable&#34;</p></td>
+<td><p>AzurePrivateLinkServiceAvailable indicates overall PLS infrastructure availability</p>
+</td>
+</tr><tr><td><p>&#34;BackupCompleted&#34;</p></td>
+<td><p>BackupCompleted indicates whether the etcd backup has completed.</p>
+</td>
 </tr><tr><td><p>&#34;CVOScaledDown&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;CloudResourcesDestroyed&#34;</p></td>
@@ -34941,6 +36830,18 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 </tr><tr><td><p>&#34;RolloutComplete&#34;</p></td>
 <td><p>ControlPlaneComponentRolloutComplete indicates whether the ControlPlaneComponent has completed its rollout.</p>
 </td>
+</tr><tr><td><p>&#34;ControlPlaneConnectionAvailable&#34;</p></td>
+<td><p>ControlPlaneConnectionAvailable indicates whether data plane workloads have a successful
+network connection to the control plane components. This condition is computed using
+a 3-replica Deployment that tests the full data path (DNS resolution of kubernetes.default.svc
+-&gt; advertise address on lo -&gt; apiserver proxy -&gt; KAS on HCP) and reports results to a shared
+ConfigMap. The HCCO evaluates the staleness of the lastSucceeded timestamp in the ConfigMap.
+<strong>True</strong> means the data plane can successfully reach the control plane (a recent successful check was recorded).
+<strong>False</strong> means there are connectivity failures preventing the data plane from reaching the control plane,
+or the last successful check is stale (older than 5 minutes).
+<strong>Unknown</strong> means the status cannot be determined due to true inability to inspect (e.g., no worker nodes exist or inspection cannot be performed),
+not due to missing required components.</p>
+</td>
 </tr><tr><td><p>&#34;DataPlaneConnectionAvailable&#34;</p></td>
 <td><p>DataPlaneConnectionAvailable indicates whether the control plane has a successful
 network connection to the data plane components.
@@ -34948,7 +36849,8 @@ network connection to the data plane components.
 <strong>False</strong> means there are network connection issues preventing the control plane from reaching the data plane.
 A failure here suggests potential issues such as: network policy restrictions,
 firewall rules, missing data plane nodes, or problems with infrastructure
-components like the konnectivity-agent workload.</p>
+components like the konnectivity-agent workload.
+<strong>Unknown</strong> means the status cannot be determined (e.g., no worker nodes available or unable to inspect).</p>
 </td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
@@ -35450,6 +37352,156 @@ ManagedIdentity
 </tr>
 </tbody>
 </table>
+###ControlPlaneUpdateHistory { #hypershift.openshift.io/v1beta1.ControlPlaneUpdateHistory }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneVersionStatus">ControlPlaneVersionStatus</a>)
+</p>
+<p>
+<p>ControlPlaneUpdateHistory is a record of a single version transition for management-side
+control plane components. Each entry captures the target version, its release image, when
+the rollout started, and when (or whether) it completed.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>state</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.UpdateState
+</a>
+</em>
+</td>
+<td>
+<p>state reflects whether the update was fully applied. The Partial state
+indicates the update is not fully applied, while the Completed state
+indicates the update was successfully rolled out.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>startedTime,omitempty,omitzero</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
+Kubernetes meta/v1.Time
+</a>
+</em>
+</td>
+<td>
+<p>startedTime is the time at which the update was started.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>completionTime,omitempty,omitzero</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#time-v1-meta">
+Kubernetes meta/v1.Time
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>completionTime is the time at which the update completed. It is set
+when all management-side components have reached the target version.
+It is not set while the update is in progress.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>version</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>version is a semantic version string identifying the update version
+(e.g. &ldquo;4.20.1&rdquo;).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>image</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>image is the release image pullspec used for this update.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###ControlPlaneVersionStatus { #hypershift.openshift.io/v1beta1.ControlPlaneVersionStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HostedClusterStatus">HostedClusterStatus</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneStatus">HostedControlPlaneStatus</a>)
+</p>
+<p>
+<p>ControlPlaneVersionStatus tracks the rollout state of management-side control plane components.
+It records the desired release, a pruned history of version transitions (newest first), and
+the last observed generation of the HostedControlPlane spec.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>desired,omitempty,omitzero</code></br>
+<em>
+<a href="https://docs.openshift.com/container-platform/4.10/rest_api/config_apis/config-apis-index.html">
+github.com/openshift/api/config/v1.Release
+</a>
+</em>
+</td>
+<td>
+<p>desired is the release version that the control plane is reconciling towards.
+It is derived from the HostedControlPlane release image fields.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>history</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneUpdateHistory">
+[]ControlPlaneUpdateHistory
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>history contains a list of versions applied to management-side control plane components. The newest entry is
+first in the list. Entries have state Completed when all ControlPlaneComponent resources report the target
+version with RolloutComplete=True. Entries have state Partial when the rollout is in progress or has failed.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>observedGeneration,omitempty,omitzero</code></br>
+<em>
+int64
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>observedGeneration reports which generation of the HostedControlPlane spec is being synced.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###DNSSpec { #hypershift.openshift.io/v1beta1.DNSSpec }
 <p>
 (<em>Appears on:</em>
@@ -35510,6 +37562,11 @@ string
 <p>publicZoneID is the Hosted Zone ID where all the DNS records that are publicly accessible to the internet exist.
 This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
 Once set, this value is immutable.</p>
+<p>On Azure, this is a full Azure resource ID for a DNS Zone in the format:
+/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/dnsZones/{zoneName}
+The maximum length of 258 is derived from Azure resource naming limits
+(see <a href="https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules):">https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules):</a>
+/subscriptions/ (15) + UUID (36) + /resourceGroups/ (16) + resource group name (90)</p>
 </td>
 </tr>
 <tr>
@@ -35524,6 +37581,11 @@ string
 <p>privateZoneID is the Hosted Zone ID where all the DNS records that are only available internally to the cluster exist.
 This field is optional and mainly leveraged in cloud environments where the DNS records for the .baseDomain are created by controllers in this zone.
 Once set, this value is immutable.</p>
+<p>On Azure, this is a full Azure resource ID for a Private DNS Zone in the format:
+/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/privateDnsZones/{zoneName}
+The maximum length of 265 is derived from Azure resource naming limits
+(see <a href="https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules):">https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules):</a>
+/subscriptions/ (15) + UUID (36) + /resourceGroups/ (16) + resource group name (90)</p>
 </td>
 </tr>
 </tbody>
@@ -35986,7 +38048,7 @@ If not specified, defaults to &ldquo;pd-balanced&rdquo;.</p>
 </tr>
 <tr>
 <td>
-<code>encryptionKey</code></br>
+<code>encryptionKey,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPDiskEncryptionKey">
 GCPDiskEncryptionKey
@@ -36075,7 +38137,7 @@ private node communication with the control plane via Private Service Connect.</
 <tbody>
 <tr>
 <td>
-<code>network</code></br>
+<code>network,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
 GCPResourceReference
@@ -36088,7 +38150,7 @@ GCPResourceReference
 </tr>
 <tr>
 <td>
-<code>privateServiceConnectSubnet</code></br>
+<code>privateServiceConnectSubnet,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
 GCPResourceReference
@@ -36153,7 +38215,9 @@ See <a href="https://cloud.google.com/compute/docs/regions-zones">https://cloud.
 <td>
 <code>subnet</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -36234,7 +38298,9 @@ taking precedence in case of conflicts.</p>
 <td>
 <code>networkTags</code></br>
 <em>
-[]string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+[]GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -36270,7 +38336,9 @@ If not specified, defaults to &ldquo;Standard&rdquo;.</p>
 <td>
 <code>onHostMaintenance</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPOnHostMaintenance">
+GCPOnHostMaintenance
+</a>
 </em>
 </td>
 <td>
@@ -36303,7 +38371,9 @@ If not specified, defaults to &ldquo;MIGRATE&rdquo; for Standard instances and &
 <td>
 <code>email</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -36337,6 +38407,10 @@ Common scopes include:
 </tbody>
 </table>
 ###GCPOnHostMaintenance { #hypershift.openshift.io/v1beta1.GCPOnHostMaintenance }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>)
+</p>
 <p>
 <p>GCPOnHostMaintenance defines the behavior when a host maintenance event occurs.</p>
 </p>
@@ -36384,7 +38458,8 @@ A valid project ID must satisfy the following rules:
 length: Must be between 6 and 30 characters, inclusive
 characters: Only lowercase letters (<code>a-z</code>), digits (<code>0-9</code>), and hyphens (<code>-</code>) are allowed
 start and end: Must begin with a lowercase letter and must not end with a hyphen
-valid examples: &ldquo;my-project&rdquo;, &ldquo;my-project-1&rdquo;, &ldquo;my-project-123&rdquo;.</p>
+valid examples: &ldquo;my-project&rdquo;, &ldquo;my-project-1&rdquo;, &ldquo;my-project-123&rdquo;.
+See <a href="https://cloud.google.com/resource-manager/docs/creating-managing-projects">https://cloud.google.com/resource-manager/docs/creating-managing-projects</a> for project ID naming rules.</p>
 </td>
 </tr>
 <tr>
@@ -36395,18 +38470,14 @@ string
 </em>
 </td>
 <td>
-<p>region is the GCP region in which the cluster resides.
-Must be in the form of <geographic-area>-<location><number> (e.g., us-central1, europe-west12).
-Must contain exactly one hyphen separating the geographic area from the location.
-Must end with one or more digits.
-Valid examples: &ldquo;us-central1&rdquo;, &ldquo;europe-west2&rdquo;, &ldquo;europe-west12&rdquo;, &ldquo;northamerica-northeast1&rdquo;
-Invalid examples: &ldquo;us1&rdquo; (no hyphen), &ldquo;us-central&rdquo; (no trailing digits), &ldquo;us-central1-a&rdquo; (zone suffix)
+<p>region is the GCP region in which the cluster resides (e.g., us-central1, europe-west2).
+Must start with lowercase letters, contain exactly one hyphen, and end with digits.
 For a full list of valid regions, see: <a href="https://cloud.google.com/compute/docs/regions-zones">https://cloud.google.com/compute/docs/regions-zones</a>.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>networkConfig</code></br>
+<code>networkConfig,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPNetworkConfig">
 GCPNetworkConfig
@@ -36508,7 +38579,9 @@ This value must be a valid IPv4 or IPv6 address.</p>
 <td>
 <code>forwardingRuleName</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -36525,15 +38598,19 @@ Populated by the reconciler via GCP API lookup</p>
 </em>
 </td>
 <td>
-<p>consumerAcceptList specifies which customer projects can connect
-Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers (e.g. &ldquo;123456789012&rdquo;)</p>
+<p>consumerAcceptList specifies which customer projects can connect.
+Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers (e.g. &ldquo;123456789012&rdquo;).
+A maximum of 50 entries are allowed.
+See <a href="https://cloud.google.com/resource-manager/docs/creating-managing-projects">https://cloud.google.com/resource-manager/docs/creating-managing-projects</a> for project ID and number formats.</p>
 </td>
 </tr>
 <tr>
 <td>
 <code>natSubnet</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -36596,8 +38673,9 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>serviceAttachmentURI is the URI customers use to connect
-Format: projects/{project}/regions/{region}/serviceAttachments/{name}</p>
+<p>serviceAttachmentURI is the URI customers use to connect.
+Format: projects/{project}/regions/{region}/serviceAttachments/{name}
+See <a href="https://cloud.google.com/vpc/docs/configure-private-service-connect-producer">https://cloud.google.com/vpc/docs/configure-private-service-connect-producer</a> for service attachment details.</p>
 </td>
 </tr>
 <tr>
@@ -36709,7 +38787,6 @@ string
 </em>
 </td>
 <td>
-<em>(Optional)</em>
 <p>value is the value part of the label. A label value can have a maximum of 63 characters.
 Empty values are allowed by GCP. If non-empty, it must start with a lowercase letter,
 contain only lowercase letters, digits, underscores, or hyphens, and end with a lowercase letter or digit.
@@ -36718,6 +38795,19 @@ See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://c
 </tr>
 </tbody>
 </table>
+###GCPResourceName { #hypershift.openshift.io/v1beta1.GCPResourceName }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectSpec">GCPPrivateServiceConnectSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">GCPResourceReference</a>)
+</p>
+<p>
+<p>GCPResourceName is the name of a GCP resource following RFC 1035 naming conventions.
+Must start with a lowercase letter, contain only lowercase letters, digits, and hyphens,
+must not end with a hyphen, and be 1-63 characters long.
+See <a href="https://cloud.google.com/compute/docs/naming-resources">https://cloud.google.com/compute/docs/naming-resources</a> for details.</p>
+</p>
 ###GCPResourceReference { #hypershift.openshift.io/v1beta1.GCPResourceReference }
 <p>
 (<em>Appears on:</em>
@@ -36740,7 +38830,9 @@ See <a href="https://google.aip.dev/122">https://google.aip.dev/122</a> for GCP 
 <td>
 <code>name</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -36753,6 +38845,17 @@ See <a href="https://cloud.google.com/compute/docs/naming-resources">https://clo
 </tr>
 </tbody>
 </table>
+###GCPServiceAccountEmail { #hypershift.openshift.io/v1beta1.GCPServiceAccountEmail }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodeServiceAccount">GCPNodeServiceAccount</a>, 
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountsEmails">GCPServiceAccountsEmails</a>)
+</p>
+<p>
+<p>GCPServiceAccountEmail is the email address of a Google Service Account.
+Format: service-account-name@project-id.iam.gserviceaccount.com
+See <a href="https://cloud.google.com/iam/docs/service-accounts-create">https://cloud.google.com/iam/docs/service-accounts-create</a> for service account naming rules.</p>
+</p>
 ###GCPServiceAccountsEmails { #hypershift.openshift.io/v1beta1.GCPServiceAccountsEmails }
 <p>
 (<em>Appears on:</em>
@@ -36774,7 +38877,9 @@ Each service account should have the appropriate IAM permissions for its specifi
 <td>
 <code>nodePool</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -36795,7 +38900,9 @@ the required service accounts with appropriate IAM roles and WIF bindings.</p>
 <td>
 <code>controlPlane</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -36816,7 +38923,9 @@ the required service accounts with appropriate IAM roles and WIF bindings.</p>
 <td>
 <code>cloudController</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -36837,7 +38946,9 @@ the required service accounts with appropriate IAM roles and WIF bindings.</p>
 <td>
 <code>storage</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -36848,6 +38959,27 @@ This GSA requires the following IAM roles:
 - roles/compute.instanceAdmin.v1 (Compute Instance Admin - for attaching disks to VMs)
 - roles/iam.serviceAccountUser (Service Account User - for impersonation)
 - roles/resourcemanager.tagUser (Tag User - for applying resource tags to disks)
+See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
+Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+<p>This is a user-provided value referencing a pre-created Google Service Account.
+Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
+the required service accounts with appropriate IAM roles and WIF bindings.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>imageRegistry</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
+</em>
+</td>
+<td>
+<p>imageRegistry is the Google Service Account email for the Image Registry Operator
+that manages GCS storage for the internal container image registry.
+This GSA requires the following IAM roles:
+- roles/storage.admin (Storage Admin - for creating and managing GCS buckets and objects)
 See cmd/infra/gcp/iam-bindings.json for the authoritative role definitions.
 Format: service-account-name@project-id.iam.gserviceaccount.com</p>
 <p>This is a user-provided value referencing a pre-created Google Service Account.
@@ -36885,7 +39017,8 @@ string
 <td>
 <p>projectNumber is the numeric GCP project identifier for WIF configuration.
 This differs from the project ID and is required for workload identity pools.
-Must be a numeric string representing the GCP project number.</p>
+Must be a numeric string representing the GCP project number.
+See <a href="https://cloud.google.com/resource-manager/docs/creating-managing-projects">https://cloud.google.com/resource-manager/docs/creating-managing-projects</a> for project number details.</p>
 <p>This is a user-provided value obtained from GCP (found in GCP Console or via <code>gcloud projects describe PROJECT_ID</code>).
 Also available in the output of <code>hypershift infra create gcp</code>.</p>
 </td>
@@ -36903,7 +39036,8 @@ This pool is used to manage external identity mappings.
 Must be 4-32 characters and start with a lowercase letter.
 Allowed characters: lowercase letters (a-z), digits (0-9), hyphens (-).
 Cannot start or end with a hyphen.
-The prefix &ldquo;gcp-&rdquo; is reserved by Google and cannot be used.</p>
+The prefix &ldquo;gcp-&rdquo; is reserved by Google and cannot be used.
+See <a href="https://cloud.google.com/iam/docs/manage-workload-identity-pools-providers">https://cloud.google.com/iam/docs/manage-workload-identity-pools-providers</a> for naming rules.</p>
 <p>This is a user-provided value referencing a pre-created Workload Identity Pool.
 Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
 the WIF infrastructure and generates appropriate pool IDs.</p>
@@ -36922,7 +39056,8 @@ This provider handles the token exchange between external and GCP identities.
 Must be 4-32 characters and start with a lowercase letter.
 Allowed characters: lowercase letters (a-z), digits (0-9), hyphens (-).
 Cannot start or end with a hyphen.
-The prefix &ldquo;gcp-&rdquo; is reserved by Google and cannot be used.</p>
+The prefix &ldquo;gcp-&rdquo; is reserved by Google and cannot be used.
+See <a href="https://cloud.google.com/iam/docs/manage-workload-identity-pools-providers">https://cloud.google.com/iam/docs/manage-workload-identity-pools-providers</a> for naming rules.</p>
 <p>This is a user-provided value referencing a pre-created OIDC Provider within the WIF Pool.
 Typically obtained from the output of <code>hypershift infra create gcp</code>.</p>
 </td>
@@ -36943,6 +39078,628 @@ This follows the AWS pattern of having different roles for different purposes.</
 </td>
 </tr>
 </tbody>
+</table>
+###HCPEtcdBackupAzureBlob { #hypershift.openshift.io/v1beta1.HCPEtcdBackupAzureBlob }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStorage">HCPEtcdBackupStorage</a>)
+</p>
+<p>
+<p>HCPEtcdBackupAzureBlob defines the Azure Blob storage configuration for etcd backups.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>container</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>container is the name of the Azure Blob container where backups are stored.
+Must be 3-63 characters, lowercase letters, numbers, and hyphens only.
+Must start and end with a letter or number. Consecutive hyphens are not allowed.
+See <a href="https://learn.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers--blobs--and-metadata#container-names">https://learn.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers&ndash;blobs&ndash;and-metadata#container-names</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>storageAccount</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>storageAccount is the name of the Azure Storage Account.
+Must be 3-24 characters, lowercase letters and numbers only.
+See <a href="https://learn.microsoft.com/en-us/azure/storage/common/storage-account-overview#storage-account-name">https://learn.microsoft.com/en-us/azure/storage/common/storage-account-overview#storage-account-name</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>keyPrefix</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>keyPrefix is the blob name prefix for the backup file.
+Must consist of valid blob name characters: alphanumeric characters, forward slashes,
+hyphens, underscores, and periods.
+See <a href="https://learn.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers--blobs--and-metadata#blob-names">https://learn.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers&ndash;blobs&ndash;and-metadata#blob-names</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>credentials,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretReference">
+SecretReference
+</a>
+</em>
+</td>
+<td>
+<p>credentials references a Secret containing Azure credentials for uploading
+to Blob Storage. The Secret must exist in the Hypershift Operator namespace.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>encryptionKeyURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>encryptionKeyURL is the URL of the Azure Key Vault key used for encryption.
+Must be a valid Azure Key Vault key URL in the format
+&ldquo;https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]&rdquo;.
+This field is immutable once set and cannot be removed.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupConfig { #hypershift.openshift.io/v1beta1.HCPEtcdBackupConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdSpec">ManagedEtcdSpec</a>)
+</p>
+<p>
+<p>HCPEtcdBackupConfig defines the backup encryption configuration that is propagated
+from the HostedCluster to the HostedControlPlane via ManagedEtcdSpec.
+Exactly one platform-specific block must be specified, matching the platform discriminator.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>platform</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupConfigPlatform">
+HCPEtcdBackupConfigPlatform
+</a>
+</em>
+</td>
+<td>
+<p>platform specifies the cloud platform for backup encryption configuration.
+Valid values are &ldquo;AWS&rdquo; for AWS KMS encryption and &ldquo;Azure&rdquo; for Azure Key Vault encryption.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>aws,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupConfigAWS">
+HCPEtcdBackupConfigAWS
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>aws contains AWS-specific backup encryption configuration.
+Required when platform is &ldquo;AWS&rdquo;, and forbidden otherwise.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azure,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupConfigAzure">
+HCPEtcdBackupConfigAzure
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>azure contains Azure-specific backup encryption configuration.
+Required when platform is &ldquo;Azure&rdquo;, and forbidden otherwise.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupConfigAWS { #hypershift.openshift.io/v1beta1.HCPEtcdBackupConfigAWS }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupConfig">HCPEtcdBackupConfig</a>)
+</p>
+<p>
+<p>HCPEtcdBackupConfigAWS defines AWS-specific encryption settings for etcd backups.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>kmsKeyARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>kmsKeyARN is the ARN of the AWS KMS key to use for encrypting etcd backup artifacts in S3.
+Must be a valid AWS KMS key ARN in the format
+&ldquo;arn:<partition>:kms:<region>:<account-id>:key/<key-id>&rdquo;
+where partition is one of aws, aws-cn, or aws-us-gov.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupConfigAzure { #hypershift.openshift.io/v1beta1.HCPEtcdBackupConfigAzure }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupConfig">HCPEtcdBackupConfig</a>)
+</p>
+<p>
+<p>HCPEtcdBackupConfigAzure defines Azure-specific encryption settings for etcd backups.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>encryptionKeyURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>encryptionKeyURL is the URL of the Azure Key Vault key to use for encrypting etcd backup artifacts.
+Must be a valid Azure Key Vault key URL in the format
+&ldquo;https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]&rdquo;.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupConfigPlatform { #hypershift.openshift.io/v1beta1.HCPEtcdBackupConfigPlatform }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupConfig">HCPEtcdBackupConfig</a>)
+</p>
+<p>
+<p>HCPEtcdBackupConfigPlatform identifies the cloud platform for backup encryption configuration.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;AWS&#34;</p></td>
+<td><p>AWSBackupConfigPlatform indicates AWS KMS encryption for backup artifacts.</p>
+</td>
+</tr><tr><td><p>&#34;Azure&#34;</p></td>
+<td><p>AzureBackupConfigPlatform indicates Azure Key Vault encryption for backup artifacts.</p>
+</td>
+</tr></tbody>
+</table>
+###HCPEtcdBackupEncryptionMetadata { #hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadata }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStatus">HCPEtcdBackupStatus</a>)
+</p>
+<p>
+<p>HCPEtcdBackupEncryptionMetadata contains platform-specific metadata about the
+encryption applied to the backup artifact in cloud storage.
+The presence of a platform block indicates that encryption was applied.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>aws,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadataAWS">
+HCPEtcdBackupEncryptionMetadataAWS
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>aws contains AWS-specific encryption metadata for the backup.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azure,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadataAzure">
+HCPEtcdBackupEncryptionMetadataAzure
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>azure contains Azure-specific encryption metadata for the backup.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupEncryptionMetadataAWS { #hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadataAWS }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadata">HCPEtcdBackupEncryptionMetadata</a>)
+</p>
+<p>
+<p>HCPEtcdBackupEncryptionMetadataAWS contains AWS-specific encryption metadata.
+The values here reflect the encryption settings from the HCPEtcdBackupConfig input.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>kmsKeyARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>kmsKeyARN is the ARN of the KMS key used for server-side encryption of the backup in S3.
+Must be a valid AWS KMS key ARN in the format
+&ldquo;arn:<partition>:kms:<region>:<account-id>:key/<key-id>&rdquo;
+where partition is one of aws, aws-cn, or aws-us-gov.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupEncryptionMetadataAzure { #hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadataAzure }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadata">HCPEtcdBackupEncryptionMetadata</a>)
+</p>
+<p>
+<p>HCPEtcdBackupEncryptionMetadataAzure contains Azure-specific encryption metadata.
+The values here reflect the encryption settings from the HCPEtcdBackupConfig input.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>encryptionKeyURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>encryptionKeyURL is the URL of the Azure Key Vault key used for encryption of the backup.
+Must be a valid Azure Key Vault key URL in the format
+&ldquo;https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]&rdquo;.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupS3 { #hypershift.openshift.io/v1beta1.HCPEtcdBackupS3 }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStorage">HCPEtcdBackupStorage</a>)
+</p>
+<p>
+<p>HCPEtcdBackupS3 defines the S3 storage configuration for etcd backups.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>bucket</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>bucket is the name of the S3 bucket where backups are stored.
+Must be 3-63 characters, lowercase letters, numbers, hyphens, and periods only.
+Must start and end with a letter or number. Consecutive periods are not allowed.
+See <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html">https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>region</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>region is the AWS region where the S3 bucket is located (e.g. &ldquo;us-east-1&rdquo;).
+Must be a valid AWS region identifier: lowercase letters, digits, and hyphens.
+Must start and end with an alphanumeric character, no consecutive hyphens.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>keyPrefix</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>keyPrefix is the S3 key prefix for the backup file.
+Must consist of safe S3 object key characters: alphanumeric characters,
+forward slashes, hyphens, underscores, periods, exclamation marks,
+asterisks, single quotes, and parentheses.
+See <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html">https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>credentials,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretReference">
+SecretReference
+</a>
+</em>
+</td>
+<td>
+<p>credentials references a Secret containing AWS credentials for uploading
+to S3. The Secret must exist in the Hypershift Operator namespace and contain a
+&lsquo;credentials&rsquo; key with a valid AWS credentials file.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kmsKeyARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kmsKeyARN is the ARN of the KMS key used for server-side encryption of the backup.
+Must be a valid AWS KMS key ARN in the format
+&ldquo;arn:<partition>:kms:<region>:<account-id>:key/<key-id>&rdquo;
+where partition is one of aws, aws-cn, or aws-us-gov.
+This field is immutable once set and cannot be removed.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupSpec { #hypershift.openshift.io/v1beta1.HCPEtcdBackupSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackup">HCPEtcdBackup</a>)
+</p>
+<p>
+<p>HCPEtcdBackupSpec defines the desired state of HCPEtcdBackup.
+HCPEtcdBackup is a one-shot backup request; the entire spec is immutable once created.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>storage,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStorage">
+HCPEtcdBackupStorage
+</a>
+</em>
+</td>
+<td>
+<p>storage defines the cloud storage backend where the etcd snapshot will be uploaded.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupStatus { #hypershift.openshift.io/v1beta1.HCPEtcdBackupStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackup">HCPEtcdBackup</a>)
+</p>
+<p>
+<p>HCPEtcdBackupStatus defines the observed state of HCPEtcdBackup.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>conditions contains details for the current state of the etcd backup.
+The following condition types are expected:
+- &ldquo;BackupCompleted&rdquo;: indicates whether the etcd backup has completed (True=success, False=failure).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>snapshotURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>snapshotURL is the URL of the completed backup snapshot in cloud storage.
+Must be a valid URL with scheme https or s3.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>encryptionMetadata,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadata">
+HCPEtcdBackupEncryptionMetadata
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>encryptionMetadata contains metadata about the encryption of the backup.
+When present, at least one platform-specific encryption block must be set.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupStorage { #hypershift.openshift.io/v1beta1.HCPEtcdBackupStorage }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupSpec">HCPEtcdBackupSpec</a>)
+</p>
+<p>
+<p>HCPEtcdBackupStorage defines the cloud storage backend configuration for the backup.
+Exactly one storage backend must be specified, matching the storageType discriminator.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>storageType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStorageType">
+HCPEtcdBackupStorageType
+</a>
+</em>
+</td>
+<td>
+<p>storageType specifies the type of cloud storage backend for the etcd backup.
+Valid values are &ldquo;S3&rdquo; for AWS S3 storage and &ldquo;AzureBlob&rdquo; for Azure Blob Storage.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>s3,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupS3">
+HCPEtcdBackupS3
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>s3 specifies the S3 storage configuration for the etcd backup.
+Required when storageType is &ldquo;S3&rdquo;, and forbidden otherwise.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azureBlob,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupAzureBlob">
+HCPEtcdBackupAzureBlob
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>azureBlob specifies the Azure Blob storage configuration for the etcd backup.
+Required when storageType is &ldquo;AzureBlob&rdquo;, and forbidden otherwise.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupStorageType { #hypershift.openshift.io/v1beta1.HCPEtcdBackupStorageType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStorage">HCPEtcdBackupStorage</a>)
+</p>
+<p>
+<p>HCPEtcdBackupStorageType is the type of storage for etcd backups.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;AzureBlob&#34;</p></td>
+<td><p>AzureBlobBackupStorage indicates that the backup is stored in Azure Blob Storage.</p>
+</td>
+</tr><tr><td><p>&#34;S3&#34;</p></td>
+<td><p>S3BackupStorage indicates that the backup is stored in AWS S3.</p>
+</td>
+</tr></tbody>
 </table>
 ###HostedClusterSpec { #hypershift.openshift.io/v1beta1.HostedClusterSpec }
 <p>
@@ -37181,7 +39938,8 @@ AutoNode
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoNode specifies the configuration for the autoNode feature.</p>
+<p>autoNode specifies the configuration for automatic node provisioning and lifecycle management.
+When set, the provisioner(e.g. Karpenter) will be used to provision nodes for targeted workloads.</p>
 </td>
 </tr>
 <tr>
@@ -37545,6 +40303,22 @@ plane&rsquo;s current state.</p>
 </tr>
 <tr>
 <td>
+<code>controlPlaneVersion,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneVersionStatus">
+ControlPlaneVersionStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneVersion tracks the rollout status of the control plane
+components running on the management cluster, independently from
+the data-plane version reported in the version field.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>version</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ClusterVersionStatus">
@@ -37674,6 +40448,20 @@ PlatformStatus
 <td>
 <em>(Optional)</em>
 <p>platform contains platform-specific status of the HostedCluster</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>autoNode,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AutoNodeStatus">
+AutoNodeStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>autoNode contains the observed state of the autoNode (Karpenter) provisioner.</p>
 </td>
 </tr>
 <tr>
@@ -38148,7 +40936,10 @@ AutoNode
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoNode specifies the configuration for the autoNode feature.</p>
+<p>autoNode specifies the configuration for automatic node provisioning
+and lifecycle management. When set, nodes are automatically provisioned
+using the specified provisioner (e.g. Karpenter) instead of requiring
+manual NodePool management.</p>
 </td>
 </tr>
 <tr>
@@ -38314,6 +41105,22 @@ This is populated after the infrastructure is ready.</p>
 </tr>
 <tr>
 <td>
+<code>controlPlaneVersion,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.ControlPlaneVersionStatus">
+ControlPlaneVersionStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneVersion tracks the rollout status of the control plane
+components running on the management cluster, independently from
+the data-plane version reported in the version field.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>versionStatus</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ClusterVersionStatus">
@@ -38443,6 +41250,20 @@ int
 <td>
 <em>(Optional)</em>
 <p>nodeCount tracks the number of nodes in the HostedControlPlane.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>autoNode,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AutoNodeStatus">
+AutoNodeStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>autoNode contains the observed state of the autoNode (Karpenter) provisioner.</p>
 </td>
 </tr>
 <tr>
@@ -39018,6 +41839,7 @@ AzureKMSSpec
 <a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">KarpenterConfig</a>)
 </p>
 <p>
+<p>KarpenterAWSConfig specifies AWS-specific configuration for the Karpenter provisioner.</p>
 </p>
 <table>
 <thead>
@@ -39035,7 +41857,237 @@ string
 </em>
 </td>
 <td>
-<p>roleARN specifies the ARN of the Karpenter provisioner.</p>
+<p>roleARN specifies the ARN of the IAM role that Karpenter assumes to provision
+and manage EC2 instances in the hosted cluster&rsquo;s AWS account.</p>
+<p>The referenced role must have a trust relationship that allows it to be assumed
+by the karpenter service account in the hosted cluster via OIDC.
+Example:
+{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Principal&rdquo;: {
+&ldquo;Federated&rdquo;: &ldquo;<oidc-provider-arn>&rdquo;
+},
+&ldquo;Action&rdquo;: &ldquo;sts:AssumeRoleWithWebIdentity&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;<oidc-provider-name>:sub&rdquo;: &ldquo;system:serviceaccount:kube-system:karpenter&rdquo;
+}
+}
+}
+]
+}</p>
+<p>The following is an example of the policy document for this role.</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedEC2InstanceAccessActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:<em>:ec2:</em>::image/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>::snapshot/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:security-group/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:subnet/</em>&rdquo;
+],
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:RunInstances&rdquo;,
+&ldquo;ec2:CreateFleet&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedEC2LaunchTemplateAccessActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:ec2:</em>:<em>:launch-template/</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:RunInstances&rdquo;,
+&ldquo;ec2:CreateFleet&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedEC2InstanceActionsWithTags&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:<em>:ec2:</em>:<em>:fleet/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:instance/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:volume/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:network-interface/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:launch-template/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:spot-instances-request/</em>&rdquo;
+],
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:RunInstances&rdquo;,
+&ldquo;ec2:CreateFleet&rdquo;,
+&ldquo;ec2:CreateLaunchTemplate&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:RequestTag/karpenter.sh/nodepool&rdquo;: &ldquo;<em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedResourceCreationTagging&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:</em>:ec2:<em>:</em>:fleet/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:instance/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:volume/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:network-interface/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:launch-template/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:spot-instances-request/<em>&rdquo;
+],
+&ldquo;Action&rdquo;: &ldquo;ec2:CreateTags&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;ec2:CreateAction&rdquo;: [
+&ldquo;RunInstances&rdquo;,
+&ldquo;CreateFleet&rdquo;,
+&ldquo;CreateLaunchTemplate&rdquo;
+]
+},
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:RequestTag/karpenter.sh/nodepool&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedResourceTagging&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:ec2:</em>:<em>:instance/</em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;ec2:CreateTags&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.sh/nodepool&rdquo;: &ldquo;<em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedDeletion&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:</em>:ec2:<em>:</em>:instance/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:launch-template/<em>&rdquo;
+],
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:TerminateInstances&rdquo;,
+&ldquo;ec2:DeleteLaunchTemplate&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.sh/nodepool&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowRegionalReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;<em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:DescribeImages&rdquo;,
+&ldquo;ec2:DescribeInstances&rdquo;,
+&ldquo;ec2:DescribeInstanceTypeOfferings&rdquo;,
+&ldquo;ec2:DescribeInstanceTypes&rdquo;,
+&ldquo;ec2:DescribeLaunchTemplates&rdquo;,
+&ldquo;ec2:DescribeSecurityGroups&rdquo;,
+&ldquo;ec2:DescribeSpotPriceHistory&rdquo;,
+&ldquo;ec2:DescribeSubnets&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowSSMReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:</em>:ssm:<em>::parameter/aws/service/</em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;ssm:GetParameter&rdquo;
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowPricingReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;<em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;pricing:GetProducts&rdquo;
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowInterruptionQueueActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;sqs:DeleteMessage&rdquo;,
+&ldquo;sqs:GetQueueUrl&rdquo;,
+&ldquo;sqs:ReceiveMessage&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowPassingInstanceRole&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:iam::</em>:role/<em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;iam:PassRole&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;iam:PassedToService&rdquo;: [
+&ldquo;ec2.amazonaws.com&rdquo;,
+&ldquo;ec2.amazonaws.com.cn&rdquo;
+]
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedInstanceProfileCreationActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:</em>:iam::<em>:instance-profile/</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;iam:CreateInstanceProfile&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:RequestTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;<em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedInstanceProfileTagActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:</em>:iam::<em>:instance-profile/</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;iam:TagInstanceProfile&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;<em>&rdquo;,
+&ldquo;aws:RequestTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedInstanceProfileActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:iam::</em>:instance-profile/<em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;iam:AddRoleToInstanceProfile&rdquo;,
+&ldquo;iam:RemoveRoleFromInstanceProfile&rdquo;,
+&ldquo;iam:DeleteInstanceProfile&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowInstanceProfileReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:iam::</em>:instance-profile/<em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;iam:GetInstanceProfile&rdquo;
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowUnscopedInstanceProfileListAction&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;</em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;iam:ListInstanceProfiles&rdquo;
+}
+]
+}</p>
 </td>
 </tr>
 </tbody>
@@ -39046,6 +42098,8 @@ string
 <a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">ProvisionerConfig</a>)
 </p>
 <p>
+<p>KarpenterConfig specifies the configuration for the Karpenter provisioner
+including the target platform and platform-specific settings.</p>
 </p>
 <table>
 <thead>
@@ -39065,7 +42119,7 @@ PlatformType
 </em>
 </td>
 <td>
-<p>platform specifies the platform-specific configuration for Karpenter.</p>
+<p>platform specifies the infrastructure platform that Karpenter should provision nodes on.</p>
 </td>
 </tr>
 <tr>
@@ -40181,6 +43235,22 @@ ManagedEtcdStorageSpec
 <p>storage specifies how etcd data is persisted.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>backup,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupConfig">
+HCPEtcdBackupConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>backup defines the backup configuration for managed etcd, including
+optional KMS key settings for artifact encryption in cloud storage.
+This configuration is only used when an HCPEtcdBackup CR exists.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###ManagedEtcdStorageSpec { #hypershift.openshift.io/v1beta1.ManagedEtcdStorageSpec }
@@ -40341,10 +43411,11 @@ credentialsSecretName must also be unique within the Azure Key Vault. See more d
 ###MarketType { #hypershift.openshift.io/v1beta1.MarketType }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>)
+<a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>, 
+<a href="#hypershift.openshift.io/v1beta1.PlacementOptions">PlacementOptions</a>)
 </p>
 <p>
-<p>MarketType describes the market type of the CapacityReservation for an Instance.</p>
+<p>MarketType describes the market type for EC2 instances.</p>
 </p>
 <table>
 <thead>
@@ -40354,10 +43425,14 @@ credentialsSecretName must also be unique within the Azure Key Vault. See more d
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;CapacityBlocks&#34;</p></td>
-<td><p>MarketTypeCapacityBlock is a MarketType enum value</p>
+<td><p>MarketTypeCapacityBlock is a MarketType enum value for Capacity Blocks.</p>
 </td>
 </tr><tr><td><p>&#34;OnDemand&#34;</p></td>
-<td><p>MarketTypeOnDemand is a MarketType enum value</p>
+<td><p>MarketTypeOnDemand is a MarketType enum value for standard on-demand instances.</p>
+</td>
+</tr><tr><td><p>&#34;Spot&#34;</p></td>
+<td><p>MarketTypeSpot is a MarketType enum value for Spot instances.
+Spot instances use spare EC2 capacity at reduced prices but may be interrupted.</p>
 </td>
 </tr></tbody>
 </table>
@@ -40767,6 +43842,39 @@ Enabling this feature will cause the controller to automatically delete unhealth
 The unhealthy criteria is reserved for the controller implementation and subject to change.
 But generally it&rsquo;s determined by checking the Node ready condition is true and a timeout that might vary depending on the platform provider.
 AutoRepair will no-op when more than 2 Nodes are unhealthy at the same time. Giving time for the cluster to stabilize or to the user to manually intervene.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###NodePoolNodesInfo { #hypershift.openshift.io/v1beta1.NodePoolNodesInfo }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolStatus">NodePoolStatus</a>)
+</p>
+<p>
+<p>NodePoolNodesInfo aggregates observed information about nodes belonging to this NodePool.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nodeVersions</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NodeVersion">
+[]NodeVersion
+</a>
+</em>
+</td>
+<td>
+<p>nodeVersions summarizes the versions and health of nodes belonging
+to this NodePool. Each entry represents a distinct version combination
+and the number of ready/unready nodes running it.</p>
 </td>
 </tr>
 </tbody>
@@ -41240,6 +44348,21 @@ the NodePool.</p>
 </tr>
 <tr>
 <td>
+<code>nodesInfo,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolNodesInfo">
+NodePoolNodesInfo
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nodesInfo contains aggregated information observed from nodes belonging
+to this NodePool.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>platform</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.NodePoolPlatformStatus">
@@ -41307,6 +44430,73 @@ int32
 <em>(Optional)</em>
 <p>port is the port of the NodePort service. If &lt;=0, the port is dynamically
 assigned when the service is created.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###NodeVersion { #hypershift.openshift.io/v1beta1.NodeVersion }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolNodesInfo">NodePoolNodesInfo</a>)
+</p>
+<p>
+<p>NodeVersion represents a version combination and the count of ready and unready nodes running it.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ocpVersion</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ocpVersion is the OpenShift release version this node was provisioned
+or upgraded with.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeletVersion</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>kubeletVersion is the kubelet version reported by the node, as observed
+from Machine.Status.NodeInfo.KubeletVersion.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>readyNodeCount</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<p>readyNodeCount is the number of nodes running this version where the
+CAPI NodeHealthy condition is True.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>unreadyNodeCount</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<p>unreadyNodeCount is the number of nodes running this version where the
+CAPI NodeHealthy condition is not True. Useful for tracking upgrade
+progress and detecting stuck nodes.</p>
 </td>
 </tr>
 </tbody>
@@ -41426,6 +44616,28 @@ OVNIPv4Config
 <p>ipv4 allows users to configure IP settings for IPv4 connections. When omitted,
 this means no opinions and the default configuration is used. Check individual
 fields within ipv4 for details of default values.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>mtu</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>mtu is the MTU to use for the tunnel interface on hosted cluster nodes.
+This must be 100 bytes smaller than the uplink MTU.
+When unset, the cluster-network-operator will determine the MTU automatically
+based on the infrastructure (e.g., for commercial AWS regions, it defaults
+to 8901 based on the 9001 uplink MTU minus 100 bytes overhead).
+Some non-commercial AWS regions do not support 9001 uplink MTU,
+requiring this field to be explicitly set to a lower value.
+The maximum is 9216, which is the standard jumbo frame upper limit
+supported by datacenter and cloud network interfaces.
+The minimum is 576, which is the minimum IPv4 MTU per RFC 791.
+This field is immutable once set.</p>
 </td>
 </tr>
 </tbody>
@@ -41916,6 +45128,10 @@ This field is immutable</p>
 </p>
 <p>
 <p>PlacementOptions specifies the placement options for the EC2 instances.</p>
+<p>The instance market type is determined by the marketType field:
+- &ldquo;OnDemand&rdquo; (default): Standard on-demand instances
+- &ldquo;Spot&rdquo;: Spot instances using spare EC2 capacity at reduced prices
+- &ldquo;CapacityBlocks&rdquo;: Scheduled pre-purchased compute capacity for ML workloads</p>
 </p>
 <table>
 <thead>
@@ -41945,6 +45161,45 @@ as AWS does not support Capacity Reservations with Dedicated Hosts.</p>
 </tr>
 <tr>
 <td>
+<code>marketType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MarketType">
+MarketType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>marketType specifies the EC2 instance purchasing model.
+Supported values are &ldquo;OnDemand&rdquo; for standard on-demand instances,
+&ldquo;Spot&rdquo; for spot instances that use spare EC2 capacity at reduced prices
+but may be interrupted (optionally accepts spot options and requires
+terminationHandlerQueueURL on the HostedCluster), and &ldquo;CapacityBlocks&rdquo; for scheduled pre-purchased
+compute capacity recommended for GPU/ML workloads (requires
+capacityReservation with a specific reservation ID).
+When omitted, the default is &ldquo;OnDemand&rdquo;.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>spot,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SpotOptions">
+SpotOptions
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>spot configures optional Spot instance overrides.
+When omitted, Spot instances use AWS defaults.</p>
+<p>Spot instances use spare EC2 capacity at reduced prices but may be interrupted
+with a 2-minute warning. Requires terminationHandlerQueueURL to be set on the
+HostedCluster&rsquo;s AWS platform spec for graceful handling of interruptions.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>capacityReservation</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">
@@ -41957,6 +45212,7 @@ CapacityReservationOptions
 <p>capacityReservation specifies Capacity Reservation options for the NodePool instances.</p>
 <p>Cannot be specified when tenancy is set to &ldquo;host&rdquo; as Dedicated Hosts
 do not support Capacity Reservations. Compatible with &ldquo;default&rdquo; and &ldquo;dedicated&rdquo; tenancy.</p>
+<p>Required when marketType is &ldquo;CapacityBlocks&rdquo;.</p>
 </td>
 </tr>
 </tbody>
@@ -42907,7 +46163,7 @@ This field is immutable. Once set, it cannot be changed.</p>
 <a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">ProvisionerConfig</a>)
 </p>
 <p>
-<p>provisioner is a enum specifying the strategy for auto managing Nodes.</p>
+<p>Provisioner is the name of a supported node provisioner.</p>
 </p>
 <table>
 <thead>
@@ -42917,7 +46173,8 @@ This field is immutable. Once set, it cannot be changed.</p>
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;Karpenter&#34;</p></td>
-<td></td>
+<td><p>ProvisionerKarpenter indicates that Karpenter is used for automatic node provisioning.</p>
+</td>
 </tr></tbody>
 </table>
 ###ProvisionerConfig { #hypershift.openshift.io/v1beta1.ProvisionerConfig }
@@ -42926,7 +46183,8 @@ This field is immutable. Once set, it cannot be changed.</p>
 <a href="#hypershift.openshift.io/v1beta1.AutoNode">AutoNode</a>)
 </p>
 <p>
-<p>ProvisionerConfig is a enum specifying the strategy for auto managing Nodes.</p>
+<p>ProvisionerConfig specifies the provisioner used for automatic node management
+and its associated configuration.</p>
 </p>
 <table>
 <thead>
@@ -42946,7 +46204,7 @@ Provisioner
 </em>
 </td>
 <td>
-<p>name specifies the name of the provisioner to use.</p>
+<p>name specifies the name of the provisioner to use for automatic node management.</p>
 </td>
 </tr>
 <tr>
@@ -43511,6 +46769,39 @@ AESCBCSpec
 </td>
 </tr></tbody>
 </table>
+###SecretReference { #hypershift.openshift.io/v1beta1.SecretReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupAzureBlob">HCPEtcdBackupAzureBlob</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupS3">HCPEtcdBackupS3</a>)
+</p>
+<p>
+<p>SecretReference contains a reference to a Secret by name.
+The Secret must exist in the same namespace as the referencing resource.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the name of the Secret. It must be a valid DNS-1123 subdomain: at most
+253 characters, consisting of lowercase alphanumeric characters, hyphens, and periods.
+Each period-separated segment must start and end with an alphanumeric character.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###ServiceNetworkEntry { #hypershift.openshift.io/v1beta1.ServiceNetworkEntry }
 <p>
 (<em>Appears on:</em>
@@ -43675,6 +46966,44 @@ ServicePublishingStrategy
 <p>ServiceType defines what control plane services can be exposed from the
 management control plane.</p>
 </p>
+###SpotOptions { #hypershift.openshift.io/v1beta1.SpotOptions }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PlacementOptions">PlacementOptions</a>)
+</p>
+<p>
+<p>SpotOptions configures options for Spot instances.</p>
+<p>Spot instances use spare EC2 capacity at reduced prices but may be interrupted
+with a 2-minute warning when EC2 needs the capacity back.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>maxPrice</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>maxPrice defines the maximum price the user is willing to pay for Spot instances.
+If not specified, the on-demand price is used as the maximum (you pay the actual spot price).
+The value should be a decimal number representing the price per hour in USD.
+For example, &ldquo;0.50&rdquo; means 50 cents per hour.</p>
+<p>Note: AWS recommends NOT setting maxPrice to reduce interruption frequency.
+When omitted, you pay the current Spot price (capped at On-Demand price).
+AWS minimum allowed value is $0.001.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###SubnetFilter { #hypershift.openshift.io/v1beta1.SubnetFilter }
 <p>
 (<em>Appears on:</em>
@@ -44342,6 +47671,186 @@ graph TB
 - **hypershift-operator AWS controller**: `hypershift-operator/controllers/platform/aws/controller.go`
 - **control-plane-operator PrivateLink controller**: `control-plane-operator/controllers/awsprivatelink/awsprivatelink_controller.go`
 - **AWSEndpointService API types**: `api/hypershift/v1beta1/endpointservice_types.go`
+
+
+---
+
+## Source: docs/content/reference/architecture/azure/privatelink.md
+
+---
+title: Azure Private Link
+---
+
+# Azure Private Link Architecture in HyperShift
+
+## Overview
+
+HyperShift uses Azure Private Link Service (PLS) to establish secure connectivity between worker nodes in the guest cluster VNet and the hosted control plane in the management cluster. This is used when `EndpointAccess` is set to `Private` or `PublicAndPrivate`.
+
+Unlike AWS PrivateLink which uses VPC Endpoint Services, Azure Private Link uses a dedicated Private Link Service resource backed by an internal load balancer with NAT IP translation.
+
+## Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph MC["Management Cluster"]
+        subgraph HO["hypershift-operator"]
+            HO_Controller["AzurePLSController
+            - Watches: AzurePrivateLinkService CR
+            - Waits for LoadBalancerIP in Spec
+            - Finds ILB by frontend IP
+            - Creates PLS with NAT subnet
+            - Writes PLS alias to Status"]
+        end
+
+        subgraph HCP["HCP Namespace (e.g., clusters-foo)"]
+            subgraph CPO["control-plane-operator"]
+                Observer["AzurePLSObserver
+                - Watches: private-router Service
+                - Waits for ILB frontend IP
+                - Creates AzurePrivateLinkService CR
+                - Writes LoadBalancerIP to Spec"]
+                Reconciler["AzurePLSReconciler
+                - Waits for PLS alias in Status
+                - Creates Private Endpoint in guest VNet
+                - Creates Private DNS zones
+                - Creates VNet links and A records
+                - Writes PrivateEndpointIP to Status"]
+            end
+            ROUTER_SVC["private-router (Svc)
+            type: LoadBalancer
+            annotation: internal"]
+        end
+    end
+
+    subgraph MGMT_AZURE["Management Azure Subscription"]
+        ILB["Internal Load Balancer
+        Frontend IP from private-router"]
+        PLS["Private Link Service
+        NAT subnet for IP translation
+        Visibility: auto-approve guest sub"]
+    end
+
+    subgraph GUEST_AZURE["Guest Azure Subscription"]
+        subgraph GUEST_VNET["Guest VNet"]
+            PE["Private Endpoint
+            Connected to PLS alias
+            Gets private IP in guest VNet"]
+            DNS_LOCAL["Private DNS Zone
+            clusterName.hypershift.local"]
+            DNS_BASE["Private DNS Zone
+            baseDomain"]
+            VNET_LINK["VNet Links
+            Link DNS zones to guest VNet"]
+            A_LOCAL["A Records (hypershift.local)
+            api → PE IP
+            *.apps → PE IP"]
+            A_BASE["A Records (baseDomain)
+            api-clusterName → PE IP
+            oauth-clusterName → PE IP"]
+            WORKERS["Worker Nodes
+            Resolve API via Private DNS"]
+        end
+    end
+
+    Observer --> ROUTER_SVC
+    ROUTER_SVC --> ILB
+    HO_Controller -- "Creates PLS
+    Writes alias to Status" --> PLS
+    ILB --> PLS
+    PLS -- "Azure Private Link" --> PE
+    Reconciler -- "Creates PE, DNS zones,
+    VNet links, A records" --> PE
+    PE --> DNS_LOCAL
+    PE --> DNS_BASE
+    DNS_LOCAL --> VNET_LINK
+    DNS_BASE --> VNET_LINK
+    DNS_LOCAL --> A_LOCAL
+    DNS_BASE --> A_BASE
+    WORKERS -- "DNS resolution" --> A_LOCAL
+    WORKERS -- "DNS resolution" --> A_BASE
+    A_LOCAL -- "PE IP" --> PE
+    A_BASE -- "PE IP" --> PE
+```
+
+## Component Responsibilities
+
+### Azure Resources
+
+| Azure Resource | Created By | Description |
+|----------------|------------|-------------|
+| Internal Load Balancer | Azure (via `private-router` Service) | Fronts the KAS/router in the management cluster with an internal IP |
+| Private Link Service | HyperShift operator (HO controller) | Exposes the ILB via Private Link using NAT subnet for IP translation |
+| Private Endpoint | Control plane operator (CPO reconciler) | Connects guest VNet to PLS, receives a private IP in the guest subnet |
+| Private DNS Zone (local) | Control plane operator (CPO reconciler) | `<clusterName>.hypershift.local` - synthetic internal zone for KAS and apps resolution |
+| Private DNS Zone (base) | Control plane operator (CPO reconciler) | `<baseDomain>` - zone for API and OAuth hostname resolution via external names |
+| VNet Links | Control plane operator (CPO reconciler) | Links both Private DNS zones to the guest VNet |
+| A Records (local zone) | Control plane operator (CPO reconciler) | `api` and `*.apps` in the `hypershift.local` zone, pointing to the Private Endpoint IP |
+| A Records (base zone) | Control plane operator (CPO reconciler) | `api-<clusterName>` and `oauth-<clusterName>` in the base domain zone, pointing to the Private Endpoint IP |
+
+### Kubernetes Resources
+
+| Resource | Created By | Responsibility |
+|----------|------------|----------------|
+| `AzurePrivateLinkService` CR | CPO (Observer) | Tracks the PLS lifecycle and coordinates between HO and CPO |
+| `.spec.loadBalancerIP` | CPO (Observer) | ILB frontend IP, consumed by HO to find the correct load balancer |
+| `.status.privateLinkServiceAlias` | HO (Controller) | Globally unique PLS alias, consumed by CPO to create Private Endpoint |
+| `.status.privateEndpointIP` | CPO (Reconciler) | Private Endpoint IP, used for DNS A record creation |
+
+## Data Flow
+
+1. **CPO Observer watches `private-router` Service** - Waits for the Service to get an internal load balancer IP from its `status.loadBalancer.ingress`
+2. **CPO Observer creates `AzurePrivateLinkService` CR** - Populates `spec.loadBalancerIP` with the ILB frontend IP, along with subscription, resource group, location, NAT subnet, and guest VNet details
+3. **HO Controller finds the ILB** - Uses the `spec.loadBalancerIP` to locate the Azure internal load balancer resource by matching frontend IP configurations
+4. **HO Controller creates Private Link Service** - Creates PLS attached to the ILB with NAT IPs from the configured NAT subnet. Configures auto-approval for the guest subscription. Writes `status.privateLinkServiceAlias`
+5. **CPO Reconciler creates Private Endpoint** - Uses the PLS alias to create a PE in the guest VNet subnet. Waits for the PE to get a private IP. Writes `status.privateEndpointIP`
+6. **CPO Reconciler creates Private DNS (local zone)** - Creates a `<clusterName>.hypershift.local` Private DNS zone, links it to the guest VNet, and creates `api` and `*.apps` A records pointing to the PE IP. This is a synthetic internal domain that only exists within the guest VNet
+7. **CPO Reconciler creates Private DNS (base domain zone)** - Creates a `<baseDomain>` Private DNS zone, links it to the guest VNet, and creates `api-<clusterName>` and `oauth-<clusterName>` A records pointing to the PE IP. This enables the console OAuth flow and other services that use external API/OAuth hostnames from within the private network
+8. **Workers resolve API hostname** - Worker nodes use the Private DNS zones to resolve the API server hostname to the Private Endpoint IP, which routes through Azure Private Link to the ILB and ultimately to the KAS pods
+
+## Condition Progression
+
+The `AzurePrivateLinkService` CR tracks progress through status conditions:
+
+| Condition | Set By | Meaning |
+|-----------|--------|---------|
+| `AzureInternalLoadBalancerAvailable` | HO | ILB found with matching frontend IP |
+| `AzurePLSCreated` | HO | Private Link Service created in management RG |
+| `AzurePrivateEndpointAvailable` | CPO | Private Endpoint created and connected in guest VNet |
+| `AzurePrivateDNSAvailable` | CPO | DNS zones, VNet links, and A records created |
+| `AzurePrivateLinkServiceAvailable` | CPO | All components ready, full private connectivity established |
+
+## EndpointAccess Modes
+
+| Mode | Public LB | Internal LB | Private Link Service | Private Endpoint | Private DNS |
+|------|-----------|-------------|---------------------|-----------------|-------------|
+| `Public` | Yes | No | No | No | No |
+| `PublicAndPrivate` | Yes | Yes | Yes | Yes | Yes |
+| `Private` | No | Yes | Yes | Yes | Yes |
+
+## Deletion Flow
+
+Deletion uses a dual-finalizer pattern to ensure resources are cleaned up in the
+correct dependency order:
+
+1. **CPO finalizer runs first**: Removes the Private Endpoint, Private DNS zones (both `<clusterName>.hypershift.local` and `<baseDomain>`), VNet links, and A records from the guest subscription
+2. **HO finalizer runs second**: Removes the Private Link Service from the management cluster's resource group
+
+This ordering is critical because:
+
+- The Private Endpoint must be disconnected before the PLS can be deleted
+- DNS records must be removed before DNS zones can be deleted
+- VNet links must be removed before DNS zones can be deleted
+
+## Code References
+
+| Component | File |
+|-----------|------|
+| HO PLS Controller | `hypershift-operator/controllers/platform/azure/controller.go` |
+| CPO Observer | `control-plane-operator/controllers/azureprivatelinkservice/observer.go` |
+| CPO Reconciler | `control-plane-operator/controllers/azureprivatelinkservice/controller.go` |
+| AzurePrivateLinkService API | `api/hypershift/v1beta1/azureprivatelinkservice_types.go` |
+| Azure platform types | `api/hypershift/v1beta1/azure.go` |
 
 
 ---
@@ -45595,6 +49104,10 @@ Legend:
 - Yellow box: namespace
 - Rounded box: processes
 - Rectangle: CR instances
+- Solid arrow (`-->`) with **reconciles**: a controller watches the resource and actively reconciles it
+- Solid arrow (`-->`) with **creates**: a controller creates the resource
+- Solid arrow (`-->`) with **operates**: a controller manages/deploys another process
+- Dotted arrow (`-.->`) with **consumes**: a process reads or references the resource as input without actively watching or reconciling it (i.e. the resource is treated as an input/lookup, not as a trigger for a reconcile loop)
 
 ```mermaid
 flowchart LR
@@ -45647,12 +49160,8 @@ flowchart LR
 
   capi-provider-->|reconciles|capi-machine
   capi-provider-->|creates|capi-provider-machine
+  capi-provider-.->|consumes|capi-machine-template
 ```
-
-TODO:
-1. How do we (or should we) represent an input/output or "consumes" relationship (e.g. the hypershift operator creates and syncs machine templates, and the CAPI provider _reads_ the template, but nothing actively watches templates and does work in reaction to them directly)
-
-
 
 ## Major Components
 
@@ -47096,6 +50605,28 @@ The following resources are created and managed by Kubernetes controllers runnin
 - **Azure Virtual Machines**: Worker nodes managed by Cluster API Provider Azure
 - **Network Interfaces**: NICs attached to worker VMs
 - **OS Disks**: Managed disks for VM operating systems
+
+### Private Endpoint Access Infrastructure (Optional)
+
+When endpoint access is `Private` or `PublicAndPrivate`, additional Azure resources are created to establish private connectivity between the guest VNet and the management cluster:
+
+| Resource | Location | Created By | Description |
+|----------|----------|------------|-------------|
+| NAT Subnet | Management VNet | User (pre-existing) | Must have `privateLinkServiceNetworkPolicies` disabled |
+| Private Link Service | Management RG | HO controller | Exposes the internal load balancer via Private Link |
+| Private Endpoint | Guest VNet | CPO reconciler | Connects the guest VNet to the PLS |
+| Private DNS Zone (infra) | Guest subscription | CPO reconciler | `<infraID>.<baseDomain>` for infrastructure DNS |
+| Private DNS Zone (base) | Guest subscription | CPO reconciler | `<baseDomain>` for API/OAuth hostname resolution |
+| VNet Links | Guest subscription | CPO reconciler | Links Private DNS zones to the guest VNet |
+| A Records | Guest subscription | CPO reconciler | `api-<name>`, `oauth-<name>` pointing to PE IP |
+
+An additional workload identity is required for private clusters. This identity is **only created when endpoint access is `Private` or `PublicAndPrivate`** and is not needed for public topology:
+
+| Identity | Operator | Service Accounts | Azure Role |
+|----------|----------|------------------|------------|
+| **Control Plane Operator** | CPO | `control-plane-operator` | Contributor (`b24988ac-6180-42a0-ab88-20f7382dd24c`) |
+
+For the full architecture and data flow details, see Azure Private Link Architecture.
 
 ## Workload Identity Authentication
 
@@ -49272,6 +52803,196 @@ This document outlines the support matrix that involved these three entities.
 
 ---
 
+## Source: docs/content/reference/nodepool-rollouts.md
+
+---
+title: NodePool Rollouts
+---
+
+# NodePool Rollouts
+
+A NodePool rollout is the process by which existing Nodes are replaced or updated when a change in the NodePool or HostedCluster configuration requires it. Understanding what triggers a rollout and how it is executed helps you plan changes with minimal disruption to your workloads.
+
+## What Triggers a Rollout
+
+There are three independent categories of changes that trigger a rollout. A rollout occurs when any one of them detects a difference between the desired state and the current state.
+
+### OCP Release Version
+
+Changing `NodePool.spec.release.image` triggers a rollout. The controller extracts the OCP version from the release image metadata and compares it against the version currently running on the Nodes. If they differ, a rollout begins.
+
+!!! important
+
+    NodePool version must be compatible with the HostedCluster version. See Versioning Support for details on the version skew policy.
+
+### Node Configuration
+
+Changes to the following fields alter the configuration hash that the controller tracks. When the hash changes, a rollout is triggered:
+
+- **`NodePool.spec.config`** — ConfigMaps containing any of the supported machine configuration APIs:
+    - `MachineConfig`
+    - `KubeletConfig`
+    - `ContainerRuntimeConfig`
+    - `ImageContentSourcePolicy`
+    - `ImageDigestMirrorSet`
+    - `ClusterImagePolicy`
+
+- **`NodePool.spec.tuningConfig`** — references to `Tuned` resources that the Node Tuning Operator translates into `MachineConfig` objects.
+
+- **`HostedCluster.spec.pullSecret`** — a change in the **name** of the referenced Secret triggers a rollout. Changing the content of the Secret without changing the name does not trigger a rollout.
+
+- **`HostedCluster.spec.additionalTrustBundle`** — same behavior as `pullSecret`: only a change in the referenced ConfigMap **name** triggers a rollout.
+
+- **`HostedCluster.spec.imageContentSources`** — changes to image content source policies managed at the HostedCluster level produce an additional core ignition config that alters the configuration hash.
+
+### HostedCluster Global Configuration
+
+Some fields in `HostedCluster.spec.configuration` affect all Nodes and therefore trigger a rollout across **every NodePool** in the cluster when they change:
+
+- **`proxy`** — cluster-wide proxy settings (`httpProxy`, `httpsProxy`, `noProxy`, `trustedCA`). The controller also computes the full `noProxy` list automatically, adding the cluster, service, and machine network CIDRs, cloud metadata endpoints (e.g. `169.254.169.254` for AWS and Azure), and internal compute domains.
+
+- **`image`** — image registry policies (`allowedRegistriesForImport`, `externalRegistryHostnames`, `additionalTrustedCA`, `registrySources`). Although this configuration is served directly by the ignition server rather than embedded in the node user-data, a change still triggers a rollout so Nodes pick up the new configuration.
+
+!!! note
+
+    Other fields inside `HostedCluster.spec.configuration` such as `oauth`, `apiServer`, `authentication`, `scheduler`, or `ingress` do **not** trigger a NodePool rollout. They are reconciled through other control plane mechanisms.
+
+### Platform-Specific Machine Template
+
+Changes to platform-specific infrastructure fields produce a new machine template, which triggers a rollout. The exact fields depend on the platform:
+
+**AWS:**
+
+| Field | Description |
+|-------|-------------|
+| `spec.platform.aws.ami` | The AMI ID for the worker instances |
+| `spec.platform.aws.instanceType` | EC2 instance type |
+| `spec.platform.aws.instanceProfile` | IAM instance profile |
+| `spec.platform.aws.subnet` | Subnet configuration |
+| `spec.platform.aws.securityGroups` | Security group references |
+| `spec.platform.aws.rootVolume` | Root volume type, size, IOPS, encryption |
+| `spec.platform.aws.placement` | Tenancy and capacity reservation settings |
+
+!!! note
+
+    `spec.platform.aws.resourceTags` is explicitly **excluded** from rollout triggers. Changing tags alone does not cause Nodes to be replaced.
+
+**Other platforms (Azure, KubeVirt, OpenStack, Agent, PowerVS):**
+
+Any change to the platform-specific machine template spec triggers a rollout. Refer to the API reference for the full list of fields per platform.
+
+## What Does Not Trigger a Rollout
+
+The following fields are propagated in-place to existing Nodes without triggering a rollout:
+
+| Field | Behavior |
+|-------|----------|
+| `spec.nodeLabels` | Propagated directly to existing Machine objects |
+| `spec.taints` | Propagated directly to existing Machine objects |
+| `spec.replicas` / `spec.autoScaling` | Only changes the number of Nodes, no replacement |
+| `spec.nodeDrainTimeout` | Updated on existing Machines without replacement |
+| `spec.nodeVolumeDetachTimeout` | Updated on existing Machines without replacement |
+| `spec.management.replace.rollingUpdate` | Changes rollout parameters (maxSurge, maxUnavailable) but does not itself cause a rollout |
+| `spec.management.autoRepair` | Toggles MachineHealthCheck without replacing Nodes |
+
+## Upgrade Types
+
+The upgrade type determines **how** Nodes are replaced or updated during a rollout. It is set once at NodePool creation and **cannot be changed** afterward.
+
+### Replace
+
+Replace upgrades create new Node instances with the updated configuration and remove old ones. This is the default and recommended approach for cloud environments where creating and destroying instances is cost-effective.
+
+The replacement process is governed by the `spec.management.replace` field:
+
+#### RollingUpdate Strategy (default)
+
+New Nodes are created before old Nodes are removed, ensuring workload availability during the rollout.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `maxSurge` | `1` | Maximum number of Nodes that can be provisioned above the desired count during the rollout. Can be an absolute number or a percentage. |
+| `maxUnavailable` | `0` | Maximum number of Nodes that can be unavailable during the rollout. Can be an absolute number or a percentage. |
+
+With the defaults (`maxSurge=1`, `maxUnavailable=0`), one new Node is created at a time, and old Nodes are only removed after the new Node is ready. This is the safest configuration but also the slowest.
+
+To speed up the rollout, you can increase `maxSurge` (more Nodes created in parallel) or increase `maxUnavailable` (allow removing old Nodes before new ones are ready), at the cost of reduced capacity during the rollout.
+
+!!! important
+
+    `maxSurge` and `maxUnavailable` cannot both be `0`.
+
+#### OnDelete Strategy
+
+Old Nodes are only replaced when they are manually deleted. This gives you full control over the rollout pace and order. Once an old Node is deleted, a new Node with the updated configuration is created to replace it.
+
+### InPlace
+
+InPlace upgrades update the operating system of existing Node instances without creating new ones. This is the recommended approach for environments with high infrastructure constraints, such as bare metal.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `maxUnavailable` | `1` | Maximum number of Nodes that can be unavailable during the in-place update. Can be an absolute number or a percentage. The minimum enforced value is `1`. |
+
+!!! important
+
+    When using InPlace upgrades, platform-specific machine template changes (e.g. instance type, AMI) will **only apply to new Nodes** that are created after the change. Existing Nodes are not affected by platform changes.
+
+## Rollout Lifecycle
+
+When a rollout is triggered, the controller follows this sequence:
+
+1. **Change detection** — the controller compares the desired state (from the NodePool and HostedCluster specs) against the current state tracked in the NodePool status and annotations.
+
+2. **New configuration artifacts** — a new ignition token Secret and user-data Secret are generated with names derived from a hash of the new configuration. The previous token is marked as expired.
+
+3. **New machine template** (if platform fields changed) — a new platform-specific machine template is created. Its name includes a hash of the spec, so any change produces a distinct template.
+
+4. **Rollout execution**:
+      - **Replace:** the MachineDeployment is updated with the new user-data Secret, machine template, and version references. CAPI orchestrates Node creation and deletion according to the configured strategy (RollingUpdate or OnDelete).
+      - **InPlace:** the MachineSet is updated with the new target configuration. An in-place upgrader applies the changes to existing Nodes, respecting `maxUnavailable`.
+
+5. **Completion** — the rollout is considered complete when:
+      - **Replace:** all desired replicas are updated and available.
+      - **InPlace:** all Nodes report the target configuration version.
+
+6. **Status update** — `NodePool.status.version` is updated and the internal tracking annotations are set to the new values.
+
+### Monitoring Rollout Progress
+
+You can monitor rollout progress through the following NodePool conditions:
+
+| Condition | Meaning |
+|-----------|---------|
+| `UpdatingVersion` | A version rollout is in progress |
+| `UpdatingConfig` | A configuration rollout is in progress |
+| `UpdatingPlatformMachineTemplate` | A platform machine template rollout is in progress |
+
+These conditions are set to `True` while the corresponding rollout is in progress and are cleared when it completes.
+
+## Summary Table
+
+| Change | Triggers Rollout | Affects |
+|--------|:---:|---------|
+| `NodePool.spec.release.image` | Yes | The changed NodePool |
+| `NodePool.spec.config` | Yes | The changed NodePool |
+| `NodePool.spec.tuningConfig` | Yes | The changed NodePool |
+| `HostedCluster.spec.pullSecret` (name change) | Yes | All NodePools |
+| `HostedCluster.spec.additionalTrustBundle` (name change) | Yes | All NodePools |
+| `HostedCluster.spec.imageContentSources` | Yes | All NodePools |
+| `HostedCluster.spec.configuration.proxy` | Yes | All NodePools |
+| `HostedCluster.spec.configuration.image` | Yes | All NodePools |
+| Platform machine template fields | Yes | The changed NodePool |
+| `NodePool.spec.nodeLabels` | No | Propagated in-place |
+| `NodePool.spec.taints` | No | Propagated in-place |
+| `NodePool.spec.replicas` / `autoScaling` | No | Scale only |
+| `NodePool.spec.nodeDrainTimeout` | No | Propagated in-place |
+| `NodePool.spec.management.autoRepair` | No | MachineHealthCheck toggle |
+| AWS `spec.platform.aws.resourceTags` | No | Applied without rollout |
+
+
+---
+
 ## Source: docs/content/reference/ocp-behaviour-deviations/index.md
 
 ---
@@ -49338,6 +53059,1268 @@ HyperShift allows customers to just leave their NodePools on 4.17, while creatin
 - Bring up a new small nodepool in 4.18, which will run `crun` as default runtime. Scale up the workload to spread the pods to the new nodepool.
 - In the best case, all is fine and the nodepool with version 4.17.Z could be upgraded.
 - In the worst case, you can report the issue as a bug to the team for the further investigation.
+
+
+---
+
+## Source: docs/content/reference/service-publishing-strategies.md
+
+# Service Publishing Strategy Reference
+
+Service publishing strategies control how control plane services are exposed to external users and the data plane.
+
+## Overview
+
+### Services
+
+HostedClusters expose the following control plane services:
+
+- **APIServer**: The Kubernetes API server endpoint
+- **OAuthServer**: The OAuth authentication service
+- **Konnectivity**: The networking proxy service for control plane to data plane communication
+- **Ignition**: The node ignition configuration service
+
+### Publishing Strategy Types
+
+Each service can be published using one of the following strategies:
+
+| Strategy Type | Description | Use Case |
+|--------------|-------------|----------|
+| **LoadBalancer** | Exposes the service through a dedicated cloud load balancer | Primary method for exposing KubeAPIServer in cloud environments without external DNS configured |
+| **Route** | Exposes the service through OpenShift Routes and the management cluster's ingress controller | Default for most services; requires management cluster to have Route capability |
+| **NodePort** | Exposes the service on a static port on each node | Used in on-premise and bare metal scenarios (Agent, None platforms) |
+
+### Terminology
+
+Understanding the following terms is essential for configuring service publishing strategies:
+
+| Term | Definition |
+|------|------------|
+| **Public** | Services accessible from the public internet. Uses external-facing load balancers or publicly accessible routes. |
+| **Private** | Services accessible only through private networking (e.g., AWS PrivateLink, GCP Private Service Connect). Not accessible from the public internet. |
+| **PublicAndPrivate** | Services accessible from both the public internet AND through private networking within the VPC. On AWS, this means endpoints are reachable externally and via PrivateLink. On GCP, this means endpoints are reachable externally and via Private Service Connect. |
+| **External** | Refers to resources or endpoints accessible from outside the management cluster's VPC or network. Typically synonymous with "public" but may also include cross-VPC access. |
+| **Internal** | Refers to resources or endpoints accessible only within the management cluster's VPC or network. Uses internal load balancers or private networking. |
+| **External DNS** | A system that manages DNS records in a public or shared DNS zone. The `--external-dns-domain` flag enables this functionality, allowing custom hostnames for services. |
+| **External Load Balancer** | A cloud load balancer with a public IP address, accessible from the internet. |
+| **Internal Load Balancer** | A cloud load balancer with a private IP address, accessible only within the VPC or through private networking (e.g., PrivateLink). |
+| **HCP Router** | A dedicated router (typically HAProxy or OpenShift Router) deployed within the Hosted Control Plane namespace, scoped to a specific hosted cluster. Used when Route publishing strategy is configured with external DNS. |
+| **Management Cluster Ingress** | The shared ingress controller of the management cluster (e.g., OpenShift Router). Used for Route publishing when external DNS is not configured. |
+
+### Configuration Requirements
+
+1. **Unique Hostnames**: Each service must have a unique hostname if a hostname is specified in the publishing strategy
+2. **Route Publishing**: Services using the `Route` publishing strategy can be exposed either through the management cluster's ingress controller (requires OpenShift) or through HyperShift's dedicated HCP router (a router deployed in the hosted control plane namespace, scoped to the specific hosted cluster, which works on any Kubernetes cluster)
+
+## Platform-Specific Configurations
+
+### AWS
+
+AWS publishing strategies are determined by the endpoint access mode and whether external DNS is configured.
+
+#### Endpoint Access Types
+
+AWS HostedClusters support three endpoint access modes that control how the API server and other control plane services are exposed:
+
+| Access Type | Description |
+|------------|-------------|
+| **Public** | Control plane endpoints are accessible from the public internet. External users and data plane nodes connect via public load balancers or routes. |
+| **PublicAndPrivate** | Control plane endpoints are accessible from both the public internet AND from within the VPC via AWS PrivateLink. Provides flexibility for both external access and private VPC connectivity. |
+| **Private** | Control plane endpoints are only accessible from within the VPC via AWS PrivateLink. No public internet access. External users must connect through VPN or other private connectivity solutions. |
+
+The endpoint access type is specified in `spec.platform.aws.endpointAccess` and affects which service publishing strategies are valid and how services are exposed.
+
+#### Public Endpoint Access
+
+**With External DNS** (`--external-dns-domain` flag):
+
+- **APIServer**: `Route` (hostname required)
+- **OAuthServer**: `Route` (hostname required)
+- **Konnectivity**: `Route` (hostname required)
+- **Ignition**: `Route` (hostname required)
+
+All Route-based services are exposed through a dedicated HCP router with an external load balancer.
+
+**Example Configuration:**
+
+```yaml
+spec:
+  platform:
+    type: AWS
+    aws:
+      endpointAccess: Public
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api.my-cluster.example.com
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: oauth.my-cluster.example.com
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: konnectivity.my-cluster.example.com
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: ignition.my-cluster.example.com
+```
+
+```mermaid
+graph RL
+    subgraph "Management Cluster"
+        subgraph HCP ["Hosted Control Plane"]
+            KAS[APIServer]
+            OAuth[OAuthServer]
+            Konnectivity[Konnectivity]
+            Ignition[Ignition]
+            Router[HCP Router<br/>External LB]
+        end
+        MCIngress[Management Cluster<br/>Ingress]
+    end
+    
+    DataPlane[Data Plane]
+    ExtUsers[External Users]
+    
+    DataPlane --> Router
+    ExtUsers --> Router
+    
+    Router --> KAS
+    Router --> OAuth
+    Router --> Konnectivity
+    Router --> Ignition
+
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    class HCP hcpStyle
+```
+
+**Without External DNS**:
+
+- **APIServer**: `LoadBalancer` (dedicated external load balancer)
+- **OAuthServer**: `Route` (management cluster ingress)
+- **Konnectivity**: `Route` (management cluster ingress)
+- **Ignition**: `Route` (management cluster ingress)
+
+**Example Configuration:**
+
+```yaml
+spec:
+  platform:
+    type: AWS
+    aws:
+      endpointAccess: Public
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+```
+
+```mermaid
+graph RL
+    subgraph "Management Cluster"
+        subgraph HCP ["Hosted Control Plane"]
+            KAS[APIServer]
+            OAuth[OAuthServer]
+            Konnectivity[Konnectivity]
+            Ignition[Ignition]
+            KASLB[KAS LoadBalancer<br/>External]
+        end
+        MCIngress[Management Cluster<br/>Ingress]
+    end
+    
+    DataPlane[Data Plane]
+    ExtUsers[External Users]
+    
+    DataPlane --> KASLB
+    DataPlane --> MCIngress
+    ExtUsers --> KASLB
+    ExtUsers --> MCIngress
+    
+    KASLB --> KAS
+    MCIngress --> OAuth
+    MCIngress --> Konnectivity
+    MCIngress --> Ignition
+
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    class HCP hcpStyle
+```
+
+#### PublicAndPrivate Endpoint Access
+
+**With External DNS** (`--external-dns-domain` flag):
+
+- **APIServer**: `Route` (hostname required)
+- **OAuthServer**: `Route` (hostname required)
+- **Konnectivity**: `Route` (resolves via `hypershift.local`)
+- **Ignition**: `Route` (resolves via `hypershift.local`)
+
+APIServer and OAuthServer are exposed externally through a dedicated HCP router. Konnectivity and Ignition resolve via `hypershift.local` through PrivateLink, so hostnames are not needed for them.
+
+**Example Configuration:**
+
+```yaml
+spec:
+  platform:
+    type: AWS
+    aws:
+      endpointAccess: PublicAndPrivate
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api.my-cluster.example.com
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: oauth.my-cluster.example.com
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+```
+
+```mermaid
+graph RL
+    subgraph "Management Cluster"
+        subgraph HCP ["Hosted Control Plane"]
+            KAS[APIServer]
+            OAuth[OAuthServer]
+            Konnectivity[Konnectivity]
+            Ignition[Ignition]
+            Router[HCP Router]
+            InternalLB[Internal LB]
+            ExternalLB[External LB]
+        end
+        MCIngress[Management Cluster<br/>Ingress]
+    end
+    
+    DataPlane[Data Plane]
+    ExtUsers[External Users]
+    
+    DataPlane -->|PrivateLink| InternalLB
+    ExtUsers --> ExternalLB
+    
+    InternalLB --> Router
+    ExternalLB --> Router
+    
+    Router --> KAS
+    Router --> OAuth
+    Router --> Konnectivity
+    Router --> Ignition
+
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    class HCP hcpStyle
+```
+
+**Without External DNS**:
+
+- **APIServer**: `LoadBalancer` (dedicated external load balancer)
+- **OAuthServer**: `Route` (HCP router with internal load balancer)
+- **Konnectivity**: `Route` (HCP router with internal load balancer)
+- **Ignition**: `Route` (HCP router with internal load balancer)
+
+**Example Configuration:**
+
+```yaml
+spec:
+  platform:
+    type: AWS
+    aws:
+      endpointAccess: PublicAndPrivate
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+```
+
+```mermaid
+graph RL
+    subgraph "Management Cluster"
+        subgraph HCP ["Hosted Control Plane"]
+            KAS[APIServer]
+            OAuth[OAuthServer]
+            Konnectivity[Konnectivity]
+            Ignition[Ignition]
+            KASLB[KAS LoadBalancer<br/>External]
+            Router[HCP Router]
+            RouterInternalLB[Router Internal LB]
+        end
+        MCIngress[Management Cluster<br/>Ingress]
+    end
+    
+    DataPlane[Data Plane]
+    ExtUsers[External Users]
+
+    ExtUsers ~~~ DataPlane
+    
+    DataPlane --> |PrivateLink| RouterInternalLB
+    ExtUsers --> KASLB
+    ExtUsers -->|OAuth| MCIngress
+    
+    KASLB --> KAS
+    RouterInternalLB --> Router
+    MCIngress --> OAuth
+    Router --> KAS
+    Router --> OAuth
+    Router --> Konnectivity
+    Router --> Ignition
+
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    class HCP hcpStyle
+```
+
+#### Private Endpoint Access
+
+All traffic in private clusters happens via PrivateLink. All services use Route publishing through an HCP router with an internal load balancer.
+
+- **APIServer**: `Route`
+- **OAuthServer**: `Route`
+- **Konnectivity**: `Route`
+- **Ignition**: `Route`
+
+**Example Configuration:**
+
+```yaml
+spec:
+  platform:
+    type: AWS
+    aws:
+      endpointAccess: Private
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+```
+
+```mermaid
+graph RL
+    subgraph "Management Cluster"
+        subgraph HCP ["Hosted Control Plane"]
+            KAS[APIServer]
+            OAuth[OAuthServer]
+            Konnectivity[Konnectivity]
+            Ignition[Ignition]
+            Router[HCP Router]
+            InternalLB[Internal LB]
+        end
+    end
+
+    DataPlane[Data Plane]
+    ExtUsers[External Users]
+
+    DataPlane -->|PrivateLink| InternalLB
+    ExtUsers -->|PrivateLink| InternalLB
+
+    InternalLB --> Router
+
+    Router --> KAS
+    Router --> OAuth
+    Router --> Konnectivity
+    Router --> Ignition
+
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    class HCP hcpStyle
+```
+
+
+### Azure
+
+Azure has two deployment modes with different service publishing strategy requirements:
+
+#### Managed Azure (ARO HCP)
+
+ARO HCP (Azure Red Hat OpenShift Hosted Control Planes) uses a unique architecture with two distinct traffic paths. All ARO HCP clusters are considered **PublicAndPrivate**.
+
+##### Architecture Overview
+
+ARO HCP management clusters are based on **AKS (Azure Kubernetes Service)**, not OpenShift. The architecture separates traffic into two paths:
+
+1. **External Traffic (KAS, OAuth)**: Flows through a **Shared Ingress HAProxy** deployment. A single HAProxy in the `hypershift-sharedingress` namespace, fronted by one Azure LoadBalancer, routes traffic to the correct hosted control plane using SNI-based hostname routing.
+
+2. **In-Cluster Traffic (Konnectivity, Ignition)**: Flows through **Swift** (Azure Service Networking). Private router pods are labeled with `kubernetes.azure.com/pod-network-instance`, which connects them directly to the customer VNet. Services resolve via the `hypershift.local` internal DNS zone (e.g., `konnectivity-server.apps.<cluster>.hypershift.local`).
+
+**Architecture Diagram:**
+
+```mermaid
+graph RL
+    subgraph "AKS Management Cluster"
+        subgraph SharedIngress ["Shared Ingress (hypershift-sharedingress namespace)"]
+            HAProxy[Central HAProxy<br/>SNI Hostname Routing]
+            SharedLB[Azure LoadBalancer<br/>Single LB for all clusters]
+        end
+
+        subgraph HCP1 ["Hosted Control Plane 1"]
+            KAS1[APIServer]
+            OAuth1[OAuthServer]
+            Konnectivity1[Konnectivity]
+            Ignition1[Ignition]
+        end
+
+        subgraph SwiftRouter ["Private Router (Swift-enabled)"]
+            PrivRouter[Private Router Pod<br/>kubernetes.azure.com/<br/>pod-network-instance]
+        end
+    end
+
+    subgraph "Data Plane (Customer VNet)"
+        Worker1[Worker Node]
+    end
+
+    ExtUsers[External Users]
+
+    ExtUsers --> |HTTPS<br/>KAS / OAuth| SharedLB
+    SharedLB --> HAProxy
+    HAProxy --> |SNI routing| KAS1
+    HAProxy --> |SNI routing| OAuth1
+
+    Worker1 --> |Swift<br/>hypershift.local| PrivRouter
+    PrivRouter --> Konnectivity1
+    PrivRouter --> Ignition1
+
+    classDef sharedIngressStyle fill:#fff3cd,stroke:#856404,stroke-width:3px;
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef dataPlaneStyle fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px;
+    classDef swiftStyle fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px;
+
+    class SharedIngress sharedIngressStyle
+    class HCP1 hcpStyle
+    class Worker1 dataPlaneStyle
+    class SwiftRouter swiftStyle
+```
+
+##### Traffic Paths
+
+| Traffic Type | Path | DNS Resolution |
+|-------------|------|----------------|
+| **External** (KAS, OAuth) | Client → Shared Ingress LB → HAProxy → HCP | External DNS zone (e.g., `api.<cluster>.<dns-zone>`) |
+| **In-Cluster** (Konnectivity, Ignition) | Worker Node → Swift → Private Router → HCP | `hypershift.local` (e.g., `konnectivity-server.apps.<cluster>.hypershift.local`) |
+
+##### Service Publishing Strategy
+
+All services use the **Route** publishing strategy type with explicit hostnames:
+
+| Service | Type | Traffic Path | Hostname |
+|---------|------|-------------|----------|
+| **APIServer** | `Route` | Shared Ingress (external) | External DNS hostname |
+| **OAuthServer** | `Route` | Shared Ingress (external) | External DNS hostname |
+| **Konnectivity** | `Route` | Swift (in-cluster) | `hypershift.local` internal hostname |
+| **Ignition** | `Route` | Swift (in-cluster) | `hypershift.local` internal hostname |
+
+**Key Differences from Other Platforms:**
+
+- **No individual LoadBalancers**: Each hosted cluster does NOT get its own LoadBalancer for any service
+- **No OpenShift Routes**: The management cluster is AKS, so there are no OpenShift ingress controllers. The "Route" type refers to entries in the shared ingress HAProxy configuration (for external traffic) or the private router (for in-cluster traffic)
+- **Shared Infrastructure**: All hosted clusters share the single LoadBalancer and HAProxy, reducing costs and provisioning time
+- **Swift for In-Cluster Traffic**: Data plane nodes connect to Konnectivity and Ignition through Swift rather than through the shared ingress, providing direct VNet connectivity
+
+##### Example Configuration
+
+```yaml
+spec:
+  platform:
+    type: Azure
+    azure:
+      azureAuthenticationConfig:
+        azureAuthenticationConfigType: ManagedIdentities
+        managedIdentities:
+          # Managed identity configuration
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api-my-cluster.aks-e2e.hypershift.azure.example.com
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: oauth-my-cluster.aks-e2e.hypershift.azure.example.com
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: konnectivity-my-cluster.aks-e2e.hypershift.azure.example.com
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: ignition-my-cluster.aks-e2e.hypershift.azure.example.com
+```
+
+#### Self-Managed Azure
+
+Self-managed Azure clusters are customer-managed HyperShift deployments on Azure. All services use the **Route** publishing strategy across all endpoint access modes. External DNS is required (`--external-dns-domain` flag).
+
+##### Public Endpoint Access
+
+All traffic flows through the management cluster's OpenShift ingress controller via external DNS hostnames.
+
+- **APIServer**: `Route` (hostname required)
+- **OAuthServer**: `Route` (hostname required)
+- **Konnectivity**: `Route` (hostname required)
+- **Ignition**: `Route` (hostname required)
+
+**Example Configuration:**
+
+```yaml
+spec:
+  platform:
+    type: Azure
+    azure:
+      azureAuthenticationConfig:
+        azureAuthenticationConfigType: WorkloadIdentities
+        workloadIdentities:
+          # Workload identity configuration
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api.my-cluster.example.com
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: oauth.my-cluster.example.com
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: konnectivity.my-cluster.example.com
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: ignition.my-cluster.example.com
+```
+
+```mermaid
+graph RL
+    subgraph "Management Cluster (OpenShift)"
+        subgraph HCP ["Hosted Control Plane"]
+            KAS[APIServer]
+            OAuth[OAuthServer]
+            Konnectivity[Konnectivity]
+            Ignition[Ignition]
+        end
+        MCIngress[Management Cluster<br/>Ingress Controller]
+    end
+
+    DataPlane[Data Plane]
+    ExtUsers[External Users]
+
+    ExtUsers --> |External DNS| MCIngress
+    DataPlane --> |External DNS| MCIngress
+
+    MCIngress --> KAS
+    MCIngress --> OAuth
+    MCIngress --> Konnectivity
+    MCIngress --> Ignition
+
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    class HCP hcpStyle
+```
+
+##### PublicAndPrivate Endpoint Access
+
+Services are accessible both from the public internet through external DNS and privately through Azure Private Link Service. Konnectivity and Ignition hostnames are handled internally.
+
+- **APIServer**: `Route` (hostname required)
+- **OAuthServer**: `Route` (hostname required)
+- **Konnectivity**: `Route` (hostname handled internally)
+- **Ignition**: `Route` (hostname handled internally)
+
+**Example Configuration:**
+
+```yaml
+spec:
+  platform:
+    type: Azure
+    azure:
+      azureAuthenticationConfig:
+        azureAuthenticationConfigType: WorkloadIdentities
+        workloadIdentities:
+          # Workload identity configuration
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api.my-cluster.example.com
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: oauth.my-cluster.example.com
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+```
+
+```mermaid
+graph RL
+    subgraph "Management Cluster (OpenShift)"
+        subgraph HCP ["Hosted Control Plane"]
+            KAS[APIServer]
+            OAuth[OAuthServer]
+            Konnectivity[Konnectivity]
+            Ignition[Ignition]
+        end
+        MCIngress[Management Cluster<br/>Ingress Controller]
+    end
+
+    DataPlane[Data Plane]
+    ExtUsers[External Users]
+    PrivLink[Azure Private<br/>Link Service]
+
+    ExtUsers --> |External DNS| MCIngress
+    DataPlane --> |Private Link| PrivLink
+    PrivLink --> MCIngress
+
+    MCIngress --> KAS
+    MCIngress --> OAuth
+    MCIngress --> Konnectivity
+    MCIngress --> Ignition
+
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef privLinkStyle fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px;
+
+    class HCP hcpStyle
+    class PrivLink privLinkStyle
+```
+
+##### Private Endpoint Access
+
+All traffic flows through Azure Private Link Service. Not accessible from the public internet. Konnectivity and Ignition hostnames are handled internally.
+
+- **APIServer**: `Route` (hostname required)
+- **OAuthServer**: `Route` (hostname required)
+- **Konnectivity**: `Route` (hostname handled internally)
+- **Ignition**: `Route` (hostname handled internally)
+
+**Example Configuration:**
+
+```yaml
+spec:
+  platform:
+    type: Azure
+    azure:
+      azureAuthenticationConfig:
+        azureAuthenticationConfigType: WorkloadIdentities
+        workloadIdentities:
+          # Workload identity configuration
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api.my-cluster.example.com
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: oauth.my-cluster.example.com
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+```
+
+```mermaid
+graph RL
+    subgraph "Management Cluster (OpenShift)"
+        subgraph HCP ["Hosted Control Plane"]
+            KAS[APIServer]
+            OAuth[OAuthServer]
+            Konnectivity[Konnectivity]
+            Ignition[Ignition]
+        end
+        MCIngress[Management Cluster<br/>Ingress Controller]
+    end
+
+    DataPlane[Data Plane]
+    ExtUsers[External Users]
+    PrivLink[Azure Private<br/>Link Service]
+
+    ExtUsers --> |Private Link| PrivLink
+    DataPlane --> |Private Link| PrivLink
+    PrivLink --> MCIngress
+
+    MCIngress --> KAS
+    MCIngress --> OAuth
+    MCIngress --> Konnectivity
+    MCIngress --> Ignition
+
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef privLinkStyle fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px;
+
+    class HCP hcpStyle
+    class PrivLink privLinkStyle
+```
+
+### Managed GCP
+
+Managed GCP (Google Cloud Platform) HostedClusters are managed service deployments on GCP. Publishing strategies are determined by the endpoint access mode. All services use Route publishing strategy, including APIServer.
+
+#### PublicAndPrivate Endpoint Access
+
+External DNS is required for GCP (`--external-dns-domain` flag):
+
+- **APIServer**: `Route` (hostname required)
+- **OAuthServer**: `Route` (hostname required)
+- **Konnectivity**: `Route` (hostname required)
+- **Ignition**: `Route` (hostname required)
+
+All Route-based services are exposed through a dedicated HCP router with both internal and external load balancers.
+
+**Example Configuration:**
+
+```yaml
+spec:
+  platform:
+    type: GCP
+    gcp:
+      endpointAccess: PublicAndPrivate
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api.my-cluster.example.com
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: oauth.my-cluster.example.com
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: konnectivity.my-cluster.example.com
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: ignition.my-cluster.example.com
+```
+
+```mermaid
+graph RL
+    subgraph "Management Cluster"
+        subgraph HCP ["Hosted Control Plane"]
+            KAS[APIServer]
+            OAuth[OAuthServer]
+            Konnectivity[Konnectivity]
+            Ignition[Ignition]
+            Router[HCP Router]
+            InternalLB[Internal LB]
+            ExternalLB[External LB]
+        end
+        MCIngress[Management Cluster<br/>Ingress]
+    end
+    
+    DataPlane[Data Plane]
+    ExtUsers[External Users]
+    
+    DataPlane -->|Private Service Connect| InternalLB
+    ExtUsers --> ExternalLB
+    
+    InternalLB --> Router
+    ExternalLB --> Router
+    
+    Router --> KAS
+    Router --> OAuth
+    Router --> Konnectivity
+    Router --> Ignition
+
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    class HCP hcpStyle
+```
+
+#### Private Endpoint Access
+
+All traffic in private GCP clusters happens via Private Service Connect. All services use Route publishing through an HCP router with an internal load balancer.
+
+- **APIServer**: `Route`
+- **OAuthServer**: `Route`
+- **Konnectivity**: `Route`
+- **Ignition**: `Route`
+
+**Example Configuration:**
+
+```yaml
+spec:
+  platform:
+    type: GCP
+    gcp:
+      endpointAccess: Private
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+```
+
+```mermaid
+graph RL
+    subgraph "Management Cluster"
+        subgraph HCP ["Hosted Control Plane"]
+            KAS[APIServer]
+            OAuth[OAuthServer]
+            Konnectivity[Konnectivity]
+            Ignition[Ignition]
+            Router[HCP Router]
+            InternalLB[Internal LB]
+        end
+        MCIngress[Management Cluster<br/>Ingress]
+    end
+    
+    DataPlane[Data Plane]
+    ExtUsers[External Users]
+
+    DataPlane -->|Private Service Connect| InternalLB
+    ExtUsers-->|Private Service Connect| InternalLB
+    
+    InternalLB --> Router
+    
+    Router --> KAS
+    Router --> OAuth
+    Router --> Konnectivity
+    Router --> Ignition
+
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    class HCP hcpStyle
+```
+
+### KubeVirt
+
+KubeVirt is unique in supporting both Ingress-based (Route/LoadBalancer) and NodePort-based service publishing strategies through the `--service-publishing-strategy` flag.
+
+#### Supported Publishing Strategies
+
+**Ingress Strategy (Default)**:
+
+| Service | Supported Strategies |
+|---------|---------------------|
+| **APIServer** | `LoadBalancer` or `Route`* |
+| **OAuthServer** | `Route` |
+| **Konnectivity** | `Route` |
+| **Ignition** | `Route` |
+
+\* With external DNS, uses `Route`; without it, uses `LoadBalancer`.
+
+**NodePort Strategy**:
+
+| Service | Supported Strategies |
+|---------|---------------------|
+| **APIServer** | `NodePort` |
+| **OAuthServer** | `NodePort` |
+| **Konnectivity** | `NodePort` |
+| **Ignition** | `NodePort` |
+
+#### Validation Rules
+
+- When using `--service-publishing-strategy=NodePort`, the `--api-server-address` flag is required
+- If not provided, the system will attempt to auto-detect the API server address
+- Supports `--external-dns-domain` flag when using Ingress strategy
+
+#### Example Configurations
+
+**Ingress Strategy with External DNS**:
+
+```yaml
+spec:
+  platform:
+    type: Kubevirt
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: Route
+      route:
+        hostname: api-mycluster.example.com
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+```
+
+**Architecture Diagram:**
+
+```mermaid
+graph RL
+    subgraph "Management Cluster"
+        subgraph HCP ["Hosted Control Plane"]
+            KAS[APIServer]
+            OAuth[OAuthServer]
+            Konnectivity[Konnectivity]
+            Ignition[Ignition]
+            Router[HCP Router]
+            ExternalLB[External LB]
+        end
+        MCIngress[Management Cluster<br/>Ingress]
+    end
+    
+    DataPlane[Data Plane]
+    ExtUsers[External Users]
+    
+    DataPlane --> ExternalLB
+    ExtUsers --> ExternalLB
+    
+    ExternalLB --> Router
+    
+    Router --> KAS
+    Router --> OAuth
+    Router --> Konnectivity
+    Router --> Ignition
+
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    class HCP hcpStyle
+```
+
+**NodePort Strategy**:
+
+```yaml
+spec:
+  platform:
+    type: Kubevirt
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: NodePort
+      nodePort:
+        address: 192.168.1.100
+        port: 30000
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: NodePort
+      nodePort:
+        address: 192.168.1.100
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: NodePort
+      nodePort:
+        address: 192.168.1.100
+  - service: Ignition
+    servicePublishingStrategy:
+      type: NodePort
+      nodePort:
+        address: 192.168.1.100
+```
+
+**Architecture Diagram:**
+
+```mermaid
+graph RL
+    subgraph "Management Cluster"
+        subgraph HCP ["Hosted Control Plane"]
+            KAS[APIServer<br/>NodePort]
+            OAuth[OAuthServer<br/>NodePort]
+            Konnectivity[Konnectivity<br/>NodePort]
+            Ignition[Ignition<br/>NodePort]
+        end
+        Node1[Management Node<br/>192.168.1.100]
+    end
+    
+    DataPlane[Data Plane]
+    ExtUsers[External Users]
+    
+    DataPlane --> |NodePort| Node1
+    ExtUsers --> |NodePort| Node1
+    
+    Node1 --> KAS
+    Node1 --> OAuth
+    Node1 --> Konnectivity
+    Node1 --> Ignition
+
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    class HCP hcpStyle
+```
+
+### Agent
+
+The Agent platform supports multiple service publishing strategies. By default, the `hcp create cluster agent` command creates a hosted cluster with NodePort configuration. However, LoadBalancer is the preferred publishing strategy for production environments.
+
+#### Supported Publishing Strategies
+
+| Service | Supported Strategies |
+|---------|---------------------|
+| **APIServer** | `NodePort` (default), `LoadBalancer`, `Route` |
+| **OAuthServer** | `NodePort`, `Route` |
+| **Konnectivity** | `NodePort`, `Route` |
+| **Ignition** | `NodePort`, `Route` |
+
+#### Publishing Strategy Recommendations
+
+- **NodePort (Default)**: Used by default when creating clusters with `hcp create cluster agent`. Suitable for development and testing.
+- **LoadBalancer (Recommended for Production)**: Provides better certificate handling and automatic DNS resolution. Requires MetalLB or similar load balancer infrastructure.
+- **Route**: Services can be exposed through Routes on the management cluster's ingress controller.
+
+#### NodePort Strategy (Default)
+
+**Configuration:**
+
+- **APIServer**: `NodePort` (with address and optional port)
+- **OAuthServer**: `NodePort`
+- **Konnectivity**: `NodePort`
+- **Ignition**: `NodePort`
+
+**Important Notes:**
+- When using NodePort, the `--api-server-address` flag is required or the system will auto-detect the API server address from available nodes
+- DNS must point to the hosted cluster compute nodes, not the management cluster nodes
+
+**Example Configuration:**
+
+```yaml
+spec:
+  platform:
+    type: Agent
+    agent:
+      agentNamespace: agent-namespace
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: NodePort
+      nodePort:
+        address: 10.0.0.100
+        port: 30000
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: NodePort
+      nodePort:
+        address: 10.0.0.100
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: NodePort
+      nodePort:
+        address: 10.0.0.100
+  - service: Ignition
+    servicePublishingStrategy:
+      type: NodePort
+      nodePort:
+        address: 10.0.0.100
+```
+
+**Architecture Diagram:**
+
+```mermaid
+graph RL
+    subgraph "Management Cluster"
+        subgraph HCP ["Hosted Control Plane"]
+            KAS[APIServer<br/>NodePort]
+            OAuth[OAuthServer<br/>NodePort]
+            Konnectivity[Konnectivity<br/>NodePort]
+            Ignition[Ignition<br/>NodePort]
+        end
+        Node1[Management Node<br/>10.0.0.100]
+    end
+    
+    DataPlane[Data Plane]
+    ExtUsers[External Users]
+    
+    DataPlane --> |NodePort:30000| Node1
+    ExtUsers --> |NodePort:30000| Node1
+    
+    Node1 --> KAS
+    Node1 --> OAuth
+    Node1 --> Konnectivity
+    Node1 --> Ignition
+
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    class HCP hcpStyle
+```
+
+#### LoadBalancer Strategy (Recommended for Production)
+
+**Configuration:**
+
+- **APIServer**: `LoadBalancer`
+- **OAuthServer**: `Route`
+- **Konnectivity**: `Route`
+- **Ignition**: `Route`
+
+**Benefits:**
+- Better certificate handling
+- Automatic DNS resolution
+- Simplified access through a single IP address
+
+**Prerequisites:**
+- MetalLB or similar load balancer infrastructure must be installed and configured on the hosted cluster
+
+**Example Configuration:**
+
+```yaml
+spec:
+  platform:
+    type: Agent
+    agent:
+      agentNamespace: agent-namespace
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+```
+
+**Architecture Diagram:**
+
+```mermaid
+graph RL
+    subgraph "Management Cluster"
+        subgraph HCP ["Hosted Control Plane"]
+            KAS[APIServer]
+            OAuth[OAuthServer]
+            Konnectivity[Konnectivity]
+            Ignition[Ignition]
+            KASLB[KAS LoadBalancer<br/>MetalLB]
+        end
+        MCIngress[Management Cluster<br/>Ingress]
+    end
+    
+    DataPlane[Data Plane]
+    ExtUsers[External Users]
+    
+    DataPlane --> KASLB
+    DataPlane --> MCIngress
+    ExtUsers --> KASLB
+    ExtUsers --> MCIngress
+    
+    KASLB --> KAS
+    MCIngress --> OAuth
+    MCIngress --> Konnectivity
+    MCIngress --> Ignition
+
+    classDef hcpStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    class HCP hcpStyle
+```
+
+## Summary Table
+
+| Platform | APIServer Default | Other Services Default | External DNS Support | NodePort Support | Special Features |
+|----------|------------------|----------------------|---------------------|-----------------|------------------|
+| AWS | LoadBalancer or Route | Route | Yes | No | Endpoint access modes |
+| Azure (Managed/ARO HCP)\* | Route (hostname required) | Route (hostname required) | No | No | Shared ingress HAProxy + Swift, all Routes need explicit hostnames |
+| Azure (Self-Managed) | Route (hostname required) | Route (hostname required) | Required | No | Endpoint access modes (Public, PublicAndPrivate, Private), uses workload identities |
+| GCP (Managed) | Route | Route | Required | No | Endpoint access modes (PublicAndPrivate, Private) |
+| KubeVirt | LoadBalancer or Route | Route | Yes | Yes | Dual strategy support via flag |
+| Agent | NodePort (default), LoadBalancer | NodePort, Route | No | Yes (default) | LoadBalancer recommended for production |
+
+\* **ARO HCP**: All clusters are PublicAndPrivate. External traffic (KAS, OAuth) flows through a shared HAProxy deployment with SNI-based hostname routing. In-cluster traffic (Konnectivity, Ignition) flows through Swift (Azure Service Networking), where private router pods connect directly to the customer VNet and services resolve via `hypershift.local`.
+
+## Best Practices
+
+1. **Use External DNS when available**: For cloud platforms that support it (AWS, Azure, GCP, KubeVirt), using the `--external-dns-domain` flag provides a cleaner configuration with predictable hostnames for all services. Note that Managed GCP requires external DNS, while it's optional for AWS, Azure, and KubeVirt.
+
+2. **Understand endpoint access modes**: On AWS, choose the endpoint access mode that matches your security requirements:
+   - `Public`: Services accessible from the internet
+   - `PublicAndPrivate`: Services accessible from both internet and VPC
+   - `Private`: Services only accessible from VPC
+
+3. **Validate your configuration**: Always check the `ValidConfiguration` condition on your HostedCluster to ensure your service publishing strategy is valid:
+   ```bash
+   oc get hostedcluster <name> -o jsonpath='{.status.conditions[?(@.type=="ValidConfiguration")]}'
+   ```
+
+4. **Consider management cluster capabilities**: Ensure your management cluster has Route capability (i.e., is an OpenShift cluster) if you plan to use Route-based publishing strategies.
+
+5. **Use LoadBalancer for Agent platform in production**: For Agent platform deployments (bare metal and non-bare-metal), use the LoadBalancer publishing strategy for production environments. NodePort is the default because Agent platform environments may not have a load balancer provider available out of the box (e.g., bare metal clusters without MetalLB), but LoadBalancer provides better certificate handling, automatic DNS resolution, and simplified access when available.
+
+6. **Plan for high availability**: When using NodePort strategies, remember that you're pointing to specific node IPs. Consider using a load balancer or DNS round-robin for high availability.
+
+## Troubleshooting
+
+### ValidConfiguration Condition is False
+
+If the `ValidConfiguration` condition is set to `False`, check the condition message for details. Common issues include:
+
+- Using an unsupported publishing strategy for a specific service on your platform
+- Missing required hostname for Route-based APIServer publishing
+- Using LoadBalancer for APIServer when external DNS is configured
+- Duplicate hostnames across services
+
+### Management Cluster Doesn't Support Routes
+
+If you see an error about Routes not being supported, this means your management cluster is not an OpenShift cluster. You'll need to either:
+
+- Use a different publishing strategy (e.g., LoadBalancer or NodePort)
+- Deploy your HostedCluster on an OpenShift management cluster
+
+### Service Not Accessible
+
+If a service is configured but not accessible:
+
+1. Verify the service publishing strategy is valid for your platform
+2. Check that the management cluster has the necessary capabilities
+3. Verify DNS resolution for Route-based services
+4. Check load balancer provisioning for LoadBalancer-based services
+5. Verify node ports are accessible for NodePort-based services
+
+## Related Documentation
+
+- Exposing Services from Hosted Control Plane
+- AWS External DNS
+- HostedCluster API Reference
 
 
 ---
