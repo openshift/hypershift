@@ -287,7 +287,8 @@ func reconcileEC2NodeClass(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2
 		subnetSelectorTerms = []awskarpenterv1.SubnetSelectorTerm{
 			{
 				Tags: map[string]string{
-					"karpenter.sh/discovery": hcp.Spec.InfraID,
+					"kubernetes.io/role/internal-elb":                         "1",
+					fmt.Sprintf("kubernetes.io/cluster/%s", hcp.Spec.InfraID): "*",
 				},
 			},
 		}
