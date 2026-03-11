@@ -18,7 +18,6 @@ import (
 	supportutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
-	configv1alpha1 "github.com/openshift/api/config/v1alpha1"
 	mcfgv1 "github.com/openshift/api/machineconfiguration/v1"
 	"github.com/openshift/api/operator/v1alpha1"
 
@@ -269,7 +268,6 @@ func (cg *ConfigGenerator) defaultAndValidateConfigManifest(manifest []byte) ([]
 	_ = mcfgv1.Install(scheme)
 	_ = v1alpha1.Install(scheme)
 	_ = configv1.Install(scheme)
-	_ = configv1alpha1.Install(scheme)
 
 	yamlSerializer := serializer.NewSerializerWithOptions(
 		serializer.DefaultMetaFactory, scheme, scheme,
@@ -293,7 +291,7 @@ func (cg *ConfigGenerator) defaultAndValidateConfigManifest(manifest []byte) ([]
 		}
 	case *v1alpha1.ImageContentSourcePolicy:
 	case *configv1.ImageDigestMirrorSet:
-	case *configv1alpha1.ClusterImagePolicy:
+	case *configv1.ClusterImagePolicy:
 	case *mcfgv1.KubeletConfig:
 		obj.Spec.MachineConfigPoolSelector = &metav1.LabelSelector{
 			MatchLabels: map[string]string{
