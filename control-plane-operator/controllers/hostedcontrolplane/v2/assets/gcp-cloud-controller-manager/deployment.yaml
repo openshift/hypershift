@@ -7,13 +7,13 @@ spec:
   revisionHistoryLimit: 2
   selector:
     matchLabels:
-      app: cloud-controller-manager
+      app: gcp-cloud-controller-manager
   strategy:
     type: Recreate
   template:
     metadata:
       labels:
-        app: cloud-controller-manager
+        app: gcp-cloud-controller-manager
     spec:
       containers:
       - name: cloud-controller-manager

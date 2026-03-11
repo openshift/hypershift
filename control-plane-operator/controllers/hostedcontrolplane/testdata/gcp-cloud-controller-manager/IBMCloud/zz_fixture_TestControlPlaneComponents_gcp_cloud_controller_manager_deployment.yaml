@@ -18,7 +18,7 @@ spec:
   revisionHistoryLimit: 2
   selector:
     matchLabels:
-      app: cloud-controller-manager
+      app: gcp-cloud-controller-manager
   strategy:
     type: Recreate
   template:
@@ -28,7 +28,7 @@ spec:
         component.hypershift.openshift.io/config-hash: eafd03f7
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
-        app: cloud-controller-manager
+        app: gcp-cloud-controller-manager
         hypershift.openshift.io/control-plane-component: gcp-cloud-controller-manager
         hypershift.openshift.io/hosted-control-plane: hcp-namespace
     spec:
