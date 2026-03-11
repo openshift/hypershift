@@ -205,6 +205,8 @@ type HostedClusterReconciler struct {
 	FeatureSet configv1.FeatureSet
 
 	OpenShiftTrustedCAFilePath string
+
+	karpenterCleanupTracker *hyperutil.CleanupTracker
 }
 
 // +kubebuilder:rbac:groups=hypershift.openshift.io,resources=hostedclusters,verbs=get;list;watch;create;update;patch;delete
@@ -237,6 +239,8 @@ func (r *HostedClusterReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpd
 	// When SCC is available (OpenShift), the container's security context and UID range is automatically set
 	// When SCC is not available (Kubernetes), we want to explicitly set a default (non-root) security context
 	r.SetDefaultSecurityContext = !r.ManagementClusterCapabilities.Has(capabilities.CapabilitySecurityContextConstraint)
+
+	r.karpenterCleanupTracker = hyperutil.NewCleanupTracker()
 
 	return bldr.Complete(r)
 }
@@ -3271,6 +3275,10 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 	// Unpause CAPI cluster to allow deletion to proceed
 	if err := pauseCAPICluster(ctx, r.Client, hc, false); err != nil {
 		return false, err
+	}
+
+	if err := r.resolveKarpenterFinalizer(ctx, hc); err != nil {
+		return false, fmt.Errorf("failed to resolve karpenter finalizer: %w", err)
 	}
 
 	// ensure that the cleanup annotation has been propagated to the hcp if it is set

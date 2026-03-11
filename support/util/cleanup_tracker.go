@@ -63,12 +63,12 @@ func (t *CleanupTracker) ResetFailures(hcpKey string) {
 	delete(t.failures, hcpKey)
 }
 
-// ShouldSkipCleanup checks if cleanup should be skipped based on failure count, duration, or KAS availability
-func (t *CleanupTracker) ShouldSkipCleanup(ctx context.Context, hcp *hyperv1.HostedControlPlane, cpClient client.Client) (bool, string, error) {
+// ShouldSkipCleanup checks if cleanup should be skipped based on failure count, duration, or KAS availability.
+// When strictAvailabilityCheck is true, the KAS deployment must have the Available condition set to True to be considered available.
+func (t *CleanupTracker) ShouldSkipCleanup(ctx context.Context, hcp *hyperv1.HostedControlPlane, cpClient client.Client, strictAvailabilityCheck bool) (bool, string, error) {
 	hcpKey := client.ObjectKeyFromObject(hcp).String()
 
-	// First check if KubeAPIServer deployment exists
-	kasAvailable, err := isKubeAPIServerAvailable(ctx, hcp, cpClient)
+	kasAvailable, err := isKubeAPIServerAvailable(ctx, hcp, cpClient, strictAvailabilityCheck)
 	if err != nil {
 		return false, "", err
 	}
@@ -120,9 +120,10 @@ func (t *CleanupTracker) GetFirstFailureTime(hcpKey string) time.Time {
 	return tracker.firstFailureTime
 }
 
-// isKubeAPIServerAvailable checks if the kube-apiserver deployment exists in the control plane namespace.
-// Returns false if the deployment is not found, true if it exists.
-func isKubeAPIServerAvailable(ctx context.Context, hcp *hyperv1.HostedControlPlane, cpClient client.Client) (bool, error) {
+// isKubeAPIServerAvailable checks if the kube-apiserver deployment is available in the control plane namespace.
+// When strictAvailabilityCheck is false, it only checks if the deployment exists.
+// When strictAvailabilityCheck is true, it also verifies the deployment has the Available condition set to True.
+func isKubeAPIServerAvailable(ctx context.Context, hcp *hyperv1.HostedControlPlane, cpClient client.Client, strictAvailabilityCheck bool) (bool, error) {
 	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "kube-apiserver",
@@ -134,6 +135,14 @@ func isKubeAPIServerAvailable(ctx context.Context, hcp *hyperv1.HostedControlPla
 			return false, nil
 		}
 		return false, err
+	}
+	if strictAvailabilityCheck {
+		for _, cond := range deployment.Status.Conditions {
+			if cond.Type == appsv1.DeploymentAvailable {
+				return cond.Status == "True", nil
+			}
+		}
+		return false, nil
 	}
 	return true, nil
 }
