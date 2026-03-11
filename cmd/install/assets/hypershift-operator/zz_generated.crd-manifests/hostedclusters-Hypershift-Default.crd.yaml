@@ -582,11 +582,14 @@ spec:
                               ciphers:
                                 description: |-
                                   ciphers is used to specify the cipher algorithms that are negotiated
-                                  during the TLS handshake.  Operators may remove entries their operands
-                                  do not support.  For example, to use DES-CBC3-SHA  (yaml):
+                                  during the TLS handshake. Operators may remove entries that their operands
+                                  do not support. For example, to use only ECDHE-RSA-AES128-GCM-SHA256 (yaml):
 
                                     ciphers:
-                                      - DES-CBC3-SHA
+                                      - ECDHE-RSA-AES128-GCM-SHA256
+
+                                  TLS 1.3 cipher suites (e.g. TLS_AES_128_GCM_SHA256) are not configurable
+                                  and are always enabled when TLS 1.3 is negotiated.
                                 items:
                                   type: string
                                 type: array
@@ -611,9 +614,6 @@ spec:
                               legacy clients and want to remain highly secure while being compatible with
                               most clients currently in use.
 
-                              The cipher list includes TLS 1.3 ciphers for forward compatibility, followed
-                              by the "intermediate" profile ciphers.
-
                               This profile is equivalent to a Custom profile specified as:
                                 minTLSVersion: VersionTLS12
                                 ciphers:
@@ -626,8 +626,6 @@ spec:
                                   - ECDHE-RSA-AES256-GCM-SHA384
                                   - ECDHE-ECDSA-CHACHA20-POLY1305
                                   - ECDHE-RSA-CHACHA20-POLY1305
-                                  - DHE-RSA-AES128-GCM-SHA256
-                                  - DHE-RSA-AES256-GCM-SHA384
                             nullable: true
                             type: object
                           modern:
@@ -648,9 +646,6 @@ spec:
                               old is a TLS profile for use when services need to be accessed by very old
                               clients or libraries and should be used only as a last resort.
 
-                              The cipher list includes TLS 1.3 ciphers for forward compatibility, followed
-                              by the "old" profile ciphers.
-
                               This profile is equivalent to a Custom profile specified as:
                                 minTLSVersion: VersionTLS10
                                 ciphers:
@@ -663,23 +658,15 @@ spec:
                                   - ECDHE-RSA-AES256-GCM-SHA384
                                   - ECDHE-ECDSA-CHACHA20-POLY1305
                                   - ECDHE-RSA-CHACHA20-POLY1305
-                                  - DHE-RSA-AES128-GCM-SHA256
-                                  - DHE-RSA-AES256-GCM-SHA384
-                                  - DHE-RSA-CHACHA20-POLY1305
                                   - ECDHE-ECDSA-AES128-SHA256
                                   - ECDHE-RSA-AES128-SHA256
                                   - ECDHE-ECDSA-AES128-SHA
                                   - ECDHE-RSA-AES128-SHA
-                                  - ECDHE-ECDSA-AES256-SHA384
-                                  - ECDHE-RSA-AES256-SHA384
                                   - ECDHE-ECDSA-AES256-SHA
                                   - ECDHE-RSA-AES256-SHA
-                                  - DHE-RSA-AES128-SHA256
-                                  - DHE-RSA-AES256-SHA256
                                   - AES128-GCM-SHA256
                                   - AES256-GCM-SHA384
                                   - AES128-SHA256
-                                  - AES256-SHA256
                                   - AES128-SHA
                                   - AES256-SHA
                                   - DES-CBC3-SHA
@@ -690,9 +677,10 @@ spec:
                               type is one of Old, Intermediate, Modern or Custom. Custom provides the
                               ability to specify individual TLS security profile parameters.
 
-                              The profiles are currently based on version 5.0 of the Mozilla Server Side TLS
-                              configuration guidelines (released 2019-06-28) with TLS 1.3 ciphers added for
-                              forward compatibility. See: https://ssl-config.mozilla.org/guidelines/5.0.json
+                              The profiles are based on version 5.7 of the Mozilla Server Side TLS
+                              configuration guidelines. The cipher lists consist of the configuration's
+                              "ciphersuites" followed by the Go-specific "ciphers" from the guidelines.
+                              See: https://ssl-config.mozilla.org/guidelines/5.7.json
 
                               The profiles are intent based, so they may change over time as new ciphers are
                               developed and existing ciphers are found to be insecure. Depending on
@@ -734,37 +722,33 @@ spec:
                         type: object
                       oidcProviders:
                         description: |-
-                          oidcProviders are OIDC identity providers that can issue tokens
-                          for this cluster
+                          oidcProviders are OIDC identity providers that can issue tokens for this cluster
                           Can only be set if "Type" is set to "OIDC".
 
                           At most one provider can be configured.
                         items:
                           properties:
                             claimMappings:
-                              description: |-
-                                claimMappings is a required field that configures the rules to be used by
-                                the Kubernetes API server for translating claims in a JWT token, issued
-                                by the identity provider, to a cluster identity.
+                              description: claimMappings is a required field that
+                                configures the rules to be used by the Kubernetes
+                                API server for translating claims in a JWT token,
+                                issued by the identity provider, to a cluster identity.
                               properties:
                                 extra:
                                   description: |-
-                                    extra is an optional field for configuring the mappings
-                                    used to construct the extra attribute for the cluster identity.
+                                    extra is an optional field for configuring the mappings used to construct the extra attribute for the cluster identity.
                                     When omitted, no extra attributes will be present on the cluster identity.
+
                                     key values for extra mappings must be unique.
                                     A maximum of 32 extra attribute mappings may be provided.
                                   items:
                                     description: |-
-                                      ExtraMapping allows specifying a key and CEL expression
-                                      to evaluate the keys' value. It is used to create additional
-                                      mappings and attributes added to a cluster identity from
-                                      a provided authentication token.
+                                      ExtraMapping allows specifying a key and CEL expression to evaluate the keys' value.
+                                      It is used to create additional mappings and attributes added to a cluster identity from a provided authentication token.
                                     properties:
                                       key:
                                         description: |-
-                                          key is a required field that specifies the string
-                                          to use as the extra attribute key.
+                                          key is a required field that specifies the string to use as the extra attribute key.
 
                                           key must be a domain-prefix path (e.g 'example.org/foo').
                                           key must not exceed 510 characters in length.
@@ -777,8 +761,7 @@ spec:
                                           It must only contain lower case alphanumeric characters and '-' or '.'.
                                           It must not use the reserved domains, or be subdomains of, "kubernetes.io", "k8s.io", and "openshift.io".
 
-                                          The path portion of the key (string of characters after the '/') must not be empty and must consist of at least one
-                                          alphanumeric character, percent-encoded octets, '-', '.', '_', '~', '!', '$', '&', ''', '(', ')', '*', '+', ',', ';', '=', and ':'.
+                                          The path portion of the key (string of characters after the '/') must not be empty and must consist of at least one alphanumeric character, percent-encoded octets, '-', '.', '_', '~', '!', '$', '&', ''', '(', ')', '*', '+', ',', ';', '=', and ':'.
                                           It must not exceed 256 characters in length.
                                         maxLength: 510
                                         minLength: 1
@@ -824,14 +807,12 @@ spec:
                                           rule: self.split('/', 2)[1].size() <= 256
                                       valueExpression:
                                         description: |-
-                                          valueExpression is a required field to specify the CEL expression to extract
-                                          the extra attribute value from a JWT token's claims.
+                                          valueExpression is a required field to specify the CEL expression to extract the extra attribute value from a JWT token's claims.
                                           valueExpression must produce a string or string array value.
                                           "", [], and null are treated as the extra mapping not being present.
                                           Empty string values within an array are filtered out.
 
-                                          CEL expressions have access to the token claims
-                                          through a CEL variable, 'claims'.
+                                          CEL expressions have access to the token claims through a CEL variable, 'claims'.
                                           'claims' is a map of claim names to claim values.
                                           For example, the 'sub' claim value can be accessed as 'claims.sub'.
                                           Nested claims can be accessed using dot notation ('claims.foo.bar').
@@ -852,76 +833,63 @@ spec:
                                   x-kubernetes-list-type: map
                                 groups:
                                   description: |-
-                                    groups is an optional field that configures how the groups of a cluster identity
-                                    should be constructed from the claims in a JWT token issued
-                                    by the identity provider.
-                                    When referencing a claim, if the claim is present in the JWT
-                                    token, its value must be a list of groups separated by a comma (',').
+                                    groups is an optional field that configures how the groups of a cluster identity should be constructed from the claims in a JWT token issued by the identity provider.
+
+                                    When referencing a claim, if the claim is present in the JWT token, its value must be a list of groups separated by a comma (',').
+
                                     For example - '"example"' and '"exampleOne", "exampleTwo", "exampleThree"' are valid claim values.
                                   properties:
                                     claim:
-                                      description: |-
-                                        claim is a required field that configures the JWT token
-                                        claim whose value is assigned to the cluster identity
-                                        field associated with this mapping.
+                                      description: claim is a required field that
+                                        configures the JWT token claim whose value
+                                        is assigned to the cluster identity field
+                                        associated with this mapping.
                                       type: string
                                     prefix:
                                       description: |-
-                                        prefix is an optional field that configures the prefix that will be
-                                        applied to the cluster identity attribute during the process of mapping
-                                        JWT claims to cluster identity attributes.
+                                        prefix is an optional field that configures the prefix that will be applied to the cluster identity attribute during the process of mapping JWT claims to cluster identity attributes.
 
                                         When omitted (""), no prefix is applied to the cluster identity attribute.
 
-                                        Example: if `prefix` is set to "myoidc:" and the `claim` in JWT contains
-                                        an array of strings "a", "b" and  "c", the mapping will result in an
-                                        array of string "myoidc:a", "myoidc:b" and "myoidc:c".
+                                        Example: if `prefix` is set to "myoidc:" and the `claim` in JWT contains an array of strings "a", "b" and "c", the mapping will result in an array of string "myoidc:a", "myoidc:b" and "myoidc:c".
                                       type: string
                                   required:
                                   - claim
                                   type: object
                                 uid:
                                   description: |-
-                                    uid is an optional field for configuring the claim mapping
-                                    used to construct the uid for the cluster identity.
+                                    uid is an optional field for configuring the claim mapping used to construct the uid for the cluster identity.
 
                                     When using uid.claim to specify the claim it must be a single string value.
                                     When using uid.expression the expression must result in a single string value.
 
-                                    When omitted, this means the user has no opinion and the platform
-                                    is left to choose a default, which is subject to change over time.
+                                    When omitted, this means the user has no opinion and the platform is left to choose a default, which is subject to change over time.
+
                                     The current default is to use the 'sub' claim.
                                   properties:
                                     claim:
                                       description: |-
-                                        claim is an optional field for specifying the
-                                        JWT token claim that is used in the mapping.
-                                        The value of this claim will be assigned to
-                                        the field in which this mapping is associated.
+                                        claim is an optional field for specifying the JWT token claim that is used in the mapping.
+                                        The value of this claim will be assigned to the field in which this mapping is associated.
 
                                         Precisely one of claim or expression must be set.
                                         claim must not be specified when expression is set.
-                                        When specified, claim must be at least 1 character in length
-                                        and must not exceed 256 characters in length.
+                                        When specified, claim must be at least 1 character in length and must not exceed 256 characters in length.
                                       maxLength: 256
                                       minLength: 1
                                       type: string
                                     expression:
                                       description: |-
-                                        expression is an optional field for specifying a
-                                        CEL expression that produces a string value from
-                                        JWT token claims.
+                                        expression is an optional field for specifying a CEL expression that produces a string value from JWT token claims.
 
-                                        CEL expressions have access to the token claims
-                                        through a CEL variable, 'claims'.
+                                        CEL expressions have access to the token claims through a CEL variable, 'claims'.
                                         'claims' is a map of claim names to claim values.
                                         For example, the 'sub' claim value can be accessed as 'claims.sub'.
                                         Nested claims can be accessed using dot notation ('claims.foo.bar').
 
                                         Precisely one of claim or expression must be set.
                                         expression must not be specified when claim is set.
-                                        When specified, expression must be at least 1 character in length
-                                        and must not exceed 1024 characters in length.
+                                        When specified, expression must be at least 1 character in length and must not exceed 1024 characters in length.
                                       maxLength: 1024
                                       minLength: 1
                                       type: string
@@ -932,15 +900,14 @@ spec:
                                     rule: 'has(self.claim) ? !has(self.expression)
                                       : has(self.expression)'
                                 username:
-                                  description: |-
-                                    username is a required field that configures how the username of a cluster identity
-                                    should be constructed from the claims in a JWT token issued by the identity provider.
+                                  description: username is a required field that configures
+                                    how the username of a cluster identity should
+                                    be constructed from the claims in a JWT token
+                                    issued by the identity provider.
                                   properties:
                                     claim:
                                       description: |-
-                                        claim is a required field that configures the JWT token
-                                        claim whose value is assigned to the cluster identity
-                                        field associated with this mapping.
+                                        claim is a required field that configures the JWT token claim whose value is assigned to the cluster identity field associated with this mapping.
 
                                         claim must not be an empty string ("") and must not exceed 256 characters.
                                       maxLength: 256
@@ -948,16 +915,13 @@ spec:
                                       type: string
                                     prefix:
                                       description: |-
-                                        prefix configures the prefix that should be prepended to the value
-                                        of the JWT claim.
+                                        prefix configures the prefix that should be prepended to the value of the JWT claim.
 
                                         prefix must be set when prefixPolicy is set to 'Prefix' and must be unset otherwise.
                                       properties:
                                         prefixString:
                                           description: |-
-                                            prefixString is a required field that configures the prefix that will
-                                            be applied to cluster identity username attribute
-                                            during the process of mapping JWT claims to cluster identity attributes.
+                                            prefixString is a required field that configures the prefix that will be applied to cluster identity username attribute during the process of mapping JWT claims to cluster identity attributes.
 
                                             prefixString must not be an empty string ("").
                                           minLength: 1
@@ -967,23 +931,21 @@ spec:
                                       type: object
                                     prefixPolicy:
                                       description: |-
-                                        prefixPolicy is an optional field that configures how a prefix should be
-                                        applied to the value of the JWT claim specified in the 'claim' field.
+                                        prefixPolicy is an optional field that configures how a prefix should be applied to the value of the JWT claim specified in the 'claim' field.
 
                                         Allowed values are 'Prefix', 'NoPrefix', and omitted (not provided or an empty string).
 
-                                        When set to 'Prefix', the value specified in the prefix field will be
-                                        prepended to the value of the JWT claim.
+                                        When set to 'Prefix', the value specified in the prefix field will be prepended to the value of the JWT claim.
+
                                         The prefix field must be set when prefixPolicy is 'Prefix'.
 
-                                        When set to 'NoPrefix', no prefix will be prepended to the value
-                                        of the JWT claim.
+                                        When set to 'NoPrefix', no prefix will be prepended to the value of the JWT claim.
 
-                                        When omitted, this means no opinion and the platform is left to choose
-                                        any prefixes that are applied which is subject to change over time.
-                                        Currently, the platform prepends `{issuerURL}#` to the value of the JWT claim
-                                        when the claim is not 'email'.
+                                        When omitted, this means no opinion and the platform is left to choose any prefixes that are applied which is subject to change over time.
+                                        Currently, the platform prepends `{issuerURL}#` to the value of the JWT claim when the claim is not 'email'.
+
                                         As an example, consider the following scenario:
+
                                            `prefix` is unset, `issuerURL` is set to `https://myoidc.tld`,
                                            the JWT claims include "username":"userA" and "email":"userA@myoidc.tld",
                                            and `claim` is set to:
@@ -1008,9 +970,7 @@ spec:
                               type: object
                             claimValidationRules:
                               description: |-
-                                claimValidationRules is an optional field that configures the rules to
-                                be used by the Kubernetes API server for validating the claims in a JWT
-                                token issued by the identity provider.
+                                claimValidationRules is an optional field that configures the rules to be used by the Kubernetes API server for validating the claims in a JWT token issued by the identity provider.
 
                                 Validation rules are joined via an AND operation.
                               items:
@@ -1022,9 +982,8 @@ spec:
                                   requiredClaim:
                                     description: |-
                                       requiredClaim allows configuring a required claim name and its expected value.
-                                      This field is required when `type` is set to RequiredClaim, and must be omitted
-                                      when `type` is set to any other value. The Kubernetes API server uses this field
-                                      to validate if an incoming JWT is valid for this identity provider.
+                                      This field is required when `type` is set to RequiredClaim, and must be omitted when `type` is set to any other value.
+                                      The Kubernetes API server uses this field to validate if an incoming JWT is valid for this identity provider.
                                     properties:
                                       claim:
                                         description: |-
@@ -1036,10 +995,8 @@ spec:
                                         type: string
                                       requiredValue:
                                         description: |-
-                                          requiredValue is a required field that configures the value that 'claim' must
-                                          have when taken from the incoming JWT claims.
-                                          If the value in the JWT claims does not match, the token
-                                          will be rejected for authentication.
+                                          requiredValue is a required field that configures the value that 'claim' must have when taken from the incoming JWT claims.
+                                          If the value in the JWT claims does not match, the token will be rejected for authentication.
 
                                           requiredValue must not be an empty string ("").
                                         minLength: 1
@@ -1054,12 +1011,9 @@ spec:
 
                                       Allowed values are "RequiredClaim" and "CEL".
 
-                                      When set to 'RequiredClaim', the Kubernetes API server will be configured
-                                      to validate that the incoming JWT contains the required claim and that its
-                                      value matches the required value.
+                                      When set to 'RequiredClaim', the Kubernetes API server will be configured to validate that the incoming JWT contains the required claim and that its value matches the required value.
 
-                                      When set to 'CEL', the Kubernetes API server will be configured
-                                      to validate the incoming JWT against the configured CEL expression.
+                                      When set to 'CEL', the Kubernetes API server will be configured to validate the incoming JWT against the configured CEL expression.
                                     enum:
                                     - RequiredClaim
                                     type: string
@@ -1074,15 +1028,14 @@ spec:
                               type: array
                               x-kubernetes-list-type: atomic
                             issuer:
-                              description: |-
-                                issuer is a required field that configures how the platform interacts
-                                with the identity provider and how tokens issued from the identity provider
-                                are evaluated by the Kubernetes API server.
+                              description: issuer is a required field that configures
+                                how the platform interacts with the identity provider
+                                and how tokens issued from the identity provider are
+                                evaluated by the Kubernetes API server.
                               properties:
                                 audiences:
                                   description: |-
-                                    audiences is a required field that configures the acceptable audiences
-                                    the JWT token, issued by the identity provider, must be issued to.
+                                    audiences is a required field that configures the acceptable audiences the JWT token, issued by the identity provider, must be issued to.
                                     At least one of the entries must match the 'aud' claim in the JWT token.
 
                                     audiences must contain at least one entry and must not exceed ten entries.
@@ -1095,15 +1048,11 @@ spec:
                                   x-kubernetes-list-type: set
                                 issuerCertificateAuthority:
                                   description: |-
-                                    issuerCertificateAuthority is an optional field that configures the
-                                    certificate authority, used by the Kubernetes API server, to validate
-                                    the connection to the identity provider when fetching discovery information.
+                                    issuerCertificateAuthority is an optional field that configures the certificate authority, used by the Kubernetes API server, to validate the connection to the identity provider when fetching discovery information.
 
                                     When not specified, the system trust is used.
 
-                                    When specified, it must reference a ConfigMap in the openshift-config
-                                    namespace containing the PEM-encoded CA certificates under the 'ca-bundle.crt'
-                                    key in the data field of the ConfigMap.
+                                    When specified, it must reference a ConfigMap in the openshift-config namespace containing the PEM-encoded CA certificates under the 'ca-bundle.crt' key in the data field of the ConfigMap.
                                   properties:
                                     name:
                                       description: name is the metadata.name of the
@@ -1114,10 +1063,8 @@ spec:
                                   type: object
                                 issuerURL:
                                   description: |-
-                                    issuerURL is a required field that configures the URL used to issue tokens
-                                    by the identity provider.
-                                    The Kubernetes API server determines how authentication tokens should be handled
-                                    by matching the 'iss' claim in the JWT to the issuerURL of configured identity providers.
+                                    issuerURL is a required field that configures the URL used to issue tokens by the identity provider.
+                                    The Kubernetes API server determines how authentication tokens should be handled by matching the 'iss' claim in the JWT to the issuerURL of configured identity providers.
 
                                     Must be at least 1 character and must not exceed 512 characters in length.
                                     Must be a valid URL that uses the 'https' scheme and does not contain a query, fragment or user.
@@ -1142,50 +1089,40 @@ spec:
                               type: object
                             name:
                               description: |-
-                                name is a required field that configures the unique human-readable identifier
-                                associated with the identity provider.
-                                It is used to distinguish between multiple identity providers
-                                and has no impact on token validation or authentication mechanics.
+                                name is a required field that configures the unique human-readable identifier associated with the identity provider.
+                                It is used to distinguish between multiple identity providers and has no impact on token validation or authentication mechanics.
 
                                 name must not be an empty string ("").
                               minLength: 1
                               type: string
                             oidcClients:
                               description: |-
-                                oidcClients is an optional field that configures how on-cluster,
-                                platform clients should request tokens from the identity provider.
+                                oidcClients is an optional field that configures how on-cluster, platform clients should request tokens from the identity provider.
                                 oidcClients must not exceed 20 entries and entries must have unique namespace/name pairs.
                               items:
-                                description: |-
-                                  OIDCClientConfig configures how platform clients
-                                  interact with identity providers as an authentication
-                                  method
+                                description: OIDCClientConfig configures how platform
+                                  clients interact with identity providers as an authentication
+                                  method.
                                 properties:
                                   clientID:
                                     description: |-
-                                      clientID is a required field that configures the client identifier, from
-                                      the identity provider, that the platform component uses for authentication
-                                      requests made to the identity provider.
-                                      The identity provider must accept this identifier for platform components
-                                      to be able to use the identity provider as an authentication mode.
+                                      clientID is a required field that configures the client identifier, from the identity provider, that the platform component uses for authentication requests made to the identity provider.
+                                      The identity provider must accept this identifier for platform components to be able to use the identity provider as an authentication mode.
 
                                       clientID must not be an empty string ("").
                                     minLength: 1
                                     type: string
                                   clientSecret:
                                     description: |-
-                                      clientSecret is an optional field that configures the client secret used
-                                      by the platform component when making authentication requests to the identity provider.
+                                      clientSecret is an optional field that configures the client secret used by the platform component when making authentication requests to the identity provider.
 
-                                      When not specified, no client secret will be used when making authentication requests
-                                      to the identity provider.
+                                      When not specified, no client secret will be used when making authentication requests to the identity provider.
 
-                                      When specified, clientSecret references a Secret in the 'openshift-config'
-                                      namespace that contains the client secret in the 'clientSecret' key of the '.data' field.
+                                      When specified, clientSecret references a Secret in the 'openshift-config' namespace that contains the client secret in the 'clientSecret' key of the '.data' field.
+
                                       The client secret will be used when making authentication requests to the identity provider.
 
-                                      Public clients do not require a client secret but private
-                                      clients do require a client secret to work with the identity provider.
+                                      Public clients do not require a client secret but private clients do require a client secret to work with the identity provider.
                                     properties:
                                       name:
                                         description: name is the metadata.name of
@@ -1196,8 +1133,8 @@ spec:
                                     type: object
                                   componentName:
                                     description: |-
-                                      componentName is a required field that specifies the name of the platform
-                                      component being configured to use the identity provider as an authentication mode.
+                                      componentName is a required field that specifies the name of the platform component being configured to use the identity provider as an authentication mode.
+
                                       It is used in combination with componentNamespace as a unique identifier.
 
                                       componentName must not be an empty string ("") and must not exceed 256 characters in length.
@@ -1206,9 +1143,8 @@ spec:
                                     type: string
                                   componentNamespace:
                                     description: |-
-                                      componentNamespace is a required field that specifies the namespace in which the
-                                      platform component being configured to use the identity provider as an authentication
-                                      mode is running.
+                                      componentNamespace is a required field that specifies the namespace in which the platform component being configured to use the identity provider as an authentication mode is running.
+
                                       It is used in combination with componentName as a unique identifier.
 
                                       componentNamespace must not be an empty string ("") and must not exceed 63 characters in length.
@@ -1217,11 +1153,8 @@ spec:
                                     type: string
                                   extraScopes:
                                     description: |-
-                                      extraScopes is an optional field that configures the extra scopes that should
-                                      be requested by the platform component when making authentication requests to the
-                                      identity provider.
-                                      This is useful if you have configured claim mappings that requires specific
-                                      scopes to be requested beyond the standard OIDC scopes.
+                                      extraScopes is an optional field that configures the extra scopes that should be requested by the platform component when making authentication requests to the identity provider.
+                                      This is useful if you have configured claim mappings that requires specific scopes to be requested beyond the standard OIDC scopes.
 
                                       When omitted, no additional scopes are requested.
                                     items:
@@ -1588,6 +1521,9 @@ spec:
 
                           Once set, changing domain is not currently supported.
                         type: string
+                        x-kubernetes-validations:
+                        - message: domain is immutable once set
+                          rule: self == oldSelf
                       loadBalancer:
                         description: |-
                           loadBalancer contains the load balancer details in general which are not only specific to the underlying infrastructure
@@ -6821,9 +6757,9 @@ spec:
                         - name
                         type: object
                       oidcClients:
-                        description: |-
-                          oidcClients is where participating operators place the current OIDC client status
-                          for OIDC clients that can be customized by the cluster-admin.
+                        description: oidcClients is where participating operators
+                          place the current OIDC client status for OIDC clients that
+                          can be customized by the cluster-admin.
                         items:
                           description: |-
                             OIDCClientStatus represents the current state
@@ -6832,8 +6768,7 @@ spec:
                           properties:
                             componentName:
                               description: |-
-                                componentName is a required field that specifies the name of the platform
-                                component using the identity provider as an authentication mode.
+                                componentName is a required field that specifies the name of the platform component using the identity provider as an authentication mode.
                                 It is used in combination with componentNamespace as a unique identifier.
 
                                 componentName must not be an empty string ("") and must not exceed 256 characters in length.
@@ -6842,9 +6777,8 @@ spec:
                               type: string
                             componentNamespace:
                               description: |-
-                                componentNamespace is a required field that specifies the namespace in which the
-                                platform component using the identity provider as an authentication
-                                mode is running.
+                                componentNamespace is a required field that specifies the namespace in which the platform component using the identity provider as an authentication mode is running.
+
                                 It is used in combination with componentName as a unique identifier.
 
                                 componentNamespace must not be an empty string ("") and must not exceed 63 characters in length.
@@ -6922,8 +6856,7 @@ spec:
                               x-kubernetes-list-type: map
                             consumingUsers:
                               description: |-
-                                consumingUsers is an optional list of ServiceAccounts requiring
-                                read permissions on the `clientSecret` secret.
+                                consumingUsers is an optional list of ServiceAccounts requiring read permissions on the `clientSecret` secret.
 
                                 consumingUsers must not exceed 5 entries.
                               items:
@@ -6940,6 +6873,7 @@ spec:
                             currentOIDCClients:
                               description: |-
                                 currentOIDCClients is an optional list of clients that the component is currently using.
+
                                 Entries must have unique issuerURL/clientID pairs.
                               items:
                                 description: |-
@@ -6948,25 +6882,21 @@ spec:
                                 properties:
                                   clientID:
                                     description: |-
-                                      clientID is a required field that specifies the client identifier, from
-                                      the identity provider, that the platform component is using for authentication
-                                      requests made to the identity provider.
+                                      clientID is a required field that specifies the client identifier, from the identity provider, that the platform component is using for authentication requests made to the identity provider.
 
                                       clientID must not be empty.
                                     minLength: 1
                                     type: string
                                   issuerURL:
                                     description: |-
-                                      issuerURL is a required field that specifies the URL of the identity
-                                      provider that this client is configured to make requests against.
+                                      issuerURL is a required field that specifies the URL of the identity provider that this client is configured to make requests against.
 
                                       issuerURL must use the 'https' scheme.
                                     pattern: ^https:\/\/[^\s]
                                     type: string
                                   oidcProviderName:
                                     description: |-
-                                      oidcProviderName is a required reference to the 'name' of the identity provider
-                                      configured in 'oidcProviders' that this client is associated with.
+                                      oidcProviderName is a required reference to the 'name' of the identity provider configured in 'oidcProviders' that this client is associated with.
 
                                       oidcProviderName must not be an empty string ("").
                                     minLength: 1
