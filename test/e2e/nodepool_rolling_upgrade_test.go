@@ -5,6 +5,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/cluster-api/util/labels/format"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -131,26 +133,70 @@ func (k *RollingUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes 
 		e2eutil.WithTimeout(k.getRollingUpgradeTimeout()),
 	)
 
+	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
+
+	// Find the current (latest revision) MachineSet for the MachineDeployment.
+	// Currently in CAPI v1.11, after a rolling upgrade completes, the old MachineSet may still have machines
+	// that are being scaled down. As a temporary workaround We only verify machines belonging to the
+	// current MachineSet to avoid false failures from stale machines.
+	// TODO(bclement): Revert this change once the root cause is found and fixed:
+	// https://issues.redhat.com/browse/OCPBUGS-77922
+	currentMachineSetName := currentMachineSetForDeployment(t, k.ctx, k.mgmtClient, controlPlaneNamespace, nodePool.Name)
+	machineLabels := crclient.MatchingLabels{
+		capiv1.MachineDeploymentNameLabel: nodePool.Name,
+		capiv1.MachineSetNameLabel:        format.MustFormatValue(currentMachineSetName),
+	}
+
 	switch globalOpts.Platform {
 	case hyperv1.AWSPlatform:
-		// check all aws machines have the new instance type
-		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
 		awsMachines := &capiaws.AWSMachineList{}
-		err = k.mgmtClient.List(k.ctx, awsMachines, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: nodePool.Name})
+		err = k.mgmtClient.List(k.ctx, awsMachines, crclient.InNamespace(controlPlaneNamespace), machineLabels)
 		g.Expect(err).ToNot(HaveOccurred(), "failed to list aws machines")
+		g.Expect(awsMachines.Items).ToNot(BeEmpty(), "expected at least one aws machine in current MachineSet")
 
 		for _, machine := range awsMachines.Items {
 			g.Expect(machine.Spec.InstanceType).To(Equal(instanceType))
 		}
 	case hyperv1.AzurePlatform:
-		// check all azure machines have the new instance type
-		controlPlaneNamespace := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
 		azureMachines := &capiazure.AzureMachineList{}
-		err = k.mgmtClient.List(k.ctx, azureMachines, crclient.InNamespace(controlPlaneNamespace), crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: nodePool.Name})
+		err = k.mgmtClient.List(k.ctx, azureMachines, crclient.InNamespace(controlPlaneNamespace), machineLabels)
 		g.Expect(err).ToNot(HaveOccurred(), "failed to list azure machines")
+		g.Expect(azureMachines.Items).ToNot(BeEmpty(), "expected at least one azure machine in current MachineSet")
 
 		for _, machine := range azureMachines.Items {
 			g.Expect(machine.Spec.VMSize).To(Equal(vmSize))
 		}
 	}
+}
+
+// currentMachineSetForDeployment returns the name of the current (highest revision)
+// MachineSet for the given MachineDeployment. This is needed because after a rolling
+// upgrade the old MachineSet may still have machines that haven't been fully cleaned up.
+func currentMachineSetForDeployment(t *testing.T, ctx context.Context, c crclient.Client, namespace, machineDeploymentName string) string {
+	t.Helper()
+	g := NewWithT(t)
+
+	machineSets := &capiv1.MachineSetList{}
+	err := c.List(ctx, machineSets,
+		crclient.InNamespace(namespace),
+		crclient.MatchingLabels{capiv1.MachineDeploymentNameLabel: machineDeploymentName},
+	)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to list MachineSets")
+	g.Expect(machineSets.Items).ToNot(BeEmpty(), "expected at least one MachineSet for MachineDeployment %s", machineDeploymentName)
+
+	var current string
+	var maxRevision int64 = -1
+	for i := range machineSets.Items {
+		rev, err := strconv.ParseInt(machineSets.Items[i].Annotations[capiv1.RevisionAnnotation], 10, 64)
+		if err != nil {
+			continue
+		}
+		if rev > maxRevision {
+			maxRevision = rev
+			current = machineSets.Items[i].Name
+		}
+	}
+	g.Expect(current).ToNot(BeEmpty(), "no MachineSet with a valid revision annotation found")
+	t.Logf("Current MachineSet for MachineDeployment %s: %s (revision %d)", machineDeploymentName, current, maxRevision)
+	return current
 }
