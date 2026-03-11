@@ -102,6 +102,8 @@ type HyperShiftOperatorInstallOptions struct {
 	AWSOidcS3Region                        string
 	AWSPrivateCredentialsFile              string
 	AWSPrivateRegion                       string
+	AzurePrivateCredentialsFile            string
+	AzurePLSResourceGroup                  string
 	EnableCIDebugOutput                    bool
 	ExternalDNSCredentials                 string
 	ExternalDNSDomain                      string
