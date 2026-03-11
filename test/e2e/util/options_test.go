@@ -1,7 +1,6 @@
 package util
 
 import (
-	"os"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -16,28 +15,28 @@ func TestComplete_BaseDomainFromEnvVar(t *testing.T) {
 		expectedBaseDomain string
 	}{
 		{
-			name:               "When BASE_DOMAIN env var is set it should use the env var value",
+			name:               "When BASE_DOMAIN env var is set, it should use the env var value",
 			envValue:           "custom.example.com",
 			flagValue:          "",
 			platform:           hyperv1.AWSPlatform,
 			expectedBaseDomain: "custom.example.com",
 		},
 		{
-			name:               "When BASE_DOMAIN env var is not set it should fall back to DefaultCIBaseDomain",
+			name:               "When BASE_DOMAIN env var is not set, it should fall back to DefaultCIBaseDomain",
 			envValue:           "",
 			flagValue:          "",
 			platform:           hyperv1.AWSPlatform,
 			expectedBaseDomain: DefaultCIBaseDomain,
 		},
 		{
-			name:               "When BaseDomain is already set via flag it should not be overridden by env var",
+			name:               "When BaseDomain is already set via flag, it should not be overridden by env var",
 			envValue:           "custom.example.com",
 			flagValue:          "flag.example.com",
 			platform:           hyperv1.AWSPlatform,
 			expectedBaseDomain: "flag.example.com",
 		},
 		{
-			name:               "When platform is KubeVirt it should not set BaseDomain from env var",
+			name:               "When platform is KubeVirt, it should not set BaseDomain from env var",
 			envValue:           "custom.example.com",
 			flagValue:          "",
 			platform:           hyperv1.KubevirtPlatform,
@@ -53,7 +52,7 @@ func TestComplete_BaseDomainFromEnvVar(t *testing.T) {
 			if tc.envValue != "" {
 				t.Setenv("BASE_DOMAIN", tc.envValue)
 			} else {
-				os.Unsetenv("BASE_DOMAIN")
+				t.Setenv("BASE_DOMAIN", "")
 			}
 
 			o := &Options{
