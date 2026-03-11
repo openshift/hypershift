@@ -1453,11 +1453,11 @@ func (r *reconciler) reconcileAggregatedAPIServicesAvailableCondition(ctx contex
 
 	expected := sets.New[string]()
 	for _, group := range manifests.OpenShiftAPIServerAPIServiceGroups() {
-		expected.Insert(fmt.Sprintf("v1.%s.openshift.io", group))
+		expected.Insert(manifests.OpenShiftAPIServerAPIService(group).Name)
 	}
 	if util.HCPOAuthEnabled(hcp) {
 		for _, group := range manifests.OpenShiftOAuthAPIServerAPIServiceGroups() {
-			expected.Insert(fmt.Sprintf("v1.%s.openshift.io", group))
+			expected.Insert(manifests.OpenShiftOAuthAPIServerAPIService(group).Name)
 		}
 	}
 	expected.Insert(manifests.OLMPackageServerAPIService().Name)
