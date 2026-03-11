@@ -12,6 +12,10 @@ import (
 )
 
 const (
+	// KarpenterFinalizer is the finalizer added to HostedControlPlane resources by the karpenter-operator.
+	// This allows time for Karpenter to delete all NodePools and NodeClaims before the HostedControlPlane is deleted.
+	KarpenterFinalizer = "hypershift.openshift.io/karpenter-finalizer"
+
 	// ManagedByKarpenterLabel is a label set on the userData secrets as being managed by Karpenter Operator
 	ManagedByKarpenterLabel = "hypershift.openshift.io/managed-by-karpenter"
 )

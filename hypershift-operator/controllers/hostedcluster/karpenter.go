@@ -13,16 +13,25 @@ limitations under the License.
 package hostedcluster
 
 import (
+	"context"
 	"fmt"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	karpenteroperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/karpenteroperator"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/upsert"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hypershiftOperatorImage, controlPlaneOperatorImage string) error {
@@ -74,4 +83,68 @@ spec:
 	}
 
 	return nil
+}
+
+// resolveKarpenterFinalizer removes the karpenter finalizer from the HCP
+// when the karpenter-operator cannot do so itself because the guest KAS is down.
+//
+// This breaks the deadlock where:
+//  1. The HostedCluster deletion waits for the HCP to be removed
+//  2. The HCP can't be removed because it has the karpenter finalizer
+//  3. The karpenter-operator can't remove the finalizer because the guest KAS is down
+//     and it depends on guest-side watches to function
+func (r *HostedClusterReconciler) resolveKarpenterFinalizer(ctx context.Context, hc *hyperv1.HostedCluster) error {
+	if !karpenterutil.IsKarpenterEnabled(hc.Spec.AutoNode) {
+		return nil
+	}
+
+	log := ctrl.LoggerFrom(ctx)
+	cpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+
+	hcp := controlplaneoperator.HostedControlPlane(cpNamespace, hc.Name)
+	if err := r.Get(ctx, client.ObjectKeyFromObject(hcp), hcp); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+
+	if !controllerutil.ContainsFinalizer(hcp, karpenterutil.KarpenterFinalizer) {
+		return nil
+	}
+
+	kasAvailable, err := isKASAvailable(ctx, hcp.Namespace, r.Client)
+	if err != nil {
+		return fmt.Errorf("failed to check KAS availability: %w", err)
+	}
+	if kasAvailable {
+		return nil
+	}
+
+	log.Info("Force-removing karpenter finalizer to unblock HCP deletion. Orphaned cloud resources may require manual cleanup.",
+		"hcp", client.ObjectKeyFromObject(hcp).String())
+
+	original := hcp.DeepCopy()
+	controllerutil.RemoveFinalizer(hcp, karpenterutil.KarpenterFinalizer)
+	if err := r.Patch(ctx, hcp, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+		return fmt.Errorf("failed to remove karpenter finalizer: %w", err)
+	}
+
+	log.Info("Successfully removed karpenter finalizer from HCP")
+	return nil
+}
+
+// isKASAvailable checks if the kube-apiserver deployment in the control plane namespace
+// has the Available condition set to True.
+func isKASAvailable(ctx context.Context, cpNamespace string, c client.Client) (bool, error) {
+	deployment := &appsv1.Deployment{}
+	if err := c.Get(ctx, client.ObjectKey{Namespace: cpNamespace, Name: "kube-apiserver"}, deployment); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	for _, cond := range deployment.Status.Conditions {
+		if cond.Type == appsv1.DeploymentAvailable {
+			return cond.Status == corev1.ConditionTrue, nil
+		}
+	}
+	return false, nil
 }

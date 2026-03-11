@@ -3301,6 +3301,10 @@ func (r *HostedClusterReconciler) delete(ctx context.Context, hc *hyperv1.Hosted
 		return false, err
 	}
 
+	if err := r.resolveKarpenterFinalizer(ctx, hc); err != nil {
+		return false, fmt.Errorf("failed to resolve karpenter finalizer: %w", err)
+	}
+
 	// ensure that the cleanup annotation has been propagated to the hcp if it is set
 	if hc.Annotations[hyperv1.CleanupCloudResourcesAnnotation] == "true" {
 		hcp := controlplaneoperator.HostedControlPlane(controlPlaneNamespace, hc.Name)
