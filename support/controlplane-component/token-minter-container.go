@@ -61,25 +61,45 @@ func (opts TokenMinterContainerOptions) injectTokenMinterContainer(cpContext Con
 		tokenVolume := opts.buildVolume(string(CloudToken))
 		podSpec.Volumes = append(podSpec.Volumes, tokenVolume)
 
-		podSpec.Containers = append(podSpec.Containers, opts.buildContainer(cpContext.HCP, CloudToken, image, tokenVolume))
-
-		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, corev1.VolumeMount{
-			Name:      tokenVolume.Name,
-			MountPath: cloudTokenFileMountPath,
-		})
+		container := opts.buildContainer(cpContext.HCP, CloudToken, image, tokenVolume)
+		opts.injectContainer(cpContext.NativeSidecarContainersEnabled, podSpec, container, cloudTokenFileMountPath, tokenVolume.Name)
 	}
 
 	if opts.TokenType == KubeAPIServerToken || opts.TokenType == CloudAndAPIServerToken {
 		tokenVolume := opts.buildVolume(string(KubeAPIServerToken))
 		podSpec.Volumes = append(podSpec.Volumes, tokenVolume)
 
-		podSpec.Containers = append(podSpec.Containers, opts.buildContainer(cpContext.HCP, KubeAPIServerToken, image, tokenVolume))
-
-		podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, corev1.VolumeMount{
-			Name:      tokenVolume.Name,
-			MountPath: kubeAPITokenFileMountPath,
-		})
+		container := opts.buildContainer(cpContext.HCP, KubeAPIServerToken, image, tokenVolume)
+		opts.injectContainer(cpContext.NativeSidecarContainersEnabled, podSpec, container, kubeAPITokenFileMountPath, tokenVolume.Name)
 	}
+}
+
+// injectContainer adds the token-minter container to the pod spec. When native sidecar containers are supported
+// (K8s >= 1.29), it injects as an init container with RestartPolicy=Always and a StartupProbe that blocks
+// main containers until the token file exists. Otherwise, it falls back to a regular sidecar container.
+func (opts TokenMinterContainerOptions) injectContainer(nativeSidecarsEnabled bool, podSpec *corev1.PodSpec, container corev1.Container, mainContainerMountPath string, volumeName string) {
+	if nativeSidecarsEnabled {
+		restartAlways := corev1.ContainerRestartPolicyAlways
+		container.RestartPolicy = &restartAlways
+		container.StartupProbe = &corev1.Probe{
+			ProbeHandler: corev1.ProbeHandler{
+				Exec: &corev1.ExecAction{
+					// The token-minter always writes to cloudTokenFileMountPath regardless of token type.
+					Command: []string{"test", "-f", path.Join(cloudTokenFileMountPath, "token")},
+				},
+			},
+			PeriodSeconds:    1,
+			FailureThreshold: 30,
+		}
+		podSpec.InitContainers = append(podSpec.InitContainers, container)
+	} else {
+		podSpec.Containers = append(podSpec.Containers, container)
+	}
+
+	podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, corev1.VolumeMount{
+		Name:      volumeName,
+		MountPath: mainContainerMountPath,
+	})
 }
 
 func (opts TokenMinterContainerOptions) buildContainer(hcp *hyperv1.HostedControlPlane, tokenType TokenType, image string, tokenVolume corev1.Volume) corev1.Container {

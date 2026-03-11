@@ -68,6 +68,10 @@ type ControlPlaneContext struct {
 	SkipPredicate bool
 	// SkipCertificateSigning is used for the generic unit test to skip the signing of certificates and maintain a stable output.
 	SkipCertificateSigning bool
+
+	// NativeSidecarContainersEnabled indicates whether the management cluster supports native sidecar containers
+	// (K8s >= 1.29 with SidecarContainers feature gate enabled by default).
+	NativeSidecarContainersEnabled bool
 }
 
 // WorkloadContext is what we pass to the components(adapt, predicate functions, etc..).
