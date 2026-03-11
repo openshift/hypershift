@@ -113,6 +113,8 @@ type Options struct {
 	ExternalDNSTxtOwnerId                     string
 	ExternalDNSImage                          string
 	ExternalDNSGoogleProject                  string
+	ExternalDNSInterval                       time.Duration
+	ExternalDNSAWSZonesCacheDuration          time.Duration
 	AdditionalOperatorEnvVars                 map[string]string
 	EnableAdminRBACGeneration                 bool
 	EnableUWMTelemetryRemoteWrite             bool
@@ -191,6 +193,12 @@ func (o *Options) Validate() error {
 		}
 		if len(o.ExternalDNSDomainFilter) == 0 {
 			errs = append(errs, fmt.Errorf("--external-dns-domain-filter is required with --external-dns-provider"))
+		}
+		if o.ExternalDNSInterval < 0 {
+			errs = append(errs, fmt.Errorf("--external-dns-interval must be a positive duration"))
+		}
+		if o.ExternalDNSAWSZonesCacheDuration < 0 {
+			errs = append(errs, fmt.Errorf("--external-dns-aws-zones-cache-duration must be a positive duration"))
 		}
 	}
 	if o.HyperShiftImage != HyperShiftImage && len(o.ImageRefsFile) > 0 {
@@ -313,6 +321,8 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerId, "external-dns-txt-owner-id", "", "external-dns TXT registry owner ID.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSImage, "external-dns-image", opts.ExternalDNSImage, "Image to use for external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSGoogleProject, "external-dns-google-project", "", "Google Cloud project ID for DNS zone (optional for GCP provider; falls back to EXTERNAL_DNS_GOOGLE_PROJECT env var or GCP metadata server)")
+	cmd.PersistentFlags().DurationVar(&opts.ExternalDNSInterval, "external-dns-interval", assets.DefaultExternalDNSInterval, "How often external-dns will reconcile DNS records.")
+	cmd.PersistentFlags().DurationVar(&opts.ExternalDNSAWSZonesCacheDuration, "external-dns-aws-zones-cache-duration", assets.DefaultExternalDNSAWSZonesCacheDuration, "How long to cache the list of AWS Route53 hosted zones. Higher values reduce ListHostedZones API calls. Only applies when --external-dns-provider=aws.")
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", opts.EnableAdminRBACGeneration, "Generate RBAC manifests for hosted cluster admins")
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
@@ -1076,15 +1086,17 @@ func setupExternalDNS(opts Options, operatorNamespace *corev1.Namespace) ([]crcl
 	}
 
 	externalDNSDeployment := assets.ExternalDNSDeployment{
-		Namespace:         operatorNamespace,
-		Image:             opts.ExternalDNSImage,
-		ServiceAccount:    externalDNSServiceAccount,
-		Provider:          assets.ExternalDNSProvider(opts.ExternalDNSProvider),
-		DomainFilter:      opts.ExternalDNSDomainFilter,
-		CredentialsSecret: externalDNSSecret,
-		TxtOwnerId:        opts.ExternalDNSTxtOwnerId,
-		Proxy:             proxy,
-		GoogleProject:     opts.ExternalDNSGoogleProject,
+		Namespace:             operatorNamespace,
+		Image:                 opts.ExternalDNSImage,
+		ServiceAccount:        externalDNSServiceAccount,
+		Provider:              assets.ExternalDNSProvider(opts.ExternalDNSProvider),
+		DomainFilter:          opts.ExternalDNSDomainFilter,
+		CredentialsSecret:     externalDNSSecret,
+		TxtOwnerId:            opts.ExternalDNSTxtOwnerId,
+		Proxy:                 proxy,
+		GoogleProject:         opts.ExternalDNSGoogleProject,
+		Interval:              opts.ExternalDNSInterval,
+		AWSZonesCacheDuration: opts.ExternalDNSAWSZonesCacheDuration,
 	}.Build()
 	objects = append(objects, externalDNSDeployment)
 

@@ -3,6 +3,7 @@ package assets
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
@@ -481,6 +482,110 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 			g.Expect(deployment.Spec.Template.Spec.Volumes).To(BeEquivalentTo(test.expectedVolumes))
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(BeEquivalentTo(test.expectedVolumeMounts))
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElements(test.expectedEnvVars))
+		})
+	}
+}
+
+func TestExternalDNSDeployment_Build(t *testing.T) {
+	baseDeployment := func() ExternalDNSDeployment {
+		return ExternalDNSDeployment{
+			Namespace: &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{Name: "hypershift"},
+			},
+			Image: "external-dns:latest",
+			ServiceAccount: &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{Name: "external-dns"},
+			},
+			Provider:     AWSExternalDNSProvider,
+			DomainFilter: "example.com",
+			CredentialsSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{Name: "dns-creds"},
+			},
+			TxtOwnerId: "test-owner",
+		}
+	}
+
+	tests := map[string]struct {
+		modify     func(*ExternalDNSDeployment)
+		expectArgs func(g Gomega, args []string)
+	}{
+		"When no interval is specified, it should default to 1m": {
+			modify: func(d *ExternalDNSDeployment) {},
+			expectArgs: func(g Gomega, args []string) {
+				g.Expect(args).To(ContainElement("--interval=1m0s"))
+			},
+		},
+		"When interval is set to 5m, it should use 5m in the args": {
+			modify: func(d *ExternalDNSDeployment) {
+				d.Interval = 5 * time.Minute
+			},
+			expectArgs: func(g Gomega, args []string) {
+				g.Expect(args).To(ContainElement("--interval=5m0s"))
+			},
+		},
+		"When interval is set to 10m, it should use 10m in the args": {
+			modify: func(d *ExternalDNSDeployment) {
+				d.Interval = 10 * time.Minute
+			},
+			expectArgs: func(g Gomega, args []string) {
+				g.Expect(args).To(ContainElement("--interval=10m0s"))
+			},
+		},
+		"When no AWS zones cache duration is specified, it should default to 1h for AWS provider": {
+			modify: func(d *ExternalDNSDeployment) {},
+			expectArgs: func(g Gomega, args []string) {
+				g.Expect(args).To(ContainElement("--aws-zones-cache-duration=1h0m0s"))
+			},
+		},
+		"When AWS zones cache duration is set to 30m, it should use 30m in the args": {
+			modify: func(d *ExternalDNSDeployment) {
+				d.AWSZonesCacheDuration = 30 * time.Minute
+			},
+			expectArgs: func(g Gomega, args []string) {
+				g.Expect(args).To(ContainElement("--aws-zones-cache-duration=30m0s"))
+			},
+		},
+		"When both interval and AWS zones cache duration are customized, it should use both custom values": {
+			modify: func(d *ExternalDNSDeployment) {
+				d.Interval = 5 * time.Minute
+				d.AWSZonesCacheDuration = 2 * time.Hour
+			},
+			expectArgs: func(g Gomega, args []string) {
+				g.Expect(args).To(ContainElement("--interval=5m0s"))
+				g.Expect(args).To(ContainElement("--aws-zones-cache-duration=2h0m0s"))
+			},
+		},
+		"When provider is Azure, it should not include AWS zones cache duration": {
+			modify: func(d *ExternalDNSDeployment) {
+				d.Provider = AzureExternalDNSProvider
+			},
+			expectArgs: func(g Gomega, args []string) {
+				g.Expect(args).To(ContainElement("--interval=1m0s"))
+				for _, arg := range args {
+					g.Expect(arg).NotTo(ContainSubstring("--aws-zones-cache-duration"))
+				}
+			},
+		},
+		"When provider is GCP, it should not include AWS zones cache duration": {
+			modify: func(d *ExternalDNSDeployment) {
+				d.Provider = GCPExternalDNSProvider
+			},
+			expectArgs: func(g Gomega, args []string) {
+				g.Expect(args).To(ContainElement("--interval=1m0s"))
+				for _, arg := range args {
+					g.Expect(arg).NotTo(ContainSubstring("--aws-zones-cache-duration"))
+				}
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			d := baseDeployment()
+			test.modify(&d)
+			deployment := d.Build()
+			test.expectArgs(g, deployment.Spec.Template.Spec.Containers[0].Args)
 		})
 	}
 }
