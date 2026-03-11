@@ -14,10 +14,6 @@ import (
 
 const (
 	ComponentName = "aws-node-termination-handler"
-
-	// AnnotationTerminationHandlerQueueURL specifies the SQS queue URL for spot interruption events.
-	// This annotation is required on the HostedCluster to enable the termination handler component.
-	AnnotationTerminationHandlerQueueURL = "hypershift.openshift.io/aws-termination-handler-queue-url"
 )
 
 var _ component.ComponentOptions = &options{}
@@ -55,6 +51,18 @@ func NewComponent() component.ControlPlaneComponent {
 		Build()
 }
 
+// getTerminationHandlerQueueURL returns the SQS queue URL for the termination handler.
+// Returns empty string if not configured or if hcp is nil.
+func getTerminationHandlerQueueURL(hcp *hyperv1.HostedControlPlane) string {
+	if hcp == nil {
+		return ""
+	}
+	if hcp.Spec.Platform.AWS != nil {
+		return hcp.Spec.Platform.AWS.TerminationHandlerQueueURL
+	}
+	return ""
+}
+
 func predicate(cpContext component.WorkloadContext) (bool, error) {
 	hcp := cpContext.HCP
 
@@ -68,12 +76,9 @@ func predicate(cpContext component.WorkloadContext) (bool, error) {
 		return false, nil
 	}
 
-	// Require SQS queue URL annotation
-	if hcp.Annotations == nil {
-		return false, nil
-	}
-	queueURL, ok := hcp.Annotations[AnnotationTerminationHandlerQueueURL]
-	if !ok || queueURL == "" {
+	// Require SQS queue URL from API
+	queueURL := getTerminationHandlerQueueURL(hcp)
+	if queueURL == "" {
 		return false, nil
 	}
 
