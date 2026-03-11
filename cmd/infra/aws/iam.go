@@ -106,6 +106,7 @@ var (
 				"ec2:CreateSnapshot",
 				"ec2:CreateTags",
 				"ec2:CreateVolume",
+				"ec2:CopyVolumes",
 				"ec2:DeleteSnapshot",
 				"ec2:DeleteTags",
 				"ec2:DeleteVolume",
