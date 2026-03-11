@@ -159,6 +159,84 @@ func TestNewIngressParams(t *testing.T) {
 				LoadBalancerScope: v1.InternalLoadBalancer,
 			},
 		},
+		{
+			name: "When Azure endpoint access is Private it should set internal load balancer scope",
+			args: args{
+				hcp: &hyperv1.HostedControlPlane{
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{
+							Type: hyperv1.AzurePlatform,
+							Azure: &hyperv1.AzurePlatformSpec{
+								EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+									Type: hyperv1.AzureEndpointAccessPrivate,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: &IngressParams{
+				IngressSubdomain:  "apps.",
+				Replicas:          1,
+				PlatformType:      hyperv1.AzurePlatform,
+				IsPrivate:         false,
+				IBMCloudUPI:       false,
+				AWSNLB:            false,
+				LoadBalancerScope: v1.InternalLoadBalancer,
+			},
+		},
+		{
+			name: "When Azure endpoint access is PublicAndPrivate it should set internal load balancer scope",
+			args: args{
+				hcp: &hyperv1.HostedControlPlane{
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{
+							Type: hyperv1.AzurePlatform,
+							Azure: &hyperv1.AzurePlatformSpec{
+								EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+									Type: hyperv1.AzureEndpointAccessPublicAndPrivate,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: &IngressParams{
+				IngressSubdomain:  "apps.",
+				Replicas:          1,
+				PlatformType:      hyperv1.AzurePlatform,
+				IsPrivate:         false,
+				IBMCloudUPI:       false,
+				AWSNLB:            false,
+				LoadBalancerScope: v1.InternalLoadBalancer,
+			},
+		},
+		{
+			name: "When Azure endpoint access is Public it should set external load balancer scope",
+			args: args{
+				hcp: &hyperv1.HostedControlPlane{
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{
+							Type: hyperv1.AzurePlatform,
+							Azure: &hyperv1.AzurePlatformSpec{
+								EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+									Type: hyperv1.AzureEndpointAccessPublic,
+								},
+							},
+						},
+					},
+				},
+			},
+			want: &IngressParams{
+				IngressSubdomain:  "apps.",
+				Replicas:          1,
+				PlatformType:      hyperv1.AzurePlatform,
+				IsPrivate:         false,
+				IBMCloudUPI:       false,
+				AWSNLB:            false,
+				LoadBalancerScope: v1.ExternalLoadBalancer,
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
