@@ -8,6 +8,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/gcputil"
 	"github.com/openshift/hypershift/support/upsert"
 
 	corev1 "k8s.io/api/core/v1"
@@ -53,17 +54,22 @@ func TestSetupOperandCredentials(t *testing.T) {
 	tests := []struct {
 		name                   string
 		disableImageRegistry   bool
+		createNamespace        bool
 		expectImageRegistrySec bool
 	}{
 		{
 			name:                   "When image registry capability is enabled it should create the credential secret",
-			disableImageRegistry:   false,
+			createNamespace:        true,
 			expectImageRegistrySec: true,
 		},
 		{
-			name:                   "When image registry capability is disabled it should skip the credential secret",
-			disableImageRegistry:   true,
-			expectImageRegistrySec: false,
+			name:                 "When image registry capability is disabled it should skip the credential secret",
+			disableImageRegistry: true,
+			createNamespace:      true,
+		},
+		{
+			name:            "When target namespace does not exist it should skip without error",
+			createNamespace: false,
 		},
 	}
 
@@ -71,6 +77,11 @@ func TestSetupOperandCredentials(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewWithT(t)
 			c := fake.NewClientBuilder().WithScheme(api.Scheme).Build()
+
+			if tc.createNamespace {
+				ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "openshift-image-registry"}}
+				g.Expect(c.Create(t.Context(), ns)).To(Succeed())
+			}
 
 			hcp := makeHCP()
 			if tc.disableImageRegistry {
@@ -92,7 +103,7 @@ func TestSetupOperandCredentials(t *testing.T) {
 				g.Expect(sec.Type).To(Equal(corev1.SecretTypeOpaque))
 
 				// Validate the WIF credential JSON structure
-				var cred gcpExternalAccountCredential
+				var cred gcputil.ExternalAccountCredential
 				g.Expect(json.Unmarshal(sec.Data["service_account.json"], &cred)).To(Succeed())
 				g.Expect(cred.Type).To(Equal("external_account"))
 				g.Expect(cred.Audience).To(ContainSubstring(testProjectNumber))
@@ -102,87 +113,6 @@ func TestSetupOperandCredentials(t *testing.T) {
 				g.Expect(cred.CredentialSource.File).To(Equal("/var/run/secrets/openshift/serviceaccount/token"))
 			} else {
 				g.Expect(apierrors.IsNotFound(err)).To(BeTrue(), "expected image registry credentials secret to be absent")
-			}
-		})
-	}
-}
-
-func TestBuildGCPWorkloadIdentityCredentials(t *testing.T) {
-	g := NewWithT(t)
-
-	wif := hyperv1.GCPWorkloadIdentityConfig{
-		ProjectNumber: testProjectNumber,
-		PoolID:        testPoolID,
-		ProviderID:    testProviderID,
-	}
-
-	credentials, err := buildGCPWorkloadIdentityCredentials(wif, testImageRegistryGSA)
-	g.Expect(err).To(BeNil())
-	g.Expect(credentials).To(ContainSubstring(`"type":"external_account"`))
-	g.Expect(credentials).To(ContainSubstring(testProjectNumber))
-	g.Expect(credentials).To(ContainSubstring(testPoolID))
-	g.Expect(credentials).To(ContainSubstring(testProviderID))
-	g.Expect(credentials).To(ContainSubstring(testImageRegistryGSA))
-	g.Expect(credentials).To(ContainSubstring("/var/run/secrets/openshift/serviceaccount/token"))
-}
-
-func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
-	validWIF := func() hyperv1.GCPWorkloadIdentityConfig {
-		return hyperv1.GCPWorkloadIdentityConfig{
-			ProjectNumber: testProjectNumber,
-			PoolID:        testPoolID,
-			ProviderID:    testProviderID,
-		}
-	}
-
-	tests := []struct {
-		name                string
-		mutateWIF           func(*hyperv1.GCPWorkloadIdentityConfig)
-		serviceAccountEmail string
-		errorMsg            string
-	}{
-		{
-			name:                "When all fields are valid it should succeed",
-			serviceAccountEmail: testImageRegistryGSA,
-		},
-		{
-			name:                "When project number is empty it should return an error",
-			mutateWIF:           func(wif *hyperv1.GCPWorkloadIdentityConfig) { wif.ProjectNumber = "" },
-			serviceAccountEmail: testImageRegistryGSA,
-			errorMsg:            "project number cannot be empty",
-		},
-		{
-			name:                "When pool ID is empty it should return an error",
-			mutateWIF:           func(wif *hyperv1.GCPWorkloadIdentityConfig) { wif.PoolID = "" },
-			serviceAccountEmail: testImageRegistryGSA,
-			errorMsg:            "pool ID cannot be empty",
-		},
-		{
-			name:                "When provider ID is empty it should return an error",
-			mutateWIF:           func(wif *hyperv1.GCPWorkloadIdentityConfig) { wif.ProviderID = "" },
-			serviceAccountEmail: testImageRegistryGSA,
-			errorMsg:            "provider ID cannot be empty",
-		},
-		{
-			name:                "When service account email is empty it should return an error",
-			serviceAccountEmail: "",
-			errorMsg:            "service account email cannot be empty",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-			wif := validWIF()
-			if tt.mutateWIF != nil {
-				tt.mutateWIF(&wif)
-			}
-			_, err := buildGCPWorkloadIdentityCredentials(wif, tt.serviceAccountEmail)
-			if tt.errorMsg != "" {
-				g.Expect(err).ToNot(BeNil())
-				g.Expect(err.Error()).To(ContainSubstring(tt.errorMsg))
-			} else {
-				g.Expect(err).To(BeNil())
 			}
 		})
 	}

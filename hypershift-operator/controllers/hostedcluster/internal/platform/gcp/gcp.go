@@ -17,12 +17,12 @@ package gcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/gcputil"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
@@ -323,7 +323,7 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	// Create credential secrets following AWS pattern
 	var errs []error
 	syncSecret := func(secret *corev1.Secret, serviceAccountEmail string) error {
-		credentials, err := buildGCPWorkloadIdentityCredentials(hcluster.Spec.Platform.GCP.WorkloadIdentity, serviceAccountEmail)
+		credentials, err := gcputil.BuildWorkloadIdentityCredentials(hcluster.Spec.Platform.GCP.WorkloadIdentity, serviceAccountEmail)
 		if err != nil {
 			return fmt.Errorf("failed to build cloud credentials secret %s/%s: %w", secret.Namespace, secret.Name, err)
 		}
@@ -424,69 +424,6 @@ func ImageRegistryCredsSecret(controlPlaneNamespace string) *corev1.Secret {
 			Name:      "image-registry-creds",
 		},
 	}
-}
-
-// gcpCredentialSource represents the credential source configuration for GCP external account credentials.
-type gcpCredentialSource struct {
-	File   string                    `json:"file"`
-	Format gcpCredentialSourceFormat `json:"format"`
-}
-
-// gcpCredentialSourceFormat represents the format of the credential source.
-type gcpCredentialSourceFormat struct {
-	Type string `json:"type"`
-}
-
-// gcpExternalAccountCredential represents the complete GCP external account credential configuration
-// for Workload Identity Federation. This follows the Google Cloud credential configuration format.
-type gcpExternalAccountCredential struct {
-	Type                           string              `json:"type"`
-	Audience                       string              `json:"audience"`
-	SubjectTokenType               string              `json:"subject_token_type"`
-	TokenURL                       string              `json:"token_url"`
-	ServiceAccountImpersonationURL string              `json:"service_account_impersonation_url"`
-	CredentialSource               gcpCredentialSource `json:"credential_source"`
-}
-
-// buildGCPWorkloadIdentityCredentials creates the credential configuration for Google Cloud SDK
-// to use Workload Identity Federation with a specific service account email.
-func buildGCPWorkloadIdentityCredentials(wif hyperv1.GCPWorkloadIdentityConfig, serviceAccountEmail string) (string, error) {
-	if wif.ProjectNumber == "" {
-		return "", fmt.Errorf("project number cannot be empty in GCP Workload Identity Federation credentials")
-	}
-	if wif.PoolID == "" {
-		return "", fmt.Errorf("pool ID cannot be empty in GCP Workload Identity Federation credentials")
-	}
-	if wif.ProviderID == "" {
-		return "", fmt.Errorf("provider ID cannot be empty in GCP Workload Identity Federation credentials")
-	}
-	if serviceAccountEmail == "" {
-		return "", fmt.Errorf("service account email cannot be empty in GCP Workload Identity Federation credentials")
-	}
-
-	// Create the credential configuration that tells Google Cloud SDK how to use WIF
-	// This follows the standard Google Cloud credential configuration format with service account impersonation
-	// The audience must be the full resource name of the Workload Identity Provider
-	credConfig := gcpExternalAccountCredential{
-		Type:                           "external_account",
-		Audience:                       fmt.Sprintf("//iam.googleapis.com/projects/%s/locations/global/workloadIdentityPools/%s/providers/%s", wif.ProjectNumber, wif.PoolID, wif.ProviderID),
-		SubjectTokenType:               "urn:ietf:params:oauth:token-type:jwt",
-		TokenURL:                       "https://sts.googleapis.com/v1/token",
-		ServiceAccountImpersonationURL: fmt.Sprintf("https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/%s:generateAccessToken", serviceAccountEmail),
-		CredentialSource: gcpCredentialSource{
-			File: "/var/run/secrets/openshift/serviceaccount/token",
-			Format: gcpCredentialSourceFormat{
-				Type: "text",
-			},
-		},
-	}
-
-	credentialJSON, err := json.Marshal(credConfig)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal GCP credential configuration: %w", err)
-	}
-
-	return string(credentialJSON), nil
 }
 
 // ReconcileSecretEncryption is a no-op
