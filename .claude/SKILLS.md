@@ -105,6 +105,28 @@ This directory contains Claude Code skills that are automatically applied when w
 - Provides ready-to-use kubectl commands
 - Covers common scenarios and resolutions
 
+### Restructure Commits
+
+**Location:** `.claude/skills/restructure-hypershift-commits/`
+
+**Description:** Reorganizes all commits on a feature branch into logical, component-based commits that match HyperShift's architecture.
+
+**Auto-applies when:**
+- User asks to "redo commits", "restructure commits", "squash by component", or "organize commits"
+- Preparing a branch for PR review with clean commit history
+- Branch has many small/WIP commits that should be consolidated
+
+**Covers:**
+- Component-based commit grouping (API, Vendor, CLI, HO, CPO, E2E, Docs)
+- Soft reset and re-staging workflow
+- Conventional commit messages with correct type/scope per component
+- Edge cases for file categorization (support/, testdata/, API tests)
+
+**Benefits:**
+- Clean, reviewable commit history organized by architectural boundary
+- Consistent commit ordering across all HyperShift PRs
+- Proper conventional commit formatting per component
+
 ## How Skills Work
 
 Skills are automatically invoked by Claude based on context. You don't need to do anything special - just ask Claude to:
