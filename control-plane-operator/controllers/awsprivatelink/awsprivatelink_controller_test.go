@@ -1,20 +1,38 @@
 package awsprivatelink
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/awsapi"
 
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	route53sdk "github.com/aws/aws-sdk-go-v2/service/route53"
+	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/google/go-cmp/cmp"
+	"go.uber.org/mock/gomock"
 )
 
 func Test_diffIDs(t *testing.T) {
@@ -203,6 +221,741 @@ func TestDiffPermissions(t *testing.T) {
 			g := NewGomegaWithT(t)
 			result := diffPermissions(test.actual, test.required)
 			g.Expect(result).To(Equal(test.expected))
+		})
+	}
+}
+
+// mockEC2Client is a hand-written mock for ec2iface.EC2API.
+// ec2iface.EC2API has 500+ methods, making mockgen impractical (~37K lines).
+// This follows the project-wide convention of hand-written embedded EC2 mocks.
+type mockEC2Client struct {
+	ec2iface.EC2API
+
+	// VPC endpoint operations
+	deleteVpcEndpointsErr      error
+	describeVpcEndpointsErr    error
+	describeVpcEndpointsOutput *ec2.DescribeVpcEndpointsOutput
+
+	// Security group operations
+	describeSecurityGroupsErr     error
+	describeSecurityGroupsOutput  *ec2.DescribeSecurityGroupsOutput
+	revokeSecurityGroupIngressErr error
+	revokeSecurityGroupEgressErr  error
+	deleteSecurityGroupErr        error
+
+	// Call tracking for assertions
+	revokeIngressCalled       bool
+	revokeEgressCalled        bool
+	deleteSecurityGroupCalled bool
+}
+
+func (m *mockEC2Client) DeleteVpcEndpointsWithContext(_ aws.Context, _ *ec2.DeleteVpcEndpointsInput, _ ...request.Option) (*ec2.DeleteVpcEndpointsOutput, error) {
+	return &ec2.DeleteVpcEndpointsOutput{}, m.deleteVpcEndpointsErr
+}
+
+func (m *mockEC2Client) DescribeVpcEndpointsWithContext(_ aws.Context, _ *ec2.DescribeVpcEndpointsInput, _ ...request.Option) (*ec2.DescribeVpcEndpointsOutput, error) {
+	if m.describeVpcEndpointsErr != nil {
+		return nil, m.describeVpcEndpointsErr
+	}
+	return m.describeVpcEndpointsOutput, nil
+}
+
+func (m *mockEC2Client) DescribeSecurityGroupsWithContext(_ aws.Context, _ *ec2.DescribeSecurityGroupsInput, _ ...request.Option) (*ec2.DescribeSecurityGroupsOutput, error) {
+	if m.describeSecurityGroupsErr != nil {
+		return nil, m.describeSecurityGroupsErr
+	}
+	return m.describeSecurityGroupsOutput, nil
+}
+
+func (m *mockEC2Client) RevokeSecurityGroupIngressWithContext(_ aws.Context, _ *ec2.RevokeSecurityGroupIngressInput, _ ...request.Option) (*ec2.RevokeSecurityGroupIngressOutput, error) {
+	m.revokeIngressCalled = true
+	if m.revokeSecurityGroupIngressErr != nil {
+		return nil, m.revokeSecurityGroupIngressErr
+	}
+	return &ec2.RevokeSecurityGroupIngressOutput{}, nil
+}
+
+func (m *mockEC2Client) RevokeSecurityGroupEgressWithContext(_ aws.Context, _ *ec2.RevokeSecurityGroupEgressInput, _ ...request.Option) (*ec2.RevokeSecurityGroupEgressOutput, error) {
+	m.revokeEgressCalled = true
+	if m.revokeSecurityGroupEgressErr != nil {
+		return nil, m.revokeSecurityGroupEgressErr
+	}
+	return &ec2.RevokeSecurityGroupEgressOutput{}, nil
+}
+
+func (m *mockEC2Client) DeleteSecurityGroupWithContext(_ aws.Context, _ *ec2.DeleteSecurityGroupInput, _ ...request.Option) (*ec2.DeleteSecurityGroupOutput, error) {
+	m.deleteSecurityGroupCalled = true
+	if m.deleteSecurityGroupErr != nil {
+		return nil, m.deleteSecurityGroupErr
+	}
+	return &ec2.DeleteSecurityGroupOutput{}, nil
+}
+
+func TestReconcileDeletion(t *testing.T) {
+	now := metav1.NewTime(time.Now())
+
+	ingressPermission := &ec2.IpPermission{
+		FromPort:   aws.Int64(6443),
+		ToPort:     aws.Int64(6443),
+		IpProtocol: aws.String("tcp"),
+		IpRanges:   []*ec2.IpRange{{CidrIp: aws.String("10.0.0.0/16")}},
+	}
+	egressPermission := &ec2.IpPermission{
+		FromPort:   aws.Int64(0),
+		ToPort:     aws.Int64(65535),
+		IpProtocol: aws.String("-1"),
+		IpRanges:   []*ec2.IpRange{{CidrIp: aws.String("0.0.0.0/0")}},
+	}
+
+	testCases := []struct {
+		name            string
+		awsEndpointSvc  *hyperv1.AWSEndpointService
+		extraObjects    []crclient.Object
+		setupMocks      func(ctrl *gomock.Controller) *MockawsClientProvider
+		expectError     bool
+		expectFinalizer bool
+		expectRequeue   bool
+	}{
+		{
+			name: "When all AWS resources are cleaned up successfully it should remove the finalizer",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "private-router",
+					Namespace:         "clusters-test",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{finalizer},
+				},
+				Status: hyperv1.AWSEndpointServiceStatus{
+					EndpointID:      "vpce-12345",
+					SecurityGroupID: "sg-12345",
+					DNSNames:        []string{"api.example.com"},
+					DNSZoneID:       "Z1234567890",
+				},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+				mockEC2 := &mockEC2Client{
+					// VPC endpoint already gone after delete request
+					describeVpcEndpointsErr: awserr.New("InvalidVpcEndpointId.NotFound", "not found", nil),
+					// Security group exists and can be cleaned up
+					describeSecurityGroupsOutput: &ec2.DescribeSecurityGroupsOutput{
+						SecurityGroups: []*ec2.SecurityGroup{{
+							GroupId:             aws.String("sg-12345"),
+							IpPermissions:       []*ec2.IpPermission{ingressPermission},
+							IpPermissionsEgress: []*ec2.IpPermission{egressPermission},
+						}},
+					},
+				}
+				mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+				// DNS record exists and can be deleted
+				mockRoute53.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any()).Return(
+					&route53sdk.ListResourceRecordSetsOutput{
+						ResourceRecordSets: []route53types.ResourceRecordSet{{
+							Name: awsv2.String("api.example.com."),
+							Type: route53types.RRTypeCname,
+							TTL:  awsv2.Int64(300),
+							ResourceRecords: []route53types.ResourceRecord{
+								{Value: awsv2.String("vpce-12345.vpce-svc.us-east-1.vpce.amazonaws.com")},
+							},
+						}},
+					}, nil)
+				mockRoute53.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any()).Return(
+					&route53sdk.ChangeResourceRecordSetsOutput{}, nil)
+				return mockBuilder
+			},
+			expectError:     false,
+			expectFinalizer: false,
+		},
+		{
+			name: "When status has no AWS resources it should remove the finalizer",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "private-router",
+					Namespace:         "clusters-test",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{finalizer},
+				},
+				Status: hyperv1.AWSEndpointServiceStatus{},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockEC2 := &mockEC2Client{}
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+				mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+				return mockBuilder
+			},
+			expectError:     false,
+			expectFinalizer: false,
+		},
+		{
+			name: "When HCP exists after restart it should initialize clients and complete deletion",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "private-router",
+					Namespace:         "clusters-test",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{finalizer},
+				},
+				Status: hyperv1.AWSEndpointServiceStatus{
+					EndpointID:      "vpce-12345",
+					SecurityGroupID: "sg-12345",
+					DNSNames:        []string{"api.example.com"},
+					DNSZoneID:       "Z1234567890",
+				},
+			},
+			extraObjects: []crclient.Object{
+				&hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-hcp",
+						Namespace: "clusters-test",
+					},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{
+							AWS: &hyperv1.AWSPlatformSpec{},
+						},
+					},
+				},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+				mockEC2 := &mockEC2Client{
+					describeVpcEndpointsErr: awserr.New("InvalidVpcEndpointId.NotFound", "not found", nil),
+					describeSecurityGroupsOutput: &ec2.DescribeSecurityGroupsOutput{
+						SecurityGroups: []*ec2.SecurityGroup{{
+							GroupId:             aws.String("sg-12345"),
+							IpPermissions:       []*ec2.IpPermission{ingressPermission},
+							IpPermissionsEgress: []*ec2.IpPermission{egressPermission},
+						}},
+					},
+				}
+				// Best-effort initialization: HCP exists, so initializeWithHCP is called.
+				mockBuilder.EXPECT().initializeWithHCP(gomock.Any(), gomock.Any())
+				mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+				mockRoute53.EXPECT().ListResourceRecordSets(gomock.Any(), gomock.Any()).Return(
+					&route53sdk.ListResourceRecordSetsOutput{
+						ResourceRecordSets: []route53types.ResourceRecordSet{{
+							Name: awsv2.String("api.example.com."),
+							Type: route53types.RRTypeCname,
+							TTL:  awsv2.Int64(300),
+							ResourceRecords: []route53types.ResourceRecord{
+								{Value: awsv2.String("vpce-12345.vpce-svc.us-east-1.vpce.amazonaws.com")},
+							},
+						}},
+					}, nil)
+				mockRoute53.EXPECT().ChangeResourceRecordSets(gomock.Any(), gomock.Any()).Return(
+					&route53sdk.ChangeResourceRecordSetsOutput{}, nil)
+				return mockBuilder
+			},
+			expectError:     false,
+			expectFinalizer: false,
+		},
+		{
+			name: "When VPC endpoint deletion fails it should return error and preserve the finalizer",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "private-router",
+					Namespace:         "clusters-test",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{finalizer},
+				},
+				Status: hyperv1.AWSEndpointServiceStatus{
+					EndpointID: "vpce-12345",
+				},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockEC2 := &mockEC2Client{
+					deleteVpcEndpointsErr: fmt.Errorf("throttling"),
+				}
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+				mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+				return mockBuilder
+			},
+			expectError:     true,
+			expectFinalizer: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			mockCtrl := gomock.NewController(t)
+			mockBuilder := tc.setupMocks(mockCtrl)
+
+			scheme := runtime.NewScheme()
+			_ = hyperv1.AddToScheme(scheme)
+
+			objects := append([]crclient.Object{tc.awsEndpointSvc}, tc.extraObjects...)
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(objects...).
+				Build()
+
+			reconciler := &AWSEndpointServiceReconciler{
+				Client:           fakeClient,
+				awsClientBuilder: mockBuilder,
+			}
+
+			ctx := ctrl.LoggerInto(context.Background(), ctrl.Log.WithName("test"))
+			req := reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      tc.awsEndpointSvc.Name,
+					Namespace: tc.awsEndpointSvc.Namespace,
+				},
+			}
+
+			result, err := reconciler.Reconcile(ctx, req)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			if tc.expectRequeue {
+				g.Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+			}
+
+			// Verify finalizer state on the persisted object.
+			// When the finalizer is removed from an object with DeletionTimestamp,
+			// the fake client deletes the object (simulating garbage collection).
+			updatedService := &hyperv1.AWSEndpointService{}
+			getErr := fakeClient.Get(ctx, types.NamespacedName{
+				Name:      tc.awsEndpointSvc.Name,
+				Namespace: tc.awsEndpointSvc.Namespace,
+			}, updatedService)
+			if tc.expectFinalizer {
+				g.Expect(getErr).ToNot(HaveOccurred(), "object should still exist when finalizer is preserved")
+				g.Expect(controllerutil.ContainsFinalizer(updatedService, finalizer)).To(BeTrue())
+			} else {
+				// Object was deleted after finalizer removal — this confirms the
+				// finalizer was successfully removed.
+				g.Expect(getErr).To(HaveOccurred(), "object should be deleted after finalizer removal")
+			}
+		})
+	}
+}
+
+// TestReconcileDeletion_AfterControllerRestart verifies the fix for OCPBUGS-74960.
+//
+// When the controller restarts, a new clientBuilder is created in SetupWithManager
+// with initialized=false. The deletion path now attempts best-effort initialization
+// by listing HostedControlPlanes in the namespace. When the HCP is not found (already
+// deleted), getClients returns "clients not initialized". The fix ensures the
+// reconciler returns an error and preserves the finalizer so that AWS resources are
+// not orphaned.
+func TestReconcileDeletion_AfterControllerRestart(t *testing.T) {
+	g := NewGomegaWithT(t)
+	now := metav1.NewTime(time.Now())
+
+	scheme := runtime.NewScheme()
+	_ = hyperv1.AddToScheme(scheme)
+
+	awsEndpointSvc := &hyperv1.AWSEndpointService{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              "private-router",
+			Namespace:         "clusters-test",
+			DeletionTimestamp: &now,
+			Finalizers:        []string{finalizer},
+		},
+		Status: hyperv1.AWSEndpointServiceStatus{
+			SecurityGroupID: "sg-12345",
+			EndpointID:      "vpce-12345",
+			DNSNames:        []string{"api.example.com"},
+			DNSZoneID:       "Z1234567890",
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(awsEndpointSvc).
+		Build()
+
+	// Simulate a controller restart: SetupWithManager creates a fresh
+	// clientBuilder{} (initialized=false). The deletion path attempts best-effort
+	// initialization by listing HCPs, but none exist here, so getClients still
+	// returns "clients not initialized".
+	restartedReconciler := &AWSEndpointServiceReconciler{
+		Client:           fakeClient,
+		awsClientBuilder: &clientBuilder{}, // fresh, uninitialized — as created by SetupWithManager
+	}
+
+	ctx := ctrl.LoggerInto(context.Background(), ctrl.Log.WithName("test"))
+	req := reconcile.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      awsEndpointSvc.Name,
+			Namespace: awsEndpointSvc.Namespace,
+		},
+	}
+
+	_, err := restartedReconciler.Reconcile(ctx, req)
+	// The reconciler must return an error so controller-runtime retries.
+	g.Expect(err).To(HaveOccurred())
+	g.Expect(err.Error()).To(ContainSubstring("failed to get AWS clients"))
+
+	// The finalizer must be preserved so the AWS resources (sg-12345, vpce-12345,
+	// api.example.com in zone Z1234567890) are not orphaned.
+	updatedService := &hyperv1.AWSEndpointService{}
+	getErr := fakeClient.Get(ctx, types.NamespacedName{
+		Name:      awsEndpointSvc.Name,
+		Namespace: awsEndpointSvc.Namespace,
+	}, updatedService)
+	g.Expect(getErr).ToNot(HaveOccurred(), "object should still exist when finalizer is preserved")
+	g.Expect(controllerutil.ContainsFinalizer(updatedService, finalizer)).To(BeTrue())
+}
+
+func TestDeleteSecurityGroup(t *testing.T) {
+	sgID := "sg-12345"
+	ingressPermission := &ec2.IpPermission{
+		FromPort:   aws.Int64(6443),
+		ToPort:     aws.Int64(6443),
+		IpProtocol: aws.String("tcp"),
+		IpRanges:   []*ec2.IpRange{{CidrIp: aws.String("10.0.0.0/16")}},
+	}
+	egressPermission := &ec2.IpPermission{
+		FromPort:   aws.Int64(0),
+		ToPort:     aws.Int64(65535),
+		IpProtocol: aws.String("-1"),
+		IpRanges:   []*ec2.IpRange{{CidrIp: aws.String("0.0.0.0/0")}},
+	}
+
+	testCases := []struct {
+		name                  string
+		mockClient            *mockEC2Client
+		expectedError         bool
+		expectedErrorContains string
+		expectIngressRevoked  bool
+		expectEgressRevoked   bool
+		expectSGDeleted       bool
+	}{
+		{
+			name: "When security group is deleted successfully it should complete without error",
+			mockClient: &mockEC2Client{
+				describeSecurityGroupsOutput: &ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []*ec2.SecurityGroup{{
+						GroupId:             aws.String(sgID),
+						IpPermissions:       []*ec2.IpPermission{ingressPermission},
+						IpPermissionsEgress: []*ec2.IpPermission{egressPermission},
+					}},
+				},
+			},
+			expectedError:        false,
+			expectIngressRevoked: true,
+			expectEgressRevoked:  true,
+			expectSGDeleted:      true,
+		},
+		{
+			name: "When security group is not found it should return nil",
+			mockClient: &mockEC2Client{
+				describeSecurityGroupsErr: awserr.New("InvalidGroup.NotFound", "The security group does not exist", nil),
+			},
+			expectedError:        false,
+			expectIngressRevoked: false,
+			expectEgressRevoked:  false,
+			expectSGDeleted:      false,
+		},
+		{
+			name: "When describe returns empty list it should return nil",
+			mockClient: &mockEC2Client{
+				describeSecurityGroupsOutput: &ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []*ec2.SecurityGroup{},
+				},
+			},
+			expectedError:        false,
+			expectIngressRevoked: false,
+			expectEgressRevoked:  false,
+			expectSGDeleted:      false,
+		},
+		{
+			name: "When revoking ingress returns DependencyViolation it should return error for retry",
+			mockClient: &mockEC2Client{
+				describeSecurityGroupsOutput: &ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []*ec2.SecurityGroup{{
+						GroupId:             aws.String(sgID),
+						IpPermissions:       []*ec2.IpPermission{ingressPermission},
+						IpPermissionsEgress: []*ec2.IpPermission{egressPermission},
+					}},
+				},
+				revokeSecurityGroupIngressErr: awserr.New("DependencyViolation", "resource has a dependent object", nil),
+			},
+			expectedError:         true,
+			expectedErrorContains: "security group has dependencies",
+			expectIngressRevoked:  true,
+			expectEgressRevoked:   false,
+			expectSGDeleted:       false,
+		},
+		{
+			name: "When revoking egress returns DependencyViolation it should return error for retry",
+			mockClient: &mockEC2Client{
+				describeSecurityGroupsOutput: &ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []*ec2.SecurityGroup{{
+						GroupId:             aws.String(sgID),
+						IpPermissions:       []*ec2.IpPermission{ingressPermission},
+						IpPermissionsEgress: []*ec2.IpPermission{egressPermission},
+					}},
+				},
+				revokeSecurityGroupEgressErr: awserr.New("DependencyViolation", "resource has a dependent object", nil),
+			},
+			expectedError:         true,
+			expectedErrorContains: "security group has dependencies",
+			expectIngressRevoked:  true,
+			expectEgressRevoked:   true,
+			expectSGDeleted:       false,
+		},
+		{
+			name: "When deleting security group returns DependencyViolation it should return error for retry",
+			mockClient: &mockEC2Client{
+				describeSecurityGroupsOutput: &ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []*ec2.SecurityGroup{{
+						GroupId:             aws.String(sgID),
+						IpPermissions:       []*ec2.IpPermission{ingressPermission},
+						IpPermissionsEgress: []*ec2.IpPermission{egressPermission},
+					}},
+				},
+				deleteSecurityGroupErr: awserr.New("DependencyViolation", "resource has a dependent object", nil),
+			},
+			expectedError:         true,
+			expectedErrorContains: "security group has dependencies",
+			expectIngressRevoked:  true,
+			expectEgressRevoked:   true,
+			expectSGDeleted:       true,
+		},
+		{
+			name: "When revoking ingress returns other error it should return that error",
+			mockClient: &mockEC2Client{
+				describeSecurityGroupsOutput: &ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []*ec2.SecurityGroup{{
+						GroupId:             aws.String(sgID),
+						IpPermissions:       []*ec2.IpPermission{ingressPermission},
+						IpPermissionsEgress: []*ec2.IpPermission{egressPermission},
+					}},
+				},
+				revokeSecurityGroupIngressErr: awserr.New("InternalError", "internal error", nil),
+			},
+			expectedError:         true,
+			expectedErrorContains: "failed to revoke security group ingress rules",
+			expectIngressRevoked:  true,
+			expectEgressRevoked:   false,
+			expectSGDeleted:       false,
+		},
+		{
+			name: "When security group has no ingress rules it should skip revoke ingress",
+			mockClient: &mockEC2Client{
+				describeSecurityGroupsOutput: &ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []*ec2.SecurityGroup{{
+						GroupId:             aws.String(sgID),
+						IpPermissions:       []*ec2.IpPermission{},
+						IpPermissionsEgress: []*ec2.IpPermission{egressPermission},
+					}},
+				},
+			},
+			expectedError:        false,
+			expectIngressRevoked: false,
+			expectEgressRevoked:  true,
+			expectSGDeleted:      true,
+		},
+		{
+			name: "When security group has no egress rules it should skip revoke egress",
+			mockClient: &mockEC2Client{
+				describeSecurityGroupsOutput: &ec2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []*ec2.SecurityGroup{{
+						GroupId:             aws.String(sgID),
+						IpPermissions:       []*ec2.IpPermission{ingressPermission},
+						IpPermissionsEgress: []*ec2.IpPermission{},
+					}},
+				},
+			},
+			expectedError:        false,
+			expectIngressRevoked: true,
+			expectEgressRevoked:  false,
+			expectSGDeleted:      true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			reconciler := &AWSEndpointServiceReconciler{}
+			ctx := ctrl.LoggerInto(context.Background(), ctrl.Log.WithName("test"))
+
+			err := reconciler.deleteSecurityGroup(ctx, tc.mockClient, sgID)
+
+			if tc.expectedError {
+				g.Expect(err).To(HaveOccurred())
+				if tc.expectedErrorContains != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrorContains))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			g.Expect(tc.mockClient.revokeIngressCalled).To(Equal(tc.expectIngressRevoked))
+			g.Expect(tc.mockClient.revokeEgressCalled).To(Equal(tc.expectEgressRevoked))
+			g.Expect(tc.mockClient.deleteSecurityGroupCalled).To(Equal(tc.expectSGDeleted))
+		})
+	}
+}
+
+// TestReconcileDeletionSharedVPC documents the remaining SharedVPC leak scenario.
+//
+// In SharedVPC clusters, the clientBuilder needs role ARNs from the HostedControlPlane
+// (hcp.Spec.Platform.AWS.SharedVPC.RolesRef) to assume cross-account roles for EC2
+// and Route53 operations. These ARNs are only stored in-memory in the clientBuilder
+// after initializeWithHCP is called.
+//
+// The deletion path now attempts best-effort initialization by listing HCPs in the
+// namespace. However, when the operator restarts during deletion and the HCP has
+// already been deleted:
+//   - The best-effort List finds no HCP, so initializeWithHCP is not called
+//   - getClients fails with "clients not initialized"
+//   - The fix preserves the finalizer, but retries will never succeed
+//   - After 10 minutes, the hypershift-operator force-removes the CPO finalizer,
+//     orphaning the security group, VPC endpoint, and DNS records
+//
+// A proper fix requires persisting the SharedVPC role ARNs in the AWSEndpointService
+// status so the deletion path can authenticate independently of the HCP.
+func TestReconcileDeletionSharedVPC(t *testing.T) {
+	now := metav1.NewTime(time.Now())
+
+	testCases := []struct {
+		name                string
+		hasHCP              bool
+		setupMocks          func(ctrl *gomock.Controller) *MockawsClientProvider
+		expectError         bool
+		expectErrorContains string
+		expectFinalizer     bool
+	}{
+		{
+			// This is the core SharedVPC leak scenario: operator restarted, HCP already
+			// deleted, role ARNs lost. The controller errors on every retry because it
+			// cannot initialize clients without the HCP. After the 10-minute grace period
+			// the hypershift-operator will force-remove the finalizer, leaking resources.
+			name:   "When SharedVPC operator restarts with no HCP it should return error and preserve finalizer",
+			hasHCP: false,
+			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				// No HCP found → no initializeWithHCP call.
+				// getClients returns "clients not initialized" to simulate uninitialized state.
+				mockBuilder.EXPECT().getClients(gomock.Any()).Return(nil, nil, fmt.Errorf("clients not initialized"))
+				return mockBuilder
+			},
+			expectError:         true,
+			expectErrorContains: "clients not initialized",
+			expectFinalizer:     true,
+		},
+		{
+			// This scenario shows what happens if the clientBuilder is re-initialized
+			// without the SharedVPC role ARNs (e.g. a naive fix that initializes without
+			// the HCP). getClients proceeds past the "not initialized" check but creates
+			// clients with default pod credentials instead of assuming the cross-account
+			// SharedVPC roles. In production the subsequent delete calls would fail with
+			// AccessDenied because the security group and VPC endpoint live in a
+			// different AWS account — a mocked error simulates this deterministically.
+			name:   "When SharedVPC client is initialized without role ARNs it should fail to create AWS session",
+			hasHCP: false,
+			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				// No HCP → no initializeWithHCP call.
+				// getClients returns a deterministic session-creation failure, simulating
+				// what would happen when SharedVPC role ARNs are missing after an HCP deletion.
+				mockBuilder.EXPECT().getClients(gomock.Any()).Return(nil, nil, fmt.Errorf("failed to create AWS session: no region configured"))
+				return mockBuilder
+			},
+			expectError:         true,
+			expectErrorContains: "failed to",
+			expectFinalizer:     true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			mockCtrl := gomock.NewController(t)
+			mockBuilder := tc.setupMocks(mockCtrl)
+
+			scheme := runtime.NewScheme()
+			_ = hyperv1.AddToScheme(scheme)
+
+			awsEndpointService := &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "private-router",
+					Namespace:         "clusters-sharedvpc",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{finalizer},
+				},
+				Status: hyperv1.AWSEndpointServiceStatus{
+					SecurityGroupID: "sg-shared-12345",
+					EndpointID:      "vpce-shared-12345",
+					DNSNames:        []string{"api.example.com"},
+					DNSZoneID:       "Z1234567890",
+				},
+			}
+
+			objects := []crclient.Object{awsEndpointService}
+			if tc.hasHCP {
+				hcp := &hyperv1.HostedControlPlane{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-hcp",
+						Namespace: "clusters-sharedvpc",
+					},
+					Spec: hyperv1.HostedControlPlaneSpec{
+						Platform: hyperv1.PlatformSpec{
+							AWS: &hyperv1.AWSPlatformSpec{
+								SharedVPC: &hyperv1.AWSSharedVPC{
+									RolesRef: hyperv1.AWSSharedVPCRolesRef{
+										ControlPlaneARN: "arn:aws:iam::123456789012:role/shared-vpc-endpoint-role",
+										IngressARN:      "arn:aws:iam::123456789012:role/shared-vpc-route53-role",
+									},
+								},
+							},
+						},
+					},
+				}
+				objects = append(objects, hcp)
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(objects...).
+				Build()
+
+			reconciler := &AWSEndpointServiceReconciler{
+				Client:           fakeClient,
+				awsClientBuilder: mockBuilder,
+			}
+
+			ctx := ctrl.LoggerInto(context.Background(), ctrl.Log.WithName("test"))
+			req := reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      "private-router",
+					Namespace: "clusters-sharedvpc",
+				},
+			}
+
+			_, err := reconciler.Reconcile(ctx, req)
+
+			if tc.expectError {
+				g.Expect(err).To(HaveOccurred())
+				if tc.expectErrorContains != "" {
+					g.Expect(err.Error()).To(ContainSubstring(tc.expectErrorContains))
+				}
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			// Verify finalizer state
+			updatedService := &hyperv1.AWSEndpointService{}
+			err = fakeClient.Get(ctx, types.NamespacedName{
+				Name:      "private-router",
+				Namespace: "clusters-sharedvpc",
+			}, updatedService)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(controllerutil.ContainsFinalizer(updatedService, finalizer)).To(Equal(tc.expectFinalizer))
 		})
 	}
 }
