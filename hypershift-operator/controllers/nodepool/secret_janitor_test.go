@@ -147,6 +147,19 @@ spec:
 	ignitionServerCACert.Data = map[string][]byte{
 		corev1.TLSCertKey: []byte("test-ignition-ca-cert"),
 	}
+	ignitionConfig4 := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "core-machineconfig-4",
+			Namespace: "myns-cluster-name",
+			Labels: map[string]string{
+				nodePoolCoreIgnitionConfigLabel: "true",
+			},
+		},
+		Data: map[string]string{
+			TokenSecretConfigKey: coreMachineConfig,
+		},
+	}
+
 	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(
 		nodePool,
 		hostedCluster,
@@ -155,6 +168,7 @@ spec:
 		ignitionConfig,
 		ignitionConfig2,
 		ignitionConfig3,
+		ignitionConfig4,
 		ignitionServerCACert,
 	).Build()
 	mockedReleaseProvider := releaseinfo.NewMockProviderWithRegistryOverrides(mockCtrl)
@@ -221,7 +235,7 @@ spec:
 			name: "related known secret with correct hash untouched",
 			input: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "token-nodepool-name-64587037",
+					Name:      "token-nodepool-name-1dde2620",
 					Namespace: "myns",
 					Annotations: map[string]string{
 						nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
@@ -230,7 +244,7 @@ spec:
 			},
 			expected: &corev1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "token-nodepool-name-64587037",
+					Name:      "token-nodepool-name-1dde2620",
 					Namespace: "myns",
 					Annotations: map[string]string{
 						nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),

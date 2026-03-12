@@ -149,6 +149,9 @@ const (
 
 	cpoAzureCredentials = "CPOAzureCredentials"
 	kmsAzureCredentials = "KMSAzureCredentials"
+
+	// serviceCAKey is the key in the service-serving-ca ConfigMap that contains the CA certificate.
+	serviceCAKey = "service-ca.crt"
 )
 
 type HostedControlPlaneReconciler struct {
@@ -2061,7 +2064,10 @@ func (r *HostedControlPlaneReconciler) reconcileImageRegistryCAIgnitionConfig(ct
 		// Not found during initial bootstrap; create a no-op MachineConfig.
 		r.Log.Info("service-serving-ca configmap not found, creating image registry CA ignition config without CA data")
 	} else {
-		serviceCA = serviceServingCA.Data["service-ca.crt"]
+		serviceCA = serviceServingCA.Data[serviceCAKey]
+		if serviceCA == "" {
+			r.Log.Info("service-serving-ca configmap exists but service-ca.crt key is missing or empty")
+		}
 	}
 
 	if _, err := createOrUpdate(ctx, r, imageRegistryCAConfig, func() error {

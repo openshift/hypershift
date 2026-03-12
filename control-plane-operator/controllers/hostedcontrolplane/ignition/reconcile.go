@@ -146,7 +146,7 @@ func ReconcileImageRegistryCAIgnitionConfig(cm *corev1.ConfigMap, ownerRef confi
 	ignConfig.Ignition.Version = ignitionVersion
 
 	if len(serviceCA) > 0 {
-		fileMode := 0644
+		fileMode := 0o644
 		ignConfig.Storage = igntypes.Storage{
 			Files: []igntypes.File{
 				{

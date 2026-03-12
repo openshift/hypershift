@@ -16,6 +16,7 @@ import (
 	k8syaml "sigs.k8s.io/yaml"
 
 	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
+	"github.com/vincent-petithory/dataurl"
 )
 
 func TestReconcileImageRegistryCAIgnitionConfig(t *testing.T) {
@@ -87,10 +88,12 @@ func TestReconcileImageRegistryCAIgnitionConfig(t *testing.T) {
 				g.Expect(ignConfig.Storage.Files[0].Overwrite).ToNot(BeNil())
 				g.Expect(*ignConfig.Storage.Files[0].Overwrite).To(BeTrue())
 				g.Expect(ignConfig.Storage.Files[0].Mode).ToNot(BeNil())
-				g.Expect(*ignConfig.Storage.Files[0].Mode).To(Equal(0644))
-				// Verify the content source is set (data URL encoded)
+				g.Expect(*ignConfig.Storage.Files[0].Mode).To(Equal(0o644))
+				// Verify the content source round-trips correctly
 				g.Expect(ignConfig.Storage.Files[0].Contents.Source).ToNot(BeNil())
-				g.Expect(*ignConfig.Storage.Files[0].Contents.Source).To(ContainSubstring("data:"))
+				decoded, err := dataurl.DecodeString(*ignConfig.Storage.Files[0].Contents.Source)
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(string(decoded.Data)).To(Equal(tc.serviceCA))
 			} else {
 				// When CA is empty, verify no files are present
 				g.Expect(ignConfig.Storage.Files).To(BeEmpty())
