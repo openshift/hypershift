@@ -32,11 +32,28 @@ type SharedIngressConfigReconciler struct {
 
 	// lastReloadedHash stores the hash of the last successfully reloaded configuration
 	lastReloadedHash []byte
+
+	// lastConfigWriteTime tracks when the config file was last written to disk.
+	// Used to coalesce rapid config changes into a single HAProxy reload,
+	// avoiding reload storms when many HostedClusters are created simultaneously.
+	lastConfigWriteTime time.Time
+
+	// firstPendingWriteTime tracks when the first config change occurred that
+	// has not yet been reloaded. This bounds the maximum coalesce delay so that
+	// a sustained trickle of HC creations cannot starve reloads indefinitely.
+	firstPendingWriteTime time.Time
+
+	// now is a function that returns the current time. It defaults to time.Now
+	// and can be overridden in tests to control time-dependent behavior.
+	now func() time.Time
 }
 
 func (r *SharedIngressConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	r.client = mgr.GetClient()
 	r.haProxyClient = &defaultHAproxyClient{}
+	if r.now == nil {
+		r.now = time.Now
+	}
 
 	// A channel is used to generate an initial sync event.
 	// Afterwards, the controller syncs on HostedClusters.
@@ -67,6 +84,18 @@ func (r *SharedIngressConfigReconciler) SetupWithManager(mgr ctrl.Manager) error
 
 const (
 	reloadTimeout = 5 * time.Second
+
+	// reloadCoalesceWindow is the minimum time to wait after a config file write
+	// before triggering an HAProxy reload. This allows rapid successive config
+	// changes (e.g. from multiple HostedClusters being created simultaneously)
+	// to be batched into a single reload, preventing reload storms that drop
+	// in-flight TLS connections.
+	reloadCoalesceWindow = 5 * time.Second
+
+	// maxCoalesceDelay is the maximum time to defer a reload after the first
+	// pending config change. This ensures that a sustained trickle of HC
+	// creations (e.g. one every 3 seconds) cannot starve reloads indefinitely.
+	maxCoalesceDelay = 30 * time.Second
 )
 
 func (r *SharedIngressConfigReconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result, error) {
@@ -109,11 +138,36 @@ func (r *SharedIngressConfigReconciler) Reconcile(ctx context.Context, _ ctrl.Re
 			return ctrl.Result{}, fmt.Errorf("failed to update config file: %w", err)
 		}
 
+		r.lastConfigWriteTime = r.now()
 		logger.Info("HAProxy configuration file updated", "hash", fmt.Sprintf("%x", newHash))
 	}
 
 	// Reload HAProxy if current config differs from last successfully reloaded config
 	if !bytes.Equal(r.lastReloadedHash, newHash) {
+		// Track when the first unreloaded config change occurred.
+		if r.firstPendingWriteTime.IsZero() {
+			r.firstPendingWriteTime = r.lastConfigWriteTime
+		}
+
+		// On first startup (no previous reload), reload immediately to serve traffic.
+		// On subsequent changes, coalesce rapid changes into a single reload by
+		// waiting for the config to stabilize. This prevents HAProxy reload storms
+		// when many HostedClusters are created simultaneously, which would drop
+		// in-flight TLS connections.
+		//
+		// The coalesce window is bounded by maxCoalesceDelay to ensure that a
+		// sustained trickle of changes cannot starve reloads indefinitely.
+		if r.lastReloadedHash != nil && !r.lastConfigWriteTime.IsZero() {
+			now := r.now()
+			sinceLastWrite := now.Sub(r.lastConfigWriteTime)
+			sinceFirstPending := now.Sub(r.firstPendingWriteTime)
+			if sinceLastWrite < reloadCoalesceWindow && sinceFirstPending < maxCoalesceDelay {
+				remaining := reloadCoalesceWindow - sinceLastWrite
+				logger.Info("Deferring HAProxy reload to coalesce changes", "remainingWait", remaining, "pendingSince", r.firstPendingWriteTime.Format(time.RFC3339))
+				return ctrl.Result{RequeueAfter: remaining}, nil
+			}
+		}
+
 		logger.Info("Reloading HAProxy configuration")
 		if err := sendHAProxyReloadCommand(r.haProxyClient, r.haProxyRuntimeSocketPath); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reload HAProxy: %w", err)
@@ -122,6 +176,7 @@ func (r *SharedIngressConfigReconciler) Reconcile(ctx context.Context, _ ctrl.Re
 		// Update the last reloaded hash only after successful reload
 		r.lastReloadedHash = make([]byte, len(newHash))
 		copy(r.lastReloadedHash, newHash)
+		r.firstPendingWriteTime = time.Time{} // reset pending tracker
 		logger.Info("HAProxy configuration reloaded successfully", "hash", fmt.Sprintf("%x", newHash))
 	}
 
