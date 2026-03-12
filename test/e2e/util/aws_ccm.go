@@ -39,6 +39,7 @@ type E2eTestConfig struct {
 }
 
 func validate_EnsureAWSCCMWithCustomizations(t *testing.T, cfg *E2eTestConfig) {
+	AtLeast(t, Version422)
 	if cfg.Platform != hyperv1.AWSPlatform {
 		t.Skip("test only supported on platform AWS")
 	}
@@ -58,11 +59,10 @@ func EnsureAWSCCMWithCustomizations(cfg *E2eTestConfig) {
 
 	// Test case: Validate managed security groups in TechPreviewNoUpgrade feature set
 	cfg.T.Run("When AWSServiceLBNetworkSecurityGroup is enabled it must have config NLBSecurityGroupMode=Managed entry in cloud-config configmap", func(t *testing.T) {
-		g := gomega.NewWithT(t)
-		AtLeast(t, Version418)
 		validate_EnsureAWSCCMWithCustomizations(t, cfg)
+		g := gomega.NewWithT(t)
 
-		t.Logf("Validating aws-cloud-config ConfigMap contains NLBSecurityGroupMode = Managed")
+		t.Logf("Validating aws-cloud-config ConfigMap contains entry NLBSecurityGroupMode=Managed")
 
 		// Ensure the configuration is present when the feature gate is enabled
 		EventuallyObject(t, cfg.Ctx, "NLBSecurityGroupMode = Managed entry exists in aws-cloud-config ConfigMap",
@@ -101,9 +101,8 @@ func EnsureAWSCCMWithCustomizations(cfg *E2eTestConfig) {
 	// have a security group attached to it
 	// Note: this test must executed only when the feature gate AWSServiceLBNetworkSecurityGroup is enabled.
 	cfg.T.Run("When AWSServiceLBNetworkSecurityGroup is enabled it must create a LoadBalancer NLB with managed security group attached", func(t *testing.T) {
-		g := gomega.NewWithT(t)
-		AtLeast(t, Version418)
 		validate_EnsureAWSCCMWithCustomizations(t, cfg)
+		g := gomega.NewWithT(t)
 
 		// Create a test namespace in the guest cluster
 		testNS := &corev1.Namespace{}
