@@ -81,10 +81,9 @@ type OVNKubernetesConfig struct {
 	// supported by datacenter and cloud network interfaces.
 	// The minimum is 576, which is the minimum IPv4 MTU per RFC 791.
 	// This field is immutable once set.
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="mtu is immutable once set"
 	// +kubebuilder:validation:Minimum=576
 	// +kubebuilder:validation:Maximum=9216
-	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="mtu is immutable"
-	// +immutable
 	// +optional
 	MTU int32 `json:"mtu,omitempty"`
 }

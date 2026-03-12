@@ -794,8 +794,13 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 		return nil, fmt.Errorf("disableMultiNetwork is only allowed when networkType is 'Other' (got '%s')", opts.NetworkType)
 	}
 
-	if opts.OVNKubernetesMTU > 0 && opts.NetworkType != string(hyperv1.OVNKubernetes) {
-		return nil, fmt.Errorf("--ovn-kubernetes-mtu is only valid when --network-type is OVNKubernetes (got '%s')", opts.NetworkType)
+	if opts.OVNKubernetesMTU != 0 {
+		if opts.NetworkType != string(hyperv1.OVNKubernetes) {
+			return nil, fmt.Errorf("--ovn-kubernetes-mtu is only valid when --network-type is OVNKubernetes (got '%s')", opts.NetworkType)
+		}
+		if opts.OVNKubernetesMTU < 576 || opts.OVNKubernetesMTU > 9216 {
+			return nil, fmt.Errorf("--ovn-kubernetes-mtu must be between 576 and 9216 (got %d)", opts.OVNKubernetesMTU)
+		}
 	}
 
 	if opts.AllocateNodeCIDRs && opts.NetworkType != "Other" {

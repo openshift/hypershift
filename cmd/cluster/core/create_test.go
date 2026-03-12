@@ -443,6 +443,42 @@ func TestValidate(t *testing.T) {
 			expectedErr: "--ovn-kubernetes-mtu is only valid when --network-type is OVNKubernetes (got 'OpenShiftSDN')",
 		},
 		{
+			name: "When ovn-kubernetes-mtu is below minimum, it should fail validation",
+			rawOpts: &RawCreateOptions{
+				Name:             "test-hc",
+				Namespace:        "test-hc",
+				PullSecretFile:   pullSecretFile,
+				Arch:             "amd64",
+				OVNKubernetesMTU: 100,
+				NetworkType:      "OVNKubernetes",
+			},
+			expectedErr: "--ovn-kubernetes-mtu must be between 576 and 9216 (got 100)",
+		},
+		{
+			name: "When ovn-kubernetes-mtu is above maximum, it should fail validation",
+			rawOpts: &RawCreateOptions{
+				Name:             "test-hc",
+				Namespace:        "test-hc",
+				PullSecretFile:   pullSecretFile,
+				Arch:             "amd64",
+				OVNKubernetesMTU: 10000,
+				NetworkType:      "OVNKubernetes",
+			},
+			expectedErr: "--ovn-kubernetes-mtu must be between 576 and 9216 (got 10000)",
+		},
+		{
+			name: "When ovn-kubernetes-mtu is negative, it should fail validation",
+			rawOpts: &RawCreateOptions{
+				Name:             "test-hc",
+				Namespace:        "test-hc",
+				PullSecretFile:   pullSecretFile,
+				Arch:             "amd64",
+				OVNKubernetesMTU: -1,
+				NetworkType:      "OVNKubernetes",
+			},
+			expectedErr: "--ovn-kubernetes-mtu must be between 576 and 9216 (got -1)",
+		},
+		{
 			name: "passes when allocate-node-cidrs is used with network-type=Other",
 			rawOpts: &RawCreateOptions{
 				Name:              "test-hc",

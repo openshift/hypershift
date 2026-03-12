@@ -2938,7 +2938,7 @@ spec:
                             minimum: 576
                             type: integer
                             x-kubernetes-validations:
-                            - message: mtu is immutable
+                            - message: mtu is immutable once set
                               rule: self == oldSelf
                         type: object
                         x-kubernetes-validations:
