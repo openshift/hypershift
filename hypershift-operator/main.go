@@ -16,7 +16,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -85,6 +84,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -529,7 +529,7 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 					ClientSecret   string `json:"clientSecret"`
 					TenantID       string `json:"tenantId"`
 				}
-				if err := json.Unmarshal(raw, &creds); err != nil {
+				if err := yaml.Unmarshal(raw, &creds); err != nil {
 					return fmt.Errorf("failed to parse Azure credentials file %q: %w", credFile, err)
 				}
 				azureCreds, err = azidentity.NewClientSecretCredential(

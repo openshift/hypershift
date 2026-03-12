@@ -50,6 +50,13 @@ Azure Private Link Service requires a dedicated subnet for NAT IP allocation. Th
 subnet must be in the **management cluster's VNet** and must have
 `privateLinkServiceNetworkPolicies` disabled.
 
+!!! note "Region Requirement"
+
+    The Private Link Service, NAT subnet, and management cluster's internal load balancer
+    must all be in the **same Azure region**. The PLS is automatically created in the
+    HostedCluster's configured location. Azure will reject PLS creation if the NAT subnet
+    is in a different region.
+
 First, identify the management cluster's VNet:
 
 ```bash
