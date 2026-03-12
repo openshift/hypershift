@@ -544,9 +544,10 @@ func SeekOverride(ctx context.Context, openshiftImageRegistryOverrides map[strin
 
 				// Cache miss - verify mirror availability with 15s timeout
 				verifyCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-				defer cancel()
+				_, _, _, err = getMetadata(verifyCtx, mirrorURL, pullSecret)
+				cancel()
 
-				if _, _, _, err = getMetadata(verifyCtx, mirrorURL, pullSecret); err == nil {
+				if err == nil {
 					log.Info("Mirror verified as available", "mirror", mirrorURL, "timeout", "15s")
 					mirrorCache.set(mirrorURL, pullSecret, true)
 					return ref
