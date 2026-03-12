@@ -419,6 +419,30 @@ func TestValidate(t *testing.T) {
 			expectedErr: "disableMultiNetwork is only allowed when networkType is 'Other' (got 'Calico')",
 		},
 		{
+			name: "When ovn-kubernetes-mtu is set with OVNKubernetes, it should pass validation",
+			rawOpts: &RawCreateOptions{
+				Name:             "test-hc",
+				Namespace:        "test-hc",
+				PullSecretFile:   pullSecretFile,
+				Arch:             "amd64",
+				OVNKubernetesMTU: 1400,
+				NetworkType:      "OVNKubernetes",
+			},
+			expectedErr: "",
+		},
+		{
+			name: "When ovn-kubernetes-mtu is set with non-OVN network type, it should fail validation",
+			rawOpts: &RawCreateOptions{
+				Name:             "test-hc",
+				Namespace:        "test-hc",
+				PullSecretFile:   pullSecretFile,
+				Arch:             "amd64",
+				OVNKubernetesMTU: 1400,
+				NetworkType:      "OpenShiftSDN",
+			},
+			expectedErr: "--ovn-kubernetes-mtu is only valid when --network-type is OVNKubernetes (got 'OpenShiftSDN')",
+		},
+		{
 			name: "passes when allocate-node-cidrs is used with network-type=Other",
 			rawOpts: &RawCreateOptions{
 				Name:              "test-hc",
@@ -556,6 +580,40 @@ func TestDisableMultiNetworkFlag(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOVNKubernetesMTUFlag(t *testing.T) {
+	t.Run("When ovn-kubernetes-mtu is set, it should propagate to OVNKubernetesConfig", func(t *testing.T) {
+		g := NewWithT(t)
+		resources, err := prototypeResources(t.Context(), &CreateOptions{
+			completedCreateOptions: &completedCreateOptions{
+				ValidatedCreateOptions: &ValidatedCreateOptions{
+					validatedCreateOptions: &validatedCreateOptions{
+						RawCreateOptions: &RawCreateOptions{
+							OVNKubernetesMTU: 1400,
+						},
+					},
+				},
+			},
+		})
+		g.Expect(err).To(BeNil())
+		g.Expect(resources.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.MTU).To(Equal(int32(1400)))
+	})
+
+	t.Run("When ovn-kubernetes-mtu is not set, it should not create OVNKubernetesConfig", func(t *testing.T) {
+		g := NewWithT(t)
+		resources, err := prototypeResources(t.Context(), &CreateOptions{
+			completedCreateOptions: &completedCreateOptions{
+				ValidatedCreateOptions: &ValidatedCreateOptions{
+					validatedCreateOptions: &validatedCreateOptions{
+						RawCreateOptions: &RawCreateOptions{},
+					},
+				},
+			},
+		})
+		g.Expect(err).To(BeNil())
+		g.Expect(resources.Cluster.Spec.OperatorConfiguration).To(BeNil())
+	})
 }
 
 func TestAllocateNodeCIDRsFlag(t *testing.T) {

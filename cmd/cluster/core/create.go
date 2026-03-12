@@ -112,6 +112,7 @@ func bindCoreOptions(opts *RawCreateOptions, flags *pflag.FlagSet) {
 	flags.StringSliceVar(&opts.EnableClusterCapabilities, "enable-cluster-capabilities", nil, "Optional cluster capabilities to enable. The only currently supported values are ImageRegistry,openshift-samples,Insights,baremetal,Console,NodeTuning,Ingress.")
 	flags.StringVar(&opts.KubeAPIServerDNSName, "kas-dns-name", opts.KubeAPIServerDNSName, "The custom DNS name for the kube-apiserver service. Make sure the DNS name is valid and addressable.")
 	flags.BoolVar(&opts.DisableMultiNetwork, "disable-multi-network", opts.DisableMultiNetwork, "Disables the Multus CNI plugin and related components in the hosted cluster")
+	flags.Int32Var(&opts.OVNKubernetesMTU, "ovn-kubernetes-mtu", opts.OVNKubernetesMTU, "The MTU to use for the OVN-Kubernetes tunnel interface. Must be 100 bytes smaller than the uplink MTU. Only valid when network-type is OVNKubernetes. When unset, the cluster-network-operator auto-detects the MTU.")
 	flags.BoolVar(&opts.VersionCheck, "version-check", opts.VersionCheck, "Checks version of CLI and Hypershift operator and blocks create if mismatched")
 	flags.BoolVar(&opts.AllocateNodeCIDRs, "allocate-node-cidrs", opts.AllocateNodeCIDRs, "When networkType=Other, it's recommended to set this field to 'true' when using Flannel as the CNI.")
 }
@@ -177,6 +178,7 @@ type RawCreateOptions struct {
 	DisableClusterCapabilities       []string
 	KubeAPIServerDNSName             string
 	DisableMultiNetwork              bool
+	OVNKubernetesMTU                 int32
 	VersionCheck                     bool
 	RedactBaseDomain                 bool
 	AllocateNodeCIDRs                bool
@@ -472,6 +474,19 @@ func prototypeResources(ctx context.Context, opts *CreateOptions) (*resources, e
 			prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator = &hyperv1.ClusterNetworkOperatorSpec{}
 		}
 		prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.DisableMultiNetwork = &opts.DisableMultiNetwork
+	}
+
+	if opts.OVNKubernetesMTU > 0 {
+		if prototype.Cluster.Spec.OperatorConfiguration == nil {
+			prototype.Cluster.Spec.OperatorConfiguration = &hyperv1.OperatorConfiguration{}
+		}
+		if prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator == nil {
+			prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator = &hyperv1.ClusterNetworkOperatorSpec{}
+		}
+		if prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig == nil {
+			prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig = &hyperv1.OVNKubernetesConfig{}
+		}
+		prototype.Cluster.Spec.OperatorConfiguration.ClusterNetworkOperator.OVNKubernetesConfig.MTU = opts.OVNKubernetesMTU
 	}
 
 	if opts.AllocateNodeCIDRs {
@@ -777,6 +792,10 @@ func (opts *RawCreateOptions) Validate(ctx context.Context) (*ValidatedCreateOpt
 
 	if opts.DisableMultiNetwork && opts.NetworkType != "Other" {
 		return nil, fmt.Errorf("disableMultiNetwork is only allowed when networkType is 'Other' (got '%s')", opts.NetworkType)
+	}
+
+	if opts.OVNKubernetesMTU > 0 && opts.NetworkType != string(hyperv1.OVNKubernetes) {
+		return nil, fmt.Errorf("--ovn-kubernetes-mtu is only valid when --network-type is OVNKubernetes (got '%s')", opts.NetworkType)
 	}
 
 	if opts.AllocateNodeCIDRs && opts.NetworkType != "Other" {
