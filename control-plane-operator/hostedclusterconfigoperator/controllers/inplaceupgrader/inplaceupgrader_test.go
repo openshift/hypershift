@@ -5,6 +5,9 @@ import (
 
 	. "github.com/onsi/gomega"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/upsert"
+
 	configv1 "github.com/openshift/api/config/v1"
 
 	corev1 "k8s.io/api/core/v1"
@@ -123,11 +126,14 @@ func TestGetNodesForMachineSet(t *testing.T) {
 
 	c := fake.NewClientBuilder().WithObjects(machineSet).WithObjects(machines...).Build()
 	hostedClusterClient := fake.NewClientBuilder().WithObjects(wantedNodes...).WithObjects(unwantedNodes...).Build()
-	gotNodes, err := getNodesForMachineSet(t.Context(), c, hostedClusterClient, machineSet)
+	gotNodes, nodeToMachine, err := getNodesForMachineSet(t.Context(), c, hostedClusterClient, machineSet)
 
 	g := NewWithT(t)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(len(gotNodes)).To(BeIdenticalTo(len(wantedNodes)))
+	g.Expect(nodeToMachine).To(HaveLen(1))
+	g.Expect(nodeToMachine).To(HaveKey("test"))
+	g.Expect(nodeToMachine["test"].Name).To(Equal("test"))
 	for i := range wantedNodes {
 		found := false
 		for j := range gotNodes {
@@ -582,4 +588,140 @@ func TestCreateUpgradePod(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileInPlaceUpgradeAnnotatesMachineWithNodePoolVersion(t *testing.T) {
+	g := NewWithT(t)
+	_ = capiv1.AddToScheme(scheme.Scheme)
+
+	targetConfigVersion := "target-hash"
+	currentConfigVersion := "current-hash"
+	nodePoolVersion := "4.18.12"
+
+	selector := map[string]string{"pool": "test"}
+
+	machineSet := &capiv1.MachineSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-ms",
+			Namespace: "test-ns",
+			UID:       "ms-uid",
+			Annotations: map[string]string{
+				nodePoolAnnotationTargetConfigVersion:  targetConfigVersion,
+				nodePoolAnnotationCurrentConfigVersion: currentConfigVersion,
+			},
+		},
+		Spec: capiv1.MachineSetSpec{
+			Selector: metav1.LabelSelector{MatchLabels: selector},
+		},
+	}
+
+	// Machine owned by the MachineSet, with a node that has completed the upgrade.
+	machine := &capiv1.Machine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-machine",
+			Namespace: "test-ns",
+			Labels:    selector,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					Kind:       "MachineSet",
+					Name:       machineSet.Name,
+					UID:        machineSet.UID,
+					Controller: ptr.To(true),
+				},
+			},
+		},
+		Status: capiv1.MachineStatus{
+			NodeRef: &corev1.ObjectReference{Name: "test-node"},
+		},
+	}
+
+	// A second machine+node still upgrading, so inPlaceUpgradeComplete returns false.
+	upgradingMachine := &capiv1.Machine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "upgrading-machine",
+			Namespace: "test-ns",
+			Labels:    selector,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					Kind:       "MachineSet",
+					Name:       machineSet.Name,
+					UID:        machineSet.UID,
+					Controller: ptr.To(true),
+				},
+			},
+		},
+		Status: capiv1.MachineStatus{
+			NodeRef: &corev1.ObjectReference{Name: "upgrading-node"},
+		},
+	}
+
+	// Node that has completed the upgrade (current == desired == target).
+	completedNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "test-node",
+			Annotations: map[string]string{
+				CurrentMachineConfigAnnotationKey:     targetConfigVersion,
+				DesiredMachineConfigAnnotationKey:     targetConfigVersion,
+				DesiredDrainerAnnotationKey:           "uncordon-xxx",
+				LastAppliedDrainerAnnotationKey:       "uncordon-xxx",
+				MachineConfigDaemonStateAnnotationKey: MachineConfigDaemonStateDone,
+			},
+		},
+	}
+
+	// Node still awaiting upgrade — keeps inPlaceUpgradeComplete false.
+	upgradingNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "upgrading-node",
+			Annotations: map[string]string{
+				CurrentMachineConfigAnnotationKey: currentConfigVersion,
+				DesiredMachineConfigAnnotationKey: currentConfigVersion,
+			},
+		},
+	}
+
+	tokenSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "token-test",
+			Namespace: "test-ns",
+		},
+		Data: map[string][]byte{
+			TokenSecretPayloadKey: []byte("payload"),
+		},
+	}
+
+	mgmtClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).
+		WithObjects(machineSet, machine, upgradingMachine).Build()
+	guestClient := fake.NewClientBuilder().WithScheme(scheme.Scheme).
+		WithObjects(completedNode, upgradingNode).Build()
+
+	r := &Reconciler{
+		client:                 mgmtClient,
+		guestClusterClient:     guestClient,
+		CreateOrUpdateProvider: upsert.New(false),
+	}
+
+	upgradeAPI := &nodePoolUpgradeAPI{
+		spec: struct {
+			targetConfigVersion string
+			poolRef             *capiv1.MachineSet
+		}{
+			targetConfigVersion: targetConfigVersion,
+			poolRef:             machineSet,
+		},
+		status: struct {
+			currentConfigVersion string
+		}{
+			currentConfigVersion: currentConfigVersion,
+		},
+	}
+
+	err := r.reconcileInPlaceUpgrade(t.Context(), upgradeAPI, tokenSecret, "mco-image", nodePoolVersion)
+	g.Expect(err).ToNot(HaveOccurred())
+
+	// Verify the Machine was annotated with the NodePool version, not the HCP version.
+	updatedMachine := &capiv1.Machine{}
+	err = mgmtClient.Get(t.Context(), client.ObjectKeyFromObject(machine), updatedMachine)
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(updatedMachine.Annotations[hyperv1.NodePoolReleaseVersionAnnotation]).To(Equal(nodePoolVersion))
 }
