@@ -180,6 +180,28 @@ The following resources are created and managed by Kubernetes controllers runnin
 - **Network Interfaces**: NICs attached to worker VMs
 - **OS Disks**: Managed disks for VM operating systems
 
+### Private Endpoint Access Infrastructure (Optional)
+
+When endpoint access is `Private` or `PublicAndPrivate`, additional Azure resources are created to establish private connectivity between the guest VNet and the management cluster:
+
+| Resource | Location | Created By | Description |
+|----------|----------|------------|-------------|
+| NAT Subnet | Management VNet | User (pre-existing) | Must have `privateLinkServiceNetworkPolicies` disabled |
+| Private Link Service | Management RG | HO controller | Exposes the internal load balancer via Private Link |
+| Private Endpoint | Guest VNet | CPO reconciler | Connects the guest VNet to the PLS |
+| Private DNS Zone (infra) | Guest subscription | CPO reconciler | `<infraID>.<baseDomain>` for infrastructure DNS |
+| Private DNS Zone (base) | Guest subscription | CPO reconciler | `<baseDomain>` for API/OAuth hostname resolution |
+| VNet Links | Guest subscription | CPO reconciler | Links Private DNS zones to the guest VNet |
+| A Records | Guest subscription | CPO reconciler | `api-<name>`, `oauth-<name>` pointing to PE IP |
+
+An additional workload identity is required for private clusters. This identity is **only created when endpoint access is `Private` or `PublicAndPrivate`** and is not needed for public topology:
+
+| Identity | Operator | Service Accounts | Azure Role |
+|----------|----------|------------------|------------|
+| **Control Plane Operator** | CPO | `control-plane-operator` | Contributor (`b24988ac-6180-42a0-ab88-20f7382dd24c`) |
+
+For the full architecture and data flow details, see [Azure Private Link Architecture](../../reference/architecture/azure/privatelink.md).
+
 ## Workload Identity Authentication
 
 Self-managed Azure uses workload identity federation for secure authentication. This eliminates long-lived credentials and follows Azure's modern authentication best practices.

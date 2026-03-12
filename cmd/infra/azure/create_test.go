@@ -26,6 +26,39 @@ func TestValidate(t *testing.T) {
 			errorContains: "--base-domain is required",
 			description:   "Should require base domain",
 		},
+		"When endpoint access is Public it should pass validation": {
+			opts: CreateInfraOptions{
+				BaseDomain:     "example.com",
+				EndpointAccess: "Public",
+			},
+			expectedError: false,
+			description:   "Should pass with valid endpoint access Public",
+		},
+		"When endpoint access is Private it should pass validation": {
+			opts: CreateInfraOptions{
+				BaseDomain:     "example.com",
+				EndpointAccess: "Private",
+			},
+			expectedError: false,
+			description:   "Should pass with valid endpoint access Private",
+		},
+		"When endpoint access is PublicAndPrivate it should pass validation": {
+			opts: CreateInfraOptions{
+				BaseDomain:     "example.com",
+				EndpointAccess: "PublicAndPrivate",
+			},
+			expectedError: false,
+			description:   "Should pass with valid endpoint access PublicAndPrivate",
+		},
+		"When endpoint access is invalid it should return an error": {
+			opts: CreateInfraOptions{
+				BaseDomain:     "example.com",
+				EndpointAccess: "InvalidValue",
+			},
+			expectedError: true,
+			errorContains: "--endpoint-access must be one of",
+			description:   "Should reject invalid endpoint access value",
+		},
 	}
 
 	for name, test := range tests {

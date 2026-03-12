@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -21,6 +22,65 @@ import (
 
 	"github.com/spf13/pflag"
 )
+
+func TestValidateEndpointAccess(t *testing.T) {
+	tests := map[string]struct {
+		endpointAccess                                      string
+		endpointAccessPrivateNATSubnetID                    string
+		endpointAccessPrivateAdditionalAllowedSubscriptions []string
+		expectError                                         bool
+		expectedErrorMsg                                    string
+	}{
+		"When endpoint-access has an invalid value it should return an error": {
+			endpointAccess:   "InvalidValue",
+			expectError:      true,
+			expectedErrorMsg: "--endpoint-access must be one of: Public, PublicAndPrivate, Private",
+		},
+		"When endpoint-access is Private but endpoint-access-private-nat-subnet-id is missing it should return an error": {
+			endpointAccess:   "Private",
+			expectError:      true,
+			expectedErrorMsg: "--endpoint-access-private-nat-subnet-id is required when --endpoint-access is not Public",
+		},
+		"When endpoint-access is PublicAndPrivate but endpoint-access-private-nat-subnet-id is missing it should return an error": {
+			endpointAccess:   "PublicAndPrivate",
+			expectError:      true,
+			expectedErrorMsg: "--endpoint-access-private-nat-subnet-id is required when --endpoint-access is not Public",
+		},
+		"When endpoint-access is Private with nat-subnet-id it should succeed without additional subscriptions": {
+			endpointAccess:                   "Private",
+			endpointAccessPrivateNATSubnetID: "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/nat-subnet",
+			expectError:                      false,
+		},
+		"When endpoint-access is Public it should succeed without private connectivity fields": {
+			endpointAccess: "Public",
+			expectError:    false,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.CredentialsFile = "fake"
+			opts.EndpointAccess = test.endpointAccess
+			opts.EndpointAccessPrivateNATSubnetID = test.endpointAccessPrivateNATSubnetID
+			opts.EndpointAccessPrivateAdditionalAllowedSubscriptions = test.endpointAccessPrivateAdditionalAllowedSubscriptions
+
+			_, err := opts.Validate(context.Background(), &core.CreateOptions{})
+			if test.expectError {
+				if err == nil {
+					t.Fatalf("expected error but got nil")
+				}
+				if err.Error() != test.expectedErrorMsg {
+					t.Fatalf("expected error %q but got %q", test.expectedErrorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("expected no error but got: %v", err)
+				}
+			}
+		})
+	}
+}
 
 func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
@@ -217,6 +277,21 @@ func TestCreateCluster(t *testing.T) {
 				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 				"--availability-zones=1,2,3",
 				"--image-generation=Gen1",
+			},
+		},
+		{
+			name: "When endpoint-access is Private with endpoint-access-private flags it should render HostedCluster with EndpointAccessPrivate",
+			args: []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--render-sensitive",
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
+				"--endpoint-access=Private",
+				"--endpoint-access-private-nat-subnet-id=/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/nat-subnet",
+				"--endpoint-access-private-additional-allowed-subscriptions=sub-1,sub-2",
 			},
 		},
 	} {

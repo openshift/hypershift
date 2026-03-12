@@ -234,8 +234,33 @@ Verify your installation:
     # operator-xxxxx-xxxxx     1/1     Running   0          1m
     ```
 
+## Private Cluster Support (Optional)
+
+If you plan to create private clusters with Azure Private Link, the HyperShift operator
+must be installed with additional flags for Private Link Service management. See
+[Deploy Azure Private Clusters](deploy-azure-private-clusters.md) for the full guide,
+but the key difference is adding these flags to the `hypershift install` command:
+
+```bash
+hypershift install \
+    --private-platform Azure \
+    --azure-private-creds /path/to/azure-private-credentials.json \
+    --azure-pls-resource-group ${MGMT_INFRA_RG} \
+    # ... include your standard install flags from above
+```
+
+!!! important
+
+    The `--private-platform Azure` flag **must** be set during operator installation.
+    If you install without it, you must re-run `hypershift install` with the private
+    flags before creating any private clusters.
+
+See [Deploy Azure Private Clusters - Step 2](deploy-azure-private-clusters.md#step-2-install-hypershift-operator-with-private-platform-support)
+for complete details and alternative authentication methods.
+
 ## Next Steps
 
 Once the management cluster is set up, create hosted clusters:
 
 - [Create a Self-Managed Azure HostedCluster](create-self-managed-azure-cluster.md) - Includes guidance for both DNS approaches
+- [Deploy Azure Private Clusters](deploy-azure-private-clusters.md) - Configure private endpoint access with Azure Private Link

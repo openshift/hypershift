@@ -119,6 +119,50 @@ where:
 * `--assign-identity-roles` enables automatic RBAC role assignment for workload identities
 * `DNS_ZONE_RG` is the name of the resource group containing your public DNS zone
 
+## Creating Infrastructure for Private Clusters
+
+To create infrastructure for a private cluster using Azure Private Link, add the
+`--endpoint-access` and `--endpoint-access-private-nat-subnet-id` flags:
+
+```bash
+hypershift create infra azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --base-domain BASE_DOMAIN \
+    --location LOCATION \
+    --workload-identities-file WORKLOAD_IDENTITIES_FILE \
+    --assign-identity-roles \
+    --dns-zone-rg-name DNS_ZONE_RG \
+    --endpoint-access Private \
+    --endpoint-access-private-nat-subnet-id NAT_SUBNET_ID \
+    --output-file OUTPUT_INFRA_FILE
+```
+
+where:
+
+* `--endpoint-access` specifies the API server endpoint visibility: `Public` (default),
+    `PublicAndPrivate`, or `Private`
+* `NAT_SUBNET_ID` is the Azure resource ID of a pre-existing subnet in the **management
+    cluster's VNet** used for Private Link Service NAT IP allocation. This subnet must
+    have `privateLinkServiceNetworkPolicies` disabled.
+
+The infrastructure output file will include a `natSubnetID` field when private endpoint
+access is configured.
+
+!!! important
+
+    The NAT subnet is **not created** by `create infra azure` — it must already exist in
+    the management cluster's VNet. See [Deploy Azure Private Clusters](deploy-azure-private-clusters.md)
+    for step-by-step instructions on preparing the NAT subnet.
+
+!!! note
+
+    When using `--endpoint-access Private`, your workload identities must also have been
+    created with `--endpoint-access Private` (via `hypershift create iam azure`) to include
+    the additional Control Plane Operator identity required for private endpoint management.
+    See [Create Azure IAM Resources Separately](create-iam-separately.md#private-endpoint-access).
+
 ## Create Workload Identities Separately
 
 If you want to create workload identities separately before creating infrastructure, use the
@@ -219,4 +263,6 @@ See [Create Azure IAM Resources Separately](create-iam-separately.md).
 | `--dns-zone-rg-name` | DNS zone resource group (for role assignment) |
 | `--assign-custom-hcp-roles` | Use custom HCP roles instead of Contributor |
 | `--disable-cluster-capabilities` | Disable specific cluster capabilities |
+| `--endpoint-access` | API server endpoint visibility: `Public` (default), `PublicAndPrivate`, or `Private` |
+| `--endpoint-access-private-nat-subnet-id` | NAT subnet ID in management cluster VNet (required when `--endpoint-access` is not `Public`) |
 | `--output-file` | Output file for infrastructure details |

@@ -45,6 +45,15 @@ func ReconcileRouterService(svc *corev1.Service, internal, crossZoneLoadBalancin
 		}
 	}
 
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform && !azureutil.IsAroHCP() {
+		if svc.Annotations == nil {
+			svc.Annotations = map[string]string{}
+		}
+		if internal {
+			svc.Annotations[azureutil.InternalLoadBalancerAnnotation] = azureutil.InternalLoadBalancerValue
+		}
+	}
+
 	if svc.Labels == nil {
 		svc.Labels = map[string]string{}
 	}

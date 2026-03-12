@@ -23,6 +23,8 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
+	// AzurePrivateLinkServices returns a AzurePrivateLinkServiceInformer.
+	AzurePrivateLinkServices() AzurePrivateLinkServiceInformer
 	// CertificateSigningRequestApprovals returns a CertificateSigningRequestApprovalInformer.
 	CertificateSigningRequestApprovals() CertificateSigningRequestApprovalInformer
 	// GCPPrivateServiceConnects returns a GCPPrivateServiceConnectInformer.
@@ -44,6 +46,11 @@ type version struct {
 // New returns a new Interface.
 func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakListOptions internalinterfaces.TweakListOptionsFunc) Interface {
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
+}
+
+// AzurePrivateLinkServices returns a AzurePrivateLinkServiceInformer.
+func (v *version) AzurePrivateLinkServices() AzurePrivateLinkServiceInformer {
+	return &azurePrivateLinkServiceInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // CertificateSigningRequestApprovals returns a CertificateSigningRequestApprovalInformer.

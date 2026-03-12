@@ -47,6 +47,12 @@ func NewIngressParams(hcp *hyperv1.HostedControlPlane) *IngressParams {
 			loadBalancerScope = v1.InternalLoadBalancer
 		}
 	}
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform && hcp.Spec.Platform.Azure != nil &&
+		hcp.Spec.Platform.Azure.EndpointAccess != nil &&
+		(hcp.Spec.Platform.Azure.EndpointAccess.Type == hyperv1.AzureEndpointAccessPrivate ||
+			hcp.Spec.Platform.Azure.EndpointAccess.Type == hyperv1.AzureEndpointAccessPublicAndPrivate) {
+		loadBalancerScope = v1.InternalLoadBalancer
+	}
 	if hcp.Spec.Platform.OpenStack != nil && hcp.Spec.Platform.OpenStack.IngressFloatingIP != "" {
 		loadBalancerIP = hcp.Spec.Platform.OpenStack.IngressFloatingIP
 	}

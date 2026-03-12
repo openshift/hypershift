@@ -70,6 +70,37 @@ Running this command creates:
     - Network Operator
 * Federated Identity Credentials for each identity, configured with the OIDC issuer
 
+## Private Endpoint Access
+
+When creating workload identities for a private cluster, add `--endpoint-access Private`
+to create an additional identity for the Control Plane Operator:
+
+```bash
+hypershift create iam azure \
+    --name CLUSTER_NAME \
+    --infra-id INFRA_ID \
+    --azure-creds AZURE_CREDENTIALS_FILE \
+    --location LOCATION \
+    --resource-group-name RESOURCE_GROUP \
+    --oidc-issuer-url OIDC_ISSUER_URL \
+    --output-file workload-identities.json \
+    --endpoint-access Private
+```
+
+This creates **8 identities** (the 7 above plus):
+
+* **Control Plane Operator** — manages Private Endpoints, Private DNS zones, VNet links,
+    and DNS A records in the guest subscription
+
+The CPO identity is assigned the **Contributor** role by default, scoped to the managed
+resource group, NSG resource group, and VNet resource group. When using
+`--assign-custom-hcp-roles`, a more restrictive custom role is used instead.
+
+!!! note
+
+    The `--endpoint-access` flag accepts `Public` (default), `PublicAndPrivate`, or
+    `Private`. The CPO identity is only created when the value is not `Public`.
+
 ## Output Format
 
 The output file contains the workload identities in JSON format, directly consumable by the
@@ -91,9 +122,15 @@ The output file contains the workload identities in JSON format, directly consum
   "ingress": { ... },
   "cloudProvider": { ... },
   "nodePoolManagement": { ... },
-  "network": { ... }
+  "network": { ... },
+  "controlPlaneOperator": { ... }
 }
 ```
+
+!!! note
+
+    The `controlPlaneOperator` entry is only present when `--endpoint-access` is not
+    `Public`. For public clusters, the output contains 7 entries.
 
 ## Using Pre-created Identities
 
@@ -164,6 +201,7 @@ Both the managed identities and their federated credentials are removed.
 | `--resource-group-name` | Resource group for identities | `{name}-{infra-id}` |
 | `--output-file` | Output file path | `{name}-iam-output.json` |
 | `--cloud` | Azure cloud environment | `AzurePublicCloud` |
+| `--endpoint-access` | API server endpoint visibility: `Public`, `PublicAndPrivate`, or `Private`. Creates an additional CPO identity when not `Public`. | `Public` |
 
 ### Required Flags for `destroy iam azure`
 
@@ -246,3 +284,4 @@ hypershift destroy iam azure \
 - [Create Azure Infrastructure Separately](create-infra-separately.md)
 - [Azure Workload Identity Setup](azure-workload-identity-setup.md)
 - [Self-Managed Azure Overview](self-managed-azure-index.md)
+- [Deploy Azure Private Clusters](deploy-azure-private-clusters.md) — End-to-end guide for private endpoint access

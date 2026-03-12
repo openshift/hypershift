@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/log"
@@ -59,6 +60,10 @@ func NewCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.DNSZoneRG, "dns-zone-rg-name", opts.DNSZoneRG, util.DNSZoneRGNameDescription)
 	cmd.Flags().BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, util.AssignCustomHCPRolesDescription)
 	cmd.Flags().StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", opts.DisableClusterCapabilities, util.DisableClusterCapabilitiesDescription)
+
+	// Endpoint access flags
+	cmd.Flags().StringVar(&opts.EndpointAccess, "endpoint-access", string(hyperv1.AzureEndpointAccessPublic), util.EndpointAccessDescription)
+	cmd.Flags().StringVar(&opts.NATSubnetID, "endpoint-access-private-nat-subnet-id", "", util.EndpointAccessPrivateNATSubnetIDInfraDescription)
 
 	_ = cmd.MarkFlagRequired("infra-id")
 	_ = cmd.MarkFlagRequired("azure-creds")
@@ -118,6 +123,10 @@ func BindProductFlags(opts *CreateInfraOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&opts.DNSZoneRG, "dns-zone-rg-name", opts.DNSZoneRG, util.DNSZoneRGNameDescription)
 	flags.BoolVar(&opts.AssignCustomHCPRoles, "assign-custom-hcp-roles", opts.AssignCustomHCPRoles, util.AssignCustomHCPRolesDescription)
 	flags.StringSliceVar(&opts.DisableClusterCapabilities, "disable-cluster-capabilities", opts.DisableClusterCapabilities, util.DisableClusterCapabilitiesDescription)
+
+	// Endpoint access
+	flags.StringVar(&opts.EndpointAccess, "endpoint-access", string(hyperv1.AzureEndpointAccessPublic), util.EndpointAccessDescription)
+	flags.StringVar(&opts.NATSubnetID, "endpoint-access-private-nat-subnet-id", "", util.EndpointAccessPrivateNATSubnetIDInfraDescription)
 
 	// Output
 	flags.StringVar(&opts.OutputFile, "output-file", opts.OutputFile, util.InfraOutputFileDescription)
@@ -216,6 +225,18 @@ func (o *CreateInfraOptions) Run(ctx context.Context, l logr.Logger) (*CreateInf
 		result.SubnetID = *vnet.Properties.Subnets[0].ID
 		result.VNetID = *vnet.ID
 		l.Info("Successfully created vnet", "ID", result.VNetID)
+	}
+
+	// Handle NAT subnet for private endpoint access.
+	// The NAT subnet must exist in the management cluster's VNet (where the ILB is created),
+	// not the guest cluster's VNet. The customer must provide a pre-created NAT subnet via
+	// --endpoint-access-private-nat-subnet-id.
+	if o.EndpointAccess != "" && o.EndpointAccess != string(hyperv1.AzureEndpointAccessPublic) {
+		if o.NATSubnetID == "" {
+			return nil, fmt.Errorf("--endpoint-access-private-nat-subnet-id is required when --endpoint-access is not Public; the NAT subnet must exist in the management cluster's VNet where the internal load balancer is created")
+		}
+		result.NATSubnetID = o.NATSubnetID
+		l.Info("Using NAT subnet for Private Link Service", "ID", result.NATSubnetID)
 	}
 
 	// Handle managed identities and RBAC
@@ -318,6 +339,19 @@ func (o *CreateInfraOptions) Validate() error {
 	if o.BaseDomain == "" {
 		return fmt.Errorf("--base-domain is required")
 	}
+
+	// Validate endpoint access value
+	if o.EndpointAccess != "" {
+		validValues := []string{
+			string(hyperv1.AzureEndpointAccessPublic),
+			string(hyperv1.AzureEndpointAccessPublicAndPrivate),
+			string(hyperv1.AzureEndpointAccessPrivate),
+		}
+		if !slices.Contains(validValues, o.EndpointAccess) {
+			return fmt.Errorf("--endpoint-access must be one of: %v", validValues)
+		}
+	}
+
 	return nil
 }
 

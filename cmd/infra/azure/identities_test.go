@@ -39,12 +39,14 @@ func TestNewIdentityManager(t *testing.T) {
 func TestGetWorkloadIdentityDefinitions(t *testing.T) {
 	tests := map[string]struct {
 		clusterName       string
+		endpointAccess    string
 		expectedCount     int
 		expectedComponent []string
 	}{
-		"When called it should return 7 identity definitions with correct components": {
-			clusterName:   "test-cluster",
-			expectedCount: 7,
+		"When public endpoint access it should return 7 identity definitions without controlPlaneOperator": {
+			clusterName:    "test-cluster",
+			endpointAccess: "Public",
+			expectedCount:  7,
 			expectedComponent: []string{
 				"disk",
 				"file",
@@ -55,16 +57,46 @@ func TestGetWorkloadIdentityDefinitions(t *testing.T) {
 				"network",
 			},
 		},
+		"When private endpoint access it should return 8 identity definitions with controlPlaneOperator": {
+			clusterName:    "test-cluster",
+			endpointAccess: "Private",
+			expectedCount:  8,
+			expectedComponent: []string{
+				"disk",
+				"file",
+				"imageRegistry",
+				"ingress",
+				"cloudProvider",
+				"nodePoolManagement",
+				"network",
+				"controlPlaneOperator",
+			},
+		},
+		"When empty endpoint access it should return 8 identity definitions for cleanup": {
+			clusterName:    "test-cluster",
+			endpointAccess: "",
+			expectedCount:  8,
+			expectedComponent: []string{
+				"disk",
+				"file",
+				"imageRegistry",
+				"ingress",
+				"cloudProvider",
+				"nodePoolManagement",
+				"network",
+				"controlPlaneOperator",
+			},
+		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			definitions := GetWorkloadIdentityDefinitions(test.clusterName)
+			definitions := GetWorkloadIdentityDefinitions(test.clusterName, test.endpointAccess)
 
 			// Verify count
-			g.Expect(definitions).To(HaveLen(test.expectedCount), "Should return 7 identity definitions")
+			g.Expect(definitions).To(HaveLen(test.expectedCount))
 
 			// Verify all expected components are present
 			componentNames := make([]string, len(definitions))

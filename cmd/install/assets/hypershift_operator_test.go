@@ -288,6 +288,113 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 				},
 			},
 		},
+		"When Azure private platform is specified, it should mount credentials and set AZURE_CREDENTIALS_FILE env var": {
+			inputBuildParameters: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				OperatorImage: testOperatorImage,
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "hypershift",
+					},
+				},
+				Replicas:              3,
+				PrivatePlatform:       string(hyperv1.AzurePlatform),
+				AzurePLSResourceGroup: "rg-mgmt",
+				AzurePrivateSecret: &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: azureCredsSecretName,
+					},
+				},
+				AzurePrivateSecretKey: "credentials",
+			},
+			expectedVolumeMounts: []corev1.VolumeMount{
+				{
+					Name:      "azure-credentials",
+					MountPath: "/etc/azure-provider",
+					ReadOnly:  true,
+				},
+			},
+			expectedVolumes: []corev1.Volume{
+				{
+					Name: "azure-credentials",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: azureCredsSecretName,
+						},
+					},
+				},
+			},
+			expectedArgs: []string{
+				"run",
+				"--namespace=$(MY_NAMESPACE)",
+				"--pod-name=$(MY_NAME)",
+				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", false),
+				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
+				fmt.Sprintf("--enable-ci-debug-output=%t", false),
+				fmt.Sprintf("--private-platform=%s", string(hyperv1.AzurePlatform)),
+			},
+			expectedEnvVars: []corev1.EnvVar{
+				{
+					Name:  "AZURE_RESOURCE_GROUP",
+					Value: "rg-mgmt",
+				},
+				{
+					Name:  "AZURE_CREDENTIALS_FILE",
+					Value: "/etc/azure-provider/credentials",
+				},
+			},
+		},
+		"When Azure private platform is specified with managed identity, it should set AZURE_PLS_CLIENT_ID and AZURE_SUBSCRIPTION_ID env vars and workload identity pod label": {
+			inputBuildParameters: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: testNamespace,
+					},
+				},
+				OperatorImage: testOperatorImage,
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "hypershift",
+					},
+				},
+				Replicas:                        3,
+				PrivatePlatform:                 string(hyperv1.AzurePlatform),
+				AzurePLSManagedIdentityClientID: "00000000-0000-0000-0000-000000000001",
+				AzurePLSSubscriptionID:          "00000000-0000-0000-0000-000000000002",
+				AzurePLSResourceGroup:           "rg-mgmt",
+			},
+			expectedVolumeMounts: nil,
+			expectedVolumes:      nil,
+			expectedArgs: []string{
+				"run",
+				"--namespace=$(MY_NAMESPACE)",
+				"--pod-name=$(MY_NAME)",
+				"--metrics-addr=:9000",
+				fmt.Sprintf("--enable-dedicated-request-serving-isolation=%t", false),
+				fmt.Sprintf("--enable-ocp-cluster-monitoring=%t", false),
+				fmt.Sprintf("--enable-ci-debug-output=%t", false),
+				fmt.Sprintf("--private-platform=%s", string(hyperv1.AzurePlatform)),
+			},
+			expectedEnvVars: []corev1.EnvVar{
+				{
+					Name:  "AZURE_RESOURCE_GROUP",
+					Value: "rg-mgmt",
+				},
+				{
+					Name:  "AZURE_PLS_CLIENT_ID",
+					Value: "00000000-0000-0000-0000-000000000001",
+				},
+				{
+					Name:  "AZURE_SUBSCRIPTION_ID",
+					Value: "00000000-0000-0000-0000-000000000002",
+				},
+			},
+		},
 		"specify dedicated request serving isolation parameter (true) result in appropriate arguments": {
 			inputBuildParameters: HyperShiftOperatorDeployment{
 				Namespace: &corev1.Namespace{
@@ -481,6 +588,76 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 			g.Expect(deployment.Spec.Template.Spec.Volumes).To(BeEquivalentTo(test.expectedVolumes))
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].VolumeMounts).To(BeEquivalentTo(test.expectedVolumeMounts))
 			g.Expect(deployment.Spec.Template.Spec.Containers[0].Env).To(ContainElements(test.expectedEnvVars))
+		})
+	}
+}
+
+func TestHyperShiftOperatorDeployment_Build_WorkloadIdentityLabel(t *testing.T) {
+	tests := map[string]struct {
+		input       HyperShiftOperatorDeployment
+		expectLabel bool
+	}{
+		"When Azure managed identity is specified, it should add workload identity pod label": {
+			input: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{Name: "hypershift"},
+				},
+				OperatorImage: "myimage",
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{Name: "hypershift"},
+				},
+				Replicas:                        3,
+				PrivatePlatform:                 string(hyperv1.AzurePlatform),
+				AzurePLSManagedIdentityClientID: "test-client-id",
+				AzurePLSSubscriptionID:          "test-sub-id",
+			},
+			expectLabel: true,
+		},
+		"When Azure credential file is specified, it should not add workload identity pod label": {
+			input: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{Name: "hypershift"},
+				},
+				OperatorImage: "myimage",
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{Name: "hypershift"},
+				},
+				Replicas:        3,
+				PrivatePlatform: string(hyperv1.AzurePlatform),
+				AzurePrivateSecret: &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{Name: "my-creds"},
+				},
+				AzurePrivateSecretKey: "credentials",
+			},
+			expectLabel: false,
+		},
+		"When no Azure config is specified, it should not add workload identity pod label": {
+			input: HyperShiftOperatorDeployment{
+				Namespace: &corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{Name: "hypershift"},
+				},
+				OperatorImage: "myimage",
+				ServiceAccount: &corev1.ServiceAccount{
+					ObjectMeta: metav1.ObjectMeta{Name: "hypershift"},
+				},
+				Replicas:        3,
+				PrivatePlatform: string(hyperv1.NonePlatform),
+			},
+			expectLabel: false,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			deployment := test.input.Build()
+			labels := deployment.Spec.Template.Labels
+			if test.expectLabel {
+				g.Expect(labels).To(HaveKeyWithValue("azure.workload.identity/use", "true"),
+					"should have workload identity pod label when managed identity is configured")
+			} else {
+				g.Expect(labels).ToNot(HaveKey("azure.workload.identity/use"),
+					"should not have workload identity pod label")
+			}
 		})
 	}
 }
