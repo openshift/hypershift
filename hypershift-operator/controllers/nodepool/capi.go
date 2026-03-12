@@ -441,7 +441,8 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 			// Annotations here propagate down to Machines
 			// https://cluster-api.sigs.k8s.io/developer/architecture/controllers/metadata-propagation.html#machinedeployment.
 			Annotations: map[string]string{
-				nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+				nodePoolAnnotation:                       client.ObjectKeyFromObject(nodePool).String(),
+				hyperv1.NodePoolReleaseVersionAnnotation: c.Version(),
 			},
 		},
 		Spec: capiv1.MachineSpec{
