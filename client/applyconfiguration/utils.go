@@ -283,6 +283,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.NodePoolConditionApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePoolManagement"):
 		return &hypershiftv1beta1.NodePoolManagementApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("NodePoolNodesInfo"):
+		return &hypershiftv1beta1.NodePoolNodesInfoApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePoolPlatform"):
 		return &hypershiftv1beta1.NodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePoolPlatformStatus"):
@@ -293,6 +295,8 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.NodePoolStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePortPublishingStrategy"):
 		return &hypershiftv1beta1.NodePortPublishingStrategyApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("NodeVersion"):
+		return &hypershiftv1beta1.NodeVersionApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OpenStackIdentityReference"):
 		return &hypershiftv1beta1.OpenStackIdentityReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OpenStackNodePoolPlatform"):
