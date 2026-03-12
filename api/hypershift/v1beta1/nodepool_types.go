@@ -25,6 +25,10 @@ const (
 	// IgnitionServerTokenExpirationTimestampAnnotation holds the time that a ignition token expires and should be
 	// removed from the cluster.
 	IgnitionServerTokenExpirationTimestampAnnotation = "hypershift.openshift.io/ignition-token-expiration-timestamp"
+
+	// NodePoolReleaseVersionAnnotation is set on userdata Secrets (Replace strategy) and on Machines (InPlace strategy)
+	// to track the OCP release version associated with each machine.
+	NodePoolReleaseVersionAnnotation = "hypershift.openshift.io/release-version"
 )
 
 // ImageType specifies the type of image to use for node instances.
@@ -250,6 +254,11 @@ type NodePoolStatus struct {
 	// +kubebuilder:validation:MaxLength=64
 	Version string `json:"version,omitempty"`
 
+	// nodesInfo contains aggregated information observed from nodes belonging
+	// to this NodePool.
+	// +optional
+	NodesInfo NodePoolNodesInfo `json:"nodesInfo,omitzero"`
+
 	// platform holds the specific statuses
 	// +optional
 	Platform *NodePoolPlatformStatus `json:"platform,omitempty"`
@@ -259,6 +268,49 @@ type NodePoolStatus struct {
 	// +kubebuilder:validation:MaxItems=100
 	// +optional
 	Conditions []NodePoolCondition `json:"conditions,omitempty"`
+}
+
+// NodePoolNodesInfo aggregates observed information about nodes belonging to this NodePool.
+type NodePoolNodesInfo struct {
+	// nodeVersions summarizes the versions and health of nodes belonging
+	// to this NodePool. Each entry represents a distinct version combination
+	// and the number of ready/unready nodes running it.
+	// +kubebuilder:validation:MaxItems=100
+	// +kubebuilder:validation:MinItems=1
+	// +required
+	NodeVersions []NodeVersion `json:"nodeVersions,omitempty"`
+}
+
+// NodeVersion represents a version combination and the count of ready and unready nodes running it.
+type NodeVersion struct {
+	// ocpVersion is the OpenShift release version this node was provisioned
+	// or upgraded with.
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^\\d+\\.\\d+\\.\\d+.*$')`,message="ocpVersion must start with semantic version prefix x.y.z"
+	// +kubebuilder:validation:MaxLength=64
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	OCPVersion string `json:"ocpVersion,omitempty"`
+
+	// kubeletVersion is the kubelet version reported by the node, as observed
+	// from Machine.Status.NodeInfo.KubeletVersion.
+	// +kubebuilder:validation:XValidation:rule=`self.matches('^v?\\d+\\.\\d+\\.\\d+.*$')`,message="kubeletVersion must start with semantic version prefix x.y.z (optional leading 'v')"
+	// +kubebuilder:validation:MaxLength=64
+	// +kubebuilder:validation:MinLength=1
+	// +required
+	KubeletVersion string `json:"kubeletVersion,omitempty"`
+
+	// readyNodeCount is the number of nodes running this version where the
+	// CAPI NodeHealthy condition is True.
+	// +kubebuilder:validation:Minimum=0
+	// +required
+	ReadyNodeCount *int32 `json:"readyNodeCount,omitempty"`
+
+	// unreadyNodeCount is the number of nodes running this version where the
+	// CAPI NodeHealthy condition is not True. Useful for tracking upgrade
+	// progress and detecting stuck nodes.
+	// +kubebuilder:validation:Minimum=0
+	// +required
+	UnreadyNodeCount *int32 `json:"unreadyNodeCount,omitempty"`
 }
 
 // NodePoolList contains a list of NodePools.
