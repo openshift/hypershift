@@ -2003,6 +2003,13 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 		return fmt.Errorf("failed to reconcile ssh key ignition config: %w", err)
 	}
 
+	// Reconcile image registry CA ignition config when image registry is enabled.
+	// This places the service-CA certificate on worker nodes so they can trust the
+	// internal image registry without relying on the node-ca daemonset.
+	if err := r.reconcileImageRegistryCAIgnitionConfig(ctx, hcp, p.OwnerRef, createOrUpdate); err != nil {
+		return fmt.Errorf("failed to reconcile image registry CA ignition config: %w", err)
+	}
+
 	// Ensure the imageDigestMirrorSet configmap has been removed if no longer needed
 	imageContentPolicyIgnitionConfig := manifests.ImageContentPolicyIgnitionConfig(hcp.GetNamespace())
 	if !p.HasImageMirrorPolicies {
@@ -2025,6 +2032,42 @@ func (r *HostedControlPlaneReconciler) reconcileCoreIgnitionConfig(ctx context.C
 		return ignition.ReconcileImageSourceMirrorsIgnitionConfigFromIDMS(imageContentPolicyIgnitionConfig, p.OwnerRef, imageDigestMirrorSet)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile image content source policy ignition config: %w", err)
+	}
+
+	return nil
+}
+
+// reconcileImageRegistryCAIgnitionConfig creates or updates a core ignition config
+// that distributes the service-CA certificate to worker nodes. When image registry
+// capability is disabled, the ignition ConfigMap is cleaned up.
+func (r *HostedControlPlaneReconciler) reconcileImageRegistryCAIgnitionConfig(ctx context.Context, hcp *hyperv1.HostedControlPlane, ownerRef config.OwnerRef, createOrUpdate upsert.CreateOrUpdateFN) error {
+	imageRegistryCAConfig := manifests.IgnitionImageRegistryCAConfig(hcp.Namespace)
+
+	if !capabilities.IsImageRegistryCapabilityEnabled(hcp.Spec.Capabilities) {
+		if _, err := util.DeleteIfNeeded(ctx, r.Client, imageRegistryCAConfig); err != nil {
+			return fmt.Errorf("failed to delete image registry CA ignition config: %w", err)
+		}
+		return nil
+	}
+
+	// Fetch the service-serving CA. This ConfigMap is populated by the ManagedCAObserver
+	// which syncs the service-ca operator's CA bundle from the guest cluster.
+	serviceServingCA := manifests.ServiceServingCA(hcp.Namespace)
+	serviceCA := ""
+	if err := r.Get(ctx, client.ObjectKeyFromObject(serviceServingCA), serviceServingCA); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get service-serving-ca configmap: %w", err)
+		}
+		// Not found during initial bootstrap; create a no-op MachineConfig.
+		r.Log.Info("service-serving-ca configmap not found, creating image registry CA ignition config without CA data")
+	} else {
+		serviceCA = serviceServingCA.Data["service-ca.crt"]
+	}
+
+	if _, err := createOrUpdate(ctx, r, imageRegistryCAConfig, func() error {
+		return ignition.ReconcileImageRegistryCAIgnitionConfig(imageRegistryCAConfig, ownerRef, serviceCA)
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile image registry CA ignition config: %w", err)
 	}
 
 	return nil
