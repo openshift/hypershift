@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/logr/testr"
 	"go.uber.org/mock/gomock"
@@ -1595,13 +1596,23 @@ func TestReconcileKubeletConfigMap(t *testing.T) {
 		g.Expect(cm.Namespace).To(Equal(testNamespace))
 		g.Expect(cm.Labels).To(HaveKeyWithValue(karpenterutil.KarpenterNodeClassKubeletConfigLabel, "true"))
 		g.Expect(cm.Data).To(HaveKey("config"))
-		g.Expect(cm.Data["config"]).To(ContainSubstring("maxPods"))
-		g.Expect(cm.Data["config"]).To(ContainSubstring("500"))
-		g.Expect(cm.Data["config"]).To(ContainSubstring("KubeletConfig"))
+		var cr map[string]interface{}
+		err = yaml.Unmarshal([]byte(cm.Data["config"]), &cr)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(cr["apiVersion"]).To(Equal("machineconfiguration.openshift.io/v1"))
+		g.Expect(cr["kind"]).To(Equal("KubeletConfig"))
+		spec, ok := cr["spec"].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		kubeletConfig, ok := spec["kubeletConfig"].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		g.Expect(kubeletConfig["maxPods"]).To(BeEquivalentTo(500))
 		// The taint must be merged in so that set-karpenter-taint can be omitted from configRefs
 		// without losing the registerWithTaints behavior.
-		g.Expect(cm.Data["config"]).To(ContainSubstring("registerWithTaints"))
-		g.Expect(cm.Data["config"]).To(ContainSubstring("karpenter.sh/unregistered"))
+		taints, ok := kubeletConfig["registerWithTaints"].([]interface{})
+		g.Expect(ok).To(BeTrue())
+		taint, ok := taints[0].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		g.Expect(taint["key"]).To(Equal(karpenterutil.KarpenterBaseTaints[0].Key))
 	})
 
 	t.Run("When kubelet config is nil and config map does not exist it should not return an error", func(t *testing.T) {
@@ -1678,9 +1689,18 @@ func TestReconcileKubeletConfigMap(t *testing.T) {
 			Namespace: testNamespace,
 		}, cm)
 		g.Expect(err).NotTo(HaveOccurred())
-		g.Expect(cm.Data["config"]).To(ContainSubstring("250"))
-		g.Expect(cm.Data["config"]).NotTo(ContainSubstring("stale-data-maxPods-100"))
-		g.Expect(cm.Data["config"]).To(ContainSubstring("registerWithTaints"))
-		g.Expect(cm.Data["config"]).To(ContainSubstring("karpenter.sh/unregistered"))
+		var cr map[string]interface{}
+		err = yaml.Unmarshal([]byte(cm.Data["config"]), &cr)
+		g.Expect(err).NotTo(HaveOccurred())
+		spec, ok := cr["spec"].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		kubeletConfig, ok := spec["kubeletConfig"].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		g.Expect(kubeletConfig["maxPods"]).To(BeEquivalentTo(250))
+		taints, ok := kubeletConfig["registerWithTaints"].([]interface{})
+		g.Expect(ok).To(BeTrue())
+		taint, ok := taints[0].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		g.Expect(taint["key"]).To(Equal(karpenterutil.KarpenterBaseTaints[0].Key))
 	})
 }

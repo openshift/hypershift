@@ -27,7 +27,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,38 +38,10 @@ func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlpl
 		return nil
 	}
 
-	// Generate configMap with KubeletConfig to register Nodes with karpenter expected taint.
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      karpenterutil.KarpenterTaintConfigMapName,
-			Namespace: cpContext.HCP.Namespace,
-		},
-	}
-
-	kubeletConfig := fmt.Sprintf(`apiVersion: machineconfiguration.openshift.io/v1
-kind: KubeletConfig
-metadata:
-  name: %s
-spec:
-  kubeletConfig:
-    registerWithTaints:
-      - key: "karpenter.sh/unregistered"
-        value: "true"
-        effect: "NoExecute"`, karpenterutil.KarpenterTaintConfigMapName)
-
-	_, err := createOrUpdate(cpContext, r.Client, configMap, func() error {
-		configMap.Data = map[string]string{
-			"config": kubeletConfig,
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create configmap: %w", err)
-	}
-
 	// TODO(alberto): Ensure deletion if autoNode is disabled.
 
 	// Run karpenter Operator to manage CRs management and guest side.
+	// The taint ConfigMap (set-karpenter-taint) is created by the karpenter-operator itself.
 
 	karpenteroperator := karpenteroperatorv2.NewComponent(&karpenteroperatorv2.KarpenterOperatorOptions{
 		HyperShiftOperatorImage:   hypershiftOperatorImage,

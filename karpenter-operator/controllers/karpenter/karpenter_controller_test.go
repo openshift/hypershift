@@ -11,6 +11,7 @@ import (
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/releaseinfo/testutils"
+	"github.com/openshift/hypershift/support/upsert"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -20,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/logr/testr"
 	"go.uber.org/mock/gomock"
@@ -300,4 +302,92 @@ func TestKarpenterDeletion(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReconcileTaintConfigMap(t *testing.T) {
+	scheme := api.Scheme
+	namespace := "clusters-test"
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-hcp",
+			Namespace: namespace,
+		},
+	}
+
+	t.Run("When taint ConfigMap does not exist it should create it", func(t *testing.T) {
+		g := NewWithT(t)
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+
+		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+		r := &Reconciler{
+			ManagementClient:       fakeManagementClient,
+			CreateOrUpdateProvider: upsert.New(false),
+		}
+
+		err := r.reconcileTaintConfigMap(ctx, hcp)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		cm := &corev1.ConfigMap{}
+		err = fakeManagementClient.Get(ctx, client.ObjectKey{Name: karpenterutil.KarpenterTaintConfigMapName, Namespace: namespace}, cm)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(cm.Data).To(HaveKey("config"))
+		var cr map[string]interface{}
+		err = yaml.Unmarshal([]byte(cm.Data["config"]), &cr)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(cr["apiVersion"]).To(Equal("machineconfiguration.openshift.io/v1"))
+		g.Expect(cr["kind"]).To(Equal("KubeletConfig"))
+		metadata, ok := cr["metadata"].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		g.Expect(metadata["name"]).To(Equal(karpenterutil.KarpenterTaintConfigMapName))
+		spec, ok := cr["spec"].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		kubeletConfig, ok := spec["kubeletConfig"].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		taints, ok := kubeletConfig["registerWithTaints"].([]interface{})
+		g.Expect(ok).To(BeTrue())
+		g.Expect(taints).To(HaveLen(len(karpenterutil.KarpenterBaseTaints)))
+		taint, ok := taints[0].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		g.Expect(taint["key"]).To(Equal(karpenterutil.KarpenterBaseTaints[0].Key))
+		g.Expect(taint["value"]).To(Equal(karpenterutil.KarpenterBaseTaints[0].Value))
+		g.Expect(taint["effect"]).To(Equal(string(karpenterutil.KarpenterBaseTaints[0].Effect)))
+	})
+
+	t.Run("When taint ConfigMap already exists it should be idempotent", func(t *testing.T) {
+		g := NewWithT(t)
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+
+		existingCM := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      karpenterutil.KarpenterTaintConfigMapName,
+				Namespace: namespace,
+			},
+			Data: map[string]string{"config": "old-data"},
+		}
+		fakeManagementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(existingCM).Build()
+		r := &Reconciler{
+			ManagementClient:       fakeManagementClient,
+			CreateOrUpdateProvider: upsert.New(false),
+		}
+
+		err := r.reconcileTaintConfigMap(ctx, hcp)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		cm := &corev1.ConfigMap{}
+		err = fakeManagementClient.Get(ctx, client.ObjectKey{Name: karpenterutil.KarpenterTaintConfigMapName, Namespace: namespace}, cm)
+		g.Expect(err).NotTo(HaveOccurred())
+		var cr map[string]interface{}
+		err = yaml.Unmarshal([]byte(cm.Data["config"]), &cr)
+		g.Expect(err).NotTo(HaveOccurred())
+		spec, ok := cr["spec"].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		kubeletConfig, ok := spec["kubeletConfig"].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		taints, ok := kubeletConfig["registerWithTaints"].([]interface{})
+		g.Expect(ok).To(BeTrue())
+		taint, ok := taints[0].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		g.Expect(taint["key"]).To(Equal(karpenterutil.KarpenterBaseTaints[0].Key))
+	})
 }

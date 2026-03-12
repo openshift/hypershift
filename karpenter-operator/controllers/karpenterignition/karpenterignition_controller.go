@@ -2,8 +2,10 @@ package karpenterignition
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -35,6 +37,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	"sigs.k8s.io/yaml"
 
 	"github.com/blang/semver"
 )
@@ -300,8 +303,8 @@ func (r *KarpenterIgnitionReconciler) createInMemoryNodePool(
 	openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass,
 	releaseImage string,
 ) *hyperv1.NodePool {
-	// When Spec.Kubelet is set, the per-nodeclass kubelet ConfigMap is generated via
-	// ToKubeletConfigManifestWithTaints and already contains registerWithTaints, so
+	// When Spec.Kubelet is set, the per-nodeclass kubelet ConfigMap is generated with
+	// KarpenterBaseTaintMap merged in (so registerWithTaints is always present), so
 	// set-karpenter-taint must NOT also be included — the MCO bootstrap rejects two
 	// KubeletConfigs targeting the same MachineConfigPool.
 	var configRefs []corev1.LocalObjectReference
@@ -489,6 +492,7 @@ func (r *KarpenterIgnitionReconciler) reconcileKubeletConfigMap(
 		},
 	}
 
+	// Delete the configmap if there are no kubelet settings on the nodeclass
 	if openshiftEC2NodeClass.Spec.Kubelet == nil {
 		if err := r.ManagementClient.Delete(ctx, cm); err != nil && !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to delete kubelet config configmap %s: %w", configMapName, err)
@@ -496,10 +500,22 @@ func (r *KarpenterIgnitionReconciler) reconcileKubeletConfigMap(
 		return nil
 	}
 
-	// Use ToKubeletConfigManifestWithTaints so the karpenter.sh/unregistered taint is merged
-	// into this manifest. This replaces the separate set-karpenter-taint ConfigMap entry so
-	// only one KubeletConfig targets the worker MachineConfigPool in the ignition payload.
-	manifest, err := openshiftEC2NodeClass.Spec.Kubelet.ToKubeletConfigManifestWithTaints(configMapName)
+	// Convert user KubeletConfiguration to a plain map (via JSON round-trip to honor json tags
+	// and omitempty)
+	nodeClassKubeletRaw, err := json.Marshal(openshiftEC2NodeClass.Spec.Kubelet)
+	if err != nil {
+		return fmt.Errorf("failed to marshal user kubelet config: %w", err)
+	}
+	var nodeClassKubeletMap map[string]interface{}
+	if err := json.Unmarshal(nodeClassKubeletRaw, &nodeClassKubeletMap); err != nil {
+		return fmt.Errorf("failed to unmarshal user kubelet config: %w", err)
+	}
+
+	// Merge nodeclass with the taint base, our taints go in last so they always win —
+	// registerWithTaints is not currently user-settable but this ordering ensures our taint
+	// can never be accidentally overridden
+	merged := mergeKubeletConfigMaps(nodeClassKubeletMap, karpenterutil.KarpenterBaseTaintMap())
+	manifest, err := kubeletConfigManifest(configMapName, merged)
 	if err != nil {
 		return fmt.Errorf("failed to generate kubelet config manifest: %w", err)
 	}
@@ -515,6 +531,36 @@ func (r *KarpenterIgnitionReconciler) reconcileKubeletConfigMap(
 		return nil
 	})
 	return err
+}
+
+// mergeKubeletConfigMaps merges two kubeletConfig maps. Base keys are included unless
+// overlay defines the same key, in which case overlay wins. Callers should pass our
+// required fields (e.g. taint base) as overlay so they are never clobbered by user config.
+func mergeKubeletConfigMaps(base, overlay map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{}, len(base)+len(overlay))
+	for k, v := range base {
+		result[k] = v
+	}
+	for k, v := range overlay {
+		result[k] = v
+	}
+	return result
+}
+
+// kubeletConfigManifest serializes a pre-merged kubeletConfig map into a KubeletConfig CR YAML
+// string suitable for storage in a ConfigMap "config" key.
+func kubeletConfigManifest(name string, kubeletConfig map[string]interface{}) (string, error) {
+	cr := map[string]interface{}{
+		"apiVersion": "machineconfiguration.openshift.io/v1",
+		"kind":       "KubeletConfig",
+		"metadata":   map[string]interface{}{"name": name},
+		"spec":       map[string]interface{}{"kubeletConfig": kubeletConfig},
+	}
+	out, err := yaml.Marshal(cr)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(string(out), "\n"), nil
 }
 
 // buildConfigGenerator creates a ConfigGenerator for the in-memory NodePool
