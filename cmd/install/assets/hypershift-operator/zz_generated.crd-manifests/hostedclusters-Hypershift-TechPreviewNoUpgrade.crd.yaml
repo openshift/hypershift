@@ -5655,8 +5655,9 @@ spec:
                                 minLength: 1
                                 type: string
                                 x-kubernetes-validations:
-                                - message: name must conform to GCP resource naming
-                                    standards
+                                - message: name must be 1-63 characters, start with
+                                    a lowercase letter, contain only lowercase letters,
+                                    digits, or hyphens, and not end with a hyphen
                                   rule: self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')
                             required:
                             - name
@@ -5679,8 +5680,9 @@ spec:
                                 minLength: 1
                                 type: string
                                 x-kubernetes-validations:
-                                - message: name must conform to GCP resource naming
-                                    standards
+                                - message: name must be 1-63 characters, start with
+                                    a lowercase letter, contain only lowercase letters,
+                                    digits, or hyphens, and not end with a hyphen
                                   rule: self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')
                             required:
                             - name
@@ -5704,9 +5706,10 @@ spec:
                         minLength: 6
                         type: string
                         x-kubernetes-validations:
-                        - message: 'project must match GCP label format: lowercase
-                            letters, digits, underscores, or hyphens'
-                          rule: self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')
+                        - message: project must be 6 to 30 characters, contain only
+                            lowercase letters, digits, or hyphens, start with a letter,
+                            and not end with a hyphen
+                          rule: self.matches('^[a-z]([a-z0-9-]{4,28}[a-z0-9])$')
                         - message: Project is immutable
                           rule: self == oldSelf
                       region:
@@ -5722,9 +5725,9 @@ spec:
                         minLength: 1
                         type: string
                         x-kubernetes-validations:
-                        - message: 'region must match GCP label format: lowercase
-                            letters, digits, underscores, or hyphens'
-                          rule: self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')
+                        - message: region must be in the form area-location followed
+                            by digits (e.g., us-central1)
+                          rule: self.matches('^[a-z]+-[a-z]+[0-9]+$')
                         - message: Region is immutable
                           rule: self == oldSelf
                       resourceLabels:
@@ -5733,6 +5736,7 @@ spec:
                           Labels are key-value pairs used for organizing and managing GCP resources.
                           Changes to this field will be propagated in-place to GCP resources where supported.
                           GCP supports a maximum of 64 labels per resource. HyperShift reserves approximately 4 labels for system use.
+                          When omitted, no additional labels are applied. If specified, at least one label must be provided.
                           For GCP labeling guidance, see https://cloud.google.com/compute/docs/labeling-resources
                         items:
                           description: |-
@@ -5754,8 +5758,10 @@ spec:
                               minLength: 1
                               type: string
                               x-kubernetes-validations:
-                              - message: 'key must match GCP label format: lowercase
-                                  letters, digits, underscores, or hyphens'
+                              - message: key must be 1-63 characters, start with a
+                                  lowercase letter, contain only lowercase letters,
+                                  digits, underscores, or hyphens, and not end with
+                                  a hyphen or underscore
                                 rule: self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')
                               - message: Label keys starting with the reserved 'goog'
                                   prefix are not allowed
@@ -5777,7 +5783,7 @@ spec:
                           - key
                           type: object
                         maxItems: 60
-                        minItems: 0
+                        minItems: 1
                         type: array
                         x-kubernetes-list-map-keys:
                         - key
@@ -5878,15 +5884,19 @@ spec:
                                   This is a user-provided value referencing a pre-created Google Service Account.
                                   Typically obtained from the output of `hypershift infra create gcp` which creates
                                   the required service accounts with appropriate IAM roles and WIF bindings.
-                                maxLength: 100
+                                maxLength: 85
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
-                                - message: cloudController must be a valid GCP service
-                                    account email
-                                  rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$')
                                 - message: CloudController is immutable
                                   rule: self == oldSelf
+                                - message: must be a valid GCP service account email
+                                    in the format service-account-name@project-id.iam.gserviceaccount.com,
+                                    where both name and project-id are 6-30 characters,
+                                    start with a lowercase letter, contain only lowercase
+                                    letters, digits, or hyphens, and not end with
+                                    a hyphen
+                                  rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$')
                               controlPlane:
                                 description: |-
                                   controlPlane is the Google Service Account email for the Control Plane Operator
@@ -5901,15 +5911,19 @@ spec:
                                   This is a user-provided value referencing a pre-created Google Service Account.
                                   Typically obtained from the output of `hypershift infra create gcp` which creates
                                   the required service accounts with appropriate IAM roles and WIF bindings.
-                                maxLength: 100
+                                maxLength: 85
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
-                                - message: controlPlane must be a valid GCP service
-                                    account email
-                                  rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$')
                                 - message: ControlPlane is immutable
                                   rule: self == oldSelf
+                                - message: must be a valid GCP service account email
+                                    in the format service-account-name@project-id.iam.gserviceaccount.com,
+                                    where both name and project-id are 6-30 characters,
+                                    start with a lowercase letter, contain only lowercase
+                                    letters, digits, or hyphens, and not end with
+                                    a hyphen
+                                  rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$')
                               imageRegistry:
                                 description: |-
                                   imageRegistry is the Google Service Account email for the Image Registry Operator
@@ -5922,15 +5936,19 @@ spec:
                                   This is a user-provided value referencing a pre-created Google Service Account.
                                   Typically obtained from the output of `hypershift infra create gcp` which creates
                                   the required service accounts with appropriate IAM roles and WIF bindings.
-                                maxLength: 100
+                                maxLength: 85
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
-                                - message: imageRegistry must be a valid GCP service
-                                    account email
-                                  rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$')
                                 - message: imageRegistry is immutable
                                   rule: self == oldSelf
+                                - message: must be a valid GCP service account email
+                                    in the format service-account-name@project-id.iam.gserviceaccount.com,
+                                    where both name and project-id are 6-30 characters,
+                                    start with a lowercase letter, contain only lowercase
+                                    letters, digits, or hyphens, and not end with
+                                    a hyphen
+                                  rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$')
                               nodePool:
                                 description: |-
                                   nodePool is the Google Service Account email for CAPG controllers
@@ -5945,15 +5963,19 @@ spec:
                                   This is a user-provided value referencing a pre-created Google Service Account.
                                   Typically obtained from the output of `hypershift infra create gcp` which creates
                                   the required service accounts with appropriate IAM roles and WIF bindings.
-                                maxLength: 100
+                                maxLength: 85
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
-                                - message: nodePool must be a valid GCP service account
-                                    email
-                                  rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$')
                                 - message: NodePool is immutable
                                   rule: self == oldSelf
+                                - message: must be a valid GCP service account email
+                                    in the format service-account-name@project-id.iam.gserviceaccount.com,
+                                    where both name and project-id are 6-30 characters,
+                                    start with a lowercase letter, contain only lowercase
+                                    letters, digits, or hyphens, and not end with
+                                    a hyphen
+                                  rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$')
                               storage:
                                 description: |-
                                   storage is the Google Service Account email for the GCP PD CSI Driver
@@ -5969,15 +5991,19 @@ spec:
                                   This is a user-provided value referencing a pre-created Google Service Account.
                                   Typically obtained from the output of `hypershift infra create gcp` which creates
                                   the required service accounts with appropriate IAM roles and WIF bindings.
-                                maxLength: 100
+                                maxLength: 85
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
-                                - message: storage must be a valid GCP service account
-                                    email
-                                  rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$')
                                 - message: Storage is immutable
                                   rule: self == oldSelf
+                                - message: must be a valid GCP service account email
+                                    in the format service-account-name@project-id.iam.gserviceaccount.com,
+                                    where both name and project-id are 6-30 characters,
+                                    start with a lowercase letter, contain only lowercase
+                                    letters, digits, or hyphens, and not end with
+                                    a hyphen
+                                  rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$')
                             required:
                             - cloudController
                             - controlPlane

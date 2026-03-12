@@ -1080,6 +1080,8 @@ spec:
                         description: |-
                           networkTags is an optional list of network tags to apply to node instances.
                           These tags are used by GCP firewall rules to control network access.
+                          When omitted, no additional network tags are applied to node instances.
+                          If specified, at least one tag must be provided.
                           Tags must conform to GCP naming conventions:
                             - 1-63 characters
                             - Lowercase letters, numbers, and hyphens only
@@ -1091,7 +1093,7 @@ spec:
                           pattern: ^[a-z][a-z0-9-]*[a-z0-9]$|^[a-z]$
                           type: string
                         maxItems: 64
-                        minItems: 0
+                        minItems: 1
                         type: array
                         x-kubernetes-list-type: set
                       onHostMaintenance:
@@ -1123,6 +1125,8 @@ spec:
                           instances and their associated resources (disks, etc.).
                           Labels will be merged with cluster-level resource labels, with NodePool labels
                           taking precedence in case of conflicts.
+                          When omitted, no additional labels are applied to node instances.
+                          If specified, at least one label must be provided.
 
                           Keys and values must conform to GCP labeling requirements:
                             - Keys: 1–63 chars, must start with a lowercase letter; allowed [a-z0-9_-]
@@ -1148,8 +1152,10 @@ spec:
                               minLength: 1
                               type: string
                               x-kubernetes-validations:
-                              - message: 'key must match GCP label format: lowercase
-                                  letters, digits, underscores, or hyphens'
+                              - message: key must be 1-63 characters, start with a
+                                  lowercase letter, contain only lowercase letters,
+                                  digits, underscores, or hyphens, and not end with
+                                  a hyphen or underscore
                                 rule: self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')
                               - message: Label keys starting with the reserved 'goog'
                                   prefix are not allowed
@@ -1171,7 +1177,7 @@ spec:
                           - key
                           type: object
                         maxItems: 60
-                        minItems: 0
+                        minItems: 1
                         type: array
                         x-kubernetes-list-map-keys:
                         - key
@@ -1189,16 +1195,21 @@ spec:
                                 - Logging writer
                                 - Monitoring metric writer
                                 - Storage object viewer (for pulling container images)
-                            maxLength: 254
+                            maxLength: 85
                             minLength: 37
                             type: string
                             x-kubernetes-validations:
-                            - message: email must be a valid GCP service account email
+                            - message: must be a valid GCP service account email in
+                                the format service-account-name@project-id.iam.gserviceaccount.com,
+                                where both name and project-id are 6-30 characters,
+                                start with a lowercase letter, contain only lowercase
+                                letters, digits, or hyphens, and not end with a hyphen
                               rule: self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\.iam\.gserviceaccount\.com$')
                           scopes:
                             description: |-
                               scopes specifies the access scopes for the service account.
-                              If not specified, defaults to standard compute scopes.
+                              When omitted, defaults to standard compute scopes.
+                              If specified, at least one scope must be provided.
                               Common scopes include:
                                 - "https://www.googleapis.com/auth/devstorage.read_only" - Storage read-only
                                 - "https://www.googleapis.com/auth/logging.write" - Logging write
@@ -1209,7 +1220,7 @@ spec:
                               minLength: 1
                               type: string
                             maxItems: 50
-                            minItems: 0
+                            minItems: 1
                             type: array
                             x-kubernetes-list-type: set
                         type: object

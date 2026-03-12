@@ -13,7 +13,7 @@ type GCPResourceReference struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')",message="name must conform to GCP resource naming standards"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')",message="name must be 1-63 characters, start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and not end with a hyphen"
 	Name string `json:"name,omitempty"`
 }
 
@@ -33,7 +33,7 @@ type GCPResourceLabel struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')",message="key must match GCP label format: lowercase letters, digits, underscores, or hyphens"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')",message="key must be 1-63 characters, start with a lowercase letter, contain only lowercase letters, digits, underscores, or hyphens, and not end with a hyphen or underscore"
 	// +kubebuilder:validation:XValidation:rule="!self.startsWith('goog')",message="Label keys starting with the reserved 'goog' prefix are not allowed"
 	Key string `json:"key,omitempty"`
 
@@ -120,7 +120,7 @@ type GCPPlatformSpec struct {
 	// +immutable
 	// +kubebuilder:validation:MinLength=6
 	// +kubebuilder:validation:MaxLength=30
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')",message="project must match GCP label format: lowercase letters, digits, underscores, or hyphens"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([a-z0-9-]{4,28}[a-z0-9])$')",message="project must be 6 to 30 characters, contain only lowercase letters, digits, or hyphens, start with a letter, and not end with a hyphen"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Project is immutable"
 	Project string `json:"project,omitempty"`
 
@@ -136,7 +136,7 @@ type GCPPlatformSpec struct {
 	// +immutable
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')",message="region must match GCP label format: lowercase letters, digits, underscores, or hyphens"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]+-[a-z]+[0-9]+$')",message="region must be in the form area-location followed by digits (e.g., us-central1)"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Region is immutable"
 	Region string `json:"region,omitempty"`
 
@@ -156,12 +156,13 @@ type GCPPlatformSpec struct {
 	// Labels are key-value pairs used for organizing and managing GCP resources.
 	// Changes to this field will be propagated in-place to GCP resources where supported.
 	// GCP supports a maximum of 64 labels per resource. HyperShift reserves approximately 4 labels for system use.
+	// When omitted, no additional labels are applied. If specified, at least one label must be provided.
 	// For GCP labeling guidance, see https://cloud.google.com/compute/docs/labeling-resources
 	//
 	// +optional
 	// +listType=map
 	// +listMapKey=key
-	// +kubebuilder:validation:MinItems=0
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=60
 	ResourceLabels []GCPResourceLabel `json:"resourceLabels,omitempty"`
 
@@ -250,6 +251,16 @@ type GCPWorkloadIdentityConfig struct {
 	ServiceAccountsEmails GCPServiceAccountsEmails `json:"serviceAccountsEmails,omitzero"`
 }
 
+// GCPServiceAccountEmail is a GCP service account email address.
+// Must be in the format: service-account-name@project-id.iam.gserviceaccount.com
+// where both service-account-name and project-id are 6-30 characters, start with a
+// lowercase letter, contain only lowercase letters, digits, or hyphens, and not end with a hyphen.
+//
+// +kubebuilder:validation:MinLength=37
+// +kubebuilder:validation:MaxLength=85
+// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')",message="must be a valid GCP service account email in the format service-account-name@project-id.iam.gserviceaccount.com, where both name and project-id are 6-30 characters, start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and not end with a hyphen"
+type GCPServiceAccountEmail string
+
 // GCPServiceAccountsEmails contains email addresses of Google Service Accounts for different controllers.
 // Each service account should have the appropriate IAM permissions for its specific role.
 type GCPServiceAccountsEmails struct {
@@ -268,11 +279,8 @@ type GCPServiceAccountsEmails struct {
 	//
 	// +required
 	// +immutable
-	// +kubebuilder:validation:MinLength=37
-	// +kubebuilder:validation:MaxLength=100
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')",message="nodePool must be a valid GCP service account email"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="NodePool is immutable"
-	NodePool string `json:"nodePool,omitempty"`
+	NodePool GCPServiceAccountEmail `json:"nodePool,omitempty"`
 
 	// controlPlane is the Google Service Account email for the Control Plane Operator
 	// that manages control plane infrastructure and resources.
@@ -289,11 +297,8 @@ type GCPServiceAccountsEmails struct {
 	//
 	// +required
 	// +immutable
-	// +kubebuilder:validation:MinLength=37
-	// +kubebuilder:validation:MaxLength=100
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')",message="controlPlane must be a valid GCP service account email"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="ControlPlane is immutable"
-	ControlPlane string `json:"controlPlane,omitempty"`
+	ControlPlane GCPServiceAccountEmail `json:"controlPlane,omitempty"`
 
 	// cloudController is the Google Service Account email for the Cloud Controller Manager
 	// that manages LoadBalancer services and node lifecycle in the hosted cluster.
@@ -310,11 +315,8 @@ type GCPServiceAccountsEmails struct {
 	//
 	// +required
 	// +immutable
-	// +kubebuilder:validation:MinLength=37
-	// +kubebuilder:validation:MaxLength=100
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')",message="cloudController must be a valid GCP service account email"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="CloudController is immutable"
-	CloudController string `json:"cloudController,omitempty"`
+	CloudController GCPServiceAccountEmail `json:"cloudController,omitempty"`
 
 	// storage is the Google Service Account email for the GCP PD CSI Driver
 	// that manages Persistent Disk storage operations (create, attach, delete volumes).
@@ -332,11 +334,8 @@ type GCPServiceAccountsEmails struct {
 	//
 	// +required
 	// +immutable
-	// +kubebuilder:validation:MinLength=37
-	// +kubebuilder:validation:MaxLength=100
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')",message="storage must be a valid GCP service account email"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Storage is immutable"
-	Storage string `json:"storage,omitempty"`
+	Storage GCPServiceAccountEmail `json:"storage,omitempty"`
 
 	// imageRegistry is the Google Service Account email for the Image Registry Operator
 	// that manages GCS storage for the internal container image registry.
@@ -351,11 +350,8 @@ type GCPServiceAccountsEmails struct {
 	//
 	// +required
 	// +immutable
-	// +kubebuilder:validation:MinLength=37
-	// +kubebuilder:validation:MaxLength=100
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')",message="imageRegistry must be a valid GCP service account email"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="imageRegistry is immutable"
-	ImageRegistry string `json:"imageRegistry,omitempty"`
+	ImageRegistry GCPServiceAccountEmail `json:"imageRegistry,omitempty"`
 }
 
 // GCPOnHostMaintenance defines the behavior when a host maintenance event occurs.
@@ -437,6 +433,8 @@ type GCPNodePoolPlatform struct {
 	// instances and their associated resources (disks, etc.).
 	// Labels will be merged with cluster-level resource labels, with NodePool labels
 	// taking precedence in case of conflicts.
+	// When omitted, no additional labels are applied to node instances.
+	// If specified, at least one label must be provided.
 	//
 	// Keys and values must conform to GCP labeling requirements:
 	//   - Keys: 1–63 chars, must start with a lowercase letter; allowed [a-z0-9_-]
@@ -446,12 +444,14 @@ type GCPNodePoolPlatform struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=key
-	// +kubebuilder:validation:MinItems=0
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=60
 	ResourceLabels []GCPResourceLabel `json:"resourceLabels,omitempty"`
 
 	// networkTags is an optional list of network tags to apply to node instances.
 	// These tags are used by GCP firewall rules to control network access.
+	// When omitted, no additional network tags are applied to node instances.
+	// If specified, at least one tag must be provided.
 	// Tags must conform to GCP naming conventions:
 	//   - 1-63 characters
 	//   - Lowercase letters, numbers, and hyphens only
@@ -460,7 +460,7 @@ type GCPNodePoolPlatform struct {
 	//
 	// +optional
 	// +listType=set
-	// +kubebuilder:validation:MinItems=0
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=64
 	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=63
@@ -540,13 +540,11 @@ type GCPNodeServiceAccount struct {
 	//   - Storage object viewer (for pulling container images)
 	//
 	// +optional
-	// +kubebuilder:validation:MinLength=37
-	// +kubebuilder:validation:MaxLength=254
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\.iam\\.gserviceaccount\\.com$')",message="email must be a valid GCP service account email"
-	Email *string `json:"email,omitempty"`
+	Email *GCPServiceAccountEmail `json:"email,omitempty"`
 
 	// scopes specifies the access scopes for the service account.
-	// If not specified, defaults to standard compute scopes.
+	// When omitted, defaults to standard compute scopes.
+	// If specified, at least one scope must be provided.
 	// Common scopes include:
 	//   - "https://www.googleapis.com/auth/devstorage.read_only" - Storage read-only
 	//   - "https://www.googleapis.com/auth/logging.write" - Logging write
@@ -555,7 +553,7 @@ type GCPNodeServiceAccount struct {
 	//
 	// +optional
 	// +listType=set
-	// +kubebuilder:validation:MinItems=0
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=50
 	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=512
