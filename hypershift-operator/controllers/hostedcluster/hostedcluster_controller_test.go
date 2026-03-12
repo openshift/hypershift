@@ -3567,7 +3567,7 @@ func TestValidateSliceNetworkCIDRs(t *testing.T) {
 			networkType: hyperv1.OVNKubernetes,
 			ovnConfig: &hyperv1.OVNKubernetesConfig{
 				IPv4: &hyperv1.OVNIPv4Config{
-					InternalTransitSwitchSubnet: "100.65.0.0/16",
+					InternalTransitSwitchSubnet: "100.66.0.0/16",
 				},
 			},
 			wantErr: false,
@@ -3581,7 +3581,7 @@ func TestValidateSliceNetworkCIDRs(t *testing.T) {
 			ovnConfig: &hyperv1.OVNKubernetesConfig{
 				IPv4: &hyperv1.OVNIPv4Config{
 					InternalJoinSubnet:          "100.64.0.0/16",
-					InternalTransitSwitchSubnet: "100.65.0.0/16",
+					InternalTransitSwitchSubnet: "100.66.0.0/16",
 				},
 			},
 			wantErr: false,
