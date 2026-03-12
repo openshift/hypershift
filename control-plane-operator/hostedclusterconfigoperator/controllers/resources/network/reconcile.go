@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -93,6 +94,10 @@ func ReconcileNetworkOperator(network *operatorv1.Network, networkType hyperv1.N
 			if ovnConfig.IPv4.InternalTransitSwitchSubnet != "" {
 				ovnCfg.IPv4.InternalTransitSwitchSubnet = ovnConfig.IPv4.InternalTransitSwitchSubnet
 			}
+		}
+		// Apply MTU configuration
+		if ovnConfig.MTU != nil {
+			ovnCfg.MTU = ptr.To(*ovnConfig.MTU)
 		}
 	}
 
