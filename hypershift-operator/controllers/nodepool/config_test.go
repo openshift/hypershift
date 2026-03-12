@@ -28,7 +28,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// coreConfigMaps is a fake list of configMaps to match default expectation of 3.
+// coreConfigMaps is a fake list of configMaps to match default expectation of 4.
+// The default expectation is 3 base configs (fips, ssh, haproxy) plus 1 for image registry CA
+// (since image registry capability is enabled by default when Capabilities is nil).
 var coreConfigMaps = []crclient.Object{
 	&corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{},
@@ -54,6 +56,16 @@ var coreConfigMaps = []crclient.Object{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "core-ignition-config-3",
+			Namespace: "test-test",
+			Labels: map[string]string{
+				nodePoolCoreIgnitionConfigLabel: "true",
+			},
+		},
+	},
+	&corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "core-ignition-config-4",
 			Namespace: "test-test",
 			Labels: map[string]string{
 				nodePoolCoreIgnitionConfigLabel: "true",
