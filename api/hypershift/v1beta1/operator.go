@@ -69,6 +69,24 @@ type OVNKubernetesConfig struct {
 	// fields within ipv4 for details of default values.
 	// +optional
 	IPv4 *OVNIPv4Config `json:"ipv4,omitempty"`
+
+	// mtu is the MTU to use for the tunnel interface on hosted cluster nodes.
+	// This must be 100 bytes smaller than the uplink MTU.
+	// When unset, the cluster-network-operator will determine the MTU automatically
+	// based on the infrastructure (e.g., for commercial AWS regions, it defaults
+	// to 8901 based on the 9001 uplink MTU minus 100 bytes overhead).
+	// Some non-commercial AWS regions do not support 9001 uplink MTU,
+	// requiring this field to be explicitly set to a lower value.
+	// The maximum is 9216, which is the standard jumbo frame upper limit
+	// supported by datacenter and cloud network interfaces.
+	// The minimum is 576, which is the minimum IPv4 MTU per RFC 791.
+	// This field is immutable once set.
+	// +kubebuilder:validation:Minimum=576
+	// +kubebuilder:validation:Maximum=9216
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="mtu is immutable"
+	// +immutable
+	// +optional
+	MTU int32 `json:"mtu,omitempty"`
 }
 
 // OVNIPv4Config contains IPv4-specific configuration options for OVN-Kubernetes.
