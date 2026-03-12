@@ -71,7 +71,7 @@ az network vnet show \
     --resource-group "${MGMT_VNET_RG}" \
     --name "${MGMT_VNET_NAME}" \
     --query '{addressSpace: addressSpace.addressPrefixes, subnets: subnets[].{name: name, prefix: addressPrefix}}' \
-    -o table
+    -o json
 
 az network vnet subnet create \
     --resource-group "${MGMT_VNET_RG}" \

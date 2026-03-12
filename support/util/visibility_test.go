@@ -13,7 +13,7 @@ type visibilityCase struct {
 	platformType hyperv1.PlatformType
 	awsAccess    *hyperv1.AWSEndpointAccessType
 	gcpAccess    *hyperv1.GCPEndpointAccessType
-	azureAccess  *hyperv1.AzureEndpointAccessSpec
+	azureAccess  hyperv1.AzureEndpointAccessSpec
 	wantPrivate  bool
 	wantPublic   bool
 	setupEnv     func(t *testing.T)
@@ -68,28 +68,28 @@ func baseVisibilityCases() []visibilityCase {
 		{
 			name:         "When Azure endpoint is public it should be public and not private",
 			platformType: hyperv1.AzurePlatform,
-			azureAccess:  &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
+			azureAccess:  hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
 			wantPrivate:  false,
 			wantPublic:   true,
 		},
 		{
 			name:         "When Azure endpoint is public and private it should be public and private",
 			platformType: hyperv1.AzurePlatform,
-			azureAccess:  &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublicAndPrivate},
+			azureAccess:  hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublicAndPrivate},
 			wantPrivate:  true,
 			wantPublic:   true,
 		},
 		{
 			name:         "When Azure endpoint is private it should be private and not public",
 			platformType: hyperv1.AzurePlatform,
-			azureAccess:  &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPrivate},
+			azureAccess:  hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPrivate},
 			wantPrivate:  true,
 			wantPublic:   false,
 		},
 		{
-			name:         "When Azure endpoint access is nil (default) it should be public and not private",
+			name:         "When Azure endpoint access is zero value (default) it should be public and not private",
 			platformType: hyperv1.AzurePlatform,
-			azureAccess:  nil,
+			azureAccess:  hyperv1.AzureEndpointAccessSpec{},
 			wantPrivate:  false,
 			wantPublic:   true,
 		},
@@ -131,12 +131,10 @@ func platformSpecFromCase(tc visibilityCase) hyperv1.PlatformSpec {
 			EndpointAccess: *tc.gcpAccess,
 		}
 	}
-	if tc.azureAccess != nil {
+	if tc.platformType == hyperv1.AzurePlatform {
 		spec.Azure = &hyperv1.AzurePlatformSpec{
 			EndpointAccess: tc.azureAccess,
 		}
-	} else if tc.platformType == hyperv1.AzurePlatform {
-		spec.Azure = &hyperv1.AzurePlatformSpec{}
 	}
 	return spec
 }
@@ -506,7 +504,7 @@ func TestLabelHCPRoutes(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
-							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPrivate},
+							EndpointAccess: hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPrivate},
 						},
 					},
 					Services: []hyperv1.ServicePublishingStrategyMapping{
@@ -528,7 +526,7 @@ func TestLabelHCPRoutes(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
-							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublicAndPrivate},
+							EndpointAccess: hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublicAndPrivate},
 						},
 					},
 					Services: []hyperv1.ServicePublishingStrategyMapping{
@@ -550,7 +548,7 @@ func TestLabelHCPRoutes(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
-							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublicAndPrivate},
+							EndpointAccess: hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublicAndPrivate},
 						},
 					},
 					Services: []hyperv1.ServicePublishingStrategyMapping{
@@ -575,7 +573,7 @@ func TestLabelHCPRoutes(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
-							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
+							EndpointAccess: hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
 						},
 					},
 					Services: []hyperv1.ServicePublishingStrategyMapping{
@@ -597,7 +595,7 @@ func TestLabelHCPRoutes(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
-							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
+							EndpointAccess: hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
 						},
 					},
 					Services: []hyperv1.ServicePublishingStrategyMapping{
@@ -622,7 +620,7 @@ func TestLabelHCPRoutes(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
-							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
+							EndpointAccess: hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
 						},
 					},
 					Services: []hyperv1.ServicePublishingStrategyMapping{

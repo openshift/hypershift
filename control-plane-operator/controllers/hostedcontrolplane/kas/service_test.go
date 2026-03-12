@@ -128,31 +128,31 @@ func TestReconcileService(t *testing.T) {
 func TestReconcileServiceAzureInternalLB(t *testing.T) {
 	testCases := []struct {
 		name             string
-		endpointAccess   *hyperv1.AzureEndpointAccessSpec
+		endpointAccess   hyperv1.AzureEndpointAccessSpec
 		expectAnnotation bool
 		strategy         hyperv1.ServicePublishingStrategy
 	}{
 		{
 			name:             "Azure Private endpoint sets internal LB annotation",
-			endpointAccess:   &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPrivate},
+			endpointAccess:   hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPrivate},
 			expectAnnotation: true,
 			strategy:         hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
 		},
 		{
 			name:             "Azure PublicAndPrivate endpoint does not set internal LB annotation on main service",
-			endpointAccess:   &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublicAndPrivate},
+			endpointAccess:   hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublicAndPrivate},
 			expectAnnotation: false,
 			strategy:         hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
 		},
 		{
 			name:             "Azure Public endpoint does not set internal LB annotation",
-			endpointAccess:   &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
+			endpointAccess:   hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
 			expectAnnotation: false,
 			strategy:         hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
 		},
 		{
 			name:             "Azure empty endpoint access does not set internal LB annotation",
-			endpointAccess:   nil,
+			endpointAccess:   hyperv1.AzureEndpointAccessSpec{},
 			expectAnnotation: false,
 			strategy:         hyperv1.ServicePublishingStrategy{Type: hyperv1.LoadBalancer},
 		},
@@ -203,7 +203,7 @@ func TestReconcilePrivateService(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
-							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPrivate},
+							EndpointAccess: hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPrivate},
 						},
 					},
 				},
@@ -220,7 +220,7 @@ func TestReconcilePrivateService(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
-							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublicAndPrivate},
+							EndpointAccess: hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublicAndPrivate},
 						},
 					},
 				},
@@ -237,7 +237,7 @@ func TestReconcilePrivateService(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
-							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
+							EndpointAccess: hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
 						},
 					},
 				},

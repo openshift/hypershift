@@ -6095,16 +6095,16 @@ func TestValidateAzureConfig(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
-							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+							EndpointAccess: hyperv1.AzureEndpointAccessSpec{
 								Type:    hyperv1.AzureEndpointAccessPrivate,
-								Private: nil,
+								Private: hyperv1.AzurePrivateConfig{},
 							},
 						},
 					},
 				},
 			},
 			expectError: true,
-			errorMsg:    `spec.platform.azure.endpointAccess.private: Invalid value: null: private is required when endpointAccess type is "Private"`,
+			errorMsg:    `spec.platform.azure.endpointAccess.private: private is required when endpointAccess type is "Private"`,
 		},
 		{
 			name: "When endpointAccess is PublicAndPrivate without Private config it should return an error",
@@ -6113,16 +6113,16 @@ func TestValidateAzureConfig(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
-							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+							EndpointAccess: hyperv1.AzureEndpointAccessSpec{
 								Type:    hyperv1.AzureEndpointAccessPublicAndPrivate,
-								Private: nil,
+								Private: hyperv1.AzurePrivateConfig{},
 							},
 						},
 					},
 				},
 			},
 			expectError: true,
-			errorMsg:    `spec.platform.azure.endpointAccess.private: Invalid value: null: private is required when endpointAccess type is "PublicAndPrivate"`,
+			errorMsg:    `spec.platform.azure.endpointAccess.private: private is required when endpointAccess type is "PublicAndPrivate"`,
 		},
 		{
 			name: "When endpointAccess is Public without Private config it should succeed",
@@ -6131,7 +6131,7 @@ func TestValidateAzureConfig(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
-							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
+							EndpointAccess: hyperv1.AzureEndpointAccessSpec{Type: hyperv1.AzureEndpointAccessPublic},
 						},
 					},
 				},
@@ -6145,11 +6145,13 @@ func TestValidateAzureConfig(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
-							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+							EndpointAccess: hyperv1.AzureEndpointAccessSpec{
 								Type: hyperv1.AzureEndpointAccessPrivate,
-								Private: &hyperv1.AzurePrivateConnectivityConfig{
-									NATSubnetID:                    "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/nat-subnet",
-									AdditionalAllowedSubscriptions: []string{"sub-1"},
+								Private: hyperv1.AzurePrivateConfig{
+									PrivateLink: hyperv1.AzurePrivateLinkConfig{
+										NATSubnetID:                    "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/nat-subnet",
+										AdditionalAllowedSubscriptions: []string{"sub-1"},
+									},
 								},
 							},
 						},
@@ -6165,9 +6167,9 @@ func TestValidateAzureConfig(t *testing.T) {
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{
-							EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+							EndpointAccess: hyperv1.AzureEndpointAccessSpec{
 								Type:    hyperv1.AzureEndpointAccessPrivate,
-								Private: nil,
+								Private: hyperv1.AzurePrivateConfig{},
 							},
 						},
 					},
@@ -6179,14 +6181,12 @@ func TestValidateAzureConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "When endpointAccess is nil it should succeed as it defaults to Public",
+			name: "When endpointAccess is zero value it should succeed as it defaults to Public",
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
 						Type: hyperv1.AzurePlatform,
-						Azure: &hyperv1.AzurePlatformSpec{
-							EndpointAccess: nil,
-						},
+						Azure: &hyperv1.AzurePlatformSpec{},
 					},
 				},
 			},

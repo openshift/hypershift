@@ -90,11 +90,13 @@ func TestReconcile(t *testing.T) {
 						Location:          testLocation,
 						VnetID:            testVNetID,
 						SubnetID:          testSubnetID,
-						EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+						EndpointAccess: hyperv1.AzureEndpointAccessSpec{
 							Type: hyperv1.AzureEndpointAccessPrivate,
-							Private: &hyperv1.AzurePrivateConnectivityConfig{
-								NATSubnetID:                    testNATSubnetID,
-								AdditionalAllowedSubscriptions: []string{testSubscription},
+							Private: hyperv1.AzurePrivateConfig{
+								PrivateLink: hyperv1.AzurePrivateLinkConfig{
+									NATSubnetID:                    testNATSubnetID,
+									AdditionalAllowedSubscriptions: []string{testSubscription},
+								},
 							},
 						},
 					},

@@ -11,7 +11,7 @@ func ConnectsThroughInternetToControlplane(platform hyperv1.PlatformSpec) bool {
 		return platform.AWS.EndpointAccess == hyperv1.Public
 	}
 	if platform.Azure != nil {
-		return platform.Azure.EndpointAccess == nil || platform.Azure.EndpointAccess.Type == hyperv1.AzureEndpointAccessPublic
+		return platform.Azure.EndpointAccess.Type == "" || platform.Azure.EndpointAccess.Type == hyperv1.AzureEndpointAccessPublic
 	}
 	return true
 }

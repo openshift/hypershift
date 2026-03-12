@@ -1238,7 +1238,7 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
 						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
 						TenantID:          "87654321-4321-8765-2109-876543210987",
-						EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+						EndpointAccess: hyperv1.AzureEndpointAccessSpec{
 							Type: hyperv1.AzureEndpointAccessPublicAndPrivate,
 						},
 					}
@@ -1258,7 +1258,7 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
 						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
 						TenantID:          "87654321-4321-8765-2109-876543210987",
-						EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+						EndpointAccess: hyperv1.AzureEndpointAccessSpec{
 							Type: hyperv1.AzureEndpointAccessPrivate,
 						},
 					}
@@ -1278,7 +1278,7 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
 						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
 						TenantID:          "87654321-4321-8765-2109-876543210987",
-						EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+						EndpointAccess: hyperv1.AzureEndpointAccessSpec{
 							Type: hyperv1.AzureEndpointAccessPublic,
 						},
 					}
@@ -1313,11 +1313,13 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
 						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
 						TenantID:          "87654321-4321-8765-2109-876543210987",
-						EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+						EndpointAccess: hyperv1.AzureEndpointAccessSpec{
 							Type: hyperv1.AzureEndpointAccessPublicAndPrivate,
-							Private: &hyperv1.AzurePrivateConnectivityConfig{
-								NATSubnetID:                    "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/pls-subnet",
-								AdditionalAllowedSubscriptions: []string{"12345678-1234-5678-9012-123456789012"},
+							Private: hyperv1.AzurePrivateConfig{
+								PrivateLink: hyperv1.AzurePrivateLinkConfig{
+									NATSubnetID:                    "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/pls-subnet",
+									AdditionalAllowedSubscriptions: []string{"12345678-1234-5678-9012-123456789012"},
+								},
 							},
 						},
 					}
@@ -1336,13 +1338,46 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
 						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
 						TenantID:          "87654321-4321-8765-2109-876543210987",
-						EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+						EndpointAccess: hyperv1.AzureEndpointAccessSpec{
 							Type: hyperv1.AzureEndpointAccessType("InvalidValue"),
 						},
 					}
 				})
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(ContainSubstring("Unsupported value"))
+			})
+
+			It("When endpointAccess is Private and APIServer uses Route, it should be rejected", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.AzurePlatform
+					hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+						Location:          "eastus",
+						ResourceGroupName: "test-rg",
+						VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+						SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+						TenantID:          "87654321-4321-8765-2109-876543210987",
+						EndpointAccess: hyperv1.AzureEndpointAccessSpec{
+							Type: hyperv1.AzureEndpointAccessPrivate,
+							Private: hyperv1.AzurePrivateConfig{
+								PrivateLink: hyperv1.AzurePrivateLinkConfig{
+									NATSubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/pls-subnet",
+								},
+							},
+						},
+					}
+					for i, s := range hc.Spec.Services {
+						if s.Service == hyperv1.APIServer {
+							hc.Spec.Services[i].ServicePublishingStrategy.Type = hyperv1.Route
+							hc.Spec.Services[i].ServicePublishingStrategy.Route = &hyperv1.RoutePublishingStrategy{
+								Hostname: "api.example.com",
+							}
+						}
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Azure platform requires APIServer to use LoadBalancer service publishing strategy when endpoint access is Private or PublicAndPrivate"))
 			})
 		})
 

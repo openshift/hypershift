@@ -143,7 +143,7 @@ func (r *AzurePrivateLinkServiceObserver) reconcileAzurePrivateLinkService(ctx c
 		return fmt.Errorf("HostedControlPlane %s/%s does not have Azure platform spec", hcp.Namespace, hcp.Name)
 	}
 
-	if azurePlatform.EndpointAccess == nil || azurePlatform.EndpointAccess.Private == nil {
+	if azurePlatform.EndpointAccess.Private.PrivateLink.NATSubnetID == "" {
 		return fmt.Errorf("HostedControlPlane %s/%s does not have Azure private connectivity config", hcp.Namespace, hcp.Name)
 	}
 
@@ -166,8 +166,8 @@ func (r *AzurePrivateLinkServiceObserver) reconcileAzurePrivateLinkService(ctx c
 		azurePLS.Spec.SubscriptionID = azurePlatform.SubscriptionID
 		azurePLS.Spec.ResourceGroupName = azurePlatform.ResourceGroupName
 		azurePLS.Spec.Location = azurePlatform.Location
-		azurePLS.Spec.NATSubnetID = azurePlatform.EndpointAccess.Private.NATSubnetID
-		azurePLS.Spec.AdditionalAllowedSubscriptions = azurePlatform.EndpointAccess.Private.AdditionalAllowedSubscriptions
+		azurePLS.Spec.NATSubnetID = azurePlatform.EndpointAccess.Private.PrivateLink.NATSubnetID
+		azurePLS.Spec.AdditionalAllowedSubscriptions = azurePlatform.EndpointAccess.Private.PrivateLink.AdditionalAllowedSubscriptions
 		azurePLS.Spec.GuestSubnetID = azurePlatform.SubnetID
 		azurePLS.Spec.GuestVNetID = azurePlatform.VnetID
 		// Derive the base domain for private DNS from the OAuth route hostname.

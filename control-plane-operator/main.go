@@ -569,8 +569,8 @@ func NewStartCommand() *cobra.Command {
 		}
 
 		if hcp.Spec.Platform.Type == hyperv1.AzurePlatform && util.IsPrivateHCP(hcp) && mgmtClusterCaps.Has(capabilities.CapabilityRoute) && !azureutil.IsAroHCP() {
-			if hcp.Spec.Platform.Azure == nil || hcp.Spec.Platform.Azure.EndpointAccess == nil || hcp.Spec.Platform.Azure.EndpointAccess.Private == nil {
-				setupLog.Error(fmt.Errorf("azure platform, EndpointAccess, or EndpointAccess.Private is nil"), "skipping Azure Private Link observer setup")
+			if hcp.Spec.Platform.Azure == nil || hcp.Spec.Platform.Azure.EndpointAccess.Private.PrivateLink.NATSubnetID == "" {
+				setupLog.Error(fmt.Errorf("azure platform or EndpointAccess.Private is not configured"), "skipping Azure Private Link observer setup")
 			} else {
 				azureObserverName := "AzurePrivateLinkServiceObserver"
 

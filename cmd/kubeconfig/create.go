@@ -41,8 +41,9 @@ of the HostedCluster itself.
 `
 
 type options struct {
-	namespace string
-	name      string
+	namespace  string
+	name       string
+	portForward bool
 }
 
 // NewCreateCommand returns a command which can render kubeconfigs for HostedCluster
@@ -61,9 +62,10 @@ func NewCreateCommand() *cobra.Command {
 
 	cmd.Flags().StringVar(&opts.namespace, "namespace", opts.namespace, "A HostedCluster namespace. Defaults to 'clusters'.")
 	cmd.Flags().StringVar(&opts.name, "name", opts.name, "A HostedCluster name.")
+	cmd.Flags().BoolVar(&opts.portForward, "port-forward", false, "For private clusters, rewrite the kubeconfig server URL for use with kubectl port-forward.")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if err := Render(cmd.Context(), opts.namespace, opts.name); err != nil {
+		if err := Render(cmd.Context(), opts.namespace, opts.name, opts.portForward); err != nil {
 			_, _ = fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 			return err
 		}
@@ -74,7 +76,7 @@ func NewCreateCommand() *cobra.Command {
 }
 
 // Render builds the kubeconfig and prints it to stdout.
-func Render(ctx context.Context, namespace string, name string) error {
+func Render(ctx context.Context, namespace string, name string, portForward bool) error {
 	scheme := runtime.NewScheme()
 	if err := clientcmdapiv1.AddToScheme(scheme); err != nil {
 		return fmt.Errorf("failed to set up scheme: %w", err)
@@ -91,7 +93,7 @@ func Render(ctx context.Context, namespace string, name string) error {
 	var kubeConfig *clientcmdapiv1.Config
 	switch {
 	case len(name) == 0:
-		config, err := buildCombinedConfig(ctx, c, namespace)
+		config, err := buildCombinedConfig(ctx, c, namespace, portForward)
 		if err != nil {
 			return fmt.Errorf("failed to make kubeconfig: %w", err)
 		}
@@ -118,7 +120,7 @@ func Render(ctx context.Context, namespace string, name string) error {
 		if !hasData || len(data) == 0 {
 			return fmt.Errorf("kubeconfig secret has no kubeconfig")
 		}
-		if hyperutil.IsPrivateHC(&cluster) {
+		if portForward && hyperutil.IsPrivateHC(&cluster) {
 			data, err = rewriteServerForPrivateCluster(ctx, c, &cluster, data)
 			if err != nil {
 				return fmt.Errorf("failed to rewrite kubeconfig for private cluster: %w", err)
@@ -138,7 +140,7 @@ type NamedConfig struct {
 // buildCombinedConfig finds the kubeconfigs for all HostedClusters which report
 // one and merges them into a single kubeconfig. The generated admin context for
 // each cluster will follow the pattern: {hostedcluster.namespace}-{hostedcluster.name}
-func buildCombinedConfig(ctx context.Context, c client.Client, namespace string) (*clientcmdapiv1.Config, error) {
+func buildCombinedConfig(ctx context.Context, c client.Client, namespace string, portForward bool) (*clientcmdapiv1.Config, error) {
 	// Select clusters.
 	var clusters hyperv1.HostedClusterList
 	if err := c.List(ctx, &clusters, client.InNamespace(namespace)); err != nil {
@@ -173,7 +175,7 @@ func buildCombinedConfig(ctx context.Context, c client.Client, namespace string)
 			log.Printf("missing kubeconfig contents")
 			continue
 		}
-		if hyperutil.IsPrivateHC(&cluster) {
+		if portForward && hyperutil.IsPrivateHC(&cluster) {
 			var err error
 			data, err = rewriteServerForPrivateCluster(ctx, c, &cluster, data)
 			if err != nil {

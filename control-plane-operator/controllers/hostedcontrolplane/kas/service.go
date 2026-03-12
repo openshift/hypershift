@@ -64,14 +64,13 @@ func ReconcileService(svc *corev1.Service, strategy *hyperv1.ServicePublishingSt
 	if hcp.Spec.Platform.Type == hyperv1.AWSPlatform {
 		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
 	}
-	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform &&
-		hcp.Spec.Platform.Azure != nil &&
-		hcp.Spec.Platform.Azure.EndpointAccess != nil &&
-		hcp.Spec.Platform.Azure.EndpointAccess.Type == hyperv1.AzureEndpointAccessPrivate {
-		svc.Annotations[azureutil.InternalLoadBalancerAnnotation] = azureutil.InternalLoadBalancerValue
-	}
 	switch strategy.Type {
 	case hyperv1.LoadBalancer:
+		if hcp.Spec.Platform.Type == hyperv1.AzurePlatform &&
+			hcp.Spec.Platform.Azure != nil &&
+			hcp.Spec.Platform.Azure.EndpointAccess.Type == hyperv1.AzureEndpointAccessPrivate {
+			svc.Annotations[azureutil.InternalLoadBalancerAnnotation] = azureutil.InternalLoadBalancerValue
+		}
 		if isPublic {
 			svc.Spec.Type = corev1.ServiceTypeLoadBalancer
 			if strategy.LoadBalancer != nil && strategy.LoadBalancer.Hostname != "" {

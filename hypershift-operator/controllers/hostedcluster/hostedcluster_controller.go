@@ -3906,9 +3906,9 @@ func (r *HostedClusterReconciler) validateAzureConfig(hc *hyperv1.HostedCluster)
 	// to provide Azure Private Link Service settings for private API server access.
 	// ARO HCP uses Swift networking, not Private Link Services.
 	if !azureutil.IsAroHCP() &&
-		hc.Spec.Platform.Azure.EndpointAccess != nil &&
+		hc.Spec.Platform.Azure.EndpointAccess.Type != "" &&
 		hc.Spec.Platform.Azure.EndpointAccess.Type != hyperv1.AzureEndpointAccessPublic &&
-		hc.Spec.Platform.Azure.EndpointAccess.Private == nil {
+		hc.Spec.Platform.Azure.EndpointAccess.Private.PrivateLink.NATSubnetID == "" {
 		return field.Invalid(
 			field.NewPath("spec", "platform", "azure", "endpointAccess", "private"),
 			hc.Spec.Platform.Azure.EndpointAccess.Private,

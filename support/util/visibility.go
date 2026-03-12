@@ -32,9 +32,6 @@ func IsPrivateHCP(hcp *hyperv1.HostedControlPlane) bool {
 	}
 	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
 		ea := ptr.Deref(hcp.Spec.Platform.Azure, hyperv1.AzurePlatformSpec{}).EndpointAccess
-		if ea == nil {
-			return false
-		}
 		return ea.Type == hyperv1.AzureEndpointAccessPublicAndPrivate || ea.Type == hyperv1.AzureEndpointAccessPrivate
 	}
 	return false
@@ -51,10 +48,7 @@ func IsPublicHCP(hcp *hyperv1.HostedControlPlane) bool {
 	}
 	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
 		ea := ptr.Deref(hcp.Spec.Platform.Azure, hyperv1.AzurePlatformSpec{}).EndpointAccess
-		if ea == nil {
-			return true // nil means Public
-		}
-		return ea.Type == hyperv1.AzureEndpointAccessPublicAndPrivate || ea.Type == hyperv1.AzureEndpointAccessPublic
+		return ea.Type == hyperv1.AzureEndpointAccessPublicAndPrivate || ea.Type == hyperv1.AzureEndpointAccessPublic || ea.Type == ""
 	}
 	return true
 }
@@ -76,9 +70,6 @@ func IsPrivateHC(hc *hyperv1.HostedCluster) bool {
 	}
 	if hc.Spec.Platform.Type == hyperv1.AzurePlatform {
 		ea := ptr.Deref(hc.Spec.Platform.Azure, hyperv1.AzurePlatformSpec{}).EndpointAccess
-		if ea == nil {
-			return false
-		}
 		return ea.Type == hyperv1.AzureEndpointAccessPublicAndPrivate || ea.Type == hyperv1.AzureEndpointAccessPrivate
 	}
 	return false
@@ -95,10 +86,7 @@ func IsPublicHC(hc *hyperv1.HostedCluster) bool {
 	}
 	if hc.Spec.Platform.Type == hyperv1.AzurePlatform {
 		ea := ptr.Deref(hc.Spec.Platform.Azure, hyperv1.AzurePlatformSpec{}).EndpointAccess
-		if ea == nil {
-			return true // nil means Public
-		}
-		return ea.Type == hyperv1.AzureEndpointAccessPublicAndPrivate || ea.Type == hyperv1.AzureEndpointAccessPublic
+		return ea.Type == hyperv1.AzureEndpointAccessPublicAndPrivate || ea.Type == hyperv1.AzureEndpointAccessPublic || ea.Type == ""
 	}
 	return true
 }

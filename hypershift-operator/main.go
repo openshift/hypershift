@@ -492,18 +492,33 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	case hyperv1.AzurePlatform:
 		// ARO HCP uses Swift networking, not Private Link Services
 		if !azureutil.IsAroHCP() {
+			azureCloudName := os.Getenv("AZURE_CLOUD_NAME")
+			if azureCloudName == "" {
+				azureCloudName = config.DefaultAzureCloud
+			}
+			cloudConfig, err := azureutil.GetAzureCloudConfiguration(azureCloudName)
+			if err != nil {
+				return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+			}
+
 			// Two credential modes are supported:
-			// 1. Workload Identity (--azure-pls-managed-identity-client-id): The Azure AD
-			//    Workload Identity webhook injects AZURE_CLIENT_ID, AZURE_TENANT_ID, and
-			//    AZURE_FEDERATED_TOKEN_FILE into the pod. DefaultAzureCredential picks these up.
-			// 2. Credential file (--azure-private-creds): A JSON file with clientId, clientSecret,
-			//    tenantId, subscriptionId is mounted and parsed into env vars.
+			// 1. Workload Identity: The Azure AD Workload Identity webhook injects
+			//    AZURE_CLIENT_ID, AZURE_TENANT_ID, and AZURE_FEDERATED_TOKEN_FILE
+			//    into the pod. DefaultAzureCredential picks these up automatically.
+			// 2. Credential file: A JSON file with clientId, clientSecret, tenantId,
+			//    subscriptionId is parsed and used with NewClientSecretCredential directly.
+			var azureCreds azcore.TokenCredential
 			if plsClientID := os.Getenv("AZURE_PLS_CLIENT_ID"); plsClientID != "" {
-				// Workload identity mode: AZURE_CLIENT_ID is set by the webhook via the SA
-				// annotation. Log which client ID is in use for debugging.
 				log.Info("Using Azure Workload Identity for PLS operations", "clientID", plsClientID)
+				azureCreds, err = azidentity.NewDefaultAzureCredential(
+					&azidentity.DefaultAzureCredentialOptions{
+						ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+					},
+				)
+				if err != nil {
+					return fmt.Errorf("failed to create Azure workload identity credentials: %w", err)
+				}
 			} else if credFile := os.Getenv("AZURE_CREDENTIALS_FILE"); credFile != "" {
-				// Credential file mode: parse the file and set env vars for DefaultAzureCredential.
 				raw, err := os.ReadFile(credFile)
 				if err != nil {
 					return fmt.Errorf("failed to read Azure credentials file %q: %w", credFile, err)
@@ -517,30 +532,22 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 				if err := json.Unmarshal(raw, &creds); err != nil {
 					return fmt.Errorf("failed to parse Azure credentials file %q: %w", credFile, err)
 				}
-				_ = os.Setenv("AZURE_TENANT_ID", creds.TenantID)
-				_ = os.Setenv("AZURE_CLIENT_ID", creds.ClientID)
-				_ = os.Setenv("AZURE_CLIENT_SECRET", creds.ClientSecret)
+				azureCreds, err = azidentity.NewClientSecretCredential(
+					creds.TenantID, creds.ClientID, creds.ClientSecret,
+					&azidentity.ClientSecretCredentialOptions{
+						ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+					},
+				)
+				if err != nil {
+					return fmt.Errorf("failed to create Azure client secret credentials: %w", err)
+				}
 				if os.Getenv("AZURE_SUBSCRIPTION_ID") == "" {
 					_ = os.Setenv("AZURE_SUBSCRIPTION_ID", creds.SubscriptionID)
 				}
+			} else {
+				return fmt.Errorf("either AZURE_PLS_CLIENT_ID or AZURE_CREDENTIALS_FILE must be set for Azure Private Link Service operations")
 			}
 
-			azureCloudName := os.Getenv("AZURE_CLOUD_NAME")
-			if azureCloudName == "" {
-				azureCloudName = config.DefaultAzureCloud
-			}
-			cloudConfig, err := azureutil.GetAzureCloudConfiguration(azureCloudName)
-			if err != nil {
-				return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
-			}
-			azureCreds, err := azidentity.NewDefaultAzureCredential(
-				&azidentity.DefaultAzureCredentialOptions{
-					ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
-				},
-			)
-			if err != nil {
-				return fmt.Errorf("failed to create Azure credentials: %w", err)
-			}
 			azureSubscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
 			if azureSubscriptionID == "" {
 				return fmt.Errorf("AZURE_SUBSCRIPTION_ID environment variable is required for Azure platform")

@@ -167,7 +167,7 @@ func TestNewIngressParams(t *testing.T) {
 						Platform: hyperv1.PlatformSpec{
 							Type: hyperv1.AzurePlatform,
 							Azure: &hyperv1.AzurePlatformSpec{
-								EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+								EndpointAccess: hyperv1.AzureEndpointAccessSpec{
 									Type: hyperv1.AzureEndpointAccessPrivate,
 								},
 							},
@@ -193,7 +193,7 @@ func TestNewIngressParams(t *testing.T) {
 						Platform: hyperv1.PlatformSpec{
 							Type: hyperv1.AzurePlatform,
 							Azure: &hyperv1.AzurePlatformSpec{
-								EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+								EndpointAccess: hyperv1.AzureEndpointAccessSpec{
 									Type: hyperv1.AzureEndpointAccessPublicAndPrivate,
 								},
 							},
@@ -219,7 +219,7 @@ func TestNewIngressParams(t *testing.T) {
 						Platform: hyperv1.PlatformSpec{
 							Type: hyperv1.AzurePlatform,
 							Azure: &hyperv1.AzurePlatformSpec{
-								EndpointAccess: &hyperv1.AzureEndpointAccessSpec{
+								EndpointAccess: hyperv1.AzureEndpointAccessSpec{
 									Type: hyperv1.AzureEndpointAccessPublic,
 								},
 							},

@@ -319,14 +319,15 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 	}
 
 	if o.EndpointAccess != "" && o.EndpointAccess != string(hyperv1.AzureEndpointAccessPublic) {
-		ea := &hyperv1.AzureEndpointAccessSpec{
+		cluster.Spec.Platform.Azure.EndpointAccess = hyperv1.AzureEndpointAccessSpec{
 			Type: hyperv1.AzureEndpointAccessType(o.EndpointAccess),
-			Private: &hyperv1.AzurePrivateConnectivityConfig{
-				NATSubnetID:                    o.EndpointAccessPrivateNATSubnetID,
-				AdditionalAllowedSubscriptions: o.EndpointAccessPrivateAdditionalAllowedSubscriptions,
+			Private: hyperv1.AzurePrivateConfig{
+				PrivateLink: hyperv1.AzurePrivateLinkConfig{
+					NATSubnetID:                    o.EndpointAccessPrivateNATSubnetID,
+					AdditionalAllowedSubscriptions: o.EndpointAccessPrivateAdditionalAllowedSubscriptions,
+				},
 			},
 		}
-		cluster.Spec.Platform.Azure.EndpointAccess = ea
 	}
 
 	// Configure authentication based on whether workload identities or managed identities are provided
