@@ -166,8 +166,10 @@ func NewSessionV2(ctx context.Context, agent, credentialsFile, credKey, credSecr
 		awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", agent),
 	}))
 
+	configOpts = append(configOpts, configv2.WithCredentialsCacheOptions(func(o *awsv2.CredentialsCacheOptions) {
+		o.ExpiryWindow = 0
+	}))
 	cfg, _ := configv2.LoadDefaultConfig(ctx, configOpts...)
-	cfg.Credentials = awsv2.NewCredentialsCache(cfg.Credentials)
 	return &cfg
 }
 
