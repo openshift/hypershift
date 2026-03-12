@@ -20,9 +20,6 @@ import (
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/upsert"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlplanecomponent.ControlPlaneContext, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hypershiftOperatorImage, controlPlaneOperatorImage string) error {
@@ -30,38 +27,10 @@ func (r *HostedClusterReconciler) reconcileKarpenterOperator(cpContext controlpl
 		return nil
 	}
 
-	// Generate configMap with KubeletConfig to register Nodes with karpenter expected taint.
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      karpenterutil.KarpenterTaintConfigMapName,
-			Namespace: cpContext.HCP.Namespace,
-		},
-	}
-
-	kubeletConfig := fmt.Sprintf(`apiVersion: machineconfiguration.openshift.io/v1
-kind: KubeletConfig
-metadata:
-  name: %s
-spec:
-  kubeletConfig:
-    registerWithTaints:
-      - key: "karpenter.sh/unregistered"
-        value: "true"
-        effect: "NoExecute"`, karpenterutil.KarpenterTaintConfigMapName)
-
-	_, err := createOrUpdate(cpContext, r.Client, configMap, func() error {
-		configMap.Data = map[string]string{
-			"config": kubeletConfig,
-		}
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create configmap: %w", err)
-	}
-
 	// TODO(alberto): Ensure deletion if autoNode is disabled.
 
 	// Run karpenter Operator to manage CRs management and guest side.
+	// The taint ConfigMap (set-karpenter-taint) is created by the karpenter-operator itself.
 
 	karpenteroperator := karpenteroperatorv2.NewComponent(&karpenteroperatorv2.KarpenterOperatorOptions{
 		HyperShiftOperatorImage:   hypershiftOperatorImage,
