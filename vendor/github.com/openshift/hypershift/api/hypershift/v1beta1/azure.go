@@ -467,12 +467,13 @@ type AzurePlatformSpec struct {
 	TenantID string `json:"tenantID"`
 
 	// endpointAccess specifies the visibility of the API server endpoint and private connectivity
-	// configuration for the hosted cluster. When nil, the API server is publicly accessible (equivalent
-	// to setting type to Public). When specified with type set to Private or PublicAndPrivate, Azure
-	// Private Link Service infrastructure will be created to enable private connectivity.
+	// configuration for the hosted cluster. Defaults to Public access. When specified with type set
+	// to Private or PublicAndPrivate, Azure Private Link Service infrastructure will be created to
+	// enable private connectivity.
 	//
 	// +optional
-	EndpointAccess *AzureEndpointAccessSpec `json:"endpointAccess,omitempty"`
+	// +kubebuilder:default={type: "Public"}
+	EndpointAccess AzureEndpointAccessSpec `json:"endpointAccess,omitzero"`
 }
 
 // objectEncoding represents the encoding for the Azure Key Vault secret containing the certificate related to
@@ -634,7 +635,7 @@ const (
 
 // AzureEndpointAccessSpec specifies the endpoint access configuration for an Azure hosted cluster,
 // including the visibility type of the API server endpoint and optional private connectivity settings.
-// When the spec is nil on AzurePlatformSpec, the cluster defaults to public access.
+// When the spec is omitted on AzurePlatformSpec, the cluster defaults to public access.
 // Transitions between PublicAndPrivate and Private are supported after creation, but transitions
 // from or to Public are not allowed.
 //
@@ -645,22 +646,33 @@ type AzureEndpointAccessSpec struct {
 	// type specifies the visibility of the API server endpoint for the hosted cluster.
 	// Valid values are Public, PublicAndPrivate, and Private.
 	// When set to Private or PublicAndPrivate, the private field must be provided with
-	// Azure Private Link Service configuration.
+	// private connectivity configuration.
 	// Transitions between PublicAndPrivate and Private are supported after creation.
 	//
 	// +required
 	Type AzureEndpointAccessType `json:"type"`
 
-	// private specifies configuration for Azure Private Link connectivity.
+	// private specifies configuration for private connectivity to the hosted cluster.
 	// This field is required when type is set to Private or PublicAndPrivate, and
 	// must not be set when type is Public.
 	//
 	// +optional
-	Private *AzurePrivateConnectivityConfig `json:"private,omitempty"`
+	Private AzurePrivateConfig `json:"private,omitzero"`
 }
 
-// AzurePrivateConnectivityConfig specifies configuration for Azure Private Link connectivity.
-type AzurePrivateConnectivityConfig struct {
+// AzurePrivateConfig specifies configuration for private connectivity to an Azure hosted cluster.
+// It contains configuration for the specific private connectivity mechanism being used.
+type AzurePrivateConfig struct {
+	// privateLink specifies configuration for Azure Private Link Service connectivity.
+	// This is used by self-managed HyperShift clusters to establish private access to
+	// the API server via Azure Private Link.
+	//
+	// +required
+	PrivateLink AzurePrivateLinkConfig `json:"privateLink"`
+}
+
+// AzurePrivateLinkConfig specifies configuration for Azure Private Link Service connectivity.
+type AzurePrivateLinkConfig struct {
 	// natSubnetID is the Azure resource ID of the subnet used for Private Link Service NAT IP allocation.
 	// This subnet must have privateLinkServiceNetworkPolicies disabled.
 	//

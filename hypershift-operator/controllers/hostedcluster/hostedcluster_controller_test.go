@@ -6185,7 +6185,7 @@ func TestValidateAzureConfig(t *testing.T) {
 			hc: &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
 					Platform: hyperv1.PlatformSpec{
-						Type: hyperv1.AzurePlatform,
+						Type:  hyperv1.AzurePlatform,
 						Azure: &hyperv1.AzurePlatformSpec{},
 					},
 				},

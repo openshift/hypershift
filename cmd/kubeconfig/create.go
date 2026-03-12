@@ -41,8 +41,8 @@ of the HostedCluster itself.
 `
 
 type options struct {
-	namespace  string
-	name       string
+	namespace   string
+	name        string
 	portForward bool
 }
 

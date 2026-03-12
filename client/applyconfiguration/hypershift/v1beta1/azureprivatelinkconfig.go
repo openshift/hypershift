@@ -17,23 +17,23 @@ limitations under the License.
 
 package v1beta1
 
-// AzurePrivateConnectivityConfigApplyConfiguration represents a declarative configuration of the AzurePrivateConnectivityConfig type for use
+// AzurePrivateLinkConfigApplyConfiguration represents a declarative configuration of the AzurePrivateLinkConfig type for use
 // with apply.
-type AzurePrivateConnectivityConfigApplyConfiguration struct {
+type AzurePrivateLinkConfigApplyConfiguration struct {
 	NATSubnetID                    *string  `json:"natSubnetID,omitempty"`
 	AdditionalAllowedSubscriptions []string `json:"additionalAllowedSubscriptions,omitempty"`
 }
 
-// AzurePrivateConnectivityConfigApplyConfiguration constructs a declarative configuration of the AzurePrivateConnectivityConfig type for use with
+// AzurePrivateLinkConfigApplyConfiguration constructs a declarative configuration of the AzurePrivateLinkConfig type for use with
 // apply.
-func AzurePrivateConnectivityConfig() *AzurePrivateConnectivityConfigApplyConfiguration {
-	return &AzurePrivateConnectivityConfigApplyConfiguration{}
+func AzurePrivateLinkConfig() *AzurePrivateLinkConfigApplyConfiguration {
+	return &AzurePrivateLinkConfigApplyConfiguration{}
 }
 
 // WithNATSubnetID sets the NATSubnetID field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the NATSubnetID field is set to the value of the last call.
-func (b *AzurePrivateConnectivityConfigApplyConfiguration) WithNATSubnetID(value string) *AzurePrivateConnectivityConfigApplyConfiguration {
+func (b *AzurePrivateLinkConfigApplyConfiguration) WithNATSubnetID(value string) *AzurePrivateLinkConfigApplyConfiguration {
 	b.NATSubnetID = &value
 	return b
 }
@@ -41,7 +41,7 @@ func (b *AzurePrivateConnectivityConfigApplyConfiguration) WithNATSubnetID(value
 // WithAdditionalAllowedSubscriptions adds the given value to the AdditionalAllowedSubscriptions field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the AdditionalAllowedSubscriptions field.
-func (b *AzurePrivateConnectivityConfigApplyConfiguration) WithAdditionalAllowedSubscriptions(values ...string) *AzurePrivateConnectivityConfigApplyConfiguration {
+func (b *AzurePrivateLinkConfigApplyConfiguration) WithAdditionalAllowedSubscriptions(values ...string) *AzurePrivateLinkConfigApplyConfiguration {
 	for i := range values {
 		b.AdditionalAllowedSubscriptions = append(b.AdditionalAllowedSubscriptions, values[i])
 	}

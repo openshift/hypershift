@@ -24,8 +24,8 @@ import (
 // AzureEndpointAccessSpecApplyConfiguration represents a declarative configuration of the AzureEndpointAccessSpec type for use
 // with apply.
 type AzureEndpointAccessSpecApplyConfiguration struct {
-	Type    *hypershiftv1beta1.AzureEndpointAccessType        `json:"type,omitempty"`
-	Private *AzurePrivateConnectivityConfigApplyConfiguration `json:"private,omitempty"`
+	Type    *hypershiftv1beta1.AzureEndpointAccessType `json:"type,omitempty"`
+	Private *AzurePrivateConfigApplyConfiguration      `json:"private,omitempty"`
 }
 
 // AzureEndpointAccessSpecApplyConfiguration constructs a declarative configuration of the AzureEndpointAccessSpec type for use with
@@ -45,7 +45,7 @@ func (b *AzureEndpointAccessSpecApplyConfiguration) WithType(value hypershiftv1b
 // WithPrivate sets the Private field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Private field is set to the value of the last call.
-func (b *AzureEndpointAccessSpecApplyConfiguration) WithPrivate(value *AzurePrivateConnectivityConfigApplyConfiguration) *AzureEndpointAccessSpecApplyConfiguration {
+func (b *AzureEndpointAccessSpecApplyConfiguration) WithPrivate(value *AzurePrivateConfigApplyConfiguration) *AzureEndpointAccessSpecApplyConfiguration {
 	b.Private = value
 	return b
 }

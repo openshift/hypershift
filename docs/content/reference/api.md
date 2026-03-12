@@ -3288,7 +3288,7 @@ applications and dev/test.</p>
 <p>
 <p>AzureEndpointAccessSpec specifies the endpoint access configuration for an Azure hosted cluster,
 including the visibility type of the API server endpoint and optional private connectivity settings.
-When the spec is nil on AzurePlatformSpec, the cluster defaults to public access.
+When the spec is omitted on AzurePlatformSpec, the cluster defaults to public access.
 Transitions between PublicAndPrivate and Private are supported after creation, but transitions
 from or to Public are not allowed.</p>
 </p>
@@ -3313,22 +3313,22 @@ AzureEndpointAccessType
 <p>type specifies the visibility of the API server endpoint for the hosted cluster.
 Valid values are Public, PublicAndPrivate, and Private.
 When set to Private or PublicAndPrivate, the private field must be provided with
-Azure Private Link Service configuration.
+private connectivity configuration.
 Transitions between PublicAndPrivate and Private are supported after creation.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>private</code></br>
+<code>private,omitzero</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1beta1.AzurePrivateConnectivityConfig">
-AzurePrivateConnectivityConfig
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateConfig">
+AzurePrivateConfig
 </a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>private specifies configuration for Azure Private Link connectivity.
+<p>private specifies configuration for private connectivity to the hosted cluster.
 This field is required when type is set to Private or PublicAndPrivate, and
 must not be set when type is Public.</p>
 </td>
@@ -3981,7 +3981,7 @@ string
 </tr>
 <tr>
 <td>
-<code>endpointAccess</code></br>
+<code>endpointAccess,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AzureEndpointAccessSpec">
 AzureEndpointAccessSpec
@@ -3991,20 +3991,54 @@ AzureEndpointAccessSpec
 <td>
 <em>(Optional)</em>
 <p>endpointAccess specifies the visibility of the API server endpoint and private connectivity
-configuration for the hosted cluster. When nil, the API server is publicly accessible (equivalent
-to setting type to Public). When specified with type set to Private or PublicAndPrivate, Azure
-Private Link Service infrastructure will be created to enable private connectivity.</p>
+configuration for the hosted cluster. Defaults to Public access. When specified with type set
+to Private or PublicAndPrivate, Azure Private Link Service infrastructure will be created to
+enable private connectivity.</p>
 </td>
 </tr>
 </tbody>
 </table>
-###AzurePrivateConnectivityConfig { #hypershift.openshift.io/v1beta1.AzurePrivateConnectivityConfig }
+###AzurePrivateConfig { #hypershift.openshift.io/v1beta1.AzurePrivateConfig }
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1beta1.AzureEndpointAccessSpec">AzureEndpointAccessSpec</a>)
 </p>
 <p>
-<p>AzurePrivateConnectivityConfig specifies configuration for Azure Private Link connectivity.</p>
+<p>AzurePrivateConfig specifies configuration for private connectivity to an Azure hosted cluster.
+It contains configuration for the specific private connectivity mechanism being used.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>privateLink</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkConfig">
+AzurePrivateLinkConfig
+</a>
+</em>
+</td>
+<td>
+<p>privateLink specifies configuration for Azure Private Link Service connectivity.
+This is used by self-managed HyperShift clusters to establish private access to
+the API server via Azure Private Link.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateLinkConfig { #hypershift.openshift.io/v1beta1.AzurePrivateLinkConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateConfig">AzurePrivateConfig</a>)
+</p>
+<p>
+<p>AzurePrivateLinkConfig specifies configuration for Azure Private Link Service connectivity.</p>
 </p>
 <table>
 <thead>

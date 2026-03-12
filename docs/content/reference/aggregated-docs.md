@@ -9090,6 +9090,10 @@ support on Azure.
 This guide assumes you have completed the self-managed Azure setup described in the
 Self-Managed Azure Overview, including:
 
+- An **OpenShift management cluster running on Azure** (not AKS). The private cluster
+  workflow uses `oc get infrastructure cluster` to discover the management cluster's
+  Azure resource group, VNet, and other platform details — these APIs are only available
+  on OpenShift. For AKS-based management clusters, use managed Azure HyperShift (ARO HCP) instead.
 - Azure Workload Identity and OIDC issuer configuration
 - Management cluster with HyperShift operator installed (will be reinstalled with private support)
 - Azure CLI (`az`), HyperShift CLI (`hypershift`), `oc`/`kubectl`, `jq`, and `yq`
@@ -9136,7 +9140,7 @@ az network vnet show \
     --resource-group "${MGMT_VNET_RG}" \
     --name "${MGMT_VNET_NAME}" \
     --query '{addressSpace: addressSpace.addressPrefixes, subnets: subnets[].{name: name, prefix: addressPrefix}}' \
-    -o table
+    -o json
 
 az network vnet subnet create \
     --resource-group "${MGMT_VNET_RG}" \
@@ -9475,10 +9479,10 @@ The deletion process automatically cleans up Private Link resources in the corre
 
 ### Management Cluster Requirements
 
-- The management cluster **must be an OpenShift cluster**, not AKS. Commands like
-  `oc get infrastructure cluster` are used to discover the management cluster's Azure
-  resource group, and these only work on OpenShift. For AKS-based management clusters,
-  use managed Azure HyperShift (ARO HCP) instead.
+- The management cluster **must be an OpenShift cluster running on Azure**, not AKS.
+  Commands like `oc get infrastructure cluster` are used to discover the management
+  cluster's Azure resource group and VNet, and these only work on OpenShift.
+  For AKS-based management clusters, use managed Azure HyperShift (ARO HCP) instead.
 
 - The HyperShift operator **must be installed with `--private-platform Azure`** before
   creating any private clusters. If you followed the
@@ -30149,7 +30153,8 @@ AutoNode
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoNode specifies the configuration for the autoNode feature.</p>
+<p>autoNode specifies the configuration for automatic node provisioning and lifecycle management.
+When set, the provisioner(e.g. Karpenter) will be used to provision nodes for targeted workloads.</p>
 </td>
 </tr>
 <tr>
@@ -32479,7 +32484,7 @@ string
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>We expose here internal configuration knobs that won&rsquo;t be exposed to the service.</p>
+<p>AutoNode specifies the configuration for automatic node provisioning and lifecycle management.</p>
 </p>
 <table>
 <thead>
@@ -32491,7 +32496,7 @@ string
 <tbody>
 <tr>
 <td>
-<code>provisionerConfig</code></br>
+<code>provisionerConfig,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">
 ProvisionerConfig
@@ -32499,7 +32504,7 @@ ProvisionerConfig
 </em>
 </td>
 <td>
-<p>provisionerConfig is the implementation used for Node auto provisioning.</p>
+<p>provisionerConfig specifies the provisioner used for automatic node management.</p>
 </td>
 </tr>
 </tbody>
@@ -32723,7 +32728,7 @@ applications and dev/test.</p>
 <p>
 <p>AzureEndpointAccessSpec specifies the endpoint access configuration for an Azure hosted cluster,
 including the visibility type of the API server endpoint and optional private connectivity settings.
-When the spec is nil on AzurePlatformSpec, the cluster defaults to public access.
+When the spec is omitted on AzurePlatformSpec, the cluster defaults to public access.
 Transitions between PublicAndPrivate and Private are supported after creation, but transitions
 from or to Public are not allowed.</p>
 </p>
@@ -32748,22 +32753,22 @@ AzureEndpointAccessType
 <p>type specifies the visibility of the API server endpoint for the hosted cluster.
 Valid values are Public, PublicAndPrivate, and Private.
 When set to Private or PublicAndPrivate, the private field must be provided with
-Azure Private Link Service configuration.
+private connectivity configuration.
 Transitions between PublicAndPrivate and Private are supported after creation.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>private</code></br>
+<code>private,omitzero</code></br>
 <em>
-<a href="#hypershift.openshift.io/v1beta1.AzurePrivateConnectivityConfig">
-AzurePrivateConnectivityConfig
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateConfig">
+AzurePrivateConfig
 </a>
 </em>
 </td>
 <td>
 <em>(Optional)</em>
-<p>private specifies configuration for Azure Private Link connectivity.
+<p>private specifies configuration for private connectivity to the hosted cluster.
 This field is required when type is set to Private or PublicAndPrivate, and
 must not be set when type is Public.</p>
 </td>
@@ -33416,7 +33421,7 @@ string
 </tr>
 <tr>
 <td>
-<code>endpointAccess</code></br>
+<code>endpointAccess,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.AzureEndpointAccessSpec">
 AzureEndpointAccessSpec
@@ -33426,20 +33431,54 @@ AzureEndpointAccessSpec
 <td>
 <em>(Optional)</em>
 <p>endpointAccess specifies the visibility of the API server endpoint and private connectivity
-configuration for the hosted cluster. When nil, the API server is publicly accessible (equivalent
-to setting type to Public). When specified with type set to Private or PublicAndPrivate, Azure
-Private Link Service infrastructure will be created to enable private connectivity.</p>
+configuration for the hosted cluster. Defaults to Public access. When specified with type set
+to Private or PublicAndPrivate, Azure Private Link Service infrastructure will be created to
+enable private connectivity.</p>
 </td>
 </tr>
 </tbody>
 </table>
-###AzurePrivateConnectivityConfig { #hypershift.openshift.io/v1beta1.AzurePrivateConnectivityConfig }
+###AzurePrivateConfig { #hypershift.openshift.io/v1beta1.AzurePrivateConfig }
 <p>
 (<em>Appears on:</em>
 <a href="#hypershift.openshift.io/v1beta1.AzureEndpointAccessSpec">AzureEndpointAccessSpec</a>)
 </p>
 <p>
-<p>AzurePrivateConnectivityConfig specifies configuration for Azure Private Link connectivity.</p>
+<p>AzurePrivateConfig specifies configuration for private connectivity to an Azure hosted cluster.
+It contains configuration for the specific private connectivity mechanism being used.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>privateLink</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkConfig">
+AzurePrivateLinkConfig
+</a>
+</em>
+</td>
+<td>
+<p>privateLink specifies configuration for Azure Private Link Service connectivity.
+This is used by self-managed HyperShift clusters to establish private access to
+the API server via Azure Private Link.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateLinkConfig { #hypershift.openshift.io/v1beta1.AzurePrivateLinkConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateConfig">AzurePrivateConfig</a>)
+</p>
+<p>
+<p>AzurePrivateLinkConfig specifies configuration for Azure Private Link Service connectivity.</p>
 </p>
 <table>
 <thead>
@@ -37323,7 +37362,8 @@ AutoNode
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoNode specifies the configuration for the autoNode feature.</p>
+<p>autoNode specifies the configuration for automatic node provisioning and lifecycle management.
+When set, the provisioner(e.g. Karpenter) will be used to provision nodes for targeted workloads.</p>
 </td>
 </tr>
 <tr>
@@ -38276,7 +38316,10 @@ AutoNode
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoNode specifies the configuration for the autoNode feature.</p>
+<p>autoNode specifies the configuration for automatic node provisioning
+and lifecycle management. When set, nodes are automatically provisioned
+using the specified provisioner (e.g. Karpenter) instead of requiring
+manual NodePool management.</p>
 </td>
 </tr>
 <tr>
@@ -39146,6 +39189,7 @@ AzureKMSSpec
 <a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">KarpenterConfig</a>)
 </p>
 <p>
+<p>KarpenterAWSConfig specifies AWS-specific configuration for the Karpenter provisioner.</p>
 </p>
 <table>
 <thead>
@@ -39163,7 +39207,237 @@ string
 </em>
 </td>
 <td>
-<p>roleARN specifies the ARN of the Karpenter provisioner.</p>
+<p>roleARN specifies the ARN of the IAM role that Karpenter assumes to provision
+and manage EC2 instances in the hosted cluster&rsquo;s AWS account.</p>
+<p>The referenced role must have a trust relationship that allows it to be assumed
+by the karpenter service account in the hosted cluster via OIDC.
+Example:
+{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Principal&rdquo;: {
+&ldquo;Federated&rdquo;: &ldquo;<oidc-provider-arn>&rdquo;
+},
+&ldquo;Action&rdquo;: &ldquo;sts:AssumeRoleWithWebIdentity&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;<oidc-provider-name>:sub&rdquo;: &ldquo;system:serviceaccount:kube-system:karpenter&rdquo;
+}
+}
+}
+]
+}</p>
+<p>The following is an example of the policy document for this role.</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedEC2InstanceAccessActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:<em>:ec2:</em>::image/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>::snapshot/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:security-group/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:subnet/</em>&rdquo;
+],
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:RunInstances&rdquo;,
+&ldquo;ec2:CreateFleet&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedEC2LaunchTemplateAccessActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:ec2:</em>:<em>:launch-template/</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:RunInstances&rdquo;,
+&ldquo;ec2:CreateFleet&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedEC2InstanceActionsWithTags&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:<em>:ec2:</em>:<em>:fleet/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:instance/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:volume/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:network-interface/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:launch-template/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:spot-instances-request/</em>&rdquo;
+],
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:RunInstances&rdquo;,
+&ldquo;ec2:CreateFleet&rdquo;,
+&ldquo;ec2:CreateLaunchTemplate&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:RequestTag/karpenter.sh/nodepool&rdquo;: &ldquo;<em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedResourceCreationTagging&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:</em>:ec2:<em>:</em>:fleet/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:instance/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:volume/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:network-interface/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:launch-template/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:spot-instances-request/<em>&rdquo;
+],
+&ldquo;Action&rdquo;: &ldquo;ec2:CreateTags&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;ec2:CreateAction&rdquo;: [
+&ldquo;RunInstances&rdquo;,
+&ldquo;CreateFleet&rdquo;,
+&ldquo;CreateLaunchTemplate&rdquo;
+]
+},
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:RequestTag/karpenter.sh/nodepool&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedResourceTagging&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:ec2:</em>:<em>:instance/</em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;ec2:CreateTags&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.sh/nodepool&rdquo;: &ldquo;<em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedDeletion&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:</em>:ec2:<em>:</em>:instance/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:launch-template/<em>&rdquo;
+],
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:TerminateInstances&rdquo;,
+&ldquo;ec2:DeleteLaunchTemplate&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.sh/nodepool&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowRegionalReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;<em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:DescribeImages&rdquo;,
+&ldquo;ec2:DescribeInstances&rdquo;,
+&ldquo;ec2:DescribeInstanceTypeOfferings&rdquo;,
+&ldquo;ec2:DescribeInstanceTypes&rdquo;,
+&ldquo;ec2:DescribeLaunchTemplates&rdquo;,
+&ldquo;ec2:DescribeSecurityGroups&rdquo;,
+&ldquo;ec2:DescribeSpotPriceHistory&rdquo;,
+&ldquo;ec2:DescribeSubnets&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowSSMReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:</em>:ssm:<em>::parameter/aws/service/</em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;ssm:GetParameter&rdquo;
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowPricingReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;<em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;pricing:GetProducts&rdquo;
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowInterruptionQueueActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;sqs:DeleteMessage&rdquo;,
+&ldquo;sqs:GetQueueUrl&rdquo;,
+&ldquo;sqs:ReceiveMessage&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowPassingInstanceRole&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:iam::</em>:role/<em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;iam:PassRole&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;iam:PassedToService&rdquo;: [
+&ldquo;ec2.amazonaws.com&rdquo;,
+&ldquo;ec2.amazonaws.com.cn&rdquo;
+]
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedInstanceProfileCreationActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:</em>:iam::<em>:instance-profile/</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;iam:CreateInstanceProfile&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:RequestTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;<em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedInstanceProfileTagActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:</em>:iam::<em>:instance-profile/</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;iam:TagInstanceProfile&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;<em>&rdquo;,
+&ldquo;aws:RequestTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedInstanceProfileActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:iam::</em>:instance-profile/<em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;iam:AddRoleToInstanceProfile&rdquo;,
+&ldquo;iam:RemoveRoleFromInstanceProfile&rdquo;,
+&ldquo;iam:DeleteInstanceProfile&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowInstanceProfileReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:iam::</em>:instance-profile/<em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;iam:GetInstanceProfile&rdquo;
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowUnscopedInstanceProfileListAction&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;</em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;iam:ListInstanceProfiles&rdquo;
+}
+]
+}</p>
 </td>
 </tr>
 </tbody>
@@ -39174,6 +39448,8 @@ string
 <a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">ProvisionerConfig</a>)
 </p>
 <p>
+<p>KarpenterConfig specifies the configuration for the Karpenter provisioner
+including the target platform and platform-specific settings.</p>
 </p>
 <table>
 <thead>
@@ -39193,7 +39469,7 @@ PlatformType
 </em>
 </td>
 <td>
-<p>platform specifies the platform-specific configuration for Karpenter.</p>
+<p>platform specifies the infrastructure platform that Karpenter should provision nodes on.</p>
 </td>
 </tr>
 <tr>
@@ -43035,7 +43311,7 @@ This field is immutable. Once set, it cannot be changed.</p>
 <a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">ProvisionerConfig</a>)
 </p>
 <p>
-<p>provisioner is a enum specifying the strategy for auto managing Nodes.</p>
+<p>Provisioner is the name of a supported node provisioner.</p>
 </p>
 <table>
 <thead>
@@ -43045,7 +43321,8 @@ This field is immutable. Once set, it cannot be changed.</p>
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;Karpenter&#34;</p></td>
-<td></td>
+<td><p>ProvisionerKarpenter indicates that Karpenter is used for automatic node provisioning.</p>
+</td>
 </tr></tbody>
 </table>
 ###ProvisionerConfig { #hypershift.openshift.io/v1beta1.ProvisionerConfig }
@@ -43054,7 +43331,8 @@ This field is immutable. Once set, it cannot be changed.</p>
 <a href="#hypershift.openshift.io/v1beta1.AutoNode">AutoNode</a>)
 </p>
 <p>
-<p>ProvisionerConfig is a enum specifying the strategy for auto managing Nodes.</p>
+<p>ProvisionerConfig specifies the provisioner used for automatic node management
+and its associated configuration.</p>
 </p>
 <table>
 <thead>
@@ -43074,7 +43352,7 @@ Provisioner
 </em>
 </td>
 <td>
-<p>name specifies the name of the provisioner to use.</p>
+<p>name specifies the name of the provisioner to use for automatic node management.</p>
 </td>
 </tr>
 <tr>
