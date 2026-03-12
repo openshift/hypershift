@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -22,6 +26,46 @@ const (
 
 // KarpenterTaintConfigMapName is the name of the configmap containing the karpenter taint config
 const KarpenterTaintConfigMapName = "set-karpenter-taint"
+
+// KarpenterBaseTaints is the set of taints applied to nodes registered by Karpenter.
+var KarpenterBaseTaints = []corev1.Taint{
+	{
+		Key:    "karpenter.sh/unregistered",
+		Value:  "true",
+		Effect: corev1.TaintEffectNoExecute,
+	},
+}
+
+// KarpenterBaseTaintMap returns the registerWithTaints kubelet config map built from KarpenterTaints.
+// It is used by reconcileKubeletConfigMap to merge our taints into the user-provided kubelet config.
+func KarpenterBaseTaintMap() map[string]interface{} {
+	taints := make([]interface{}, len(KarpenterBaseTaints))
+	for i, t := range KarpenterBaseTaints {
+		taints[i] = map[string]interface{}{
+			"key":    t.Key,
+			"value":  t.Value,
+			"effect": string(t.Effect),
+		}
+	}
+	return map[string]interface{}{
+		"registerWithTaints": taints,
+	}
+}
+
+// KarpenterTaintConfigManifest returns the KubeletConfig CR YAML for the set-karpenter-taint ConfigMap.
+func KarpenterTaintConfigManifest() (string, error) {
+	cr := map[string]interface{}{
+		"apiVersion": "machineconfiguration.openshift.io/v1",
+		"kind":       "KubeletConfig",
+		"metadata":   map[string]interface{}{"name": KarpenterTaintConfigMapName},
+		"spec":       map[string]interface{}{"kubeletConfig": KarpenterBaseTaintMap()},
+	}
+	out, err := yaml.Marshal(cr)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(string(out), "\n"), nil
+}
 
 // KarpenterNodeClassKubeletConfigName returns the name of the ConfigMap containing the
 // per-OpenshiftEC2NodeClass KubeletConfig in the HCP namespace.
