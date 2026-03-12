@@ -12,7 +12,9 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/globalconfig"
+	karpenterutil "github.com/openshift/hypershift/support/karpenter"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/releaseinfo/testutils"
 	"github.com/openshift/hypershift/support/testutil"
 	supportutil "github.com/openshift/hypershift/support/util"
 
@@ -29,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
+	"github.com/go-logr/logr/testr"
 	"github.com/google/uuid"
 )
 
@@ -1069,6 +1072,130 @@ func TestGetIgnitionCACert(t *testing.T) {
 			}
 			g.Expect(err).NotTo(HaveOccurred())
 			g.Expect(caCert).To(Equal(tc.expectedCACert))
+		})
+	}
+}
+
+func TestSetKarpenterAMILabels(t *testing.T) {
+	testCases := []struct {
+		name           string
+		platform       hyperv1.PlatformType
+		userDataSecret *corev1.Secret
+		releaseImage   *releaseinfo.ReleaseImage
+		region         string
+		expectedError  string
+		expectedLabels map[string]string
+	}{
+		{
+			name:     "when the user data secret is created for supported platform and architecture it should set the expected labels",
+			platform: hyperv1.AWSPlatform,
+			region:   "us-east-1",
+			userDataSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-data-secret",
+					Namespace: "test-namespace",
+					Labels: map[string]string{
+						karpenterutil.ManagedByKarpenterLabel: "true",
+					},
+				},
+			},
+			expectedLabels: map[string]string{
+				karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64): "us-east-1-x86_64-image",
+				karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureARM64): "us-east-1-aarch64-image",
+			},
+		},
+		{
+			name:     "when the AMI is unavailable for all architectures it should return an error",
+			platform: hyperv1.AWSPlatform,
+			region:   "us-west-2",
+			userDataSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-data-secret",
+					Namespace: "test-namespace",
+					Labels: map[string]string{
+						karpenterutil.ManagedByKarpenterLabel: "true",
+					},
+				},
+			},
+			expectedError: "no supported architectures found",
+		},
+		{
+			name:     "when one architecture AMI is unavailable it should set the label only for the available one",
+			platform: hyperv1.AWSPlatform,
+			region:   "us-east-1",
+			userDataSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-data-secret",
+					Namespace: "test-namespace",
+					Labels: map[string]string{
+						karpenterutil.ManagedByKarpenterLabel: "true",
+					},
+				},
+			},
+			releaseImage: &releaseinfo.ReleaseImage{
+				ImageStream: &imageapi.ImageStream{
+					ObjectMeta: metav1.ObjectMeta{Name: "test-release"},
+				},
+				StreamMetadata: &releaseinfo.CoreOSStreamMetadata{
+					Architectures: map[string]releaseinfo.CoreOSArchitecture{
+						"x86_64": {
+							Images: releaseinfo.CoreOSImages{
+								AWS: releaseinfo.CoreOSAWSImages{
+									Regions: map[string]releaseinfo.CoreOSAWSImage{
+										"us-east-1": {Image: "ami-amd64-only"},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedLabels: map[string]string{
+				karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64): "ami-amd64-only",
+			},
+		},
+		{
+			name:     "when the user data secret is created for unsupported platform it should return an error",
+			platform: hyperv1.AzurePlatform,
+			region:   "us-east-1",
+			userDataSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-data-secret",
+					Namespace: "test-namespace",
+					Labels: map[string]string{
+						karpenterutil.ManagedByKarpenterLabel: "true",
+					},
+				},
+			},
+			expectedError: "failed to get supported architectures: unsupported platform: Azure",
+		},
+	}
+	log := testr.New(t)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ri := tc.releaseImage
+			if ri == nil {
+				ri = testutils.InitReleaseImageOrDie("test-release")
+			}
+			err := setKarpenterAMILabels(log, tc.userDataSecret, tc.region, ri, tc.platform)
+			if tc.expectedError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(Equal(tc.expectedError))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			for labelKey, expectedAMI := range tc.expectedLabels {
+				g.Expect(tc.userDataSecret.Labels).To(HaveKeyWithValue(labelKey, expectedAMI))
+			}
+			amdKey := karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64)
+			armKey := karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureARM64)
+			if _, ok := tc.expectedLabels[amdKey]; !ok {
+				g.Expect(tc.userDataSecret.Labels).NotTo(HaveKey(amdKey))
+			}
+			if _, ok := tc.expectedLabels[armKey]; !ok {
+				g.Expect(tc.userDataSecret.Labels).NotTo(HaveKey(armKey))
+			}
 		})
 	}
 }

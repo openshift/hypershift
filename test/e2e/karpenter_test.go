@@ -73,10 +73,55 @@ func TestKarpenter(t *testing.T) {
 		err = yaml.Unmarshal(yamlFile, workLoads)
 		g.Expect(err).NotTo(HaveOccurred())
 
+		// Unmarshal ARM64 NodePool.
+		armNodePool := &unstructured.Unstructured{}
+		yamlFile, err = content.ReadFile(fmt.Sprintf("assets/%s", "karpenter/arm-nodepool.yaml"))
+		g.Expect(err).NotTo(HaveOccurred())
+		err = yaml.Unmarshal(yamlFile, armNodePool)
+		g.Expect(err).NotTo(HaveOccurred())
+
+		// Unmarshal ARM64 workloads.
+		armWorkLoads := &unstructured.Unstructured{}
+		yamlFile, err = content.ReadFile(fmt.Sprintf("assets/%s", "karpenter/arm-workloads.yaml"))
+		g.Expect(err).NotTo(HaveOccurred())
+		err = yaml.Unmarshal(yamlFile, armWorkLoads)
+		g.Expect(err).NotTo(HaveOccurred())
+
 		nodeLabels := map[string]string{
 			"node.kubernetes.io/instance-type": "t3.large",
 			"karpenter.sh/nodepool":            karpenterNodePool.GetName(),
 		}
+
+		t.Run("Test ARM64 instance provisioning", func(t *testing.T) {
+			if !globalOpts.ConfigurableClusterOptions.AWSMultiArch && !globalOpts.ConfigurableClusterOptions.AzureMultiArch {
+				t.Skip("test only supported on multi-arch clusters")
+			}
+			t.Cleanup(func() {
+				_ = guestClient.Delete(ctx, armWorkLoads)
+				_ = guestClient.Delete(ctx, armNodePool)
+			})
+
+			g.Expect(guestClient.Create(ctx, armNodePool)).To(Succeed())
+			t.Logf("Created ARM64 NodePool")
+			g.Expect(guestClient.Create(ctx, armWorkLoads)).To(Succeed())
+			t.Logf("Created ARM64 workloads")
+
+			armNodeLabels := map[string]string{
+				"karpenter.sh/nodepool": armNodePool.GetName(),
+				"kubernetes.io/arch":    "arm64",
+			}
+
+			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 1, armNodeLabels)
+			waitForReadyKarpenterPods(t, ctx, guestClient, nodes, 1)
+
+			g.Expect(guestClient.Delete(ctx, armNodePool)).To(Succeed())
+			t.Logf("Deleted ARM64 NodePool")
+			g.Expect(guestClient.Delete(ctx, armWorkLoads)).To(Succeed())
+			t.Logf("Deleted ARM64 workloads")
+
+			t.Logf("Waiting for Karpenter ARM64 Nodes to disappear")
+			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, armNodeLabels)
+		})
 
 		t.Run("Karpenter operator plumbing and smoketesting", func(t *testing.T) {
 			karpenterMetrics := []string{
@@ -693,7 +738,6 @@ func TestKarpenter(t *testing.T) {
 			t.Logf("Created cluster-deletion-blocking PodDisruptionBudget")
 
 			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), nodeLabels)
-
 		})
 
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "karpenter", globalOpts.ServiceAccountSigningKey)

@@ -44,6 +44,9 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 	hcp := &hyperv1.HostedControlPlane{
 		Spec: hyperv1.HostedControlPlaneSpec{
 			InfraID: "test-infra",
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
 		},
 	}
 
@@ -162,6 +165,9 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					InfraID: testInfraID,
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
 				},
 			},
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{},
@@ -203,6 +209,9 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					InfraID: testInfraID,
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
 				},
 			},
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{},
@@ -275,6 +284,7 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				Spec: hyperv1.HostedControlPlaneSpec{
 					InfraID: "test-infra",
 					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{
 							ResourceTags: []hyperv1.AWSResourceTag{
 								{Key: "red-hat-managed", Value: "true"},
@@ -330,6 +340,7 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				Spec: hyperv1.HostedControlPlaneSpec{
 					InfraID: "test-infra",
 					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{
 							ResourceTags: []hyperv1.AWSResourceTag{
 								{Key: "red-hat-clustertype", Value: "rosa"}, // This should override nodeclass tag
@@ -803,6 +814,79 @@ func TestKarpenterSecretPredicate(t *testing.T) {
 			}
 
 			g.Expect(result).To(Equal(tc.expectedResult))
+		})
+	}
+}
+
+func TestAMISelectorTerms(t *testing.T) {
+	testCases := []struct {
+		name           string
+		userDataSecret *corev1.Secret
+		platform       hyperv1.PlatformType
+		expectedError  string
+		expectedAMIs   []awskarpenterv1.AMISelectorTerm
+	}{
+		{
+			name:     "when user data secret is created for supported platform, and labels exist it should return the expected AMIs",
+			platform: hyperv1.AWSPlatform,
+			userDataSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-data-secret",
+					Namespace: "test-namespace",
+					Labels: map[string]string{
+						karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64): "ami-123",
+						karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureARM64): "ami-456",
+					},
+				},
+			},
+			expectedAMIs: []awskarpenterv1.AMISelectorTerm{
+				{
+					ID: "ami-123",
+				},
+				{
+					ID: "ami-456",
+				},
+			},
+		},
+		{
+			name:     "when user data secret is created for unsupported platform, and labels exist it should return an error",
+			platform: hyperv1.AzurePlatform,
+			userDataSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-data-secret",
+					Namespace: "test-namespace",
+					Labels: map[string]string{
+						karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64): "ami-123",
+						karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureARM64): "ami-456",
+					},
+				},
+			},
+			expectedError: "failed to get supported architectures: unsupported platform: Azure",
+		},
+		{
+			name:     "when user data secret is created for supported platform, but no AMIs labels exist it should return an error",
+			platform: hyperv1.AWSPlatform,
+			userDataSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-data-secret",
+					Namespace: "test-namespace",
+					Labels:    map[string]string{},
+				},
+			},
+			expectedError: "no AMIs found for supported architectures: [amd64 arm64]",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			amis, err := AMISelectorTerms(tc.userDataSecret, tc.platform)
+			if tc.expectedError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(Equal(tc.expectedError))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(amis).To(Equal(tc.expectedAMIs))
 		})
 	}
 }

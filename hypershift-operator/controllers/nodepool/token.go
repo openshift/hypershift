@@ -8,11 +8,11 @@ import (
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hyperkarpenterv1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/ignitionserver"
 	"github.com/openshift/hypershift/support/backwardcompat"
 	"github.com/openshift/hypershift/support/globalconfig"
 	karpenterutil "github.com/openshift/hypershift/support/karpenter"
+	"github.com/openshift/hypershift/support/releaseinfo"
 	"github.com/openshift/hypershift/support/upsert"
 	supportutil "github.com/openshift/hypershift/support/util"
 
@@ -28,6 +28,7 @@ import (
 
 	"github.com/clarketm/json"
 	ignitionapi "github.com/coreos/ignition/v2/config/v3_2/types"
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 )
 
@@ -239,7 +240,7 @@ func (t *Token) Reconcile(ctx context.Context) error {
 
 	userDataSecret := t.UserDataSecret()
 	if result, err := t.CreateOrUpdate(ctx, t.Client, userDataSecret, func() error {
-		return t.reconcileUserDataSecret(userDataSecret, string(tokenBytes))
+		return t.reconcileUserDataSecret(log, userDataSecret, string(tokenBytes))
 	}); err != nil {
 		return err
 	} else {
@@ -359,7 +360,7 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 	return nil
 }
 
-func (t *Token) reconcileUserDataSecret(userDataSecret *corev1.Secret, token string) error {
+func (t *Token) reconcileUserDataSecret(log logr.Logger, userDataSecret *corev1.Secret, token string) error {
 	// The token secret controller deletes expired token Secrets.
 	// When that happens the NodePool controller reconciles and create a new one.
 	// Then it reconciles the userData Secret with the new generated token.
@@ -377,11 +378,10 @@ func (t *Token) reconcileUserDataSecret(userDataSecret *corev1.Secret, token str
 	if karpenterutil.IsKarpenterEnabled(t.hostedCluster.Spec.AutoNode) {
 		npLabels := t.nodePool.GetLabels()
 		if npLabels != nil && npLabels[karpenterutil.ManagedByKarpenterLabel] == "true" {
-			ami, err := defaultNodePoolAMI(t.hostedCluster.Spec.Platform.AWS.Region, t.nodePool.Spec.Arch, t.releaseImage)
+			err := setKarpenterAMILabels(log, userDataSecret, t.hostedCluster.Spec.Platform.AWS.Region, t.releaseImage, t.hostedCluster.Spec.Platform.Type)
 			if err != nil {
-				return fmt.Errorf("failed to get default node pool AMI: %w", err)
+				return err
 			}
-			userDataSecret.Labels[hyperkarpenterv1.UserDataAMILabel] = ami
 			userDataSecret.Labels[karpenterutil.ManagedByKarpenterLabel] = "true"
 		}
 	}
@@ -396,6 +396,29 @@ func (t *Token) reconcileUserDataSecret(userDataSecret *corev1.Secret, token str
 	userDataSecret.Data = map[string][]byte{
 		"disableTemplating": []byte(base64.StdEncoding.EncodeToString([]byte("true"))),
 		"value":             userDataValue,
+	}
+	return nil
+}
+
+func setKarpenterAMILabels(log logr.Logger, userDataSecret *corev1.Secret, region string, releaseImage *releaseinfo.ReleaseImage, platform hyperv1.PlatformType) error {
+	supportedArchitectures, err := karpenterutil.SupportedArchitectures(platform)
+	if err != nil {
+		return fmt.Errorf("failed to get supported architectures: %w", err)
+	}
+	supported := 0
+	for _, arch := range supportedArchitectures {
+		ami, err := defaultNodePoolAMI(region, arch, releaseImage)
+		if err != nil {
+			// skip unavailable architectures gracefully
+			log.Error(err, "failed to get default NodePool AMI for architecture", "architecture", arch)
+			continue
+		}
+		labelKey := karpenterutil.ArchToAMILabelKey(arch)
+		userDataSecret.Labels[labelKey] = ami
+		supported++
+	}
+	if supported == 0 {
+		return fmt.Errorf("no supported architectures found")
 	}
 	return nil
 }
