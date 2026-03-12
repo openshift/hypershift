@@ -56,26 +56,91 @@ const (
 	ConditionReasonAsExpected = "AsExpected"
 )
 
+// PublicIPAddressAssignment controls whether public IP addresses are assigned to instances.
+// +kubebuilder:validation:Enum=Enabled;Disabled
+type PublicIPAddressAssignment string
+
+const (
+	// PublicIPAddressAssignmentEnabled assigns public IP addresses to instances.
+	PublicIPAddressAssignmentEnabled PublicIPAddressAssignment = "Enabled"
+	// PublicIPAddressAssignmentDisabled does not assign public IP addresses to instances.
+	PublicIPAddressAssignmentDisabled PublicIPAddressAssignment = "Disabled"
+)
+
+// DetailedMonitoringState controls detailed monitoring for instances.
+// +kubebuilder:validation:Enum=Enabled;Disabled
+type DetailedMonitoringState string
+
+const (
+	// DetailedMonitoringEnabled enables detailed monitoring for instances.
+	DetailedMonitoringEnabled DetailedMonitoringState = "Enabled"
+	// DetailedMonitoringDisabled disables detailed monitoring for instances.
+	DetailedMonitoringDisabled DetailedMonitoringState = "Disabled"
+)
+
+// RootVolumeDesignation indicates whether a device is mounted as the kubelet root directory.
+// +kubebuilder:validation:Enum=RootVolume;NotRootVolume
+type RootVolumeDesignation string
+
+const (
+	// RootVolumeDesignationRootVolume indicates the device is mounted as kubelet root dir.
+	RootVolumeDesignationRootVolume RootVolumeDesignation = "RootVolume"
+	// RootVolumeDesignationNotRootVolume indicates the device is not the kubelet root dir.
+	RootVolumeDesignationNotRootVolume RootVolumeDesignation = "NotRootVolume"
+)
+
+// DeleteOnTerminationPolicy controls whether an EBS volume is deleted on instance termination.
+// +kubebuilder:validation:Enum=Delete;Retain
+type DeleteOnTerminationPolicy string
+
+const (
+	// DeleteOnTerminationPolicyDelete deletes the EBS volume when the instance terminates.
+	DeleteOnTerminationPolicyDelete DeleteOnTerminationPolicy = "Delete"
+	// DeleteOnTerminationPolicyRetain retains the EBS volume when the instance terminates.
+	DeleteOnTerminationPolicyRetain DeleteOnTerminationPolicy = "Retain"
+)
+
+// EncryptionState controls whether an EBS volume is encrypted.
+// +kubebuilder:validation:Enum=Encrypted;Unencrypted
+type EncryptionState string
+
+const (
+	// EncryptionStateEncrypted indicates the EBS volume is encrypted.
+	EncryptionStateEncrypted EncryptionState = "Encrypted"
+	// EncryptionStateUnencrypted indicates the EBS volume is not encrypted.
+	EncryptionStateUnencrypted EncryptionState = "Unencrypted"
+)
+
 // Subnet contains resolved Subnet selector values utilized for node launch
 type Subnet struct {
-	// ID of the subnet
+	// id is the ID of the subnet.
 	// +required
-	ID string `json:"id"`
-	// The associated availability zone
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	ID string `json:"id,omitempty"`
+	// zone is the associated availability zone.
 	// +required
-	Zone string `json:"zone"`
-	// The associated availability zone ID
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	Zone string `json:"zone,omitempty"`
+	// zoneID is the associated availability zone ID.
 	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
 	ZoneID string `json:"zoneID,omitempty"`
 }
 
 // SecurityGroup contains resolved SecurityGroup selector values utilized for node launch
 type SecurityGroup struct {
-	// ID of the security group
+	// id is the ID of the security group.
 	// +required
-	ID string `json:"id"`
-	// Name of the security group
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	ID string `json:"id,omitempty"`
+	// name is the name of the security group.
 	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
 	Name string `json:"name,omitempty"`
 }
 
@@ -93,125 +158,150 @@ const (
 
 // OpenshiftEC2NodeClassSpec defines the desired state of ClusterSizingConfiguration
 // This will contain configuration necessary to launch instances in AWS.
+// +kubebuilder:validation:MinProperties=1
 type OpenshiftEC2NodeClassSpec struct {
-	// SubnetSelectorTerms is a list of or subnet selector terms. The terms are ORed.
+	// subnetSelectorTerms is a list of or subnet selector terms. The terms are ORed.
 	// +kubebuilder:validation:XValidation:message="subnetSelectorTerms cannot be empty",rule="self.size() != 0"
 	// +kubebuilder:validation:XValidation:message="expected at least one, got none, ['tags', 'id']",rule="self.all(x, has(x.tags) || has(x.id))"
 	// +kubebuilder:validation:XValidation:message="'id' is mutually exclusive, cannot be set with a combination of other fields in subnetSelectorTerms",rule="!self.all(x, has(x.id) && has(x.tags))"
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems:=30
+	// +listType=atomic
 	// +optional
 	SubnetSelectorTerms []SubnetSelectorTerm `json:"subnetSelectorTerms,omitempty"`
 
-	// SecurityGroupSelectorTerms is a list of or security group selector terms. The terms are ORed.
+	// securityGroupSelectorTerms is a list of or security group selector terms. The terms are ORed.
 	// +kubebuilder:validation:XValidation:message="securityGroupSelectorTerms cannot be empty",rule="self.size() != 0"
 	// +kubebuilder:validation:XValidation:message="expected at least one, got none, ['tags', 'id', 'name']",rule="self.all(x, has(x.tags) || has(x.id) || has(x.name))"
 	// +kubebuilder:validation:XValidation:message="'id' is mutually exclusive, cannot be set with a combination of other fields in securityGroupSelectorTerms",rule="!self.all(x, has(x.id) && (has(x.tags) || has(x.name)))"
 	// +kubebuilder:validation:XValidation:message="'name' is mutually exclusive, cannot be set with a combination of other fields in securityGroupSelectorTerms",rule="!self.all(x, has(x.name) && (has(x.tags) || has(x.id)))"
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems:=30
+	// +listType=atomic
 	// +optional
 	SecurityGroupSelectorTerms []SecurityGroupSelectorTerm `json:"securityGroupSelectorTerms,omitempty"`
 
-	// AssociatePublicIPAddress controls if public IP addresses are assigned to instances that are launched with the nodeclass.
+	// associatePublicIPAddress controls if public IP addresses are assigned to instances that are launched with the nodeclass.
 	// +optional
-	AssociatePublicIPAddress *bool `json:"associatePublicIPAddress,omitempty"`
+	AssociatePublicIPAddress PublicIPAddressAssignment `json:"associatePublicIPAddress,omitempty"`
 
-	// Tags to be applied on ec2 resources like instances and launch templates.
+	// tags to be applied on ec2 resources like instances and launch templates.
 	// +kubebuilder:validation:XValidation:message="empty tag keys aren't supported",rule="self.all(k, k != '')"
 	// +kubebuilder:validation:XValidation:message="tag contains a restricted tag matching eks:eks-cluster-name",rule="self.all(k, k !='eks:eks-cluster-name')"
 	// +kubebuilder:validation:XValidation:message="tag contains a restricted tag matching kubernetes.io/cluster/",rule="self.all(k, !k.startsWith('kubernetes.io/cluster') )"
 	// +kubebuilder:validation:XValidation:message="tag contains a restricted tag matching karpenter.sh/nodepool",rule="self.all(k, k != 'karpenter.sh/nodepool')"
 	// +kubebuilder:validation:XValidation:message="tag contains a restricted tag matching karpenter.sh/nodeclaim",rule="self.all(k, k !='karpenter.sh/nodeclaim')"
 	// +kubebuilder:validation:XValidation:message="tag contains a restricted tag matching karpenter.k8s.aws/ec2nodeclass",rule="self.all(k, k !='karpenter.k8s.aws/ec2nodeclass')"
+	// +kubebuilder:validation:MinProperties=1
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`
 
-	// BlockDeviceMappings to be applied to provisioned nodes.
+	// blockDeviceMappings to be applied to provisioned nodes.
 	// For OpenShift nodes, a default root volume size of 120Gi and type gp3 is set if no blockDeviceMapping overrides are specified.
-	// +kubebuilder:validation:XValidation:message="must have only one blockDeviceMappings with rootVolume",rule="self.filter(x, has(x.rootVolume)?x.rootVolume==true:false).size() <= 1"
+	// +kubebuilder:validation:XValidation:message="must have only one blockDeviceMappings with rootVolume",rule="self.filter(x, has(x.rootVolume)?x.rootVolume=='RootVolume':false).size() <= 1"
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems:=50
+	// +listType=atomic
 	// +optional
 	BlockDeviceMappings []*BlockDeviceMapping `json:"blockDeviceMappings,omitempty"`
 
-	// InstanceStorePolicy specifies how to handle instance-store disks.
+	// instanceStorePolicy specifies how to handle instance-store disks.
 	// +optional
-	InstanceStorePolicy *InstanceStorePolicy `json:"instanceStorePolicy,omitempty"`
+	InstanceStorePolicy InstanceStorePolicy `json:"instanceStorePolicy,omitempty"`
 
-	// DetailedMonitoring controls if detailed monitoring is enabled for instances that are launched
+	// detailedMonitoring controls if detailed monitoring is enabled for instances that are launched.
 	// +optional
-	DetailedMonitoring *bool `json:"detailedMonitoring,omitempty"`
+	DetailedMonitoring DetailedMonitoringState `json:"detailedMonitoring,omitempty"`
 
-	// Version is an OpenShift version (e.g., "4.20.1") specifying the release version
+	// version is an OpenShift version (e.g., "4.20.1") specifying the release version
 	// for nodes managed by this NodeClass. When set, the controller resolves this to a
 	// release image via the Cincinnati graph API. When not set, nodes use the control plane's
 	// release image.
-	// +kubebuilder:validation:Pattern=`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^(0|[1-9]\\\\d*)\\\\.(0|[1-9]\\\\d*)\\\\.(0|[1-9]\\\\d*)$')",message="version must be a valid semantic version (e.g., 4.20.1)"
+	// +kubebuilder:validation:MinLength=5
+	// +kubebuilder:validation:MaxLength=64
 	// +optional
 	Version string `json:"version,omitempty"`
 }
 
 // SubnetSelectorTerm defines selection logic for a subnet used by Karpenter to launch nodes.
 // If multiple fields are used for selection, the requirements are ANDed.
+// +kubebuilder:validation:MinProperties=1
 type SubnetSelectorTerm struct {
-	// Tags is a map of key/value tags used to select subnets
+	// tags is a map of key/value tags used to select subnets.
 	// Specifying '*' for a value selects all values for a given tag key.
 	// +kubebuilder:validation:XValidation:message="empty tag keys or values aren't supported",rule="self.all(k, k != '' && self[k] != '')"
 	// +kubebuilder:validation:MaxProperties:=20
+	// +kubebuilder:validation:MinProperties=1
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`
 
-	// ID is the subnet id in EC2
-	// +kubebuilder:validation:Pattern="subnet-[0-9a-z]+"
+	// id is the subnet id in EC2.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^subnet-[0-9a-z]+$')",message="id must match the pattern subnet-[0-9a-z]+"
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
 	// +optional
 	ID string `json:"id,omitempty"`
 }
 
 // SecurityGroupSelectorTerm defines selection logic for a security group used by Karpenter to launch nodes.
 // If multiple fields are used for selection, the requirements are ANDed.
+// +kubebuilder:validation:MinProperties=1
 type SecurityGroupSelectorTerm struct {
-	// Tags is a map of key/value tags used to select subnets
+	// tags is a map of key/value tags used to select security groups.
 	// Specifying '*' for a value selects all values for a given tag key.
 	// +kubebuilder:validation:XValidation:message="empty tag keys or values aren't supported",rule="self.all(k, k != '' && self[k] != '')"
 	// +kubebuilder:validation:MaxProperties:=20
+	// +kubebuilder:validation:MinProperties=1
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`
 
-	// ID is the security group id in EC2
-	// +kubebuilder:validation:Pattern:="sg-[0-9a-z]+"
+	// id is the security group id in EC2.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^sg-[0-9a-z]+$')",message="id must match the pattern sg-[0-9a-z]+"
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
 	// +optional
 	ID string `json:"id,omitempty"`
 
-	// Name is the security group name in EC2.
+	// name is the security group name in EC2.
 	// This value is the name field, which is different from the name tag.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	// +optional
 	Name string `json:"name,omitempty"`
 }
 
 type BlockDeviceMapping struct {
-	// The device name (for example, /dev/sdh or xvdh).
+	// deviceName is the device name (for example, /dev/sdh or xvdh).
 	// +optional
-	DeviceName *string `json:"deviceName,omitempty"`
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	DeviceName string `json:"deviceName,omitempty"`
 
-	// EBS contains parameters used to automatically set up EBS volumes when an instance is launched.
+	// ebs contains parameters used to automatically set up EBS volumes when an instance is launched.
 	// +kubebuilder:validation:XValidation:message="snapshotID or volumeSize must be defined",rule="has(self.snapshotID) || has(self.volumeSize)"
 	// +optional
-	EBS *BlockDevice `json:"ebs,omitempty"`
+	EBS BlockDevice `json:"ebs,omitempty,omitzero"`
 
-	// RootVolume is a flag indicating if this device is mounted as kubelet root dir. You can
+	// rootVolume indicates whether this device is mounted as kubelet root dir. You can
 	// configure at most one root volume in BlockDeviceMappings.
-	RootVolume bool `json:"rootVolume,omitempty"`
+	// +optional
+	RootVolume RootVolumeDesignation `json:"rootVolume,omitempty"`
 }
 
+// +kubebuilder:validation:MinProperties=1
 type BlockDevice struct {
-	// DeleteOnTermination indicates whether the EBS volume is deleted on instance termination.
+	// deleteOnTermination indicates whether the EBS volume is deleted on instance termination.
 	// +optional
-	DeleteOnTermination *bool `json:"deleteOnTermination,omitempty"`
+	DeleteOnTermination DeleteOnTerminationPolicy `json:"deleteOnTermination,omitempty"`
 
-	// Encrypted indicates whether the EBS volume is encrypted. Encrypted volumes can only
+	// encrypted indicates whether the EBS volume is encrypted. Encrypted volumes can only
 	// be attached to instances that support Amazon EBS encryption. If you are creating
 	// a volume from a snapshot, you can't specify an encryption value.
 	// +optional
-	Encrypted *bool `json:"encrypted,omitempty"`
+	Encrypted EncryptionState `json:"encrypted,omitempty"`
 
-	// IOPS is the number of I/O operations per second (IOPS). For gp3, io1, and io2 volumes,
+	// iops is the number of I/O operations per second (IOPS). For gp3, io1, and io2 volumes,
 	// this represents the number of IOPS that are provisioned for the volume. For
 	// gp2 volumes, this represents the baseline performance of the volume and the
 	// rate at which the volume accumulates I/O credits for bursting.
@@ -233,20 +323,24 @@ type BlockDevice struct {
 	// +optional
 	IOPS *int64 `json:"iops,omitempty"`
 
-	// KMSKeyID (ARN) of the symmetric Key Management Service (KMS) CMK used for encryption.
+	// kmsKeyID is the ARN of the symmetric Key Management Service (KMS) CMK used for encryption.
 	// +optional
-	KMSKeyID *string `json:"kmsKeyID,omitempty"`
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=2048
+	KMSKeyID string `json:"kmsKeyID,omitempty"`
 
-	// SnapshotID is the ID of an EBS snapshot
+	// snapshotID is the ID of an EBS snapshot.
 	// +optional
-	SnapshotID *string `json:"snapshotID,omitempty"`
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	SnapshotID string `json:"snapshotID,omitempty"`
 
-	// Throughput to provision for a gp3 volume, with a maximum of 1,000 MiB/s.
+	// throughput to provision for a gp3 volume, with a maximum of 1,000 MiB/s.
 	// Valid Range: Minimum value of 125. Maximum value of 1000.
 	// +optional
 	Throughput *int64 `json:"throughput,omitempty"`
 
-	// VolumeSize in `Gi`, `G`, `Ti`, or `T`. You must specify either a snapshot ID or
+	// volumeSize in `Gi`, `G`, `Ti`, or `T`. You must specify either a snapshot ID or
 	// a volume size. The following are the supported volumes sizes for each volume
 	// type:
 	//
@@ -265,43 +359,56 @@ type BlockDevice struct {
 	// +optional
 	VolumeSize *resource.Quantity `json:"volumeSize,omitempty" hash:"string"`
 
-	// VolumeType of the block device.
+	// volumeType is the type of the block device.
 	// For more information, see Amazon EBS volume types (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EBSVolumeTypes.html)
 	// in the Amazon Elastic Compute Cloud User Guide.
 	// +kubebuilder:validation:Enum:={standard,io1,io2,gp2,sc1,st1,gp3}
 	// +optional
-	VolumeType *string `json:"volumeType,omitempty"`
+	VolumeType string `json:"volumeType,omitempty"`
 }
 
 // OpenshiftEC2NodeClassStatus defines the observed state of OpenshiftEC2NodeClass.
+// +kubebuilder:validation:MinProperties=1
 type OpenshiftEC2NodeClassStatus struct {
-	// Subnets contains the current Subnet values that are available to the
-	// cluster under the subnet selectors.
-	// +optional
-	Subnets []Subnet `json:"subnets,omitempty"`
-
-	// SecurityGroups contains the current Security Groups values that are available to the
-	// cluster under the SecurityGroups selectors.
-	// +optional
-	SecurityGroups []SecurityGroup `json:"securityGroups,omitempty"`
-
-	// ReleaseImage is the fully qualified release image resolved either from spec.version, or inherited from
-	// the HostedControlPlane's spec.ReleaseImage.
-	// Of the format "quay.io/openshift-release-dev/ocp-release@sha256:<digest>".
-	// +optional
-	ReleaseImage string `json:"releaseImage,omitempty"`
-
-	// Version is the resolved OpenShift version corresponding to the status.releaseImage.
-	// +optional
-	Version string `json:"version,omitempty"`
-
+	// conditions contain signals for health and readiness.
 	// +optional
 	// +listType=map
 	// +listMapKey=type
 	// +patchMergeKey=type
 	// +patchStrategy=merge
-	// Conditions contain signals for health and readiness.
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=100
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type"`
+
+	// subnets contains the current Subnet values that are available to the
+	// cluster under the subnet selectors.
+	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=100
+	Subnets []Subnet `json:"subnets,omitempty"`
+
+	// securityGroups contains the current Security Groups values that are available to the
+	// cluster under the SecurityGroups selectors.
+	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=100
+	SecurityGroups []SecurityGroup `json:"securityGroups,omitempty"`
+
+	// releaseImage is the fully qualified release image resolved either from spec.version, or inherited from
+	// the HostedControlPlane's spec.ReleaseImage.
+	// Of the format "quay.io/openshift-release-dev/ocp-release@sha256:<digest>".
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=512
+	ReleaseImage string `json:"releaseImage,omitempty"`
+
+	// version is the resolved OpenShift version corresponding to the status.releaseImage.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=64
+	Version string `json:"version,omitempty"`
 }
 
 // +genclient
@@ -312,11 +419,19 @@ type OpenshiftEC2NodeClassStatus struct {
 // +kubebuilder:storageversion
 // OpenshiftEC2NodeClass defines the desired state of OpenshiftEC2NodeClass.
 type OpenshiftEC2NodeClass struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+
+	// metadata is the standard object metadata.
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   OpenshiftEC2NodeClassSpec   `json:"spec,omitempty"`
-	Status OpenshiftEC2NodeClassStatus `json:"status,omitempty"`
+	// spec defines the desired state of the OpenshiftEC2NodeClass.
+	// +optional
+	Spec OpenshiftEC2NodeClassSpec `json:"spec,omitempty,omitzero"`
+
+	// status defines the observed state of the OpenshiftEC2NodeClass.
+	// +optional
+	Status OpenshiftEC2NodeClassStatus `json:"status,omitempty,omitzero"`
 }
 
 // +kubebuilder:object:root=true

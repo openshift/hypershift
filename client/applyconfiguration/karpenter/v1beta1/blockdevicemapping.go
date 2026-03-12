@@ -17,12 +17,16 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	karpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+)
+
 // BlockDeviceMappingApplyConfiguration represents a declarative configuration of the BlockDeviceMapping type for use
 // with apply.
 type BlockDeviceMappingApplyConfiguration struct {
-	DeviceName *string                        `json:"deviceName,omitempty"`
-	EBS        *BlockDeviceApplyConfiguration `json:"ebs,omitempty"`
-	RootVolume *bool                          `json:"rootVolume,omitempty"`
+	DeviceName *string                                 `json:"deviceName,omitempty"`
+	EBS        *BlockDeviceApplyConfiguration          `json:"ebs,omitempty"`
+	RootVolume *karpenterv1beta1.RootVolumeDesignation `json:"rootVolume,omitempty"`
 }
 
 // BlockDeviceMappingApplyConfiguration constructs a declarative configuration of the BlockDeviceMapping type for use with
@@ -50,7 +54,7 @@ func (b *BlockDeviceMappingApplyConfiguration) WithEBS(value *BlockDeviceApplyCo
 // WithRootVolume sets the RootVolume field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the RootVolume field is set to the value of the last call.
-func (b *BlockDeviceMappingApplyConfiguration) WithRootVolume(value bool) *BlockDeviceMappingApplyConfiguration {
+func (b *BlockDeviceMappingApplyConfiguration) WithRootVolume(value karpenterv1beta1.RootVolumeDesignation) *BlockDeviceMappingApplyConfiguration {
 	b.RootVolume = &value
 	return b
 }

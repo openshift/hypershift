@@ -5,19 +5,23 @@ metadata:
     api.openshift.io/merged-by-featuregates: "true"
     include.release.openshift.io/ibm-cloud-managed: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
-  name: certificatesigningrequestapprovals.hypershift.openshift.io
+  name: hostedcontrolplanes.hypershift.openshift.io
 spec:
   group: hypershift.openshift.io
   names:
-    kind: CertificateSigningRequestApproval
-    listKind: CertificateSigningRequestApprovalList
-    plural: certificatesigningrequestapprovals
+    categories:
+    - cluster-api
+    kind: HostedControlPlane
+    listKind: HostedControlPlaneList
+    plural: hostedcontrolplanes
     shortNames:
-    - csra
-    - csras
-    singular: certificatesigningrequestapproval
+    - hcp
+    - hcps
+    singular: hostedcontrolplane
   scope: Namespaced
   versions:
   - name: v1beta1
     served: true
     storage: true
+    subresources:
+      status: {}

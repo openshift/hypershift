@@ -42,7 +42,7 @@ linters:
     rules:
       - linters:
           - kubeapilinter
-        path-except: hypershift//*
+        path-except: (hypershift|karpenter)//*
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/aws.go
@@ -2095,6 +2095,21 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/hostedcluster_types.go
         text: 'uniquemarkers: field ProvisionerConfig.Name has multiple definitions of marker kubebuilder:validation:Enum when only a single definition should exist'
+      # karpenter - arrayofstruct: These selector term structs intentionally have all optional fields
+      # because they represent OR-style selectors where any combination of fields can be used.
+      # CEL XValidation rules already enforce that at least one field is set per term.
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1beta1/karpenter_types.go
+        text: 'arrayofstruct: OpenshiftEC2NodeClassSpec.SubnetSelectorTerms is an array of structs'
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1beta1/karpenter_types.go
+        text: 'arrayofstruct: OpenshiftEC2NodeClassSpec.SecurityGroupSelectorTerms is an array of structs'
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1beta1/karpenter_types.go
+        text: 'arrayofstruct: OpenshiftEC2NodeClassSpec.BlockDeviceMappings is an array of structs'
 
     paths:
       - third_party$
