@@ -219,7 +219,7 @@ func configureGCPServiceAccount(saConfig *hyperv1.GCPNodeServiceAccount) *capigc
 
 	email := ""
 	if saConfig.Email != nil {
-		email = *saConfig.Email
+		email = string(*saConfig.Email)
 	}
 	return &capigcp.ServiceAccount{
 		Email:  email,
