@@ -12,7 +12,7 @@ import (
 
 const (
 	defaultArch          = "multi"
-	defaultCincinnatiURL = "https://api.openshift.com/api/upgrades_info/v1/graph"
+	defaultCincinnatiURL = "https://api.openshift.com/api/upgrades_info/graph"
 	cacheTTL             = 10 * time.Minute
 )
 
@@ -96,7 +96,7 @@ func (r *CincinnatiVersionResolver) fetchVersion(ctx context.Context, version, c
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/vnd.redhat.cincinnati.v1+json")
 
 	resp, err := r.client.Do(req)
 	if err != nil {
