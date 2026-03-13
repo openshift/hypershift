@@ -65,7 +65,7 @@ type cincinnatiNode struct {
 // Resolve resolves an OpenShift version (e.g., "4.20.1") to a fully qualified
 // release image pullspec by querying the Cincinnati graph API with the given channel.
 func (r *CincinnatiVersionResolver) Resolve(ctx context.Context, version, channel string) (string, error) {
-	// Derive the Cincinnati channel. Use the HCP channel if set, otherwise default to "fast-<major>.<minor>".
+	// Derive the Cincinnati channel. Use the input channel if set, otherwise default to "fast-<major>.<minor>".
 	if channel == "" {
 		parsedVersion, err := semver.Parse(version)
 		if err != nil {
