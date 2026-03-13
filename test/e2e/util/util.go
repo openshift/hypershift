@@ -2976,13 +2976,6 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
 	}
 
-	// TODO: TEMPORARY - Remove this once ControlPlaneConnectionAvailable condition is merged and stable.
-	// Exclude ControlPlaneConnectionAvailable during upgrade tests as the condition
-	// may not be present in all builds during the upgrade window.
-	if strings.Contains(t.Name(), "Upgrade") {
-		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
-	}
-
 	var predicates []Predicate[*hyperv1.HostedCluster]
 	for conditionType, conditionStatus := range expectedConditions {
 		predicates = append(predicates, ConditionPredicate[*hyperv1.HostedCluster](Condition{
