@@ -9,6 +9,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
+	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 
 	awsrequest "github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/service/elbv2"
@@ -24,52 +25,44 @@ import (
 
 // E2eTestConfig is a configuration struct for AWS CCM tests.
 type E2eTestConfig struct {
-	T   *testing.T
-	Ctx context.Context
-	// G                     gomega.Gomega
-	MgtClient             crclient.Client
-	GuestClient           crclient.Client
-	HostedCluster         *hyperv1.HostedCluster
-	FeatureSet            string
-	ControlPlaneNamespace string
-	FeatureGateEnabled    bool
-	AWSCredsFile          string
-	AWSRegion             string
-	Platform              hyperv1.PlatformType
-}
-
-func validate_EnsureAWSCCMWithCustomizations(t *testing.T, cfg *E2eTestConfig) {
-	AtLeast(t, Version422)
-	if cfg.Platform != hyperv1.AWSPlatform {
-		t.Skip("test only supported on platform AWS")
-	}
-
-	// Check if the feature is enabled in the feature set
-	if !cfg.FeatureGateEnabled {
-		t.Logf("Feature gate is not enabled in the feature set: %s", cfg.FeatureSet)
-		t.Skipf("Skipping test: feature gate is not enabled in the feature set: %s", cfg.FeatureSet)
-	}
+	MgtClient     crclient.Client
+	GuestClient   crclient.Client
+	HostedCluster *hyperv1.HostedCluster
+	AWSCredsFile  string
+	Platform      hyperv1.PlatformType
 }
 
 // EnsureAWSCCMWithCustomizations implements tests that exercise AWS CCM controller for critical features.
 // This test is only supported on platform AWS, as well runs only when the feature gate AWSServiceLBNetworkSecurityGroup is enabled.
 // A hosted cluster with TechPreviewNoUpgrade feature set is supported.
 // It must skip tests not enabled in the feature set.
-func EnsureAWSCCMWithCustomizations(cfg *E2eTestConfig) {
+func EnsureAWSCCMWithCustomizations(t *testing.T, ctx context.Context, cfg *E2eTestConfig) {
+	validate_extractLoadBalancerNameFromHostname(t)
+
+	AtLeast(t, Version422)
+	if cfg.Platform != hyperv1.AWSPlatform {
+		t.Skip("test only supported on platform AWS")
+	}
+
+	// Check if the feature is enabled in the feature set
+	featureGateSpec := cfg.HostedCluster.Spec.Configuration.FeatureGate
+	if !featuregates.IsFeatureEnabledInFeatureGateSpec(featureGateSpec, featuregates.AWSServiceLBNetworkSecurityGroup) {
+		t.Logf("Feature gate is not enabled in the feature set: %s", featureGateSpec.FeatureSet)
+		t.Skipf("Skipping test: feature gate is not enabled in the feature set: %s", featureGateSpec.FeatureSet)
+	}
 
 	// Test case: Validate managed security groups in TechPreviewNoUpgrade feature set
-	cfg.T.Run("When AWSServiceLBNetworkSecurityGroup is enabled it must have config NLBSecurityGroupMode=Managed entry in cloud-config configmap", func(t *testing.T) {
-		validate_EnsureAWSCCMWithCustomizations(t, cfg)
+	t.Run("When AWSServiceLBNetworkSecurityGroup is enabled it must have config NLBSecurityGroupMode=Managed entry in cloud-config configmap", func(t *testing.T) {
 		g := gomega.NewWithT(t)
 
 		t.Logf("Validating aws-cloud-config ConfigMap contains entry NLBSecurityGroupMode=Managed")
 
 		// Ensure the configuration is present when the feature gate is enabled
-		EventuallyObject(t, cfg.Ctx, "NLBSecurityGroupMode = Managed entry exists in aws-cloud-config ConfigMap",
+		EventuallyObject(t, ctx, "NLBSecurityGroupMode = Managed entry exists in aws-cloud-config ConfigMap",
 			func(ctx context.Context) (*corev1.ConfigMap, error) {
 				cm := &corev1.ConfigMap{}
-				err := cfg.MgtClient.Get(cfg.Ctx, crclient.ObjectKey{
-					Namespace: cfg.ControlPlaneNamespace,
+				err := cfg.MgtClient.Get(ctx, crclient.ObjectKey{
+					Namespace: cfg.HostedCluster.Namespace,
 					Name:      "aws-cloud-config",
 				}, cm)
 				return cm, err
@@ -99,21 +92,23 @@ func EnsureAWSCCMWithCustomizations(cfg *E2eTestConfig) {
 
 	// Test case: Create custom service type NLB in the hosted cluster, the NLB resource must
 	// have a security group attached to it
-	// Note: this test must executed only when the feature gate AWSServiceLBNetworkSecurityGroup is enabled.
-	cfg.T.Run("When AWSServiceLBNetworkSecurityGroup is enabled it must create a LoadBalancer NLB with managed security group attached", func(t *testing.T) {
-		validate_EnsureAWSCCMWithCustomizations(t, cfg)
+	// Note: this test must run only when the feature gate AWSServiceLBNetworkSecurityGroup is enabled.
+	t.Run("When AWSServiceLBNetworkSecurityGroup is enabled it must create a LoadBalancer NLB with managed security group attached", func(t *testing.T) {
 		g := gomega.NewWithT(t)
 
 		// Create a test namespace in the guest cluster
-		testNS := &corev1.Namespace{}
-		testNS.Name = "test-ccm-nlb-sg"
+		testNS := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-ccm-nlb-sg",
+			},
+		}
 		t.Logf("Creating test namespace %s in guest cluster", testNS.Name)
 
-		err := cfg.GuestClient.Create(cfg.Ctx, testNS)
+		err := cfg.GuestClient.Create(ctx, testNS)
 		g.Expect(err).NotTo(gomega.HaveOccurred(), "failed to create test namespace")
 		defer func() {
 			t.Logf("Cleaning up test namespace %s", testNS.Name)
-			_ = cfg.GuestClient.Delete(cfg.Ctx, testNS)
+			_ = cfg.GuestClient.Delete(ctx, testNS)
 		}()
 
 		// Create a LoadBalancer service
@@ -141,15 +136,15 @@ func EnsureAWSCCMWithCustomizations(cfg *E2eTestConfig) {
 			},
 		}
 		t.Logf("Creating LoadBalancer service %s/%s", testSvc.Namespace, testSvc.Name)
-		err = cfg.GuestClient.Create(cfg.Ctx, testSvc)
+		err = cfg.GuestClient.Create(ctx, testSvc)
 		g.Expect(err).NotTo(gomega.HaveOccurred(), "failed to create LoadBalancer service")
 
 		// Wait for the LoadBalancer to be provisioned and get hostname
 		var lbHostname string
-		EventuallyObject(cfg.T, cfg.Ctx, "LoadBalancer service to have ingress hostname",
+		EventuallyObject(t, ctx, "LoadBalancer service to have ingress hostname",
 			func(ctx context.Context) (*corev1.Service, error) {
 				svc := &corev1.Service{}
-				err := cfg.GuestClient.Get(cfg.Ctx, crclient.ObjectKey{
+				err := cfg.GuestClient.Get(ctx, crclient.ObjectKey{
 					Namespace: testNS.Name,
 					Name:      testSvc.Name,
 				}, svc)
@@ -176,7 +171,7 @@ func EnsureAWSCCMWithCustomizations(cfg *E2eTestConfig) {
 		t.Logf("Extracted load balancer name: %s", lbName)
 
 		t.Logf("Verifying load balancer has security groups using AWS SDK")
-		awsSession := awsutil.NewSession("e2e-ccm-nlb-sg", cfg.AWSCredsFile, "", "", cfg.AWSRegion)
+		awsSession := awsutil.NewSession("e2e-ccm-nlb-sg", cfg.AWSCredsFile, "", "", cfg.HostedCluster.Spec.Platform.AWS.Region)
 		g.Expect(awsSession).NotTo(gomega.BeNil(), "failed to create AWS session")
 
 		awsConfig := awsutil.NewConfig()
@@ -208,7 +203,7 @@ func EnsureAWSCCMWithCustomizations(cfg *E2eTestConfig) {
 		// 9 attempts with the delay profile above waits ~215s between attempts (plus request time),
 		// satisfying the "wait at least 3 minutes" requirement before failing.
 		err = elbv2Client.WaitUntilLoadBalancerAvailableWithContext(
-			cfg.Ctx,
+			ctx,
 			describeLBInput,
 			awsrequest.WithWaiterMaxAttempts(9),
 			awsrequest.WithWaiterDelay(waiterDelay),
@@ -218,7 +213,7 @@ func EnsureAWSCCMWithCustomizations(cfg *E2eTestConfig) {
 		// Describe the load balancer
 		t.Logf("Describing load balancer to check for security groups")
 
-		describeLBOutput, err := elbv2Client.DescribeLoadBalancersWithContext(cfg.Ctx, describeLBInput)
+		describeLBOutput, err := elbv2Client.DescribeLoadBalancersWithContext(ctx, describeLBInput)
 		g.Expect(err).NotTo(gomega.HaveOccurred(), "failed to describe load balancer")
 		g.Expect(len(describeLBOutput.LoadBalancers)).To(gomega.BeNumerically(">", 0), "no load balancers found with name %s", lbName)
 
@@ -234,11 +229,31 @@ func EnsureAWSCCMWithCustomizations(cfg *E2eTestConfig) {
 		for i, sg := range lb.SecurityGroups {
 			t.Logf("  Security Group %d: %s", i+1, *sg)
 		}
-
 	})
+}
 
+// extractLoadBalancerNameFromHostname extracts the load balancer name from the DNS hostname.
+// The hostname is in the format of <name>-<id>.elb.<region>.amazonaws.com.
+// The function drops only the last hyphen segment.
+// Example:
+// - Input: "e2e-v7-fnt8p-ext-9a316db0952d7e14.elb.us-east-1.amazonaws.com"
+// - Output: "e2e-v7-fnt8p-ext"
+// - Input: "af1c7bcc09ce1420db0292d91f0dad1f-f4ad6ce6794c3afd.elb.us-east-1.amazonaws.com"
+// - Output: "af1c7bcc09ce1420db0292d91f0dad1f"
+// - Input: "a7f9d8c870a2b44c39d9565e2ec22e81-1194117244.us-east-1.elb.amazonaws.com"
+// - Output: "a7f9d8c870a2b44c39d9565e2ec22e81"
+func extractLoadBalancerNameFromHostname(hostname string) string {
+	firstLabel := strings.SplitN(hostname, ".", 2)[0]
+	lastHyphen := strings.LastIndex(firstLabel, "-")
+	if lastHyphen == -1 {
+		return firstLabel
+	}
+	return firstLabel[:lastHyphen]
+}
+
+func validate_extractLoadBalancerNameFromHostname(t *testing.T) {
 	// Test case: validate the load balancer name extraction function from the DNS hostname.
-	cfg.T.Run("When extracting a load balancer name from a DNS hostname it should drop only the last hyphen segment", func(t *testing.T) {
+	t.Run("When extracting a load balancer name from a DNS hostname it should drop only the last hyphen segment", func(t *testing.T) {
 		cases := []struct {
 			name     string
 			hostname string
@@ -280,23 +295,4 @@ func EnsureAWSCCMWithCustomizations(cfg *E2eTestConfig) {
 			})
 		}
 	})
-}
-
-// extractLoadBalancerNameFromHostname extracts the load balancer name from the DNS hostname.
-// The hostname is in the format of <name>-<id>.elb.<region>.amazonaws.com.
-// The function drops only the last hyphen segment.
-// Example:
-// - Input: "e2e-v7-fnt8p-ext-9a316db0952d7e14.elb.us-east-1.amazonaws.com"
-// - Output: "e2e-v7-fnt8p-ext"
-// - Input: "af1c7bcc09ce1420db0292d91f0dad1f-f4ad6ce6794c3afd.elb.us-east-1.amazonaws.com"
-// - Output: "af1c7bcc09ce1420db0292d91f0dad1f"
-// - Input: "a7f9d8c870a2b44c39d9565e2ec22e81-1194117244.us-east-1.elb.amazonaws.com"
-// - Output: "a7f9d8c870a2b44c39d9565e2ec22e81"
-func extractLoadBalancerNameFromHostname(hostname string) string {
-	firstLabel := strings.SplitN(hostname, ".", 2)[0]
-	lastHyphen := strings.LastIndex(firstLabel, "-")
-	if lastHyphen == -1 {
-		return firstLabel
-	}
-	return firstLabel[:lastHyphen]
 }
