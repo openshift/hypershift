@@ -4,13 +4,14 @@ Weekly PR Report Generator for HyperShift
 Optimized version with parallel API calls and batch processing
 """
 
+import argparse
 import asyncio
 import json
 import os
 import re
 import sys
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 import subprocess
 
 # API pagination and limit constants
@@ -19,6 +20,15 @@ GITHUB_PR_SEARCH_LIMIT = 100
 GITHUB_REVIEWS_LIMIT = 50
 GITHUB_LABELS_LIMIT = 20
 GITHUB_TIMELINE_ITEMS_LIMIT = 100
+GITHUB_FILES_LIMIT = 50
+
+# HyperShift-related paths in openshift/release repository
+HYPERSHIFT_RELEASE_PATHS = [
+    'ci-operator/config/openshift/hypershift/',
+    'ci-operator/jobs/openshift/hypershift/',
+    'ci-operator/step-registry/hypershift/',
+    'clusters/app.ci/openshift/hypershift/',
+]
 
 # Default report period
 DEFAULT_DAYS_AGO = 7
@@ -294,8 +304,10 @@ class JiraClient:
 
 
 class PRReportGenerator:
-    def __init__(self, since_date: str):
+    def __init__(self, since_date: str, end_date: Optional[str] = None, output_dir: str = '/tmp'):
         self.since_date = since_date
+        self.end_date = end_date or datetime.now().strftime('%Y-%m-%d')
+        self.output_dir = output_dir
         self.github_token = os.getenv('GITHUB_TOKEN') or self._get_gh_token()
         self.jira_url = os.getenv('JIRA_URL', 'https://issues.redhat.com')
 
@@ -303,6 +315,63 @@ class PRReportGenerator:
         self.prs: List[Dict] = []
         self.jira_hierarchy: Dict = {}
         self.hypershift_authors: Set[str] = set()
+
+    # Bot authors to tag in release repo PRs
+    RELEASE_BOT_AUTHORS = {'renovate[bot]', 'dependabot[bot]'}
+
+    async def _github_graphql_request(self, session, query: str, variables: Dict,
+                                       headers: Dict, max_retries: int = 3) -> Optional[Dict]:
+        """Make a GitHub GraphQL request with rate limit handling.
+
+        Handles 403/429 rate limit responses by respecting Retry-After headers.
+        Returns parsed JSON data or None on failure.
+        """
+        for attempt in range(max_retries + 1):
+            try:
+                if HAS_AIOHTTP and session is not None:
+                    async with session.post(
+                        'https://api.github.com/graphql',
+                        json={"query": query, "variables": variables},
+                        headers=headers
+                    ) as response:
+                        if response.status in (403, 429):
+                            retry_after = int(response.headers.get('Retry-After', 60))
+                            print(f"  Rate limited (HTTP {response.status}), waiting {retry_after}s...")
+                            await asyncio.sleep(retry_after)
+                            continue
+                        if response.status != 200:
+                            print(f"  GitHub API returned {response.status}")
+                            if attempt < max_retries:
+                                await asyncio.sleep(2)
+                                continue
+                            return None
+                        return await response.json()
+                else:
+                    response = requests.post(
+                        'https://api.github.com/graphql',
+                        json={"query": query, "variables": variables},
+                        headers=headers,
+                        timeout=30
+                    )
+                    if response.status_code in (403, 429):
+                        retry_after = int(response.headers.get('Retry-After', 60))
+                        print(f"  Rate limited (HTTP {response.status_code}), waiting {retry_after}s...")
+                        await asyncio.sleep(retry_after)
+                        continue
+                    if response.status_code != 200:
+                        print(f"  GitHub API returned {response.status_code}")
+                        if attempt < max_retries:
+                            await asyncio.sleep(2)
+                            continue
+                        return None
+                    return response.json()
+            except Exception as e:
+                print(f"  Request error: {e}")
+                if attempt < max_retries:
+                    await asyncio.sleep(2)
+                    continue
+                return None
+        return None
 
     def _get_gh_token(self) -> str:
         """Get GitHub token from gh CLI"""
@@ -371,8 +440,8 @@ class PRReportGenerator:
 
     async def fetch_prs_graphql(self, repo_owner: str, repo_name: str) -> List[Dict]:
         """Fetch PRs using GitHub GraphQL API with search query for date filtering"""
-        # Use search query to filter by merge date range
-        search_query = f"repo:{repo_owner}/{repo_name} is:pr is:merged merged:>={self.since_date}"
+        # Use search query to filter by merge date range (range syntax: START..END)
+        search_query = f"repo:{repo_owner}/{repo_name} is:pr is:merged merged:{self.since_date}..{self.end_date}"
 
         query = f"""
         query($searchQuery: String!, $cursor: String) {{
@@ -420,39 +489,12 @@ class PRReportGenerator:
         prs = []
         cursor = None
 
-        if HAS_AIOHTTP:
-            async with aiohttp.ClientSession() as session:
-                while True:
-                    variables = {"searchQuery": search_query, "cursor": cursor}
-                    async with session.post(
-                        'https://api.github.com/graphql',
-                        json={"query": query, "variables": variables},
-                        headers=headers
-                    ) as response:
-                        data = await response.json()
-
-                    if 'data' not in data or not data['data']['search']:
-                        break
-
-                    for pr in data['data']['search']['nodes']:
-                        if pr:  # Skip null entries
-                            prs.append(self._process_pr_data(pr, f"{repo_owner}/{repo_name}"))
-
-                    page_info = data['data']['search']['pageInfo']
-                    if not page_info['hasNextPage']:
-                        break
-                    cursor = page_info['endCursor']
-        else:
+        session = aiohttp.ClientSession() if HAS_AIOHTTP else None
+        try:
             while True:
                 variables = {"searchQuery": search_query, "cursor": cursor}
-                response = requests.post(
-                    'https://api.github.com/graphql',
-                    json={"query": query, "variables": variables},
-                    headers=headers
-                )
-                data = response.json()
-
-                if 'data' not in data or not data['data']['search']:
+                data = await self._github_graphql_request(session, query, variables, headers)
+                if not data or 'data' not in data or not data['data']['search']:
                     break
 
                 for pr in data['data']['search']['nodes']:
@@ -463,7 +505,168 @@ class PRReportGenerator:
                 if not page_info['hasNextPage']:
                     break
                 cursor = page_info['endCursor']
+        finally:
+            if session:
+                await session.close()
 
+        return prs
+
+    async def fetch_release_prs_graphql(self) -> List[Dict]:
+        """Fetch PRs from openshift/release that touch HyperShift-related paths.
+
+        Uses GitHub GraphQL API to fetch merged PRs, then filters by file paths
+        to identify HyperShift-related changes.
+        """
+        repo_owner = 'openshift'
+        repo_name = 'release'
+        search_query = f"repo:{repo_owner}/{repo_name} is:pr is:merged merged:{self.since_date}..{self.end_date}"
+
+        # Include files in the query for path-based filtering
+        query = f"""
+        query($searchQuery: String!, $cursor: String) {{
+          search(query: $searchQuery, type: ISSUE, first: {GITHUB_PR_SEARCH_LIMIT}, after: $cursor) {{
+            pageInfo {{
+              hasNextPage
+              endCursor
+            }}
+            nodes {{
+              ... on PullRequest {{
+                number
+                title
+                url
+                author {{ login }}
+                createdAt
+                mergedAt
+                isDraft
+                body
+                files(first: {GITHUB_FILES_LIMIT}) {{
+                  pageInfo {{
+                    hasNextPage
+                  }}
+                  nodes {{
+                    path
+                  }}
+                }}
+                labels(first: {GITHUB_LABELS_LIMIT}) {{ nodes {{ name }} }}
+                reviews(first: {GITHUB_REVIEWS_LIMIT}) {{
+                  nodes {{
+                    author {{ login }}
+                    state
+                    submittedAt
+                  }}
+                }}
+                timelineItems(first: {GITHUB_TIMELINE_ITEMS_LIMIT}, itemTypes: [READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT]) {{
+                  nodes {{
+                    __typename
+                    ... on ReadyForReviewEvent {{ createdAt }}
+                    ... on ConvertToDraftEvent {{ createdAt }}
+                  }}
+                }}
+              }}
+            }}
+          }}
+        }}
+        """
+
+        headers = {
+            "Authorization": f"Bearer {self.github_token}",
+            "Content-Type": "application/json"
+        }
+
+        prs = []
+        cursor = None
+        total_scanned = 0
+        retry_count = 0
+        max_retries = 3
+
+        def is_hypershift_related(pr_data: Dict) -> bool:
+            """Check if PR touches any HyperShift-related paths."""
+            files = pr_data.get('files', {}).get('nodes', [])
+            for file_node in files:
+                path = file_node.get('path', '')
+                # Check if path contains 'hypershift' anywhere
+                if 'hypershift' in path.lower():
+                    return True
+            return False
+
+        def files_incomplete(pr_data: Dict) -> bool:
+            """Check if files were truncated by the GraphQL limit."""
+            return pr_data.get('files', {}).get('pageInfo', {}).get('hasNextPage', False)
+
+        async def check_remaining_files_async(session, pr_number: int) -> bool:
+            """Use REST API to check all files when GraphQL result was truncated."""
+            page = 1
+            per_page = 100
+            while True:
+                url = f"https://api.github.com/repos/{repo_owner}/{repo_name}/pulls/{pr_number}/files"
+                params = {"per_page": per_page, "page": page}
+                try:
+                    if HAS_AIOHTTP:
+                        async with session.get(url, headers=headers, params=params) as resp:
+                            if resp.status != 200:
+                                return False
+                            batch = await resp.json()
+                    else:
+                        resp = requests.get(url, headers=headers, params=params, timeout=30)
+                        if resp.status_code != 200:
+                            return False
+                        batch = resp.json()
+                except Exception:
+                    return False
+                for f in batch:
+                    if 'hypershift' in f.get('filename', '').lower():
+                        return True
+                if len(batch) < per_page:
+                    break
+                page += 1
+            return False
+
+        session = aiohttp.ClientSession() if HAS_AIOHTTP else None
+        bot_count = 0
+        try:
+            while True:
+                variables = {"searchQuery": search_query, "cursor": cursor}
+                data = await self._github_graphql_request(session, query, variables, headers)
+                if not data:
+                    break
+
+                if 'errors' in data:
+                    print(f"GraphQL errors: {data['errors']}")
+                    break
+
+                if 'data' not in data or not data['data']['search']:
+                    break
+
+                for pr in data['data']['search']['nodes']:
+                    if pr:
+                        total_scanned += 1
+                        if is_hypershift_related(pr):
+                            pr_data = self._process_pr_data(pr, f"{repo_owner}/{repo_name}")
+                            # Tag bot-authored PRs
+                            author = pr.get('author', {}).get('login', '') if pr.get('author') else ''
+                            if author in self.RELEASE_BOT_AUTHORS:
+                                pr_data['is_bot'] = True
+                                bot_count += 1
+                            prs.append(pr_data)
+                        elif files_incomplete(pr):
+                            if await check_remaining_files_async(session, pr['number']):
+                                pr_data = self._process_pr_data(pr, f"{repo_owner}/{repo_name}")
+                                author = pr.get('author', {}).get('login', '') if pr.get('author') else ''
+                                if author in self.RELEASE_BOT_AUTHORS:
+                                    pr_data['is_bot'] = True
+                                    bot_count += 1
+                                prs.append(pr_data)
+
+                page_info = data['data']['search']['pageInfo']
+                if not page_info['hasNextPage']:
+                    break
+                cursor = page_info['endCursor']
+        finally:
+            if session:
+                await session.close()
+
+        bot_note = f", {bot_count} bot-authored" if bot_count else ""
+        print(f"  Scanned {total_scanned} release PRs, found {len(prs)} HyperShift-related{bot_note}")
         return prs
 
     def _process_pr_data(self, pr: Dict, repo: str) -> Dict:
@@ -545,7 +748,7 @@ class PRReportGenerator:
             tasks = [
                 self.fetch_prs_graphql('openshift', 'hypershift'),
                 self.fetch_prs_graphql('openshift-eng', 'ai-helpers'),
-                # Note: openshift/release would need separate handling due to size
+                self.fetch_prs_graphql('openshift', 'enhancements'),
             ]
             results = await asyncio.gather(*tasks)
         else:
@@ -553,11 +756,13 @@ class PRReportGenerator:
             results = [
                 await self.fetch_prs_graphql('openshift', 'hypershift'),
                 await self.fetch_prs_graphql('openshift-eng', 'ai-helpers'),
+                await self.fetch_prs_graphql('openshift', 'enhancements'),
             ]
 
         # Combine and filter
         hypershift_prs = results[0]
         ai_helpers_prs = results[1] if len(results) > 1 else []
+        enhancements_prs = results[2] if len(results) > 2 else []
 
         # Filter ai-helpers PRs to only HyperShift contributors
         filtered_ai_helpers = [
@@ -565,8 +770,18 @@ class PRReportGenerator:
             if pr['author'] in self.hypershift_authors
         ]
 
-        self.prs = hypershift_prs + filtered_ai_helpers
-        print(f"Found {len(self.prs)} PRs ({len(hypershift_prs)} hypershift, {len(filtered_ai_helpers)} ai-helpers)")
+        # Filter enhancements PRs to only HyperShift contributors
+        filtered_enhancements = [
+            pr for pr in enhancements_prs
+            if pr['author'] in self.hypershift_authors
+        ]
+
+        # Fetch openshift/release PRs filtered by HyperShift-related paths
+        print("Fetching openshift/release PRs (filtering by HyperShift paths)...")
+        release_prs = await self.fetch_release_prs_graphql()
+
+        self.prs = hypershift_prs + filtered_ai_helpers + filtered_enhancements + release_prs
+        print(f"Found {len(self.prs)} PRs ({len(hypershift_prs)} hypershift, {len(filtered_ai_helpers)} ai-helpers, {len(filtered_enhancements)} enhancements, {len(release_prs)} release)")
 
     async def load_jira_hierarchy(self):
         """Load Jira hierarchy - either via direct API or from cache.
@@ -593,19 +808,29 @@ class PRReportGenerator:
             self.jira_hierarchy = await jira_client.build_hierarchy(all_tickets)
 
             # Save to cache for future runs
+            jira_cache_path = os.path.join(self.output_dir, 'jira_hierarchy.json')
             if self.jira_hierarchy:
-                with open('/tmp/jira_hierarchy.json', 'w') as f:
+                with open(jira_cache_path, 'w') as f:
                     json.dump(self.jira_hierarchy, f, indent=2)
                 print(f"Saved Jira hierarchy to cache ({len(self.jira_hierarchy)} entries)")
         else:
             # Fall back to loading from cache
+            jira_cache_path = os.path.join(self.output_dir, 'jira_hierarchy.json')
             print("JIRA_TOKEN not set, loading from cache (use MCP tools to populate)")
             try:
-                with open('/tmp/jira_hierarchy.json', 'r') as f:
+                # Check if cache is stale (older than report end date)
+                cache_mtime = datetime.fromtimestamp(os.path.getmtime(jira_cache_path))
+                report_end = datetime.strptime(self.end_date, '%Y-%m-%d')
+                if cache_mtime < report_end:
+                    print(f"Warning: Jira cache is stale (last updated {cache_mtime.strftime('%Y-%m-%d')}, "
+                          f"report ends {self.end_date}). Invalidating cache.")
+                    os.remove(jira_cache_path)
+                    raise FileNotFoundError
+                with open(jira_cache_path, 'r') as f:
                     self.jira_hierarchy = json.load(f)
                 print(f"Loaded Jira hierarchy cache with {len(self.jira_hierarchy)} entries")
             except FileNotFoundError:
-                print("Warning: Jira hierarchy cache not found at /tmp/jira_hierarchy.json")
+                print(f"Warning: Jira hierarchy cache not found at {jira_cache_path}")
                 print("Set JIRA_TOKEN or run /pr-report command to populate Jira data via MCP tools")
                 self.jira_hierarchy = {}
 
@@ -616,13 +841,15 @@ class PRReportGenerator:
         with open(output_path, 'w') as f:
             # Header
             f.write(f"# Weekly PR Report: openshift/hypershift\n")
-            f.write(f"**Period:** {self.since_date} to {datetime.now().strftime('%Y-%m-%d')}\n")
+            f.write(f"**Period:** {self.since_date} to {self.end_date}\n")
 
             # Count by repo
             hypershift_count = len([pr for pr in self.prs if pr['repo'] == 'openshift/hypershift'])
             ai_helpers_count = len([pr for pr in self.prs if pr['repo'] == 'openshift-eng/ai-helpers'])
+            enhancements_count = len([pr for pr in self.prs if pr['repo'] == 'openshift/enhancements'])
+            release_count = len([pr for pr in self.prs if pr['repo'] == 'openshift/release'])
 
-            f.write(f"**Total PRs:** {len(self.prs)} ({hypershift_count} hypershift, {ai_helpers_count} ai-helpers, 0 release)\n\n")
+            f.write(f"**Total PRs:** {len(self.prs)} ({hypershift_count} hypershift, {ai_helpers_count} ai-helpers, {enhancements_count} enhancements, {release_count} release)\n\n")
             f.write("---\n\n")
 
             # Summary Statistics
@@ -630,7 +857,8 @@ class PRReportGenerator:
             f.write("### Repository Breakdown\n")
             f.write(f"- **openshift/hypershift:** {hypershift_count} PRs\n")
             f.write(f"- **openshift-eng/ai-helpers:** {ai_helpers_count} PRs\n")
-            f.write(f"- **openshift/release:** 0 PRs\n\n")
+            f.write(f"- **openshift/enhancements:** {enhancements_count} PRs\n")
+            f.write(f"- **openshift/release:** {release_count} PRs\n\n")
 
             # Group by OCPSTRAT
             f.write("### Epic/Feature Groupings\n\n")
@@ -860,28 +1088,601 @@ class PRReportGenerator:
             json.dump(self.prs, f, indent=2)
         print(f"Raw data saved to {output_path}")
 
+    def save_summary_data(self, output_path: str):
+        """Save compact PR summary for LLM analysis (no large body text).
+
+        Outputs a compact format optimized for LLM consumption:
+        - Stats and period info
+        - PRs grouped by OCPSTRAT initiative
+        - Ungrouped PRs listed separately
+        - No redundant duplication of PR data
+        """
+        # Build compact PR records
+        def compact_pr(pr: Dict) -> Dict:
+            """Create a compact PR record with essential fields only."""
+            # Get first OCPSTRAT from Jira tickets
+            ocpstrat = None
+            jira_summary = None
+            for ticket in pr.get('jiraTickets', []):
+                if ticket in self.jira_hierarchy:
+                    h = self.jira_hierarchy[ticket]
+                    jira_summary = h.get('summary', '')
+                    if h.get('ocpstrat'):
+                        ocpstrat = h['ocpstrat']
+                        break
+
+            return {
+                'repo': pr['repo'].split('/')[-1],  # Just repo name, not owner
+                'number': pr['number'],
+                'title': pr['title'],
+                'author': pr['author'],
+                'topic': self._get_pr_topic(pr),
+                'priority': self._get_pr_jira_priority(pr),
+                'jira': pr.get('jiraTickets', []),
+                'jiraSummary': jira_summary,
+                'ocpstrat': ocpstrat,
+                'mergeHours': round(pr.get('readyToMergeHours') or 0, 1),
+            }
+
+        compact_prs = [compact_pr(pr) for pr in self.prs]
+
+        # Group by OCPSTRAT
+        ocpstrat_groups = {}
+        ungrouped = []
+
+        for pr in compact_prs:
+            ocpstrat = pr.get('ocpstrat')
+            if ocpstrat:
+                if ocpstrat not in ocpstrat_groups:
+                    # Find OCPSTRAT summary from jira_hierarchy
+                    ocpstrat_summary = self.jira_hierarchy.get(ocpstrat, {}).get('summary', '')
+                    ocpstrat_groups[ocpstrat] = {
+                        'key': ocpstrat,
+                        'summary': ocpstrat_summary,
+                        'prs': []
+                    }
+                # Remove ocpstrat from PR since it's redundant in grouped context
+                pr_copy = {k: v for k, v in pr.items() if k != 'ocpstrat'}
+                ocpstrat_groups[ocpstrat]['prs'].append(pr_copy)
+            else:
+                ungrouped.append(pr)
+
+        # Calculate timing stats
+        merge_times = [pr['mergeHours'] for pr in compact_prs if pr['mergeHours'] > 0]
+        avg_merge = round(sum(merge_times) / len(merge_times), 1) if merge_times else 0
+
+        # Find most active reviewer
+        reviewer_counts = {}
+        for pr in self.prs:
+            for r in pr.get('reviewers', []):
+                reviewer_counts[r] = reviewer_counts.get(r, 0) + 1
+        top_reviewer = max(reviewer_counts.items(), key=lambda x: x[1]) if reviewer_counts else ('N/A', 0)
+
+        # Score all PRs for deep analysis selection
+        scored_prs = self.score_prs_for_deep_analysis(limit=len(self.prs))
+        scored_list = [{
+            'rank': i + 1,
+            'score': pr['score'],
+            'repo': pr['repo'].split('/')[-1],
+            'number': pr['number'],
+            'title': pr['title'][:80],
+            'priority': pr.get('priority', '-'),
+            'topic': pr.get('topic', '-'),
+            'pr_id': f"{pr['repo']}#{pr['number']}",
+        } for i, pr in enumerate(scored_prs)]
+
+        output = {
+            'period': f"{self.since_date} to {self.end_date}",
+            'stats': {
+                'total': len(compact_prs),
+                'hypershift': len([p for p in compact_prs if p['repo'] == 'hypershift']),
+                'ai_helpers': len([p for p in compact_prs if p['repo'] == 'ai-helpers']),
+                'enhancements': len([p for p in compact_prs if p['repo'] == 'enhancements']),
+                'release': len([p for p in compact_prs if p['repo'] == 'release']),
+                'authors': len(set(p['author'] for p in compact_prs)),
+                'avgMergeHours': avg_merge,
+                'topReviewer': f"@{top_reviewer[0]} ({top_reviewer[1]} PRs)",
+            },
+            'initiatives': list(ocpstrat_groups.values()),
+            'other': ungrouped,
+            'scored': scored_list,  # Pre-scored for deep analysis selection
+        }
+
+        with open(output_path, 'w') as f:
+            json.dump(output, f, indent=2)
+        print(f"Summary data saved to {output_path}")
+
+    def parse_pr_identifiers(self, pr_ids: List[str]) -> List[Tuple[str, int]]:
+        """Parse PR identifiers in owner/repo#number format.
+
+        Args:
+            pr_ids: List of strings like "openshift/hypershift#7709"
+
+        Returns:
+            List of (repo, pr_number) tuples
+        """
+        parsed = []
+        for pr_id in pr_ids:
+            match = re.match(r'^([^/]+/[^#]+)#(\d+)$', pr_id)
+            if match:
+                repo = match.group(1)
+                pr_num = int(match.group(2))
+                parsed.append((repo, pr_num))
+            else:
+                print(f"Warning: Invalid PR format '{pr_id}', expected owner/repo#number")
+        return parsed
+
+    def _parse_conventional_commit(self, title: str) -> Tuple[Optional[str], Optional[str]]:
+        """Parse conventional commit type and scope from PR title.
+
+        Conventional commit format: type(scope): description
+        Or with Jira prefix: TICKET-123: type(scope): description
+
+        Returns:
+            Tuple of (type, scope) or (None, None) if not found
+        """
+        # Strip Jira ticket prefix if present (e.g., "CNTRLPLANE-123: ")
+        title_stripped = re.sub(r'^(?:\[.*?\]\s*)?(?:[A-Z]+-\d+:\s*)+', '', title)
+
+        # Match conventional commit: type(scope): or type:
+        match = re.match(r'^(\w+)(?:\(([^)]+)\))?:\s*', title_stripped)
+        if match:
+            commit_type = match.group(1).lower()
+            scope = match.group(2).lower() if match.group(2) else None
+            return commit_type, scope
+
+        return None, None
+
+    def _get_pr_topic(self, pr: Dict) -> str:
+        """Derive topic category from PR title using conventional commit format."""
+        title = pr.get('title', '')
+
+        # Try to parse conventional commit format first
+        commit_type, scope = self._parse_conventional_commit(title)
+
+        if commit_type:
+            # Return type with scope if available (e.g., "feat:aws", "fix:nodepool")
+            if scope:
+                return f"{commit_type}:{scope}"
+            return commit_type
+
+        # Fallback: check for OCPBUGS (bug fix)
+        if any(t.startswith('OCPBUGS') for t in pr.get('jiraTickets', [])):
+            return 'fix'
+
+        # Fallback: CI for release repo
+        if pr['repo'] == 'openshift/release':
+            return 'ci'
+
+        # Enhancement proposals
+        if pr['repo'] == 'openshift/enhancements':
+            return 'enhancement'
+
+        return '-'
+
+    def _get_pr_jira_priority(self, pr: Dict) -> str:
+        """Get highest Jira priority from PR's tickets."""
+        priority_order = ['Critical', 'Blocker', 'Major', 'Normal', 'Minor', 'Undefined']
+        highest_priority = '-'
+        highest_idx = len(priority_order)
+
+        for ticket in pr.get('jiraTickets', []):
+            if ticket in self.jira_hierarchy:
+                priority = self.jira_hierarchy[ticket].get('priority', 'Undefined')
+                try:
+                    idx = priority_order.index(priority)
+                    if idx < highest_idx:
+                        highest_idx = idx
+                        highest_priority = priority
+                except ValueError:
+                    pass
+
+        return highest_priority
+
+    def score_prs_for_deep_analysis(self, limit: int = 20) -> List[Dict]:
+        """Score PRs by importance for deep analysis selection.
+
+        Scoring criteria (higher = more important):
+        - Enhancement proposals (openshift/enhancements): +200 points (always selected)
+        - Jira priority: Critical=100, Blocker=100, Major=50, Normal=20, Minor=10
+        - SDK/API/migration work: +30 points
+        - Feature work (feat in title): +15 points
+        - Bug fixes (OCPBUGS): +10 points
+        - Has Jira ticket: +5 points
+        - Non-bot author in openshift/release: +10 points
+
+        Args:
+            limit: Maximum number of PRs to return
+
+        Returns:
+            List of PR dicts with 'score', 'score_reasons', 'topic', and 'priority' fields,
+            sorted by score descending
+        """
+        # Priority scores (higher = more important)
+        priority_scores = {
+            'Critical': 100,
+            'Blocker': 100,
+            'Major': 50,
+            'Normal': 20,
+            'Minor': 10,
+            'Undefined': 5,
+        }
+
+        # Bot patterns to detect automated PRs
+        bot_patterns = ['bot', 'robot', 'renovate', 'dependabot']
+
+        scored_prs = []
+
+        for pr in self.prs:
+            score = 0
+            reasons = []
+
+            # Get topic and priority for display
+            topic = self._get_pr_topic(pr)
+            priority = self._get_pr_jira_priority(pr)
+
+            # Score based on Jira ticket priority
+            for ticket in pr.get('jiraTickets', []):
+                if ticket in self.jira_hierarchy:
+                    ticket_priority = self.jira_hierarchy[ticket].get('priority', 'Undefined')
+                    pscore = priority_scores.get(ticket_priority, 5)
+                    score += pscore
+                    if pscore >= 50:
+                        reasons.append(ticket_priority)
+
+            # Bonus for SDK/API/migration work (significant changes)
+            title_lower = pr.get('title', '').lower()
+            if any(term in title_lower for term in ['sdk', 'migrate', 'api', 'breaking']):
+                score += 30
+                reasons.append('SDK/API')
+            elif 'feat' in title_lower or 'feature' in title_lower:
+                score += 15
+                reasons.append('feature')
+
+            # Bug fixes get moderate priority
+            if any(t.startswith('OCPBUGS') for t in pr.get('jiraTickets', [])):
+                score += 10
+                reasons.append('bugfix')
+
+            # Having any Jira ticket is better than none
+            if pr.get('jiraTickets'):
+                score += 5
+
+            # Enhancement proposals are always high-priority for deep analysis
+            if pr['repo'] == 'openshift/enhancements':
+                score += 200
+                reasons.append('enhancement')
+
+            # For release repo, prefer non-bot PRs (manual CI changes)
+            if pr['repo'] == 'openshift/release':
+                author_lower = pr.get('author', '').lower()
+                is_bot = any(bot in author_lower for bot in bot_patterns)
+                if not is_bot:
+                    score += 10
+                    reasons.append('manual-CI')
+
+            # Store score in PR
+            pr_copy = pr.copy()
+            pr_copy['score'] = score
+            pr_copy['score_reasons'] = reasons
+            pr_copy['topic'] = topic
+            pr_copy['priority'] = priority
+            scored_prs.append(pr_copy)
+
+        # Sort by score descending
+        scored_prs.sort(key=lambda x: -x['score'])
+
+        return scored_prs[:limit]
+
+    def print_scored_prs(self, scored_prs: List[Dict]):
+        """Print scored PRs in a readable format with priority and topic."""
+        print("\nPR Selection by Importance Score:")
+        print("-" * 120)
+        print(f"{'#':<3} {'Score':<6} {'Priority':<10} {'Repo':<12} {'PR':<7} {'Topic':<14} {'Title':<60}")
+        print("-" * 120)
+
+        for i, pr in enumerate(scored_prs, 1):
+            repo_short = pr['repo'].replace('openshift/', '').replace('openshift-eng/', '')
+            title_trunc = pr['title'][:58] + '..' if len(pr['title']) > 60 else pr['title']
+            topic = pr.get('topic', '-')[:14]
+            print(f"{i:<3} {pr['score']:<6} {pr.get('priority', '-'):<10} {repo_short:<12} #{pr['number']:<6} {topic:<14} {title_trunc}")
+
+        print("-" * 120)
+        print(f"Selected {len(scored_prs)} PRs for deep analysis\n")
+
+    async def fetch_pr_diffs(self, pr_list: List[Tuple[str, int]]) -> Dict[str, Dict]:
+        """Fetch diffs for selected PRs via GitHub REST API.
+
+        Args:
+            pr_list: List of (repo, pr_number) tuples
+
+        Returns:
+            Dict mapping "owner_repo_number" key to diff data
+        """
+        headers = {
+            "Authorization": f"Bearer {self.github_token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28"
+        }
+
+        async def fetch_single_diff(session, repo: str, number: int) -> Dict:
+            """Fetch diff for a single PR with pagination."""
+            url = f"https://api.github.com/repos/{repo}/pulls/{number}/files"
+            per_page = 100
+
+            try:
+                files = []
+                page = 1
+                while True:
+                    params = {"per_page": per_page, "page": page}
+                    if HAS_AIOHTTP:
+                        async with session.get(url, headers=headers, params=params) as response:
+                            if response.status != 200:
+                                return {'repo': repo, 'number': number, 'error': f"HTTP {response.status}"}
+                            batch = await response.json()
+                    else:
+                        response = requests.get(url, headers=headers, params=params, timeout=30)
+                        if response.status_code != 200:
+                            return {'repo': repo, 'number': number, 'error': f"HTTP {response.status_code}"}
+                        batch = response.json()
+
+                    files.extend(batch)
+                    if len(batch) < per_page:
+                        break
+                    page += 1
+
+                # Process file patches, skip vendor dirs, truncate large ones
+                patches = []
+                for f in files:
+                    filename = f['filename']
+                    dirs = set(filename.split('/')[:-1])
+                    if 'vendor' in dirs:
+                        continue
+                    patch = f.get('patch', '')
+                    if len(patch) > 5000:
+                        patch = patch[:5000] + "\n... [truncated]"
+                    patches.append({
+                        'filename': filename,
+                        'status': f['status'],
+                        'additions': f['additions'],
+                        'deletions': f['deletions'],
+                        'patch': patch
+                    })
+
+                return {
+                    'repo': repo,
+                    'number': number,
+                    'files': patches,
+                    'total_additions': sum(f['additions'] for f in files),
+                    'total_deletions': sum(f['deletions'] for f in files),
+                    'total_files': len(files)
+                }
+            except Exception as e:
+                return {'repo': repo, 'number': number, 'error': str(e)}
+
+        results = {}
+
+        if HAS_AIOHTTP:
+            async with aiohttp.ClientSession() as session:
+                tasks = [fetch_single_diff(session, repo, num) for repo, num in pr_list]
+                responses = await asyncio.gather(*tasks)
+                for r in responses:
+                    key = f"{r['repo'].replace('/', '_')}_{r['number']}"
+                    results[key] = r
+        else:
+            for repo, num in pr_list:
+                r = await fetch_single_diff(None, repo, num)
+                key = f"{repo.replace('/', '_')}_{num}"
+                results[key] = r
+
+        errors = [k for k, v in results.items() if 'error' in v]
+        if errors:
+            print(f"  Warning: Failed to fetch {len(errors)} PRs")
+
+        return results
+
+    def write_deep_pr_files(self, diffs: Dict[str, Dict], output_dir: str = '.work/pr_deep'):
+        """Write per-PR JSON files combining metadata + Jira + diff.
+
+        Args:
+            diffs: Dict from fetch_pr_diffs()
+            output_dir: Directory to write files
+        """
+        os.makedirs(output_dir, exist_ok=True)
+
+        written = 0
+        for key, diff_data in diffs.items():
+            if 'error' in diff_data:
+                continue
+
+            repo = diff_data['repo']
+            number = diff_data['number']
+
+            # Find matching PR metadata
+            pr = next((p for p in self.prs if p['repo'] == repo and p['number'] == number), None)
+
+            if not pr:
+                print(f"  Warning: No metadata found for {repo}#{number}")
+                continue
+
+            # Build combined JSON
+            combined = {
+                'repo': pr['repo'],
+                'number': pr['number'],
+                'title': pr['title'],
+                'url': pr['url'],
+                'author': pr['author'],
+                'body': pr['body'],
+                'jiraTickets': pr['jiraTickets'],
+                'labels': pr['labels'],
+                'mergedAt': pr['mergedAt'],
+                'jiraHierarchy': {t: self.jira_hierarchy[t] for t in pr['jiraTickets'] if t in self.jira_hierarchy},
+                'diff': {
+                    'files': diff_data.get('files', []),
+                    'total_additions': diff_data.get('total_additions', 0),
+                    'total_deletions': diff_data.get('total_deletions', 0),
+                    'total_files': diff_data.get('total_files', 0)
+                }
+            }
+
+            filepath = os.path.join(output_dir, f"{key}.json")
+            with open(filepath, 'w') as f:
+                json.dump(combined, f, indent=2)
+            written += 1
+
+        print(f"Wrote {written} per-PR JSON files to {output_dir}/")
+
+
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description='Generate weekly PR report for HyperShift repositories',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s 2026-02-05
+      Standard report since date (until today)
+
+  %(prog)s 2026-02-05 --end 2026-02-12
+      Report for specific date range
+
+  %(prog)s 2026-02-05 --end 2026-02-12 --score
+      Output scored PR list for deep analysis selection
+
+  %(prog)s 2026-02-05 --score --score-limit 30
+      Output top 30 scored PRs
+
+  %(prog)s 2026-02-05 --deep openshift/hypershift#7709 openshift/release#74707
+      Fetch diffs for specific PRs (for deep analysis)
+
+PR format: owner/repo#number (e.g., openshift/hypershift#7657)
+
+Scoring criteria (higher = more important):
+  - Jira priority: Critical/Blocker=100, Major=50, Normal=20, Minor=10
+  - SDK/API/migration work: +30 points
+  - Feature work: +15 points
+  - Bug fixes (OCPBUGS): +10 points
+  - Manual CI changes (non-bot in release repo): +10 points
+        """
+    )
+    parser.add_argument(
+        'since_date',
+        nargs='?',
+        default=(datetime.now() - timedelta(days=DEFAULT_DAYS_AGO)).strftime('%Y-%m-%d'),
+        help='Start date in YYYY-MM-DD format (default: 7 days ago)'
+    )
+    parser.add_argument(
+        '--end',
+        dest='end_date',
+        default=datetime.now().strftime('%Y-%m-%d'),
+        help='End date in YYYY-MM-DD format (default: today)'
+    )
+    parser.add_argument(
+        '--deep',
+        nargs='+',
+        metavar='PR',
+        help='Fetch diffs for specified PRs (owner/repo#number format)'
+    )
+    parser.add_argument(
+        '--score',
+        action='store_true',
+        help='Output scored PR list for deep analysis selection'
+    )
+    parser.add_argument(
+        '--score-limit',
+        type=int,
+        default=20,
+        metavar='N',
+        help='Number of PRs to include in scored output (default: 20)'
+    )
+    parser.add_argument(
+        '--output-dir',
+        default='/tmp',
+        metavar='DIR',
+        help='Directory for output files (default: /tmp)'
+    )
+    return parser.parse_args()
+
 
 async def main():
     import time
     start_time = time.time()
 
-    if len(sys.argv) > 1:
-        since_date = sys.argv[1]
-    else:
-        since_date = (datetime.now() - timedelta(days=DEFAULT_DAYS_AGO)).strftime('%Y-%m-%d')
+    args = parse_args()
+    since_date = args.since_date
+    end_date = args.end_date
+    deep_prs = args.deep or []
+    score_mode = args.score
+    score_limit = args.score_limit
+    output_dir = args.output_dir
+    os.makedirs(output_dir, exist_ok=True)
 
-    print(f"Generating PR report since: {since_date}")
-    print(f"Using {'async (aiohttp)' if HAS_AIOHTTP else 'sync (requests)'} mode\n")
+    print(f"Generating PR report for: {since_date} to {end_date}")
+    print(f"Using {'async (aiohttp)' if HAS_AIOHTTP else 'sync (requests)'} mode")
+    if deep_prs:
+        print(f"Deep mode: will fetch diffs for {len(deep_prs)} PRs")
+    if score_mode:
+        print(f"Score mode: will output top {score_limit} PRs by importance")
+    print()
 
-    generator = PRReportGenerator(since_date)
+    generator = PRReportGenerator(since_date, end_date, output_dir=output_dir)
 
     # Fetch all data
     await generator.fetch_all_prs()
     await generator.load_jira_hierarchy()
 
     # Generate outputs
-    generator.generate_report('/tmp/weekly_pr_report_fast.md')
-    generator.save_raw_data('/tmp/hypershift_pr_details_fast.json')
+    generator.generate_report(os.path.join(output_dir, 'weekly_pr_report_fast.md'))
+    generator.save_raw_data(os.path.join(output_dir, 'hypershift_pr_details_fast.json'))
+    generator.save_summary_data(os.path.join(output_dir, 'hypershift_pr_summary.json'))
+
+    # Score mode: output scored PR list
+    if score_mode:
+        scored_prs = generator.score_prs_for_deep_analysis(limit=score_limit)
+        generator.print_scored_prs(scored_prs)
+
+        # Also save to JSON for programmatic use
+        scored_output = [{
+            'repo': pr['repo'],
+            'number': pr['number'],
+            'title': pr['title'],
+            'score': pr['score'],
+            'score_reasons': pr['score_reasons'],
+            'pr_id': f"{pr['repo']}#{pr['number']}"
+        } for pr in scored_prs]
+
+        scored_path = os.path.join(output_dir, 'pr_scored.json')
+        with open(scored_path, 'w') as f:
+            json.dump(scored_output, f, indent=2)
+        print(f"Scored PRs saved to {scored_path}")
+
+        # Print PR list ready for --deep flag
+        print("\nPR list for --deep flag:")
+        print(' '.join([pr['pr_id'] for pr in scored_output]))
+
+    # Deep mode: fetch diffs for specified PRs
+    if deep_prs:
+        pr_list = generator.parse_pr_identifiers(deep_prs)
+        if pr_list:
+            print(f"\nFetching diffs for {len(pr_list)} PRs...")
+            diffs = await generator.fetch_pr_diffs(pr_list)
+            generator.write_deep_pr_files(diffs)
+
+            # Print deep analysis summary
+            successful = {k: v for k, v in diffs.items() if 'error' not in v}
+            failed = {k: v for k, v in diffs.items() if 'error' in v}
+            total_additions = sum(d.get('total_additions', 0) for d in successful.values())
+            total_deletions = sum(d.get('total_deletions', 0) for d in successful.values())
+            total_files = sum(d.get('total_files', 0) for d in successful.values())
+            total_patches = sum(len(d.get('files', [])) for d in successful.values())
+            vendor_skipped = total_files - total_patches
+
+            print(f"\n  Deep analysis summary:")
+            print(f"    PRs fetched:    {len(successful)}/{len(diffs)}")
+            print(f"    Total files:    {total_files} ({vendor_skipped} vendor files skipped)")
+            print(f"    Lines changed:  +{total_additions} -{total_deletions}")
+            if failed:
+                print(f"    Failed:         {', '.join(v.get('error', '?') for v in failed.values())}")
 
     elapsed = time.time() - start_time
     print(f"\nDone in {elapsed:.2f} seconds!")
