@@ -171,9 +171,9 @@ func computeCatalogImages(releaseVersion func() (*semver.Version, error), imageE
 
 	for catalog := range catalogs {
 		catalogVersion := *version
-		// Start at 4.20 until the 4.21 catalog images works properly
-		if catalogVersion.Minor > 20 {
-			catalogVersion.Minor = 20
+		// Start at 4.21 until the 4.22 catalog images works properly
+		if catalogVersion.Minor > 21 {
+			catalogVersion.Minor = 21
 		}
 		for i := range supportedVersions {
 			for _, registry := range registries {
