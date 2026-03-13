@@ -31,6 +31,7 @@ type WorkloadSpec struct {
 func GetControlPlaneWorkloads() []WorkloadSpec {
 	awsPlatform := hyperv1.AWSPlatform
 	azurePlatform := hyperv1.AzurePlatform
+	gcpPlatform := hyperv1.GCPPlatform
 	kubevirtPlatform := hyperv1.KubevirtPlatform
 	openstackPlatform := hyperv1.OpenStackPlatform
 	powervsPlatform := hyperv1.PowerVSPlatform
@@ -383,6 +384,14 @@ func GetControlPlaneWorkloads() []WorkloadSpec {
 			Platform: &awsPlatform,
 			PodSelector: map[string]string{
 				"app": "aws-node-termination-handler",
+			},
+		},
+		{
+			Type:     "Deployment",
+			Name:     "gcp-cloud-controller-manager",
+			Platform: &gcpPlatform,
+			PodSelector: map[string]string{
+				"app": "cloud-controller-manager",
 			},
 		},
 		{
