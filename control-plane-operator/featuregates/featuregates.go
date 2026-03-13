@@ -19,13 +19,13 @@ var (
 	allFeatures = featuregates.NewFeatureSetAwareFeatures()
 
 	externalOIDCWithUIDAndExtraClaimMappingsFeature = featuregates.NewFeature(ExternalOIDCWithUIDAndExtraClaimMappings, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade, configv1.Default))
-	awsServiceLBNetworkSecurityGroupFeature         = featuregates.NewFeature(AWSServiceLBNetworkSecurityGroup, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	//awsServiceLBNetworkSecurityGroupFeature         = featuregates.NewFeature(AWSServiceLBNetworkSecurityGroup, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
 	// Add featuregates here
 	allFeatures.AddFeature(externalOIDCWithUIDAndExtraClaimMappingsFeature)
-	allFeatures.AddFeature(awsServiceLBNetworkSecurityGroupFeature)
+	//allFeatures.AddFeature(awsServiceLBNetworkSecurityGroupFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))
@@ -62,6 +62,7 @@ func ConfigureFeatureSet(featureSet string) {
 // It handles both fixed feature sets (Default, TechPreviewNoUpgrade, DevPreviewNoUpgrade) and
 // custom feature sets (CustomNoUpgrade) where features are explicitly enabled/disabled.
 // If the feature gate spec is nil, it falls back to checking the global gate.
+/*
 func IsFeatureEnabledInFeatureGateSpec(featureGateSpec *configv1.FeatureGateSpec, feature featuregate.Feature) bool {
 	if featureGateSpec == nil {
 		// No feature gate configuration, fall back to global gate
@@ -110,3 +111,4 @@ func IsFeatureEnabledInFeatureGateSpec(featureGateSpec *configv1.FeatureGateSpec
 
 	return featureGate.Enabled(feature)
 }
+*/
