@@ -505,3 +505,95 @@ func setUpDummyMachineSet(nodePool *hyperv1.NodePool, hostedCluster *hyperv1.Hos
 	}
 	return machineSet
 }
+
+func TestAutoscalerEnabledCondition(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name           string
+		nodePool       *hyperv1.NodePool
+		expectedStatus corev1.ConditionStatus
+		expectedReason string
+		expectMessage  string
+	}{
+		{
+			name: "When autoscaling is not enabled, it should set condition to false with AsExpected",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					Replicas: ptr.To[int32](2),
+				},
+			},
+			expectedStatus: corev1.ConditionFalse,
+			expectedReason: hyperv1.AsExpectedReason,
+		},
+		{
+			name: "When autoscaling is enabled with min greater than zero, it should set condition to true",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					AutoScaling: &hyperv1.NodePoolAutoScaling{
+						Min: ptr.To[int32](1),
+						Max: 5,
+					},
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			expectedStatus: corev1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+			expectMessage:  "Minimum nodes: 1",
+		},
+		{
+			name: "When autoscaling from zero on a supported platform, it should set condition to true",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					AutoScaling: &hyperv1.NodePoolAutoScaling{
+						Min: ptr.To[int32](0),
+						Max: 5,
+					},
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			expectedStatus: corev1.ConditionTrue,
+			expectedReason: hyperv1.AsExpectedReason,
+			expectMessage:  "Minimum nodes: 0",
+		},
+		{
+			name: "When autoscaling from zero on an unsupported platform, it should set condition to false with validation failure",
+			nodePool: &hyperv1.NodePool{
+				Spec: hyperv1.NodePoolSpec{
+					AutoScaling: &hyperv1.NodePoolAutoScaling{
+						Min: ptr.To[int32](0),
+						Max: 5,
+					},
+					Platform: hyperv1.NodePoolPlatform{
+						Type: hyperv1.KubevirtPlatform,
+					},
+				},
+			},
+			expectedStatus: corev1.ConditionFalse,
+			expectedReason: hyperv1.NodePoolValidationFailedReason,
+			expectMessage:  "not supported",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewGomegaWithT(t)
+
+			r := &NodePoolReconciler{}
+			_, err := r.autoscalerEnabledCondition(t.Context(), tt.nodePool, nil)
+			g.Expect(err).To(BeNil())
+
+			condition := FindStatusCondition(tt.nodePool.Status.Conditions, hyperv1.NodePoolAutoscalingEnabledConditionType)
+			g.Expect(condition).NotTo(BeNil())
+			g.Expect(condition.Status).To(Equal(tt.expectedStatus))
+			g.Expect(condition.Reason).To(Equal(tt.expectedReason))
+			if tt.expectMessage != "" {
+				g.Expect(condition.Message).To(ContainSubstring(tt.expectMessage))
+			}
+		})
+	}
+}

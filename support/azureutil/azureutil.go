@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 
@@ -24,6 +25,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 )
 
 // CPOUserAgent is the User-Agent identifier for the Control Plane Operator.
@@ -39,18 +41,86 @@ type AzureEncryptionKey struct {
 }
 
 // NewARMClientOptions creates Azure ARM client options with proper cloud configuration
-// and telemetry settings for the Control Plane Operator. The telemetry options include
-// the CPOUserAgent as the ApplicationID, which is added to the User-Agent header of
-// all Azure API requests for proper request attribution and tracing.
-func NewARMClientOptions(cloudConfig cloud.Configuration) *arm.ClientOptions {
+// and telemetry settings. The userAgent is added to the User-Agent header of all Azure
+// API requests for proper request attribution and tracing.
+// Azure SDK has a 24-character limit for ApplicationID.
+func NewARMClientOptions(cloudConfig cloud.Configuration, userAgent string) *arm.ClientOptions {
 	return &arm.ClientOptions{
 		ClientOptions: azcore.ClientOptions{
 			Cloud: cloudConfig,
 			Telemetry: policy.TelemetryOptions{
-				ApplicationID: CPOUserAgent,
+				ApplicationID: userAgent,
 			},
 		},
 	}
+}
+
+// NewScaleFromZeroCredential creates an Azure ClientSecretCredential specifically for
+// scale-from-zero instance type queries. This function supports both OpenShift installer
+// format and Azure standard format for credentials files.
+// The credentials file may include an optional "cloud" field (e.g., "AzurePublicCloud",
+// "AzureUSGovernmentCloud", "AzureChinaCloud") to target non-public clouds. If omitted,
+// it defaults to "AzurePublicCloud".
+// The returned cloud.Configuration can be used to configure ARM clients (e.g., via NewARMClientOptions).
+func NewScaleFromZeroCredential(credentialsPath string) (*azidentity.ClientSecretCredential, string, cloud.Configuration, error) {
+	// Internal struct to support multiple credential formats
+	type credentialFile struct {
+		SubscriptionID string `json:"subscriptionId,omitempty"`
+		TenantID       string `json:"tenantId,omitempty"`
+
+		// Cloud environment (optional, defaults to AzurePublicCloud)
+		Cloud string `json:"cloud,omitempty"`
+
+		// OpenShift installer format
+		ClientID     string `json:"clientId,omitempty"`
+		ClientSecret string `json:"clientSecret,omitempty"`
+
+		// Azure standard format (preferred)
+		AADClientID     string `json:"aadClientId,omitempty"`
+		AADClientSecret string `json:"aadClientSecret,omitempty"`
+	}
+
+	raw, err := os.ReadFile(credentialsPath)
+	if err != nil {
+		return nil, "", cloud.Configuration{}, fmt.Errorf("failed to read credentials from %s: %w", credentialsPath, err)
+	}
+
+	var cf credentialFile
+	if err := yaml.Unmarshal(raw, &cf); err != nil {
+		return nil, "", cloud.Configuration{}, fmt.Errorf("failed to unmarshal credentials: %w", err)
+	}
+
+	// Normalize: prefer Azure standard format over installer format
+	clientID := cf.ClientID
+	clientSecret := cf.ClientSecret
+
+	if cf.AADClientID != "" {
+		clientID = cf.AADClientID
+	}
+	if cf.AADClientSecret != "" {
+		clientSecret = cf.AADClientSecret
+	}
+
+	// Validate required fields
+	if cf.TenantID == "" || cf.SubscriptionID == "" || clientID == "" || clientSecret == "" {
+		return nil, "", cloud.Configuration{}, fmt.Errorf("invalid credentials: missing required fields (tenantId, subscriptionId, clientId/aadClientId, clientSecret/aadClientSecret)")
+	}
+
+	cloudCfg, err := GetAzureCloudConfiguration(cf.Cloud)
+	if err != nil {
+		return nil, "", cloud.Configuration{}, fmt.Errorf("invalid cloud %q in credentials file: %w", cf.Cloud, err)
+	}
+
+	cred, err := azidentity.NewClientSecretCredential(cf.TenantID, clientID, clientSecret, &azidentity.ClientSecretCredentialOptions{
+		ClientOptions: azcore.ClientOptions{
+			Cloud: cloudCfg,
+		},
+	})
+	if err != nil {
+		return nil, "", cloud.Configuration{}, fmt.Errorf("failed to create Azure credentials: %w", err)
+	}
+
+	return cred, cf.SubscriptionID, cloudCfg, nil
 }
 
 // GetAzureCloudConfiguration converts a cloud name string to the Azure SDK cloud.Configuration.
@@ -172,7 +242,7 @@ func getFullVnetInfo(ctx context.Context, subscriptionID string, vnetResourceGro
 		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("failed to get Azure cloud configuration: %w", err)
 	}
 
-	networksClient, err := armnetwork.NewVirtualNetworksClient(subscriptionID, azureCreds, NewARMClientOptions(cloudConfig))
+	networksClient, err := armnetwork.NewVirtualNetworksClient(subscriptionID, azureCreds, NewARMClientOptions(cloudConfig, CPOUserAgent))
 	if err != nil {
 		return armnetwork.VirtualNetworksClientGetResponse{}, fmt.Errorf("failed to create new virtual networks client: %w", err)
 	}
@@ -218,7 +288,7 @@ func GetNetworkSecurityGroupInfo(ctx context.Context, nsgID string, subscription
 		return armnetwork.SecurityGroupsClientGetResponse{}, fmt.Errorf("failed to get Azure cloud configuration: %w", err)
 	}
 
-	securityGroupClient, err := armnetwork.NewSecurityGroupsClient(subscriptionID, azureCreds, NewARMClientOptions(cloudConfig))
+	securityGroupClient, err := armnetwork.NewSecurityGroupsClient(subscriptionID, azureCreds, NewARMClientOptions(cloudConfig, CPOUserAgent))
 	if err != nil {
 		return armnetwork.SecurityGroupsClientGetResponse{}, fmt.Errorf("failed to create security group client: %w", err)
 	}
@@ -239,7 +309,7 @@ func GetResourceGroupInfo(ctx context.Context, rgName string, subscriptionID str
 		return armresources.ResourceGroupsClientGetResponse{}, fmt.Errorf("failed to get Azure cloud configuration: %w", err)
 	}
 
-	resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, azureCreds, NewARMClientOptions(cloudConfig))
+	resourceGroupClient, err := armresources.NewResourceGroupsClient(subscriptionID, azureCreds, NewARMClientOptions(cloudConfig, CPOUserAgent))
 	if err != nil {
 		return armresources.ResourceGroupsClientGetResponse{}, fmt.Errorf("failed to create new resource groups client: %w", err)
 	}
