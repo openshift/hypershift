@@ -109,10 +109,12 @@ spec:
                     minimum: 1
                     type: integer
                   min:
-                    description: min is the minimum number of nodes to maintain in
-                      the pool. Must be >= 1 and <= .Max.
+                    description: |-
+                      min is the minimum number of nodes to maintain in the pool.
+                      Can be set to 0 for scale-from-zero for AWS platform.
+                      Must be >= 0 and <= .Max.
                     format: int32
-                    minimum: 1
+                    minimum: 0
                     type: integer
                 required:
                 - max
@@ -1465,9 +1467,12 @@ spec:
             - message: s390x is only supported on KubeVirt platform
               rule: self.arch != 's390x' || has(self.platform.kubevirt)
             - message: ImageType 'Windows' requires arch 'amd64' (AWS only)
-              rule: '(has(self.platform.aws) && has(self.platform.aws.imageType) &&
-                self.platform.aws.imageType == ''Windows'') ? self.arch == ''amd64''
-                : true'
+              rule: '!has(self.platform.aws) || !has(self.platform.aws.imageType)
+                || self.platform.aws.imageType != ''Windows'' || self.arch == ''amd64'''
+            - message: Scale-from-zero (autoScaling.min=0) is currently only supported
+                for AWS platform
+              rule: '!has(self.autoScaling) || self.autoScaling.min > 0 || self.platform.type
+                == ''AWS'''
           status:
             description: status is the latest observed status of the NodePool.
             properties:

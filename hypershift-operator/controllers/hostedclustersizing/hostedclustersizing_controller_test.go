@@ -610,7 +610,7 @@ func TestSizingController_Reconcile(t *testing.T) {
 				return &hypershiftv1beta1.NodePoolList{Items: []hypershiftv1beta1.NodePool{
 					{Spec: hypershiftv1beta1.NodePoolSpec{Replicas: ptr.To[int32](100)}},
 					{Spec: hypershiftv1beta1.NodePoolSpec{Replicas: ptr.To[int32](100)}},
-					{Spec: hypershiftv1beta1.NodePoolSpec{AutoScaling: &hypershiftv1beta1.NodePoolAutoScaling{Min: 1, Max: 100}}, Status: hypershiftv1beta1.NodePoolStatus{Replicas: 100}},
+					{Spec: hypershiftv1beta1.NodePoolSpec{AutoScaling: &hypershiftv1beta1.NodePoolAutoScaling{Min: ptr.To[int32](1), Max: 100}}, Status: hypershiftv1beta1.NodePoolStatus{Replicas: 100}},
 				}}, nil
 			},
 			listHostedClusters: func(_ context.Context) (*hypershiftv1beta1.HostedClusterList, error) {
