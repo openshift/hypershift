@@ -831,26 +831,41 @@ func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 func TestSetKASCustomKubeconfigStatus(t *testing.T) {
 	hcp := sampleHCP(t)
 	pullSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "pull-secret"}}
-	c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(hcp, pullSecret).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
+	customKubeconfigSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: hcp.Namespace, Name: "custom-admin-kubeconfig"}}
 	ctx := ctrl.LoggerInto(t.Context(), zapr.NewLogger(zaptest.NewLogger(t)))
 
 	tests := []struct {
 		name                 string
 		KubeAPIServerDNSName string
+		secretExists         bool
 		expectedStatus       *hyperv1.KubeconfigSecretRef
 	}{
 		{
-			name:                 "KubeAPIServerDNSName is empty",
+			name:                 "When KubeAPIServerDNSName is empty it should clear the status",
 			KubeAPIServerDNSName: "",
+			secretExists:         false,
 			expectedStatus:       nil,
 		},
 		{
-			name:                 "KubeAPIServerDNSName has a valid value",
+			name:                 "When KubeAPIServerDNSName is set but secret does not exist it should not advertise the secret in status",
 			KubeAPIServerDNSName: "testapi.example.com",
+			secretExists:         false,
+			expectedStatus:       nil,
+		},
+		{
+			name:                 "When KubeAPIServerDNSName is set and secret exists it should set the status",
+			KubeAPIServerDNSName: "testapi.example.com",
+			secretExists:         true,
 			expectedStatus: &hyperv1.KubeconfigSecretRef{
 				Name: "custom-admin-kubeconfig",
 				Key:  "kubeconfig",
 			},
+		},
+		{
+			name:                 "When KubeAPIServerDNSName is empty and secret exists it should clear the status",
+			KubeAPIServerDNSName: "",
+			secretExists:         true,
+			expectedStatus:       nil,
 		},
 	}
 
@@ -858,6 +873,12 @@ func TestSetKASCustomKubeconfigStatus(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 			hcp.Spec.KubeAPIServerDNSName = tc.KubeAPIServerDNSName
+
+			objs := []client.Object{hcp, pullSecret}
+			if tc.secretExists {
+				objs = append(objs, customKubeconfigSecret)
+			}
+			c := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).WithStatusSubresource(&hyperv1.HostedControlPlane{}).Build()
 
 			err := setKASCustomKubeconfigStatus(ctx, hcp, c)
 			g.Expect(err).To(BeNil(), fmt.Errorf("error setting custom kubeconfig status failed: %v", err))
