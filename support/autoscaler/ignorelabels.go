@@ -47,6 +47,7 @@ const (
 	CommonIgnoredLabelAzureDiskZone     = "topology.disk.csi.azure.com/zone"
 	CommonIgnoredLabelIBMCloudWorkerID  = "ibm-cloud.kubernetes.io/worker-id"
 	CommonIgnoredLabelVPCBlockCSIDriver = "vpc-block-csi-driver-labels"
+	CommonIgnoredLabelGlobalPSENABLED   = "hypershift.openshift.io/nodepool-globalps-enabled"
 )
 
 // GetIgnoreLabels returns a list of labels that the cluster autoscaler should ignore
@@ -60,6 +61,7 @@ func GetIgnoreLabels(platformType hyperv1.PlatformType) []string {
 		CommonIgnoredLabelAzureDiskZone,
 		CommonIgnoredLabelIBMCloudWorkerID,
 		CommonIgnoredLabelVPCBlockCSIDriver,
+		CommonIgnoredLabelGlobalPSENABLED,
 	}
 
 	// Platform-specific labels
