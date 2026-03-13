@@ -352,10 +352,10 @@ func (r *KarpenterIgnitionReconciler) resolveReleaseImage(
 		return "", fmt.Errorf("failed to parse OpenshiftEC2NodeClass version %q: %w", version, err)
 	}
 
-	// Derive the Cincinnati channel. Use the HCP channel if set, otherwise default to "stable-4.<minor>".
+	// Derive the Cincinnati channel. Use the HCP channel if set, otherwise default to "fast-<major>.<minor>".
 	channel := hcp.Spec.Channel
 	if channel == "" {
-		channel = fmt.Sprintf("stable-%d.%d", nodeClassVersion.Major, nodeClassVersion.Minor)
+		channel = fmt.Sprintf("fast-%d.%d", nodeClassVersion.Major, nodeClassVersion.Minor)
 	}
 
 	resolved, err := r.VersionResolver.Resolve(ctx, version, channel)
