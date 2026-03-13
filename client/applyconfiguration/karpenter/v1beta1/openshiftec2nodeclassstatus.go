@@ -24,17 +24,30 @@ import (
 // OpenshiftEC2NodeClassStatusApplyConfiguration represents a declarative configuration of the OpenshiftEC2NodeClassStatus type for use
 // with apply.
 type OpenshiftEC2NodeClassStatusApplyConfiguration struct {
+	Conditions     []v1.ConditionApplyConfiguration  `json:"conditions,omitempty"`
 	Subnets        []SubnetApplyConfiguration        `json:"subnets,omitempty"`
 	SecurityGroups []SecurityGroupApplyConfiguration `json:"securityGroups,omitempty"`
 	ReleaseImage   *string                           `json:"releaseImage,omitempty"`
 	Version        *string                           `json:"version,omitempty"`
-	Conditions     []v1.ConditionApplyConfiguration  `json:"conditions,omitempty"`
 }
 
 // OpenshiftEC2NodeClassStatusApplyConfiguration constructs a declarative configuration of the OpenshiftEC2NodeClassStatus type for use with
 // apply.
 func OpenshiftEC2NodeClassStatus() *OpenshiftEC2NodeClassStatusApplyConfiguration {
 	return &OpenshiftEC2NodeClassStatusApplyConfiguration{}
+}
+
+// WithConditions adds the given value to the Conditions field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the Conditions field.
+func (b *OpenshiftEC2NodeClassStatusApplyConfiguration) WithConditions(values ...*v1.ConditionApplyConfiguration) *OpenshiftEC2NodeClassStatusApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithConditions")
+		}
+		b.Conditions = append(b.Conditions, *values[i])
+	}
+	return b
 }
 
 // WithSubnets adds the given value to the Subnets field in the declarative configuration
@@ -76,18 +89,5 @@ func (b *OpenshiftEC2NodeClassStatusApplyConfiguration) WithReleaseImage(value s
 // If called multiple times, the Version field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassStatusApplyConfiguration) WithVersion(value string) *OpenshiftEC2NodeClassStatusApplyConfiguration {
 	b.Version = &value
-	return b
-}
-
-// WithConditions adds the given value to the Conditions field in the declarative configuration
-// and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, values provided by each call will be appended to the Conditions field.
-func (b *OpenshiftEC2NodeClassStatusApplyConfiguration) WithConditions(values ...*v1.ConditionApplyConfiguration) *OpenshiftEC2NodeClassStatusApplyConfiguration {
-	for i := range values {
-		if values[i] == nil {
-			panic("nil value passed to WithConditions")
-		}
-		b.Conditions = append(b.Conditions, *values[i])
-	}
 	return b
 }

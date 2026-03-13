@@ -18,20 +18,21 @@ limitations under the License.
 package v1beta1
 
 import (
+	karpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	resource "k8s.io/apimachinery/pkg/api/resource"
 )
 
 // BlockDeviceApplyConfiguration represents a declarative configuration of the BlockDevice type for use
 // with apply.
 type BlockDeviceApplyConfiguration struct {
-	DeleteOnTermination *bool              `json:"deleteOnTermination,omitempty"`
-	Encrypted           *bool              `json:"encrypted,omitempty"`
-	IOPS                *int64             `json:"iops,omitempty"`
-	KMSKeyID            *string            `json:"kmsKeyID,omitempty"`
-	SnapshotID          *string            `json:"snapshotID,omitempty"`
-	Throughput          *int64             `json:"throughput,omitempty"`
-	VolumeSize          *resource.Quantity `json:"volumeSize,omitempty"`
-	VolumeType          *string            `json:"volumeType,omitempty"`
+	DeleteOnTermination *karpenterv1beta1.DeleteOnTerminationPolicy `json:"deleteOnTermination,omitempty"`
+	Encrypted           *karpenterv1beta1.EncryptionState           `json:"encrypted,omitempty"`
+	IOPS                *int64                                      `json:"iops,omitempty"`
+	KMSKeyID            *string                                     `json:"kmsKeyID,omitempty"`
+	SnapshotID          *string                                     `json:"snapshotID,omitempty"`
+	Throughput          *int64                                      `json:"throughput,omitempty"`
+	VolumeSize          *resource.Quantity                          `json:"volumeSize,omitempty"`
+	VolumeType          *string                                     `json:"volumeType,omitempty"`
 }
 
 // BlockDeviceApplyConfiguration constructs a declarative configuration of the BlockDevice type for use with
@@ -43,7 +44,7 @@ func BlockDevice() *BlockDeviceApplyConfiguration {
 // WithDeleteOnTermination sets the DeleteOnTermination field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the DeleteOnTermination field is set to the value of the last call.
-func (b *BlockDeviceApplyConfiguration) WithDeleteOnTermination(value bool) *BlockDeviceApplyConfiguration {
+func (b *BlockDeviceApplyConfiguration) WithDeleteOnTermination(value karpenterv1beta1.DeleteOnTerminationPolicy) *BlockDeviceApplyConfiguration {
 	b.DeleteOnTermination = &value
 	return b
 }
@@ -51,7 +52,7 @@ func (b *BlockDeviceApplyConfiguration) WithDeleteOnTermination(value bool) *Blo
 // WithEncrypted sets the Encrypted field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Encrypted field is set to the value of the last call.
-func (b *BlockDeviceApplyConfiguration) WithEncrypted(value bool) *BlockDeviceApplyConfiguration {
+func (b *BlockDeviceApplyConfiguration) WithEncrypted(value karpenterv1beta1.EncryptionState) *BlockDeviceApplyConfiguration {
 	b.Encrypted = &value
 	return b
 }
