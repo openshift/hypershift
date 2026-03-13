@@ -140,6 +140,17 @@ type OpenshiftEC2NodeClassSpec struct {
 	// +optional
 	DetailedMonitoring *bool `json:"detailedMonitoring,omitempty"`
 
+	// MetadataOptions contains parameters for specifying the exposure of the
+	// Instance Metadata Service to provisioned EC2 nodes.
+	// Refer to recommended, security best practices
+	// (https://aws.github.io/aws-eks-best-practices/security/docs/iam/#restrict-access-to-the-instance-profile-assigned-to-the-worker-node)
+	// for limiting exposure of Instance Metadata and User Data to pods.
+	// If omitted, defaults to httpEndpoint enabled, with httpProtocolIPv6
+	// disabled, with httpPutResponseHopLimit of 1, and with httpTokens
+	// required.
+	// +optional
+	MetadataOptions *MetadataOptions `json:"metadataOptions,omitempty"`
+
 	// Version is an OpenShift version (e.g., "4.20.1") specifying the release version
 	// for nodes managed by this NodeClass. When set, the controller resolves this to a
 	// release image via the Cincinnati graph API. When not set, nodes use the control plane's
@@ -271,6 +282,56 @@ type BlockDevice struct {
 	// +kubebuilder:validation:Enum:={standard,io1,io2,gp2,sc1,st1,gp3}
 	// +optional
 	VolumeType *string `json:"volumeType,omitempty"`
+}
+
+// MetadataOptions contains parameters for specifying the exposure of the
+// Instance Metadata Service to provisioned EC2 nodes.
+type MetadataOptions struct {
+	// HTTPEndpoint enables or disables the HTTP metadata endpoint on provisioned
+	// nodes. If metadata options is non-nil, but this parameter is not specified,
+	// the default state is "enabled".
+	//
+	// If you specify a value of "disabled", instance metadata will not be accessible
+	// on the node.
+	// +kubebuilder:default=enabled
+	// +kubebuilder:validation:Enum:={enabled,disabled}
+	// +optional
+	HTTPEndpoint *string `json:"httpEndpoint,omitempty"`
+	// HTTPProtocolIPv6 enables or disables the IPv6 endpoint for the instance metadata
+	// service on provisioned nodes. If metadata options is non-nil, but this parameter
+	// is not specified, the default state is "disabled".
+	// +kubebuilder:default=disabled
+	// +kubebuilder:validation:Enum:={enabled,disabled}
+	// +optional
+	HTTPProtocolIPv6 *string `json:"httpProtocolIPv6,omitempty"`
+	// HTTPPutResponseHopLimit is the desired HTTP PUT response hop limit for
+	// instance metadata requests. The larger the number, the further instance
+	// metadata requests can travel. Possible values are integers from 1 to 64.
+	// If metadata options is non-nil, but this parameter is not specified, the
+	// default value is 1.
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum:=1
+	// +kubebuilder:validation:Maximum:=64
+	// +optional
+	HTTPPutResponseHopLimit *int64 `json:"httpPutResponseHopLimit,omitempty"`
+	// HTTPTokens determines the state of token usage for instance metadata
+	// requests. If metadata options is non-nil, but this parameter is not
+	// specified, the default state is "required".
+	//
+	// If the state is optional, one can choose to retrieve instance metadata with
+	// or without a signed token header on the request. If one retrieves the IAM
+	// role credentials without a token, the version 1.0 role credentials are
+	// returned. If one retrieves the IAM role credentials using a valid signed
+	// token, the version 2.0 role credentials are returned.
+	//
+	// If the state is "required", one must send a signed token header with any
+	// instance metadata retrieval requests. In this state, retrieving the IAM
+	// role credentials always returns the version 2.0 credentials; the version
+	// 1.0 credentials are not available.
+	// +kubebuilder:default=required
+	// +kubebuilder:validation:Enum:={required,optional}
+	// +optional
+	HTTPTokens *string `json:"httpTokens,omitempty"`
 }
 
 // OpenshiftEC2NodeClassStatus defines the observed state of OpenshiftEC2NodeClass.

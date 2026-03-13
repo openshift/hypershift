@@ -120,6 +120,12 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				},
 				InstanceStorePolicy: ptr.To(hyperkarpenterv1.InstanceStorePolicyRAID0),
 				DetailedMonitoring:  ptr.To(true),
+				MetadataOptions: &hyperkarpenterv1.MetadataOptions{
+					HTTPEndpoint:            ptr.To("enabled"),
+					HTTPProtocolIPv6:        ptr.To("disabled"),
+					HTTPPutResponseHopLimit: ptr.To(int64(1)),
+					HTTPTokens:              ptr.To("required"),
+				},
 			},
 			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
@@ -153,6 +159,122 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				},
 				InstanceStorePolicy: ptr.To(awskarpenterv1.InstanceStorePolicyRAID0),
 				DetailedMonitoring:  ptr.To(true),
+				MetadataOptions: &awskarpenterv1.MetadataOptions{
+					HTTPEndpoint:            ptr.To("enabled"),
+					HTTPProtocolIPv6:        ptr.To("disabled"),
+					HTTPPutResponseHopLimit: ptr.To(int64(1)),
+					HTTPTokens:              ptr.To("required"),
+				},
+			},
+		},
+		{
+			name: "When MetadataOptions is specified it should be mapped to EC2NodeClass",
+			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				MetadataOptions: &hyperkarpenterv1.MetadataOptions{
+					HTTPEndpoint:            ptr.To("enabled"),
+					HTTPProtocolIPv6:        ptr.To("disabled"),
+					HTTPPutResponseHopLimit: ptr.To(int64(2)),
+					HTTPTokens:              ptr.To("required"),
+				},
+			},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				BlockDeviceMappings: []*awskarpenterv1.BlockDeviceMapping{
+					{
+						DeviceName: ptr.To("/dev/xvda"),
+						EBS: &awskarpenterv1.BlockDevice{
+							VolumeSize: ptr.To(resource.MustParse("120Gi")),
+							VolumeType: ptr.To("gp3"),
+							Encrypted:  ptr.To(true),
+						},
+					},
+				},
+				MetadataOptions: &awskarpenterv1.MetadataOptions{
+					HTTPEndpoint:            ptr.To("enabled"),
+					HTTPProtocolIPv6:        ptr.To("disabled"),
+					HTTPPutResponseHopLimit: ptr.To(int64(2)),
+					HTTPTokens:              ptr.To("required"),
+				},
+			},
+		},
+		{
+			name: "When MetadataOptions is nil it should not be set on EC2NodeClass",
+			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				BlockDeviceMappings: []*awskarpenterv1.BlockDeviceMapping{
+					{
+						DeviceName: ptr.To("/dev/xvda"),
+						EBS: &awskarpenterv1.BlockDevice{
+							VolumeSize: ptr.To(resource.MustParse("120Gi")),
+							VolumeType: ptr.To("gp3"),
+							Encrypted:  ptr.To(true),
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "When MetadataOptions has only HTTPTokens set to optional it should allow IMDSv1",
+			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				MetadataOptions: &hyperkarpenterv1.MetadataOptions{
+					HTTPTokens: ptr.To("optional"),
+				},
+			},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				BlockDeviceMappings: []*awskarpenterv1.BlockDeviceMapping{
+					{
+						DeviceName: ptr.To("/dev/xvda"),
+						EBS: &awskarpenterv1.BlockDevice{
+							VolumeSize: ptr.To(resource.MustParse("120Gi")),
+							VolumeType: ptr.To("gp3"),
+							Encrypted:  ptr.To(true),
+						},
+					},
+				},
+				MetadataOptions: &awskarpenterv1.MetadataOptions{
+					HTTPTokens: ptr.To("optional"),
+				},
 			},
 		},
 		{
