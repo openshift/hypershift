@@ -9,6 +9,40 @@ platforms:
         cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:88c55ea554f7e62a64e34ff8d3be45ef85ef6b80fe4e9b0240b9a1aa226f9d98
       - version: 4.19.10
         cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-19@sha256:88c55ea554f7e62a64e34ff8d3be45ef85ef6b80fe4e9b0240b9a1aa226f9d98
+      - version: 4.20.0
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.1
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.2
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.3
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.4
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.5
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.6
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.8
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.9
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.10
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.11
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.12
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.13
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.14
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.15
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.16
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
+      - version: 4.20.17
+        cpoImage: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/control-plane-operator-4-20@sha256:a15944444f28bf3ea77e2c7935488f41fc8c7118bc7421fd54eeff0747665f98
     testing:
       # Update the image refs below to indicate which images should be used for CPO override
       # testing. Currently, we only test one latest/previous combination. In the future, we
