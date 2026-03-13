@@ -74,7 +74,9 @@ func (r *CincinnatiVersionResolver) Resolve(ctx context.Context, version, channe
 		channel = fmt.Sprintf("fast-%d.%d", parsedVersion.Major, parsedVersion.Minor)
 	}
 
-	cacheKey := channel + "/" + version
+	arch := defaultArch
+
+	cacheKey := arch + "/" + channel + "/" + version
 
 	// Check cache
 	r.mu.RLock()
@@ -84,7 +86,7 @@ func (r *CincinnatiVersionResolver) Resolve(ctx context.Context, version, channe
 	}
 	r.mu.RUnlock()
 
-	releaseImage, err := r.fetchVersion(ctx, version, channel)
+	releaseImage, err := r.fetchVersion(ctx, version, channel, arch)
 	if err != nil {
 		return "", err
 	}
@@ -100,8 +102,8 @@ func (r *CincinnatiVersionResolver) Resolve(ctx context.Context, version, channe
 	return releaseImage, nil
 }
 
-func (r *CincinnatiVersionResolver) fetchVersion(ctx context.Context, version, channel string) (string, error) {
-	url := fmt.Sprintf("%s?channel=%s&arch=%s", r.baseURL, channel, defaultArch)
+func (r *CincinnatiVersionResolver) fetchVersion(ctx context.Context, version, channel arch, string) (string, error) {
+	url := fmt.Sprintf("%s?channel=%s&arch=%s", r.baseURL, channel, arch)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
