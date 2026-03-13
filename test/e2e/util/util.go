@@ -1616,6 +1616,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 			"openstack-manila-csi":                   "app",
 			"karpenter":                              "app",
 			"karpenter-operator":                     "app",
+			"aws-node-termination-handler":           "app",
 		}
 
 		hcpPods := &corev1.PodList{}
