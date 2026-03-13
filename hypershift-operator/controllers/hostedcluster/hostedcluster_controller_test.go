@@ -48,6 +48,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	errors2 "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -5921,5 +5922,317 @@ func TestComputeGCPPSCCondition(t *testing.T) {
 				t.Errorf("error, expected %v\nbut got %v", tc.expected, condition)
 			}
 		})
+	}
+}
+
+func TestReconcileKubeconfigAndPasswordSync_WhenKubeconfigFails_ItShouldStillSyncKubeadminPassword(t *testing.T) {
+	const (
+		hcName       = "test-hc"
+		hcNamespace  = "test-ns"
+		hcpNamespace = "test-hcp-ns"
+	)
+
+	// HCP references a kubeconfig secret that does NOT exist (will cause kubeconfig sync to fail)
+	// but has a kubeadmin password secret that DOES exist (should succeed despite kubeconfig failure)
+	kubeadminSrc := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hcpNamespace,
+			Name:      "kubeadmin-password",
+		},
+		Data: map[string][]byte{
+			"password": []byte("test-password"),
+		},
+	}
+
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hcName,
+			Namespace: hcNamespace,
+		},
+	}
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hcName,
+			Namespace: hcpNamespace,
+		},
+		Status: hyperv1.HostedControlPlaneStatus{
+			KubeConfig: &hyperv1.KubeconfigSecretRef{
+				Name: "nonexistent-kubeconfig", // this secret does NOT exist
+				Key:  "kubeconfig",
+			},
+			KubeadminPassword: &corev1.LocalObjectReference{
+				Name: "kubeadmin-password", // this secret exists
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hcluster, kubeadminSrc).
+		Build()
+
+	r := &HostedClusterReconciler{
+		Client: fakeClient,
+	}
+	createOrUpdate := upsert.New(false).CreateOrUpdate
+
+	errs := r.reconcileKubeconfigAndPasswordSync(t.Context(), createOrUpdate, hcluster, hcp, false)
+
+	// Kubeconfig sync should have failed
+	kubeconfigFailed := false
+	for _, err := range errs {
+		if strings.Contains(err.Error(), "kubeconfig") {
+			kubeconfigFailed = true
+		}
+	}
+	if !kubeconfigFailed {
+		t.Errorf("expected kubeconfig sync to fail, but no kubeconfig error found in: %v", errs)
+	}
+
+	// Kubeadmin password sync should have succeeded — verify the destination secret was created
+	destSecret := &corev1.Secret{}
+	destKey := crclient.ObjectKey{
+		Namespace: hcNamespace,
+		Name:      fmt.Sprintf("%s-kubeadmin-password", hcName),
+	}
+	if err := fakeClient.Get(t.Context(), destKey, destSecret); err != nil {
+		t.Fatalf("kubeadmin password secret should have been synced despite kubeconfig failure, but got: %v", err)
+	}
+	if string(destSecret.Data["password"]) != "test-password" {
+		t.Errorf("expected kubeadmin password data to be synced, got: %v", destSecret.Data)
+	}
+}
+
+func TestReconcileRBACAndPolicies_WhenPKIRBACFails_ItShouldStillCreatePrometheusRBAC(t *testing.T) {
+	const (
+		hcName       = "test-hc"
+		hcNamespace  = "test-ns"
+		hcpNamespace = "test-hcp-ns"
+	)
+
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hcName,
+			Namespace: hcNamespace,
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.NonePlatform,
+			},
+			InfraID: "test-infra",
+		},
+	}
+
+	hcp := &hyperv1.HostedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hcName,
+			Namespace: hcpNamespace,
+		},
+		Spec: hyperv1.HostedControlPlaneSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.NonePlatform,
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hcluster, hcp).
+		Build()
+
+	r := &HostedClusterReconciler{
+		Client:                        fakeClient,
+		EnableOCPClusterMonitoring:    true,
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+	}
+	createOrUpdate := upsert.New(false).CreateOrUpdate
+	log := zap.New(zap.UseDevMode(true), zap.Level(zapcore.InfoLevel))
+	releaseVersion := semver.MustParse("4.16.0")
+
+	_ = r.reconcileRBACAndPolicies(t.Context(), log, createOrUpdate, hcluster, hcp,
+		true, // controlPlanePKIOperatorSignsCSRs — enables PKI RBAC
+		false, releaseVersion)
+
+	// Regardless of PKI RBAC or network policies outcome, prometheus RBAC should have run.
+	// Verify the prometheus Role was created in the HCP namespace.
+	role := &rbacv1.Role{}
+	roleKey := crclient.ObjectKey{Namespace: hcpNamespace, Name: "openshift-prometheus"}
+	if err := fakeClient.Get(t.Context(), roleKey, role); err != nil {
+		t.Fatalf("prometheus RBAC Role should have been created despite other failures, but got: %v", err)
+	}
+	if len(role.Rules) == 0 {
+		t.Errorf("expected prometheus Role to have rules, got empty")
+	}
+
+	binding := &rbacv1.RoleBinding{}
+	bindingKey := crclient.ObjectKey{Namespace: hcpNamespace, Name: "openshift-prometheus"}
+	if err := fakeClient.Get(t.Context(), bindingKey, binding); err != nil {
+		t.Fatalf("prometheus RBAC RoleBinding should have been created, but got: %v", err)
+	}
+}
+
+func TestReconcile_WhenPhase6SSHKeyFails_ItShouldStillCreateHCPAndCPODeployment(t *testing.T) {
+	const (
+		hcName      = "test-hc"
+		hcNamespace = "test-ns"
+	)
+	hcpNamespace := hcpmanifests.HostedControlPlaneNamespace(hcNamespace, hcName)
+
+	// Mock release provider that returns a valid release image
+	mockCtrl := gomock.NewController(t)
+	mockReleaseProvider := releaseinfo.NewMockProviderWithOpenShiftImageRegistryOverrides(mockCtrl)
+	mockReleaseProvider.EXPECT().
+		Lookup(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(testutils.InitReleaseImageOrDie("4.16.0"), nil).AnyTimes()
+	mockReleaseProvider.EXPECT().GetRegistryOverrides().Return(nil).AnyTimes()
+	mockReleaseProvider.EXPECT().GetOpenShiftImageRegistryOverrides().Return(nil).AnyTimes()
+	mockReleaseProvider.EXPECT().GetMirroredReleaseImage().Return("").AnyTimes()
+
+	// Fake image metadata provider for payload arch detection
+	fakeMetadata := fakeimagemetadataprovider.FakeRegistryClientImageMetadataProvider{
+		Result: &dockerv1client.DockerImageConfig{
+			Architecture: "amd64",
+		},
+	}
+
+	// Pull secret — required by Phase 4
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hcNamespace,
+			Name:      "pull-secret",
+		},
+		Data: map[string][]byte{
+			".dockerconfigjson": []byte(`{"auths":{}}`),
+		},
+	}
+
+	// Ingress — required by defaultIngressDomain() in Phase 8 CPO reconciliation
+	ingress := &configv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: configv1.IngressSpec{
+			Domain: "apps.test.example.com",
+		},
+	}
+
+	hcluster := &hyperv1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hcName,
+			Namespace: hcNamespace,
+			Annotations: map[string]string{
+				// Bypass CPO image lookups
+				hyperv1.ControlPlaneOperatorImageAnnotation:       "test-cpo-image",
+				hyperv1.ControlPlaneOperatorImageLabelsAnnotation: "fake-label=true",
+				// Skip release image validation
+				hyperv1.SkipReleaseImageValidation: "true",
+			},
+		},
+		Spec: hyperv1.HostedClusterSpec{
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.NonePlatform,
+			},
+			Release: hyperv1.Release{
+				Image: "quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64",
+			},
+			PullSecret: corev1.LocalObjectReference{
+				Name: "pull-secret",
+			},
+			SSHKey: corev1.LocalObjectReference{
+				Name: "nonexistent-ssh-key", // Phase 6: this will FAIL
+			},
+			Etcd: hyperv1.EtcdSpec{
+				ManagementType: hyperv1.Managed,
+			},
+			InfraID: "test-infra",
+			Services: []hyperv1.ServicePublishingStrategyMapping{
+				{
+					Service: hyperv1.APIServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+						Route: &hyperv1.RoutePublishingStrategy{
+							Hostname: "api.test.example.com",
+						},
+					},
+				},
+				{
+					Service: hyperv1.Ignition,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
+				{
+					Service: hyperv1.Konnectivity,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
+				{
+					Service: hyperv1.OAuthServer,
+					ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+						Type: hyperv1.Route,
+					},
+				},
+			},
+			Networking: hyperv1.ClusterNetworking{
+				ClusterNetwork: []hyperv1.ClusterNetworkEntry{
+					{CIDR: *ipnet.MustParseCIDR("10.132.0.0/14")},
+				},
+				ServiceNetwork: []hyperv1.ServiceNetworkEntry{
+					{CIDR: *ipnet.MustParseCIDR("172.31.0.0/16")},
+				},
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(api.Scheme).
+		WithObjects(hcluster, pullSecret, ingress).
+		WithStatusSubresource(hcluster).
+		Build()
+
+	r := &HostedClusterReconciler{
+		Client:                        fakeClient,
+		Clock:                         clock.RealClock{},
+		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
+		EnableOCPClusterMonitoring:    true, // Phase 8: enables prometheus RBAC
+		CertRotationScale:             24 * time.Hour,
+		HypershiftOperatorImage:       "test-hso-image",
+		RegistryProvider: fakeReleaseProvider{
+			releaseProvider:  mockReleaseProvider,
+			metadataProvider: fakeMetadata,
+		},
+		createOrUpdate: func(req reconcile.Request) upsert.CreateOrUpdateFN {
+			return upsert.New(false).CreateOrUpdate
+		},
+		now: metav1.Now,
+	}
+
+	req := ctrl.Request{NamespacedName: crclient.ObjectKeyFromObject(hcluster)}
+	log := zap.New(zap.UseDevMode(true), zap.Level(zapcore.InfoLevel))
+
+	_, err := r.reconcile(t.Context(), req, log, hcluster)
+
+	// The reconcile should return an error (aggregated) that includes the SSH key failure
+	if err == nil {
+		t.Fatal("expected reconcile to return an error due to missing SSH key, but got nil")
+	}
+	if !strings.Contains(err.Error(), "SSH key") {
+		t.Errorf("expected aggregated error to contain 'SSH key', got: %v", err)
+	}
+
+	// Phase 7 should have still run: verify HCP object was created
+	hcpObj := &hyperv1.HostedControlPlane{}
+	hcpKey := crclient.ObjectKey{Namespace: hcpNamespace, Name: hcName}
+	if err := fakeClient.Get(t.Context(), hcpKey, hcpObj); err != nil {
+		t.Fatalf("HCP object should have been created in Phase 7 despite Phase 6 SSH key failure, but got: %v", err)
+	}
+
+	// Phase 8 should have still run: verify CPO Deployment was created
+	cpoDeployment := &appsv1.Deployment{}
+	cpoKey := crclient.ObjectKey{Namespace: hcpNamespace, Name: "control-plane-operator"}
+	if err := fakeClient.Get(t.Context(), cpoKey, cpoDeployment); err != nil {
+		t.Fatalf("CPO Deployment should have been created in Phase 8 despite Phase 6 SSH key failure, but got: %v", err)
 	}
 }
