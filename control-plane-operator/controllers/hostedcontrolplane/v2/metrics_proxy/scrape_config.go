@@ -76,7 +76,7 @@ func adaptScrapeConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap
 			continue
 		}
 
-		scheme := "https"
+		scheme := "http"
 		if ep.Scheme != nil {
 			scheme = ep.Scheme.String()
 		}
@@ -142,7 +142,7 @@ func adaptScrapeConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap
 			continue
 		}
 
-		scheme := "https"
+		scheme := "http"
 		if ep.Scheme != nil {
 			scheme = ep.Scheme.String()
 		}
