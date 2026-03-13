@@ -113,6 +113,8 @@ type Options struct {
 	ExternalDNSTxtOwnerId                     string
 	ExternalDNSImage                          string
 	ExternalDNSGoogleProject                  string
+	ExternalDNSInterval                       string
+	ExternalDNSAWSZonesCacheDuration          string
 	AdditionalOperatorEnvVars                 map[string]string
 	EnableAdminRBACGeneration                 bool
 	EnableUWMTelemetryRemoteWrite             bool
@@ -191,6 +193,19 @@ func (o *Options) Validate() error {
 		}
 		if len(o.ExternalDNSDomainFilter) == 0 {
 			errs = append(errs, fmt.Errorf("--external-dns-domain-filter is required with --external-dns-provider"))
+		}
+		if len(o.ExternalDNSInterval) > 0 {
+			if _, err := time.ParseDuration(o.ExternalDNSInterval); err != nil {
+				errs = append(errs, fmt.Errorf("--external-dns-interval is not a valid duration: %w", err))
+			}
+		}
+		if len(o.ExternalDNSAWSZonesCacheDuration) > 0 {
+			if _, err := time.ParseDuration(o.ExternalDNSAWSZonesCacheDuration); err != nil {
+				errs = append(errs, fmt.Errorf("--external-dns-aws-zones-cache-duration is not a valid duration: %w", err))
+			}
+			if o.ExternalDNSProvider != "aws" {
+				errs = append(errs, fmt.Errorf("--external-dns-aws-zones-cache-duration is only effective with --external-dns-provider=aws"))
+			}
 		}
 	}
 	if o.HyperShiftImage != HyperShiftImage && len(o.ImageRefsFile) > 0 {
@@ -313,6 +328,8 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerId, "external-dns-txt-owner-id", "", "external-dns TXT registry owner ID.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSImage, "external-dns-image", opts.ExternalDNSImage, "Image to use for external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSGoogleProject, "external-dns-google-project", "", "Google Cloud project ID for DNS zone (optional for GCP provider; falls back to EXTERNAL_DNS_GOOGLE_PROJECT env var or GCP metadata server)")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSInterval, "external-dns-interval", "", fmt.Sprintf("Polling interval for external-dns DNS record reconciliation (default: %s)", assets.DefaultExternalDNSInterval))
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSAWSZonesCacheDuration, "external-dns-aws-zones-cache-duration", "", fmt.Sprintf("Cache duration for AWS Route53 hosted zones list; only effective with AWS provider (default: %s)", assets.DefaultExternalDNSAWSZonesCacheDuration))
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", opts.EnableAdminRBACGeneration, "Generate RBAC manifests for hosted cluster admins")
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
@@ -1076,15 +1093,17 @@ func setupExternalDNS(opts Options, operatorNamespace *corev1.Namespace) ([]crcl
 	}
 
 	externalDNSDeployment := assets.ExternalDNSDeployment{
-		Namespace:         operatorNamespace,
-		Image:             opts.ExternalDNSImage,
-		ServiceAccount:    externalDNSServiceAccount,
-		Provider:          assets.ExternalDNSProvider(opts.ExternalDNSProvider),
-		DomainFilter:      opts.ExternalDNSDomainFilter,
-		CredentialsSecret: externalDNSSecret,
-		TxtOwnerId:        opts.ExternalDNSTxtOwnerId,
-		Proxy:             proxy,
-		GoogleProject:     opts.ExternalDNSGoogleProject,
+		Namespace:             operatorNamespace,
+		Image:                 opts.ExternalDNSImage,
+		ServiceAccount:        externalDNSServiceAccount,
+		Provider:              assets.ExternalDNSProvider(opts.ExternalDNSProvider),
+		DomainFilter:          opts.ExternalDNSDomainFilter,
+		CredentialsSecret:     externalDNSSecret,
+		TxtOwnerId:            opts.ExternalDNSTxtOwnerId,
+		Proxy:                 proxy,
+		GoogleProject:         opts.ExternalDNSGoogleProject,
+		Interval:              opts.ExternalDNSInterval,
+		AWSZonesCacheDuration: opts.ExternalDNSAWSZonesCacheDuration,
 	}.Build()
 	objects = append(objects, externalDNSDeployment)
 

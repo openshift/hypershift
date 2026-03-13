@@ -8,26 +8,28 @@ import (
 )
 
 type TemplateParams struct {
-	HyperShiftImage             string
-	HyperShiftImageTag          string
-	Namespace                   string
-	HypershiftOperatorReplicas  string
-	OIDCS3Name                  string
-	OIDCS3Region                string
-	OIDCS3CredsSecret           string
-	OIDCS3CredsSecretKey        string
-	AWSPrivateRegion            string
-	AWSPrivateCredsSecret       string
-	AWSPrivateCredsSecretKey    string
-	ExternalDNSCredsSecret      string
-	ExternalDNSDomainFilter     string
-	ExternalDNSTxtOwnerID       string
-	ExternalDNSImage            string
-	ExternalDNSGoogleProject    string
-	RegistryOverrides           string
-	AROHCPKeyVaultUsersClientID string
-	TemplateNamespace           bool
-	TemplateParamWrapper        func(string) string
+	HyperShiftImage                  string
+	HyperShiftImageTag               string
+	Namespace                        string
+	HypershiftOperatorReplicas       string
+	OIDCS3Name                       string
+	OIDCS3Region                     string
+	OIDCS3CredsSecret                string
+	OIDCS3CredsSecretKey             string
+	AWSPrivateRegion                 string
+	AWSPrivateCredsSecret            string
+	AWSPrivateCredsSecretKey         string
+	ExternalDNSCredsSecret           string
+	ExternalDNSDomainFilter          string
+	ExternalDNSTxtOwnerID            string
+	ExternalDNSImage                 string
+	ExternalDNSGoogleProject         string
+	ExternalDNSInterval              string
+	ExternalDNSAWSZonesCacheDuration string
+	RegistryOverrides                string
+	AROHCPKeyVaultUsersClientID      string
+	TemplateNamespace                bool
+	TemplateParamWrapper             func(string) string
 }
 
 func hyperShiftOperatorTemplateManifest(ctx context.Context, client crclient.Client, opts *Options, templateParamConfig TemplateParams) ([]crclient.Object, []crclient.Object, error) {
@@ -68,6 +70,12 @@ func hyperShiftOperatorTemplateManifest(ctx context.Context, client crclient.Cli
 		}
 		if opts.ExternalDNSGoogleProject != "" {
 			opts.ExternalDNSGoogleProject = templateParamConfig.TemplateParamWrapper(templateParamConfig.ExternalDNSGoogleProject)
+		}
+		if opts.ExternalDNSInterval != "" {
+			opts.ExternalDNSInterval = templateParamConfig.TemplateParamWrapper(templateParamConfig.ExternalDNSInterval)
+		}
+		if opts.ExternalDNSAWSZonesCacheDuration != "" {
+			opts.ExternalDNSAWSZonesCacheDuration = templateParamConfig.TemplateParamWrapper(templateParamConfig.ExternalDNSAWSZonesCacheDuration)
 		}
 	}
 
