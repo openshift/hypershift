@@ -270,7 +270,7 @@ type OpenshiftEC2NodeClassSpec struct {
 	// for nodes managed by this NodeClass. When set, the controller resolves this to a
 	// release image via the Cincinnati graph API. When not set, nodes use the control plane's
 	// release image.
-	// +kubebuilder:validation:XValidation:rule="self.matches('^(0|[1-9]\\\\d*)\\\\.(0|[1-9]\\\\d*)\\\\.(0|[1-9]\\\\d*)$')",message="version must be a valid semantic version (e.g., 4.20.1)"
+	// +kubebuilder:validation:XValidation:rule=`^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$`,message="version must be a valid semantic version (e.g., 4.20.1)"
 	// +kubebuilder:validation:MinLength=5
 	// +kubebuilder:validation:MaxLength=64
 	// +optional
