@@ -17,12 +17,17 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // AzureKMSSpecApplyConfiguration represents a declarative configuration of the AzureKMSSpec type for use
 // with apply.
 type AzureKMSSpecApplyConfiguration struct {
-	ActiveKey *AzureKMSKeyApplyConfiguration     `json:"activeKey,omitempty"`
-	BackupKey *AzureKMSKeyApplyConfiguration     `json:"backupKey,omitempty"`
-	KMS       *ManagedIdentityApplyConfiguration `json:"kms,omitempty"`
+	ActiveKey      *AzureKMSKeyApplyConfiguration             `json:"activeKey,omitempty"`
+	BackupKey      *AzureKMSKeyApplyConfiguration             `json:"backupKey,omitempty"`
+	KMS            *ManagedIdentityApplyConfiguration         `json:"kms,omitempty"`
+	KeyVaultAccess *hypershiftv1beta1.AzureKeyVaultAccessType `json:"keyVaultAccess,omitempty"`
 }
 
 // AzureKMSSpecApplyConfiguration constructs a declarative configuration of the AzureKMSSpec type for use with
@@ -52,5 +57,13 @@ func (b *AzureKMSSpecApplyConfiguration) WithBackupKey(value *AzureKMSKeyApplyCo
 // If called multiple times, the KMS field is set to the value of the last call.
 func (b *AzureKMSSpecApplyConfiguration) WithKMS(value *ManagedIdentityApplyConfiguration) *AzureKMSSpecApplyConfiguration {
 	b.KMS = value
+	return b
+}
+
+// WithKeyVaultAccess sets the KeyVaultAccess field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the KeyVaultAccess field is set to the value of the last call.
+func (b *AzureKMSSpecApplyConfiguration) WithKeyVaultAccess(value hypershiftv1beta1.AzureKeyVaultAccessType) *AzureKMSSpecApplyConfiguration {
+	b.KeyVaultAccess = &value
 	return b
 }

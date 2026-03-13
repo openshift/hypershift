@@ -1,0 +1,31 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: control-plane-pki-operator
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: control-plane-pki-operator Deployment Available condition not found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: 'Waiting for deployment control-plane-pki-operator rollout to finish:
+      0 out of 1 new replicas have been updated'
+    reason: WaitingForRolloutComplete
+    status: "False"
+    type: RolloutComplete
+  resources:
+  - group: rbac.authorization.k8s.io
+    kind: Role
+    name: control-plane-pki-operator
+  - group: rbac.authorization.k8s.io
+    kind: RoleBinding
+    name: control-plane-pki-operator
+  - group: ""
+    kind: ServiceAccount
+    name: control-plane-pki-operator

@@ -1,0 +1,158 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: cluster-node-tuning-operator
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      name: cluster-node-tuning-operator
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
+        component.hypershift.openshift.io/config-hash: ""
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+        target.workload.openshift.io/management: '{"effect": "PreferredDuringScheduling"}'
+      creationTimestamp: null
+      labels:
+        app: cluster-node-tuning-operator
+        hypershift.openshift.io/control-plane-component: cluster-node-tuning-operator
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+        hypershift.openshift.io/need-management-kas-access: "true"
+        name: cluster-node-tuning-operator
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+      automountServiceAccountToken: true
+      containers:
+      - args:
+        - -v=0
+        command:
+        - cluster-node-tuning-operator
+        env:
+        - name: RELEASE_VERSION
+          value: 4.18.0
+        - name: HYPERSHIFT
+          value: "true"
+        - name: MY_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: WATCH_NAMESPACE
+          value: openshift-cluster-node-tuning-operator
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: RESYNC_PERIOD
+          value: "600"
+        - name: CLUSTER_NODE_TUNED_IMAGE
+          value: cluster-node-tuning-operator
+        - name: KUBECONFIG
+          value: /etc/kubernetes/kubeconfig
+        image: cluster-node-tuning-operator
+        imagePullPolicy: IfNotPresent
+        name: cluster-node-tuning-operator
+        ports:
+        - containerPort: 60000
+          name: metrics
+          protocol: TCP
+        resources:
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/secrets
+          name: node-tuning-operator-tls
+        - mountPath: /tmp/metrics-client-ca
+          name: metrics-client-ca
+        - mountPath: /var/run/configmaps/trusted-ca/
+          name: trusted-ca
+        - mountPath: /etc/kubernetes
+          name: hosted-kubeconfig
+        - mountPath: /tmp
+          name: tmp-dir
+      priorityClassName: hypershift-control-plane
+      restartPolicy: Always
+      serviceAccount: cluster-node-tuning-operator
+      serviceAccountName: cluster-node-tuning-operator
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - name: node-tuning-operator-tls
+        secret:
+          defaultMode: 416
+          secretName: node-tuning-operator-tls
+      - name: metrics-client-ca
+        secret:
+          defaultMode: 416
+          secretName: metrics-client
+      - configMap:
+          defaultMode: 420
+          items:
+          - key: ca-bundle.crt
+            path: tls-ca-bundle.pem
+          name: trusted-ca
+          optional: true
+        name: trusted-ca
+      - name: hosted-kubeconfig
+        secret:
+          defaultMode: 416
+          secretName: service-network-admin-kubeconfig
+      - emptyDir: {}
+        name: tmp-dir
+status: {}

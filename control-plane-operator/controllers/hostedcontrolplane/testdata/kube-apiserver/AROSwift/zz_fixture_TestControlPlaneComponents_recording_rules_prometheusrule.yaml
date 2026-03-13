@@ -1,0 +1,62 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  creationTimestamp: null
+  name: recording-rules
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  groups:
+  - name: hypershift.rules
+    rules:
+    - expr: sum by (instance) (apiserver_storage_objects)
+      labels:
+        _id: ""
+      record: instance:etcd_object_counts:sum
+    - expr: sum(rate(apiserver_request_total{job="apiserver"}[10m])) BY (code)
+      labels:
+        _id: ""
+      record: code:apiserver_request_total:rate:sum
+    - expr: |
+        max_over_time(sum(apiserver_current_inflight_requests{apiserver=~"openshift-apiserver|kube-apiserver"}) by (apiserver,request_kind)[2m:])
+      labels:
+        _id: ""
+      record: cluster:apiserver_current_inflight_requests:sum:max_over_time:2m
+    - expr: sum by(plugin_name, volume_mode)(pv_collector_total_pv_count)
+      labels:
+        _id: ""
+      record: cluster:kube_persistentvolume_plugin_type_counts:sum
+    - expr: sum by (instance) (etcd_mvcc_db_total_size_in_bytes{job="etcd"})
+      labels:
+        _id: ""
+      record: instance:etcd_mvcc_db_total_size_in_bytes:sum
+    - expr: histogram_quantile(0.99, sum by (instance, le) (rate(etcd_disk_wal_fsync_duration_seconds_bucket{job="etcd"}[5m])))
+      labels:
+        _id: ""
+        quantile: "0.99"
+      record: instance:etcd_disk_wal_fsync_duration_seconds:histogram_quantile
+    - expr: histogram_quantile(0.99, sum by (instance, le) (rate(etcd_network_peer_round_trip_time_seconds_bucket{job="etcd"}[5m])))
+      labels:
+        _id: ""
+        quantile: "0.99"
+      record: instance:etcd_network_peer_round_trip_time_seconds:histogram_quantile
+    - expr: sum by (instance) (etcd_mvcc_db_total_size_in_use_in_bytes{job="etcd"})
+      labels:
+        _id: ""
+      record: instance:etcd_mvcc_db_total_size_in_use_in_bytes:sum
+    - expr: histogram_quantile(0.99, sum by (instance, le) (rate(etcd_disk_backend_commit_duration_seconds_bucket{job="etcd"}[5m])))
+      labels:
+        _id: ""
+        quantile: "0.99"
+      record: instance:etcd_disk_backend_commit_duration_seconds:histogram_quantile
+    - expr: count by (_id) (nto_profile_calculated_total{profile!~"openshift-node",profile!~"openshift-control-plane",profile!~"openshift"})
+      labels:
+        _id: ""
+      record: nto_custom_profiles:count

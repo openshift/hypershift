@@ -1,0 +1,174 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    hypershift.openshift.io/managed-by: control-plane-operator
+  name: konnectivity-agent
+  namespace: hcp-namespace
+  ownerReferences:
+  - apiVersion: hypershift.openshift.io/v1beta1
+    blockOwnerDeletion: true
+    controller: true
+    kind: HostedControlPlane
+    name: hcp
+    uid: ""
+  resourceVersion: "1"
+spec:
+  replicas: 2
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app: konnectivity-agent
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
+        component.hypershift.openshift.io/config-hash: ""
+        hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+      creationTimestamp: null
+      labels:
+        app: konnectivity-agent
+        hypershift.openshift.io/control-plane-component: konnectivity-agent
+        hypershift.openshift.io/hosted-control-plane: hcp-namespace
+    spec:
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/control-plane
+                operator: In
+                values:
+                - "true"
+            weight: 50
+          - preference:
+              matchExpressions:
+              - key: hypershift.openshift.io/cluster
+                operator: In
+                values:
+                - hcp-namespace
+            weight: 100
+        podAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  hypershift.openshift.io/hosted-control-plane: hcp-namespace
+              topologyKey: kubernetes.io/hostname
+            weight: 100
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: konnectivity-agent
+                hypershift.openshift.io/control-plane-component: konnectivity-agent
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+            topologyKey: topology.kubernetes.io/zone
+          - labelSelector:
+              matchLabels:
+                app: konnectivity-agent
+                hypershift.openshift.io/control-plane-component: konnectivity-agent
+                hypershift.openshift.io/hosted-control-plane: hcp-namespace
+            topologyKey: kubernetes.io/hostname
+      automountServiceAccountToken: false
+      containers:
+      - args:
+        - --logtostderr=true
+        - --ca-cert
+        - /etc/konnectivity/ca/ca.crt
+        - --agent-cert
+        - /etc/konnectivity/agent/tls.crt
+        - --agent-key
+        - /etc/konnectivity/agent/tls.key
+        - --proxy-server-host
+        - konnectivity-server
+        - --proxy-server-port
+        - "8091"
+        - --health-server-port
+        - "2041"
+        - --keepalive-time
+        - 30s
+        - --probe-interval
+        - 5s
+        - --sync-interval
+        - 5s
+        - --sync-interval-cap
+        - 30s
+        - --v
+        - "3"
+        - --agent-identifiers
+        - ipv4=&ipv4=&ipv4=
+        command:
+        - /usr/bin/proxy-agent
+        image: apiserver-network-proxy
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 6
+          httpGet:
+            path: healthz
+            port: 2041
+            scheme: HTTP
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 5
+        name: konnectivity-agent
+        readinessProbe:
+          failureThreshold: 1
+          httpGet:
+            path: readyz
+            port: 2041
+            scheme: HTTP
+          periodSeconds: 30
+          successThreshold: 1
+          timeoutSeconds: 5
+        resources:
+          requests:
+            cpu: 40m
+            memory: 50Mi
+        securityContext:
+          readOnlyRootFilesystem: true
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: healthz
+            port: 2041
+            scheme: HTTP
+          periodSeconds: 5
+          successThreshold: 1
+          timeoutSeconds: 5
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /etc/konnectivity/agent
+          name: agent-certs
+        - mountPath: /etc/konnectivity/ca
+          name: konnectivity-ca
+        - mountPath: /tmp
+          name: tmp-dir
+      priorityClassName: hypershift-control-plane
+      tolerations:
+      - effect: NoSchedule
+        key: hypershift.openshift.io/control-plane
+        operator: Equal
+        value: "true"
+      - effect: NoSchedule
+        key: hypershift.openshift.io/cluster
+        operator: Equal
+        value: hcp-namespace
+      volumes:
+      - name: agent-certs
+        secret:
+          defaultMode: 416
+          secretName: konnectivity-agent
+      - configMap:
+          defaultMode: 420
+          name: konnectivity-ca-bundle
+        name: konnectivity-ca
+      - emptyDir: {}
+        name: tmp-dir
+status: {}

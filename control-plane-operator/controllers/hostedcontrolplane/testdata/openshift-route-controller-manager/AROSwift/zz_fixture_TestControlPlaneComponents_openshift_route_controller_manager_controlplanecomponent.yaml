@@ -1,0 +1,32 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: ControlPlaneComponent
+metadata:
+  creationTimestamp: null
+  name: openshift-route-controller-manager
+  namespace: hcp-namespace
+  resourceVersion: "1"
+spec: {}
+status:
+  conditions:
+  - lastTransitionTime: null
+    message: openshift-route-controller-manager Deployment Available condition not
+      found
+    reason: NotFound
+    status: "False"
+    type: Available
+  - lastTransitionTime: null
+    message: 'Waiting for deployment openshift-route-controller-manager rollout to
+      finish: 0 out of 2 new replicas have been updated'
+    reason: WaitingForRolloutComplete
+    status: "False"
+    type: RolloutComplete
+  resources:
+  - group: ""
+    kind: ConfigMap
+    name: openshift-route-controller-manager-config
+  - group: ""
+    kind: Service
+    name: openshift-route-controller-manager
+  - group: monitoring.coreos.com
+    kind: ServiceMonitor
+    name: openshift-route-controller-manager
