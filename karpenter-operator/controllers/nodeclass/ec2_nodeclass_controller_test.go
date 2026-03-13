@@ -3,6 +3,7 @@ package nodeclass
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -63,7 +64,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
 					{
 						Tags: map[string]string{
-							"karpenter.sh/discovery": testInfraID,
+							"kubernetes.io/role/internal-elb":                    "1",
+							fmt.Sprintf("kubernetes.io/cluster/%s", testInfraID): "*",
 						},
 					},
 				},
@@ -175,7 +177,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
 					{
 						Tags: map[string]string{
-							"karpenter.sh/discovery": testInfraID,
+							"kubernetes.io/role/internal-elb":                    "1",
+							fmt.Sprintf("kubernetes.io/cluster/%s", testInfraID): "*",
 						},
 					},
 				},
@@ -219,7 +222,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
 					{
 						Tags: map[string]string{
-							"karpenter.sh/discovery": testInfraID,
+							"kubernetes.io/role/internal-elb":                    "1",
+							fmt.Sprintf("kubernetes.io/cluster/%s", testInfraID): "*",
 						},
 					},
 				},
@@ -249,7 +253,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
 					{
 						Tags: map[string]string{
-							"karpenter.sh/discovery": testInfraID,
+							"kubernetes.io/role/internal-elb":                    "1",
+							fmt.Sprintf("kubernetes.io/cluster/%s", testInfraID): "*",
 						},
 					},
 				},
@@ -299,7 +304,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
 					{
 						Tags: map[string]string{
-							"karpenter.sh/discovery": "test-infra",
+							"kubernetes.io/role/internal-elb":                    "1",
+							fmt.Sprintf("kubernetes.io/cluster/%s", testInfraID): "*",
 						},
 					},
 				},
@@ -354,7 +360,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
 					{
 						Tags: map[string]string{
-							"karpenter.sh/discovery": "test-infra",
+							"kubernetes.io/role/internal-elb":                    "1",
+							fmt.Sprintf("kubernetes.io/cluster/%s", testInfraID): "*",
 						},
 					},
 				},
