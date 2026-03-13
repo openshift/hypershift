@@ -3,10 +3,14 @@ package cvo
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path"
 	"strings"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+
+	"github.com/openshift/hypershift/support/awsutil"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	prometheusoperatorv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -118,7 +122,18 @@ func cvoLabels() map[string]string {
 
 var port int32 = 8443
 
-func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneReleaseImage, dataPlaneReleaseImage, cliImage, availabilityProberImage, clusterID string, updateService configv1.URL, platformType hyperv1.PlatformType, oauthEnabled, enableCVOManagementClusterMetricsAccess bool, featureSet configv1.FeatureSet, caps *hyperv1.Capabilities) error {
+// IsManagementClusterMetricsAccessEnabled determines if CVO needs access to a metrics
+// endpoint on the Management Cluster. This covers two scenarios:
+//   - Self-managed HyperShift: Thanos Querier in openshift-monitoring namespace
+//     (controlled by enableCVOManagementClusterMetricsAccess flag)
+//   - ROSA HCP: RHOBS Prometheus in openshift-observability-operator namespace
+//     (enabled when RHOBS monitoring is active on ROSA HCP clusters)
+func IsManagementClusterMetricsAccessEnabled(hcp *hyperv1.HostedControlPlane, enableCVOManagementClusterMetricsAccess bool) bool {
+	return enableCVOManagementClusterMetricsAccess ||
+		(os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" && awsutil.IsROSAHCP(hcp))
+}
+
+func ReconcileDeployment(deployment *appsv1.Deployment, hcp *hyperv1.HostedControlPlane, ownerRef config.OwnerRef, deploymentConfig config.DeploymentConfig, controlPlaneReleaseImage, dataPlaneReleaseImage, cliImage, availabilityProberImage, clusterID string, updateService configv1.URL, platformType hyperv1.PlatformType, oauthEnabled, enableCVOManagementClusterMetricsAccess bool, featureSet configv1.FeatureSet, caps *hyperv1.Capabilities) error {
 	ownerRef.ApplyTo(deployment)
 
 	// preserve existing resource requirements for main CVO container
@@ -161,6 +176,8 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		return err
 	}
 
+	enableMetricsAccess := IsManagementClusterMetricsAccessEnabled(hcp, enableCVOManagementClusterMetricsAccess)
+
 	deployment.Spec = appsv1.DeploymentSpec{
 		Selector: selector,
 		Template: corev1.PodTemplateSpec{
@@ -174,7 +191,7 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 					util.BuildContainer(cvoContainerBootstrap(), buildCVOContainerBootstrap(cliImage, clusterVersionJSON)),
 				},
 				Containers: []corev1.Container{
-					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(controlPlaneReleaseImage, dataPlaneReleaseImage, deployment.Namespace, updateService, enableCVOManagementClusterMetricsAccess)),
+					util.BuildContainer(cvoContainerMain(), buildCVOContainerMain(controlPlaneReleaseImage, dataPlaneReleaseImage, deployment.Namespace, updateService, hcp, enableMetricsAccess)),
 				},
 				Volumes: []corev1.Volume{
 					util.BuildVolume(cvoVolumePayload(), buildCVOVolumePayload),
@@ -186,7 +203,13 @@ func ReconcileDeployment(deployment *appsv1.Deployment, ownerRef config.OwnerRef
 		},
 	}
 	deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(false)
-	if enableCVOManagementClusterMetricsAccess {
+	if enableMetricsAccess {
+		// Set annotation to enable automountServiceAccountToken for metrics endpoint access
+		if deployment.Spec.Template.Annotations == nil {
+			deployment.Spec.Template.Annotations = map[string]string{}
+		}
+		deployment.Spec.Template.Annotations[config.NeedMetricsServerAccessLabel] = "true"
+
 		deployment.Spec.Template.Spec.ServiceAccountName = manifests.ClusterVersionOperatorServiceAccount("").Name
 		deployment.Spec.Template.Spec.AutomountServiceAccountToken = ptr.To(true)
 	}
@@ -391,7 +414,7 @@ done
 	return fmt.Sprintf(scriptTemplate, payloadDir, string(clusterVersionJSON))
 }
 
-func buildCVOContainerMain(controlPlaneReleaseImage, dataPlaneReleaseImage, namespace string, updateService configv1.URL, enableCVOManagementClusterMetricsAccess bool) func(c *corev1.Container) {
+func buildCVOContainerMain(controlPlaneReleaseImage, dataPlaneReleaseImage, namespace string, updateService configv1.URL, hcp *hyperv1.HostedControlPlane, enableMetricsAccess bool) func(c *corev1.Container) {
 	cpath := func(vol, file string) string {
 		return path.Join(volumeMounts.Path(cvoContainerMain().Name, vol), file)
 	}
@@ -414,10 +437,23 @@ func buildCVOContainerMain(controlPlaneReleaseImage, dataPlaneReleaseImage, name
 		if updateService != "" {
 			c.Args = append(c.Args, "--update-service", string(updateService))
 		}
-		if enableCVOManagementClusterMetricsAccess {
+		if enableMetricsAccess {
 			c.Args = append(c.Args, "--use-dns-for-services=true")
+
+			// Determine metrics URL based on monitoring stack.
+			cvoPrometheusURL := os.Getenv(config.CVOPrometheusURLEnvVar)
+			if cvoPrometheusURL == "" {
+				if os.Getenv(rhobsmonitoring.EnvironmentVariable) == "1" && awsutil.IsROSAHCP(hcp) {
+					// RHOBS monitoring stack (ROSA HCP) - currently uses HTTP without TLS
+					cvoPrometheusURL = "http://hypershift-monitoring-stack-prometheus.openshift-observability-operator.svc:9090"
+				} else {
+					// Self-managed HyperShift - OCP Thanos Query uses HTTPS with service CA
+					cvoPrometheusURL = fmt.Sprintf("https://thanos-querier.openshift-monitoring.svc:9092?namespace=%s", namespace)
+				}
+			}
+
 			c.Args = append(c.Args, "--metrics-ca-bundle-file=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt")
-			c.Args = append(c.Args, fmt.Sprintf("--metrics-url=https://thanos-querier.openshift-monitoring.svc:9092?namespace=%s", namespace))
+			c.Args = append(c.Args, fmt.Sprintf("--metrics-url=%s", cvoPrometheusURL))
 		}
 		c.Env = []corev1.EnvVar{
 			{
