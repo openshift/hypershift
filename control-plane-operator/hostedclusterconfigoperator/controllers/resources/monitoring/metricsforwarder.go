@@ -15,7 +15,7 @@ import (
 
 const (
 	metricsForwarderPortName = "metrics"
-	metricsForwarderPort     = 8443
+	metricsForwarderPort     = 9443
 )
 
 func ReconcileMetricsForwarderDeployment(deployment *appsv1.Deployment, haproxyImage string) error {
@@ -62,6 +62,9 @@ func ReconcileMetricsForwarderDeployment(deployment *appsv1.Deployment, haproxyI
 						SecurityContext: &corev1.SecurityContext{
 							AllowPrivilegeEscalation: ptr.To(false),
 							RunAsNonRoot:             ptr.To(true),
+							SeccompProfile: &corev1.SeccompProfile{
+								Type: corev1.SeccompProfileTypeRuntimeDefault,
+							},
 							Capabilities: &corev1.Capabilities{
 								Drop: []corev1.Capability{"ALL"},
 								Add:  []corev1.Capability{"NET_BIND_SERVICE"},
@@ -71,11 +74,6 @@ func ReconcileMetricsForwarderDeployment(deployment *appsv1.Deployment, haproxyI
 							{
 								Name:      "config",
 								MountPath: "/usr/local/etc/haproxy",
-								ReadOnly:  true,
-							},
-							{
-								Name:      "ca-cert",
-								MountPath: "/etc/haproxy/certs",
 								ReadOnly:  true,
 							},
 						},
@@ -92,14 +90,6 @@ func ReconcileMetricsForwarderDeployment(deployment *appsv1.Deployment, haproxyI
 							},
 						},
 					},
-					{
-						Name: "ca-cert",
-						VolumeSource: corev1.VolumeSource{
-							Secret: &corev1.SecretVolumeSource{
-								SecretName: "metrics-forwarder-ca",
-							},
-						},
-					},
 				},
 			},
 		},
@@ -107,6 +97,9 @@ func ReconcileMetricsForwarderDeployment(deployment *appsv1.Deployment, haproxyI
 	return nil
 }
 
+// ReconcileMetricsForwarderConfigMap builds the HAProxy configuration for TCP
+// passthrough mode. HAProxy is opaque to TLS — the TLS ClientHello (including
+// SNI) passes through transparently to the metrics-proxy.
 func ReconcileMetricsForwarderConfigMap(cm *corev1.ConfigMap, routeHost string) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
@@ -115,74 +108,59 @@ func ReconcileMetricsForwarderConfigMap(cm *corev1.ConfigMap, routeHost string) 
     log stdout format raw local0
 
 defaults
-    mode http
+    mode tcp
     timeout connect 5s
     timeout client 30s
     timeout server 30s
 
-frontend metrics_frontend
+frontend metrics_proxy
     bind *:%d
-    default_backend metrics_proxy
+    default_backend metrics_proxy_backend
 
-backend metrics_proxy
-    server proxy %s:443 ssl verify required ca-file /etc/haproxy/certs/ca.crt sni str(%s)
-    http-request set-header Host %s
-`, metricsForwarderPort, routeHost, routeHost, routeHost)
+backend metrics_proxy_backend
+    server metrics-proxy %s:443
+`, metricsForwarderPort, routeHost)
 	return nil
 }
 
-func ReconcileMetricsForwarderCASecret(secret *corev1.Secret, caCert []byte) error {
-	if secret.Data == nil {
-		secret.Data = map[string][]byte{}
+// ReconcileMetricsForwarderServingCA syncs the metrics-proxy serving CA into
+// a ConfigMap in the guest cluster. Prometheus uses this CA to verify the
+// metrics-proxy's TLS certificate through the TCP passthrough proxy.
+func ReconcileMetricsForwarderServingCA(cm *corev1.ConfigMap, caCert []byte) error {
+	if cm.Data == nil {
+		cm.Data = map[string]string{}
 	}
-	secret.Data["ca.crt"] = caCert
+	cm.Data["ca.crt"] = string(caCert)
 	return nil
 }
 
-func ReconcileMetricsForwarderBearerTokenSecret(secret *corev1.Secret) error {
-	// This Secret is of type kubernetes.io/service-account-token. Kubernetes
-	// automatically populates its "token" field with a long-lived token for
-	// the referenced SA. Prometheus then reads this token via the PodMonitor's
-	// Authorization.Credentials reference.
-	secret.Type = corev1.SecretTypeServiceAccountToken
-	if secret.Annotations == nil {
-		secret.Annotations = map[string]string{}
-	}
-	secret.Annotations[corev1.ServiceAccountNameKey] = "prometheus-k8s"
-	return nil
-}
-
-func ReconcileMetricsForwarderPodMonitor(podMonitor *prometheusoperatorv1.PodMonitor, componentNames []string, bearerTokenSecretName string) error {
+// ReconcileMetricsForwarderPodMonitor builds a PodMonitor with one endpoint per
+// control-plane component. It uses the tls-client-certificate-auth scrape class
+// so CMO automatically injects the client cert from metrics-client-certs.
+// The per-endpoint CA override references the metrics-proxy-serving-ca ConfigMap,
+// which takes precedence over the scrape class's caFile (service-serving CA).
+func ReconcileMetricsForwarderPodMonitor(podMonitor *prometheusoperatorv1.PodMonitor, componentNames []string, routeHost string) error {
 	podMonitor.Spec.Selector = metav1.LabelSelector{
 		MatchLabels: map[string]string{
 			"app": "control-plane-metrics-forwarder",
 		},
 	}
 
-	http := prometheusoperatorv1.Scheme("http")
+	scrapeClass := "tls-client-certificate-auth"
+	podMonitor.Spec.ScrapeClassName = &scrapeClass
+
+	https := prometheusoperatorv1.Scheme("https")
 
 	sorted := make([]string, len(componentNames))
 	copy(sorted, componentNames)
 	slices.Sort(sorted)
 
-	// The metrics-proxy requires a bearer token from the guest cluster's
-	// prometheus-k8s SA. Prometheus sends the token in the Authorization header;
-	// HAProxy forwards it transparently to the metrics-proxy backend.
-	auth := &prometheusoperatorv1.SafeAuthorization{
-		Credentials: &corev1.SecretKeySelector{
-			LocalObjectReference: corev1.LocalObjectReference{
-				Name: bearerTokenSecretName,
-			},
-			Key: "token",
-		},
-	}
-
 	endpoints := make([]prometheusoperatorv1.PodMetricsEndpoint, 0, len(sorted))
 	for _, name := range sorted {
 		endpoints = append(endpoints, prometheusoperatorv1.PodMetricsEndpoint{
-			Port: ptr.To(metricsForwarderPortName),
-			Path: fmt.Sprintf("/metrics/%s", name),
-			Scheme: &http,
+			Port:   ptr.To(metricsForwarderPortName),
+			Path:   fmt.Sprintf("/metrics/%s", name),
+			Scheme: &https,
 			// HonorLabels preserves the original metric labels (job, namespace,
 			// pod, instance, etc.) as injected by the metrics-proxy, instead of
 			// overwriting them with the PodMonitor's scrape labels. This ensures
@@ -191,8 +169,19 @@ func ReconcileMetricsForwarderPodMonitor(podMonitor *prometheusoperatorv1.PodMon
 			HonorLabels: true,
 			HTTPConfigWithProxy: prometheusoperatorv1.HTTPConfigWithProxy{
 				HTTPConfig: prometheusoperatorv1.HTTPConfig{
-					HTTPConfigWithoutTLS: prometheusoperatorv1.HTTPConfigWithoutTLS{
-						Authorization: auth,
+					TLSConfig: &prometheusoperatorv1.SafeTLSConfig{
+						ServerName: &routeHost,
+						// Override the scrape class's caFile with the metrics-proxy CA.
+						// Per Prometheus Operator docs, per-endpoint CA takes precedence
+						// over the scrape class's corresponding field.
+						CA: prometheusoperatorv1.SecretOrConfigMap{
+							ConfigMap: &corev1.ConfigMapKeySelector{
+								LocalObjectReference: corev1.LocalObjectReference{
+									Name: "metrics-proxy-serving-ca",
+								},
+								Key: "ca.crt",
+							},
+						},
 					},
 				},
 			},

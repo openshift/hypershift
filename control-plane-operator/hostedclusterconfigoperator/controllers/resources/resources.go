@@ -864,8 +864,8 @@ func (r *reconciler) reconcileMetricsForwarder(ctx context.Context, hcp *hyperv1
 		return nil
 	}
 	componentNames := make([]string, 0, len(cfg.Components))
-	for name := range cfg.Components {
-		componentNames = append(componentNames, name)
+	for _, comp := range cfg.Components {
+		componentNames = append(componentNames, comp.Name)
 	}
 	sort.Strings(componentNames)
 
@@ -888,23 +888,16 @@ func (r *reconciler) reconcileMetricsForwarder(ctx context.Context, hcp *hyperv1
 		return fmt.Errorf("failed to reconcile metrics forwarder config: %w", err)
 	}
 
-	caSecret := manifests.MetricsForwarderCASecret()
-	if _, err := r.CreateOrUpdate(ctx, r.client, caSecret, func() error {
-		return monitoring.ReconcileMetricsForwarderCASecret(caSecret, caCert)
+	servingCA := manifests.MetricsForwarderServingCA()
+	if _, err := r.CreateOrUpdate(ctx, r.client, servingCA, func() error {
+		return monitoring.ReconcileMetricsForwarderServingCA(servingCA, caCert)
 	}); err != nil {
-		return fmt.Errorf("failed to reconcile metrics forwarder CA secret: %w", err)
-	}
-
-	bearerTokenSecret := manifests.MetricsForwarderBearerTokenSecret()
-	if _, err := r.CreateOrUpdate(ctx, r.client, bearerTokenSecret, func() error {
-		return monitoring.ReconcileMetricsForwarderBearerTokenSecret(bearerTokenSecret)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile metrics forwarder bearer token secret: %w", err)
+		return fmt.Errorf("failed to reconcile metrics forwarder serving CA: %w", err)
 	}
 
 	podMonitor := manifests.MetricsForwarderPodMonitor()
 	if _, err := r.CreateOrUpdate(ctx, r.client, podMonitor, func() error {
-		return monitoring.ReconcileMetricsForwarderPodMonitor(podMonitor, componentNames, bearerTokenSecret.Name)
+		return monitoring.ReconcileMetricsForwarderPodMonitor(podMonitor, componentNames, routeHost)
 	}); err != nil {
 		return fmt.Errorf("failed to reconcile metrics forwarder pod monitor: %w", err)
 	}

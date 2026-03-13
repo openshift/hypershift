@@ -35,19 +35,10 @@ func MetricsForwarderConfigMap() *corev1.ConfigMap {
 	}
 }
 
-func MetricsForwarderCASecret() *corev1.Secret {
-	return &corev1.Secret{
+func MetricsForwarderServingCA() *corev1.ConfigMap {
+	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "metrics-forwarder-ca",
-			Namespace: "openshift-monitoring",
-		},
-	}
-}
-
-func MetricsForwarderBearerTokenSecret() *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "metrics-forwarder-prometheus-token",
+			Name:      "metrics-proxy-serving-ca",
 			Namespace: "openshift-monitoring",
 		},
 	}
