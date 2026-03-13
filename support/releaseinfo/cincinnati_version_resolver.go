@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/blang/semver"
 )
 
 const (
@@ -63,6 +65,15 @@ type cincinnatiNode struct {
 // Resolve resolves an OpenShift version (e.g., "4.20.1") to a fully qualified
 // release image pullspec by querying the Cincinnati graph API with the given channel.
 func (r *CincinnatiVersionResolver) Resolve(ctx context.Context, version, channel string) (string, error) {
+	// Derive the Cincinnati channel. Use the HCP channel if set, otherwise default to "fast-<major>.<minor>".
+	if channel == "" {
+		parsedVersion, err := semver.Parse(version)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse version %q: %w", version, err)
+		}
+		channel = fmt.Sprintf("fast-%d.%d", parsedVersion.Major, parsedVersion.Minor)
+	}
+
 	cacheKey := channel + "/" + version
 
 	// Check cache
