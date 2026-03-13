@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/onsi/gomega"
+
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
 
@@ -559,4 +561,151 @@ func TestCollectConcurrency(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// drainVCpuValue reads all metrics from a closed channel and returns the
+// hypershift_cluster_vcpus gauge value, or -999 if not found.
+func drainVCpuValue(ch <-chan prometheus.Metric) float64 {
+	for m := range ch {
+		if m.Desc() == vCpusCountByHClusterMetricDesc {
+			var metric dto.Metric
+			_ = m.Write(&metric)
+			return metric.GetGauge().GetValue()
+		}
+	}
+	return -999
+}
+
+func TestErrorCache(t *testing.T) {
+	t.Run("When both EC2 and Pricing APIs report unknown instance type, it should cache the error and skip API calls on subsequent collections", func(t *testing.T) {
+		g := NewWithT(t)
+
+		var ec2CallCount, pricingCallCount int
+
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "hc", Namespace: "any"},
+			Spec: hyperv1.HostedClusterSpec{
+				ClusterID: "id",
+				Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+			},
+		}
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{Name: "np-0", Namespace: "any"},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "hc",
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.AWSPlatform,
+					AWS:  &hyperv1.AWSNodePoolPlatform{InstanceType: "unknown-type.xlarge"},
+				},
+			},
+			Status: hyperv1.NodePoolStatus{Replicas: 2},
+		}
+
+		configMap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      rosaCPUsInstanceTypeConfigMapName,
+				Namespace: rosaCPUInstanceTypeConfigMapNamespace,
+			},
+			Data: map[string]string{"unknown-type.xlarge": "8"},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(hcluster, nodePool, configMap).
+			Build()
+
+		ec2Mock := &Ec2ClientMock{
+			MockedDescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				ec2CallCount++
+				return nil, newAWSError("InvalidInstanceType", "the instance type is not recognized")
+			},
+		}
+
+		pricingMock := &PricingClientMock{
+			MockedGetProductsFunc: func(ctx context.Context, input *pricingv2.GetProductsInput, optFns ...func(*pricingv2.Options)) (*pricingv2.GetProductsOutput, error) {
+				pricingCallCount++
+				return &pricingv2.GetProductsOutput{PriceList: nil}, nil
+			},
+		}
+
+		collector := createNodePoolsMetricsCollector(fakeClient, ec2Mock, pricingMock, clock.RealClock{}).(*nodePoolsMetricsCollector)
+
+		// First collect: both APIs called, error cached, ConfigMap resolves vCPUs.
+		ch := make(chan prometheus.Metric, 200)
+		collector.Collect(ch)
+		close(ch)
+		g.Expect(ec2CallCount).To(Equal(1))
+		g.Expect(pricingCallCount).To(Equal(1))
+		g.Expect(drainVCpuValue(ch)).To(BeNumerically("==", 16)) // 2 replicas * 8 vCPUs
+
+		// Second collect: error cache hit, APIs skipped, ConfigMap used directly.
+		ch = make(chan prometheus.Metric, 200)
+		collector.Collect(ch)
+		close(ch)
+		g.Expect(ec2CallCount).To(Equal(1), "EC2 API should not be called again due to error cache")
+		g.Expect(pricingCallCount).To(Equal(1), "Pricing API should not be called again due to error cache")
+		g.Expect(drainVCpuValue(ch)).To(BeNumerically("==", 16))
+	})
+
+	t.Run("When Pricing API returns a transient error, it should not cache and should retry APIs on subsequent collections", func(t *testing.T) {
+		g := NewWithT(t)
+
+		var ec2CallCount, pricingCallCount int
+
+		hcluster := &hyperv1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "hc", Namespace: "any"},
+			Spec: hyperv1.HostedClusterSpec{
+				ClusterID: "id",
+				Platform:  hyperv1.PlatformSpec{Type: hyperv1.AWSPlatform},
+			},
+		}
+
+		nodePool := &hyperv1.NodePool{
+			ObjectMeta: metav1.ObjectMeta{Name: "np-0", Namespace: "any"},
+			Spec: hyperv1.NodePoolSpec{
+				ClusterName: "hc",
+				Platform: hyperv1.NodePoolPlatform{
+					Type: hyperv1.AWSPlatform,
+					AWS:  &hyperv1.AWSNodePoolPlatform{InstanceType: "transient-fail.xlarge"},
+				},
+			},
+			Status: hyperv1.NodePoolStatus{Replicas: 2},
+		}
+
+		fakeClient := fake.NewClientBuilder().
+			WithScheme(api.Scheme).
+			WithObjects(hcluster, nodePool).
+			Build()
+
+		ec2Mock := &Ec2ClientMock{
+			MockedDescribeInstanceTypesFunc: func(ctx context.Context, input *ec2v2.DescribeInstanceTypesInput, optFns ...func(*ec2v2.Options)) (*ec2v2.DescribeInstanceTypesOutput, error) {
+				ec2CallCount++
+				return nil, newAWSError("InvalidInstanceType", "the instance type is not recognized")
+			},
+		}
+
+		pricingMock := &PricingClientMock{
+			MockedGetProductsFunc: func(ctx context.Context, input *pricingv2.GetProductsInput, optFns ...func(*pricingv2.Options)) (*pricingv2.GetProductsOutput, error) {
+				pricingCallCount++
+				return nil, fmt.Errorf("network timeout")
+			},
+		}
+
+		collector := createNodePoolsMetricsCollector(fakeClient, ec2Mock, pricingMock, clock.RealClock{}).(*nodePoolsMetricsCollector)
+
+		// First collect: both APIs called, both fail, no ConfigMap → vCPUs = -1.
+		ch := make(chan prometheus.Metric, 200)
+		collector.Collect(ch)
+		close(ch)
+		g.Expect(ec2CallCount).To(Equal(1))
+		g.Expect(pricingCallCount).To(Equal(1))
+
+		// Second collect: error NOT cached (Pricing returned transient error), both APIs retried.
+		ch = make(chan prometheus.Metric, 200)
+		collector.Collect(ch)
+		close(ch)
+		g.Expect(ec2CallCount).To(Equal(2), "EC2 API should be retried when Pricing error was transient")
+		g.Expect(pricingCallCount).To(Equal(2), "Pricing API should be retried when its error was transient")
+	})
 }

@@ -144,6 +144,10 @@ type nodePoolsMetricsCollector struct {
 	mu            sync.Mutex
 
 	ec2InstanceTypeToVCpusCount map[string]int32
+	// awsInstanceTypeUnknown caches instance types that are not recognized
+	// by both the EC2 and Pricing APIs, so subsequent calls skip those APIs
+	// and go directly to the ConfigMap fallback.
+	awsInstanceTypeUnknown map[string]struct{}
 
 	transitionDurationMetric *prometheus.HistogramVec
 
@@ -163,6 +167,7 @@ func createNodePoolsMetricsCollector(client client.Client, ec2Client EC2API, pri
 		pricingClient:               pricingClient,
 		clock:                       clock,
 		ec2InstanceTypeToVCpusCount: make(map[string]int32),
+		awsInstanceTypeUnknown:      make(map[string]struct{}),
 		transitionDurationMetric: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    TransitionDurationMetricName,
 			Help:    transitionDurationMetricHelp,
@@ -365,18 +370,30 @@ func (c *nodePoolsMetricsCollector) retrieveVCpusDetailsPerNode(nodePool *hyperv
 		return vCpusCountPerNode, ""
 	}
 
+	// If this instance type was previously determined to be unknown by both
+	// the EC2 and Pricing APIs, skip them and go directly to the ConfigMap.
+	if _, unknown := c.awsInstanceTypeUnknown[ec2InstanceType]; unknown {
+		return extractCPUFromInstanceTypeNameViaConfigMap(ec2InstanceType, c.Client)
+	}
+
 	// Try EC2 API
-	vCpusCount, errReason := extractCPUFromInstanceTypeNameViaEC2API(ec2InstanceType, c.ec2Client)
-	if errReason == "" {
+	vCpusCount, ec2ErrReason := extractCPUFromInstanceTypeNameViaEC2API(ec2InstanceType, c.ec2Client)
+	if ec2ErrReason == "" {
 		c.ec2InstanceTypeToVCpusCount[ec2InstanceType] = vCpusCount
 		return vCpusCount, ""
 	}
 
 	// Try Pricing API
-	vCpusCount, errReason = extractCPUFromInstanceTypeNameViaPricingAPI(ec2InstanceType, c.pricingClient)
-	if errReason == "" {
+	vCpusCount, pricingErrReason := extractCPUFromInstanceTypeNameViaPricingAPI(ec2InstanceType, c.pricingClient)
+	if pricingErrReason == "" {
 		c.ec2InstanceTypeToVCpusCount[ec2InstanceType] = vCpusCount
 		return vCpusCount, ""
+	}
+
+	// Cache the fact that both APIs do not recognize this instance type
+	// so that subsequent calls skip straight to the ConfigMap fallback.
+	if ec2ErrReason == unknownInstanceTypeErrorReason && pricingErrReason == unknownInstanceTypeErrorReason {
+		c.awsInstanceTypeUnknown[ec2InstanceType] = struct{}{}
 	}
 
 	// Try ConfigMap as last resort. ConfigMap values may change without
@@ -384,12 +401,12 @@ func (c *nodePoolsMetricsCollector) retrieveVCpusDetailsPerNode(nodePool *hyperv
 	// informer-based cache, so repeated Get calls hit the local cache,
 	// not the API server. We intentionally do not cache ConfigMap results
 	// so that updates to the ConfigMap are picked up on the next collection.
-	vCpusCount, errReason = extractCPUFromInstanceTypeNameViaConfigMap(ec2InstanceType, c.Client)
-	if errReason == "" {
+	vCpusCount, cmErrReason := extractCPUFromInstanceTypeNameViaConfigMap(ec2InstanceType, c.Client)
+	if cmErrReason == "" {
 		return vCpusCount, ""
 	}
 
-	return -1, errReason
+	return -1, cmErrReason
 }
 
 func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
