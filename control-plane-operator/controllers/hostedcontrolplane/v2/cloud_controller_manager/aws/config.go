@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 
-	configv1 "github.com/openshift/api/config/v1"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -64,12 +63,15 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 
 	// Add NLBSecurityGroupMode when the AWSServiceLBNetworkSecurityGroup feature gate is enabled for this cluster.
 	// Check the feature gate based on the cluster's configured feature gate spec, not the global operator feature set.
-	var featureGateSpec *configv1.FeatureGateSpec
+	/*var featureGateSpec *configv1.FeatureGateSpec
 	if cpContext.HCP.Spec.Configuration != nil {
 		featureGateSpec = cpContext.HCP.Spec.Configuration.FeatureGate
 	}
 
 	if featuregates.IsFeatureEnabledInFeatureGateSpec(featureGateSpec, featuregates.AWSServiceLBNetworkSecurityGroup) {
+		baseConfig += "\nNLBSecurityGroupMode = Managed"
+	}*/
+	if featuregates.Gate().Enabled(featuregates.AWSServiceLBNetworkSecurityGroup) {
 		baseConfig += "\nNLBSecurityGroupMode = Managed"
 	}
 

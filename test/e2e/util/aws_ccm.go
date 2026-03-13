@@ -46,7 +46,11 @@ func EnsureAWSCCMWithCustomizations(t *testing.T, ctx context.Context, cfg *E2eT
 
 	// Check if the feature is enabled in the feature set
 	featureGateSpec := cfg.HostedCluster.Spec.Configuration.FeatureGate
-	if !featuregates.IsFeatureEnabledInFeatureGateSpec(featureGateSpec, featuregates.AWSServiceLBNetworkSecurityGroup) {
+	/*if !featuregates.IsFeatureEnabledInFeatureGateSpec(featureGateSpec, featuregates.AWSServiceLBNetworkSecurityGroup) {
+		t.Logf("Feature gate is not enabled in the feature set: %s", featureGateSpec.FeatureSet)
+		t.Skipf("Skipping test: feature gate is not enabled in the feature set: %s", featureGateSpec.FeatureSet)
+	}*/
+	if !featuregates.Gate().Enabled(featuregates.AWSServiceLBNetworkSecurityGroup) {
 		t.Logf("Feature gate is not enabled in the feature set: %s", featureGateSpec.FeatureSet)
 		t.Skipf("Skipping test: feature gate is not enabled in the feature set: %s", featureGateSpec.FeatureSet)
 	}
