@@ -1,0 +1,58 @@
+name: "redhat-executive: GPU sharing build vs partner decision"
+description: >
+  Tests that the redhat-executive agent evaluates a product feature
+  decision through business lenses including subscription value,
+  competitive positioning, and ecosystem strategy.
+type: agent
+target: redhat-executive
+
+invocation:
+  model: claude-opus-4-6
+  allowed_tools: ""
+  max_budget_usd: 2.00
+
+prompt: |
+  Should HyperShift invest in building native GPU time-sharing and
+  multi-instance GPU (MIG) support directly into the NodePool API,
+  or should we rely on the existing partner ecosystem (NVIDIA GPU
+  Operator, Intel Device Plugins) and focus our engineering effort
+  elsewhere? Consider this from a Red Hat product strategy perspective.
+  Provide your complete response directly in your response.
+  Do not use plan mode or write to a plan file.
+
+criteria:
+  - id: business-lens
+    description: "Evaluates through business/product strategy lens"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response evaluate the decision through a business or
+      product strategy lens (e.g., subscription value, competitive
+      positioning, market differentiation, customer demand)?
+      Answer PASS or FAIL.
+
+  - id: ecosystem-consideration
+    description: "Considers partner ecosystem implications"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response consider the implications for the partner
+      ecosystem (e.g., NVIDIA partnership, ISV relationships,
+      ecosystem multiplier effects, or risk of competing with partners)?
+      Answer PASS or FAIL.
+
+  - id: engineering-tradeoff
+    description: "Weighs engineering investment vs return"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response weigh the engineering investment required
+      against the expected return (e.g., opportunity cost, maintenance
+      burden, team focus, or build vs buy analysis)?
+      Answer PASS or FAIL.
+
+  - id: customer-economics
+    description: "References customer or operational economics"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response reference customer economics, operational
+      efficiency, or how the decision impacts the total cost of
+      ownership or day-2 operations for customers?
+      Answer PASS or FAIL.

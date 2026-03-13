@@ -1,0 +1,52 @@
+name: "hcp-architect-sme: flag bidirectional communication violation"
+description: >
+  Tests that the hcp-architect-sme agent identifies a proposed design
+  that violates the unidirectional communication principle (management
+  to hosted, never hosted to management) and suggests alternatives.
+type: agent
+target: hcp-architect-sme
+
+invocation:
+  model: claude-opus-4-6
+  allowed_tools: ""
+  max_budget_usd: 2.00
+
+prompt: |
+  We are considering a design where the hosted cluster's worker nodes
+  send status updates directly to the hypershift-operator in the
+  management cluster via a webhook. The worker node would call a REST
+  endpoint on the hypershift-operator to report node health metrics.
+  This way we get real-time health data without polling.
+
+  What do you think of this approach?
+  Provide your complete response directly in your response.
+  Do not use plan mode or write to a plan file.
+
+criteria:
+  - id: flags-bidirectional
+    description: "Flags the bidirectional communication violation"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response clearly identify that this proposal violates
+      the unidirectional communication principle (management cluster
+      communicates to hosted cluster, never the reverse)?
+      Answer PASS or FAIL.
+
+  - id: security-concern
+    description: "Raises security or isolation concerns"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response raise security or tenant isolation concerns
+      about worker nodes in a hosted cluster communicating directly
+      back to the management cluster?
+      Answer PASS or FAIL.
+
+  - id: suggests-alternative
+    description: "Proposes an alternative architecture"
+    check_type: llm_judge
+    judge_prompt: |
+      Does the response suggest at least one concrete alternative
+      approach that respects the unidirectional communication
+      constraint (e.g., management-side polling, using the hosted
+      control plane namespace, pull-based metrics collection)?
+      Answer PASS or FAIL.
