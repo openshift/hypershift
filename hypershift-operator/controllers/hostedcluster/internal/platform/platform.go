@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/ibmcloud"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/none"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/oci"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/openstack"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/powervs"
 	"github.com/openshift/hypershift/support/backwardcompat"
@@ -44,6 +45,7 @@ var (
 	_ Platform = agent.Agent{}
 	_ Platform = kubevirt.Kubevirt{}
 	_ Platform = gcp.GCP{}
+	_ Platform = oci.OCI{}
 )
 
 type Platform interface {
@@ -192,6 +194,9 @@ func GetPlatform(ctx context.Context, hcluster *hyperv1.HostedCluster, releasePr
 			}
 		}
 		platform = gcp.New(utilitiesImage, capiImageProvider, payloadVersion)
+	case hyperv1.OCIPlatform:
+		// OCI platform - no CAPI provider image needed yet (CAPOCI integration is future work)
+		platform = oci.New("")
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", hcluster.Spec.Platform.Type)
 	}

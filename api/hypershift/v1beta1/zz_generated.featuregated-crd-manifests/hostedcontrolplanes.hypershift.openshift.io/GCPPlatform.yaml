@@ -5591,6 +5591,7 @@ spec:
                     - None
                     - OpenStack
                     - GCP
+                    - OCI
                     maxLength: 100
                     type: string
                     x-kubernetes-validations:

@@ -293,6 +293,10 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.NodePoolStatusApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("NodePortPublishingStrategy"):
 		return &hypershiftv1beta1.NodePortPublishingStrategyApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OCIIdentityReference"):
+		return &hypershiftv1beta1.OCIIdentityReferenceApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("OCIPlatformSpec"):
+		return &hypershiftv1beta1.OCIPlatformSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OpenStackIdentityReference"):
 		return &hypershiftv1beta1.OpenStackIdentityReferenceApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("OpenStackNodePoolPlatform"):
