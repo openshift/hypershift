@@ -18,15 +18,22 @@ import (
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/upsert"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
 	capiazure "sigs.k8s.io/cluster-api-provider-azure/api/v1beta1"
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/blang/semver"
@@ -478,4 +485,128 @@ func reconcileKMSConfigSecret(secret *corev1.Secret, hc *hyperv1.HostedCluster) 
 	secret.Data[azure.CloudConfigKey] = serializedConfig
 
 	return nil
+}
+
+// resourceGroupChecker abstracts Azure resource group existence checks for testability.
+//
+// This interface enables dependency injection for testing the DeleteOrphanedMachines
+// method without requiring actual Azure API calls. The production implementation
+// is azureResourceGroupChecker.
+//
+// Implementations MUST follow fail-safe semantics: when in doubt about whether
+// a resource group exists (e.g., due to API errors, permission issues, or network
+// problems), return (true, nil) to avoid incorrectly removing finalizers from
+// machines that might still have running Azure VMs. Only return false when the
+// Azure API definitively returns HTTP 404 (Not Found).
+type resourceGroupChecker interface {
+	Exists(ctx context.Context, subscriptionID, resourceGroupName string) (bool, error)
+}
+
+// azureResourceGroupChecker implements resourceGroupChecker using the Azure SDK.
+type azureResourceGroupChecker struct {
+	credential    azcore.TokenCredential
+	clientOptions *arm.ClientOptions
+}
+
+// Exists reports whether the Azure resource group exists.
+//
+// This method uses a fail-safe approach: it only returns false (not found) when
+// the Azure API definitively returns a 404. For any other error (permissions,
+// network issues, etc.), it returns true to avoid incorrectly removing finalizers
+// from machines that might still have running Azure VMs. This prevents orphaned
+// cloud resources that would continue to incur costs.
+func (c *azureResourceGroupChecker) Exists(ctx context.Context, subscriptionID, resourceGroupName string) (bool, error) {
+	rgClient, err := armresources.NewResourceGroupsClient(subscriptionID, c.credential, c.clientOptions)
+	if err != nil {
+		// Can't create client - assume RG exists to avoid orphaning VMs
+		return true, nil
+	}
+
+	_, err = rgClient.Get(ctx, resourceGroupName, nil)
+	if err == nil {
+		return true, nil
+	}
+	if azureutil.IsNotFoundError(err) {
+		// Definitive 404 - resource group is gone
+		return false, nil
+	}
+	// Other errors (403, 500, network) - assume RG exists to avoid orphaning VMs
+	return true, nil
+}
+
+// newResourceGroupChecker creates a resourceGroupChecker for the given cloud environment.
+// Returns nil if credentials are unavailable.
+func newResourceGroupChecker(cloudName string) resourceGroupChecker {
+	cred, err := azidentity.NewDefaultAzureCredential(nil)
+	if err != nil {
+		return nil
+	}
+
+	cloudConfig, err := azureutil.GetAzureCloudConfiguration(cloudName)
+	if err != nil {
+		return nil
+	}
+
+	return &azureResourceGroupChecker{
+		credential: cred,
+		clientOptions: &arm.ClientOptions{
+			ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+		},
+	}
+}
+
+// DeleteOrphanedMachines removes finalizers from AzureMachines when the
+// Azure resource group no longer exists, allowing deletion to proceed.
+// This implements the platform.OrphanDeleter interface.
+func (a Azure) DeleteOrphanedMachines(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string) error {
+	return a.deleteOrphanedMachinesWithChecker(ctx, c, hc, controlPlaneNamespace, nil)
+}
+
+// deleteOrphanedMachinesWithChecker is the testable implementation.
+func (a Azure) deleteOrphanedMachinesWithChecker(ctx context.Context, c client.Client, hc *hyperv1.HostedCluster, controlPlaneNamespace string, checker resourceGroupChecker) error {
+	logger := ctrl.LoggerFrom(ctx)
+
+	if hc.Spec.Platform.Azure == nil {
+		return nil
+	}
+
+	// Use provided checker or create default
+	if checker == nil {
+		checker = newResourceGroupChecker(hc.Spec.Platform.Azure.Cloud)
+		if checker == nil {
+			logger.Info("Azure credentials unavailable, skipping orphan cleanup")
+			return nil
+		}
+	}
+
+	exists, _ := checker.Exists(ctx, hc.Spec.Platform.Azure.SubscriptionID, hc.Spec.Platform.Azure.ResourceGroupName)
+	if exists {
+		return nil
+	}
+
+	logger.Info("Azure resource group not found, cleaning up orphaned AzureMachines",
+		"resourceGroup", hc.Spec.Platform.Azure.ResourceGroupName)
+
+	var machines capiazure.AzureMachineList
+	if err := c.List(ctx, &machines, client.InNamespace(controlPlaneNamespace)); err != nil {
+		return fmt.Errorf("listing AzureMachines: %w", err)
+	}
+
+	var errs []error
+	for i := range machines.Items {
+		machine := &machines.Items[i]
+		if machine.DeletionTimestamp.IsZero() || len(machine.Finalizers) == 0 {
+			continue
+		}
+
+		original := machine.DeepCopy()
+		machine.Finalizers = nil
+		if err := c.Patch(ctx, machine, client.MergeFrom(original)); err != nil {
+			errs = append(errs, fmt.Errorf("removing finalizer from %s: %w", machine.Name, err))
+			continue
+		}
+		logger.Info("Removed finalizer from orphaned AzureMachine", "machine", machine.Name)
+	}
+
+	return utilerrors.NewAggregate(errs)
 }
