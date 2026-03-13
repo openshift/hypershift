@@ -1806,41 +1806,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if cpoSupportsKASCustomKubeconfig {
 		// Reconcile the HostedControlPlane external kubeconfig if one is reported
 		if len(hcp.Spec.KubeAPIServerDNSName) > 0 {
-			if hcp.Status.CustomKubeconfig != nil {
-				src := &corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: hcp.Namespace,
-						Name:      hcp.Status.CustomKubeconfig.Name,
-					},
-				}
-				err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src)
-				if err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to get controlplane custom external kubeconfig secret %q: %w", client.ObjectKeyFromObject(src), err)
-				}
-				dest := manifests.KubeConfigExternalSecret(hcluster.Namespace, hcluster.Name)
-				_, err = createOrUpdate(ctx, r.Client, dest, func() error {
-					key := hcp.Status.CustomKubeconfig.Key
-					srcData, srcHasData := src.Data[key]
-					if !srcHasData {
-						return fmt.Errorf("controlplane custom external kubeconfig secret %q must have a %q key", client.ObjectKeyFromObject(src), key)
-					}
-					dest.Labels = hcluster.Labels
-					dest.Type = corev1.SecretTypeOpaque
-					if dest.Data == nil {
-						dest.Data = map[string][]byte{}
-					}
-					dest.Data["kubeconfig"] = srcData
-					dest.SetOwnerReferences([]metav1.OwnerReference{{
-						APIVersion: hyperv1.GroupVersion.String(),
-						Kind:       "HostedCluster",
-						Name:       hcluster.Name,
-						UID:        hcluster.UID,
-					}})
-					return nil
-				})
-				if err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcluster custom external kubeconfig secret: %w", err)
-				}
+			requeue, err := r.reconcileCustomExternalKubeconfig(ctx, createOrUpdate, hcp, hcluster)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			if requeue != nil {
+				requeueAfter = requeue
 			}
 		} else {
 			// Delete the custom external kubeconfig secret if it exists and the external name is not set
@@ -2048,6 +2019,62 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		result.RequeueAfter = *requeueAfter
 	}
 	return result, nil
+}
+
+// reconcileCustomExternalKubeconfig copies the custom kubeconfig secret from the
+// HCP namespace to the HostedCluster namespace. It returns a requeue duration if
+// the source secret does not exist yet (e.g. during initial provisioning).
+func (r *HostedClusterReconciler) reconcileCustomExternalKubeconfig(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster) (*time.Duration, error) {
+	if hcp.Status.CustomKubeconfig == nil {
+		return nil, nil
+	}
+
+	log := ctrl.LoggerFrom(ctx)
+	src := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hcp.Namespace,
+			Name:      hcp.Status.CustomKubeconfig.Name,
+		},
+	}
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("failed to get controlplane custom external kubeconfig secret %q: %w", client.ObjectKeyFromObject(src), err)
+		}
+		// The CPO has advertised the secret name in status but the secret
+		// does not exist yet (e.g. during initial provisioning or retarget).
+		// Continue reconciliation so downstream steps like CPO deployment
+		// updates are not blocked. Requeue to retry the copy once the
+		// secret is created.
+		log.Info("custom external kubeconfig secret not found yet, will retry", "secret", client.ObjectKeyFromObject(src))
+		requeue := 30 * time.Second
+		return &requeue, nil
+	}
+
+	dest := manifests.KubeConfigExternalSecret(hcluster.Namespace, hcluster.Name)
+	_, err := createOrUpdate(ctx, r.Client, dest, func() error {
+		key := hcp.Status.CustomKubeconfig.Key
+		srcData, srcHasData := src.Data[key]
+		if !srcHasData {
+			return fmt.Errorf("controlplane custom external kubeconfig secret %q must have a %q key", client.ObjectKeyFromObject(src), key)
+		}
+		dest.Labels = hcluster.Labels
+		dest.Type = corev1.SecretTypeOpaque
+		if dest.Data == nil {
+			dest.Data = map[string][]byte{}
+		}
+		dest.Data["kubeconfig"] = srcData
+		dest.SetOwnerReferences([]metav1.OwnerReference{{
+			APIVersion: hyperv1.GroupVersion.String(),
+			Kind:       "HostedCluster",
+			Name:       hcluster.Name,
+			UID:        hcluster.UID,
+		}})
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to reconcile hostedcluster custom external kubeconfig secret: %w", err)
+	}
+	return nil, nil
 }
 
 const (
