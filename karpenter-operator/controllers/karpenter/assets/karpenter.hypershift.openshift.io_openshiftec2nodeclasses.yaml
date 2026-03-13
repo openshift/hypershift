@@ -461,7 +461,7 @@ spec:
                 type: string
                 x-kubernetes-validations:
                 - message: version must be a valid semantic version (e.g., 4.20.1)
-                  rule: self.matches('^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$')
+                  rule: ^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)(?:-(?P<prerelease>(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+(?P<buildmetadata>[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$
             type: object
           status:
             description: status defines the observed state of the OpenshiftEC2NodeClass.
