@@ -427,7 +427,7 @@ func (src *MachineSet) ConvertTo(dstRaw conversion.Hub) error {
 	}
 
 	if src.Spec.MinReadySeconds == 0 {
-		dst.Spec.Template.Spec.MinReadySeconds = nil
+		dst.Spec.Template.Spec.MinReadySeconds = ptr.To[int32](0)
 	} else {
 		dst.Spec.Template.Spec.MinReadySeconds = &src.Spec.MinReadySeconds
 	}
