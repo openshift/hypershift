@@ -103,6 +103,17 @@ func CPOAtLeast(t *testing.T, version semver.Version, hc *hyperv1.HostedCluster)
 	}
 }
 
+func GinkgoCPOAtLeast(version semver.Version, hc *hyperv1.HostedCluster) {
+	if hc.Status.Version == nil || hc.Status.Version.Desired.Version == "" {
+		GinkgoAtLeast(version)
+		return
+	}
+	cpoVersion := semver.MustParse(hc.Status.Version.Desired.Version)
+	if cpoVersion.LT(version) {
+		ginkgo.Skip(fmt.Sprintf("Only tested in CPO %s and later", version))
+	}
+}
+
 func IsLessThan(version semver.Version) bool {
 	return releaseVersion.LT(version)
 }

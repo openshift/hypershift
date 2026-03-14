@@ -76,14 +76,15 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 		if err := testCtx.ValidateControlPlaneNamespace(); err != nil {
 			AbortSuite(err.Error())
 		}
-		hostedCluster := testCtx.GetHostedCluster()
+		hostedCluster, err := testCtx.GetHostedCluster()
+		Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 		Expect(hostedCluster).NotTo(BeNil(), "HostedCluster should be set up")
 		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
 			Skip("Test is only supported on AWS platform")
 		}
 
 		// Ensure Velero pod is running before proceeding with backup/restore tests
-		err := backuprestore.EnsureVeleroPodRunning(testCtx)
+		err = backuprestore.EnsureVeleroPodRunning(testCtx)
 		if err != nil {
 			Fail(fmt.Sprintf("Velero is not running: %v", err))
 		}

@@ -21,6 +21,7 @@ import (
 	"embed"
 	"fmt"
 	"net"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -29,11 +30,14 @@ import (
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/test/e2e/util"
+	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/e2e/v2/internal"
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -481,6 +485,61 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 					},
 					"must have at most 60 items"),
 			)
+		})
+
+		Context("Immutability validation", Label("Immutability"), func() {
+			It("should reject Services changes", func() {
+				testCtx := ctx.(*internal.TestContext)
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+
+				err = patchHostedCluster(testCtx, hostedCluster, func(obj *hyperv1.HostedCluster) {
+					for i, svc := range obj.Spec.Services {
+						if svc.Service == hyperv1.APIServer {
+							svc.Type = hyperv1.NodePort
+							obj.Spec.Services[i] = svc
+						}
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Services is immutable"))
+			})
+
+			It("should reject ControllerAvailabilityPolicy changes", func() {
+				testCtx := ctx.(*internal.TestContext)
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+
+				err = patchHostedCluster(testCtx, hostedCluster, func(obj *hyperv1.HostedCluster) {
+					if obj.Spec.ControllerAvailabilityPolicy == hyperv1.HighlyAvailable {
+						obj.Spec.ControllerAvailabilityPolicy = hyperv1.SingleReplica
+					} else if obj.Spec.ControllerAvailabilityPolicy == hyperv1.SingleReplica {
+						obj.Spec.ControllerAvailabilityPolicy = hyperv1.HighlyAvailable
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("ControllerAvailabilityPolicy is immutable"))
+			})
+
+			Context("Capabilities immutability", Label("Capabilities"), func() {
+				BeforeEach(func() {
+					e2eutil.GinkgoAtLeast(e2eutil.Version419)
+				})
+
+				It("should reject Capabilities changes", func() {
+					testCtx := ctx.(*internal.TestContext)
+					hostedCluster, err := testCtx.GetHostedCluster()
+					Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+
+					err = patchHostedCluster(testCtx, hostedCluster, func(obj *hyperv1.HostedCluster) {
+						obj.Spec.Capabilities = &hyperv1.Capabilities{
+							Disabled: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability},
+						}
+					})
+					Expect(err).To(HaveOccurred())
+					Expect(err.Error()).To(ContainSubstring("Capabilities is immutable"))
+				})
+			})
 		})
 
 		Context("Cluster and Infra ID validation", Label("ClusterID", "InfraID"), func() {
@@ -1789,5 +1848,30 @@ func testNodePoolCreation(ctx context.Context, client crclient.Client, file stri
 	// Explicitly delete the resource after creation attempt, in addition to defer
 	// This matches the original test behavior and ensures cleanup even if creation fails
 	_ = client.Delete(ctx, nodePool)
+	return err
+}
+
+// patchHostedCluster fetches the latest HostedCluster, applies a mutation, and patches it.
+// Returns the patch error (which may be an admission webhook rejection).
+func patchHostedCluster(testCtx *internal.TestContext, original *hyperv1.HostedCluster, mutate func(*hyperv1.HostedCluster)) error {
+	var patchErr error
+	err := wait.PollUntilContextTimeout(testCtx, time.Second, time.Minute, true, func(ctx context.Context) (bool, error) {
+		if err := testCtx.MgmtClient.Get(ctx, crclient.ObjectKeyFromObject(original), original); err != nil {
+			return false, nil
+		}
+		obj := original.DeepCopy()
+		mutate(obj)
+		if err := testCtx.MgmtClient.Patch(ctx, obj, crclient.MergeFrom(original)); err != nil {
+			if apierrors.IsConflict(err) {
+				return false, nil
+			}
+			patchErr = err
+			return true, nil
+		}
+		return true, nil
+	})
+	if patchErr != nil {
+		return patchErr
+	}
 	return err
 }
