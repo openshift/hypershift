@@ -24,14 +24,15 @@ import (
 // OpenshiftEC2NodeClassSpecApplyConfiguration represents a declarative configuration of the OpenshiftEC2NodeClassSpec type for use
 // with apply.
 type OpenshiftEC2NodeClassSpecApplyConfiguration struct {
-	SubnetSelectorTerms        []SubnetSelectorTermApplyConfiguration        `json:"subnetSelectorTerms,omitempty"`
-	SecurityGroupSelectorTerms []SecurityGroupSelectorTermApplyConfiguration `json:"securityGroupSelectorTerms,omitempty"`
-	AssociatePublicIPAddress   *bool                                         `json:"associatePublicIPAddress,omitempty"`
-	Tags                       map[string]string                             `json:"tags,omitempty"`
-	BlockDeviceMappings        []*karpenterv1beta1.BlockDeviceMapping        `json:"blockDeviceMappings,omitempty"`
-	InstanceStorePolicy        *karpenterv1beta1.InstanceStorePolicy         `json:"instanceStorePolicy,omitempty"`
-	DetailedMonitoring         *bool                                         `json:"detailedMonitoring,omitempty"`
-	Version                    *string                                       `json:"version,omitempty"`
+	SubnetSelectorTerms              []SubnetSelectorTermApplyConfiguration              `json:"subnetSelectorTerms,omitempty"`
+	SecurityGroupSelectorTerms       []SecurityGroupSelectorTermApplyConfiguration       `json:"securityGroupSelectorTerms,omitempty"`
+	CapacityReservationSelectorTerms []CapacityReservationSelectorTermApplyConfiguration `json:"capacityReservationSelectorTerms,omitempty"`
+	AssociatePublicIPAddress         *bool                                               `json:"associatePublicIPAddress,omitempty"`
+	Tags                             map[string]string                                   `json:"tags,omitempty"`
+	BlockDeviceMappings              []*karpenterv1beta1.BlockDeviceMapping              `json:"blockDeviceMappings,omitempty"`
+	InstanceStorePolicy              *karpenterv1beta1.InstanceStorePolicy               `json:"instanceStorePolicy,omitempty"`
+	DetailedMonitoring               *bool                                               `json:"detailedMonitoring,omitempty"`
+	Version                          *string                                             `json:"version,omitempty"`
 }
 
 // OpenshiftEC2NodeClassSpecApplyConfiguration constructs a declarative configuration of the OpenshiftEC2NodeClassSpec type for use with
@@ -62,6 +63,19 @@ func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithSecurityGroupSelectorT
 			panic("nil value passed to WithSecurityGroupSelectorTerms")
 		}
 		b.SecurityGroupSelectorTerms = append(b.SecurityGroupSelectorTerms, *values[i])
+	}
+	return b
+}
+
+// WithCapacityReservationSelectorTerms adds the given value to the CapacityReservationSelectorTerms field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the CapacityReservationSelectorTerms field.
+func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithCapacityReservationSelectorTerms(values ...*CapacityReservationSelectorTermApplyConfiguration) *OpenshiftEC2NodeClassSpecApplyConfiguration {
+	for i := range values {
+		if values[i] == nil {
+			panic("nil value passed to WithCapacityReservationSelectorTerms")
+		}
+		b.CapacityReservationSelectorTerms = append(b.CapacityReservationSelectorTerms, *values[i])
 	}
 	return b
 }
