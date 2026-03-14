@@ -1,15 +1,33 @@
 package registryoperator
 
 import (
+	"fmt"
+
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
+	"github.com/openshift/hypershift/support/controllerconfig"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
-
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 )
+
+// adaptControllerConfig uses the HostedControlPlane to derive the image
+// registry controller configuration. This function ensures that we are
+// using the right port for the metrics endpoint.
+func adaptControllerConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) error {
+	config := controllerconfig.BuildGenericControllerConfig(cpContext.HCP)
+	config.ServingInfo.BindAddress = "0.0.0.0:60000"
+
+	data, err := controllerconfig.YAMLMarshal(config)
+	if err != nil {
+		return fmt.Errorf("marshaling controller config: %w", err)
+	}
+
+	cm.Data["config.yaml"] = data
+	return nil
+}
 
 func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Deployment) error {
 	util.UpdateContainer(ComponentName, deployment.Spec.Template.Spec.Containers, func(c *corev1.Container) {
