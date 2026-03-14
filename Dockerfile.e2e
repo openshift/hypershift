@@ -4,7 +4,7 @@ WORKDIR /hypershift
 
 COPY . .
 
-RUN make e2e
+RUN make e2e hypershift
 
 # Reuse the same image as builder because we need go command in ci-test-e2e.sh
 # Multi-stage build lets us drop the source code and build cache from the final image
@@ -18,6 +18,7 @@ COPY --from=builder /hypershift/bin/test-e2e-v2 /hypershift/bin/test-e2e-v2
 COPY --from=builder /hypershift/bin/test-backuprestore /hypershift/bin/test-backuprestore
 COPY --from=builder /hypershift/bin/test-setup /hypershift//bin/test-setup
 COPY --from=builder /hypershift/bin/test-reqserving /hypershift/bin/test-reqserving
+COPY --from=builder /hypershift/bin/hypershift /hypershift/bin/hypershift
 COPY --from=builder /hypershift/hack/ci-test-e2e.sh /hypershift/hack/ci-test-e2e.sh
 COPY --from=builder /hypershift/hack/run-reqserving-e2e.sh /hypershift/hack/run-reqserving-e2e.sh
 
