@@ -231,6 +231,81 @@ GCPPrivateServiceConnectStatus
 </tr>
 </tbody>
 </table>
+##HCPEtcdBackup { #hypershift.openshift.io/v1beta1.HCPEtcdBackup }
+<p>
+<p>HCPEtcdBackup represents a request to back up etcd for a hosted control plane.
+This resource is feature-gated behind the HCPEtcdBackup feature gate.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>apiVersion</code></br>
+string</td>
+<td>
+<code>
+hypershift.openshift.io/v1beta1
+</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>kind</code></br>
+string
+</td>
+<td><code>HCPEtcdBackup</code></td>
+</tr>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metadata is the metadata for the HCPEtcdBackup.</p>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupSpec">
+HCPEtcdBackupSpec
+</a>
+</em>
+</td>
+<td>
+<p>spec is the specification for the HCPEtcdBackup.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>status,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStatus">
+HCPEtcdBackupStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>status is the status of the HCPEtcdBackup.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ##HostedCluster { #hypershift.openshift.io/v1beta1.HostedCluster }
 <p>
 <p>HostedCluster is the primary representation of a HyperShift cluster and encapsulates
@@ -4962,6 +5037,9 @@ created in the guest VPC</p>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 has been created for the specified NLB in the management VPC</p>
 </td>
+</tr><tr><td><p>&#34;BackupCompleted&#34;</p></td>
+<td><p>BackupCompleted indicates whether the etcd backup has completed.</p>
+</td>
 </tr><tr><td><p>&#34;CVOScaledDown&#34;</p></td>
 <td></td>
 </tr><tr><td><p>&#34;CloudResourcesDestroyed&#34;</p></td>
@@ -7029,6 +7107,624 @@ This follows the AWS pattern of having different roles for different purposes.</
 </td>
 </tr>
 </tbody>
+</table>
+###HCPEtcdBackupAzureBlob { #hypershift.openshift.io/v1beta1.HCPEtcdBackupAzureBlob }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStorage">HCPEtcdBackupStorage</a>)
+</p>
+<p>
+<p>HCPEtcdBackupAzureBlob defines the Azure Blob storage configuration for etcd backups.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>container</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>container is the name of the Azure Blob container where backups are stored.
+Must be 3-63 characters, lowercase letters, numbers, and hyphens only.
+Must start and end with a letter or number. Consecutive hyphens are not allowed.
+See <a href="https://learn.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers--blobs--and-metadata#container-names">https://learn.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers&ndash;blobs&ndash;and-metadata#container-names</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>storageAccount</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>storageAccount is the name of the Azure Storage Account.
+Must be 3-24 characters, lowercase letters and numbers only.
+See <a href="https://learn.microsoft.com/en-us/azure/storage/common/storage-account-overview#storage-account-name">https://learn.microsoft.com/en-us/azure/storage/common/storage-account-overview#storage-account-name</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>keyPrefix</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>keyPrefix is the blob name prefix for the backup file.
+Must consist of valid blob name characters: alphanumeric characters, forward slashes,
+hyphens, underscores, and periods.
+See <a href="https://learn.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers--blobs--and-metadata#blob-names">https://learn.microsoft.com/en-us/rest/api/storageservices/naming-and-referencing-containers&ndash;blobs&ndash;and-metadata#blob-names</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>credentialsSecretRef,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretReference">
+SecretReference
+</a>
+</em>
+</td>
+<td>
+<p>credentialsSecretRef references a Secret containing Azure credentials for uploading
+to Blob Storage. The Secret must exist in the Hypershift Operator namespace.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>encryptionKeyURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>encryptionKeyURL is the URL of the Azure Key Vault key used for encryption.
+Must be a valid Azure Key Vault key URL in the format
+&ldquo;https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]&rdquo;.
+This field is immutable once set and cannot be removed.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupConfig { #hypershift.openshift.io/v1beta1.HCPEtcdBackupConfig }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.ManagedEtcdSpec">ManagedEtcdSpec</a>)
+</p>
+<p>
+<p>HCPEtcdBackupConfig defines the backup encryption configuration that is propagated
+from the HostedCluster to the HostedControlPlane via ManagedEtcdSpec.
+Exactly one platform-specific block must be specified, matching the platform discriminator.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>platform</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupConfigPlatform">
+HCPEtcdBackupConfigPlatform
+</a>
+</em>
+</td>
+<td>
+<p>platform specifies the cloud platform for backup encryption configuration.
+Valid values are &ldquo;AWS&rdquo; for AWS KMS encryption and &ldquo;Azure&rdquo; for Azure Key Vault encryption.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>aws,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupConfigAWS">
+HCPEtcdBackupConfigAWS
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>aws contains AWS-specific backup encryption configuration.
+Required when platform is &ldquo;AWS&rdquo;, and forbidden otherwise.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azure,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupConfigAzure">
+HCPEtcdBackupConfigAzure
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>azure contains Azure-specific backup encryption configuration.
+Required when platform is &ldquo;Azure&rdquo;, and forbidden otherwise.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupConfigAWS { #hypershift.openshift.io/v1beta1.HCPEtcdBackupConfigAWS }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupConfig">HCPEtcdBackupConfig</a>)
+</p>
+<p>
+<p>HCPEtcdBackupConfigAWS defines AWS-specific encryption settings for etcd backups.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>kmsKeyARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>kmsKeyARN is the ARN of the AWS KMS key to use for encrypting etcd backup artifacts in S3.
+Must be a valid AWS KMS key ARN in the format
+&ldquo;arn:<partition>:kms:<region>:<account-id>:key/<key-id>&rdquo;
+where partition is one of aws, aws-cn, or aws-us-gov.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupConfigAzure { #hypershift.openshift.io/v1beta1.HCPEtcdBackupConfigAzure }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupConfig">HCPEtcdBackupConfig</a>)
+</p>
+<p>
+<p>HCPEtcdBackupConfigAzure defines Azure-specific encryption settings for etcd backups.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>encryptionKeyURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>encryptionKeyURL is the URL of the Azure Key Vault key to use for encrypting etcd backup artifacts.
+Must be a valid Azure Key Vault key URL in the format
+&ldquo;https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]&rdquo;.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupConfigPlatform { #hypershift.openshift.io/v1beta1.HCPEtcdBackupConfigPlatform }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupConfig">HCPEtcdBackupConfig</a>)
+</p>
+<p>
+<p>HCPEtcdBackupConfigPlatform identifies the cloud platform for backup encryption configuration.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;AWS&#34;</p></td>
+<td><p>AWSBackupConfigPlatform indicates AWS KMS encryption for backup artifacts.</p>
+</td>
+</tr><tr><td><p>&#34;Azure&#34;</p></td>
+<td><p>AzureBackupConfigPlatform indicates Azure Key Vault encryption for backup artifacts.</p>
+</td>
+</tr></tbody>
+</table>
+###HCPEtcdBackupEncryptionMetadata { #hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadata }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStatus">HCPEtcdBackupStatus</a>)
+</p>
+<p>
+<p>HCPEtcdBackupEncryptionMetadata contains platform-specific metadata about the
+encryption applied to the backup artifact in cloud storage.
+The presence of a platform block indicates that encryption was applied.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>aws,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadataAWS">
+HCPEtcdBackupEncryptionMetadataAWS
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>aws contains AWS-specific encryption metadata for the backup.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azure,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadataAzure">
+HCPEtcdBackupEncryptionMetadataAzure
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>azure contains Azure-specific encryption metadata for the backup.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupEncryptionMetadataAWS { #hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadataAWS }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadata">HCPEtcdBackupEncryptionMetadata</a>)
+</p>
+<p>
+<p>HCPEtcdBackupEncryptionMetadataAWS contains AWS-specific encryption metadata.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>kmsKeyARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>kmsKeyARN is the ARN of the KMS key used for server-side encryption of the backup in S3.
+Must be a valid AWS KMS key ARN in the format
+&ldquo;arn:<partition>:kms:<region>:<account-id>:key/<key-id>&rdquo;
+where partition is one of aws, aws-cn, or aws-us-gov.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupEncryptionMetadataAzure { #hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadataAzure }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadata">HCPEtcdBackupEncryptionMetadata</a>)
+</p>
+<p>
+<p>HCPEtcdBackupEncryptionMetadataAzure contains Azure-specific encryption metadata.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>encryptionKeyURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>encryptionKeyURL is the URL of the Azure Key Vault key used for encryption of the backup.
+Must be a valid Azure Key Vault key URL in the format
+&ldquo;https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]&rdquo;.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupS3 { #hypershift.openshift.io/v1beta1.HCPEtcdBackupS3 }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStorage">HCPEtcdBackupStorage</a>)
+</p>
+<p>
+<p>HCPEtcdBackupS3 defines the S3 storage configuration for etcd backups.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>bucket</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>bucket is the name of the S3 bucket where backups are stored.
+Must be 3-63 characters, lowercase letters, numbers, hyphens, and periods only.
+Must start and end with a letter or number. Consecutive periods are not allowed.
+See <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html">https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucketnamingrules.html</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>region</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>region is the AWS region where the S3 bucket is located (e.g. &ldquo;us-east-1&rdquo;).
+Must be a valid AWS region identifier: lowercase letters, digits, and hyphens.
+Must start and end with an alphanumeric character, no consecutive hyphens.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>keyPrefix</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>keyPrefix is the S3 key prefix for the backup file.
+Must consist of valid S3 object key characters as defined in
+<a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html">https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html</a>.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>credentialsSecretRef,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SecretReference">
+SecretReference
+</a>
+</em>
+</td>
+<td>
+<p>credentialsSecretRef references a Secret containing AWS credentials for uploading
+to S3. The Secret must exist in the Hypershift Operator namespace and contain a
+&lsquo;credentials&rsquo; key with a valid AWS credentials file.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kmsKeyARN</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>kmsKeyARN is the ARN of the KMS key used for server-side encryption of the backup.
+Must be a valid AWS KMS key ARN in the format
+&ldquo;arn:<partition>:kms:<region>:<account-id>:key/<key-id>&rdquo;
+where partition is one of aws, aws-cn, or aws-us-gov.
+This field is immutable once set and cannot be removed.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupSpec { #hypershift.openshift.io/v1beta1.HCPEtcdBackupSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackup">HCPEtcdBackup</a>)
+</p>
+<p>
+<p>HCPEtcdBackupSpec defines the desired state of HCPEtcdBackup.
+HCPEtcdBackup is a one-shot backup request; the entire spec is immutable once created.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>storage,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStorage">
+HCPEtcdBackupStorage
+</a>
+</em>
+</td>
+<td>
+<p>storage defines the cloud storage backend where the etcd snapshot will be uploaded.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupStatus { #hypershift.openshift.io/v1beta1.HCPEtcdBackupStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackup">HCPEtcdBackup</a>)
+</p>
+<p>
+<p>HCPEtcdBackupStatus defines the observed state of HCPEtcdBackup.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>conditions contains details for the current state of the etcd backup.
+The following condition types are expected:
+- &ldquo;BackupCompleted&rdquo;: indicates whether the etcd backup has completed (True=success, False=failure).</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>snapshotURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>snapshotURL is the URL of the completed backup snapshot in cloud storage.
+Must be a valid URL with scheme https or s3.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>encryptionMetadata,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupEncryptionMetadata">
+HCPEtcdBackupEncryptionMetadata
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>encryptionMetadata contains metadata about the encryption of the backup.
+When present, at least one platform-specific encryption block must be set.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupStorage { #hypershift.openshift.io/v1beta1.HCPEtcdBackupStorage }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupSpec">HCPEtcdBackupSpec</a>)
+</p>
+<p>
+<p>HCPEtcdBackupStorage defines the cloud storage backend configuration for the backup.
+Exactly one storage backend must be specified, matching the storageType discriminator.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>storageType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStorageType">
+HCPEtcdBackupStorageType
+</a>
+</em>
+</td>
+<td>
+<p>storageType specifies the type of cloud storage backend for the etcd backup.
+Valid values are &ldquo;S3&rdquo; for AWS S3 storage and &ldquo;AzureBlob&rdquo; for Azure Blob Storage.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>s3,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupS3">
+HCPEtcdBackupS3
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>s3 specifies the S3 storage configuration for the etcd backup.
+Required when storageType is &ldquo;S3&rdquo;, and forbidden otherwise.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>azureBlob,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupAzureBlob">
+HCPEtcdBackupAzureBlob
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>azureBlob specifies the Azure Blob storage configuration for the etcd backup.
+Required when storageType is &ldquo;AzureBlob&rdquo;, and forbidden otherwise.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###HCPEtcdBackupStorageType { #hypershift.openshift.io/v1beta1.HCPEtcdBackupStorageType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupStorage">HCPEtcdBackupStorage</a>)
+</p>
+<p>
+<p>HCPEtcdBackupStorageType is the type of storage for etcd backups.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;AzureBlob&#34;</p></td>
+<td><p>AzureBlobBackupStorage indicates that the backup is stored in Azure Blob Storage.</p>
+</td>
+</tr><tr><td><p>&#34;S3&#34;</p></td>
+<td><p>S3BackupStorage indicates that the backup is stored in AWS S3.</p>
+</td>
+</tr></tbody>
 </table>
 ###HostedClusterSpec { #hypershift.openshift.io/v1beta1.HostedClusterSpec }
 <p>
@@ -10490,6 +11186,21 @@ ManagedEtcdStorageSpec
 <p>storage specifies how etcd data is persisted.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>backup,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupConfig">
+HCPEtcdBackupConfig
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>backup defines the backup configuration for managed etcd, including
+optional KMS key settings for artifact encryption in cloud storage.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###ManagedEtcdStorageSpec { #hypershift.openshift.io/v1beta1.ManagedEtcdStorageSpec }
@@ -13821,6 +14532,39 @@ AESCBCSpec
 <td><p>KMS integrates with a cloud provider&rsquo;s key management service to do secret encryption</p>
 </td>
 </tr></tbody>
+</table>
+###SecretReference { #hypershift.openshift.io/v1beta1.SecretReference }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupAzureBlob">HCPEtcdBackupAzureBlob</a>, 
+<a href="#hypershift.openshift.io/v1beta1.HCPEtcdBackupS3">HCPEtcdBackupS3</a>)
+</p>
+<p>
+<p>SecretReference contains a reference to a Secret by name.
+The Secret must exist in the same namespace as the referencing resource.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>name</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>name is the name of the Secret. It must be a valid DNS-1123 subdomain: at most
+253 characters, consisting of lowercase alphanumeric characters, hyphens, and periods.
+Each period-separated segment must start and end with an alphanumeric character.</p>
+</td>
+</tr>
+</tbody>
 </table>
 ###ServiceNetworkEntry { #hypershift.openshift.io/v1beta1.ServiceNetworkEntry }
 <p>

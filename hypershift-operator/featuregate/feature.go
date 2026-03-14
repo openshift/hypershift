@@ -28,6 +28,12 @@ const (
 	// alpha: v0.1.49
 	// beta: x.y.z
 	GCPPlatform featuregate.Feature = "GCPPlatform"
+
+	// HCPEtcdBackup enables the HCPEtcdBackup CRD for OADP-driven etcd backup orchestration.
+	// owner: @jparrill
+	// alpha: v0.1.49
+	// beta: x.y.z
+	HCPEtcdBackup featuregate.Feature = "HCPEtcdBackup"
 )
 
 // Initialize new features here
@@ -37,6 +43,7 @@ var (
 	aroHCPManagedIdentitiesFeature = featuregates.NewFeature(AROHCPManagedIdentities, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	openStackFeature               = featuregates.NewFeature(OpenStack, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 	gcpHCPFeature                  = featuregates.NewFeature(GCPPlatform, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
+	hcpEtcdBackupFeature           = featuregates.NewFeature(HCPEtcdBackup, featuregates.WithEnableForFeatureSets(configv1.TechPreviewNoUpgrade))
 )
 
 func init() {
@@ -44,6 +51,7 @@ func init() {
 	allFeatures.AddFeature(aroHCPManagedIdentitiesFeature)
 	allFeatures.AddFeature(openStackFeature)
 	allFeatures.AddFeature(gcpHCPFeature)
+	allFeatures.AddFeature(hcpEtcdBackupFeature)
 
 	// Default to configuring the Default featureset
 	ConfigureFeatureSet(string(configv1.Default))

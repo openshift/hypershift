@@ -27,6 +27,8 @@ type Interface interface {
 	CertificateSigningRequestApprovals() CertificateSigningRequestApprovalInformer
 	// GCPPrivateServiceConnects returns a GCPPrivateServiceConnectInformer.
 	GCPPrivateServiceConnects() GCPPrivateServiceConnectInformer
+	// HCPEtcdBackups returns a HCPEtcdBackupInformer.
+	HCPEtcdBackups() HCPEtcdBackupInformer
 	// HostedClusters returns a HostedClusterInformer.
 	HostedClusters() HostedClusterInformer
 	// HostedControlPlanes returns a HostedControlPlaneInformer.
@@ -54,6 +56,11 @@ func (v *version) CertificateSigningRequestApprovals() CertificateSigningRequest
 // GCPPrivateServiceConnects returns a GCPPrivateServiceConnectInformer.
 func (v *version) GCPPrivateServiceConnects() GCPPrivateServiceConnectInformer {
 	return &gCPPrivateServiceConnectInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// HCPEtcdBackups returns a HCPEtcdBackupInformer.
+func (v *version) HCPEtcdBackups() HCPEtcdBackupInformer {
+	return &hCPEtcdBackupInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
 }
 
 // HostedClusters returns a HostedClusterInformer.
