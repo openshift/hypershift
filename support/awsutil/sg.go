@@ -1,20 +1,25 @@
 package awsutil
 
 import (
+	"context"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/openshift/hypershift/support/awsapi"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	"github.com/pkg/errors"
 )
 
-func DefaultWorkerSGEgressRules() []*ec2.IpPermission {
-	return []*ec2.IpPermission{
+func DefaultWorkerSGEgressRules() []ec2types.IpPermission {
+	return []ec2types.IpPermission{
 		{
 			IpProtocol: aws.String("-1"),
-			IpRanges: []*ec2.IpRange{
+			IpRanges: []ec2types.IpRange{
 				{
 					CidrIp: aws.String("0.0.0.0/0"),
 				},
@@ -187,25 +192,36 @@ func DefaultWorkerSGIngressRules(machineCIDRs []string, sgGroupID, sgUserID stri
 	return inboundRules
 }
 
-func VPCEndpointSecurityGroupRules(machineCIDRs []string, port int64) []*ec2.IpPermission {
-	var inboundRules []*ec2.IpPermission
+func VPCEndpointSecurityGroupRules(machineCIDRs []string, port int32) []ec2types.IpPermission {
+	var inboundRules []ec2types.IpPermission
 	for _, cidr := range machineCIDRs {
-		machineCIDRInboundRules := []*ec2.IpPermission{
+		machineCIDRInboundRules := []ec2types.IpPermission{
 			{
 				IpProtocol: aws.String("tcp"),
-				IpRanges: []*ec2.IpRange{
+				IpRanges: []ec2types.IpRange{
 					{
 						CidrIp:      aws.String(cidr),
 						Description: aws.String("Control plane service"),
 					},
 				},
-				FromPort: aws.Int64(port),
-				ToPort:   aws.Int64(port),
+				FromPort: aws.Int32(port),
+				ToPort:   aws.Int32(port),
 			},
 		}
 		inboundRules = append(inboundRules, machineCIDRInboundRules...)
 	}
 	return inboundRules
+}
+
+func GetSecurityGroupV2(ctx context.Context, ec2Client awsapi.EC2API, filter []ec2types.Filter) (*ec2types.SecurityGroup, error) {
+	describeSGResult, err := ec2Client.DescribeSecurityGroups(ctx, &ec2v2.DescribeSecurityGroupsInput{Filters: filter})
+	if err != nil {
+		return nil, fmt.Errorf("cannot list security groups: %w", err)
+	}
+	if len(describeSGResult.SecurityGroups) == 0 {
+		return nil, nil
+	}
+	return &describeSGResult.SecurityGroups[0], nil
 }
 
 func GetSecurityGroup(ec2Client ec2iface.EC2API, filter []*ec2.Filter) (*ec2.SecurityGroup, error) {
@@ -219,6 +235,17 @@ func GetSecurityGroup(ec2Client ec2iface.EC2API, filter []*ec2.Filter) (*ec2.Sec
 	return describeSGResult.SecurityGroups[0], nil
 }
 
+func GetSecurityGroupByIdV2(ctx context.Context, ec2Client awsapi.EC2API, id string) (*ec2types.SecurityGroup, error) {
+	describeSGResult, err := ec2Client.DescribeSecurityGroups(ctx, &ec2v2.DescribeSecurityGroupsInput{GroupIds: []string{id}})
+	if err != nil {
+		return nil, fmt.Errorf("cannot get security group: %w", err)
+	}
+	if len(describeSGResult.SecurityGroups) == 0 {
+		return nil, nil
+	}
+	return &describeSGResult.SecurityGroups[0], nil
+}
+
 func GetSecurityGroupById(ec2Client ec2iface.EC2API, id string) (*ec2.SecurityGroup, error) {
 	describeSGResult, err := ec2Client.DescribeSecurityGroups(&ec2.DescribeSecurityGroupsInput{GroupIds: []*string{aws.String(id)}})
 	if err != nil {
@@ -230,36 +257,31 @@ func GetSecurityGroupById(ec2Client ec2iface.EC2API, id string) (*ec2.SecurityGr
 	return describeSGResult.SecurityGroups[0], nil
 }
 
-func UpdateResourceTags(ec2Client ec2iface.EC2API, resourceID string, create, remove map[string]string) error {
-	// If we have anything to create or update
+func UpdateResourceTags(ctx context.Context, ec2Client awsapi.EC2API, resourceID string, create, remove map[string]string) error {
 	if len(create) > 0 {
-		createTagsInput := MapToEC2Tags(create)
-		input := &ec2.CreateTagsInput{
-			Resources: []*string{aws.String(resourceID)},
-			Tags:      createTagsInput,
+		tags := make([]ec2types.Tag, 0, len(create))
+		for k, v := range create {
+			tags = append(tags, ec2types.Tag{Key: aws.String(k), Value: aws.String(v)})
 		}
-
-		// Create/Update tags in AWS.
-		if _, err := ec2Client.CreateTags(input); err != nil {
+		if _, err := ec2Client.CreateTags(ctx, &ec2v2.CreateTagsInput{
+			Resources: []string{resourceID},
+			Tags:      tags,
+		}); err != nil {
 			return errors.Wrapf(err, "failed to create tags for resource %q: %+v", resourceID, create)
 		}
 	}
-
-	// If we have anything to remove
 	if len(remove) > 0 {
-		removeTagsInput := MapToEC2Tags(remove)
-		// Create the DeleteTags input
-		input := &ec2.DeleteTagsInput{
-			Resources: []*string{aws.String(resourceID)},
-			Tags:      removeTagsInput,
+		tags := make([]ec2types.Tag, 0, len(remove))
+		for k, v := range remove {
+			tags = append(tags, ec2types.Tag{Key: aws.String(k), Value: aws.String(v)})
 		}
-
-		// Delete tags in AWS.
-		if _, err := ec2Client.DeleteTags(input); err != nil {
+		if _, err := ec2Client.DeleteTags(ctx, &ec2v2.DeleteTagsInput{
+			Resources: []string{resourceID},
+			Tags:      tags,
+		}); err != nil {
 			return errors.Wrapf(err, "failed to delete tags for resource %q: %v", resourceID, remove)
 		}
 	}
-
 	return nil
 }
 

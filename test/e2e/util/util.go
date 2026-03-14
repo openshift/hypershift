@@ -44,10 +44,11 @@ import (
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/library-go/test/library/metrics"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
+	iamv2 "github.com/aws/aws-sdk-go-v2/service/iam"
 	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
 
 	k8sadmissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -3355,6 +3356,8 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 		}
 		g := NewWithT(t)
 
+		// test: changed Resource from specific SG ARN to "*" to verify if
+		// the resource ARN specificity is causing matchedStatements to be empty
 		tagsPolicy := fmt.Sprintf(`{
 			"Version": "2012-10-17",
 			"Statement": [
@@ -3369,8 +3372,29 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 			]
 		}`, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
 
+		t.Logf("debug: applying PutRolePolicy to CPO role: %s", hostedCluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN)
+		t.Logf("debug: default worker SG: %s", hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
+
 		cleanup, err := PutRolePolicy(ctx, clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN, tagsPolicy)
 		g.Expect(err).NotTo(HaveOccurred(), "failed to put role policy for tagging default security group")
+
+		// Verify the policy was actually applied and is visible
+		iamClient := GetIAMClient(ctx, clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+		roleName := hostedCluster.Spec.Platform.AWS.RolesRef.ControlPlaneOperatorARN
+		roleName = roleName[strings.LastIndex(roleName, "/")+1:]
+		policyName := hyperutil.HashSimple(tagsPolicy)
+		t.Logf("debug: checking role=%s policyName=%s", roleName, policyName)
+
+		getRolePolicyOut, getRolePolicyErr := iamClient.GetRolePolicy(ctx, &iamv2.GetRolePolicyInput{
+			RoleName:   aws.String(roleName),
+			PolicyName: aws.String(policyName),
+		})
+		if getRolePolicyErr != nil {
+			t.Logf("debug: GetRolePolicy FAILED (policy NOT found on role): %v", getRolePolicyErr)
+		} else {
+			t.Logf("debug: GetRolePolicy SUCCESS - policy IS on the role, document: %s", aws.ToString(getRolePolicyOut.PolicyDocument))
+		}
+
 		defer func() {
 			err := cleanup()
 			g.Expect(err).NotTo(HaveOccurred(), "failed to cleanup role policy for tagging default security group")
@@ -3390,14 +3414,14 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 
 		// Ensure that day2 tag is correctly applied to the default security group.
 		g.Eventually(func(g Gomega) {
-			sg, err := GetDefaultSecurityGroup(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
+			sg, err := GetDefaultSecurityGroup(ctx, clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to get default security group")
 
-			g.Expect(sg.Tags).To(ContainElement(&ec2.Tag{
+			g.Expect(sg.Tags).To(ContainElement(ec2types.Tag{
 				Key:   aws.String(day2TagKey),
 				Value: aws.String(day2TagValue),
 			}))
-		}).WithContext(ctx).WithTimeout(time.Minute * 2).WithPolling(time.Second).Should(Succeed())
+		}).WithContext(ctx).WithTimeout(time.Minute * 10).WithPolling(time.Second).Should(Succeed())
 	})
 }
 

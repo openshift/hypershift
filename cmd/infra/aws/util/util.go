@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"time"
 
 	"github.com/openshift/hypershift/cmd/util"
@@ -144,6 +145,13 @@ func NewSession(agent, credentialsFile, credKey, credSecretKey, region string) *
 
 func NewSessionV2(ctx context.Context, agent, credentialsFile, credKey, credSecretKey, region string) *awsv2.Config {
 	var configOpts []func(*configv2.LoadOptions) error
+	// If no credentials file is explicitly provided, fall back to AWS_SHARED_CREDENTIALS_FILE.
+	// This matches the v1 SDK behavior when AWS_SDK_LOAD_CONFIG=1 is set: the env-var file is
+	// treated as a shared config file (not just a credentials file), so settings such as
+	// role_arn and web_identity_token_file are correctly processed.
+	if credentialsFile == "" {
+		credentialsFile = os.Getenv("AWS_SHARED_CREDENTIALS_FILE")
+	}
 	if credentialsFile != "" {
 		configOpts = append(configOpts, configv2.WithSharedConfigFiles([]string{credentialsFile}))
 	}
@@ -158,6 +166,9 @@ func NewSessionV2(ctx context.Context, agent, credentialsFile, credKey, credSecr
 		awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", agent),
 	}))
 
+	configOpts = append(configOpts, configv2.WithCredentialsCacheOptions(func(o *awsv2.CredentialsCacheOptions) {
+		o.ExpiryWindow = 0
+	}))
 	cfg, _ := configv2.LoadDefaultConfig(ctx, configOpts...)
 	return &cfg
 }

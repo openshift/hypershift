@@ -7,8 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -85,16 +86,16 @@ func (ar *NodePoolDay2TagsTest) Run(t *testing.T, nodePool hyperv1.NodePool, nod
 		for _, awsMachine := range awsMachines.Items {
 			g.Expect(awsMachine.Spec.AdditionalTags).To(HaveKeyWithValue(day2TagKey, day2TagValue))
 
-			instanceID := awsMachines.Items[0].Spec.InstanceID
+			instanceID := awsMachine.Spec.InstanceID
 			// Fetch the EC2 instance to verify the tag
-			instance, err := ec2client.DescribeInstancesWithContext(ar.ctx, &ec2.DescribeInstancesInput{
-				InstanceIds: []*string{instanceID},
+			instance, err := ec2client.DescribeInstances(ar.ctx, &ec2.DescribeInstancesInput{
+				InstanceIds: []string{aws.ToString(instanceID)},
 			})
 			g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance")
 
 			g.Expect(instance.Reservations).NotTo(BeEmpty(), "expected at least one reservation")
 			g.Expect(instance.Reservations[0].Instances).NotTo(BeEmpty(), "expected at least one instance")
-			g.Expect(instance.Reservations[0].Instances[0].Tags).To(ContainElement(&ec2.Tag{
+			g.Expect(instance.Reservations[0].Instances[0].Tags).To(ContainElement(ec2types.Tag{
 				Key:   aws.String(day2TagKey),
 				Value: aws.String(day2TagValue),
 			}))

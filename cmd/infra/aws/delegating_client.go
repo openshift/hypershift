@@ -9,6 +9,7 @@ import (
 
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	configv2 "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
@@ -16,8 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/sqs"
 	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
 	"github.com/aws/smithy-go/middleware"
@@ -35,25 +34,19 @@ func NewDelegatingClient(
 ) (*DelegatingClient, error) {
 	awsConfig := awsutil.NewConfig()
 	awsConfigv2 := awsutil.NewConfigV2()
-	awsEbsCsiDriverControllerSession, err := session.NewSessionWithOptions(session.Options{SharedConfigFiles: []string{awsEbsCsiDriverControllerCredentialsFile}})
+	awsEbsCsiDriverControllerCfg, err := configv2.LoadDefaultConfig(ctx,
+		configv2.WithSharedConfigFiles([]string{awsEbsCsiDriverControllerCredentialsFile}),
+		configv2.WithAPIOptions([]func(*middleware.Stack) error{
+			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", "aws-ebs-csi-driver-controller"),
+		}))
 	if err != nil {
-		return nil, fmt.Errorf("error creating new AWS session for awsEbsCsiDriverController: %w", err)
+		return nil, fmt.Errorf("error loading AWS config for awsEbsCsiDriverController: %w", err)
 	}
-	awsEbsCsiDriverControllerSession.Handlers.Build.PushBackNamed(request.NamedHandler{
-		Name: "openshift.io/hypershift",
-		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", "aws-ebs-csi-driver-controller"),
-	})
 	awsEbsCsiDriverController := &awsEbsCsiDriverControllerClientDelegate{
-		ec2Client: ec2.New(awsEbsCsiDriverControllerSession, awsConfig),
+		ec2Client: ec2.NewFromConfig(awsEbsCsiDriverControllerCfg, func(o *ec2.Options) {
+			o.Retryer = awsConfigv2()
+		}),
 	}
-	cloudControllerSession, err := session.NewSessionWithOptions(session.Options{SharedConfigFiles: []string{cloudControllerCredentialsFile}})
-	if err != nil {
-		return nil, fmt.Errorf("error creating new AWS session for cloudController: %w", err)
-	}
-	cloudControllerSession.Handlers.Build.PushBackNamed(request.NamedHandler{
-		Name: "openshift.io/hypershift",
-		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", "cloud-controller"),
-	})
 	cloudControllerCfg, err := configv2.LoadDefaultConfig(ctx,
 		configv2.WithSharedConfigFiles([]string{cloudControllerCredentialsFile}),
 		configv2.WithAPIOptions([]func(*middleware.Stack) error{
@@ -63,7 +56,9 @@ func NewDelegatingClient(
 		return nil, fmt.Errorf("error loading AWS config for cloudController: %w", err)
 	}
 	cloudController := &cloudControllerClientDelegate{
-		ec2Client: ec2.New(cloudControllerSession, awsConfig),
+		ec2Client: ec2.NewFromConfig(cloudControllerCfg, func(o *ec2.Options) {
+			o.Retryer = awsConfigv2()
+		}),
 		elasticloadbalancingClient: elasticloadbalancing.NewFromConfig(cloudControllerCfg, func(o *elasticloadbalancing.Options) {
 			o.Retryer = awsConfigv2()
 		}),
@@ -71,25 +66,19 @@ func NewDelegatingClient(
 			o.Retryer = awsConfigv2()
 		}),
 	}
-	cloudNetworkConfigControllerSession, err := session.NewSessionWithOptions(session.Options{SharedConfigFiles: []string{cloudNetworkConfigControllerCredentialsFile}})
+	cloudNetworkConfigControllerCfg, err := configv2.LoadDefaultConfig(ctx,
+		configv2.WithSharedConfigFiles([]string{cloudNetworkConfigControllerCredentialsFile}),
+		configv2.WithAPIOptions([]func(*middleware.Stack) error{
+			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", "cloud-network-config-controller"),
+		}))
 	if err != nil {
-		return nil, fmt.Errorf("error creating new AWS session for cloudNetworkConfigController: %w", err)
+		return nil, fmt.Errorf("error loading AWS config for cloudNetworkConfigController: %w", err)
 	}
-	cloudNetworkConfigControllerSession.Handlers.Build.PushBackNamed(request.NamedHandler{
-		Name: "openshift.io/hypershift",
-		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", "cloud-network-config-controller"),
-	})
 	cloudNetworkConfigController := &cloudNetworkConfigControllerClientDelegate{
-		ec2Client: ec2.New(cloudNetworkConfigControllerSession, awsConfig),
+		ec2Client: ec2.NewFromConfig(cloudNetworkConfigControllerCfg, func(o *ec2.Options) {
+			o.Retryer = awsConfigv2()
+		}),
 	}
-	controlPlaneOperatorSession, err := session.NewSessionWithOptions(session.Options{SharedConfigFiles: []string{controlPlaneOperatorCredentialsFile}})
-	if err != nil {
-		return nil, fmt.Errorf("error creating new AWS session for controlPlaneOperator: %w", err)
-	}
-	controlPlaneOperatorSession.Handlers.Build.PushBackNamed(request.NamedHandler{
-		Name: "openshift.io/hypershift",
-		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", "control-plane-operator"),
-	})
 	controlPlaneOperatorCfg, err := configv2.LoadDefaultConfig(ctx,
 		configv2.WithSharedConfigFiles([]string{controlPlaneOperatorCredentialsFile}),
 		configv2.WithAPIOptions([]func(*middleware.Stack) error{
@@ -99,7 +88,9 @@ func NewDelegatingClient(
 		return nil, fmt.Errorf("error loading AWS config for controlPlaneOperator: %w", err)
 	}
 	controlPlaneOperator := &controlPlaneOperatorClientDelegate{
-		ec2Client: ec2.New(controlPlaneOperatorSession, awsConfig),
+		ec2Client: ec2.NewFromConfig(controlPlaneOperatorCfg, func(o *ec2.Options) {
+			o.Retryer = awsConfigv2()
+		}),
 		route53Client: route53.NewFromConfig(controlPlaneOperatorCfg, func(o *route53.Options) {
 			o.Retryer = awsConfigv2()
 		}),
@@ -112,8 +103,18 @@ func NewDelegatingClient(
 		Name: "openshift.io/hypershift",
 		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", "node-pool"),
 	})
+	nodePoolCfg, err := configv2.LoadDefaultConfig(ctx,
+		configv2.WithSharedConfigFiles([]string{nodePoolCredentialsFile}),
+		configv2.WithAPIOptions([]func(*middleware.Stack) error{
+			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", "node-pool"),
+		}))
+	if err != nil {
+		return nil, fmt.Errorf("error loading AWS config for nodePool: %w", err)
+	}
 	nodePool := &nodePoolClientDelegate{
-		ec2Client: ec2.New(nodePoolSession, awsConfig),
+		ec2Client: ec2.NewFromConfig(nodePoolCfg, func(o *ec2.Options) {
+			o.Retryer = awsConfigv2()
+		}),
 		sqsClient: sqs.New(nodePoolSession, awsConfig),
 	}
 	openshiftImageRegistryCfg, err := configv2.LoadDefaultConfig(ctx,
@@ -130,7 +131,7 @@ func NewDelegatingClient(
 		}),
 	}
 	return &DelegatingClient{
-		EC2API: &ec2Client{
+		EC2Client: &ec2Client{
 			EC2API:                       nil,
 			awsEbsCsiDriverController:    awsEbsCsiDriverController,
 			cloudController:              cloudController,
@@ -162,26 +163,26 @@ func NewDelegatingClient(
 }
 
 type awsEbsCsiDriverControllerClientDelegate struct {
-	ec2Client ec2iface.EC2API
+	ec2Client awsapi.EC2API
 }
 
 type cloudControllerClientDelegate struct {
-	ec2Client                    ec2iface.EC2API
+	ec2Client                    awsapi.EC2API
 	elasticloadbalancingClient   awsapi.ELBAPI
 	elasticloadbalancingv2Client awsapi.ELBV2API
 }
 
 type cloudNetworkConfigControllerClientDelegate struct {
-	ec2Client ec2iface.EC2API
+	ec2Client awsapi.EC2API
 }
 
 type controlPlaneOperatorClientDelegate struct {
-	ec2Client     ec2iface.EC2API
+	ec2Client     awsapi.EC2API
 	route53Client awsapi.ROUTE53API
 }
 
 type nodePoolClientDelegate struct {
-	ec2Client ec2iface.EC2API
+	ec2Client awsapi.EC2API
 	sqsClient sqsiface.SQSAPI
 }
 
@@ -191,7 +192,7 @@ type openshiftImageRegistryClientDelegate struct {
 
 // DelegatingClient embeds clients for AWS services we have privileges to use with guest cluster component roles.
 type DelegatingClient struct {
-	ec2iface.EC2API
+	EC2Client     awsapi.EC2API
 	ELBClient     awsapi.ELBAPI
 	ELBV2Client   awsapi.ELBV2API
 	ROUTE53Client awsapi.ROUTE53API
@@ -202,7 +203,7 @@ type DelegatingClient struct {
 // ec2Client delegates to individual component clients for API calls we know those components will have privileges to make.
 type ec2Client struct {
 	// embedding this fulfills the interface and falls back to a panic for APIs we don't have privileges for
-	ec2iface.EC2API
+	awsapi.EC2API
 
 	awsEbsCsiDriverController    *awsEbsCsiDriverControllerClientDelegate
 	cloudController              *cloudControllerClientDelegate
@@ -211,222 +212,222 @@ type ec2Client struct {
 	nodePool                     *nodePoolClientDelegate
 }
 
-func (c *ec2Client) AttachVolumeWithContext(ctx aws.Context, input *ec2.AttachVolumeInput, opts ...request.Option) (*ec2.VolumeAttachment, error) {
-	return c.awsEbsCsiDriverController.ec2Client.AttachVolumeWithContext(ctx, input, opts...)
+func (c *ec2Client) AttachVolume(ctx context.Context, input *ec2.AttachVolumeInput, optFns ...func(*ec2.Options)) (*ec2.AttachVolumeOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.AttachVolume(ctx, input, optFns...)
 }
-func (c *ec2Client) CreateSnapshotWithContext(ctx aws.Context, input *ec2.CreateSnapshotInput, opts ...request.Option) (*ec2.Snapshot, error) {
-	return c.awsEbsCsiDriverController.ec2Client.CreateSnapshotWithContext(ctx, input, opts...)
+func (c *ec2Client) CreateSnapshot(ctx context.Context, input *ec2.CreateSnapshotInput, optFns ...func(*ec2.Options)) (*ec2.CreateSnapshotOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.CreateSnapshot(ctx, input, optFns...)
 }
-func (c *ec2Client) CreateTagsWithContext(ctx aws.Context, input *ec2.CreateTagsInput, opts ...request.Option) (*ec2.CreateTagsOutput, error) {
-	return c.awsEbsCsiDriverController.ec2Client.CreateTagsWithContext(ctx, input, opts...)
+func (c *ec2Client) CreateTags(ctx context.Context, input *ec2.CreateTagsInput, optFns ...func(*ec2.Options)) (*ec2.CreateTagsOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.CreateTags(ctx, input, optFns...)
 }
-func (c *ec2Client) CreateVolumeWithContext(ctx aws.Context, input *ec2.CreateVolumeInput, opts ...request.Option) (*ec2.Volume, error) {
-	return c.awsEbsCsiDriverController.ec2Client.CreateVolumeWithContext(ctx, input, opts...)
+func (c *ec2Client) CreateVolume(ctx context.Context, input *ec2.CreateVolumeInput, optFns ...func(*ec2.Options)) (*ec2.CreateVolumeOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.CreateVolume(ctx, input, optFns...)
 }
-func (c *ec2Client) DeleteSnapshotWithContext(ctx aws.Context, input *ec2.DeleteSnapshotInput, opts ...request.Option) (*ec2.DeleteSnapshotOutput, error) {
-	return c.awsEbsCsiDriverController.ec2Client.DeleteSnapshotWithContext(ctx, input, opts...)
+func (c *ec2Client) DeleteSnapshot(ctx context.Context, input *ec2.DeleteSnapshotInput, optFns ...func(*ec2.Options)) (*ec2.DeleteSnapshotOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.DeleteSnapshot(ctx, input, optFns...)
 }
-func (c *ec2Client) DeleteTagsWithContext(ctx aws.Context, input *ec2.DeleteTagsInput, opts ...request.Option) (*ec2.DeleteTagsOutput, error) {
-	return c.awsEbsCsiDriverController.ec2Client.DeleteTagsWithContext(ctx, input, opts...)
+func (c *ec2Client) DeleteTags(ctx context.Context, input *ec2.DeleteTagsInput, optFns ...func(*ec2.Options)) (*ec2.DeleteTagsOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.DeleteTags(ctx, input, optFns...)
 }
-func (c *ec2Client) DeleteVolumeWithContext(ctx aws.Context, input *ec2.DeleteVolumeInput, opts ...request.Option) (*ec2.DeleteVolumeOutput, error) {
-	return c.awsEbsCsiDriverController.ec2Client.DeleteVolumeWithContext(ctx, input, opts...)
+func (c *ec2Client) DeleteVolume(ctx context.Context, input *ec2.DeleteVolumeInput, optFns ...func(*ec2.Options)) (*ec2.DeleteVolumeOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.DeleteVolume(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeInstancesWithContext(ctx aws.Context, input *ec2.DescribeInstancesInput, opts ...request.Option) (*ec2.DescribeInstancesOutput, error) {
-	return c.awsEbsCsiDriverController.ec2Client.DescribeInstancesWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeInstances(ctx context.Context, input *ec2.DescribeInstancesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstancesOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.DescribeInstances(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeSnapshotsWithContext(ctx aws.Context, input *ec2.DescribeSnapshotsInput, opts ...request.Option) (*ec2.DescribeSnapshotsOutput, error) {
-	return c.awsEbsCsiDriverController.ec2Client.DescribeSnapshotsWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeSnapshots(ctx context.Context, input *ec2.DescribeSnapshotsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSnapshotsOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.DescribeSnapshots(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeTagsWithContext(ctx aws.Context, input *ec2.DescribeTagsInput, opts ...request.Option) (*ec2.DescribeTagsOutput, error) {
-	return c.awsEbsCsiDriverController.ec2Client.DescribeTagsWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeTags(ctx context.Context, input *ec2.DescribeTagsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeTagsOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.DescribeTags(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeVolumesWithContext(ctx aws.Context, input *ec2.DescribeVolumesInput, opts ...request.Option) (*ec2.DescribeVolumesOutput, error) {
-	return c.awsEbsCsiDriverController.ec2Client.DescribeVolumesWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeVolumes(ctx context.Context, input *ec2.DescribeVolumesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVolumesOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.DescribeVolumes(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeVolumesModificationsWithContext(ctx aws.Context, input *ec2.DescribeVolumesModificationsInput, opts ...request.Option) (*ec2.DescribeVolumesModificationsOutput, error) {
-	return c.awsEbsCsiDriverController.ec2Client.DescribeVolumesModificationsWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeVolumesModifications(ctx context.Context, input *ec2.DescribeVolumesModificationsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVolumesModificationsOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.DescribeVolumesModifications(ctx, input, optFns...)
 }
-func (c *ec2Client) DetachVolumeWithContext(ctx aws.Context, input *ec2.DetachVolumeInput, opts ...request.Option) (*ec2.VolumeAttachment, error) {
-	return c.awsEbsCsiDriverController.ec2Client.DetachVolumeWithContext(ctx, input, opts...)
+func (c *ec2Client) DetachVolume(ctx context.Context, input *ec2.DetachVolumeInput, optFns ...func(*ec2.Options)) (*ec2.DetachVolumeOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.DetachVolume(ctx, input, optFns...)
 }
-func (c *ec2Client) ModifyVolumeWithContext(ctx aws.Context, input *ec2.ModifyVolumeInput, opts ...request.Option) (*ec2.ModifyVolumeOutput, error) {
-	return c.awsEbsCsiDriverController.ec2Client.ModifyVolumeWithContext(ctx, input, opts...)
-}
-
-func (c *ec2Client) AuthorizeSecurityGroupIngressWithContext(ctx aws.Context, input *ec2.AuthorizeSecurityGroupIngressInput, opts ...request.Option) (*ec2.AuthorizeSecurityGroupIngressOutput, error) {
-	return c.cloudController.ec2Client.AuthorizeSecurityGroupIngressWithContext(ctx, input, opts...)
-}
-func (c *ec2Client) CreateRouteWithContext(ctx aws.Context, input *ec2.CreateRouteInput, opts ...request.Option) (*ec2.CreateRouteOutput, error) {
-	return c.cloudController.ec2Client.CreateRouteWithContext(ctx, input, opts...)
-}
-func (c *ec2Client) CreateSecurityGroupWithContext(ctx aws.Context, input *ec2.CreateSecurityGroupInput, opts ...request.Option) (*ec2.CreateSecurityGroupOutput, error) {
-	return c.cloudController.ec2Client.CreateSecurityGroupWithContext(ctx, input, opts...)
-}
-func (c *ec2Client) DeleteRouteWithContext(ctx aws.Context, input *ec2.DeleteRouteInput, opts ...request.Option) (*ec2.DeleteRouteOutput, error) {
-	return c.cloudController.ec2Client.DeleteRouteWithContext(ctx, input, opts...)
-}
-func (c *ec2Client) DeleteSecurityGroupWithContext(ctx aws.Context, input *ec2.DeleteSecurityGroupInput, opts ...request.Option) (*ec2.DeleteSecurityGroupOutput, error) {
-	return c.cloudController.ec2Client.DeleteSecurityGroupWithContext(ctx, input, opts...)
-}
-func (c *ec2Client) DescribeAvailabilityZonesWithContext(ctx aws.Context, input *ec2.DescribeAvailabilityZonesInput, opts ...request.Option) (*ec2.DescribeAvailabilityZonesOutput, error) {
-	return c.cloudController.ec2Client.DescribeAvailabilityZonesWithContext(ctx, input, opts...)
-}
-func (c *ec2Client) DescribeImagesWithContext(ctx aws.Context, input *ec2.DescribeImagesInput, opts ...request.Option) (*ec2.DescribeImagesOutput, error) {
-	return c.cloudController.ec2Client.DescribeImagesWithContext(ctx, input, opts...)
-}
-func (c *ec2Client) DescribeRegionsWithContext(ctx aws.Context, input *ec2.DescribeRegionsInput, opts ...request.Option) (*ec2.DescribeRegionsOutput, error) {
-	return c.cloudController.ec2Client.DescribeRegionsWithContext(ctx, input, opts...)
-}
-func (c *ec2Client) DescribeRouteTablesWithContext(ctx aws.Context, input *ec2.DescribeRouteTablesInput, opts ...request.Option) (*ec2.DescribeRouteTablesOutput, error) {
-	return c.cloudController.ec2Client.DescribeRouteTablesWithContext(ctx, input, opts...)
-}
-func (c *ec2Client) DescribeSecurityGroupsWithContext(ctx aws.Context, input *ec2.DescribeSecurityGroupsInput, opts ...request.Option) (*ec2.DescribeSecurityGroupsOutput, error) {
-	return c.cloudController.ec2Client.DescribeSecurityGroupsWithContext(ctx, input, opts...)
-}
-func (c *ec2Client) DescribeSubnetsWithContext(ctx aws.Context, input *ec2.DescribeSubnetsInput, opts ...request.Option) (*ec2.DescribeSubnetsOutput, error) {
-	return c.cloudController.ec2Client.DescribeSubnetsWithContext(ctx, input, opts...)
-}
-func (c *ec2Client) DescribeVpcsWithContext(ctx aws.Context, input *ec2.DescribeVpcsInput, opts ...request.Option) (*ec2.DescribeVpcsOutput, error) {
-	return c.cloudController.ec2Client.DescribeVpcsWithContext(ctx, input, opts...)
-}
-func (c *ec2Client) ModifyInstanceAttributeWithContext(ctx aws.Context, input *ec2.ModifyInstanceAttributeInput, opts ...request.Option) (*ec2.ModifyInstanceAttributeOutput, error) {
-	return c.cloudController.ec2Client.ModifyInstanceAttributeWithContext(ctx, input, opts...)
-}
-func (c *ec2Client) RevokeSecurityGroupIngressWithContext(ctx aws.Context, input *ec2.RevokeSecurityGroupIngressInput, opts ...request.Option) (*ec2.RevokeSecurityGroupIngressOutput, error) {
-	return c.cloudController.ec2Client.RevokeSecurityGroupIngressWithContext(ctx, input, opts...)
+func (c *ec2Client) ModifyVolume(ctx context.Context, input *ec2.ModifyVolumeInput, optFns ...func(*ec2.Options)) (*ec2.ModifyVolumeOutput, error) {
+	return c.awsEbsCsiDriverController.ec2Client.ModifyVolume(ctx, input, optFns...)
 }
 
-func (c *ec2Client) AssignIpv6AddressesWithContext(ctx aws.Context, input *ec2.AssignIpv6AddressesInput, opts ...request.Option) (*ec2.AssignIpv6AddressesOutput, error) {
-	return c.cloudNetworkConfigController.ec2Client.AssignIpv6AddressesWithContext(ctx, input, opts...)
+func (c *ec2Client) AuthorizeSecurityGroupIngress(ctx context.Context, input *ec2.AuthorizeSecurityGroupIngressInput, optFns ...func(*ec2.Options)) (*ec2.AuthorizeSecurityGroupIngressOutput, error) {
+	return c.cloudController.ec2Client.AuthorizeSecurityGroupIngress(ctx, input, optFns...)
 }
-func (c *ec2Client) AssignPrivateIpAddressesWithContext(ctx aws.Context, input *ec2.AssignPrivateIpAddressesInput, opts ...request.Option) (*ec2.AssignPrivateIpAddressesOutput, error) {
-	return c.cloudNetworkConfigController.ec2Client.AssignPrivateIpAddressesWithContext(ctx, input, opts...)
+func (c *ec2Client) CreateRoute(ctx context.Context, input *ec2.CreateRouteInput, optFns ...func(*ec2.Options)) (*ec2.CreateRouteOutput, error) {
+	return c.cloudController.ec2Client.CreateRoute(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeInstanceStatusWithContext(ctx aws.Context, input *ec2.DescribeInstanceStatusInput, opts ...request.Option) (*ec2.DescribeInstanceStatusOutput, error) {
-	return c.cloudNetworkConfigController.ec2Client.DescribeInstanceStatusWithContext(ctx, input, opts...)
+func (c *ec2Client) CreateSecurityGroup(ctx context.Context, input *ec2.CreateSecurityGroupInput, optFns ...func(*ec2.Options)) (*ec2.CreateSecurityGroupOutput, error) {
+	return c.cloudController.ec2Client.CreateSecurityGroup(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeInstanceTypesWithContext(ctx aws.Context, input *ec2.DescribeInstanceTypesInput, opts ...request.Option) (*ec2.DescribeInstanceTypesOutput, error) {
-	return c.cloudNetworkConfigController.ec2Client.DescribeInstanceTypesWithContext(ctx, input, opts...)
+func (c *ec2Client) DeleteRoute(ctx context.Context, input *ec2.DeleteRouteInput, optFns ...func(*ec2.Options)) (*ec2.DeleteRouteOutput, error) {
+	return c.cloudController.ec2Client.DeleteRoute(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeNetworkInterfacesWithContext(ctx aws.Context, input *ec2.DescribeNetworkInterfacesInput, opts ...request.Option) (*ec2.DescribeNetworkInterfacesOutput, error) {
-	return c.cloudNetworkConfigController.ec2Client.DescribeNetworkInterfacesWithContext(ctx, input, opts...)
+func (c *ec2Client) DeleteSecurityGroup(ctx context.Context, input *ec2.DeleteSecurityGroupInput, optFns ...func(*ec2.Options)) (*ec2.DeleteSecurityGroupOutput, error) {
+	return c.cloudController.ec2Client.DeleteSecurityGroup(ctx, input, optFns...)
 }
-func (c *ec2Client) UnassignIpv6AddressesWithContext(ctx aws.Context, input *ec2.UnassignIpv6AddressesInput, opts ...request.Option) (*ec2.UnassignIpv6AddressesOutput, error) {
-	return c.cloudNetworkConfigController.ec2Client.UnassignIpv6AddressesWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeAvailabilityZones(ctx context.Context, input *ec2.DescribeAvailabilityZonesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAvailabilityZonesOutput, error) {
+	return c.cloudController.ec2Client.DescribeAvailabilityZones(ctx, input, optFns...)
 }
-func (c *ec2Client) UnassignPrivateIpAddressesWithContext(ctx aws.Context, input *ec2.UnassignPrivateIpAddressesInput, opts ...request.Option) (*ec2.UnassignPrivateIpAddressesOutput, error) {
-	return c.cloudNetworkConfigController.ec2Client.UnassignPrivateIpAddressesWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeImages(ctx context.Context, input *ec2.DescribeImagesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeImagesOutput, error) {
+	return c.cloudController.ec2Client.DescribeImages(ctx, input, optFns...)
+}
+func (c *ec2Client) DescribeRegions(ctx context.Context, input *ec2.DescribeRegionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeRegionsOutput, error) {
+	return c.cloudController.ec2Client.DescribeRegions(ctx, input, optFns...)
+}
+func (c *ec2Client) DescribeRouteTables(ctx context.Context, input *ec2.DescribeRouteTablesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeRouteTablesOutput, error) {
+	return c.cloudController.ec2Client.DescribeRouteTables(ctx, input, optFns...)
+}
+func (c *ec2Client) DescribeSecurityGroups(ctx context.Context, input *ec2.DescribeSecurityGroupsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSecurityGroupsOutput, error) {
+	return c.cloudController.ec2Client.DescribeSecurityGroups(ctx, input, optFns...)
+}
+func (c *ec2Client) DescribeSubnets(ctx context.Context, input *ec2.DescribeSubnetsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeSubnetsOutput, error) {
+	return c.cloudController.ec2Client.DescribeSubnets(ctx, input, optFns...)
+}
+func (c *ec2Client) DescribeVpcs(ctx context.Context, input *ec2.DescribeVpcsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVpcsOutput, error) {
+	return c.cloudController.ec2Client.DescribeVpcs(ctx, input, optFns...)
+}
+func (c *ec2Client) ModifyInstanceAttribute(ctx context.Context, input *ec2.ModifyInstanceAttributeInput, optFns ...func(*ec2.Options)) (*ec2.ModifyInstanceAttributeOutput, error) {
+	return c.cloudController.ec2Client.ModifyInstanceAttribute(ctx, input, optFns...)
+}
+func (c *ec2Client) RevokeSecurityGroupIngress(ctx context.Context, input *ec2.RevokeSecurityGroupIngressInput, optFns ...func(*ec2.Options)) (*ec2.RevokeSecurityGroupIngressOutput, error) {
+	return c.cloudController.ec2Client.RevokeSecurityGroupIngress(ctx, input, optFns...)
 }
 
-func (c *ec2Client) AuthorizeSecurityGroupEgressWithContext(ctx aws.Context, input *ec2.AuthorizeSecurityGroupEgressInput, opts ...request.Option) (*ec2.AuthorizeSecurityGroupEgressOutput, error) {
-	return c.controlPlaneOperator.ec2Client.AuthorizeSecurityGroupEgressWithContext(ctx, input, opts...)
+func (c *ec2Client) AssignIpv6Addresses(ctx context.Context, input *ec2.AssignIpv6AddressesInput, optFns ...func(*ec2.Options)) (*ec2.AssignIpv6AddressesOutput, error) {
+	return c.cloudNetworkConfigController.ec2Client.AssignIpv6Addresses(ctx, input, optFns...)
 }
-func (c *ec2Client) CreateVpcEndpointWithContext(ctx aws.Context, input *ec2.CreateVpcEndpointInput, opts ...request.Option) (*ec2.CreateVpcEndpointOutput, error) {
-	return c.controlPlaneOperator.ec2Client.CreateVpcEndpointWithContext(ctx, input, opts...)
+func (c *ec2Client) AssignPrivateIpAddresses(ctx context.Context, input *ec2.AssignPrivateIpAddressesInput, optFns ...func(*ec2.Options)) (*ec2.AssignPrivateIpAddressesOutput, error) {
+	return c.cloudNetworkConfigController.ec2Client.AssignPrivateIpAddresses(ctx, input, optFns...)
 }
-func (c *ec2Client) DeleteVpcEndpointsWithContext(ctx aws.Context, input *ec2.DeleteVpcEndpointsInput, opts ...request.Option) (*ec2.DeleteVpcEndpointsOutput, error) {
-	return c.controlPlaneOperator.ec2Client.DeleteVpcEndpointsWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeInstanceStatus(ctx context.Context, input *ec2.DescribeInstanceStatusInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstanceStatusOutput, error) {
+	return c.cloudNetworkConfigController.ec2Client.DescribeInstanceStatus(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeVpcEndpointsWithContext(ctx aws.Context, input *ec2.DescribeVpcEndpointsInput, opts ...request.Option) (*ec2.DescribeVpcEndpointsOutput, error) {
-	return c.controlPlaneOperator.ec2Client.DescribeVpcEndpointsWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeInstanceTypes(ctx context.Context, input *ec2.DescribeInstanceTypesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInstanceTypesOutput, error) {
+	return c.cloudNetworkConfigController.ec2Client.DescribeInstanceTypes(ctx, input, optFns...)
 }
-func (c *ec2Client) ModifyVpcEndpointWithContext(ctx aws.Context, input *ec2.ModifyVpcEndpointInput, opts ...request.Option) (*ec2.ModifyVpcEndpointOutput, error) {
-	return c.controlPlaneOperator.ec2Client.ModifyVpcEndpointWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeNetworkInterfaces(ctx context.Context, input *ec2.DescribeNetworkInterfacesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfacesOutput, error) {
+	return c.cloudNetworkConfigController.ec2Client.DescribeNetworkInterfaces(ctx, input, optFns...)
 }
-func (c *ec2Client) RevokeSecurityGroupEgressWithContext(ctx aws.Context, input *ec2.RevokeSecurityGroupEgressInput, opts ...request.Option) (*ec2.RevokeSecurityGroupEgressOutput, error) {
-	return c.controlPlaneOperator.ec2Client.RevokeSecurityGroupEgressWithContext(ctx, input, opts...)
+func (c *ec2Client) UnassignIpv6Addresses(ctx context.Context, input *ec2.UnassignIpv6AddressesInput, optFns ...func(*ec2.Options)) (*ec2.UnassignIpv6AddressesOutput, error) {
+	return c.cloudNetworkConfigController.ec2Client.UnassignIpv6Addresses(ctx, input, optFns...)
+}
+func (c *ec2Client) UnassignPrivateIpAddresses(ctx context.Context, input *ec2.UnassignPrivateIpAddressesInput, optFns ...func(*ec2.Options)) (*ec2.UnassignPrivateIpAddressesOutput, error) {
+	return c.cloudNetworkConfigController.ec2Client.UnassignPrivateIpAddresses(ctx, input, optFns...)
 }
 
-func (c *ec2Client) AssociateRouteTableWithContext(ctx aws.Context, input *ec2.AssociateRouteTableInput, opts ...request.Option) (*ec2.AssociateRouteTableOutput, error) {
-	return c.nodePool.ec2Client.AssociateRouteTableWithContext(ctx, input, opts...)
+func (c *ec2Client) AuthorizeSecurityGroupEgress(ctx context.Context, input *ec2.AuthorizeSecurityGroupEgressInput, optFns ...func(*ec2.Options)) (*ec2.AuthorizeSecurityGroupEgressOutput, error) {
+	return c.controlPlaneOperator.ec2Client.AuthorizeSecurityGroupEgress(ctx, input, optFns...)
 }
-func (c *ec2Client) AttachInternetGatewayWithContext(ctx aws.Context, input *ec2.AttachInternetGatewayInput, opts ...request.Option) (*ec2.AttachInternetGatewayOutput, error) {
-	return c.nodePool.ec2Client.AttachInternetGatewayWithContext(ctx, input, opts...)
+func (c *ec2Client) CreateVpcEndpoint(ctx context.Context, input *ec2.CreateVpcEndpointInput, optFns ...func(*ec2.Options)) (*ec2.CreateVpcEndpointOutput, error) {
+	return c.controlPlaneOperator.ec2Client.CreateVpcEndpoint(ctx, input, optFns...)
 }
-func (c *ec2Client) CreateInternetGatewayWithContext(ctx aws.Context, input *ec2.CreateInternetGatewayInput, opts ...request.Option) (*ec2.CreateInternetGatewayOutput, error) {
-	return c.nodePool.ec2Client.CreateInternetGatewayWithContext(ctx, input, opts...)
+func (c *ec2Client) DeleteVpcEndpoints(ctx context.Context, input *ec2.DeleteVpcEndpointsInput, optFns ...func(*ec2.Options)) (*ec2.DeleteVpcEndpointsOutput, error) {
+	return c.controlPlaneOperator.ec2Client.DeleteVpcEndpoints(ctx, input, optFns...)
 }
-func (c *ec2Client) CreateLaunchTemplateWithContext(ctx aws.Context, input *ec2.CreateLaunchTemplateInput, opts ...request.Option) (*ec2.CreateLaunchTemplateOutput, error) {
-	return c.nodePool.ec2Client.CreateLaunchTemplateWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeVpcEndpoints(ctx context.Context, input *ec2.DescribeVpcEndpointsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVpcEndpointsOutput, error) {
+	return c.controlPlaneOperator.ec2Client.DescribeVpcEndpoints(ctx, input, optFns...)
 }
-func (c *ec2Client) CreateLaunchTemplateVersionWithContext(ctx aws.Context, input *ec2.CreateLaunchTemplateVersionInput, opts ...request.Option) (*ec2.CreateLaunchTemplateVersionOutput, error) {
-	return c.nodePool.ec2Client.CreateLaunchTemplateVersionWithContext(ctx, input, opts...)
+func (c *ec2Client) ModifyVpcEndpoint(ctx context.Context, input *ec2.ModifyVpcEndpointInput, optFns ...func(*ec2.Options)) (*ec2.ModifyVpcEndpointOutput, error) {
+	return c.controlPlaneOperator.ec2Client.ModifyVpcEndpoint(ctx, input, optFns...)
 }
-func (c *ec2Client) CreateNatGatewayWithContext(ctx aws.Context, input *ec2.CreateNatGatewayInput, opts ...request.Option) (*ec2.CreateNatGatewayOutput, error) {
-	return c.nodePool.ec2Client.CreateNatGatewayWithContext(ctx, input, opts...)
+func (c *ec2Client) RevokeSecurityGroupEgress(ctx context.Context, input *ec2.RevokeSecurityGroupEgressInput, optFns ...func(*ec2.Options)) (*ec2.RevokeSecurityGroupEgressOutput, error) {
+	return c.controlPlaneOperator.ec2Client.RevokeSecurityGroupEgress(ctx, input, optFns...)
 }
-func (c *ec2Client) CreateRouteTableWithContext(ctx aws.Context, input *ec2.CreateRouteTableInput, opts ...request.Option) (*ec2.CreateRouteTableOutput, error) {
-	return c.nodePool.ec2Client.CreateRouteTableWithContext(ctx, input, opts...)
+
+func (c *ec2Client) AssociateRouteTable(ctx context.Context, input *ec2.AssociateRouteTableInput, optFns ...func(*ec2.Options)) (*ec2.AssociateRouteTableOutput, error) {
+	return c.nodePool.ec2Client.AssociateRouteTable(ctx, input, optFns...)
 }
-func (c *ec2Client) CreateSubnetWithContext(ctx aws.Context, input *ec2.CreateSubnetInput, opts ...request.Option) (*ec2.CreateSubnetOutput, error) {
-	return c.nodePool.ec2Client.CreateSubnetWithContext(ctx, input, opts...)
+func (c *ec2Client) AttachInternetGateway(ctx context.Context, input *ec2.AttachInternetGatewayInput, optFns ...func(*ec2.Options)) (*ec2.AttachInternetGatewayOutput, error) {
+	return c.nodePool.ec2Client.AttachInternetGateway(ctx, input, optFns...)
 }
-func (c *ec2Client) DeleteInternetGatewayWithContext(ctx aws.Context, input *ec2.DeleteInternetGatewayInput, opts ...request.Option) (*ec2.DeleteInternetGatewayOutput, error) {
-	return c.nodePool.ec2Client.DeleteInternetGatewayWithContext(ctx, input, opts...)
+func (c *ec2Client) CreateInternetGateway(ctx context.Context, input *ec2.CreateInternetGatewayInput, optFns ...func(*ec2.Options)) (*ec2.CreateInternetGatewayOutput, error) {
+	return c.nodePool.ec2Client.CreateInternetGateway(ctx, input, optFns...)
 }
-func (c *ec2Client) DeleteLaunchTemplateWithContext(ctx aws.Context, input *ec2.DeleteLaunchTemplateInput, opts ...request.Option) (*ec2.DeleteLaunchTemplateOutput, error) {
-	return c.nodePool.ec2Client.DeleteLaunchTemplateWithContext(ctx, input, opts...)
+func (c *ec2Client) CreateLaunchTemplate(ctx context.Context, input *ec2.CreateLaunchTemplateInput, optFns ...func(*ec2.Options)) (*ec2.CreateLaunchTemplateOutput, error) {
+	return c.nodePool.ec2Client.CreateLaunchTemplate(ctx, input, optFns...)
 }
-func (c *ec2Client) DeleteLaunchTemplateVersionsWithContext(ctx aws.Context, input *ec2.DeleteLaunchTemplateVersionsInput, opts ...request.Option) (*ec2.DeleteLaunchTemplateVersionsOutput, error) {
-	return c.nodePool.ec2Client.DeleteLaunchTemplateVersionsWithContext(ctx, input, opts...)
+func (c *ec2Client) CreateLaunchTemplateVersion(ctx context.Context, input *ec2.CreateLaunchTemplateVersionInput, optFns ...func(*ec2.Options)) (*ec2.CreateLaunchTemplateVersionOutput, error) {
+	return c.nodePool.ec2Client.CreateLaunchTemplateVersion(ctx, input, optFns...)
 }
-func (c *ec2Client) DeleteNatGatewayWithContext(ctx aws.Context, input *ec2.DeleteNatGatewayInput, opts ...request.Option) (*ec2.DeleteNatGatewayOutput, error) {
-	return c.nodePool.ec2Client.DeleteNatGatewayWithContext(ctx, input, opts...)
+func (c *ec2Client) CreateNatGateway(ctx context.Context, input *ec2.CreateNatGatewayInput, optFns ...func(*ec2.Options)) (*ec2.CreateNatGatewayOutput, error) {
+	return c.nodePool.ec2Client.CreateNatGateway(ctx, input, optFns...)
 }
-func (c *ec2Client) DeleteRouteTableWithContext(ctx aws.Context, input *ec2.DeleteRouteTableInput, opts ...request.Option) (*ec2.DeleteRouteTableOutput, error) {
-	return c.nodePool.ec2Client.DeleteRouteTableWithContext(ctx, input, opts...)
+func (c *ec2Client) CreateRouteTable(ctx context.Context, input *ec2.CreateRouteTableInput, optFns ...func(*ec2.Options)) (*ec2.CreateRouteTableOutput, error) {
+	return c.nodePool.ec2Client.CreateRouteTable(ctx, input, optFns...)
 }
-func (c *ec2Client) DeleteSubnetWithContext(ctx aws.Context, input *ec2.DeleteSubnetInput, opts ...request.Option) (*ec2.DeleteSubnetOutput, error) {
-	return c.nodePool.ec2Client.DeleteSubnetWithContext(ctx, input, opts...)
+func (c *ec2Client) CreateSubnet(ctx context.Context, input *ec2.CreateSubnetInput, optFns ...func(*ec2.Options)) (*ec2.CreateSubnetOutput, error) {
+	return c.nodePool.ec2Client.CreateSubnet(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeAccountAttributesWithContext(ctx aws.Context, input *ec2.DescribeAccountAttributesInput, opts ...request.Option) (*ec2.DescribeAccountAttributesOutput, error) {
-	return c.nodePool.ec2Client.DescribeAccountAttributesWithContext(ctx, input, opts...)
+func (c *ec2Client) DeleteInternetGateway(ctx context.Context, input *ec2.DeleteInternetGatewayInput, optFns ...func(*ec2.Options)) (*ec2.DeleteInternetGatewayOutput, error) {
+	return c.nodePool.ec2Client.DeleteInternetGateway(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeAddressesWithContext(ctx aws.Context, input *ec2.DescribeAddressesInput, opts ...request.Option) (*ec2.DescribeAddressesOutput, error) {
-	return c.nodePool.ec2Client.DescribeAddressesWithContext(ctx, input, opts...)
+func (c *ec2Client) DeleteLaunchTemplate(ctx context.Context, input *ec2.DeleteLaunchTemplateInput, optFns ...func(*ec2.Options)) (*ec2.DeleteLaunchTemplateOutput, error) {
+	return c.nodePool.ec2Client.DeleteLaunchTemplate(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeDhcpOptionsWithContext(ctx aws.Context, input *ec2.DescribeDhcpOptionsInput, opts ...request.Option) (*ec2.DescribeDhcpOptionsOutput, error) {
-	return c.nodePool.ec2Client.DescribeDhcpOptionsWithContext(ctx, input, opts...)
+func (c *ec2Client) DeleteLaunchTemplateVersions(ctx context.Context, input *ec2.DeleteLaunchTemplateVersionsInput, optFns ...func(*ec2.Options)) (*ec2.DeleteLaunchTemplateVersionsOutput, error) {
+	return c.nodePool.ec2Client.DeleteLaunchTemplateVersions(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeInternetGatewaysWithContext(ctx aws.Context, input *ec2.DescribeInternetGatewaysInput, opts ...request.Option) (*ec2.DescribeInternetGatewaysOutput, error) {
-	return c.nodePool.ec2Client.DescribeInternetGatewaysWithContext(ctx, input, opts...)
+func (c *ec2Client) DeleteNatGateway(ctx context.Context, input *ec2.DeleteNatGatewayInput, optFns ...func(*ec2.Options)) (*ec2.DeleteNatGatewayOutput, error) {
+	return c.nodePool.ec2Client.DeleteNatGateway(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeLaunchTemplateVersionsWithContext(ctx aws.Context, input *ec2.DescribeLaunchTemplateVersionsInput, opts ...request.Option) (*ec2.DescribeLaunchTemplateVersionsOutput, error) {
-	return c.nodePool.ec2Client.DescribeLaunchTemplateVersionsWithContext(ctx, input, opts...)
+func (c *ec2Client) DeleteRouteTable(ctx context.Context, input *ec2.DeleteRouteTableInput, optFns ...func(*ec2.Options)) (*ec2.DeleteRouteTableOutput, error) {
+	return c.nodePool.ec2Client.DeleteRouteTable(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeLaunchTemplatesWithContext(ctx aws.Context, input *ec2.DescribeLaunchTemplatesInput, opts ...request.Option) (*ec2.DescribeLaunchTemplatesOutput, error) {
-	return c.nodePool.ec2Client.DescribeLaunchTemplatesWithContext(ctx, input, opts...)
+func (c *ec2Client) DeleteSubnet(ctx context.Context, input *ec2.DeleteSubnetInput, optFns ...func(*ec2.Options)) (*ec2.DeleteSubnetOutput, error) {
+	return c.nodePool.ec2Client.DeleteSubnet(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeNatGatewaysWithContext(ctx aws.Context, input *ec2.DescribeNatGatewaysInput, opts ...request.Option) (*ec2.DescribeNatGatewaysOutput, error) {
-	return c.nodePool.ec2Client.DescribeNatGatewaysWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeAccountAttributes(ctx context.Context, input *ec2.DescribeAccountAttributesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAccountAttributesOutput, error) {
+	return c.nodePool.ec2Client.DescribeAccountAttributes(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeNetworkInterfaceAttributeWithContext(ctx aws.Context, input *ec2.DescribeNetworkInterfaceAttributeInput, opts ...request.Option) (*ec2.DescribeNetworkInterfaceAttributeOutput, error) {
-	return c.nodePool.ec2Client.DescribeNetworkInterfaceAttributeWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeAddresses(ctx context.Context, input *ec2.DescribeAddressesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeAddressesOutput, error) {
+	return c.nodePool.ec2Client.DescribeAddresses(ctx, input, optFns...)
 }
-func (c *ec2Client) DescribeVpcAttributeWithContext(ctx aws.Context, input *ec2.DescribeVpcAttributeInput, opts ...request.Option) (*ec2.DescribeVpcAttributeOutput, error) {
-	return c.nodePool.ec2Client.DescribeVpcAttributeWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeDhcpOptions(ctx context.Context, input *ec2.DescribeDhcpOptionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeDhcpOptionsOutput, error) {
+	return c.nodePool.ec2Client.DescribeDhcpOptions(ctx, input, optFns...)
 }
-func (c *ec2Client) DetachInternetGatewayWithContext(ctx aws.Context, input *ec2.DetachInternetGatewayInput, opts ...request.Option) (*ec2.DetachInternetGatewayOutput, error) {
-	return c.nodePool.ec2Client.DetachInternetGatewayWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeInternetGateways(ctx context.Context, input *ec2.DescribeInternetGatewaysInput, optFns ...func(*ec2.Options)) (*ec2.DescribeInternetGatewaysOutput, error) {
+	return c.nodePool.ec2Client.DescribeInternetGateways(ctx, input, optFns...)
 }
-func (c *ec2Client) DisassociateAddressWithContext(ctx aws.Context, input *ec2.DisassociateAddressInput, opts ...request.Option) (*ec2.DisassociateAddressOutput, error) {
-	return c.nodePool.ec2Client.DisassociateAddressWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeLaunchTemplateVersions(ctx context.Context, input *ec2.DescribeLaunchTemplateVersionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplateVersionsOutput, error) {
+	return c.nodePool.ec2Client.DescribeLaunchTemplateVersions(ctx, input, optFns...)
 }
-func (c *ec2Client) DisassociateRouteTableWithContext(ctx aws.Context, input *ec2.DisassociateRouteTableInput, opts ...request.Option) (*ec2.DisassociateRouteTableOutput, error) {
-	return c.nodePool.ec2Client.DisassociateRouteTableWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeLaunchTemplates(ctx context.Context, input *ec2.DescribeLaunchTemplatesInput, optFns ...func(*ec2.Options)) (*ec2.DescribeLaunchTemplatesOutput, error) {
+	return c.nodePool.ec2Client.DescribeLaunchTemplates(ctx, input, optFns...)
 }
-func (c *ec2Client) ModifyNetworkInterfaceAttributeWithContext(ctx aws.Context, input *ec2.ModifyNetworkInterfaceAttributeInput, opts ...request.Option) (*ec2.ModifyNetworkInterfaceAttributeOutput, error) {
-	return c.nodePool.ec2Client.ModifyNetworkInterfaceAttributeWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeNatGateways(ctx context.Context, input *ec2.DescribeNatGatewaysInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNatGatewaysOutput, error) {
+	return c.nodePool.ec2Client.DescribeNatGateways(ctx, input, optFns...)
 }
-func (c *ec2Client) ModifySubnetAttributeWithContext(ctx aws.Context, input *ec2.ModifySubnetAttributeInput, opts ...request.Option) (*ec2.ModifySubnetAttributeOutput, error) {
-	return c.nodePool.ec2Client.ModifySubnetAttributeWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeNetworkInterfaceAttribute(ctx context.Context, input *ec2.DescribeNetworkInterfaceAttributeInput, optFns ...func(*ec2.Options)) (*ec2.DescribeNetworkInterfaceAttributeOutput, error) {
+	return c.nodePool.ec2Client.DescribeNetworkInterfaceAttribute(ctx, input, optFns...)
 }
-func (c *ec2Client) RunInstancesWithContext(ctx aws.Context, input *ec2.RunInstancesInput, opts ...request.Option) (*ec2.Reservation, error) {
-	return c.nodePool.ec2Client.RunInstancesWithContext(ctx, input, opts...)
+func (c *ec2Client) DescribeVpcAttribute(ctx context.Context, input *ec2.DescribeVpcAttributeInput, optFns ...func(*ec2.Options)) (*ec2.DescribeVpcAttributeOutput, error) {
+	return c.nodePool.ec2Client.DescribeVpcAttribute(ctx, input, optFns...)
 }
-func (c *ec2Client) TerminateInstancesWithContext(ctx aws.Context, input *ec2.TerminateInstancesInput, opts ...request.Option) (*ec2.TerminateInstancesOutput, error) {
-	return c.nodePool.ec2Client.TerminateInstancesWithContext(ctx, input, opts...)
+func (c *ec2Client) DetachInternetGateway(ctx context.Context, input *ec2.DetachInternetGatewayInput, optFns ...func(*ec2.Options)) (*ec2.DetachInternetGatewayOutput, error) {
+	return c.nodePool.ec2Client.DetachInternetGateway(ctx, input, optFns...)
+}
+func (c *ec2Client) DisassociateAddress(ctx context.Context, input *ec2.DisassociateAddressInput, optFns ...func(*ec2.Options)) (*ec2.DisassociateAddressOutput, error) {
+	return c.nodePool.ec2Client.DisassociateAddress(ctx, input, optFns...)
+}
+func (c *ec2Client) DisassociateRouteTable(ctx context.Context, input *ec2.DisassociateRouteTableInput, optFns ...func(*ec2.Options)) (*ec2.DisassociateRouteTableOutput, error) {
+	return c.nodePool.ec2Client.DisassociateRouteTable(ctx, input, optFns...)
+}
+func (c *ec2Client) ModifyNetworkInterfaceAttribute(ctx context.Context, input *ec2.ModifyNetworkInterfaceAttributeInput, optFns ...func(*ec2.Options)) (*ec2.ModifyNetworkInterfaceAttributeOutput, error) {
+	return c.nodePool.ec2Client.ModifyNetworkInterfaceAttribute(ctx, input, optFns...)
+}
+func (c *ec2Client) ModifySubnetAttribute(ctx context.Context, input *ec2.ModifySubnetAttributeInput, optFns ...func(*ec2.Options)) (*ec2.ModifySubnetAttributeOutput, error) {
+	return c.nodePool.ec2Client.ModifySubnetAttribute(ctx, input, optFns...)
+}
+func (c *ec2Client) RunInstances(ctx context.Context, input *ec2.RunInstancesInput, optFns ...func(*ec2.Options)) (*ec2.RunInstancesOutput, error) {
+	return c.nodePool.ec2Client.RunInstances(ctx, input, optFns...)
+}
+func (c *ec2Client) TerminateInstances(ctx context.Context, input *ec2.TerminateInstancesInput, optFns ...func(*ec2.Options)) (*ec2.TerminateInstancesOutput, error) {
+	return c.nodePool.ec2Client.TerminateInstances(ctx, input, optFns...)
 }
 
 // elasticloadbalancingClient delegates to individual component clients for API calls we know those components will have privileges to make.

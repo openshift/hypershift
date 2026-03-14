@@ -11,8 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	"github.com/blang/semver"
 	. "github.com/onsi/gomega"
@@ -375,8 +374,8 @@ func TestKarpenter(t *testing.T) {
 				t.Logf("Checking instance profile for node %s (instance %s)", node.Name, instanceID)
 
 				// Get EC2 instance details
-				result, err := ec2client.DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
-					InstanceIds: []*string{aws.String(instanceID)},
+				result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+					InstanceIds: []string{instanceID},
 				})
 				g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance")
 				g.Expect(result.Reservations).NotTo(BeEmpty(), "expected at least one reservation")
