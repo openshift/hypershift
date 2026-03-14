@@ -1,6 +1,7 @@
 package ingressoperator
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
@@ -38,6 +39,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 			)
 		}
 	})
+
+	if cpContext.HCP.Spec.Platform.Type == hyperv1.AWSPlatform && cpContext.HCP.Spec.AdditionalTrustBundle != nil {
+		util.DeploymentAddAWSCABundleVolume(cpContext.HCP.Spec.AdditionalTrustBundle, deployment)
+	}
 
 	return nil
 }

@@ -1,6 +1,7 @@
 package capiprovider
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/proxy"
 	"github.com/openshift/hypershift/support/util"
@@ -19,6 +20,10 @@ func (capi *CAPIProviderOptions) adaptDeployment(cpContext component.WorkloadCon
 	deployment.Spec.Template.Spec.ServiceAccountName = "capi-provider"
 
 	proxy.SetEnvVars(&deployment.Spec.Template.Spec.Containers[0].Env)
+
+	if cpContext.HCP.Spec.Platform.Type == hyperv1.AWSPlatform && cpContext.HCP.Spec.AdditionalTrustBundle != nil {
+		util.DeploymentAddAWSCABundleVolume(cpContext.HCP.Spec.AdditionalTrustBundle, deployment)
+	}
 
 	if deployment.Annotations == nil {
 		deployment.Annotations = make(map[string]string)
