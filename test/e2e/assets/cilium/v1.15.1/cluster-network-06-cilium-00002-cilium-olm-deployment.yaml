@@ -31,28 +31,26 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
             - name: RELATED_IMAGE_CILIUM
-              value: quay.io/cilium/cilium@sha256:d3b287029755b6a47dee01420e2ea469469f1b174a2089c10af7e5e9289ef05b
+              value: quay.io/cilium/cilium@sha256:351d6685dc6f6ffbcd5451043167cfa8842c6decf80d8c8e426a417c73fb56d4
             - name: RELATED_IMAGE_HUBBLE_RELAY
-              value: quay.io/cilium/hubble-relay@sha256:dbef89f924a927043d02b40c18e417c1ea0e8f58b44523b80fef7e3652db24d4
+              value: quay.io/cilium/hubble-relay@sha256:3254aaf85064bc1567e8ce01ad634b6dd269e91858c83be99e47e685d4bb8012
             - name: RELATED_IMAGE_CILIUM_OPERATOR
-              value: quay.io/cilium/operator-generic@sha256:303f9076bdc73b3fc32aaedee64a14f6f44c8bb08ee9e3956d443021103ebe7a
+              value: quay.io/cilium/operator-generic@sha256:819c7281f5a4f25ee1ce2ec4c76b6fbc69a660c68b7825e9580b1813833fa743
             - name: RELATED_IMAGE_PREFLIGHT
-              value: quay.io/cilium/cilium@sha256:d3b287029755b6a47dee01420e2ea469469f1b174a2089c10af7e5e9289ef05b
+              value: quay.io/cilium/cilium@sha256:351d6685dc6f6ffbcd5451043167cfa8842c6decf80d8c8e426a417c73fb56d4
             - name: RELATED_IMAGE_CLUSTERMESH
-              value: quay.io/cilium/clustermesh-apiserver@sha256:7eaa35cf5452c43b1f7d0cde0d707823ae7e49965bcb54c053e31ea4e04c3d96
+              value: quay.io/cilium/clustermesh-apiserver@sha256:b353badd255c2ce47eaa8f394ee4cbf70666773d7294bd887693e0c33503dc37
             - name: RELATED_IMAGE_CERTGEN
               value: quay.io/cilium/certgen@sha256:f09fccb919d157fc0a83de20011738192a606250c0ee3238e3610b6cb06c0981
             - name: RELATED_IMAGE_HUBBLE_UI_BE
-              value: quay.io/cilium/hubble-ui-backend@sha256:f88a73a120521eeafbcdbd908f517117f6557bf61e115847853fac371f0d774c
+              value: quay.io/cilium/hubble-ui-backend@sha256:6a396a3674b7d90ff8c408a2e13bc70b7871431bddd63da57afcdeea1d77d27c
             - name: RELATED_IMAGE_HUBBLE_UI_FE
-              value: quay.io/cilium/hubble-ui@sha256:e15af59a2ded739e420be82de6cbdd0ce22f8d3f00e3a10b3d2d2734e074a394
+              value: quay.io/cilium/hubble-ui@sha256:cc0d4f6f610409707566087895062ac40960d667dd79e4f33a4f0f393758fc1e
             - name: RELATED_IMAGE_ETCD_OPERATOR
               value: quay.io/cilium/cilium-etcd-operator@sha256:04b8327f7f992693c2cb483b999041ed8f92efc8e14f2a5f3ab95574a65ea2dc
             - name: RELATED_IMAGE_NODEINIT
               value: quay.io/cilium/startup-script@sha256:a1454ca1f93b69ecd2c43482c8e13dc418ae15e28a46009f5934300a20afbdba
-            - name: RELATED_IMAGE_CLUSTERMESH_ETCD
-              value: quay.io/coreos/etcd@sha256:a67fb152d4c53223e96e818420c37f11d05c2d92cf62c05ca5604066c37295e9
-          image: registry.connect.redhat.com/isovalent/cilium-olm:7750223f8f7aba7be99f428c46e6cc91ff9d8145-v1.14.5
+          image: registry.connect.redhat.com/isovalent/cilium-olm@sha256:9ab6be29447125e886300e9258b9a06bedf0a9d87405832aa8b6565ed1ba4215
           name: operator
           ports:
             - containerPort: 9443
