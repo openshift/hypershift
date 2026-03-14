@@ -705,6 +705,11 @@ func isCancelCalled(cancelValue ssa.Value, allFuncs []*ssa.Function) bool {
 					if isCancelCalledViaStructField(fa, allFuncs) {
 						return true
 					}
+					// Check if the struct containing this field is returned,
+					// transferring cancel responsibility to the caller.
+					if isStructFieldReturnedFromFunc(fa) {
+						return true
+					}
 				}
 				queue = append(queue, r.Addr)
 			case *ssa.UnOp:
@@ -725,6 +730,52 @@ func isCancelCalled(cancelValue ssa.Value, allFuncs []*ssa.Function) bool {
 				if r.X == current {
 					queue = append(queue, r)
 				}
+			case *ssa.MakeClosure:
+				// The cancel value is captured as a free variable in a closure.
+				// Find the corresponding FreeVar inside the closure body and
+				// follow it so that calls within the closure are detected.
+				if fn, ok := r.Fn.(*ssa.Function); ok {
+					for i, binding := range r.Bindings {
+						if binding == current && i < len(fn.FreeVars) {
+							queue = append(queue, fn.FreeVars[i])
+						}
+					}
+				}
+			case *ssa.Return:
+				// Cancel function is returned to the caller — responsibility
+				// is transferred; treat as "called".
+				for _, result := range r.Results {
+					if result == current {
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+// isStructFieldReturnedFromFunc checks whether the struct that owns a FieldAddr
+// is loaded and returned from the enclosing function. When a cancel is stored in
+// a struct field and the struct is returned, responsibility for calling the
+// cancel is transferred to the caller.
+func isStructFieldReturnedFromFunc(fa *ssa.FieldAddr) bool {
+	structBase := fa.X
+	if structBase == nil {
+		return false
+	}
+
+	// Follow referrers of the struct base pointer to find loads (*struct)
+	// that are then returned.
+	for _, ref := range safeReferrers(structBase) {
+		load, ok := ref.(*ssa.UnOp)
+		if !ok || load.Op != token.MUL {
+			continue
+		}
+		for _, loadRef := range safeReferrers(load) {
+			if _, ok := loadRef.(*ssa.Return); ok {
+				return true
 			}
 		}
 	}
