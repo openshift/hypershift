@@ -1754,6 +1754,69 @@ spec:
                   type: object
                 maxItems: 100
                 type: array
+              nodesInfo:
+                description: |-
+                  nodesInfo contains aggregated information observed from nodes belonging
+                  to this NodePool.
+                properties:
+                  nodeVersions:
+                    description: |-
+                      nodeVersions summarizes the versions and health of nodes belonging
+                      to this NodePool. Each entry represents a distinct version combination
+                      and the number of ready/unready nodes running it.
+                    items:
+                      description: NodeVersion represents a version combination and
+                        the count of ready and unready nodes running it.
+                      properties:
+                        kubeletVersion:
+                          description: |-
+                            kubeletVersion is the kubelet version reported by the node, as observed
+                            from Machine.Status.NodeInfo.KubeletVersion.
+                          maxLength: 64
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: kubeletVersion must start with semantic version
+                              prefix x.y.z (optional leading 'v')
+                            rule: self.matches('^v?\\d+\\.\\d+\\.\\d+.*$')
+                        ocpVersion:
+                          description: |-
+                            ocpVersion is the OpenShift release version this node was provisioned
+                            or upgraded with.
+                          maxLength: 64
+                          minLength: 1
+                          type: string
+                          x-kubernetes-validations:
+                          - message: ocpVersion must start with semantic version prefix
+                              x.y.z
+                            rule: self.matches('^\\d+\\.\\d+\\.\\d+.*$')
+                        readyNodeCount:
+                          description: |-
+                            readyNodeCount is the number of nodes running this version where the
+                            CAPI NodeHealthy condition is True.
+                          format: int32
+                          minimum: 0
+                          type: integer
+                        unreadyNodeCount:
+                          description: |-
+                            unreadyNodeCount is the number of nodes running this version where the
+                            CAPI NodeHealthy condition is not True. Useful for tracking upgrade
+                            progress and detecting stuck nodes.
+                          format: int32
+                          minimum: 0
+                          type: integer
+                      required:
+                      - kubeletVersion
+                      - ocpVersion
+                      - readyNodeCount
+                      - unreadyNodeCount
+                      type: object
+                    maxItems: 100
+                    minItems: 1
+                    type: array
+                required:
+                - nodeVersions
+                type: object
               platform:
                 description: platform holds the specific statuses
                 properties:

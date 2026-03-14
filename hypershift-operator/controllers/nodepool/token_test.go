@@ -739,6 +739,8 @@ func TestTokenReconcile(t *testing.T) {
 			g.Expect(UUIDToken).To(BeAssignableToTypeOf(uuid.UUID{}))
 			g.Expect(gotTokenSecret.Data[TokenSecretReleaseKey]).To(Equal([]byte(tc.configGenerator.nodePool.Spec.Release.Image)))
 			g.Expect(gotTokenSecret.Data[TokenSecretReleaseKey]).ToNot(BeEmpty())
+			g.Expect(gotTokenSecret.Data[TokenSecretReleaseVersionKey]).To(Equal([]byte(tc.configGenerator.releaseImage.Version())))
+			g.Expect(gotTokenSecret.Data[TokenSecretReleaseVersionKey]).ToNot(BeEmpty())
 
 			// Validate the config is compressed and encoded in the token secret.
 			compressedAndEncodedConfig := gotTokenSecret.Data[TokenSecretConfigKey]

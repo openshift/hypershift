@@ -441,7 +441,8 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 			// Annotations here propagate down to Machines
 			// https://cluster-api.sigs.k8s.io/developer/architecture/controllers/metadata-propagation.html#machinedeployment.
 			Annotations: map[string]string{
-				nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
+				nodePoolAnnotation:                       client.ObjectKeyFromObject(nodePool).String(),
+				hyperv1.NodePoolReleaseVersionAnnotation: c.Version(),
 			},
 		},
 		Spec: capiv1.MachineSpec{
@@ -893,8 +894,11 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 				resourcesName:           resourcesName,
 				capiv1.ClusterNameLabel: capiClusterName,
 			},
-			// Annotations here propagate down to Machines
-			// https://cluster-api.sigs.k8s.io/developer/architecture/controllers/metadata-propagation.html#machinedeployment.
+			// Annotations here propagate down to Machines.
+			// NodePoolReleaseVersionAnnotation is NOT set on the MachineSet template
+			// to avoid conflicting with the in-place upgrader, which sets it per-Machine
+			// after each node completes its upgrade. Machines without the annotation
+			// fall back to nodePool.Status.Version in nodeVersionsFromMachines.
 			Annotations: map[string]string{
 				nodePoolAnnotation: client.ObjectKeyFromObject(nodePool).String(),
 			},

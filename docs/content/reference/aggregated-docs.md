@@ -39869,6 +39869,39 @@ AutoRepair will no-op when more than 2 Nodes are unhealthy at the same time. Giv
 </tr>
 </tbody>
 </table>
+###NodePoolNodesInfo { #hypershift.openshift.io/v1beta1.NodePoolNodesInfo }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolStatus">NodePoolStatus</a>)
+</p>
+<p>
+<p>NodePoolNodesInfo aggregates observed information about nodes belonging to this NodePool.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>nodeVersions</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NodeVersion">
+[]NodeVersion
+</a>
+</em>
+</td>
+<td>
+<p>nodeVersions summarizes the versions and health of nodes belonging
+to this NodePool. Each entry represents a distinct version combination
+and the number of ready/unready nodes running it.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###NodePoolPlatform { #hypershift.openshift.io/v1beta1.NodePoolPlatform }
 <p>
 (<em>Appears on:</em>
@@ -40338,6 +40371,21 @@ the NodePool.</p>
 </tr>
 <tr>
 <td>
+<code>nodesInfo,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolNodesInfo">
+NodePoolNodesInfo
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>nodesInfo contains aggregated information observed from nodes belonging
+to this NodePool.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>platform</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.NodePoolPlatformStatus">
@@ -40405,6 +40453,73 @@ int32
 <em>(Optional)</em>
 <p>port is the port of the NodePort service. If &lt;=0, the port is dynamically
 assigned when the service is created.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###NodeVersion { #hypershift.openshift.io/v1beta1.NodeVersion }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.NodePoolNodesInfo">NodePoolNodesInfo</a>)
+</p>
+<p>
+<p>NodeVersion represents a version combination and the count of ready and unready nodes running it.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>ocpVersion</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>ocpVersion is the OpenShift release version this node was provisioned
+or upgraded with.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>kubeletVersion</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>kubeletVersion is the kubelet version reported by the node, as observed
+from Machine.Status.NodeInfo.KubeletVersion.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>readyNodeCount</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<p>readyNodeCount is the number of nodes running this version where the
+CAPI NodeHealthy condition is True.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>unreadyNodeCount</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<p>unreadyNodeCount is the number of nodes running this version where the
+CAPI NodeHealthy condition is not True. Useful for tracking upgrade
+progress and detecting stuck nodes.</p>
 </td>
 </tr>
 </tbody>
