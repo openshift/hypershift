@@ -2439,7 +2439,7 @@ func (r *reconciler) ensureCloudResourcesDestroyed(ctx context.Context, hcp *hyp
 	hcpKey := client.ObjectKeyFromObject(hcp).String()
 
 	// Check if we should skip cleanup (includes KAS availability check and failure tracking)
-	shouldSkip, reason, err := r.cleanupTracker.ShouldSkipCleanup(ctx, hcp, r.cpClient)
+	shouldSkip, reason, err := r.cleanupTracker.ShouldSkipCleanup(ctx, hcp, r.cpClient, false)
 	if err != nil {
 		log.Error(err, "Failed to check if cleanup should be skipped")
 		return remaining, "", err

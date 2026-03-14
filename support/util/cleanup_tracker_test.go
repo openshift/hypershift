@@ -76,7 +76,7 @@ func TestShouldSkipCleanup_KubeAPIServerUnavailable(t *testing.T) {
 	// Create fake client without kube-apiserver deployment
 	cpClient := fake.NewClientBuilder().Build()
 
-	shouldSkip, reason, err := tracker.ShouldSkipCleanup(context.Background(), hcp, cpClient)
+	shouldSkip, reason, err := tracker.ShouldSkipCleanup(context.Background(), hcp, cpClient, false)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(shouldSkip).To(BeTrue())
 	g.Expect(reason).To(Equal("KubeAPIServerUnavailable"))
@@ -102,7 +102,7 @@ func TestShouldSkipCleanup_KubeAPIServerAvailable(t *testing.T) {
 	}
 	cpClient := fake.NewClientBuilder().WithObjects(kasDeployment).Build()
 
-	shouldSkip, reason, err := tracker.ShouldSkipCleanup(context.Background(), hcp, cpClient)
+	shouldSkip, reason, err := tracker.ShouldSkipCleanup(context.Background(), hcp, cpClient, false)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(shouldSkip).To(BeFalse())
 	g.Expect(reason).To(BeEmpty())
@@ -134,7 +134,7 @@ func TestShouldSkipCleanup_MaxFailuresExceeded(t *testing.T) {
 		tracker.RecordFailure(hcpKey)
 	}
 
-	shouldSkip, reason, err := tracker.ShouldSkipCleanup(context.Background(), hcp, cpClient)
+	shouldSkip, reason, err := tracker.ShouldSkipCleanup(context.Background(), hcp, cpClient, false)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(shouldSkip).To(BeTrue())
 	g.Expect(reason).To(Equal("MaxConnectionFailuresExceeded"))
@@ -166,7 +166,7 @@ func TestShouldSkipCleanup_BelowMaxFailures(t *testing.T) {
 		tracker.RecordFailure(hcpKey)
 	}
 
-	shouldSkip, reason, err := tracker.ShouldSkipCleanup(context.Background(), hcp, cpClient)
+	shouldSkip, reason, err := tracker.ShouldSkipCleanup(context.Background(), hcp, cpClient, false)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(shouldSkip).To(BeFalse())
 	g.Expect(reason).To(BeEmpty())
@@ -199,7 +199,7 @@ func TestShouldSkipCleanup_MaxDurationExceeded(t *testing.T) {
 	tracker.failures[hcpKey].firstFailureTime = time.Now().Add(-MaxCleanupFailureDuration - time.Second)
 	tracker.mutex.Unlock()
 
-	shouldSkip, reason, err := tracker.ShouldSkipCleanup(context.Background(), hcp, cpClient)
+	shouldSkip, reason, err := tracker.ShouldSkipCleanup(context.Background(), hcp, cpClient, false)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(shouldSkip).To(BeTrue())
 	g.Expect(reason).To(Equal("ConnectionFailureTimeout"))
@@ -229,7 +229,7 @@ func TestShouldSkipCleanup_BelowMaxDuration(t *testing.T) {
 	// Record a failure (first failure time will be set to now)
 	tracker.RecordFailure(hcpKey)
 
-	shouldSkip, reason, err := tracker.ShouldSkipCleanup(context.Background(), hcp, cpClient)
+	shouldSkip, reason, err := tracker.ShouldSkipCleanup(context.Background(), hcp, cpClient, false)
 	g.Expect(err).ToNot(HaveOccurred())
 	g.Expect(shouldSkip).To(BeFalse())
 	g.Expect(reason).To(BeEmpty())
@@ -263,7 +263,7 @@ func TestConcurrentAccess(t *testing.T) {
 			tracker.RecordFailure(hcpKey)
 			tracker.GetFailureCount(hcpKey)
 			tracker.GetFirstFailureTime(hcpKey)
-			_, _, _ = tracker.ShouldSkipCleanup(context.Background(), hcp, cpClient)
+			_, _, _ = tracker.ShouldSkipCleanup(context.Background(), hcp, cpClient, false)
 			done <- true
 		}()
 	}
@@ -302,10 +302,11 @@ func TestMultipleHCPs(t *testing.T) {
 
 func TestIsKubeAPIServerAvailable(t *testing.T) {
 	tests := []struct {
-		name        string
-		deployment  *appsv1.Deployment
-		expected    bool
-		expectError bool
+		name                    string
+		deployment              *appsv1.Deployment
+		strictAvailabilityCheck bool
+		expected                bool
+		expectError             bool
 	}{
 		{
 			name: "KubeAPIServer exists",
@@ -314,15 +315,45 @@ func TestIsKubeAPIServerAvailable(t *testing.T) {
 					Name:      "kube-apiserver",
 					Namespace: "test-namespace",
 				},
+				Status: appsv1.DeploymentStatus{
+					Conditions: []appsv1.DeploymentCondition{
+						{
+							Type:   appsv1.DeploymentAvailable,
+							Status: "False",
+						},
+					},
+				},
 			},
-			expected:    true,
-			expectError: false,
+			strictAvailabilityCheck: false,
+			expected:                true,
+			expectError:             false,
 		},
 		{
-			name:        "KubeAPIServer does not exist",
-			deployment:  nil,
-			expected:    false,
-			expectError: false,
+			name:                    "KubeAPIServer does not exist",
+			deployment:              nil,
+			strictAvailabilityCheck: false,
+			expected:                false,
+			expectError:             false,
+		},
+		{
+			name: "KubeAPIServer exists but not available for strict availability check",
+			deployment: &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kube-apiserver",
+					Namespace: "test-namespace",
+				},
+				Status: appsv1.DeploymentStatus{
+					Conditions: []appsv1.DeploymentCondition{
+						{
+							Type:   appsv1.DeploymentAvailable,
+							Status: "False",
+						},
+					},
+				},
+			},
+			strictAvailabilityCheck: true,
+			expected:                false,
+			expectError:             false,
 		},
 	}
 
@@ -344,7 +375,7 @@ func TestIsKubeAPIServerAvailable(t *testing.T) {
 				cpClient = fake.NewClientBuilder().Build()
 			}
 
-			available, err := isKubeAPIServerAvailable(context.Background(), hcp, cpClient)
+			available, err := isKubeAPIServerAvailable(context.Background(), hcp, cpClient, tt.strictAvailabilityCheck)
 
 			if tt.expectError {
 				g.Expect(err).To(HaveOccurred())

@@ -41,8 +41,6 @@ import (
 )
 
 const (
-	karpenterFinalizer = "hypershift.openshift.io/karpenter-finalizer"
-
 	// NodeClaimDeletionTimeout is the timeout for the deletion of a NodeClaim during cluster deletion.
 	// If the timeout is reached, the NodeClaim will be forcefully deleted by setting the termination timestamp annotation.
 	NodeClaimDeletionTimeout = 3 * time.Minute
@@ -190,7 +188,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		// When force=true, we skip the graceful timeout and immediately trigger forceful deletion.
 		// When force=false, we wait for NodeClaimDeletionTimeout before triggering forceful deletion.
 		force := true
-		if controllerutil.ContainsFinalizer(hcp, karpenterFinalizer) {
+		if controllerutil.ContainsFinalizer(hcp, karpenterutil.KarpenterFinalizer) {
 			// The deletion flow is:
 			// 1. Delete all NodePools (NodeClaims will be marked for deletion from deleting the NodePools due to ownerReferences)
 			// 2. Make sure all NodeClaims are actually gone (gracefully first, unless force=true)
@@ -250,16 +248,16 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 
 		originalHCP := hcp.DeepCopy()
-		controllerutil.RemoveFinalizer(hcp, karpenterFinalizer)
+		controllerutil.RemoveFinalizer(hcp, karpenterutil.KarpenterFinalizer)
 		if err := r.ManagementClient.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 			return ctrl.Result{RequeueAfter: KarpenterDeletionRequeueInterval}, fmt.Errorf("failed to remove finalizer from cluster: %w", err)
 		}
 		log.Info("Successfully removed all Karpenter NodePools and NodeClaims")
 		return ctrl.Result{}, nil
 	}
-	if !controllerutil.ContainsFinalizer(hcp, karpenterFinalizer) {
+	if !controllerutil.ContainsFinalizer(hcp, karpenterutil.KarpenterFinalizer) {
 		originalHCP := hcp.DeepCopy()
-		controllerutil.AddFinalizer(hcp, karpenterFinalizer)
+		controllerutil.AddFinalizer(hcp, karpenterutil.KarpenterFinalizer)
 		if err := r.ManagementClient.Patch(ctx, hcp, client.MergeFromWithOptions(originalHCP, client.MergeFromWithOptimisticLock{})); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to add finalizer to hostedControlPlane: %w", err)
 		}
