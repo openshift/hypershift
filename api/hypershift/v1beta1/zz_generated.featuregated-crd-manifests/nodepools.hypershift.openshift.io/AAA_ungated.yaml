@@ -137,13 +137,18 @@ spec:
               config:
                 description: |-
                   config is a list of references to ConfigMaps containing serialized
-                  MachineConfig resources to be injected into the ignition configurations of
-                  nodes in the NodePool. The MachineConfig API schema is defined here:
+                  MachineConfig or select OpenShift Config resources to be injected into
+                  the ignition configurations of nodes in the NodePool.
 
-                  https://github.com/openshift/machine-config-operator/blob/18963e4f8fe66e8c513ca4b131620760a414997f/pkg/apis/machineconfiguration.openshift.io/v1/types.go#L185
+                  The MachineConfig API schema is defined here:
+                  https://github.com/openshift/api/blob/caf97963ed302881f01e67b791ae4efc6bcf723c/machineconfiguration/v1/types.go#L290
+
+                  The OpenShift Config API schemas are defined here:
+                  https://github.com/openshift/api/tree/master/config/v1
 
                   Each ConfigMap must have a single key named "config" whose value is the YML
-                  with one or more serialized machineconfiguration.openshift.io resources:
+                  with one or more serialized machineconfiguration.openshift.io or select
+                  config.openshift.io resources:
 
                   * KubeletConfig
                   * ContainerRuntimeConfig
@@ -151,6 +156,7 @@ spec:
                   * ClusterImagePolicy
                   * ImageContentSourcePolicy
                   * ImageDigestMirrorSet
+                  * ImageTagMirrorSet
 
                   This is validated in the backend and signaled back via validMachineConfig condition.
                   Changing this field will trigger a NodePool rollout.
