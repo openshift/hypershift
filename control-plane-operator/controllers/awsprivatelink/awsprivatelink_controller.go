@@ -200,8 +200,23 @@ const (
 type AWSEndpointServiceReconciler struct {
 	client.Client
 	upsert.CreateOrUpdateProvider
-	awsClientBuilder clientBuilder
+	awsClientBuilder awsClientProvider
 }
+
+// awsClientProvider abstracts AWS client creation for testability.
+// ec2iface.EC2API is not mockgen-generated because the interface has 500+ methods,
+// producing ~37K lines; tests use hand-written embedded mocks instead.
+//
+//go:generate ../../../hack/tools/bin/mockgen -source=awsprivatelink_controller.go -package=awsprivatelink -destination=awsprivatelink_controller_mock.go
+type awsClientProvider interface {
+	getClients(ctx context.Context) (ec2iface.EC2API, awsapi.ROUTE53API, error)
+	initializeWithHCP(log logr.Logger, hcp *hyperv1.HostedControlPlane)
+	getLocalHostedZoneID() string
+	setLocalHostedZoneID(zoneID string)
+}
+
+// Verify clientBuilder implements awsClientProvider.
+var _ awsClientProvider = (*clientBuilder)(nil)
 
 type clientBuilder struct {
 	mu                             sync.Mutex
@@ -323,6 +338,9 @@ func (b *clientBuilder) setFromHCP(hcp *hyperv1.HostedControlPlane) {
 }
 
 func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.awsClientBuilder == nil {
+		r.awsClientBuilder = &clientBuilder{}
+	}
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.AWSEndpointService{}).
 		WithOptions(controller.Options{
@@ -398,17 +416,33 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{}, nil
 		}
 
+		// Best-effort initialization for deletion reconciles: after a controller restart
+		// the clientBuilder is uninitialized because initializeWithHCP is only called in
+		// the non-deletion path. If the HCP still exists, initialize from it so that
+		// getClients can succeed and deletion can proceed.
+		//
+		// Known issue (SharedVPC): when the HCP is already deleted, the SharedVPC role
+		// ARNs (needed for cross-account EC2/Route53 access) are lost. Initialization
+		// cannot happen, getClients will fail, and the finalizer will be preserved until
+		// the hypershift-operator force-removes it after the grace period — orphaning
+		// AWS resources in the shared VPC account. A proper fix requires persisting the
+		// SharedVPC role ARNs in the AWSEndpointService status. See
+		// TestReconcileDeletionSharedVPC for details.
+		hcpList := &hyperv1.HostedControlPlaneList{}
+		if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: req.Namespace}); err == nil && len(hcpList.Items) == 1 {
+			r.awsClientBuilder.initializeWithHCP(log, &hcpList.Items[0])
+		}
+
 		ec2Client, route53Client, err := r.awsClientBuilder.getClients(ctx)
 		if err != nil {
-			log.Error(err, "failed to get AWS client, skipping aws endpoint service cleanup")
-		} else {
-			completed, err := r.delete(ctx, awsEndpointService, ec2Client, route53Client)
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
-			}
-			if !completed {
-				return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
-			}
+			return ctrl.Result{}, fmt.Errorf("failed to get AWS clients for endpoint service cleanup: %w", err)
+		}
+		completed, err := r.delete(ctx, awsEndpointService, ec2Client, route53Client)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
+		}
+		if !completed {
+			return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
 		}
 		if controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
 			controllerutil.RemoveFinalizer(awsEndpointService, finalizer)
@@ -1089,8 +1123,11 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissions,
 		}); err != nil {
+			// DependencyViolation indicates the VPC endpoint is still being deleted
+			if supportawsutil.AWSErrorCode(err) == supportawsutil.DependencyViolation {
+				return fmt.Errorf("security group has dependencies, VPC endpoint deletion may still be in progress: %w", err)
+			}
 			log.Error(err, "failed to revoke security group ingress permissions", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
-
 			return fmt.Errorf("failed to revoke security group ingress rules: %s", supportawsutil.AWSErrorCode(err))
 		}
 	}
@@ -1100,6 +1137,10 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissionsEgress,
 		}); err != nil {
+			// DependencyViolation indicates the VPC endpoint is still being deleted
+			if supportawsutil.AWSErrorCode(err) == supportawsutil.DependencyViolation {
+				return fmt.Errorf("security group has dependencies, VPC endpoint deletion may still be in progress: %w", err)
+			}
 			log.Error(err, "failed to revoke security group egress permissions", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
 			return fmt.Errorf("failed to revoke security group egress rules: %s", supportawsutil.AWSErrorCode(err))
 		}
@@ -1108,6 +1149,10 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 	if _, err = ec2Client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
 		GroupId: sg.GroupId,
 	}); err != nil {
+		// DependencyViolation indicates the VPC endpoint is still being deleted
+		if supportawsutil.AWSErrorCode(err) == supportawsutil.DependencyViolation {
+			return fmt.Errorf("security group has dependencies, VPC endpoint deletion may still be in progress: %w", err)
+		}
 		log.Error(err, "failed to delete security group", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
 		return fmt.Errorf("failed to delete security group %s: %s", aws.StringValue(sg.GroupId), supportawsutil.AWSErrorCode(err))
 	}
