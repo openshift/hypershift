@@ -352,6 +352,10 @@ func AWSPodIdentityWebhookServingCert(ns string) *corev1.Secret {
 	return secretFor(ns, "aws-pod-identity-webhook-serving-cert")
 }
 
+func AzureWorkloadIdentityWebhookServingCert(ns string) *corev1.Secret {
+	return secretFor(ns, "azure-workload-identity-webhook-serving-cert")
+}
+
 func AzureDiskCsiDriverControllerMetricsServingCert(ns string) *corev1.Secret {
 	return secretFor(ns, "azure-disk-csi-driver-controller-metrics-serving-cert")
 }
