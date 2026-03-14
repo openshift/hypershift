@@ -3,6 +3,11 @@ kind: ServiceMonitor
 metadata:
   name: kube-apiserver
   namespace: HCP_NAMESPACE
+  annotations:
+    hypershift.openshift.io/metrics-job: apiserver
+    hypershift.openshift.io/metrics-namespace: default
+    hypershift.openshift.io/metrics-service: kubernetes
+    hypershift.openshift.io/metrics-endpoint: https
 spec:
   endpoints:
   - metricRelabelings:
