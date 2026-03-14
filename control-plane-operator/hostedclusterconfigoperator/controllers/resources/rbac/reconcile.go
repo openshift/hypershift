@@ -296,34 +296,6 @@ func ReconcileAuthenticatedReaderForAuthenticatedUserRolebinding(r *rbacv1.RoleB
 	return nil
 }
 
-func ReconcileKASConnectionCheckerRole(r *rbacv1.Role) error {
-	r.Rules = []rbacv1.PolicyRule{
-		{
-			APIGroups:     []string{""},
-			Resources:     []string{"configmaps"},
-			ResourceNames: []string{hccomanifests.KASConnectionCheckerConfigMapName},
-			Verbs:         []string{"get", "update", "patch"},
-		},
-	}
-	return nil
-}
-
-func ReconcileKASConnectionCheckerRoleBinding(r *rbacv1.RoleBinding) error {
-	r.RoleRef = rbacv1.RoleRef{
-		APIGroup: rbacv1.SchemeGroupVersion.Group,
-		Kind:     "Role",
-		Name:     hccomanifests.KASConnectionCheckerRole().Name,
-	}
-	r.Subjects = []rbacv1.Subject{
-		{
-			Kind:      "ServiceAccount",
-			Name:      hccomanifests.KASConnectionCheckerName,
-			Namespace: hccomanifests.KASConnectionCheckerNamespace,
-		},
-	}
-	return nil
-}
-
 func ReconcileKCMLeaderElectionRole(r *rbacv1.Role) error {
 	r.Rules = []rbacv1.PolicyRule{
 		{
