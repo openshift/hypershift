@@ -1,0 +1,60 @@
+{
+    "managedIdentitiesKeyVault": {
+        "name": "<PREFIX>",
+        "tenantID": "<TENANT_ID>"
+    },
+    "cloudProvider": {
+        "certificateName": "cloud-provider-<PREFIX>",
+        "clientID": "<CLIENT_ID>",
+        "credentialsSecretName": "cloud-provider-<PREFIX>-json",
+        "objectEncoding": "utf-8"
+    },
+    "controlPlaneOperator": {
+        "certificateName": "cpo-<PREFIX>",
+        "clientID": "<CLIENT_ID>",
+        "credentialsSecretName": "cpo-<PREFIX>-json",
+        "objectEncoding": "utf-8"
+    },
+    "disk": {
+        "certificateName": "azure-disk-<PREFIX>",
+        "clientID": "<CLIENT_ID>",
+        "credentialsSecretName": "azure-disk-<PREFIX>-json",
+        "objectEncoding": "utf-8"
+    },
+    "file": {
+        "certificateName": "azure-file-<PREFIX>",
+        "clientID": "<CLIENT_ID>",
+        "credentialsSecretName": "azure-file-<PREFIX>-json",
+        "objectEncoding": "utf-8"
+    },
+    "imageRegistry": {
+        "certificateName": "ciro-<PREFIX>",
+        "clientID": "<CLIENT_ID>",
+        "credentialsSecretName": "ciro-<PREFIX>-json",
+        "objectEncoding": "utf-8"
+    },
+    "ingress": {
+        "certificateName": "ingress-<PREFIX>",
+        "clientID": "<CLIENT_ID>",
+        "credentialsSecretName": "ingress-<PREFIX>-json",
+        "objectEncoding": "utf-8"
+    },
+    "network": {
+        "certificateName": "cncc-<PREFIX>",
+        "clientID": "<CLIENT_ID>",
+        "credentialsSecretName": "cncc-<PREFIX>-json",
+        "objectEncoding": "utf-8"
+    },
+    "nodePoolManagement": {
+        "certificateName": "nodepool-mgmt-<PREFIX>",
+        "clientID": "<CLIENT_ID>",
+        "credentialsSecretName": "nodepool-mgmt-<PREFIX>-json",
+        "objectEncoding": "utf-8"
+    },
+    "velero": {
+        "certificateName": "velero-<PREFIX>",
+        "clientID": "<CLIENT_ID>",
+        "credentialsSecretName": "velero-<PREFIX>-json",
+        "objectEncoding": "utf-8"
+    }
+}
