@@ -246,6 +246,16 @@ func azureMachineTemplateSpec(nodePool *hyperv1.NodePool) (*capiazure.AzureMachi
 
 	azureMachineTemplate.Template.Spec.SSHPublicKey = dummySSHKey
 
+	if nodePool.Spec.Platform.Azure.ImageRegistryCredentials != nil {
+		managedIdentityResourceID := nodePool.Spec.Platform.Azure.ImageRegistryCredentials.ManagedIdentity
+		azureMachineTemplate.Template.Spec.Identity = capiazure.VMIdentityUserAssigned
+		azureMachineTemplate.Template.Spec.UserAssignedIdentities = []capiazure.UserAssignedIdentity{
+			{
+				ProviderID: fmt.Sprintf("azure://%s", managedIdentityResourceID),
+			},
+		}
+	}
+
 	return azureMachineTemplate, nil
 }
 
