@@ -90,6 +90,7 @@ func reconcileConfigValidatingAdmissionPolicy(ctx context.Context, hcp *hyperv1.
 	configResources := []string{
 		"apiservers",
 		"authentications",
+		"clusterversions",
 		"featuregates",
 		"images",
 		"imagecontentpolicies",
