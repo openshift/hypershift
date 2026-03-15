@@ -258,6 +258,14 @@ func HCCOClientCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "hcco-client")
 }
 
+func KASBootstrapContainerSigner(ns string) *corev1.Secret {
+	return secretFor(ns, "kas-bootstrap-container-signer")
+}
+
+func KASBootstrapContainerClientCertSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "kas-bootstrap-container-client")
+}
+
 func KASMachineBootstrapClientCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "kas-bootstrap-client")
 }
