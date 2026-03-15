@@ -43,6 +43,7 @@ import (
 	platformaws "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/platform/aws"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/internal/proxy"
 	hcmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/metrics"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/primaryudn"
 	validations "github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster/validations"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/clusterapi"
@@ -1042,6 +1043,21 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		}
 		switch serviceStrategy.Type {
 		case hyperv1.Route:
+			// For KubeVirt with Primary UDN, use internal service DNS instead of external route
+			// because Primary UDN namespace isolation prevents external ingress from reaching backend pods.
+			// Workers on Primary UDN can reach ClusterIP services directly via the UDN gateway.
+			if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+				// Check if namespace has Primary UDN label
+				if err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), controlPlaneNamespace); err == nil {
+					if _, hasPrimaryUDN := controlPlaneNamespace.Labels["k8s.ovn.org/primary-user-defined-network"]; hasPrimaryUDN {
+						// Use internal service DNS instead of external route
+						hcluster.Status.IgnitionEndpoint = fmt.Sprintf("ignition-server.%s.svc.cluster.local", controlPlaneNamespace.GetName())
+						// Skip the rest of the Route logic
+						break
+					}
+				}
+			}
+
 			if serviceStrategy.Route != nil && serviceStrategy.Route.Hostname != "" {
 				hcluster.Status.IgnitionEndpoint = serviceStrategy.Route.Hostname
 			} else {
@@ -1331,13 +1347,66 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	_, controlPlanePKIOperatorSignsCSRs := controlPlaneOperatorImageLabels[controlPlanePKIOperatorSignsCSRsLabel]
 	_, useRestrictedPSA := controlPlaneOperatorImageLabels[useRestrictedPodSecurityLabel]
 	_, defaultToControlPlaneV2 := controlPlaneOperatorImageLabels[defaultToControlPlaneV2Label]
+	primaryUDNName := ""
+	primaryUDNSubnet := ""
+	if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform && hcluster.Annotations != nil {
+		primaryUDNName = hcluster.Annotations[hyperv1.PrimaryUDNNameAnnotation]
+		primaryUDNSubnet = hcluster.Annotations[hyperv1.PrimaryUDNSubnetAnnotation]
+	}
+	// Primary UDN enablement is atomic: either both name+subnet are set, or neither.
+	if primaryUDNName != "" || primaryUDNSubnet != "" {
+		if primaryUDNName == "" || primaryUDNSubnet == "" {
+			return ctrl.Result{}, fmt.Errorf("hostedcluster %s/%s must set both %q and %q (no partial Primary UDN configuration allowed)", hcluster.Namespace, hcluster.Name, hyperv1.PrimaryUDNNameAnnotation, hyperv1.PrimaryUDNSubnetAnnotation)
+		}
+	}
+
+	// HACK(CI): The CI script pre-creates the HCP namespace without Primary UDN metadata.
+	// OVN-K requires the k8s.ovn.org/primary-user-defined-network label+annotation at namespace
+	// creation time, so we cannot simply patch them on. Instead, delete the stale namespace and
+	// let the createOrUpdate below recreate it with the correct metadata.
+	if primaryUDNName != "" && primaryUDNSubnet != "" {
+		const ovnPrimaryUDNKey = "k8s.ovn.org/primary-user-defined-network"
+		existingNS := &corev1.Namespace{}
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(controlPlaneNamespace), existingNS); err == nil {
+			if existingNS.DeletionTimestamp != nil {
+				log.Info("waiting for namespace deletion to complete for Primary UDN re-creation", "namespace", existingNS.Name)
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+			existingLabel := existingNS.Labels[ovnPrimaryUDNKey]
+			existingAnno := ""
+			if existingNS.Annotations != nil {
+				existingAnno = existingNS.Annotations[ovnPrimaryUDNKey]
+			}
+			if existingLabel != primaryUDNName || existingAnno != primaryUDNName {
+				log.Info("namespace missing required Primary UDN metadata; deleting for re-creation",
+					"namespace", existingNS.Name,
+					"expectedUDN", primaryUDNName,
+					"currentLabel", existingLabel,
+					"currentAnnotation", existingAnno)
+				if err := r.Client.Delete(ctx, existingNS); err != nil {
+					return ctrl.Result{}, fmt.Errorf("failed to delete namespace %s for Primary UDN re-creation: %w", existingNS.Name, err)
+				}
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+		}
+	}
 
 	// Reconcile the hosted cluster namespace
 	_, err = createOrUpdate(ctx, r.Client, controlPlaneNamespace, func() error {
+		const ovnPrimaryUDNKey = "k8s.ovn.org/primary-user-defined-network"
+
 		if controlPlaneNamespace.Labels == nil {
 			controlPlaneNamespace.Labels = make(map[string]string)
 		}
 		controlPlaneNamespace.Labels[ControlPlaneNamespaceLabelKey] = "true"
+
+		if primaryUDNName != "" && primaryUDNSubnet != "" {
+			controlPlaneNamespace.Labels[ovnPrimaryUDNKey] = primaryUDNName
+			if controlPlaneNamespace.Annotations == nil {
+				controlPlaneNamespace.Annotations = make(map[string]string)
+			}
+			controlPlaneNamespace.Annotations[ovnPrimaryUDNKey] = primaryUDNName
+		}
 
 		// Set pod security labels on HCP namespace
 		psaOverride := hcluster.Annotations[hyperv1.PodSecurityAdmissionLabelOverrideAnnotation]
@@ -1383,6 +1452,13 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile namespace: %w", err)
+	}
+
+	if primaryUDNName != "" && primaryUDNSubnet != "" {
+		if err := primaryudn.EnsureUserDefinedNetwork(ctx, r.Client, controlPlaneNamespace.Name, primaryUDNName, primaryUDNSubnet); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to ensure primary UDN %q in namespace %q: %w", primaryUDNName, controlPlaneNamespace.Name, err)
+		}
+
 	}
 
 	p, err := platform.GetPlatform(ctx, hcluster, releaseProvider, utilitiesImage, pullSecretBytes)
@@ -1778,12 +1854,23 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	}
 	hcp = controlplaneoperator.HostedControlPlane(controlPlaneNamespace.Name, hcluster.Name)
 	_, err = createOrUpdate(ctx, r.Client, hcp, func() error {
-		return reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
+		if err := reconcileHostedControlPlane(hcp, hcluster, isAutoscalingNeeded, isAWSNodeTerminationHandlerNeeded,
 			annotationsForCertRenewal(log,
 				hcp,
 				shouldCheckForStaleCerts(hcluster, defaultToControlPlaneV2),
 				r.kasServingCertHashFromSecret(ctx, hcp),
-				r.kasServingCertHashFromEndpoint(kasHostAndPortFromHCP(hcp))))
+				r.kasServingCertHashFromEndpoint(kasHostAndPortFromHCP(hcp)))); err != nil {
+			return err
+		}
+		// Set Primary UDN annotation on HCP if namespace has Primary UDN label
+		if hcluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+			if _, hasPrimaryUDN := controlPlaneNamespace.Labels["k8s.ovn.org/primary-user-defined-network"]; hasPrimaryUDN {
+				hcp.Annotations["hypershift.openshift.io/primary-udn"] = "true"
+			} else {
+				delete(hcp.Annotations, "hypershift.openshift.io/primary-udn")
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcontrolplane: %w", err)
@@ -2074,6 +2161,58 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 
 	if err := r.reconcileKarpenterOperator(cpContext, createOrUpdate, hcluster, r.HypershiftOperatorImage, controlPlaneOperatorImage); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile karpenter operator: %w", err)
+	}
+
+	// HACK(CI): Work around upstream ingress-operator sync.Once bug.
+	// The ingress-operator's gatewayapi_controller uses sync.Once to set up a GatewayClass
+	// field indexer. If the CRD isn't established on the first reconcile, sync.Once prevents
+	// any retry, permanently breaking the status_controller (which needs that indexer).
+	// This causes the ingress ClusterOperator to never report status.
+	// Restarting the ingress-operator pod gives it a fresh sync.Once.
+	// This is non-blocking: if anything isn't ready, we just log and let the normal
+	// reconcile loop handle it on the next pass.
+	if primaryUDNName != "" && primaryUDNSubnet != "" {
+		const ingressRestartAnnotation = "hypershift.openshift.io/ingress-operator-restarted"
+		if hcluster.Annotations[ingressRestartAnnotation] == "" {
+			ingressDeploy := &appsv1.Deployment{}
+			ingressDeployKey := client.ObjectKey{Namespace: controlPlaneNamespace.Name, Name: "ingress-operator"}
+			if err := r.Client.Get(ctx, ingressDeployKey, ingressDeploy); err == nil {
+				if ingressDeploy.Status.AvailableReplicas > 0 {
+					podList := &corev1.PodList{}
+					if err := r.Client.List(ctx, podList,
+						client.InNamespace(controlPlaneNamespace.Name),
+						client.MatchingLabels(ingressDeploy.Spec.Selector.MatchLabels),
+					); err == nil && len(podList.Items) > 0 {
+						oldest := podList.Items[0].CreationTimestamp.Time
+						for _, p := range podList.Items[1:] {
+							if p.CreationTimestamp.Time.Before(oldest) {
+								oldest = p.CreationTimestamp.Time
+							}
+						}
+						if time.Since(oldest) >= 2*time.Minute {
+							for i := range podList.Items {
+								if err := r.Client.Delete(ctx, &podList.Items[i]); err != nil {
+									log.Error(err, "failed to delete ingress-operator pod for restart", "pod", podList.Items[i].Name)
+								}
+							}
+							log.Info("restarted ingress-operator pods to work around sync.Once bug")
+							if hcluster.Annotations == nil {
+								hcluster.Annotations = map[string]string{}
+							}
+							hcluster.Annotations[ingressRestartAnnotation] = "true"
+							if err := r.Client.Update(ctx, hcluster); err != nil {
+								log.Error(err, "failed to set ingress restart annotation")
+							}
+						} else {
+							log.Info("ingress-operator pods not old enough for restart, will check next reconcile",
+								"oldestPodAge", time.Since(oldest).String())
+						}
+					}
+				} else {
+					log.Info("ingress-operator deployment not yet available, will check next reconcile")
+				}
+			}
+		}
 	}
 
 	log.Info("successfully reconciled")

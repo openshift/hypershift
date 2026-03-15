@@ -220,6 +220,21 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		}
 	}
 
+	asPrimaryUDN := func(serviceName, udnNetworkName string) func(eps discoveryv1.EndpointSlice) discoveryv1.EndpointSlice {
+		return func(eps discoveryv1.EndpointSlice) discoveryv1.EndpointSlice {
+			if eps.Labels == nil {
+				eps.Labels = map[string]string{}
+			}
+			if eps.Annotations == nil {
+				eps.Annotations = map[string]string{}
+			}
+			eps.Labels[ovnUDNServiceNameLabelKey] = serviceName
+			eps.Annotations[ovnUDNEndpointSliceNetworkAnnoKey] = udnNetworkName
+			delete(eps.Labels, discoveryv1.LabelServiceName)
+			return eps
+		}
+	}
+
 	defaultIngressEndpointSliceIPv4 := func(machine capiv1.Machine, vm kubevirtv1.VirtualMachine, endpointSliceTransform ...func(discoveryv1.EndpointSlice) discoveryv1.EndpointSlice) discoveryv1.EndpointSlice {
 		endpointSlice := discoveryv1.EndpointSlice{
 			ObjectMeta: metav1.ObjectMeta{
@@ -387,6 +402,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		name                          string
 		machines                      []capiv1.Machine
 		virtualMachines               []kubevirtv1.VirtualMachine
+		infraPods                     []corev1.Pod
 		services                      []corev1.Service
 		endpointSlices                []discoveryv1.EndpointSlice
 		hcp                           *hyperv1.HostedControlPlane
@@ -439,6 +455,30 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 			hcp: kubevirtHCP,
 		},
 		{
+			name:            "With Primary UDN namespace should create UDN endpointslices",
+			machines:        pairOfDualStackRunningMachines,
+			virtualMachines: pairOfVirtualMachines,
+			infraPods: []corev1.Pod{{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "ns1",
+					Name:      "virt-launcher-vm-worker1-abcde",
+					Labels:    map[string]string{"kubevirt.io": "virt-launcher"},
+					Annotations: map[string]string{
+						ovnPodNetworksAnnotationKey: `{"ns1/hcp-cluster1":{"role":"primary"}}`,
+					},
+				},
+			}},
+			services:         []corev1.Service{defaultIngressService},
+			expectedServices: []corev1.Service{defaultIngressService},
+			expectedIngressEndpointSlices: []discoveryv1.EndpointSlice{
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0], asPrimaryUDN(defaultIngressService.Name, "ns1_hcp-cluster1")),
+				defaultIngressEndpointSliceIPv4(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], asPrimaryUDN(defaultIngressService.Name, "ns1_hcp-cluster1")),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[0], pairOfVirtualMachines[0], asPrimaryUDN(defaultIngressService.Name, "ns1_hcp-cluster1")),
+				defaultIngressEndpointSliceIPv6(pairOfDualStackRunningMachines[1], pairOfVirtualMachines[1], asPrimaryUDN(defaultIngressService.Name, "ns1_hcp-cluster1")),
+			},
+			hcp: kubevirtHCP,
+		},
+		{
 			name:            "Should remove orphan endpoint slices",
 			machines:        pairOfDualStackRunningMachines,
 			virtualMachines: pairOfVirtualMachines,
@@ -464,6 +504,10 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			kubevirtInfraClusterObjects := []client.Object{}
+			for _, p := range tc.infraPods {
+				pod := p // golang bug referencing for loop vars
+				kubevirtInfraClusterObjects = append(kubevirtInfraClusterObjects, &pod)
+			}
 			for _, vm := range tc.virtualMachines {
 				virtualMachine := vm // golang bug referencing for loop vars
 				kubevirtInfraClusterObjects = append(kubevirtInfraClusterObjects, &virtualMachine)
