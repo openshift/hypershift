@@ -31,6 +31,18 @@ func (spec OpenshiftEC2NodeClassSpec) KarpenterInstanceStorePolicy() *awskarpent
 	return (*awskarpenterv1.InstanceStorePolicy)(spec.InstanceStorePolicy)
 }
 
+func (spec OpenshiftEC2NodeClassSpec) KarpenterMetadataOptions() *awskarpenterv1.MetadataOptions {
+	if spec.MetadataOptions == nil {
+		return nil
+	}
+	return &awskarpenterv1.MetadataOptions{
+		HTTPEndpoint:            spec.MetadataOptions.HTTPEndpoint,
+		HTTPProtocolIPv6:        spec.MetadataOptions.HTTPProtocolIPv6,
+		HTTPPutResponseHopLimit: spec.MetadataOptions.HTTPPutResponseHopLimit,
+		HTTPTokens:              spec.MetadataOptions.HTTPTokens,
+	}
+}
+
 func (bd *BlockDevice) ToKarpenterTypes() *awskarpenterv1.BlockDevice {
 	if bd == nil {
 		return nil

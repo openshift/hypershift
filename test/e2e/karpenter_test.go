@@ -485,6 +485,12 @@ func TestKarpenter(t *testing.T) {
 					SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
 						{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
 					},
+					MetadataOptions: &hyperkarpenterv1.MetadataOptions{
+						HTTPEndpoint:            aws.String("enabled"),
+						HTTPProtocolIPv6:        aws.String("disabled"),
+						HTTPPutResponseHopLimit: aws.Int64(2),
+						HTTPTokens:              aws.String("required"),
+					},
 				},
 			}
 			g.Expect(guestClient.Create(ctx, nc)).To(Succeed())
@@ -524,6 +530,20 @@ func TestKarpenter(t *testing.T) {
 				e2eutil.WithTimeout(5*time.Minute),
 			)
 			t.Log("OpenshiftEC2NodeClass version resolved successfully")
+
+			// Verify MetadataOptions propagated to the downstream EC2NodeClass
+			t.Log("Verifying MetadataOptions propagated to EC2NodeClass")
+			g.Eventually(func(g Gomega) {
+				ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
+				err := guestClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, ec2NodeClass)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(ec2NodeClass.Spec.MetadataOptions).NotTo(BeNil(), "MetadataOptions should be set on EC2NodeClass")
+				g.Expect(*ec2NodeClass.Spec.MetadataOptions.HTTPEndpoint).To(Equal("enabled"))
+				g.Expect(*ec2NodeClass.Spec.MetadataOptions.HTTPProtocolIPv6).To(Equal("disabled"))
+				g.Expect(*ec2NodeClass.Spec.MetadataOptions.HTTPPutResponseHopLimit).To(Equal(int64(2)))
+				g.Expect(*ec2NodeClass.Spec.MetadataOptions.HTTPTokens).To(Equal("required"))
+			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+			t.Log("MetadataOptions propagated correctly to EC2NodeClass")
 
 			// Look up the expected kubelet version from the resolved release image
 			pullSecret, err := os.ReadFile(clusterOpts.PullSecretFile)
