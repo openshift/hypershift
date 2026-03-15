@@ -444,7 +444,7 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 							MachineType: "n1-standard-2",
 							Zone:        "us-central1-a",
 							ServiceAccount: &hyperv1.GCPNodeServiceAccount{
-								Email: ptr.To("test-nodepool@test-project.iam.gserviceaccount.com"),
+								Email: ptr.To(hyperv1.GCPServiceAccountEmail("test-nodepool@test-project.iam.gserviceaccount.com")),
 								Scopes: []string{
 									"https://www.googleapis.com/auth/cloud-platform",
 								},

@@ -148,7 +148,7 @@ Refer to the Kubernetes API documentation for the fields of the
 </tr>
 <tr>
 <td>
-<code>spec</code></br>
+<code>spec,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectSpec">
 GCPPrivateServiceConnectSpec
@@ -158,61 +158,6 @@ GCPPrivateServiceConnectSpec
 <td>
 <em>(Optional)</em>
 <p>spec is the specification for the GCPPrivateServiceConnect.</p>
-<br/>
-<br/>
-<table>
-<tr>
-<td>
-<code>loadBalancerIP</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<p>loadBalancerIP is the IP address of the Internal Load Balancer
-Populated by the observer from service status
-This value must be a valid IPv4 or IPv6 address.</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>forwardingRuleName</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>forwardingRuleName is the name of the Internal Load Balancer forwarding rule
-Populated by the reconciler via GCP API lookup</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>consumerAcceptList</code></br>
-<em>
-[]string
-</em>
-</td>
-<td>
-<p>consumerAcceptList specifies which customer projects can connect
-Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers (e.g. &ldquo;123456789012&rdquo;)</p>
-</td>
-</tr>
-<tr>
-<td>
-<code>natSubnet</code></br>
-<em>
-string
-</em>
-</td>
-<td>
-<em>(Optional)</em>
-<p>natSubnet is the subnet used for NAT by the Service Attachment
-Auto-populated by the HyperShift Operator</p>
-</td>
-</tr>
-</table>
 </td>
 </tr>
 <tr>
@@ -6053,7 +5998,7 @@ If not specified, defaults to &ldquo;pd-balanced&rdquo;.</p>
 </tr>
 <tr>
 <td>
-<code>encryptionKey</code></br>
+<code>encryptionKey,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPDiskEncryptionKey">
 GCPDiskEncryptionKey
@@ -6142,7 +6087,7 @@ private node communication with the control plane via Private Service Connect.</
 <tbody>
 <tr>
 <td>
-<code>network</code></br>
+<code>network,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
 GCPResourceReference
@@ -6155,7 +6100,7 @@ GCPResourceReference
 </tr>
 <tr>
 <td>
-<code>privateServiceConnectSubnet</code></br>
+<code>privateServiceConnectSubnet,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
 GCPResourceReference
@@ -6290,7 +6235,9 @@ If not specified, uses the default compute service account for the project.</p>
 <p>resourceLabels is an optional list of additional labels to apply to GCP node
 instances and their associated resources (disks, etc.).
 Labels will be merged with cluster-level resource labels, with NodePool labels
-taking precedence in case of conflicts.</p>
+taking precedence in case of conflicts.
+When omitted, no additional labels are applied to node instances.
+If specified, at least one label must be provided.</p>
 <p>Keys and values must conform to GCP labeling requirements:
 - Keys: 1–63 chars, must start with a lowercase letter; allowed [a-z0-9<em>-]
 - Values: empty or 1–63 chars; allowed [a-z0-9</em>-]
@@ -6308,6 +6255,8 @@ taking precedence in case of conflicts.</p>
 <em>(Optional)</em>
 <p>networkTags is an optional list of network tags to apply to node instances.
 These tags are used by GCP firewall rules to control network access.
+When omitted, no additional network tags are applied to node instances.
+If specified, at least one tag must be provided.
 Tags must conform to GCP naming conventions:
 - 1-63 characters
 - Lowercase letters, numbers, and hyphens only
@@ -6370,7 +6319,9 @@ If not specified, defaults to &ldquo;MIGRATE&rdquo; for Standard instances and &
 <td>
 <code>email</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -6393,7 +6344,8 @@ The service account must have the necessary permissions for the node to function
 <td>
 <em>(Optional)</em>
 <p>scopes specifies the access scopes for the service account.
-If not specified, defaults to standard compute scopes.
+When omitted, defaults to standard compute scopes.
+If specified, at least one scope must be provided.
 Common scopes include:
 - &ldquo;<a href="https://www.googleapis.com/auth/devstorage.read_only&quot;">https://www.googleapis.com/auth/devstorage.read_only&rdquo;</a> - Storage read-only
 - &ldquo;<a href="https://www.googleapis.com/auth/logging.write&quot;">https://www.googleapis.com/auth/logging.write&rdquo;</a> - Logging write
@@ -6473,7 +6425,7 @@ For a full list of valid regions, see: <a href="https://cloud.google.com/compute
 </tr>
 <tr>
 <td>
-<code>networkConfig</code></br>
+<code>networkConfig,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPNetworkConfig">
 GCPNetworkConfig
@@ -6515,6 +6467,7 @@ Allowed values: &ldquo;Private&rdquo;, &ldquo;PublicAndPrivate&rdquo;. Defaults 
 Labels are key-value pairs used for organizing and managing GCP resources.
 Changes to this field will be propagated in-place to GCP resources where supported.
 GCP supports a maximum of 64 labels per resource. HyperShift reserves approximately 4 labels for system use.
+When omitted, no additional labels are applied. If specified, at least one label must be provided.
 For GCP labeling guidance, see <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a></p>
 </td>
 </tr>
@@ -6676,8 +6629,9 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>endpointIP is the reserved IP address for the PSC endpoint
-This value must be a valid IPv4 or IPv6 address.</p>
+<p>endpointIP is the reserved IP address for the PSC endpoint.
+When omitted, the endpoint IP has not yet been allocated.
+If specified, it must be a valid IPv4 or IPv6 address.</p>
 </td>
 </tr>
 <tr>
@@ -6690,6 +6644,7 @@ This value must be a valid IPv4 or IPv6 address.</p>
 </em>
 </td>
 <td>
+<em>(Optional)</em>
 <p>dnsZones contains DNS zone information created for this cluster</p>
 </td>
 </tr>
@@ -6820,6 +6775,18 @@ See <a href="https://cloud.google.com/compute/docs/naming-resources">https://clo
 </tr>
 </tbody>
 </table>
+###GCPServiceAccountEmail { #hypershift.openshift.io/v1beta1.GCPServiceAccountEmail }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodeServiceAccount">GCPNodeServiceAccount</a>, 
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountsEmails">GCPServiceAccountsEmails</a>)
+</p>
+<p>
+<p>GCPServiceAccountEmail is a GCP service account email address.
+Must be in the format: service-account-name@project-id.iam.gserviceaccount.com
+where both service-account-name and project-id are 6-30 characters, start with a
+lowercase letter, contain only lowercase letters, digits, or hyphens, and not end with a hyphen.</p>
+</p>
 ###GCPServiceAccountsEmails { #hypershift.openshift.io/v1beta1.GCPServiceAccountsEmails }
 <p>
 (<em>Appears on:</em>
@@ -6841,7 +6808,9 @@ Each service account should have the appropriate IAM permissions for its specifi
 <td>
 <code>nodePool</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -6862,7 +6831,9 @@ the required service accounts with appropriate IAM roles and WIF bindings.</p>
 <td>
 <code>controlPlane</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -6883,7 +6854,9 @@ the required service accounts with appropriate IAM roles and WIF bindings.</p>
 <td>
 <code>cloudController</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -6904,7 +6877,9 @@ the required service accounts with appropriate IAM roles and WIF bindings.</p>
 <td>
 <code>storage</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -6926,7 +6901,9 @@ the required service accounts with appropriate IAM roles and WIF bindings.</p>
 <td>
 <code>imageRegistry</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>

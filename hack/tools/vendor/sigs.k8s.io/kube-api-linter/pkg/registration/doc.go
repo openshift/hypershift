@@ -13,6 +13,7 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+
 /*
 This package is used as an internal registration of linters.
 
@@ -28,12 +29,15 @@ import (
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/conditions"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/conflictingmarkers"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/defaultorrequired"
+	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/defaults"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/dependenttags"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/duplicatemarkers"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/forbiddenmarkers"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/integers"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/jsontags"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/maxlength"
+	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/minlength"
+	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/namingconventions"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/nobools"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/nodurations"
 	_ "sigs.k8s.io/kube-api-linter/pkg/analysis/nofloats"
