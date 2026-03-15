@@ -99,6 +99,12 @@ type Options struct {
 	AWSPrivateCredentialsSecret               string
 	AWSPrivateCredentialsSecretKey            string
 	AWSPrivateRegion                          string
+	AzurePrivateCreds                         string
+	AzurePrivateCredentialsSecret             string
+	AzurePrivateCredentialsSecretKey          string
+	AzurePLSManagedIdentityClientID           string
+	AzurePLSSubscriptionID                    string
+	AzurePLSResourceGroup                     string
 	GCPProject                                string
 	GCPRegion                                 string
 	OIDCStorageProviderS3Region               string
@@ -165,9 +171,19 @@ func (o *Options) Validate() error {
 		if (o.GCPProject == "") != (o.GCPRegion == "") {
 			errs = append(errs, fmt.Errorf("--gcp-project and --gcp-region must be set together when --private-platform=%s", hyperv1.GCPPlatform))
 		}
+	case hyperv1.AzurePlatform:
+		if len(o.AzurePrivateCreds) > 0 && len(o.AzurePLSManagedIdentityClientID) > 0 {
+			errs = append(errs, fmt.Errorf("--azure-private-creds and --azure-pls-managed-identity-client-id are mutually exclusive"))
+		}
+		if len(o.AzurePrivateCredentialsSecret) > 0 && len(o.AzurePLSManagedIdentityClientID) > 0 {
+			errs = append(errs, fmt.Errorf("--azure-private-secret and --azure-pls-managed-identity-client-id are mutually exclusive"))
+		}
+		if len(o.AzurePLSManagedIdentityClientID) > 0 && len(o.AzurePLSSubscriptionID) == 0 {
+			errs = append(errs, fmt.Errorf("--azure-pls-subscription-id is required with --azure-pls-managed-identity-client-id"))
+		}
 	case hyperv1.NonePlatform:
 	default:
-		errs = append(errs, fmt.Errorf("--private-platform must be either %s, %s, or %s", hyperv1.AWSPlatform, hyperv1.GCPPlatform, hyperv1.NonePlatform))
+		errs = append(errs, fmt.Errorf("--private-platform must be either %s, %s, %s, or %s", hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.GCPPlatform, hyperv1.NonePlatform))
 	}
 
 	if len(o.OIDCStorageProviderS3CredentialsSecret) > 0 && len(o.OIDCStorageProviderS3Credentials) > 0 {
@@ -309,11 +325,17 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", opts.ExcludeEtcdManifests, "Leave out etcd manifests")
 	cmd.PersistentFlags().Var(&opts.PlatformMonitoring, "platform-monitoring", "Select an option for enabling platform cluster monitoring. Valid values are: None, OperatorOnly, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
-	cmd.PersistentFlags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\", \"GCP\", or \"None\")")
+	cmd.PersistentFlags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\", \"Azure\", \"GCP\", or \"None\")")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCreds, "aws-private-creds", opts.AWSPrivateCreds, "Path to an AWS credentials file with privileges sufficient to manage private cluster resources")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecret, "aws-private-secret", "", "Name of an existing secret containing the AWS private link credentials.")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecretKey, "aws-private-secret-key", opts.AWSPrivateCredentialsSecretKey, "Name of the secret key containing the AWS private link credentials.")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateRegion, "aws-private-region", opts.AWSPrivateRegion, "AWS region where private clusters are supported by this operator")
+	cmd.PersistentFlags().StringVar(&opts.AzurePrivateCreds, "azure-private-creds", opts.AzurePrivateCreds, "Path to an Azure credentials file with privileges sufficient to manage private cluster resources")
+	cmd.PersistentFlags().StringVar(&opts.AzurePrivateCredentialsSecret, "azure-private-secret", "", "Name of an existing secret containing the Azure private link credentials")
+	cmd.PersistentFlags().StringVar(&opts.AzurePrivateCredentialsSecretKey, "azure-private-secret-key", "credentials", "Name of the secret key containing the Azure private link credentials")
+	cmd.PersistentFlags().StringVar(&opts.AzurePLSManagedIdentityClientID, "azure-pls-managed-identity-client-id", "", "Client ID of the managed identity for Azure Private Link Service operations (alternative to credential file; uses Azure Workload Identity federation)")
+	cmd.PersistentFlags().StringVar(&opts.AzurePLSSubscriptionID, "azure-pls-subscription-id", "", "Azure subscription ID for Private Link Service operations (required with --azure-pls-managed-identity-client-id)")
+	cmd.PersistentFlags().StringVar(&opts.AzurePLSResourceGroup, "azure-pls-resource-group", "", "Azure resource group of the management cluster where Private Link Services and load balancers reside (required with --private-platform=Azure for self-managed clusters)")
 	cmd.PersistentFlags().StringVar(&opts.GCPProject, "gcp-project", "", "GCP project ID for the operator when using --private-platform=GCP")
 	cmd.PersistentFlags().StringVar(&opts.GCPRegion, "gcp-region", "", "GCP region for the operator when using --private-platform=GCP")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", "", "Region of the OIDC bucket. Required for AWS guest clusters")
