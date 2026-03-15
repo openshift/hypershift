@@ -115,6 +115,12 @@ func (o *RawKubevirtPlatformCreateOptions) Validate(_ context.Context, _ *core.C
 		return nil, fmt.Errorf("the root volume size [%d] must be greater than or equal to 16", o.RootVolumeSize)
 	}
 
+	if o.Memory != "" {
+		if _, err := apiresource.ParseQuantity(o.Memory); err != nil {
+			return nil, fmt.Errorf("invalid memory quantity %q: %w", o.Memory, err)
+		}
+	}
+
 	if len(o.AdditionalNetworks) == 0 && o.AttachDefaultNetwork != nil && !*o.AttachDefaultNetwork {
 		return nil, fmt.Errorf(`missing --additional-network. when --attach-default-network is false configuring an additional network is mandatory`)
 	}
@@ -297,8 +303,7 @@ func (o *CompletedKubevirtPlatformCreateOptions) NodePoolPlatform() *hyperv1.Kub
 	}
 
 	if o.Memory != "" {
-		// TODO: add a debug trace for this error
-		memory, _ := apiresource.ParseQuantity(o.Memory)
+		memory := apiresource.MustParse(o.Memory)
 		platform.Compute.Memory = &memory
 	}
 	if o.Cores != 0 {

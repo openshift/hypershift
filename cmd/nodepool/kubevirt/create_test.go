@@ -1,6 +1,7 @@
 package kubevirt
 
 import (
+	"strings"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -13,11 +14,62 @@ import (
 	"github.com/spf13/pflag"
 )
 
+func TestNodePoolPlatform_When_memory_is_set_it_should_parse_correctly(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		memory         string
+		expectMemory   bool
+		expectedString string
+	}{
+		{
+			name:           "When memory value is valid it should parse correctly",
+			memory:         "8Gi",
+			expectMemory:   true,
+			expectedString: "8Gi",
+		},
+		{
+			name:         "When memory is empty it should leave Compute.Memory nil",
+			memory:       "",
+			expectMemory: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := &CompletedKubevirtPlatformCreateOptions{
+				completedKubevirtPlatformCreateOptions: &completedKubevirtPlatformCreateOptions{
+					KubevirtPlatformOptions: &KubevirtPlatformOptions{
+						Memory:               tc.memory,
+						Cores:                2,
+						RootVolumeSize:       32,
+						AttachDefaultNetwork: ptr.To(true),
+					},
+				},
+			}
+
+			platform := opts.NodePoolPlatform()
+			if platform.Compute == nil {
+				t.Fatal("expected Compute to be set")
+			}
+			if tc.expectMemory {
+				if platform.Compute.Memory == nil {
+					t.Fatal("expected Compute.Memory to be set")
+				}
+				if platform.Compute.Memory.String() != tc.expectedString {
+					t.Errorf("expected Compute.Memory to be %s, got %s", tc.expectedString, platform.Compute.Memory.String())
+				}
+			} else {
+				if platform.Compute.Memory != nil {
+					t.Errorf("expected Compute.Memory to be nil, got %s", platform.Compute.Memory.String())
+				}
+			}
+		})
+	}
+}
+
 func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 	for _, test := range []struct {
-		name          string
-		input         RawKubevirtPlatformCreateOptions
-		expectedError string
+		name                   string
+		input                  RawKubevirtPlatformCreateOptions
+		expectedErrorSubstring string
 	}{
 		{
 			name: "should fail excluding default network without additional ones",
@@ -28,16 +80,33 @@ func TestRawKubevirtPlatformCreateOptions_Validate(t *testing.T) {
 					AttachDefaultNetwork: ptr.To(true),
 				},
 			},
-			expectedError: "",
+			expectedErrorSubstring: "",
+		},
+		{
+			name: "When memory value is invalid it should return a validation error",
+			input: RawKubevirtPlatformCreateOptions{
+				KubevirtPlatformOptions: &KubevirtPlatformOptions{
+					Memory:               "not-a-quantity",
+					Cores:                2,
+					RootVolumeSize:       32,
+					AttachDefaultNetwork: ptr.To(true),
+				},
+			},
+			expectedErrorSubstring: `invalid memory quantity "not-a-quantity"`,
 		},
 	} {
-		var errString string
-		if _, err := test.input.Validate(t.Context(), nil); err != nil {
-			errString = err.Error()
-		}
-		if diff := cmp.Diff(test.expectedError, errString); diff != "" {
-			t.Errorf("got incorrect error: %v", diff)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			var errString string
+			if _, err := test.input.Validate(t.Context(), nil); err != nil {
+				errString = err.Error()
+			}
+			switch {
+			case test.expectedErrorSubstring == "" && errString != "":
+				t.Errorf("unexpected error: %s", errString)
+			case test.expectedErrorSubstring != "" && !strings.Contains(errString, test.expectedErrorSubstring):
+				t.Errorf("expected error containing %q, got %q", test.expectedErrorSubstring, errString)
+			}
+		})
 	}
 }
 
