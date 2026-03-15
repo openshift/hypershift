@@ -758,10 +758,10 @@ func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.Rel
 		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
 	}
 
-	if len(arch.Images.GCP.Image) == 0 {
+	if len(arch.Images.GCP.Project) == 0 || len(arch.Images.GCP.Name) == 0 {
 		return "", fmt.Errorf("release image metadata has no GCP image for architecture %q", specifiedArch)
 	}
-	return arch.Images.GCP.Image, nil
+	return fmt.Sprintf("projects/%s/global/images/%s", arch.Images.GCP.Project, arch.Images.GCP.Name), nil
 }
 
 // MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas
