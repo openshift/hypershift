@@ -2,8 +2,10 @@ package karpenterignition
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -30,10 +32,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
+	"sigs.k8s.io/yaml"
 
 	"github.com/blang/semver"
 )
@@ -44,6 +48,8 @@ const (
 	// nodePoolAnnotationCurrentConfigVersion mirrors the annotation from nodepool_controller.go
 	// It's used to track the current config version for outdated token cleanup
 	nodePoolAnnotationCurrentConfigVersion = "hypershift.openshift.io/nodePoolCurrentConfigVersion"
+
+	kubeletConfigFinalizer = "hypershift.openshift.io/karpenter-kubelet-config-finalizer"
 )
 
 type KarpenterIgnitionReconciler struct {
@@ -108,6 +114,11 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		return ctrl.Result{}, fmt.Errorf("failed to get OpenshiftEC2NodeClass: %w", err)
 	}
 
+	// Handle deletion: clean up management-cluster ConfigMap before finalizer is removed
+	if !openshiftEC2NodeClass.DeletionTimestamp.IsZero() {
+		return r.reconcileDeletedNodeClass(ctx, hcp, openshiftEC2NodeClass)
+	}
+
 	hostedCluster, err := hostedClusterFromHCP(hcp, r.IgnitionEndpoint)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get HostedCluster: %w", err)
@@ -144,6 +155,35 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		skewErr = detectVersionSkew(hostedCluster, version)
 	}
 
+	// If spec.kubelet is configured, add a finalizer to clean up the configmap. We can't just use owner
+	// references because this is cross cluster (the configmap lives in the control plane)
+	if openshiftEC2NodeClass.Spec.Kubelet != nil {
+
+		if !controllerutil.ContainsFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer) {
+			original := openshiftEC2NodeClass.DeepCopy()
+			controllerutil.AddFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer)
+			if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass,
+				client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to add kubelet config finalizer: %w", err)
+			}
+		}
+	}
+
+	if err := r.reconcileKubeletConfigMap(ctx, hcp, openshiftEC2NodeClass); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile kubelet config configmap: %w", err)
+	}
+
+	// The reconcile will have deleted the configmap if we make it here, so we can
+	// remove the finalizer
+	if openshiftEC2NodeClass.Spec.Kubelet == nil && controllerutil.ContainsFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer) {
+		original := openshiftEC2NodeClass.DeepCopy()
+		controllerutil.RemoveFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer)
+		if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass,
+			client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to remove kubelet config finalizer: %w", err)
+		}
+	}
+
 	if err := r.reconcileNodeClassToken(ctx, hcp, hostedCluster, openshiftEC2NodeClass, releaseImage); err != nil {
 		log.Error(err, "failed to reconcile token for OpenshiftEC2NodeClass", "name", openshiftEC2NodeClass.Name)
 		// Still update version status so conditions are set even when token reconciliation fails.
@@ -168,6 +208,45 @@ func (r *KarpenterIgnitionReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	if err := r.updateVersionStatus(ctx, openshiftEC2NodeClass, releaseImage, version, nil); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update version status: %w", err)
 	}
+
+	return ctrl.Result{}, nil
+}
+
+// reconcileDeletedNodeClass handles cleanup when an OpenshiftEC2NodeClass is being deleted.
+// It deletes the kubelet ConfigMap from the management cluster and removes the finalizer
+// to allow the NodeClass deletion to proceed.
+func (r *KarpenterIgnitionReconciler) reconcileDeletedNodeClass(
+	ctx context.Context,
+	hcp *hyperv1.HostedControlPlane,
+	openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass,
+) (ctrl.Result, error) {
+	log := ctrl.LoggerFrom(ctx)
+
+	if !controllerutil.ContainsFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer) {
+		return ctrl.Result{}, nil
+	}
+
+	// Delete the kubelet ConfigMap from the management cluster
+	configMapName := karpenterutil.KarpenterNodeClassKubeletConfigName(openshiftEC2NodeClass.Name)
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMapName,
+			Namespace: hcp.Namespace,
+		},
+	}
+	if _, err := supportutil.DeleteIfNeeded(ctx, r.ManagementClient, cm); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to delete kubelet config configmap %s: %w", configMapName, err)
+	}
+	log.Info("Deleted kubelet config ConfigMap", "name", configMapName)
+
+	// Remove the finalizer to allow NodeClass deletion to proceed
+	original := openshiftEC2NodeClass.DeepCopy()
+	controllerutil.RemoveFinalizer(openshiftEC2NodeClass, kubeletConfigFinalizer)
+	if err := r.GuestClient.Patch(ctx, openshiftEC2NodeClass,
+		client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to remove kubelet config finalizer: %w", err)
+	}
+	log.Info("Removed kubelet config finalizer from OpenshiftEC2NodeClass", "name", openshiftEC2NodeClass.Name)
 
 	return ctrl.Result{}, nil
 }
@@ -224,6 +303,21 @@ func (r *KarpenterIgnitionReconciler) createInMemoryNodePool(
 	openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass,
 	releaseImage string,
 ) *hyperv1.NodePool {
+	// When Spec.Kubelet is set, the per-nodeclass kubelet ConfigMap is generated with
+	// KarpenterBaseTaintMap merged in (so registerWithTaints is always present), so
+	// set-karpenter-taint must NOT also be included — the MCO bootstrap rejects two
+	// KubeletConfigs targeting the same MachineConfigPool.
+	var configRefs []corev1.LocalObjectReference
+	if openshiftEC2NodeClass.Spec.Kubelet != nil {
+		configRefs = []corev1.LocalObjectReference{
+			{Name: karpenterutil.KarpenterNodeClassKubeletConfigName(openshiftEC2NodeClass.Name)},
+		}
+	} else {
+		configRefs = []corev1.LocalObjectReference{
+			{Name: karpenterutil.KarpenterTaintConfigMapName},
+		}
+	}
+
 	return &hyperv1.NodePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        karpenterutil.KarpenterNodePoolName(openshiftEC2NodeClass),
@@ -240,12 +334,8 @@ func (r *KarpenterIgnitionReconciler) createInMemoryNodePool(
 			Release: hyperv1.Release{
 				Image: releaseImage,
 			},
-			Config: []corev1.LocalObjectReference{
-				{
-					Name: karpenterutil.KarpenterTaintConfigMapName,
-				},
-			},
-			Arch: hyperv1.ArchitectureAMD64, // used to find default AMI
+			Config: configRefs,
+			Arch:   hyperv1.ArchitectureAMD64, // used to find default AMI
 		},
 	}
 }
@@ -385,6 +475,92 @@ func detectVersionSkew(hostedCluster *hyperv1.HostedCluster, version string) err
 	}
 
 	return supportedversion.ValidateVersionSkew(&hostedClusterVersion, &nodeClassVersion)
+}
+
+// reconcileKubeletConfigMap creates, updates, or deletes the per-OpenshiftEC2NodeClass KubeletConfig ConfigMap
+// in the HCP namespace based on whether the nodeclass has KubeletConfig set.
+func (r *KarpenterIgnitionReconciler) reconcileKubeletConfigMap(
+	ctx context.Context,
+	hcp *hyperv1.HostedControlPlane,
+	openshiftEC2NodeClass *hyperkarpenterv1.OpenshiftEC2NodeClass,
+) error {
+	configMapName := karpenterutil.KarpenterNodeClassKubeletConfigName(openshiftEC2NodeClass.Name)
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      configMapName,
+			Namespace: hcp.Namespace,
+		},
+	}
+
+	// Delete the configmap if there are no kubelet settings on the nodeclass
+	if openshiftEC2NodeClass.Spec.Kubelet == nil {
+		if err := r.ManagementClient.Delete(ctx, cm); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete kubelet config configmap %s: %w", configMapName, err)
+		}
+		return nil
+	}
+
+	// Convert user KubeletConfiguration to a plain map (via JSON round-trip to honor json tags
+	// and omitempty)
+	nodeClassKubeletRaw, err := json.Marshal(openshiftEC2NodeClass.Spec.Kubelet)
+	if err != nil {
+		return fmt.Errorf("failed to marshal user kubelet config: %w", err)
+	}
+	var nodeClassKubeletMap map[string]interface{}
+	if err := json.Unmarshal(nodeClassKubeletRaw, &nodeClassKubeletMap); err != nil {
+		return fmt.Errorf("failed to unmarshal user kubelet config: %w", err)
+	}
+
+	// Merge nodeclass with the taint base, our taints go in last so they always win —
+	// registerWithTaints is not currently user-settable but this ordering ensures our taint
+	// can never be accidentally overridden
+	merged := mergeKubeletConfigMaps(nodeClassKubeletMap, karpenterutil.KarpenterBaseTaintMap())
+	manifest, err := kubeletConfigManifest(configMapName, merged)
+	if err != nil {
+		return fmt.Errorf("failed to generate kubelet config manifest: %w", err)
+	}
+
+	_, err = r.CreateOrUpdate(ctx, r.ManagementClient, cm, func() error {
+		if cm.Labels == nil {
+			cm.Labels = map[string]string{}
+		}
+		cm.Labels[karpenterutil.KarpenterNodeClassKubeletConfigLabel] = "true"
+		cm.Data = map[string]string{
+			"config": manifest,
+		}
+		return nil
+	})
+	return err
+}
+
+// mergeKubeletConfigMaps merges two kubeletConfig maps. Base keys are included unless
+// overlay defines the same key, in which case overlay wins. Callers should pass our
+// required fields (e.g. taint base) as overlay so they are never clobbered by user config.
+func mergeKubeletConfigMaps(base, overlay map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{}, len(base)+len(overlay))
+	for k, v := range base {
+		result[k] = v
+	}
+	for k, v := range overlay {
+		result[k] = v
+	}
+	return result
+}
+
+// kubeletConfigManifest serializes a pre-merged kubeletConfig map into a KubeletConfig CR YAML
+// string suitable for storage in a ConfigMap "config" key.
+func kubeletConfigManifest(name string, kubeletConfig map[string]interface{}) (string, error) {
+	cr := map[string]interface{}{
+		"apiVersion": "machineconfiguration.openshift.io/v1",
+		"kind":       "KubeletConfig",
+		"metadata":   map[string]interface{}{"name": name},
+		"spec":       map[string]interface{}{"kubeletConfig": kubeletConfig},
+	}
+	out, err := yaml.Marshal(cr)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(string(out), "\n"), nil
 }
 
 // buildConfigGenerator creates a ConfigGenerator for the in-memory NodePool

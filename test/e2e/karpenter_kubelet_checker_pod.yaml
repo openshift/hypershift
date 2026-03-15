@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kubelet-config-checker
+  namespace: kube-system
+spec:
+  restartPolicy: Never
+  containers:
+  - name: checker
+    image: alpine
+    command:
+    - /bin/sh
+    - -c
+    - |
+      set -u
+      FILE=/host/etc/kubernetes/kubelet.conf
+      ENV_FILE=/host/etc/node-sizing-enabled.env
+      FAIL=0
+
+      check() {
+        local label="$1"; shift
+        if grep -q "$@" "$FILE"; then
+          echo "PASS: $label"
+        else
+          echo "FAIL: $label  (pattern: $*)"
+          FAIL=1
+        fi
+      }
+
+      check_env() {
+        local label="$1"; shift
+        if grep -q "$@" "$ENV_FILE"; then
+          echo "PASS: $label"
+        else
+          echo "FAIL: $label  (pattern: $*)"
+          FAIL=1
+        fi
+      }
+
+      echo "=== kubelet.conf ==="
+      cat "$FILE"
+      echo "=== node-sizing-enabled.env ==="
+      cat "$ENV_FILE"
+      echo "=== grep checks ==="
+
+      check "maxPods: 203"                        'maxPods: 203'
+      check "podsPerCore: 11"                     'podsPerCore: 11'
+      check "cpuCFSQuota: false"                  'cpuCFSQuota: false'
+      check "evictionMaxPodGracePeriod: 31"       'evictionMaxPodGracePeriod: 31'
+      check "imageGCHighThresholdPercent: 81"     'imageGCHighThresholdPercent: 81'
+      check "imageGCLowThresholdPercent: 71"      'imageGCLowThresholdPercent: 71'
+      check "kubeReserved cpu: 510m"              'cpu: 510m'
+      check "kubeReserved memory: 521Mi"          'memory: 521Mi'
+      check "evictionHard memory.available 201Mi" 'memory.available: 201Mi'
+      check "evictionHard nodefs.available 11%"   'nodefs.available: 11%'
+      check "evictionSoft memory.available 401Mi" 'memory.available: 401Mi'
+      check "evictionSoft nodefs.available 16%"   'nodefs.available: 16%'
+      check "evictionSoftGracePeriod 1m31s"       '1m31s'
+      check "evictionSoftGracePeriod 2m5s"        '2m5s'
+
+      check_env "SYSTEM_RESERVED_CPU=510m"        'SYSTEM_RESERVED_CPU=510m'
+      check_env "SYSTEM_RESERVED_MEMORY=521Mi"    'SYSTEM_RESERVED_MEMORY=521Mi'
+
+      exit $FAIL
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - name: host
+      mountPath: /host
+      readOnly: true
+  volumes:
+  - name: host
+    hostPath:
+      path: /

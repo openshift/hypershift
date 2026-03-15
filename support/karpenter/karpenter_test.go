@@ -14,6 +14,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/yaml"
 )
 
 func TestGetHCP(t *testing.T) {
@@ -165,4 +166,71 @@ func TestArchToAMILabelKey(t *testing.T) {
 			g.Expect(ArchToAMILabelKey(tc.arch)).To(Equal(tc.expected))
 		})
 	}
+
+}
+func TestKarpenterTaintConfigManifest(t *testing.T) {
+	t.Run("When called it should return a valid KubeletConfig CR with correct apiVersion and kind", func(t *testing.T) {
+		g := NewWithT(t)
+
+		manifest, err := KarpenterTaintConfigManifest()
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(manifest).NotTo(BeEmpty())
+
+		var cr map[string]interface{}
+		err = yaml.Unmarshal([]byte(manifest), &cr)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(cr["apiVersion"]).To(Equal("machineconfiguration.openshift.io/v1"))
+		g.Expect(cr["kind"]).To(Equal("KubeletConfig"))
+		metadata, ok := cr["metadata"].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		g.Expect(metadata["name"]).To(Equal(KarpenterTaintConfigMapName))
+	})
+
+	t.Run("When called it should embed all KarpenterBaseTaints in registerWithTaints with correct fields", func(t *testing.T) {
+		g := NewWithT(t)
+
+		manifest, err := KarpenterTaintConfigManifest()
+		g.Expect(err).NotTo(HaveOccurred())
+
+		var cr map[string]interface{}
+		err = yaml.Unmarshal([]byte(manifest), &cr)
+		g.Expect(err).NotTo(HaveOccurred())
+		spec, ok := cr["spec"].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		kubeletConfig, ok := spec["kubeletConfig"].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		taints, ok := kubeletConfig["registerWithTaints"].([]interface{})
+		g.Expect(ok).To(BeTrue())
+		g.Expect(taints).To(HaveLen(len(KarpenterBaseTaints)))
+		taint, ok := taints[0].(map[string]interface{})
+		g.Expect(ok).To(BeTrue())
+		g.Expect(taint["key"]).To(Equal(KarpenterBaseTaints[0].Key))
+		g.Expect(taint["value"]).To(Equal(KarpenterBaseTaints[0].Value))
+		g.Expect(taint["effect"]).To(Equal(string(KarpenterBaseTaints[0].Effect)))
+	})
+}
+
+func TestKarpenterBaseTaintMap(t *testing.T) {
+	t.Run("When called it should return a map with the registerWithTaints key", func(t *testing.T) {
+		g := NewWithT(t)
+
+		m := KarpenterBaseTaintMap()
+		g.Expect(m).To(HaveKey("registerWithTaints"))
+	})
+
+	t.Run("When called it should include the correct key, value, and effect for each taint", func(t *testing.T) {
+		g := NewWithT(t)
+
+		m := KarpenterBaseTaintMap()
+		taints, ok := m["registerWithTaints"].([]interface{})
+		g.Expect(ok).To(BeTrue())
+		g.Expect(taints).To(HaveLen(len(KarpenterBaseTaints)))
+		for i, entry := range taints {
+			taint, ok := entry.(map[string]interface{})
+			g.Expect(ok).To(BeTrue())
+			g.Expect(taint["key"]).To(Equal(KarpenterBaseTaints[i].Key))
+			g.Expect(taint["value"]).To(Equal(KarpenterBaseTaints[i].Value))
+			g.Expect(taint["effect"]).To(Equal(string(KarpenterBaseTaints[i].Effect)))
+		}
+	})
 }
