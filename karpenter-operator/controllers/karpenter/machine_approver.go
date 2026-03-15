@@ -9,10 +9,10 @@ import (
 
 	awsutil "github.com/openshift/hypershift/cmd/infra/aws/util"
 	"github.com/openshift/hypershift/control-plane-pki-operator/certificates"
+	"github.com/openshift/hypershift/support/awsapi"
 
-	awssdk "github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 
 	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -137,7 +137,7 @@ func (r *MachineApproverController) Reconcile(ctx context.Context, req ctrl.Requ
 }
 
 // TODO: include a creation time window for the nodeclaim, the instance and csr triplets and also ratelimit and short circuit approval based on the number of pending CSRs
-func (r *MachineApproverController) authorize(ctx context.Context, csr *certificatesv1.CertificateSigningRequest, ec2Client ec2iface.EC2API) (bool, error) {
+func (r *MachineApproverController) authorize(ctx context.Context, csr *certificatesv1.CertificateSigningRequest, ec2Client awsapi.EC2API) (bool, error) {
 	switch csr.Spec.SignerName {
 	case certificatesv1.KubeAPIServerClientKubeletSignerName:
 		return r.authorizeClientCSR(ctx, csr, ec2Client)
@@ -148,7 +148,7 @@ func (r *MachineApproverController) authorize(ctx context.Context, csr *certific
 	return false, fmt.Errorf("unrecognized signerName %s", csr.Spec.SignerName)
 }
 
-func (r *MachineApproverController) authorizeClientCSR(ctx context.Context, csr *certificatesv1.CertificateSigningRequest, ec2Client ec2iface.EC2API) (bool, error) {
+func (r *MachineApproverController) authorizeClientCSR(ctx context.Context, csr *certificatesv1.CertificateSigningRequest, ec2Client awsapi.EC2API) (bool, error) {
 	x509cr, err := certificates.ParseCSR(csr.Spec.Request)
 	if err != nil {
 		return false, err
@@ -181,7 +181,7 @@ func (r *MachineApproverController) authorizeClientCSR(ctx context.Context, csr 
 	return false, nil
 }
 
-func (r *MachineApproverController) authorizeServingCSR(ctx context.Context, csr *certificatesv1.CertificateSigningRequest, ec2Client ec2iface.EC2API) (bool, error) {
+func (r *MachineApproverController) authorizeServingCSR(ctx context.Context, csr *certificatesv1.CertificateSigningRequest, ec2Client awsapi.EC2API) (bool, error) {
 	nodeName := strings.TrimPrefix(csr.Spec.Username, "system:node:")
 	if len(nodeName) == 0 {
 		return false, fmt.Errorf("csr username does not have a valid node name")
@@ -204,7 +204,7 @@ func (r *MachineApproverController) authorizeServingCSR(ctx context.Context, csr
 	return false, nil
 }
 
-func getEC2InstancesDNSNames(ctx context.Context, nodeClaims []karpenterv1.NodeClaim, ec2Client ec2iface.EC2API) ([]string, error) {
+func getEC2InstancesDNSNames(ctx context.Context, nodeClaims []karpenterv1.NodeClaim, ec2Client awsapi.EC2API) ([]string, error) {
 	ec2InstanceIDs := []string{}
 	for _, claim := range nodeClaims {
 		providerID := claim.Status.ProviderID
@@ -217,8 +217,8 @@ func getEC2InstancesDNSNames(ctx context.Context, nodeClaims []karpenterv1.NodeC
 		return nil, nil
 	}
 
-	output, err := ec2Client.DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
-		InstanceIds: awssdk.StringSlice(ec2InstanceIDs),
+	output, err := ec2Client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+		InstanceIds: ec2InstanceIDs,
 	})
 	if err != nil {
 		return nil, err
@@ -227,7 +227,7 @@ func getEC2InstancesDNSNames(ctx context.Context, nodeClaims []karpenterv1.NodeC
 	dnsNames := []string{}
 	for _, reservation := range output.Reservations {
 		for _, instance := range reservation.Instances {
-			dnsNames = append(dnsNames, *instance.PrivateDnsName)
+			dnsNames = append(dnsNames, aws.ToString(instance.PrivateDnsName))
 		}
 	}
 	return dnsNames, nil
@@ -249,15 +249,18 @@ func (r *MachineApproverController) approve(ctx context.Context, csr *certificat
 	return nil
 }
 
-func getEC2Client() (ec2iface.EC2API, error) {
+func getEC2Client() (awsapi.EC2API, error) {
 	// AWS_SHARED_CREDENTIALS_FILE and AWS_REGION envvar should be set in operator deployment
 	// when reconciling an AWS hosted control plane
 	if os.Getenv("AWS_SHARED_CREDENTIALS_FILE") == "" {
 		return nil, fmt.Errorf("AWS credentials not set")
 	}
 
-	awsSession := awsutil.NewSession("karpenter-operator", "", "", "", "")
-	ec2Client := ec2.New(awsSession, awssdk.NewConfig())
+	awsSession := awsutil.NewSessionV2(context.Background(), "karpenter-operator", "", "", "", "")
+	awsConfig := awsutil.NewConfigV2()
+	ec2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+		o.Retryer = awsConfig()
+	})
 	return ec2Client, nil
 }
 

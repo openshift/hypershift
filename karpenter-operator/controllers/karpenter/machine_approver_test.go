@@ -13,11 +13,11 @@ import (
 	. "github.com/onsi/gomega"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/support/awsapi"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
 	certificatesv1 "k8s.io/api/certificates/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -27,23 +27,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
+
+	"go.uber.org/mock/gomock"
 )
-
-type fakeEC2Client struct {
-	ec2iface.EC2API
-
-	instances []*ec2.Instance
-}
-
-func (fake *fakeEC2Client) DescribeInstancesWithContext(aws.Context, *ec2.DescribeInstancesInput, ...request.Option) (*ec2.DescribeInstancesOutput, error) {
-	return &ec2.DescribeInstancesOutput{
-		Reservations: []*ec2.Reservation{
-			{
-				Instances: fake.instances,
-			},
-		},
-	}, nil
-}
 
 func TestAuthorizeClientCSR(t *testing.T) {
 	fakeNodeClaim := &karpenterv1.NodeClaim{
@@ -54,7 +40,7 @@ func TestAuthorizeClientCSR(t *testing.T) {
 
 	testCases := []struct {
 		name      string
-		instances []*ec2.Instance
+		instances []ec2types.Instance
 		x509csr   []byte
 		objects   []client.Object
 		wantErr   string
@@ -85,7 +71,7 @@ func TestAuthorizeClientCSR(t *testing.T) {
 		},
 		{
 			name: "When CSR common name does NOT match any EC2 instance PrivateDnsName it should not be authorized",
-			instances: []*ec2.Instance{
+			instances: []ec2types.Instance{
 				{
 					PrivateDnsName: aws.String("test2"),
 				},
@@ -96,7 +82,7 @@ func TestAuthorizeClientCSR(t *testing.T) {
 		},
 		{
 			name: "When CSR common name matches an EC2 instance PrivateDnsName it should be authorized",
-			instances: []*ec2.Instance{
+			instances: []ec2types.Instance{
 				{
 					PrivateDnsName: aws.String("test1"),
 				},
@@ -115,12 +101,14 @@ func TestAuthorizeClientCSR(t *testing.T) {
 				WithObjects(tc.objects...).
 				Build()
 
-			r := &MachineApproverController{
-				client: fakeClient,
-			}
-			fakeEC2Client := &fakeEC2Client{
-				instances: tc.instances,
-			}
+			r := &MachineApproverController{client: fakeClient}
+
+			mockEC2 := awsapi.NewMockEC2API(gomock.NewController(t))
+			mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any()).Return(
+				&ec2.DescribeInstancesOutput{
+					Reservations: []ec2types.Reservation{{Instances: tc.instances}},
+				}, nil,
+			).AnyTimes()
 
 			csr := &certificatesv1.CertificateSigningRequest{
 				Spec: certificatesv1.CertificateSigningRequestSpec{
@@ -129,7 +117,7 @@ func TestAuthorizeClientCSR(t *testing.T) {
 				},
 			}
 
-			authorized, err := r.authorize(t.Context(), csr, fakeEC2Client)
+			authorized, err := r.authorize(t.Context(), csr, mockEC2)
 			if tc.wantErr != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.wantErr))
@@ -155,7 +143,7 @@ func TestAuthorizeServingCSR(t *testing.T) {
 	testCases := []struct {
 		name        string
 		csrUserName string
-		instances   []*ec2.Instance
+		instances   []ec2types.Instance
 		objects     []client.Object
 		wantErr     string
 		authorize   bool
@@ -187,7 +175,7 @@ func TestAuthorizeServingCSR(t *testing.T) {
 			name:        "When CSR username does NOT match any EC2 instance PrivateDnsName it should not be authorized",
 			csrUserName: "system:node:test1",
 			objects:     []client.Object{nodeClaimWithNodeName("test1")},
-			instances: []*ec2.Instance{
+			instances: []ec2types.Instance{
 				{
 					PrivateDnsName: aws.String("test2"),
 				},
@@ -198,7 +186,7 @@ func TestAuthorizeServingCSR(t *testing.T) {
 			name:        "When CSR username matches an EC2 instance PrivateDnsName it should be authorized",
 			csrUserName: "system:node:test1",
 			objects:     []client.Object{nodeClaimWithNodeName("test1")},
-			instances: []*ec2.Instance{
+			instances: []ec2types.Instance{
 				{
 					PrivateDnsName: aws.String("test1"),
 				},
@@ -215,12 +203,14 @@ func TestAuthorizeServingCSR(t *testing.T) {
 				WithObjects(tc.objects...).
 				Build()
 
-			r := &MachineApproverController{
-				client: fakeClient,
-			}
-			fakeEC2Client := &fakeEC2Client{
-				instances: tc.instances,
-			}
+			r := &MachineApproverController{client: fakeClient}
+
+			mockEC2 := awsapi.NewMockEC2API(gomock.NewController(t))
+			mockEC2.EXPECT().DescribeInstances(gomock.Any(), gomock.Any()).Return(
+				&ec2.DescribeInstancesOutput{
+					Reservations: []ec2types.Reservation{{Instances: tc.instances}},
+				}, nil,
+			).AnyTimes()
 
 			csr := &certificatesv1.CertificateSigningRequest{
 				Spec: certificatesv1.CertificateSigningRequestSpec{
@@ -229,7 +219,7 @@ func TestAuthorizeServingCSR(t *testing.T) {
 				},
 			}
 
-			authorized, err := r.authorize(t.Context(), csr, fakeEC2Client)
+			authorized, err := r.authorize(t.Context(), csr, mockEC2)
 			if tc.wantErr != "" {
 				g.Expect(err).To(HaveOccurred())
 				g.Expect(err.Error()).To(ContainSubstring(tc.wantErr))

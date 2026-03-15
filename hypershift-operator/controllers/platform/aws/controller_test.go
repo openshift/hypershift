@@ -1,7 +1,7 @@
 package aws
 
 import (
-	"errors"
+	"context"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -10,12 +10,11 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	elbv2types "github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2/types"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -25,47 +24,6 @@ import (
 	"github.com/go-logr/logr/testr"
 	"go.uber.org/mock/gomock"
 )
-
-type fakeEC2Client struct {
-	ec2iface.EC2API
-	created     *ec2.CreateVpcEndpointServiceConfigurationInput
-	createOut   *ec2.CreateVpcEndpointServiceConfigurationOutput
-	deleteOut   *ec2.DeleteVpcEndpointServiceConfigurationsOutput
-	describeOut *ec2.DescribeVpcEndpointConnectionsOutput
-	rejectOut   *ec2.RejectVpcEndpointConnectionsOutput
-
-	permsOut *ec2.DescribeVpcEndpointServicePermissionsOutput
-	setPerms *ec2.ModifyVpcEndpointServicePermissionsInput
-}
-
-func (f *fakeEC2Client) CreateVpcEndpointServiceConfigurationWithContext(ctx aws.Context, in *ec2.CreateVpcEndpointServiceConfigurationInput, o ...request.Option) (*ec2.CreateVpcEndpointServiceConfigurationOutput, error) {
-	if f.created != nil {
-		return nil, errors.New("already created endpoint service")
-	}
-	f.created = in
-	return f.createOut, nil
-}
-
-func (f *fakeEC2Client) DeleteVpcEndpointServiceConfigurationsWithContext(ctx aws.Context, in *ec2.DeleteVpcEndpointServiceConfigurationsInput, o ...request.Option) (*ec2.DeleteVpcEndpointServiceConfigurationsOutput, error) {
-	return f.deleteOut, nil
-}
-
-func (f *fakeEC2Client) DescribeVpcEndpointConnectionsWithContext(ctx aws.Context, in *ec2.DescribeVpcEndpointConnectionsInput, o ...request.Option) (*ec2.DescribeVpcEndpointConnectionsOutput, error) {
-	return f.describeOut, nil
-}
-
-func (f *fakeEC2Client) RejectVpcEndpointConnectionsWithContext(ctx aws.Context, in *ec2.RejectVpcEndpointConnectionsInput, o ...request.Option) (*ec2.RejectVpcEndpointConnectionsOutput, error) {
-	return f.rejectOut, nil
-}
-
-func (f *fakeEC2Client) DescribeVpcEndpointServicePermissions(in *ec2.DescribeVpcEndpointServicePermissionsInput) (*ec2.DescribeVpcEndpointServicePermissionsOutput, error) {
-	return f.permsOut, nil
-}
-
-func (f *fakeEC2Client) ModifyVpcEndpointServicePermissions(in *ec2.ModifyVpcEndpointServicePermissionsInput) (*ec2.ModifyVpcEndpointServicePermissionsOutput, error) {
-	f.setPerms = in
-	return &ec2.ModifyVpcEndpointServicePermissionsOutput{}, nil
-}
 
 func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 	const mockControlPlaneOperatorRoleArn = "arn:aws:12345678910::iam:role/fakeRoleARN"
@@ -96,7 +54,9 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			elbClient := awsapi.NewMockELBV2API(gomock.NewController(t))
+			ctrl := gomock.NewController(t)
+
+			elbClient := awsapi.NewMockELBV2API(ctrl)
 			elbClient.EXPECT().DescribeLoadBalancers(gomock.Any(), gomock.Any()).Return(&elasticloadbalancingv2.DescribeLoadBalancersOutput{LoadBalancers: []elbv2types.LoadBalancer{{
 				LoadBalancerArn: aws.String("lb-arn"),
 				State:           &elbv2types.LoadBalancerState{Code: elbv2types.LoadBalancerStateEnumActive},
@@ -108,22 +68,31 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 			}
 			client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(infra).Build()
 
-			// Populate the test's existingAllowedPrincipals into the fakeEC2Client
-			existingAllowedPrincipals := make([]*ec2.AllowedPrincipal, len(test.existingAllowedPrincipals))
+			existingAllowedPrincipals := make([]ec2types.AllowedPrincipal, len(test.existingAllowedPrincipals))
 			for i, p := range test.existingAllowedPrincipals {
-				existingAllowedPrincipals[i] = &ec2.AllowedPrincipal{Principal: aws.String(p)}
+				existingAllowedPrincipals[i] = ec2types.AllowedPrincipal{Principal: aws.String(p)}
 			}
 
-			ec2Client := &fakeEC2Client{
-				createOut: &ec2.CreateVpcEndpointServiceConfigurationOutput{ServiceConfiguration: &ec2.ServiceConfiguration{ServiceName: aws.String("ep-service")}},
-				permsOut: &ec2.DescribeVpcEndpointServicePermissionsOutput{
-					AllowedPrincipals: existingAllowedPrincipals,
-				},
-			}
+			mockEC2 := awsapi.NewMockEC2API(ctrl)
 
-			r := AWSEndpointServiceReconciler{
-				Client: client,
-			}
+			var created *ec2.CreateVpcEndpointServiceConfigurationInput
+			mockEC2.EXPECT().CreateVpcEndpointServiceConfiguration(gomock.Any(), gomock.Any()).
+				Do(func(_ context.Context, in *ec2.CreateVpcEndpointServiceConfigurationInput, _ ...func(*ec2.Options)) {
+					created = in
+				}).
+				Return(&ec2.CreateVpcEndpointServiceConfigurationOutput{ServiceConfiguration: &ec2types.ServiceConfiguration{ServiceName: aws.String("ep-service")}}, nil)
+
+			mockEC2.EXPECT().DescribeVpcEndpointServicePermissions(gomock.Any(), gomock.Any()).Return(
+				&ec2.DescribeVpcEndpointServicePermissionsOutput{AllowedPrincipals: existingAllowedPrincipals}, nil)
+
+			var setPerms *ec2.ModifyVpcEndpointServicePermissionsInput
+			mockEC2.EXPECT().ModifyVpcEndpointServicePermissions(gomock.Any(), gomock.Any()).
+				Do(func(_ context.Context, in *ec2.ModifyVpcEndpointServicePermissionsInput, _ ...func(*ec2.Options)) {
+					setPerms = in
+				}).
+				Return(&ec2.ModifyVpcEndpointServicePermissionsOutput{}, nil)
+
+			r := AWSEndpointServiceReconciler{Client: client}
 
 			if err := r.reconcileAWSEndpointServiceStatus(t.Context(), &hyperv1.AWSEndpointService{}, &hyperv1.HostedCluster{
 				Spec: hyperv1.HostedClusterSpec{
@@ -136,21 +105,21 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 						},
 					},
 				},
-			}, ec2Client, elbClient); err != nil {
+			}, mockEC2, elbClient); err != nil {
 				t.Fatalf("reconcileAWSEndpointServiceStatus failed: %v", err)
 			}
 
-			if actual, expected := *ec2Client.created.TagSpecifications[0].Tags[0].Key, "kubernetes.io/cluster/management-cluster-infra-id"; actual != expected {
+			if actual, expected := aws.ToString(created.TagSpecifications[0].Tags[0].Key), "kubernetes.io/cluster/management-cluster-infra-id"; actual != expected {
 				t.Errorf("expected first tag key to be %s, was %s", expected, actual)
 			}
 
-			if actual, expected := *ec2Client.created.TagSpecifications[0].Tags[0].Value, "owned"; actual != expected {
+			if actual, expected := aws.ToString(created.TagSpecifications[0].Tags[0].Value), "owned"; actual != expected {
 				t.Errorf("expected first tags value to be %s, was %s", expected, actual)
 			}
 
 			actualToAdd := map[string]struct{}{mockControlPlaneOperatorRoleArn: {}}
-			for _, arn := range ec2Client.setPerms.AddAllowedPrincipals {
-				actualToAdd[*arn] = struct{}{}
+			for _, arn := range setPerms.AddAllowedPrincipals {
+				actualToAdd[arn] = struct{}{}
 			}
 
 			for _, arn := range test.expectedPrincipalsToAdd {
@@ -160,8 +129,8 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 			}
 
 			actualToRemove := map[string]struct{}{}
-			for _, arn := range ec2Client.setPerms.RemoveAllowedPrincipals {
-				actualToRemove[*arn] = struct{}{}
+			for _, arn := range setPerms.RemoveAllowedPrincipals {
+				actualToRemove[arn] = struct{}{}
 			}
 
 			for _, arn := range test.expectedPrincipalsToRemove {
@@ -175,33 +144,30 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 
 func TestDeleteAWSEndpointService(t *testing.T) {
 	tests := []struct {
-		name      string
-		ec2Client ec2iface.EC2API
-		expected  bool
-		expectErr bool
+		name        string
+		deleteOut   *ec2.DeleteVpcEndpointServiceConfigurationsOutput
+		describeOut *ec2.DescribeVpcEndpointConnectionsOutput
+		expected    bool
+		expectErr   bool
 	}{
 		{
 			name: "successful deletion",
-			ec2Client: &fakeEC2Client{
-				deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
-					Unsuccessful: []*ec2.UnsuccessfulItem{},
-				},
+			deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
+				Unsuccessful: []ec2types.UnsuccessfulItem{},
 			},
 			expected:  true,
 			expectErr: false,
 		},
 		{
 			name: "endpoint service no longer exists",
-			ec2Client: &fakeEC2Client{
-				deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
-					Unsuccessful: []*ec2.UnsuccessfulItem{
-						{
-							Error: &ec2.UnsuccessfulItemError{
-								Code:    aws.String("InvalidVpcEndpointService.NotFound"),
-								Message: aws.String("The VpcEndpointService Id 'vpce-svc-id' does not exist"),
-							},
-							ResourceId: aws.String("vpce-svc-id"),
+			deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
+				Unsuccessful: []ec2types.UnsuccessfulItem{
+					{
+						Error: &ec2types.UnsuccessfulItemError{
+							Code:    aws.String("InvalidVpcEndpointService.NotFound"),
+							Message: aws.String("The VpcEndpointService Id 'vpce-svc-id' does not exist"),
 						},
+						ResourceId: aws.String("vpce-svc-id"),
 					},
 				},
 			},
@@ -210,24 +176,22 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 		},
 		{
 			name: "existing connections",
-			ec2Client: &fakeEC2Client{
-				deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
-					Unsuccessful: []*ec2.UnsuccessfulItem{
-						{
-							Error: &ec2.UnsuccessfulItemError{
-								Code:    aws.String("ExistingVpcEndpointConnections"),
-								Message: aws.String("Service has existing active VPC Endpoint connections!"),
-							},
-							ResourceId: aws.String("vpce-svc-id"),
+			deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
+				Unsuccessful: []ec2types.UnsuccessfulItem{
+					{
+						Error: &ec2types.UnsuccessfulItemError{
+							Code:    aws.String("ExistingVpcEndpointConnections"),
+							Message: aws.String("Service has existing active VPC Endpoint connections!"),
 						},
+						ResourceId: aws.String("vpce-svc-id"),
 					},
 				},
-				describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
-					VpcEndpointConnections: []*ec2.VpcEndpointConnection{
-						{
-							VpcEndpointId:    aws.String("vpce-id"),
-							VpcEndpointState: aws.String("available"),
-						},
+			},
+			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
+				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
+					{
+						VpcEndpointId:    aws.String("vpce-id"),
+						VpcEndpointState: ec2types.StateAvailable,
 					},
 				},
 			},
@@ -238,13 +202,20 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			mockEC2 := awsapi.NewMockEC2API(gomock.NewController(t))
+			mockEC2.EXPECT().DeleteVpcEndpointServiceConfigurations(gomock.Any(), gomock.Any()).Return(test.deleteOut, nil)
+			if test.describeOut != nil {
+				mockEC2.EXPECT().DescribeVpcEndpointConnections(gomock.Any(), gomock.Any()).Return(test.describeOut, nil)
+				mockEC2.EXPECT().RejectVpcEndpointConnections(gomock.Any(), gomock.Any()).Return(nil, nil)
+			}
+
 			obj := &hyperv1.AWSEndpointService{
 				Status: hyperv1.AWSEndpointServiceStatus{EndpointServiceName: "vpce-svc-id"},
 			}
 			client := fake.NewClientBuilder().WithScheme(hyperapi.Scheme).WithObjects(obj).Build()
 
 			r := AWSEndpointServiceReconciler{
-				ec2Client: test.ec2Client,
+				ec2Client: mockEC2,
 				Client:    client,
 			}
 

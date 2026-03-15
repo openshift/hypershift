@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	. "github.com/onsi/gomega"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/hostedcluster"
@@ -169,15 +169,15 @@ func (it *NodePoolImageTypeTest) Run(t *testing.T, nodePool hyperv1.NodePool, no
 		}
 		t.Logf("Verifying EC2 instance %s for node %s", instanceID, node.Name)
 
-		result, err := ec2client.DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
-			InstanceIds: []*string{aws.String(instanceID)},
+		result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+			InstanceIds: []string{instanceID},
 		})
 		g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance %s", instanceID)
 		g.Expect(result.Reservations).NotTo(BeEmpty(), "no reservations found for instance %s", instanceID)
 		g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty(), "no instances found in reservation for instance %s", instanceID)
 
 		instance := result.Reservations[0].Instances[0]
-		actualAMI := aws.StringValue(instance.ImageId)
+		actualAMI := aws.ToString(instance.ImageId)
 		t.Logf("Node %s is running on EC2 instance %s with AMI %s", node.Name, instanceID, actualAMI)
 
 		// This is the critical validation: ensure the EC2 instance is using the Windows LI AMI.

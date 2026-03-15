@@ -7,10 +7,11 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/conditions"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/clock"
@@ -130,7 +131,7 @@ var (
 
 type nodePoolsMetricsCollector struct {
 	client.Client
-	ec2Client ec2iface.EC2API
+	ec2Client awsapi.EC2API
 	clock     clock.Clock
 
 	ec2InstanceTypeToVCpusCount map[string]int32
@@ -140,7 +141,7 @@ type nodePoolsMetricsCollector struct {
 	lastCollectTime time.Time
 }
 
-func createNodePoolsMetricsCollector(client client.Client, ec2Client ec2iface.EC2API, clock clock.Clock) prometheus.Collector {
+func createNodePoolsMetricsCollector(client client.Client, ec2Client awsapi.EC2API, clock clock.Clock) prometheus.Collector {
 	return &nodePoolsMetricsCollector{
 		Client:                      client,
 		ec2Client:                   ec2Client,
@@ -155,7 +156,7 @@ func createNodePoolsMetricsCollector(client client.Client, ec2Client ec2iface.EC
 	}
 }
 
-func CreateAndRegisterNodePoolsMetricsCollector(client client.Client, ec2Client ec2iface.EC2API) prometheus.Collector {
+func CreateAndRegisterNodePoolsMetricsCollector(client client.Client, ec2Client awsapi.EC2API) prometheus.Collector {
 	collector := createNodePoolsMetricsCollector(client, ec2Client, clock.RealClock{})
 
 	metrics.Registry.MustRegister(collector)
@@ -198,7 +199,7 @@ type vCpusDetail struct {
 	vCpusCountErrorReason string // set only if vCpusCount == -1
 }
 
-func (c *nodePoolsMetricsCollector) retrieveVCpusDetailsPerNode(nodePool *hyperv1.NodePool, ec2InstanceTypeToResolutionErrorReason *map[string]string) vCpusDetail {
+func (c *nodePoolsMetricsCollector) retrieveVCpusDetailsPerNode(ctx context.Context, nodePool *hyperv1.NodePool, ec2InstanceTypeToResolutionErrorReason *map[string]string) vCpusDetail {
 	if nodePool.Spec.Platform.Type != hyperv1.AWSPlatform {
 		ctrllog.Log.Info("cannot retrieve the number of vCPUs for " + nodePool.Name + " node pool as its platform is not supported (supported platforms: AWS)")
 
@@ -230,27 +231,25 @@ func (c *nodePoolsMetricsCollector) retrieveVCpusDetailsPerNode(nodePool *hyperv
 	if vCpusCountPerNode, isCached := c.ec2InstanceTypeToVCpusCount[ec2InstanceType]; isCached {
 		return vCpusDetail{vCpusCount: vCpusCountPerNode}
 	}
-	awsInput := ec2.DescribeInstanceTypesInput{InstanceTypes: []*string{&ec2InstanceType}}
+	awsInput := ec2.DescribeInstanceTypesInput{InstanceTypes: []ec2types.InstanceType{ec2types.InstanceType(ec2InstanceType)}}
 	unresolvedErrorReason := ""
 
-	if awsOuput, err := c.ec2Client.DescribeInstanceTypes(&awsInput); awsOuput != nil && err == nil {
+	if awsOuput, err := c.ec2Client.DescribeInstanceTypes(ctx, &awsInput); awsOuput != nil && err == nil {
 		if len(awsOuput.InstanceTypes) == 1 {
 			ec2InstanceTypeInfo := awsOuput.InstanceTypes[0]
 
-			if ec2InstanceTypeInfo != nil {
-				instanceTypeInInfo := ec2InstanceTypeInfo.InstanceType
-				cpuInfo := ec2InstanceTypeInfo.VCpuInfo
+			instanceTypeInInfo := ec2InstanceTypeInfo.InstanceType
+			cpuInfo := ec2InstanceTypeInfo.VCpuInfo
 
-				if instanceTypeInInfo != nil && *instanceTypeInInfo == ec2InstanceType && cpuInfo != nil {
-					vCpusCountPtr := cpuInfo.DefaultVCpus
+			if string(instanceTypeInInfo) == ec2InstanceType && cpuInfo != nil {
+				vCpusCountPtr := cpuInfo.DefaultVCpus
 
-					if vCpusCountPtr != nil {
-						vCpusCount := int32(*vCpusCountPtr)
+				if vCpusCountPtr != nil {
+					vCpusCount := *vCpusCountPtr
 
-						c.ec2InstanceTypeToVCpusCount[ec2InstanceType] = vCpusCount
+					c.ec2InstanceTypeToVCpusCount[ec2InstanceType] = vCpusCount
 
-						return vCpusDetail{vCpusCount: vCpusCount}
-					}
+					return vCpusDetail{vCpusCount: vCpusCount}
 				}
 			}
 		}
@@ -402,7 +401,7 @@ func (c *nodePoolsMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 
 				// vCpusCountByHClusterMetric - aggregation
 				if hclusterData.vCpusCount >= 0 && nodePool.Status.Replicas > 0 {
-					nodeVCpusDetails := c.retrieveVCpusDetailsPerNode(nodePool, &ec2InstanceTypeToResolutionErrorReason)
+					nodeVCpusDetails := c.retrieveVCpusDetailsPerNode(ctx, nodePool, &ec2InstanceTypeToResolutionErrorReason)
 
 					if nodeVCpusDetails.vCpusCountErrorReason == "" {
 						hclusterData.vCpusCount += nodeVCpusDetails.vCpusCount * nodePool.Status.Replicas

@@ -16,12 +16,11 @@ import (
 	"github.com/openshift/hypershift/support/awsapi"
 
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
 	stsv2 "github.com/aws/aws-sdk-go-v2/service/sts"
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/ram"
 
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -55,7 +54,7 @@ type CreateInfraOptions struct {
 
 	PublicOnly bool
 
-	additionalEC2Tags []*ec2.Tag
+	additionalEC2Tags []ec2types.Tag
 }
 
 type CreateInfraOutputZone struct {
@@ -200,10 +199,6 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		return nil, err
 	}
 
-	awsSession, err := o.AWSCredentialsOpts.GetSession("cli-create-infra", o.CredentialsSecretData, o.Region)
-	if err != nil {
-		return nil, err
-	}
 	awsSessionv2, err := o.AWSCredentialsOpts.GetSessionV2(ctx, "cli-create-infra", o.CredentialsSecretData, o.Region)
 	if err != nil {
 		return nil, err
@@ -221,11 +216,16 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		}
 	}
 
-	var clusterCreatorEC2Client, ec2Client *ec2.EC2
+	var clusterCreatorEC2Client, ec2Client awsapi.EC2API
 	var vpcOwnerRoute53Client, route53Client awsapi.ROUTE53API
-	clusterCreatorEC2Client = ec2.New(awsSession, awsutil.NewConfig())
-	if vpcOwnerAWSSession != nil {
-		ec2Client = ec2.New(vpcOwnerAWSSession, awsutil.NewConfig())
+	awsConfigv2 := awsutil.NewConfigV2()
+	clusterCreatorEC2Client = ec2.NewFromConfig(*awsSessionv2, func(o *ec2.Options) {
+		o.Retryer = awsConfigv2()
+	})
+	if vpcOwnerSessionv2 != nil {
+		ec2Client = ec2.NewFromConfig(*vpcOwnerSessionv2, func(o *ec2.Options) {
+			o.Retryer = awsConfigv2()
+		})
 	} else {
 		ec2Client = clusterCreatorEC2Client
 	}
@@ -254,7 +254,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		PublicOnly:       o.PublicOnly,
 	}
 	if len(o.Zones) == 0 {
-		zone, err := o.firstZone(l, ec2Client)
+		zone, err := o.firstZone(ctx, l, ec2Client)
 		if err != nil {
 			return nil, err
 		}
@@ -262,14 +262,14 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	}
 
 	// VPC resources
-	result.VPCID, err = o.createVPC(l, ec2Client)
+	result.VPCID, err = o.createVPC(ctx, l, ec2Client)
 	if err != nil {
 		return nil, err
 	}
-	if err = o.CreateDHCPOptions(l, ec2Client, result.VPCID); err != nil {
+	if err = o.CreateDHCPOptions(ctx, l, ec2Client, result.VPCID); err != nil {
 		return nil, err
 	}
-	igwID, err := o.CreateInternetGateway(l, ec2Client, result.VPCID)
+	igwID, err := o.CreateInternetGateway(ctx, l, ec2Client, result.VPCID)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +286,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	privateNetwork.Mask = net.CIDRMask(20, 32)
 	privateNetwork.IP[2] += 128
 
-	var endpointRouteTableIds []*string
+	var endpointRouteTableIds []string
 	var publicSubnetIDs []string
 	var natGatewayID string
 	for _, zone := range o.Zones {
@@ -295,28 +295,28 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 			err             error
 		)
 		if !o.PublicOnly {
-			privateSubnetID, err = o.CreatePrivateSubnet(l, ec2Client, result.VPCID, zone, privateNetwork.String())
+			privateSubnetID, err = o.CreatePrivateSubnet(ctx, l, ec2Client, result.VPCID, zone, privateNetwork.String())
 			if err != nil {
 				return nil, err
 			}
 		}
-		publicSubnetID, err := o.CreatePublicSubnet(l, ec2Client, result.VPCID, zone, publicNetwork.String())
+		publicSubnetID, err := o.CreatePublicSubnet(ctx, l, ec2Client, result.VPCID, zone, publicNetwork.String())
 		if err != nil {
 			return nil, err
 		}
 		publicSubnetIDs = append(publicSubnetIDs, publicSubnetID)
 		if !o.PublicOnly && !o.EnableProxy && !o.EnableSecureProxy && ((natGatewayID == "" && o.SingleNATGateway) || !o.SingleNATGateway) {
-			natGatewayID, err = o.CreateNATGateway(l, ec2Client, publicSubnetID, zone)
+			natGatewayID, err = o.CreateNATGateway(ctx, l, ec2Client, publicSubnetID, zone)
 			if err != nil {
 				return nil, err
 			}
 		}
 		if !o.PublicOnly {
-			privateRouteTable, err := o.CreatePrivateRouteTable(l, ec2Client, result.VPCID, natGatewayID, privateSubnetID, zone)
+			privateRouteTable, err := o.CreatePrivateRouteTable(ctx, l, ec2Client, result.VPCID, natGatewayID, privateSubnetID, zone)
 			if err != nil {
 				return nil, err
 			}
-			endpointRouteTableIds = append(endpointRouteTableIds, aws.String(privateRouteTable))
+			endpointRouteTableIds = append(endpointRouteTableIds, privateRouteTable)
 		}
 		zoneSubnetID := privateSubnetID
 		if o.PublicOnly {
@@ -330,12 +330,12 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		privateNetwork.IP[2] = privateNetwork.IP[2] + 16
 		publicNetwork.IP[2] = publicNetwork.IP[2] + 16
 	}
-	publicRouteTable, err := o.CreatePublicRouteTable(l, ec2Client, result.VPCID, igwID, publicSubnetIDs)
+	publicRouteTable, err := o.CreatePublicRouteTable(ctx, l, ec2Client, result.VPCID, igwID, publicSubnetIDs)
 	if err != nil {
 		return nil, err
 	}
-	endpointRouteTableIds = append(endpointRouteTableIds, aws.String(publicRouteTable))
-	err = o.CreateVPCS3Endpoint(l, ec2Client, result.VPCID, endpointRouteTableIds)
+	endpointRouteTableIds = append(endpointRouteTableIds, publicRouteTable)
+	err = o.CreateVPCS3Endpoint(ctx, l, ec2Client, result.VPCID, endpointRouteTableIds)
 	if err != nil {
 		return nil, err
 	}
@@ -345,7 +345,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	}
 
 	if vpcOwnerAWSSession != nil {
-		if err := o.shareSubnets(ctx, l, vpcOwnerAWSSession, awsSession, vpcOwnerSessionv2, awsSessionv2, publicSubnetIDs, result); err != nil {
+		if err := o.shareSubnets(ctx, l, vpcOwnerAWSSession, vpcOwnerSessionv2, awsSessionv2, publicSubnetIDs, result); err != nil {
 			return nil, err
 		}
 	}
@@ -356,7 +356,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 		privateZoneClient = route53Client
 
 		// Create a dummy vpc that we can use to create the private hosted zones
-		if initialVPC, err = o.createVPC(l, clusterCreatorEC2Client); err != nil {
+		if initialVPC, err = o.createVPC(ctx, l, clusterCreatorEC2Client); err != nil {
 			return nil, err
 		}
 	}
@@ -371,7 +371,7 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	}
 
 	if initialVPC != "" {
-		if err := o.deleteVPC(l, clusterCreatorEC2Client, initialVPC); err != nil {
+		if err := o.deleteVPC(ctx, l, clusterCreatorEC2Client, initialVPC); err != nil {
 			return nil, err
 		}
 	}
@@ -401,23 +401,23 @@ func (o *CreateInfraOptions) CreateInfra(ctx context.Context, l logr.Logger) (*C
 	return result, nil
 }
 
-func (o *CreateInfraOptions) createProxySecurityGroup(ctx context.Context, l logr.Logger, client ec2iface.EC2API, vpcID string) (*string, error) {
+func (o *CreateInfraOptions) createProxySecurityGroup(ctx context.Context, l logr.Logger, client awsapi.EC2API, vpcID string) (string, error) {
 	securityGroupName := o.InfraID + "-proxy-sg"
-	sgCreateResult, err := client.CreateSecurityGroupWithContext(ctx, &ec2.CreateSecurityGroupInput{
-		GroupName:         aws.String(securityGroupName),
-		Description:       aws.String("proxy security group"),
-		VpcId:             aws.String(vpcID),
+	sgCreateResult, err := client.CreateSecurityGroup(ctx, &ec2.CreateSecurityGroupInput{
+		GroupName:         awsv2.String(securityGroupName),
+		Description:       awsv2.String("proxy security group"),
+		VpcId:             awsv2.String(vpcID),
 		TagSpecifications: o.ec2TagSpecifications("security-group", securityGroupName),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create bastion security group: %w", err)
+		return "", fmt.Errorf("failed to create bastion security group: %w", err)
 	}
 
 	var sgResult *ec2.DescribeSecurityGroupsOutput
 	err = retry.OnError(ec2Backoff(), func(error) bool { return true }, func() error {
 		var err error
-		sgResult, err = client.DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{
-			GroupIds: []*string{sgCreateResult.GroupId},
+		sgResult, err = client.DescribeSecurityGroups(ctx, &ec2.DescribeSecurityGroupsInput{
+			GroupIds: []string{awsv2.ToString(sgCreateResult.GroupId)},
 		})
 		if err != nil || len(sgResult.SecurityGroups) == 0 {
 			return errors.New("not found yet")
@@ -425,59 +425,59 @@ func (o *CreateInfraOptions) createProxySecurityGroup(ctx context.Context, l log
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("cannot find security group that was just created (%s)", aws.StringValue(sgCreateResult.GroupId))
+		return "", fmt.Errorf("cannot find security group that was just created (%s)", awsv2.ToString(sgCreateResult.GroupId))
 	}
 	sg := sgResult.SecurityGroups[0]
-	l.Info("Created security group", "name", securityGroupName, "id", aws.StringValue(sg.GroupId))
+	l.Info("Created security group", "name", securityGroupName, "id", awsv2.ToString(sg.GroupId))
 
-	permissions := []*ec2.IpPermission{
+	permissions := []ec2types.IpPermission{
 		{
-			IpProtocol: aws.String("tcp"),
-			IpRanges: []*ec2.IpRange{{
-				CidrIp: aws.String("0.0.0.0/0"),
+			IpProtocol: awsv2.String("tcp"),
+			IpRanges: []ec2types.IpRange{{
+				CidrIp: awsv2.String("0.0.0.0/0"),
 			}},
-			FromPort: aws.Int64(22),
-			ToPort:   aws.Int64(22),
+			FromPort: awsv2.Int32(22),
+			ToPort:   awsv2.Int32(22),
 		},
 		{
-			IpProtocol: aws.String("-1"),
-			IpRanges: []*ec2.IpRange{{
-				CidrIp: aws.String("10.0.0.0/8"),
+			IpProtocol: awsv2.String("-1"),
+			IpRanges: []ec2types.IpRange{{
+				CidrIp: awsv2.String("10.0.0.0/8"),
 			}},
-			FromPort: aws.Int64(-1),
-			ToPort:   aws.Int64(-1),
+			FromPort: awsv2.Int32(-1),
+			ToPort:   awsv2.Int32(-1),
 		},
 	}
-	_, err = client.AuthorizeSecurityGroupIngressWithContext(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
+	_, err = client.AuthorizeSecurityGroupIngress(ctx, &ec2.AuthorizeSecurityGroupIngressInput{
 		GroupId:       sg.GroupId,
 		IpPermissions: permissions,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to authorize security group: %w", err)
+		return "", fmt.Errorf("failed to authorize security group: %w", err)
 	}
 	l.Info("Authorized security group for proxy")
 
-	return sg.GroupId, nil
+	return awsv2.ToString(sg.GroupId), nil
 }
 
-func (o *CreateInfraOptions) createProxyVPCEndpoint(ctx context.Context, l logr.Logger, client ec2iface.EC2API, vpcID string, subnetID string, sgGroupID *string) (string, error) {
-	output, err := client.CreateVpcEndpointWithContext(ctx, &ec2.CreateVpcEndpointInput{
-		ServiceName: aws.String(o.ProxyVPCEndpointServiceName),
-		VpcId:       aws.String(vpcID),
-		SubnetIds:   []*string{aws.String(subnetID)},
-		SecurityGroupIds: []*string{
+func (o *CreateInfraOptions) createProxyVPCEndpoint(ctx context.Context, l logr.Logger, client awsapi.EC2API, vpcID string, subnetID string, sgGroupID string) (string, error) {
+	output, err := client.CreateVpcEndpoint(ctx, &ec2.CreateVpcEndpointInput{
+		ServiceName: awsv2.String(o.ProxyVPCEndpointServiceName),
+		VpcId:       awsv2.String(vpcID),
+		SubnetIds:   []string{subnetID},
+		SecurityGroupIds: []string{
 			sgGroupID,
 		},
-		VpcEndpointType:   aws.String("Interface"),
-		PrivateDnsEnabled: aws.Bool(false),
+		VpcEndpointType:   ec2types.VpcEndpointTypeInterface,
+		PrivateDnsEnabled: awsv2.Bool(false),
 		TagSpecifications: o.ec2TagSpecifications("vpc-endpoint", o.InfraID+"-http-proxy"),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create VPC endpoint for proxy: %w", err)
 	}
 
-	l.Info("Created VPC endpoint for proxy", "id", aws.StringValue(output.VpcEndpoint.VpcEndpointId))
-	return fmt.Sprintf("http://%s:3128", *output.VpcEndpoint.DnsEntries[0].DnsName), nil
+	l.Info("Created VPC endpoint for proxy", "id", awsv2.ToString(output.VpcEndpoint.VpcEndpointId))
+	return fmt.Sprintf("http://%s:3128", awsv2.ToString(output.VpcEndpoint.DnsEntries[0].DnsName)), nil
 }
 
 type proxyInfo struct {
@@ -487,7 +487,7 @@ type proxyInfo struct {
 	PrivateKey    string
 }
 
-func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger, client ec2iface.EC2API, subnetID string, sgGroupID *string, isSecure bool) (*proxyInfo, error) {
+func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger, client awsapi.EC2API, subnetID string, sgGroupID string, isSecure bool) (*proxyInfo, error) {
 
 	var result proxyInfo
 
@@ -496,23 +496,23 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger,
 		return nil, fmt.Errorf("failed to generate proxy ssh keys: %w", err)
 	}
 
-	instanceType := "t2.micro"
+	instanceType := ec2types.InstanceTypeT2Micro
 	if isSecure {
-		instanceType = "t3.medium"
+		instanceType = ec2types.InstanceTypeT3Medium
 	}
 
-	runResult, err := client.RunInstancesWithContext(ctx, &ec2.RunInstancesInput{
-		ImageId:      aws.String("resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"),
-		MaxCount:     aws.Int64(1),
-		MinCount:     aws.Int64(1),
-		InstanceType: aws.String(instanceType),
-		UserData:     aws.String(base64.StdEncoding.EncodeToString([]byte(proxyConfigScript(isSecure, string(publicSSHKey))))),
-		NetworkInterfaces: []*ec2.InstanceNetworkInterfaceSpecification{
+	runResult, err := client.RunInstances(ctx, &ec2.RunInstancesInput{
+		ImageId:      awsv2.String("resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"),
+		MaxCount:     awsv2.Int32(1),
+		MinCount:     awsv2.Int32(1),
+		InstanceType: instanceType,
+		UserData:     awsv2.String(base64.StdEncoding.EncodeToString([]byte(proxyConfigScript(isSecure, string(publicSSHKey))))),
+		NetworkInterfaces: []ec2types.InstanceNetworkInterfaceSpecification{
 			{
-				DeviceIndex:              aws.Int64(0),
-				AssociatePublicIpAddress: aws.Bool(true),
-				SubnetId:                 aws.String(subnetID),
-				Groups:                   []*string{sgGroupID},
+				DeviceIndex:              awsv2.Int32(0),
+				AssociatePublicIpAddress: awsv2.Bool(true),
+				SubnetId:                 awsv2.String(subnetID),
+				Groups:                   []string{sgGroupID},
 			},
 		},
 		TagSpecifications: o.ec2TagSpecifications("instance", o.InfraID+"-http-proxy"),
@@ -522,22 +522,23 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger,
 	}
 	l.Info("Created proxy host")
 
-	privateIP := aws.StringValue(runResult.Instances[0].PrivateIpAddress)
+	privateIP := awsv2.ToString(runResult.Instances[0].PrivateIpAddress)
 	if isSecure {
-		if err := client.WaitUntilInstanceRunningWithContext(ctx, &ec2.DescribeInstancesInput{
-			InstanceIds: []*string{runResult.Instances[0].InstanceId},
-		}); err != nil {
+		waiter := ec2.NewInstanceRunningWaiter(client)
+		if err := waiter.Wait(ctx, &ec2.DescribeInstancesInput{
+			InstanceIds: []string{awsv2.ToString(runResult.Instances[0].InstanceId)},
+		}, 10*time.Minute); err != nil {
 			return nil, fmt.Errorf("failed to wait for proxy host to be in running state: %w", err)
 		}
 
-		describeResult, err := client.DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
-			InstanceIds: []*string{runResult.Instances[0].InstanceId},
+		describeResult, err := client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+			InstanceIds: []string{awsv2.ToString(runResult.Instances[0].InstanceId)},
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to describe proxy instance: %w", err)
 		}
 
-		publicIP := aws.StringValue(describeResult.Reservations[0].Instances[0].PublicIpAddress)
+		publicIP := awsv2.ToString(describeResult.Reservations[0].Instances[0].PublicIpAddress)
 
 		backoff := wait.Backoff{
 			Steps:    10,
@@ -570,7 +571,7 @@ func (o *CreateInfraOptions) createProxyHost(ctx context.Context, l logr.Logger,
 	return &result, nil
 }
 
-func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vpcOwnerSession, clusterSession *session.Session, vpcOwnerSessionv2, clusterSessionv2 *awsv2.Config, publicSubnetIDs []string, output *CreateInfraOutput) error {
+func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vpcOwnerSession *session.Session, vpcOwnerSessionv2, clusterSessionv2 *awsv2.Config, publicSubnetIDs []string, output *CreateInfraOutput) error {
 	// Obtain account IDs for both accounts using v2 STS
 	clusterSTSClient := stsv2.NewFromConfig(*clusterSessionv2, func(o *stsv2.Options) {
 		o.Retryer = awsutil.NewConfigV2()()
@@ -579,9 +580,13 @@ func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vp
 		o.Retryer = awsutil.NewConfigV2()()
 	})
 
-	// Create v1 EC2 clients (EC2 not yet migrated)
-	clusterEC2Client := ec2.New(clusterSession, awsutil.NewConfig())
-	vpcOwnerEC2Client := ec2.New(vpcOwnerSession, awsutil.NewConfig())
+	awsConfigv2 := awsutil.NewConfigV2()
+	clusterEC2Client := ec2.NewFromConfig(*clusterSessionv2, func(o *ec2.Options) {
+		o.Retryer = awsConfigv2()
+	})
+	vpcOwnerEC2Client := ec2.NewFromConfig(*vpcOwnerSessionv2, func(o *ec2.Options) {
+		o.Retryer = awsConfigv2()
+	})
 
 	clusterAccountID, err := clusterSTSClient.GetCallerIdentity(ctx, &stsv2.GetCallerIdentityInput{})
 	if err != nil {
@@ -594,23 +599,21 @@ func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vp
 	output.VPCCreatorAccountID = awsv2.ToString(vpcOwnerAccountID.Account)
 	output.ClusterAccountID = awsv2.ToString(clusterAccountID.Account)
 
-	privateSubnetIDsToShare := make([]*string, 0, len(output.Zones))
-	publicSubnetIDsToShare := make([]*string, 0, len(publicSubnetIDs))
-	allSubnetIDsToShare := make([]*string, 0, len(output.Zones)+len(publicSubnetIDs))
+	privateSubnetIDsToShare := make([]string, 0, len(output.Zones))
+	publicSubnetIDsToShare := make([]string, 0, len(publicSubnetIDs))
+	allSubnetIDsToShare := make([]string, 0, len(output.Zones)+len(publicSubnetIDs))
 	//if publicOnly=true, the zone.SubnetID is the same as publicSubnetID. Skip this to avoid duplicate publicSubnetIDs will be added to allSubnetIDsToShare
 	if !output.PublicOnly {
 		for _, zone := range output.Zones {
-			privateSubnetIDsToShare = append(privateSubnetIDsToShare, aws.String(zone.SubnetID))
+			privateSubnetIDsToShare = append(privateSubnetIDsToShare, zone.SubnetID)
 		}
 	}
-	for _, subnetID := range publicSubnetIDs {
-		publicSubnetIDsToShare = append(publicSubnetIDsToShare, aws.String(subnetID))
-	}
+	publicSubnetIDsToShare = append(publicSubnetIDsToShare, publicSubnetIDs...)
 
 	allSubnetIDsToShare = append(allSubnetIDsToShare, privateSubnetIDsToShare...)
 	allSubnetIDsToShare = append(allSubnetIDsToShare, publicSubnetIDsToShare...)
 
-	subnetsResult, err := vpcOwnerEC2Client.DescribeSubnetsWithContext(ctx, &ec2.DescribeSubnetsInput{
+	subnetsResult, err := vpcOwnerEC2Client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
 		SubnetIds: allSubnetIDsToShare,
 	})
 	if err != nil {
@@ -625,13 +628,13 @@ func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vp
 	l.Info("Sharing VPC subnets with cluster creator account", "subnetids", allSubnetIDsToShare)
 	ramClient := ram.New(vpcOwnerSession, awsutil.NewConfig())
 	if _, err = ramClient.CreateResourceShareWithContext(ctx, &ram.CreateResourceShareInput{
-		Name:         aws.String(fmt.Sprintf("%s-share", o.InfraID)),
-		Principals:   []*string{aws.String(output.ClusterAccountID)},
+		Name:         awsv2.String(fmt.Sprintf("%s-share", o.InfraID)),
+		Principals:   []*string{awsv2.String(output.ClusterAccountID)},
 		ResourceArns: subnetArns,
 		Tags: []*ram.Tag{
 			{
-				Key:   aws.String(clusterTag(o.InfraID)),
-				Value: aws.String(clusterTagValue),
+				Key:   awsv2.String(clusterTag(o.InfraID)),
+				Value: awsv2.String(clusterTagValue),
 			},
 		},
 	}); err != nil {
@@ -648,7 +651,7 @@ func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vp
 	var subnetResult *ec2.DescribeSubnetsOutput
 	if err = retry.OnError(backoff, func(error) bool { return true }, func() error {
 		var err error
-		subnetResult, err = clusterEC2Client.DescribeSubnets(&ec2.DescribeSubnetsInput{
+		subnetResult, err = clusterEC2Client.DescribeSubnets(ctx, &ec2.DescribeSubnetsInput{
 			SubnetIds: allSubnetIDsToShare,
 		})
 		if err != nil || len(subnetResult.Subnets) != len(allSubnetIDsToShare) {
@@ -662,9 +665,9 @@ func (o *CreateInfraOptions) shareSubnets(ctx context.Context, l logr.Logger, vp
 
 	// Tag subnets in cluster creator account
 	for _, subnet := range subnetsResult.Subnets {
-		l.Info("Tagging subnet", "id", aws.StringValue(subnet.SubnetId))
-		if _, err := clusterEC2Client.CreateTagsWithContext(ctx, &ec2.CreateTagsInput{
-			Resources: []*string{subnet.SubnetId},
+		l.Info("Tagging subnet", "id", awsv2.ToString(subnet.SubnetId))
+		if _, err := clusterEC2Client.CreateTags(ctx, &ec2.CreateTagsInput{
+			Resources: []string{awsv2.ToString(subnet.SubnetId)},
 			Tags:      subnet.Tags,
 		}); err != nil {
 			return err
