@@ -17,6 +17,7 @@ limitations under the License.
 package tests
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"slices"
@@ -36,6 +37,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/utils/ptr"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -50,13 +52,161 @@ func getWorkloadPods(testCtx *internal.TestContext, workload internal.WorkloadSp
 	return pods
 }
 
+// podCrashTolerations defines the tolerated number of restarts per workload.
+// Keys are workload names from the control plane workload registry.
+var podCrashTolerations = map[string]int32{
+	// TODO: Figure out why Route kind does not exist when ingress-operator first starts
+	"ingress-operator": 20,
+	// Seeing flakes due to https://issues.redhat.com/browse/OCPBUGS-30068
+	"cloud-credential-operator": 20,
+	// Restart built into OLM by design by
+	// https://github.com/openshift/operator-framework-olm/commit/1cf358424a0cbe353428eab9a16051c6cabbd002
+	"olm-operator":                20,
+	"catalog-operator":            20,
+	"certified-operators-catalog": 20,
+	"community-operators-catalog": 20,
+	"redhat-operators-catalog":    20,
+	"redhat-marketplace-catalog": 20,
+	// Temporary workaround for https://issues.redhat.com/browse/CNV-40820
+	"kubevirt-csi-controller": 20,
+	"aws-ebs-csi-driver-controller": 1,
+	// Allow 1 restart for network-node-identity webhook startup timing
+	"network-node-identity": 1,
+	// Temporary workaround for https://issues.redhat.com/browse/CNV-76520
+	"kubevirt-cloud-controller-manager": 2,
+}
+
+// isCertificateTriggeredRestart checks if a kube-controller-manager restart was triggered by certificate rotation.
+func isCertificateTriggeredRestart(testCtx *internal.TestContext, pod *corev1.Pod) bool {
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := testCtx.MgmtClient.List(testCtx, hcpList, crclient.InNamespace(pod.Namespace)); err != nil {
+		return false
+	}
+	for _, hcp := range hcpList.Items {
+		if restartAnnotation, ok := hcp.Annotations[hyperv1.RestartDateAnnotation]; ok {
+			if strings.HasPrefix(restartAnnotation, "CertHash:") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// workloadRestartExemption is a per-workload check that can exempt a restart from failing.
+// If the function returns true, the restart is considered acceptable (e.g. cert rotation, leader election loss).
+type workloadRestartExemption func(testCtx *internal.TestContext, pod *corev1.Pod, containerName string) bool
+
+// workloadRestartExemptions defines optional checks per workload. Only workloads in this map
+// get their exemption checked. Workloads with leader election should be listed here.
+var workloadRestartExemptions = map[string]workloadRestartExemption{
+	"kube-controller-manager": func(testCtx *internal.TestContext, pod *corev1.Pod, containerName string) bool {
+		if isCertificateTriggeredRestart(testCtx, pod) {
+			return true
+		}
+		return isLeaderElectionFailure(testCtx, pod, containerName)
+	},
+	"kube-scheduler":                          isLeaderElectionFailure,
+	"aws-cloud-controller-manager":             isLeaderElectionFailure,
+	"azure-cloud-controller-manager":           isLeaderElectionFailure,
+	"kubevirt-cloud-controller-manager":        isLeaderElectionFailure,
+	"openstack-cloud-controller-manager":       isLeaderElectionFailure,
+	"powervs-cloud-controller-manager":        isLeaderElectionFailure,
+}
+
+// isLeaderElectionFailure checks if a container restart was caused by leader election loss.
+func isLeaderElectionFailure(testCtx *internal.TestContext, pod *corev1.Pod, containerName string) bool {
+	k8sClient := testCtx.GetKubeClient()
+	podLogOpts := corev1.PodLogOptions{
+		Container: containerName,
+		Previous:  true,
+		TailLines: ptr.To[int64](10),
+	}
+	req := k8sClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &podLogOpts)
+	podLogs, err := req.Stream(testCtx)
+	if err != nil {
+		return false
+	}
+	defer podLogs.Close()
+
+	scanner := bufio.NewScanner(podLogs)
+	const (
+		bufSize          = 256 * 1024
+		maxScanTokenSize = 512 * 1024
+	)
+	buf := make([]byte, bufSize)
+	scanner.Buffer(buf, maxScanTokenSize)
+	for scanner.Scan() {
+		if strings.Contains(strings.ToLower(scanner.Text()), "election lost") {
+			return true
+		}
+	}
+	return false
+}
+
+// NoCrashingPodsTest registers per-workload tests that validate no pods are crashing.
+func NoCrashingPodsTest(getTestCtx internal.TestContextGetter) {
+	Context("No crashing pods", func() {
+		for _, workload := range workloads {
+			It(fmt.Sprintf("should have no crashing pods for %s", workload.Name), func() {
+				testCtx := getTestCtx()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
+				}
+
+				pods := getWorkloadPods(testCtx, workload)
+				if len(pods) == 0 {
+					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+				}
+
+				// Determine default crash tolerance based on platform
+				var defaultCrashToleration int32
+				if hostedCluster != nil && hostedCluster.Spec.Platform.Type == hyperv1.KubevirtPlatform {
+					kvPlatform := hostedCluster.Spec.Platform.Kubevirt
+					if kvPlatform != nil && kvPlatform.Credentials != nil {
+						defaultCrashToleration = 1
+					}
+					if kvPlatform != nil && hostedCluster.Annotations != nil {
+						mgmtPlatform, ok := hostedCluster.Annotations[hyperv1.ManagementPlatformAnnotation]
+						if ok && mgmtPlatform == string(hyperv1.AzurePlatform) {
+							defaultCrashToleration = 1
+						}
+					}
+				}
+
+				for _, pod := range pods {
+					crashToleration := defaultCrashToleration
+					if toleration, ok := podCrashTolerations[workload.Name]; ok {
+						crashToleration = toleration
+					}
+
+					for _, containerStatus := range pod.Status.ContainerStatuses {
+						if containerStatus.RestartCount <= crashToleration {
+							continue
+						}
+
+						if exempt := workloadRestartExemptions[workload.Name]; exempt != nil && exempt(testCtx, &pod, containerStatus.Name) {
+							continue
+						}
+
+						Fail(fmt.Sprintf("container %s in pod %s has restartCount %d (toleration: %d)",
+							containerStatus.Name, pod.Name, containerStatus.RestartCount, crashToleration))
+					}
+				}
+			})
+		}
+	})
+}
+
 // DeploymentGenerationTest registers tests for deployment generation validation
 func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
 
 	Context("Deployment generation", func() {
 		BeforeEach(func() {
 			testCtx := getTestCtx()
-			hostedCluster := testCtx.GetHostedCluster()
+			hostedCluster, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 			if hostedCluster == nil || hostedCluster.CreationTimestamp.IsZero() || time.Since(hostedCluster.CreationTimestamp.Time) > 4*time.Hour {
 				Skip("Deployment generation test is only for recently created hosted clusters")
 			}
@@ -72,13 +222,14 @@ func DeploymentGenerationTest(getTestCtx internal.TestContextGetter) {
 
 			It(fmt.Sprintf("should not indicate rapid rollouts for %s", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
 
 				deployment := &appsv1.Deployment{}
-				err := testCtx.MgmtClient.Get(context.Background(), crclient.ObjectKey{
+				err = testCtx.MgmtClient.Get(context.Background(), crclient.ObjectKey{
 					Namespace: testCtx.ControlPlaneNamespace,
 					Name:      workload.Name,
 				}, deployment)
@@ -123,7 +274,8 @@ func SafeToEvictAnnotationsTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should exist for pods with emptyDir or hostPath volumes belonging to %s", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -216,7 +368,8 @@ func ReadOnlyRootFilesystemTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should have read-only root filesystem for %s containers", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -287,7 +440,8 @@ func ReadOnlyRootFilesystemTmpDirMountTest(getTestCtx internal.TestContextGetter
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should have /tmp mounted for %s containers", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -327,7 +481,8 @@ func ContainerImagePullPolicyTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should have IfNotPresent pull policy for %s containers", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -375,7 +530,8 @@ func ContainerTerminationMessagePolicyTest(getTestCtx internal.TestContextGetter
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should have FallbackToLogsOnError termination message policy for %s containers", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -415,7 +571,8 @@ func ContainerResourceRequestsTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should have resource requests for %s containers", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -450,7 +607,8 @@ func PodPriorityTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should not have too high priority for %s pods", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -533,7 +691,8 @@ func ServiceAccountTokenMountingTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should not mount service account token unless necessary for %s pods", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -565,7 +724,8 @@ func PodAffinitiesAndTolerationsTest(getTestCtx internal.TestContextGetter) {
 		// EnsureHCPPodsAffinitiesAndTolerations
 		BeforeEach(func() {
 			testCtx := getTestCtx()
-			hostedCluster := testCtx.GetHostedCluster()
+			hostedCluster, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 			if hostedCluster == nil || hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
 				Skip("Pod affinities and tolerations test is only for AWS platform")
 			}
@@ -574,7 +734,8 @@ func PodAffinitiesAndTolerationsTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should have correct affinities and tolerations for %s pods", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -689,16 +850,147 @@ func PodAffinitiesAndTolerationsTest(getTestCtx internal.TestContextGetter) {
 	})
 }
 
+// AppLabelTest registers per-workload tests that validate pods have an "app" label set.
+func AppLabelTest(getTestCtx internal.TestContextGetter) {
+	Context("App label", func() {
+		BeforeEach(func() {
+			e2eutil.GinkgoAtLeast(e2eutil.Version419)
+		})
+
+		// KubeVirt virt-launcher pods use kubevirt.io label instead of app
+		exemptions := []string{"virt-launcher"}
+
+		for _, workload := range workloads {
+			It(fmt.Sprintf("should have app label for %s pods", workload.Name), func() {
+				testCtx := getTestCtx()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
+				}
+				if slices.Contains(exemptions, workload.Name) {
+					Skip(fmt.Sprintf("workload %s is exempt from app label check", workload.Name))
+				}
+
+				pods := getWorkloadPods(testCtx, workload)
+				if len(pods) == 0 {
+					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+				}
+
+				var podsWithoutAppLabel []string
+				for _, pod := range pods {
+					val, ok := pod.Labels["app"]
+					if ok && val != "" {
+						continue
+					}
+					podsWithoutAppLabel = append(podsWithoutAppLabel, pod.Name)
+				}
+
+				Expect(podsWithoutAppLabel).To(BeEmpty(),
+					"expected pods [%s] to have app label set", strings.Join(podsWithoutAppLabel, ", "))
+			})
+		}
+	})
+}
+
+// CustomLabelsTest registers per-workload tests that validate custom labels from HC configuration are applied to pods.
+func CustomLabelsTest(getTestCtx internal.TestContextGetter) {
+	Context("Custom labels", func() {
+		BeforeEach(func() {
+			e2eutil.GinkgoAtLeast(e2eutil.Version419)
+			testCtx := getTestCtx()
+			hostedCluster, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+			if len(hostedCluster.Spec.Labels) == 0 {
+				Skip("no custom labels configured on HostedCluster")
+			}
+		})
+
+		// KubeVirt virt-launcher pods may not receive custom labels
+		exemptions := []string{"virt-launcher"}
+
+		for _, workload := range workloads {
+			It(fmt.Sprintf("should have custom labels for %s pods", workload.Name), func() {
+				testCtx := getTestCtx()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
+				}
+				if slices.Contains(exemptions, workload.Name) {
+					Skip(fmt.Sprintf("workload %s is exempt from custom labels check", workload.Name))
+				}
+
+				pods := getWorkloadPods(testCtx, workload)
+				if len(pods) == 0 {
+					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+				}
+
+				for _, pod := range pods {
+					for key, expectedValue := range hostedCluster.Spec.Labels {
+						Expect(pod.Labels).To(HaveKeyWithValue(key, expectedValue),
+							"pod %s missing label %s=%s", pod.Name, key, expectedValue)
+					}
+				}
+			})
+		}
+	})
+}
+
+// CustomTolerationsTest registers per-workload tests that validate custom tolerations from HC configuration are applied to pods.
+func CustomTolerationsTest(getTestCtx internal.TestContextGetter) {
+	Context("Custom tolerations", func() {
+		BeforeEach(func() {
+			e2eutil.GinkgoAtLeast(e2eutil.Version419)
+			testCtx := getTestCtx()
+			hostedCluster, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+			if len(hostedCluster.Spec.Tolerations) == 0 {
+				Skip("no custom tolerations configured on HostedCluster")
+			}
+		})
+
+		// KubeVirt virt-launcher pods may not receive custom tolerations
+		exemptions := []string{"virt-launcher"}
+
+		for _, workload := range workloads {
+			It(fmt.Sprintf("should have custom tolerations for %s pods", workload.Name), func() {
+				testCtx := getTestCtx()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
+				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
+					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
+				}
+				if slices.Contains(exemptions, workload.Name) {
+					Skip(fmt.Sprintf("workload %s is exempt from custom tolerations check", workload.Name))
+				}
+
+				pods := getWorkloadPods(testCtx, workload)
+				if len(pods) == 0 {
+					Skip(fmt.Sprintf("no pods found for workload %s", workload.Name))
+				}
+
+				for _, pod := range pods {
+					Expect(pod.Spec.Tolerations).To(ContainElements(hostedCluster.Spec.Tolerations),
+						"pod %s should have all tolerations from HostedCluster.Spec.Tolerations: %v",
+						pod.Name, hostedCluster.Spec.Tolerations)
+				}
+			})
+		}
+	})
+}
+
 // WorkloadRegistryValidationTest registers tests for workload registry validation
 func WorkloadRegistryValidationTest(getTestCtx internal.TestContextGetter) {
 	Context("Workload registry validation", func() {
 		// Label("Informing"): failures skip (non-blocking) until registry is complete
 		It("all pods should belong to predefined workloads", Label("Informing"), func() {
 			testCtx := getTestCtx()
-			_ = testCtx.GetHostedCluster() // unused but kept for consistency
+			_, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 			// List all pods in control plane namespace
 			podList := &corev1.PodList{}
-			err := testCtx.MgmtClient.List(context.Background(), podList, &crclient.ListOptions{
+			err = testCtx.MgmtClient.List(context.Background(), podList, &crclient.ListOptions{
 				Namespace: testCtx.ControlPlaneNamespace,
 			})
 			Expect(err).NotTo(HaveOccurred(), "failed to list pods in control plane namespace")
@@ -744,14 +1036,15 @@ func SecurityContextUIDTest(getTestCtx internal.TestContextGetter) {
 
 		BeforeEach(func() {
 			testCtx := getTestCtx()
-			hostedCluster := testCtx.GetHostedCluster()
+			hostedCluster, err := testCtx.GetHostedCluster()
+			Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 			if hostedCluster == nil || hostedCluster.Spec.Platform.Type != hyperv1.AzurePlatform {
 				Skip("Security context UID test is only for Azure platform")
 			}
 
 			// Get the control plane namespace to check for UID annotation
 			controlPlaneNamespace := &corev1.Namespace{}
-			err := testCtx.MgmtClient.Get(context.Background(), crclient.ObjectKey{Name: testCtx.ControlPlaneNamespace}, controlPlaneNamespace)
+			err = testCtx.MgmtClient.Get(context.Background(), crclient.ObjectKey{Name: testCtx.ControlPlaneNamespace}, controlPlaneNamespace)
 			Expect(err).NotTo(HaveOccurred(), "failed to get namespace %s", testCtx.ControlPlaneNamespace)
 
 			uid, ok := controlPlaneNamespace.Annotations["hypershift.openshift.io/default-security-context-uid"]
@@ -780,7 +1073,8 @@ func SecurityContextUIDTest(getTestCtx internal.TestContextGetter) {
 		for _, workload := range workloads {
 			It(fmt.Sprintf("should have expected RunAsUser UID for %s pods", workload.Name), func() {
 				testCtx := getTestCtx()
-				hostedCluster := testCtx.GetHostedCluster()
+				hostedCluster, err := testCtx.GetHostedCluster()
+				Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 				if internal.ShouldSkipWorkloadForPlatform(workload, hostedCluster) {
 					Skip(fmt.Sprintf("workload %s is platform-specific and doesn't match cluster platform", workload.Name))
 				}
@@ -819,6 +1113,10 @@ func SecurityContextUIDTest(getTestCtx internal.TestContextGetter) {
 // RegisterControlPlaneWorkloadsTests registers all control plane workloads tests
 func RegisterControlPlaneWorkloadsTests(getTestCtx internal.TestContextGetter) {
 	WorkloadRegistryValidationTest(getTestCtx)
+	NoCrashingPodsTest(getTestCtx)
+	AppLabelTest(getTestCtx)
+	CustomLabelsTest(getTestCtx)
+	CustomTolerationsTest(getTestCtx)
 	DeploymentGenerationTest(getTestCtx)
 	SafeToEvictAnnotationsTest(getTestCtx)
 	ReadOnlyRootFilesystemTest(getTestCtx)

@@ -152,4 +152,9 @@ func init() {
 		false,
 		"/tmp/artifacts",
 	)
+	RegisterEnvVar(
+		"AWS_CREDENTIALS_FILE",
+		"Path to an AWS credentials file. Required for AWS-specific tests that need EC2, IAM, or SQS clients.",
+		false,
+	)
 }
