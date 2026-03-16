@@ -475,6 +475,9 @@ func (p *konnectivityProxy) IsCloudAPI(host string) bool {
 		return false
 	}
 	if strings.HasSuffix(host, ".amazonaws.com") ||
+		strings.HasSuffix(host, ".c2s.ic.gov") ||
+		strings.HasSuffix(host, ".hci.ic.gov") ||
+		strings.HasSuffix(host, ".sc2s.sgov.gov") ||
 		strings.HasSuffix(host, ".microsoftonline.com") ||
 		strings.HasSuffix(host, ".azure.com") ||
 		strings.HasSuffix(host, ".cloud.ibm.com") {
