@@ -398,9 +398,20 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{}, nil
 		}
 
+		hcp, err := r.hostedControlPlane(ctx, req.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if hcp == nil {
+			log.Info("HostedControlPlane not found, retrying aws endpoint service cleanup")
+			return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
+		}
+
+		r.awsClientBuilder.initializeWithHCP(log, hcp)
 		ec2Client, route53Client, err := r.awsClientBuilder.getClients(ctx)
 		if err != nil {
-			log.Error(err, "failed to get AWS client, skipping aws endpoint service cleanup")
+			log.Error(err, "failed to get AWS client, retrying aws endpoint service cleanup")
+			return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
 		} else {
 			completed, err := r.delete(ctx, awsEndpointService, ec2Client, route53Client)
 			if err != nil {
@@ -438,18 +449,14 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	// Fetch the HostedControlPlane
-	hcpList := &hyperv1.HostedControlPlaneList{}
-	if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: req.Namespace}); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get resource: %w", err)
+	hcp, err := r.hostedControlPlane(ctx, req.Namespace)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
-	if len(hcpList.Items) == 0 {
+	if hcp == nil {
 		// Return early if HostedControlPlane is deleted
 		return ctrl.Result{}, nil
 	}
-	if len(hcpList.Items) > 1 {
-		return ctrl.Result{}, fmt.Errorf("unexpected number of HostedControlPlanes in namespace, expected: 1, actual: %d", len(hcpList.Items))
-	}
-	hcp := &hcpList.Items[0]
 
 	if isPaused, duration := util.IsReconciliationPaused(log, hcp.Spec.PausedUntil); isPaused {
 		log.Info("Reconciliation paused", "pausedUntil", *hcp.Spec.PausedUntil)
@@ -501,6 +508,20 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 func hasAWSConfig(platform *hyperv1.PlatformSpec) bool {
 	return platform.Type == hyperv1.AWSPlatform && platform.AWS != nil && platform.AWS.CloudProviderConfig != nil &&
 		platform.AWS.CloudProviderConfig.Subnet != nil && platform.AWS.CloudProviderConfig.Subnet.ID != nil
+}
+
+func (r *AWSEndpointServiceReconciler) hostedControlPlane(ctx context.Context, namespace string) (*hyperv1.HostedControlPlane, error) {
+	hcpList := &hyperv1.HostedControlPlaneList{}
+	if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: namespace}); err != nil {
+		return nil, fmt.Errorf("failed to get resource: %w", err)
+	}
+	if len(hcpList.Items) == 0 {
+		return nil, nil
+	}
+	if len(hcpList.Items) > 1 {
+		return nil, fmt.Errorf("unexpected number of HostedControlPlanes in namespace, expected: 1, actual: %d", len(hcpList.Items))
+	}
+	return hcpList.Items[0].DeepCopy(), nil
 }
 
 func diffIDs(desired []string, existing []*string) (added, removed []*string) {
@@ -1005,38 +1026,26 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 
 	endpointID := awsEndpointService.Status.EndpointID
 	if endpointID != "" {
-		if _, err := ec2Client.DeleteVpcEndpointsWithContext(ctx, &ec2.DeleteVpcEndpointsInput{
-			VpcEndpointIds: []*string{aws.String(endpointID)},
-		}); err != nil {
+		endpointDeleted, err := ensureVPCEndpointDeleted(ctx, ec2Client, endpointID)
+		if err != nil {
 			return false, err
 		}
-
-		// check if Endpoint exists in AWS
-		output, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{
-			VpcEndpointIds: []*string{aws.String(endpointID)},
-		})
-		if err != nil {
-			awsErr, ok := err.(awserr.Error)
-			if ok {
-				if awsErr.Code() != "InvalidVpcEndpointId.NotFound" {
-					return false, err
-				}
-			} else {
-				return false, err
-			}
-
-		}
-
-		if output != nil && len(output.VpcEndpoints) != 0 {
-			return false, fmt.Errorf("resource requested for deletion but still present")
+		if !endpointDeleted {
+			log.Info("Waiting for endpoint deletion to complete", "endpointID", endpointID)
+			return false, nil
 		}
 
 		log.Info("endpoint deleted", "endpointID", endpointID)
 	}
 
 	if awsEndpointService.Status.SecurityGroupID != "" {
-		if err := r.deleteSecurityGroup(ctx, ec2Client, awsEndpointService.Status.SecurityGroupID); err != nil {
+		securityGroupDeleted, err := r.deleteSecurityGroup(ctx, ec2Client, awsEndpointService.Status.SecurityGroupID)
+		if err != nil {
 			return false, err
+		}
+		if !securityGroupDeleted {
+			log.Info("Waiting for security group deletion to complete", "id", awsEndpointService.Status.SecurityGroupID)
+			return false, nil
 		}
 		log.Info("security group deleted", "id", awsEndpointService.Status.SecurityGroupID)
 	}
@@ -1070,17 +1079,59 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	return true, nil
 }
 
-func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, sgID string) error {
+func ensureVPCEndpointDeleted(ctx context.Context, ec2Client ec2iface.EC2API, endpointID string) (bool, error) {
+	deleteOutput, err := ec2Client.DeleteVpcEndpointsWithContext(ctx, &ec2.DeleteVpcEndpointsInput{
+		VpcEndpointIds: []*string{aws.String(endpointID)},
+	})
+	if err != nil {
+		awsErr, ok := err.(awserr.Error)
+		if !ok || awsErr.Code() != "InvalidVpcEndpointId.NotFound" {
+			return false, err
+		}
+	}
+	if deleteOutput != nil && len(deleteOutput.Unsuccessful) > 0 {
+		failureMessages := make([]string, 0, len(deleteOutput.Unsuccessful))
+		for _, unsuccessful := range deleteOutput.Unsuccessful {
+			currentEndpointID := endpointID
+			if unsuccessful != nil && unsuccessful.ResourceId != nil {
+				currentEndpointID = aws.StringValue(unsuccessful.ResourceId)
+			}
+			if unsuccessful == nil || unsuccessful.Error == nil {
+				failureMessages = append(failureMessages, fmt.Sprintf("endpoint %s delete failed: unknown error", currentEndpointID))
+				continue
+			}
+
+			failureMessages = append(failureMessages, fmt.Sprintf("endpoint %s delete failed with code %s: %s", currentEndpointID, aws.StringValue(unsuccessful.Error.Code), aws.StringValue(unsuccessful.Error.Message)))
+		}
+		return false, fmt.Errorf("DeleteVpcEndpoints returned unsuccessful entries: %s", strings.Join(failureMessages, "; "))
+	}
+
+	// check if Endpoint exists in AWS
+	output, err := ec2Client.DescribeVpcEndpointsWithContext(ctx, &ec2.DescribeVpcEndpointsInput{
+		VpcEndpointIds: []*string{aws.String(endpointID)},
+	})
+	if err != nil {
+		awsErr, ok := err.(awserr.Error)
+		if ok && awsErr.Code() == "InvalidVpcEndpointId.NotFound" {
+			return true, nil
+		}
+		return false, err
+	}
+
+	return output == nil || len(output.VpcEndpoints) == 0, nil
+}
+
+func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, sgID string) (bool, error) {
 	log := ctrl.LoggerFrom(ctx)
 	describeSGResult, err := ec2Client.DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{GroupIds: []*string{aws.String(sgID)}})
 	if err != nil {
 		if supportawsutil.AWSErrorCode(err) == "InvalidGroup.NotFound" {
-			return nil
+			return true, nil
 		}
-		return fmt.Errorf("cannot describe security group: %s", supportawsutil.AWSErrorCode(err))
+		return false, fmt.Errorf("cannot describe security group: %s", supportawsutil.AWSErrorCode(err))
 	}
 	if len(describeSGResult.SecurityGroups) == 0 {
-		return nil
+		return true, nil
 	}
 	sg := describeSGResult.SecurityGroups[0]
 
@@ -1089,9 +1140,13 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissions,
 		}); err != nil {
-			log.Error(err, "failed to revoke security group ingress permissions", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
-
-			return fmt.Errorf("failed to revoke security group ingress rules: %s", supportawsutil.AWSErrorCode(err))
+			code := supportawsutil.AWSErrorCode(err)
+			if shouldIgnoreSecurityGroupRevokePermissionError(code) {
+				log.Info("security group ingress permissions already revoked", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", code)
+			} else {
+				log.Error(err, "failed to revoke security group ingress permissions", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", code)
+				return false, fmt.Errorf("failed to revoke security group ingress rules: %s", code)
+			}
 		}
 	}
 
@@ -1100,19 +1155,51 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissionsEgress,
 		}); err != nil {
-			log.Error(err, "failed to revoke security group egress permissions", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
-			return fmt.Errorf("failed to revoke security group egress rules: %s", supportawsutil.AWSErrorCode(err))
+			code := supportawsutil.AWSErrorCode(err)
+			if shouldIgnoreSecurityGroupRevokePermissionError(code) {
+				log.Info("security group egress permissions already revoked", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", code)
+			} else {
+				log.Error(err, "failed to revoke security group egress permissions", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", code)
+				return false, fmt.Errorf("failed to revoke security group egress rules: %s", code)
+			}
 		}
 	}
 
 	if _, err = ec2Client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
 		GroupId: sg.GroupId,
 	}); err != nil {
-		log.Error(err, "failed to delete security group", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
-		return fmt.Errorf("failed to delete security group %s: %s", aws.StringValue(sg.GroupId), supportawsutil.AWSErrorCode(err))
+		code := supportawsutil.AWSErrorCode(err)
+		if code == "InvalidGroup.NotFound" {
+			return true, nil
+		}
+		if shouldRetrySecurityGroupDeletion(code) {
+			log.Info("security group deletion still in progress", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", code)
+			return false, nil
+		}
+		log.Error(err, "failed to delete security group", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", code)
+		return false, fmt.Errorf("failed to delete security group %s: %s", aws.StringValue(sg.GroupId), code)
 	}
 
-	return nil
+	describeSGResult, err = ec2Client.DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{GroupIds: []*string{aws.String(sgID)}})
+	if err != nil {
+		if supportawsutil.AWSErrorCode(err) == "InvalidGroup.NotFound" {
+			return true, nil
+		}
+		return false, fmt.Errorf("cannot describe security group: %s", supportawsutil.AWSErrorCode(err))
+	}
+	if len(describeSGResult.SecurityGroups) == 0 {
+		return true, nil
+	}
+
+	return false, nil
+}
+
+func shouldRetrySecurityGroupDeletion(code string) bool {
+	return code == "DependencyViolation"
+}
+
+func shouldIgnoreSecurityGroupRevokePermissionError(code string) bool {
+	return code == "InvalidPermission.NotFound"
 }
 
 func diffPermissions(actual, required []*ec2.IpPermission) []*ec2.IpPermission {
