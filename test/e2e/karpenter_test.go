@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	"github.com/blang/semver"
@@ -484,6 +485,12 @@ func TestKarpenter(t *testing.T) {
 					SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
 						{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
 					},
+					MetadataOptions: &hyperkarpenterv1.MetadataOptions{
+						HTTPEndpoint:            aws.String("enabled"),
+						HTTPProtocolIPv6:        aws.String("disabled"),
+						HTTPPutResponseHopLimit: aws.Int64(2),
+						HTTPTokens:              aws.String("required"),
+					},
 				},
 			}
 			g.Expect(guestClient.Create(ctx, nc)).To(Succeed())
@@ -523,6 +530,38 @@ func TestKarpenter(t *testing.T) {
 				e2eutil.WithTimeout(5*time.Minute),
 			)
 			t.Log("OpenshiftEC2NodeClass version resolved successfully")
+
+			// Verify MetadataOptions propagated to the downstream EC2NodeClass
+			t.Log("Verifying MetadataOptions propagated to EC2NodeClass")
+			e2eutil.EventuallyObject(t, ctx, "EC2NodeClass to have MetadataOptions propagated",
+				func(ctx context.Context) (*awskarpenterv1.EC2NodeClass, error) {
+					ec2NodeClass := &awskarpenterv1.EC2NodeClass{}
+					err := guestClient.Get(ctx, crclient.ObjectKey{Name: nc.Name}, ec2NodeClass)
+					return ec2NodeClass, err
+				},
+				[]e2eutil.Predicate[*awskarpenterv1.EC2NodeClass]{
+					e2eutil.Predicate[*awskarpenterv1.EC2NodeClass](func(ec2nc *awskarpenterv1.EC2NodeClass) (done bool, reasons string, err error) {
+						if ec2nc.Spec.MetadataOptions == nil {
+							return false, "MetadataOptions is nil", nil
+						}
+						if ec2nc.Spec.MetadataOptions.HTTPEndpoint == nil || *ec2nc.Spec.MetadataOptions.HTTPEndpoint != "enabled" {
+							return false, fmt.Sprintf("expected HTTPEndpoint=enabled, got %v", ec2nc.Spec.MetadataOptions.HTTPEndpoint), nil
+						}
+						if ec2nc.Spec.MetadataOptions.HTTPProtocolIPv6 == nil || *ec2nc.Spec.MetadataOptions.HTTPProtocolIPv6 != "disabled" {
+							return false, fmt.Sprintf("expected HTTPProtocolIPv6=disabled, got %v", ec2nc.Spec.MetadataOptions.HTTPProtocolIPv6), nil
+						}
+						if ec2nc.Spec.MetadataOptions.HTTPPutResponseHopLimit == nil || *ec2nc.Spec.MetadataOptions.HTTPPutResponseHopLimit != 2 {
+							return false, fmt.Sprintf("expected HTTPPutResponseHopLimit=2, got %v", ec2nc.Spec.MetadataOptions.HTTPPutResponseHopLimit), nil
+						}
+						if ec2nc.Spec.MetadataOptions.HTTPTokens == nil || *ec2nc.Spec.MetadataOptions.HTTPTokens != "required" {
+							return false, fmt.Sprintf("expected HTTPTokens=required, got %v", ec2nc.Spec.MetadataOptions.HTTPTokens), nil
+						}
+						return true, "MetadataOptions propagated correctly", nil
+					}),
+				},
+				e2eutil.WithTimeout(2*time.Minute),
+			)
+			t.Log("MetadataOptions propagated correctly to EC2NodeClass")
 
 			// Look up the expected kubelet version from the resolved release image
 			pullSecret, err := os.ReadFile(clusterOpts.PullSecretFile)
@@ -594,7 +633,7 @@ func TestKarpenter(t *testing.T) {
 			}
 
 			// Wait for node to be provisioned and verify it has the correct kubelet version
-			_ = e2eutil.WaitForNReadyNodesWithOptions(t, ctx, guestClient, int32(replicas), hyperv1.AWSPlatform, "",
+			nodes := e2eutil.WaitForNReadyNodesWithOptions(t, ctx, guestClient, int32(replicas), hyperv1.AWSPlatform, "",
 				e2eutil.WithClientOptions(
 					crclient.MatchingLabelsSelector{Selector: labels.SelectorFromSet(labels.Set(testNodeLabels))},
 				),
@@ -609,6 +648,39 @@ func TestKarpenter(t *testing.T) {
 				),
 			)
 			t.Logf("Node provisioned with correct kubelet version (v%s) for NodeClass version %s", expectedKubeletVersion, nodeClassVersion)
+
+			// Verify MetadataOptions propagated to the actual EC2 instance
+			t.Log("Verifying MetadataOptions on EC2 instance via DescribeInstances")
+			ec2client := ec2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+			for _, node := range nodes {
+				providerID := node.Spec.ProviderID
+				g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
+
+				parts := strings.Split(providerID, "/")
+				g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
+				instanceID := parts[4]
+				t.Logf("Checking MetadataOptions for node %s (instance %s)", node.Name, instanceID)
+
+				result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+					InstanceIds: []string{instanceID},
+				})
+				g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance")
+				g.Expect(result.Reservations).NotTo(BeEmpty(), "expected at least one reservation")
+				g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty(), "expected at least one instance")
+
+				instance := result.Reservations[0].Instances[0]
+				g.Expect(instance.MetadataOptions).NotTo(BeNil(), "instance should have MetadataOptions")
+				g.Expect(string(instance.MetadataOptions.HttpEndpoint)).To(Equal("enabled"),
+					"instance %s HttpEndpoint mismatch", instanceID)
+				g.Expect(string(instance.MetadataOptions.HttpProtocolIpv6)).To(Equal("disabled"),
+					"instance %s HttpProtocolIpv6 mismatch", instanceID)
+				g.Expect(*instance.MetadataOptions.HttpPutResponseHopLimit).To(Equal(int32(2)),
+					"instance %s HttpPutResponseHopLimit mismatch", instanceID)
+				g.Expect(string(instance.MetadataOptions.HttpTokens)).To(Equal("required"),
+					"instance %s HttpTokens mismatch", instanceID)
+				t.Logf("Instance %s has correct MetadataOptions: HttpTokens=%s, HttpEndpoint=%s, HttpPutResponseHopLimit=%d",
+					instanceID, instance.MetadataOptions.HttpTokens, instance.MetadataOptions.HttpEndpoint, *instance.MetadataOptions.HttpPutResponseHopLimit)
+			}
 
 			// Clean up
 			g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())

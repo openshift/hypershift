@@ -31,6 +31,7 @@ type OpenshiftEC2NodeClassSpecApplyConfiguration struct {
 	BlockDeviceMappings        []BlockDeviceMappingApplyConfiguration        `json:"blockDeviceMappings,omitempty"`
 	InstanceStorePolicy        *karpenterv1beta1.InstanceStorePolicy         `json:"instanceStorePolicy,omitempty"`
 	Monitoring                 *karpenterv1beta1.MonitoringState             `json:"monitoring,omitempty"`
+	MetadataOptions            *MetadataOptionsApplyConfiguration            `json:"metadataOptions,omitempty"`
 	Version                    *string                                       `json:"version,omitempty"`
 }
 
@@ -114,6 +115,14 @@ func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithInstanceStorePolicy(va
 // If called multiple times, the Monitoring field is set to the value of the last call.
 func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithMonitoring(value karpenterv1beta1.MonitoringState) *OpenshiftEC2NodeClassSpecApplyConfiguration {
 	b.Monitoring = &value
+	return b
+}
+
+// WithMetadataOptions sets the MetadataOptions field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MetadataOptions field is set to the value of the last call.
+func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithMetadataOptions(value *MetadataOptionsApplyConfiguration) *OpenshiftEC2NodeClassSpecApplyConfiguration {
+	b.MetadataOptions = value
 	return b
 }
 
