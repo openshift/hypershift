@@ -324,6 +324,14 @@ func ClusterNodeTuningOperatorServingCertSecret(ns string) *corev1.Secret {
 	return secretFor(ns, "node-tuning-operator-tls")
 }
 
+func AzureDiskCSIDriverOperatorServingCertSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "azure-disk-csi-driver-operator-serving-cert")
+}
+
+func AzureFileCSIDriverOperatorServingCertSecret(ns string) *corev1.Secret {
+	return secretFor(ns, "azure-file-csi-driver-operator-serving-cert")
+}
+
 func OLMPackageServerCertSecret(ns string) *corev1.Secret { return secretFor(ns, "packageserver-cert") }
 
 func OLMOperatorServingCertSecret(ns string) *corev1.Secret {
