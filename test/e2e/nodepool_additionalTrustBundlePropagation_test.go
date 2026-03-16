@@ -131,6 +131,68 @@ func (k *AdditionalTrustBundlePropagationTest) Run(t *testing.T, nodePool hyperv
 			)
 		}
 
+		// Verify AWS_CA_BUNDLE wiring on the aws-cloud-controller-manager deployment
+		if k.hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+			hcpNamespace := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
+			awsCCMDeployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "aws-cloud-controller-manager",
+					Namespace: hcpNamespace,
+				},
+			}
+			e2eutil.EventuallyObject(t, k.ctx, "Waiting for aws-cloud-controller-manager to have AWS_CA_BUNDLE wiring",
+				func(ctx context.Context) (*appsv1.Deployment, error) {
+					err := k.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(awsCCMDeployment), awsCCMDeployment)
+					return awsCCMDeployment, err
+				},
+				[]e2eutil.Predicate[*appsv1.Deployment]{
+					func(obj *appsv1.Deployment) (bool, string, error) {
+						// Check AWS_CA_BUNDLE env var on the first container.
+						hasEnv := false
+						for _, env := range obj.Spec.Template.Spec.Containers[0].Env {
+							if env.Name == "AWS_CA_BUNDLE" && env.Value == "/etc/pki/ca-trust/extracted/hypershift/combined-ca-bundle.pem" {
+								hasEnv = true
+								break
+							}
+						}
+						if !hasEnv {
+							return false, "AWS_CA_BUNDLE env var not found on first container", nil
+						}
+
+						// Check setup-aws-ca-bundle init container.
+						hasInitContainer := false
+						for _, ic := range obj.Spec.Template.Spec.InitContainers {
+							if ic.Name == "setup-aws-ca-bundle" {
+								hasInitContainer = true
+								break
+							}
+						}
+						if !hasInitContainer {
+							return false, "setup-aws-ca-bundle init container not found", nil
+						}
+
+						// Check aws-ca-bundle volume.
+						hasVolume := false
+						for _, v := range obj.Spec.Template.Spec.Volumes {
+							if v.Name == "aws-ca-bundle" && v.EmptyDir != nil {
+								hasVolume = true
+								break
+							}
+						}
+						if !hasVolume {
+							return false, "aws-ca-bundle volume not found", nil
+						}
+
+						if ready := util.IsDeploymentReady(k.ctx, obj); !ready {
+							return false, "Deployment is not ready", nil
+						}
+						return true, "AWS_CA_BUNDLE wiring is present and deployment is ready", nil
+					},
+				},
+				e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(5*time.Minute),
+			)
+		}
+
 		t.Logf("Updating hosted cluster by removing additional trust bundle.")
 		if err = e2eutil.UpdateObject(t, k.ctx, k.mgmtClient, k.hostedCluster, func(obj *hyperv1.HostedCluster) {
 			obj.Spec.AdditionalTrustBundle = nil
@@ -165,6 +227,45 @@ func (k *AdditionalTrustBundlePropagationTest) Run(t *testing.T, nodePool hyperv
 				},
 			},
 		)
+
+		// Verify AWS_CA_BUNDLE wiring is removed from the aws-cloud-controller-manager deployment
+		if k.hostedCluster.Spec.Platform.Type == hyperv1.AWSPlatform {
+			hcpNamespace := manifests.HostedControlPlaneNamespace(k.hostedCluster.Namespace, k.hostedCluster.Name)
+			awsCCMDeployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "aws-cloud-controller-manager",
+					Namespace: hcpNamespace,
+				},
+			}
+			e2eutil.EventuallyObject(t, k.ctx, "Waiting for aws-cloud-controller-manager to have AWS_CA_BUNDLE wiring removed",
+				func(ctx context.Context) (*appsv1.Deployment, error) {
+					err := k.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(awsCCMDeployment), awsCCMDeployment)
+					return awsCCMDeployment, err
+				},
+				[]e2eutil.Predicate[*appsv1.Deployment]{
+					func(obj *appsv1.Deployment) (bool, string, error) {
+						// Ensure AWS_CA_BUNDLE env var is gone.
+						for _, env := range obj.Spec.Template.Spec.Containers[0].Env {
+							if env.Name == "AWS_CA_BUNDLE" {
+								return false, "AWS_CA_BUNDLE env var is still present", nil
+							}
+						}
+
+						// Ensure setup-aws-ca-bundle init container is gone.
+						for _, ic := range obj.Spec.Template.Spec.InitContainers {
+							if ic.Name == "setup-aws-ca-bundle" {
+								return false, "setup-aws-ca-bundle init container is still present", nil
+							}
+						}
+
+						if ready := util.IsDeploymentReady(k.ctx, obj); !ready {
+							return false, "Deployment is not ready", nil
+						}
+						return true, "AWS_CA_BUNDLE wiring is removed and deployment is ready", nil
+					},
+				},
+			)
+		}
 
 		e2eutil.EventuallyObject(t, k.ctx, fmt.Sprintf("Waiting for NodePool %s/%s to begin updating", nodePool.Namespace, nodePool.Name),
 			func(ctx context.Context) (*hyperv1.NodePool, error) {

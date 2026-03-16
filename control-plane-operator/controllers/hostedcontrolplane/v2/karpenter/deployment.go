@@ -43,6 +43,10 @@ func adaptDeployment(cpContext component.WorkloadContext, deployment *appsv1.Dep
 		}
 	})
 
+	if hcp.Spec.AdditionalTrustBundle != nil {
+		util.DeploymentAddAWSCABundleVolume(hcp.Spec.AdditionalTrustBundle, deployment, cpContext.ReleaseImageProvider.GetImage(util.CPOImageName))
+	}
+
 	deployment.Spec.Template.Spec.InitContainers = append(deployment.Spec.Template.Spec.InitContainers,
 		corev1.Container{
 			Name:    "token-minter",
