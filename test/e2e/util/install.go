@@ -48,6 +48,8 @@ func getInstallOptions(opts HyperShiftOperatorInstallOptions) install.Options {
 
 	installOpts.AWSPrivateCreds = opts.AWSPrivateCredentialsFile
 	installOpts.AWSPrivateRegion = opts.AWSPrivateRegion
+	installOpts.AzurePrivateCreds = opts.AzurePrivateCredentialsFile
+	installOpts.AzurePLSResourceGroup = opts.AzurePLSResourceGroup
 	installOpts.EnableCIDebugOutput = opts.EnableCIDebugOutput
 	installOpts.ExternalDNSCredentials = opts.ExternalDNSCredentials
 	installOpts.ExternalDNSDomainFilter = opts.ExternalDNSDomainFilter
