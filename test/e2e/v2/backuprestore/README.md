@@ -87,6 +87,16 @@ spec:
 EOF
 ```
 
+Note: For OpenShift ADP 1.5+, the customPlugins might be left out. Instead, the hypershift plugin can be listed directly under defaultPlugins as follows. This will use the default hypershift plugin version:
+```
+      defaultPlugins:
+        - openshift
+        - aws
+        - csi
+        - kubevirt
+        - hypershift
+```
+
 * BackupStorageLocation
 
 ```bash

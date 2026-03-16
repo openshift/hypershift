@@ -25,8 +25,7 @@ import (
 
 const (
 	// DeletionTimeout is the default timeout for waiting for deletion
-	DeletionTimeout      = 10 * time.Minute
-	DeletionRetryTimeout = 5 * time.Minute
+	DeletionTimeout = 10 * time.Minute
 	// PollInterval is the interval for polling deletion status
 	PollInterval = 5 * time.Second
 )
@@ -41,6 +40,7 @@ const (
 // 4. Delete HostedCluster namespace
 // 5. Remove finalizers from orphaned resources in HostedCluster namespace
 // 6. Wait for control plane namespace to be fully deleted
+// 7. Wait for hosted cluster namespace to be fully deleted
 func BreakHostedClusterPreservingMachines(testCtx *internal.TestContext, logger logr.Logger) error {
 	// Step 1: Force delete HCP namespace (without waiting for completion)
 	// This removes the CAPI controller early, leaving machine resources orphaned
@@ -59,7 +59,7 @@ func BreakHostedClusterPreservingMachines(testCtx *internal.TestContext, logger 
 		return fmt.Errorf("failed to remove orphaned resource finalizers: %w", err)
 	}
 
-	// Step 4: Delete HostedCluster namespace
+	// Step 4: Delete HostedCluster namespace (without waiting for completion)
 	if err := deleteHostedClusterNamespace(testCtx, false); err != nil {
 		return fmt.Errorf("failed to delete hosted cluster namespace: %w", err)
 	}
@@ -72,6 +72,11 @@ func BreakHostedClusterPreservingMachines(testCtx *internal.TestContext, logger 
 	// Step 6: Wait for control plane namespace to be fully deleted
 	if err := deleteControlPlaneNamespace(testCtx, true); err != nil {
 		return fmt.Errorf("failed to delete control plane namespace: %w", err)
+	}
+
+	// Step 7: Wait for hosted cluster namespace to be fully deleted
+	if err := deleteHostedClusterNamespace(testCtx, true); err != nil {
+		return fmt.Errorf("failed to wait for hosted cluster namespace deletion: %w", err)
 	}
 
 	return nil
