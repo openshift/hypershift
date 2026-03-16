@@ -59,6 +59,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
@@ -414,7 +415,10 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
-	var ec2Client awsapi.EC2API
+	var (
+		ec2Client     awsapi.EC2API
+		pricingClient npmetrics.PricingAPI
+	)
 
 	if hyperv1.PlatformType(opts.PrivatePlatform) == hyperv1.AWSPlatform {
 		awsSession := awsutil.NewSessionV2(ctx, "hypershift-operator", "", "", "", "")
@@ -422,9 +426,14 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		ec2Client = ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
 			o.Retryer = awsConfig()
 		})
+
+		// Create Pricing client. The AWS Pricing API is only available in us-east-1 and ap-south-1.
+		const awsPricingAPIRegion = "us-east-1"
+		pricingSession := awsutil.NewSessionV2(ctx, "hypershift-operator-pricing", "", "", "", awsPricingAPIRegion)
+		pricingClient = pricing.NewFromConfig(*pricingSession)
 	}
 
-	npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient(), ec2Client)
+	npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient(), ec2Client, pricingClient)
 
 	var instanceTypeProvider instancetype.Provider
 
