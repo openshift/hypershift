@@ -868,7 +868,6 @@ func (c *CAPI) reconcileMachineSet(ctx context.Context,
 	machineSet.Labels[capiv1.ClusterNameLabel] = capiClusterName
 
 	resourcesName := generateName(capiClusterName, nodePool.Spec.ClusterName, nodePool.GetName())
-	machineSet.Spec.MinReadySeconds = int32(0)
 
 	gvk, err := apiutil.GVKForObject(machineTemplateCR, api.Scheme)
 	if err != nil {
