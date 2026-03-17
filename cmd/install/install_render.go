@@ -46,6 +46,7 @@ var openshiftTemplateParams = TemplateParams{
 	ExternalDNSCredsSecret:           "EXTERNAL_DNS_CREDS_SECRET",
 	ExternalDNSDomainFilter:          "EXTERNAL_DNS_DOMAIN_FILTER",
 	ExternalDNSTxtOwnerID:            "EXTERNAL_DNS_TXT_OWNER_ID",
+	ExternalDNSTxtSuffix:             "EXTERNAL_DNS_TXT_SUFFIX",
 	ExternalDNSImage:                 "EXTERNAL_DNS_IMAGE",
 	ExternalDNSGoogleProject:         "EXTERNAL_DNS_GOOGLE_PROJECT",
 	ExternalDNSInterval:              "EXTERNAL_DNS_INTERVAL",
@@ -197,6 +198,12 @@ func openshiftTemplate(ctx context.Context, opts *Options) (crclient.Object, err
 			templateParameters = append(
 				templateParameters,
 				map[string]string{"name": openshiftTemplateParams.ExternalDNSTxtOwnerID, "value": opts.ExternalDNSTxtOwnerId},
+			)
+		}
+		if opts.ExternalDNSTxtSuffix != "" {
+			templateParameters = append(
+				templateParameters,
+				map[string]string{"name": openshiftTemplateParams.ExternalDNSTxtSuffix, "value": opts.ExternalDNSTxtSuffix},
 			)
 		}
 		if opts.ExternalDNSGoogleProject != "" {

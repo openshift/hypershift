@@ -224,6 +224,7 @@ type ExternalDNSDeployment struct {
 	DomainFilter          string
 	CredentialsSecret     *corev1.Secret
 	TxtOwnerId            string
+	TxtSuffix             string
 	Proxy                 *configv1.Proxy
 	GoogleProject         string
 	Interval              string
@@ -235,6 +236,10 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 	txtOwnerId := o.TxtOwnerId
 	if txtOwnerId == "" {
 		txtOwnerId = uuid.NewString()
+	}
+	txtSuffix := o.TxtSuffix
+	if txtSuffix == "" {
+		txtSuffix = "-external-dns"
 	}
 	interval := o.Interval
 	if interval == "" {
@@ -283,7 +288,7 @@ func (o ExternalDNSDeployment) Build() *appsv1.Deployment {
 								fmt.Sprintf("--domain-filter=%s", o.DomainFilter),
 								fmt.Sprintf("--provider=%s", o.Provider),
 								"--registry=txt",
-								"--txt-suffix=-external-dns",
+								fmt.Sprintf("--txt-suffix=%s", txtSuffix),
 								fmt.Sprintf("--txt-owner-id=%s", txtOwnerId),
 								fmt.Sprintf("--label-filter=%s!=%s", hyperv1.RouteVisibilityLabel, hyperv1.RouteVisibilityPrivate),
 								fmt.Sprintf("--interval=%s", interval),

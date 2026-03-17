@@ -117,6 +117,7 @@ type Options struct {
 	ExternalDNSCredentialsSecret              string
 	ExternalDNSDomainFilter                   string
 	ExternalDNSTxtOwnerId                     string
+	ExternalDNSTxtSuffix                      string
 	ExternalDNSImage                          string
 	ExternalDNSGoogleProject                  string
 	ExternalDNSInterval                       string
@@ -348,6 +349,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSCredentialsSecret, "external-dns-secret", "", "Name of an existing secret containing the external-dns credentials.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSDomainFilter, "external-dns-domain-filter", "", "Restrict external-dns to changes within the specified domain.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerId, "external-dns-txt-owner-id", "", "external-dns TXT registry owner ID.")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtSuffix, "external-dns-txt-suffix", "", "Suffix to use for external-dns TXT registry ownership records (default: -external-dns).")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSImage, "external-dns-image", opts.ExternalDNSImage, "Image to use for external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSGoogleProject, "external-dns-google-project", "", "Google Cloud project ID for DNS zone (optional for GCP provider; falls back to EXTERNAL_DNS_GOOGLE_PROJECT env var or GCP metadata server)")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSInterval, "external-dns-interval", "", fmt.Sprintf("Polling interval for external-dns DNS record reconciliation (default: %s)", assets.DefaultExternalDNSInterval))
@@ -1122,6 +1124,7 @@ func setupExternalDNS(opts Options, operatorNamespace *corev1.Namespace) ([]crcl
 		DomainFilter:          opts.ExternalDNSDomainFilter,
 		CredentialsSecret:     externalDNSSecret,
 		TxtOwnerId:            opts.ExternalDNSTxtOwnerId,
+		TxtSuffix:             opts.ExternalDNSTxtSuffix,
 		Proxy:                 proxy,
 		GoogleProject:         opts.ExternalDNSGoogleProject,
 		Interval:              opts.ExternalDNSInterval,

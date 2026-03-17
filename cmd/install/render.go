@@ -22,6 +22,7 @@ type TemplateParams struct {
 	ExternalDNSCredsSecret           string
 	ExternalDNSDomainFilter          string
 	ExternalDNSTxtOwnerID            string
+	ExternalDNSTxtSuffix             string
 	ExternalDNSImage                 string
 	ExternalDNSGoogleProject         string
 	ExternalDNSInterval              string
@@ -67,6 +68,9 @@ func hyperShiftOperatorTemplateManifest(ctx context.Context, client crclient.Cli
 		}
 		if opts.ExternalDNSTxtOwnerId != "" {
 			opts.ExternalDNSTxtOwnerId = templateParamConfig.TemplateParamWrapper(templateParamConfig.ExternalDNSTxtOwnerID)
+		}
+		if opts.ExternalDNSTxtSuffix != "" {
+			opts.ExternalDNSTxtSuffix = templateParamConfig.TemplateParamWrapper(templateParamConfig.ExternalDNSTxtSuffix)
 		}
 		if opts.ExternalDNSGoogleProject != "" {
 			opts.ExternalDNSGoogleProject = templateParamConfig.TemplateParamWrapper(templateParamConfig.ExternalDNSGoogleProject)

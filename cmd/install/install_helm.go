@@ -27,6 +27,7 @@ var helmTemplateParams = TemplateParams{
 	ExternalDNSCredsSecret:           ".Values.externaldns.credsSecret",
 	ExternalDNSDomainFilter:          ".Values.externaldns.domainFilter",
 	ExternalDNSTxtOwnerID:            ".Values.externaldns.txtOwnerId",
+	ExternalDNSTxtSuffix:             ".Values.externaldns.txtSuffix",
 	ExternalDNSImage:                 ".Values.externaldns.image",
 	ExternalDNSGoogleProject:         ".Values.externaldns.googleProject",
 	ExternalDNSInterval:              ".Values.externaldns.interval",
