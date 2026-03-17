@@ -10,8 +10,8 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -111,9 +111,11 @@ func (o *DestroyBastionOpts) Run(ctx context.Context, logger logr.Logger) error 
 		region = o.Region
 	}
 
-	awsSession := awsutil.NewSession("cli-destroy-bastion", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
-	awsConfig := awsutil.NewConfig()
-	ec2Client := ec2.New(awsSession, awsConfig)
+	awsSession := awsutil.NewSessionV2(ctx, "cli-destroy-bastion", o.AWSCredentialsFile, o.AWSKey, o.AWSSecretKey, region)
+	awsConfig := awsutil.NewConfigV2()
+	ec2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+		o.Retryer = awsConfig()
+	})
 
 	return wait.PollUntilContextCancel(ctx, 5*time.Second, true, func(ctx context.Context) (bool, error) {
 		err := destroyBastion(ctx, logger, ec2Client, infraID)
@@ -128,7 +130,7 @@ func (o *DestroyBastionOpts) Run(ctx context.Context, logger logr.Logger) error 
 	})
 }
 
-func destroyBastion(ctx context.Context, logger logr.Logger, ec2Client *ec2.EC2, infraID string) error {
+func destroyBastion(ctx context.Context, logger logr.Logger, ec2Client *ec2.Client, infraID string) error {
 	if err := destroyEC2Instance(ctx, logger, ec2Client, infraID); err != nil {
 		return err
 	}
@@ -141,7 +143,7 @@ func destroyBastion(ctx context.Context, logger logr.Logger, ec2Client *ec2.EC2,
 	return nil
 }
 
-func destroyEC2Instance(ctx context.Context, logger logr.Logger, ec2Client *ec2.EC2, infraID string) error {
+func destroyEC2Instance(ctx context.Context, logger logr.Logger, ec2Client *ec2.Client, infraID string) error {
 	instanceID, err := existingInstance(ctx, ec2Client, infraID)
 	if err != nil {
 		return err
@@ -151,8 +153,8 @@ func destroyEC2Instance(ctx context.Context, logger logr.Logger, ec2Client *ec2.
 	}
 	terminateCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	_, err = ec2Client.TerminateInstancesWithContext(terminateCtx, &ec2.TerminateInstancesInput{
-		InstanceIds: []*string{aws.String(instanceID)},
+	_, err = ec2Client.TerminateInstances(terminateCtx, &ec2.TerminateInstancesInput{
+		InstanceIds: []string{instanceID},
 	})
 	if err != nil {
 		return fmt.Errorf("error deleting instance: %w", err)
@@ -161,7 +163,7 @@ func destroyEC2Instance(ctx context.Context, logger logr.Logger, ec2Client *ec2.
 	return nil
 }
 
-func destroySecurityGroup(ctx context.Context, logger logr.Logger, ec2Client *ec2.EC2, infraID string) error {
+func destroySecurityGroup(ctx context.Context, logger logr.Logger, ec2Client *ec2.Client, infraID string) error {
 	sg, err := existingSecurityGroup(ctx, ec2Client, infraID)
 	if err != nil {
 		return err
@@ -171,17 +173,17 @@ func destroySecurityGroup(ctx context.Context, logger logr.Logger, ec2Client *ec
 	}
 	sgCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	_, err = ec2Client.DeleteSecurityGroupWithContext(sgCtx, &ec2.DeleteSecurityGroupInput{
+	_, err = ec2Client.DeleteSecurityGroup(sgCtx, &ec2.DeleteSecurityGroupInput{
 		GroupId: sg.GroupId,
 	})
 	if err != nil {
 		return fmt.Errorf("error deleting security group: %w", err)
 	}
-	logger.Info("Deleted security group", "id", aws.StringValue(sg.GroupId), "name", securityGroupName(infraID))
+	logger.Info("Deleted security group", "id", aws.ToString(sg.GroupId), "name", securityGroupName(infraID))
 	return nil
 }
 
-func destroyKeyPair(ctx context.Context, logger logr.Logger, ec2Client *ec2.EC2, infraID string) error {
+func destroyKeyPair(ctx context.Context, logger logr.Logger, ec2Client *ec2.Client, infraID string) error {
 	keyPairID, err := existingKeyPair(ctx, ec2Client, infraID)
 	if err != nil {
 		return err
@@ -191,7 +193,7 @@ func destroyKeyPair(ctx context.Context, logger logr.Logger, ec2Client *ec2.EC2,
 	}
 	kpCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	_, err = ec2Client.DeleteKeyPairWithContext(kpCtx, &ec2.DeleteKeyPairInput{
+	_, err = ec2Client.DeleteKeyPair(kpCtx, &ec2.DeleteKeyPairInput{
 		KeyPairId: aws.String(keyPairID),
 	})
 	if err != nil {

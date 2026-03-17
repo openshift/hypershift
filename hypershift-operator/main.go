@@ -46,6 +46,7 @@ import (
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	sharedingressconfiggenerator "github.com/openshift/hypershift/sharedingress-config-generator"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
@@ -57,9 +58,8 @@ import (
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -414,12 +414,14 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
-	var ec2Client ec2iface.EC2API
+	var ec2Client awsapi.EC2API
 
 	if hyperv1.PlatformType(opts.PrivatePlatform) == hyperv1.AWSPlatform {
-		awsSession := awsutil.NewSession("hypershift-operator", "", "", "", "")
-		awsConfig := awsutil.NewConfig()
-		ec2Client = ec2.New(awsSession, awsConfig)
+		awsSession := awsutil.NewSessionV2(ctx, "hypershift-operator", "", "", "", "")
+		awsConfig := awsutil.NewConfigV2()
+		ec2Client = ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+			o.Retryer = awsConfig()
+		})
 	}
 
 	npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient(), ec2Client)
@@ -429,9 +431,11 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	if opts.ScaleFromZeroCreds != "" && opts.ScaleFromZeroProvider != "" {
 		switch strings.ToLower(opts.ScaleFromZeroProvider) {
 		case "aws":
-			awsSession := awsutil.NewSession("hypershift-operator-scale-from-zero", opts.ScaleFromZeroCreds, "", "", "")
-			awsConfig := awsutil.NewConfig()
-			scaleFromZeroEC2Client := ec2.New(awsSession, awsConfig)
+			awsSession := awsutil.NewSessionV2(ctx, "hypershift-operator-scale-from-zero", opts.ScaleFromZeroCreds, "", "", "")
+			awsConfig := awsutil.NewConfigV2()
+			scaleFromZeroEC2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+				o.Retryer = awsConfig()
+			})
 			instanceTypeProvider = awsinstancetype.NewProvider(scaleFromZeroEC2Client)
 			log.Info("Instance type provider initialized", "provider", opts.ScaleFromZeroProvider)
 		default:

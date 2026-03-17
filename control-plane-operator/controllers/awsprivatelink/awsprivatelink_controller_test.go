@@ -9,8 +9,8 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -23,19 +23,19 @@ func Test_diffIDs(t *testing.T) {
 	subnet3 := "3"
 	type args struct {
 		desired  []string
-		existing []*string
+		existing []string
 	}
 	tests := []struct {
 		name        string
 		args        args
-		wantAdded   []*string
-		wantRemoved []*string
+		wantAdded   []string
+		wantRemoved []string
 	}{
 		{
 			name: "no subnets, no change",
 			args: args{
 				desired:  []string{},
-				existing: []*string{},
+				existing: []string{},
 			},
 			wantAdded:   nil,
 			wantRemoved: nil,
@@ -44,7 +44,7 @@ func Test_diffIDs(t *testing.T) {
 			name: "two subnet, no change",
 			args: args{
 				desired:  []string{subnet1, subnet2},
-				existing: []*string{&subnet1, &subnet2},
+				existing: []string{subnet1, subnet2},
 			},
 			wantAdded:   nil,
 			wantRemoved: nil,
@@ -53,28 +53,28 @@ func Test_diffIDs(t *testing.T) {
 			name: "one new subnet",
 			args: args{
 				desired:  []string{subnet1, subnet2},
-				existing: []*string{&subnet1},
+				existing: []string{subnet1},
 			},
-			wantAdded:   []*string{&subnet2},
+			wantAdded:   []string{subnet2},
 			wantRemoved: nil,
 		},
 		{
 			name: "one removed subnet",
 			args: args{
 				desired:  []string{subnet1},
-				existing: []*string{&subnet1, &subnet2},
+				existing: []string{subnet1, subnet2},
 			},
 			wantAdded:   nil,
-			wantRemoved: []*string{&subnet2},
+			wantRemoved: []string{subnet2},
 		},
 		{
 			name: "one removed subnet, one added subnet",
 			args: args{
 				desired:  []string{subnet1, subnet2},
-				existing: []*string{&subnet2, &subnet3},
+				existing: []string{subnet2, subnet3},
 			},
-			wantAdded:   []*string{&subnet1},
-			wantRemoved: []*string{&subnet3},
+			wantAdded:   []string{subnet1},
+			wantRemoved: []string{subnet3},
 		},
 	}
 	for _, tt := range tests {
@@ -134,30 +134,30 @@ func TestRecordForService(t *testing.T) {
 }
 
 func TestDiffPermissions(t *testing.T) {
-	r := func(desc, cidr string) *ec2.IpRange {
-		return &ec2.IpRange{
+	r := func(desc, cidr string) ec2types.IpRange {
+		return ec2types.IpRange{
 			Description: aws.String(desc),
 			CidrIp:      aws.String(cidr),
 		}
 	}
 
-	p := func(from, to int64, protocol string, ranges ...*ec2.IpRange) *ec2.IpPermission {
-		return &ec2.IpPermission{
-			FromPort:   aws.Int64(from),
-			ToPort:     aws.Int64(to),
+	p := func(from, to int32, protocol string, ranges ...ec2types.IpRange) ec2types.IpPermission {
+		return ec2types.IpPermission{
+			FromPort:   aws.Int32(from),
+			ToPort:     aws.Int32(to),
 			IpProtocol: aws.String(protocol),
 			IpRanges:   ranges,
 		}
 	}
 
-	pp := func(perms ...*ec2.IpPermission) []*ec2.IpPermission {
+	pp := func(perms ...ec2types.IpPermission) []ec2types.IpPermission {
 		return perms
 	}
 
 	tests := []struct {
-		actual   []*ec2.IpPermission
-		required []*ec2.IpPermission
-		expected []*ec2.IpPermission
+		actual   []ec2types.IpPermission
+		required []ec2types.IpPermission
+		expected []ec2types.IpPermission
 	}{
 		{
 			actual: pp(),
