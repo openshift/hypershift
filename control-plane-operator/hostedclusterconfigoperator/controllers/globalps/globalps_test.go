@@ -19,7 +19,6 @@ import (
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sigs.k8s.io/controller-runtime/pkg/event"
 )
 
 var (
@@ -950,47 +949,6 @@ func TestLabelNodesForGlobalPullSecret(t *testing.T) {
 			},
 			expectedLabeled: []string{"replace-node-1", "replace-node-2"}, // All Replace nodes should be labeled
 		},
-		{
-			name: "When Machine.Status.NodeRef is nil it should skip the node for labeling",
-			nodes: []corev1.Node{
-				{ObjectMeta: metav1.ObjectMeta{Name: "new-node-1"}},
-				{ObjectMeta: metav1.ObjectMeta{Name: "existing-node-1"}},
-			},
-			machineSets: []capiv1.MachineSet{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "replace-machineset-1",
-						Namespace: "test-namespace",
-					},
-					Spec: capiv1.MachineSetSpec{
-						Selector: metav1.LabelSelector{
-							MatchLabels: map[string]string{"machineset": "replace-1"},
-						},
-					},
-				},
-			},
-			machines: []capiv1.Machine{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "machine-with-noderef",
-						Namespace: "test-namespace",
-						Labels:    map[string]string{"machineset": "replace-1"},
-					},
-					Status: capiv1.MachineStatus{
-						NodeRef: &corev1.ObjectReference{Name: "existing-node-1"},
-					},
-				},
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "machine-without-noderef",
-						Namespace: "test-namespace",
-						Labels:    map[string]string{"machineset": "replace-1"},
-					},
-					Status: capiv1.MachineStatus{NodeRef: nil},
-				},
-			},
-			expectedLabeled: []string{"existing-node-1"},
-		},
 	}
 
 	for _, tt := range tests {
@@ -1054,77 +1012,4 @@ func TestLabelNodesForGlobalPullSecret(t *testing.T) {
 			g.Expect(len(labeledNodes)).To(Equal(len(tt.expectedLabeled)), "Number of labeled nodes doesn't match expected")
 		})
 	}
-}
-
-func TestMachineNodeRefPredicate(t *testing.T) {
-	p := machineNodeRefPredicate()
-
-	t.Run("When a Machine is created it should not trigger reconciliation", func(t *testing.T) {
-		g := NewWithT(t)
-		e := event.TypedCreateEvent[*capiv1.Machine]{
-			Object: &capiv1.Machine{},
-		}
-		g.Expect(p.Create(e)).To(BeFalse())
-	})
-
-	t.Run("When a Machine is deleted it should not trigger reconciliation", func(t *testing.T) {
-		g := NewWithT(t)
-		e := event.TypedDeleteEvent[*capiv1.Machine]{
-			Object: &capiv1.Machine{},
-		}
-		g.Expect(p.Delete(e)).To(BeFalse())
-	})
-
-	t.Run("When a generic event occurs it should not trigger reconciliation", func(t *testing.T) {
-		g := NewWithT(t)
-		e := event.TypedGenericEvent[*capiv1.Machine]{
-			Object: &capiv1.Machine{},
-		}
-		g.Expect(p.Generic(e)).To(BeFalse())
-	})
-
-	t.Run("When NodeRef transitions from nil to non-nil it should trigger reconciliation", func(t *testing.T) {
-		g := NewWithT(t)
-		e := event.TypedUpdateEvent[*capiv1.Machine]{
-			ObjectOld: &capiv1.Machine{
-				Status: capiv1.MachineStatus{NodeRef: nil},
-			},
-			ObjectNew: &capiv1.Machine{
-				Status: capiv1.MachineStatus{
-					NodeRef: &corev1.ObjectReference{Name: "node-1"},
-				},
-			},
-		}
-		g.Expect(p.Update(e)).To(BeTrue())
-	})
-
-	t.Run("When NodeRef is already set on both old and new it should not trigger reconciliation", func(t *testing.T) {
-		g := NewWithT(t)
-		e := event.TypedUpdateEvent[*capiv1.Machine]{
-			ObjectOld: &capiv1.Machine{
-				Status: capiv1.MachineStatus{
-					NodeRef: &corev1.ObjectReference{Name: "node-1"},
-				},
-			},
-			ObjectNew: &capiv1.Machine{
-				Status: capiv1.MachineStatus{
-					NodeRef: &corev1.ObjectReference{Name: "node-1"},
-				},
-			},
-		}
-		g.Expect(p.Update(e)).To(BeFalse())
-	})
-
-	t.Run("When NodeRef is nil on both old and new it should not trigger reconciliation", func(t *testing.T) {
-		g := NewWithT(t)
-		e := event.TypedUpdateEvent[*capiv1.Machine]{
-			ObjectOld: &capiv1.Machine{
-				Status: capiv1.MachineStatus{NodeRef: nil},
-			},
-			ObjectNew: &capiv1.Machine{
-				Status: capiv1.MachineStatus{NodeRef: nil},
-			},
-		}
-		g.Expect(p.Update(e)).To(BeFalse())
-	})
 }
