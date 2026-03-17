@@ -320,7 +320,7 @@ type VPCSecurityGroupRuleProtocol string
 
 const (
 	// VPCSecurityGroupRuleProtocolAll defines the Rule is for all network protocols.
-	VPCSecurityGroupRuleProtocolAll VPCSecurityGroupRuleProtocol = vpcv1.NetworkACLRuleProtocolAllConst
+	VPCSecurityGroupRuleProtocolAll VPCSecurityGroupRuleProtocol = "all"
 	// VPCSecurityGroupRuleProtocolIcmp defiens the Rule is for ICMP network protocol.
 	VPCSecurityGroupRuleProtocolIcmp VPCSecurityGroupRuleProtocol = vpcv1.NetworkACLRuleProtocolIcmpConst
 	// VPCSecurityGroupRuleProtocolTCP defines the Rule is for TCP network protocol.
