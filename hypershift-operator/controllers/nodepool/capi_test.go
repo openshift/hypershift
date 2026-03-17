@@ -1265,6 +1265,7 @@ func TestCAPIReconcile(t *testing.T) {
 		nodePool      *hyperv1.NodePool
 		hostedCluster *hyperv1.HostedCluster
 		machineSet    *capiv1.MachineSet
+		machines      []client.Object
 		templates     []client.Object
 		// Different userdata name is what triggers a machineDeployment rollout.
 		// Set this to true to validate expectations that should happen when no rollout is happening.
@@ -1338,6 +1339,17 @@ func TestCAPIReconcile(t *testing.T) {
 								// So reconciliation doesn't create a new AWSMachineTemplate but reconcile this one.
 								Name: awsMachineTemplateName,
 							},
+						},
+					},
+				},
+			},
+			machines: []client.Object{
+				&capiv1.Machine{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-machine-1",
+						Namespace: "test-namespace-test-cluster",
+						Annotations: map[string]string{
+							nodePoolAnnotation: "test-namespace/test-nodepool",
 						},
 					},
 				},
@@ -1686,13 +1698,14 @@ func TestCAPIReconcile(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
-			c := fake.NewClientBuilder().
+			builder := fake.NewClientBuilder().
 				WithScheme(api.Scheme).
-				// WithObjectTracker()
-				// WithInterceptorFuncs()
 				WithObjects(tt.nodePool, tt.machineSet).
-				WithObjects(tt.templates...).
-				Build()
+				WithObjects(tt.templates...)
+			if len(tt.machines) > 0 {
+				builder = builder.WithObjects(tt.machines...)
+			}
+			c := builder.Build()
 
 			controlpaneNamespace := manifests.HostedControlPlaneNamespace(tt.hostedCluster.Namespace, tt.hostedCluster.Name)
 			capi := &CAPI{
@@ -1854,6 +1867,24 @@ func TestCAPIReconcile(t *testing.T) {
 					g.Expect(tt.nodePool.Annotations).ToNot(HaveKey(nodePoolAnnotationPlatformMachineTemplate))
 					g.Expect(tt.nodePool.Annotations).ToNot(HaveKey(nodePoolAnnotationCurrentConfig))
 					g.Expect(tt.nodePool.Status.Version).To(BeEmpty())
+				}
+
+				// Check globalPS managed label on Machines.
+				if len(tt.machines) > 0 &&
+					(tt.nodePool.Spec.Platform.Type == hyperv1.AWSPlatform || tt.nodePool.Spec.Platform.Type == hyperv1.AzurePlatform) {
+					globalPSManagedLabelKey := fmt.Sprintf("%s.%s", labelManagedPrefix, globalPSNodeLabel)
+					machineList := &capiv1.MachineList{}
+					err = capi.Client.List(t.Context(), machineList, client.InNamespace(controlpaneNamespace))
+					g.Expect(err).NotTo(HaveOccurred())
+					foundOwnedMachine := false
+					for _, machine := range machineList.Items {
+						if machine.Annotations[nodePoolAnnotation] == client.ObjectKeyFromObject(tt.nodePool).String() {
+							foundOwnedMachine = true
+							g.Expect(machine.Labels).To(HaveKeyWithValue(globalPSManagedLabelKey, "true"),
+								"Machine %s should have the globalPS managed label", machine.Name)
+						}
+					}
+					g.Expect(foundOwnedMachine).To(BeTrue(), "expected at least one Machine owned by NodePool %s", client.ObjectKeyFromObject(tt.nodePool).String())
 				}
 			}
 		})
