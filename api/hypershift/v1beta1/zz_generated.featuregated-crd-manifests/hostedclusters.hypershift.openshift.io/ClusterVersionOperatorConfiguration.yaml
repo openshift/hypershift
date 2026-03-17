@@ -6019,7 +6019,8 @@ spec:
             - message: APIServer loadBalancer hostname cannot be in ClusterConfiguration.apiserver.servingCerts.namedCertificates[]
               rule: '!self.services.exists(s, s.service == ''APIServer'' && has(s.servicePublishingStrategy.loadBalancer)
                 && s.servicePublishingStrategy.loadBalancer.hostname != "" && has(self.configuration)
-                && has(self.configuration.apiServer) && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert,
+                && has(self.configuration.apiServer) && has(self.configuration.apiServer.servingCerts)
+                && self.configuration.apiServer.servingCerts.namedCertificates.exists(cert,
                 cert.names.exists(n, n == s.servicePublishingStrategy.loadBalancer.hostname)))'
             - message: disableMultiNetwork can only be set to true when networkType
                 is 'Other'
