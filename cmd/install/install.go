@@ -798,9 +798,14 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 					return false
 				}
 				// If the feature generated CRD has any featureSet version then it has the format nodepool-<featureSet>.
-				if strings.Contains(path, "zz_generated.crd-manifests") {
+				if strings.HasSuffix(path, ".crd.yaml") {
 					if strings.Contains(path, "awsendpointservices") {
 						return isAWSPlatformEnabled(opts.PlatformsToInstall)
+					}
+					// Filter by ClusterProfile: only include the Hypershift profile CRDs,
+					// skip SelfManagedHA variants which are for standalone OCP.
+					if strings.Contains(path, "-SelfManagedHA-") {
+						return false
 					}
 					if opts.TechPreviewNoUpgrade {
 						// Skip all featureSets but TechPreviewNoUpgrade.

@@ -201,12 +201,9 @@ hypershift-api: $(CONTROLLER_GEN) $(CODE_GEN)
 	(cd ./api && $(CODE_GEN) schemapatch)
 	(cd ./api && $(CODE_GEN) crd-manifest-merge --manifest-merge:payload-manifest-path ./hypershift/v1beta1/featuregates)
 
-	# Move final CRDs to the install folder.
-	mv ./api/hypershift/v1beta1/zz_generated.crd-manifests cmd/install/assets/hypershift-operator/
-
-	# Remove SelfManagedHA CRDs
-	rm -rf cmd/install/assets/hypershift-operator/zz_generated.crd-manifests/hostedclusters-SelfManagedHA-*.yaml
-	rm -rf cmd/install/assets/hypershift-operator/zz_generated.crd-manifests/hostedcontrolplanes-SelfManagedHA-*.yaml
+	# Move final CRDs to the install folder (flatten out of zz_generated.crd-manifests/).
+	mv ./api/hypershift/v1beta1/zz_generated.crd-manifests/* cmd/install/assets/hypershift-operator/
+	rm -rf ./api/hypershift/v1beta1/zz_generated.crd-manifests
 
 	# Generate additional CRDs.
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/scheduling/..." output:crd:artifacts:config=cmd/install/assets/hypershift-operator

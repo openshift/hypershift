@@ -3,7 +3,7 @@
 
 # Generated deepcopy, defaults, conversion, and CRD manifests
 **/zz_generated.* linguist-generated=true
-**/zz_generated.crd-manifests/** linguist-generated=true
+cmd/install/assets/hypershift-operator/*.crd.yaml linguist-generated=true
 
 # Generated client code (applyconfiguration, clientset, informers, listers)
 client/** linguist-generated=true

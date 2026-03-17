@@ -2,7 +2,10 @@ package install
 
 import (
 	"bytes"
+	"fmt"
 	"io"
+	"io/fs"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -78,10 +81,12 @@ func TestHostedClusterSchedulerProfileCustomizationsDynamicResourceAllocationFie
 	pathParts := strings.Split(fieldPath, ".")
 
 	// Test all HostedCluster CRD variants
+	// Only test Hypershift profile CRDs; SelfManagedHA variants do not include
+	// the deprecated dynamicResourceAllocation field.
 	crdPaths := []string{
-		"hypershift-operator/zz_generated.crd-manifests/hostedclusters-Hypershift-Default.crd.yaml",
-		"hypershift-operator/zz_generated.crd-manifests/hostedclusters-Hypershift-TechPreviewNoUpgrade.crd.yaml",
-		"hypershift-operator/zz_generated.crd-manifests/hostedclusters-Hypershift-CustomNoUpgrade.crd.yaml",
+		"hypershift-operator/hostedclusters-Hypershift-Default.crd.yaml",
+		"hypershift-operator/hostedclusters-Hypershift-TechPreviewNoUpgrade.crd.yaml",
+		"hypershift-operator/hostedclusters-Hypershift-CustomNoUpgrade.crd.yaml",
 	}
 
 	for _, crdPath := range crdPaths {
@@ -122,4 +127,65 @@ func TestHostedClusterSchedulerProfileCustomizationsDynamicResourceAllocationFie
 			g.Expect(fieldExists).To(BeTrue(), "Field %s does not exist in CRD %s", fieldPath, crdPath)
 		})
 	}
+}
+
+// TestNoDuplicateCRDsPerProfileAndFeatureSet verifies that within a single ClusterProfile,
+// no two embedded CRDs share the same metadata.name + feature-set combination.
+func TestNoDuplicateCRDsPerProfileAndFeatureSet(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	type crdKey struct {
+		name       string
+		featureSet string
+		profile    string
+	}
+
+	seen := map[crdKey]string{}
+
+	err := fs.WalkDir(assets.CRDS, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if filepath.Ext(path) != ".yaml" {
+			return nil
+		}
+		f, err := assets.CRDS.Open(path)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		crdBytes, err := io.ReadAll(f)
+		if err != nil {
+			return err
+		}
+		repaired := bytes.Replace(crdBytes, []byte("\n---\n"), []byte(""), 1)
+
+		var crd apiextensionsv1.CustomResourceDefinition
+		if err := yaml.NewYAMLOrJSONDecoder(bytes.NewReader(repaired), 100).Decode(&crd); err != nil {
+			return err
+		}
+
+		featureSet := crd.Annotations["release.openshift.io/feature-set"]
+
+		// Determine profile from path
+		profile := "default"
+		if strings.Contains(path, "-SelfManagedHA-") {
+			profile = "SelfManagedHA"
+		} else if strings.Contains(path, "-Hypershift-") {
+			profile = "Hypershift"
+		}
+
+		key := crdKey{name: crd.Name, featureSet: featureSet, profile: profile}
+		if existing, ok := seen[key]; ok {
+			t.Errorf("duplicate CRD %s (featureSet=%q, profile=%s) found in both %s and %s",
+				crd.Name, featureSet, profile, existing, path)
+		}
+		seen[key] = path
+
+		return nil
+	})
+	g.Expect(err).ToNot(HaveOccurred())
+	g.Expect(seen).ToNot(BeEmpty(), "expected to find at least one CRD")
+	fmt.Printf("Validated %d unique CRD entries across all profiles and feature sets\n", len(seen))
 }
