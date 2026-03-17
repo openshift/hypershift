@@ -41,6 +41,16 @@ func TestMgmtClusterSupportsNativeSidecars(t *testing.T) {
 			gitVersion:      "v1.29.3+abcdef1",
 			expectedSupport: true,
 		},
+		{
+			name:            "When K8s version is a GKE-style version it should support native sidecars",
+			gitVersion:      "v1.29.0-gke.1",
+			expectedSupport: true,
+		},
+		{
+			name:            "When K8s version is a GKE-style version below 1.29 it should not support native sidecars",
+			gitVersion:      "v1.28.0-gke.1",
+			expectedSupport: false,
+		},
 	}
 
 	for _, tc := range tests {

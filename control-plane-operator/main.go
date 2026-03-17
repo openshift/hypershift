@@ -605,5 +605,7 @@ func mgmtClusterSupportsNativeSidecars(client discovery.ServerVersionInterface) 
 
 	// Native sidecar containers (RestartPolicy=Always on init containers) are beta and enabled
 	// by default starting in K8s 1.29. See https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/
-	return version.GE(semver.MustParse("1.29.0")), nil
+	// Compare only major/minor to avoid semver pre-release ordering issues with vendor-suffixed
+	// versions (e.g. v1.29.0-gke.1 sorts below v1.29.0 per semver spec).
+	return version.Major > 1 || (version.Major == 1 && version.Minor >= 29), nil
 }
