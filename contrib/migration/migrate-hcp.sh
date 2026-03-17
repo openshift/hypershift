@@ -251,6 +251,10 @@ function clean_routes() {
     timeout=40
     count=0
 
+    # TXT ownership record suffix used by external-dns (default: -external-dns)
+    # Override by setting EXTERNAL_DNS_TXT_SUFFIX before running this script.
+    TXT_SUFFIX=${EXTERNAL_DNS_TXT_SUFFIX:--external-dns}
+
     # This allows us to remove the ownership in the AWS for the API route
     oc delete route -n ${1} --all
 
@@ -264,7 +268,7 @@ function clean_routes() {
             exit 1
         fi
         count=$((count+1))
-        ROUTES=$(aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --max-items 10000 --output json | grep -c ${HC_CLUSTER_NAME}-external-dns.${EXTERNAL_DNS_DOMAIN}) || true
+        ROUTES=$(aws route53 list-resource-record-sets --hosted-zone-id ${ZONE_ID} --max-items 10000 --output json | grep -c ${HC_CLUSTER_NAME}${TXT_SUFFIX}.${EXTERNAL_DNS_DOMAIN}) || true
     done
 }
 

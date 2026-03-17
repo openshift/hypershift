@@ -50,6 +50,7 @@ go build -o cleanzones-azure .
 | `-subscription-id` | Yes | | Azure subscription ID |
 | `-dns-zone-rg` | Yes | | Resource group containing the DNS zone |
 | `-dns-zone-name` | Yes | | DNS zone name (base domain) |
+| `-txt-suffix` | No | `-external-dns` | TXT ownership record suffix (must match `--txt-suffix` passed to external-dns) |
 | `-dry-run` | No | `true` | Preview changes without deleting |
 | `-verbose` | No | `false` | Show individual records in dry run |
 | `-infra-rg` | No | | Filter resource groups by prefix |

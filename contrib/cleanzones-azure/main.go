@@ -20,6 +20,7 @@ type options struct {
 	dnsZoneResourceGroup string
 	dnsZoneName          string
 	infraResourceGroup   string // Optional: if set, only clean records for clusters not in this RG
+	txtSuffix            string // Suffix used by external-dns for TXT ownership records
 	dryRun               bool
 	verbose              bool
 }
@@ -31,6 +32,7 @@ func main() {
 	flag.StringVar(&opts.dnsZoneResourceGroup, "dns-zone-rg", "", "Resource group containing the DNS zone (required)")
 	flag.StringVar(&opts.dnsZoneName, "dns-zone-name", "", "DNS zone name / base domain (required)")
 	flag.StringVar(&opts.infraResourceGroup, "infra-rg", "", "Resource group containing cluster infrastructure (optional, for cross-referencing active clusters)")
+	flag.StringVar(&opts.txtSuffix, "txt-suffix", "-external-dns", "Suffix used by external-dns for TXT ownership records (must match --txt-suffix passed to external-dns)")
 	flag.BoolVar(&opts.dryRun, "dry-run", true, "If true, only print what would be deleted (default: true)")
 	flag.BoolVar(&opts.verbose, "verbose", false, "Enable verbose logging")
 	flag.Parse()
@@ -190,21 +192,21 @@ func shouldDeleteRecord(name, recordType string, activeInfraIDs []string, opts o
 	var matchedInfraID string
 
 	// Pattern 1: ExternalDNS TXT ownership records
-	// Format: a-<record-name>-external-dns or cname-<record-name>-external-dns
-	if recordType == "TXT" && strings.HasSuffix(nameLower, "-external-dns") {
+	// Format: a-<record-name><txtSuffix> or cname-<record-name><txtSuffix>
+	if recordType == "TXT" && strings.HasSuffix(nameLower, opts.txtSuffix) {
 		if strings.HasPrefix(nameLower, "a-") ||
 			strings.HasPrefix(nameLower, "cname-") ||
 			strings.HasPrefix(nameLower, "aaaa-") {
 			isClusterRecord = true
 			matchReason = "external-dns TXT ownership record"
-			matchedInfraID = extractInfraIDFromRecord(nameLower)
+			matchedInfraID = extractInfraIDFromRecord(nameLower, opts.txtSuffix)
 		}
 	}
 
 	// Pattern 2: Records with infraID embedded (5-char alphanumeric segment)
 	// e.g., api-autoscaling-7589p, apps-mycluster-abc12
 	if !isClusterRecord {
-		if infraID := extractInfraIDFromRecord(nameLower); infraID != "" {
+		if infraID := extractInfraIDFromRecord(nameLower, opts.txtSuffix); infraID != "" {
 			isClusterRecord = true
 			matchReason = fmt.Sprintf("contains infraID '%s'", infraID)
 			matchedInfraID = infraID
@@ -271,14 +273,14 @@ func shouldDeleteRecord(name, recordType string, activeInfraIDs []string, opts o
 }
 
 // extractInfraIDFromRecord extracts the infraID from a DNS record name.
-// InfraIDs are the last segment before any "-external-dns" suffix.
+// InfraIDs are the last segment before any TXT ownership suffix.
 // Examples:
 //   - "a-api-autoscaling-7589p-external-dns" -> "7589p"
 //   - "oauth-node-pool-xht64" -> "xht64"
 //   - "api-create-cluster-abc12" -> "abc12"
-func extractInfraIDFromRecord(name string) string {
+func extractInfraIDFromRecord(name, txtSuffix string) string {
 	// Remove the external-dns ownership suffix if present
-	name = strings.TrimSuffix(name, "-external-dns")
+	name = strings.TrimSuffix(name, txtSuffix)
 
 	// Find the last hyphen and extract everything after it
 	lastIdx := strings.LastIndex(name, "-")
@@ -331,7 +333,7 @@ func getActiveInfraIDs(ctx context.Context, subscriptionID, resourceGroupPrefix 
 			}
 
 			// Extract infraID from resource group name using same logic as DNS records
-			infraID := extractInfraIDFromRecord(name)
+			infraID := extractInfraIDFromRecord(name, "")
 			if infraID != "" {
 				infraIDSet[infraID] = true
 			}
