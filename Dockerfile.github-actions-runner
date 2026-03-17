@@ -1,0 +1,25 @@
+FROM ghcr.io/actions/actions-runner@sha256:5b922563ee9406d55e77a57d3dde85e1d793e600ed326ef6739182a847efae0f
+
+USER root
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        make \
+        gcc \
+        libc6-dev \
+        git \
+        curl \
+        ca-certificates \
+        python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG GO_VERSION=1.25.3
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-arm64.tar.gz" | tar -C /usr/local -xz
+
+RUN curl -fsSL "https://mirror.openshift.com/pub/openshift-v4/aarch64/clients/ocp/stable/openshift-client-linux.tar.gz" | tar -C /usr/local/bin -xz oc kubectl
+
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOPATH="/home/runner/go"
+ENV PATH="${GOPATH}/bin:${PATH}"
+
+USER runner
