@@ -152,6 +152,8 @@ github.com/aws/aws-sdk-go-v2/service/kms v1.50.0 h1:XSvRJBoDObL6Sn4cRmvH9wqjxjL7
 github.com/aws/aws-sdk-go-v2/service/kms v1.50.0/go.mod h1:1SdcmEGUEQE1mrU2sIgeHtcMSxHuybhPvuEPANzIDfI=
 github.com/aws/aws-sdk-go-v2/service/pricing v1.39.4 h1:FLRgwQXpnb+NWOAg1oP0VD0wM+q7OWJRssKyDsbrIEo=
 github.com/aws/aws-sdk-go-v2/service/pricing v1.39.4/go.mod h1:EWTrh/FVF3sDmcK5tKy1ETFPn6VX2nfLy5gDTsCy2+s=
+github.com/aws/aws-sdk-go-v2/service/ram v1.34.5 h1:PvZedq8Nr3QiAOx3tXbZhD3uqvijB7AqgtjSK9HH1vE=
+github.com/aws/aws-sdk-go-v2/service/ram v1.34.5/go.mod h1:6T048C/TFPVH5LDnuB27uZiWz4neaMX/k4PQuwsSGYI=
 github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi v1.31.6 h1:gd7YMnFZQGdy4lERF9ffz9kbc6K/IPhCu5CrJDJr8XY=
 github.com/aws/aws-sdk-go-v2/service/resourcegroupstaggingapi v1.31.6/go.mod h1:lnTv81am9e2C2SjX3VKyUrKEzDADD9lKST9ou96UBoY=
 github.com/aws/aws-sdk-go-v2/service/route53 v1.62.1 h1:1jIdwWOulae7bBLIgB36OZ0DINACb1wxM6wdGlx4eHE=
