@@ -722,6 +722,7 @@ func TestEventHandling(t *testing.T) {
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
 		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
+		ImageMetadataProvider:         &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
 			return readyInfraStatus, nil
 		},
@@ -803,6 +804,7 @@ func TestNonReadyInfraTriggersRequeueAfter(t *testing.T) {
 		ManagementClusterCapabilities: &fakecapabilities.FakeSupportAllCapabilities{},
 		ReleaseProvider:               mockedProviderWithOpenshiftImageRegistryOverrides,
 		UserReleaseProvider:           &fakereleaseprovider.FakeReleaseProvider{},
+		ImageMetadataProvider:         &fakeimagemetadataprovider.FakeRegistryClientImageMetadataProviderHCCO{},
 		reconcileInfrastructureStatus: func(context.Context, *hyperv1.HostedControlPlane) (infra.InfrastructureStatus, error) {
 			return infra.InfrastructureStatus{}, nil
 		},
