@@ -42,12 +42,14 @@ type DNSZoneStatus struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
-	Name string `json:"name"`
+	Name string `json:"name,omitempty"`
 
 	// records lists the DNS records created in this zone
 	// +optional
 	// +listType=atomic
+	// +kubebuilder:validation:MinItems=0
 	// +kubebuilder:validation:MaxItems=10
+	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=253
 	Records []string `json:"records,omitempty"`
 }
@@ -58,31 +60,36 @@ type GCPPrivateServiceConnectSpec struct {
 	// Populated by the observer from service status
 	// This value must be a valid IPv4 or IPv6 address.
 	// +required
-	// +kubebuilder:validation:XValidation:rule="self.matches('^((\\\\d{1,3}\\\\.){3}\\\\d{1,3})$') || self.matches('^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$')",message="loadBalancerIP must be a valid IPv4 or IPv6 address"
+	// +kubebuilder:validation:XValidation:rule="self.isIP()",message="loadBalancerIP must be a valid IPv4 or IPv6 address"
+	// +kubebuilder:validation:MinLength=7
 	// +kubebuilder:validation:MaxLength=45
-	LoadBalancerIP string `json:"loadBalancerIP"`
+	LoadBalancerIP string `json:"loadBalancerIP,omitempty"`
 
 	// forwardingRuleName is the name of the Internal Load Balancer forwarding rule
 	// Populated by the reconciler via GCP API lookup
 	// +optional
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')",message="forwardingRuleName must conform to GCP resource naming standards"
 	ForwardingRuleName string `json:"forwardingRuleName,omitempty"`
 
 	// consumerAcceptList specifies which customer projects can connect
 	// Accepts both project IDs (e.g. "my-project-123") and project numbers (e.g. "123456789012")
 	// +required
+	// +listType=set
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=50
+	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=30
-	// +kubebuilder:validation:items:Pattern=`^([a-z][a-z0-9-]{4,28}[a-z0-9]|[0-9]{6,12})$`
-	ConsumerAcceptList []string `json:"consumerAcceptList"`
+	// +kubebuilder:validation:items:XValidation:rule="self.matches('^([a-z][a-z0-9-]{4,28}[a-z0-9]|[0-9]{6,12})$')",message="each entry must be a valid GCP project ID or project number"
+	ConsumerAcceptList []string `json:"consumerAcceptList,omitempty"`
 
 	// natSubnet is the subnet used for NAT by the Service Attachment
 	// Auto-populated by the HyperShift Operator
 	// +optional
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-z]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')",message="natSubnet must conform to GCP resource naming standards"
 	NATSubnet string `json:"natSubnet,omitempty"`
 }
 
@@ -95,6 +102,7 @@ type GCPPrivateServiceConnectStatus struct {
 	// +listMapKey=type
 	// +patchMergeKey=type
 	// +patchStrategy=merge
+	// +kubebuilder:validation:MinItems=0
 	// +kubebuilder:validation:MaxItems=10
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
@@ -102,27 +110,33 @@ type GCPPrivateServiceConnectStatus struct {
 
 	// serviceAttachmentName is the name of the created Service Attachment
 	// +optional
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
 	ServiceAttachmentName string `json:"serviceAttachmentName,omitempty"`
 
 	// serviceAttachmentURI is the URI customers use to connect
 	// Format: projects/{project}/regions/{region}/serviceAttachments/{name}
 	// +optional
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
-	// +kubebuilder:validation:Pattern=`^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/regions/[a-z]+-[a-z0-9]+[0-9]/serviceAttachments/[a-z]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/regions/[a-z]+-[a-z0-9]+[0-9]/serviceAttachments/[a-z]([-a-z0-9]*[a-z0-9])?$')",message="serviceAttachmentURI must be a valid GCP service attachment URI"
 	ServiceAttachmentURI string `json:"serviceAttachmentURI,omitempty"`
 
 	// Customer Side Status (PSC Endpoint and DNS)
 
-	// endpointIP is the reserved IP address for the PSC endpoint
-	// This value must be a valid IPv4 or IPv6 address.
+	// endpointIP is the reserved IP address for the PSC endpoint.
+	// When omitted, the endpoint IP has not yet been allocated.
+	// If specified, it must be a valid IPv4 or IPv6 address.
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="self == '' || self.matches('^((\\\\d{1,3}\\\\.){3}\\\\d{1,3})$') || self.matches('^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$')",message="endpointIP must be a valid IPv4 or IPv6 address"
+	// +kubebuilder:validation:XValidation:rule="self.isIP()",message="endpointIP must be a valid IPv4 or IPv6 address"
+	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=45
 	EndpointIP string `json:"endpointIP,omitempty"`
 
 	// dnsZones contains DNS zone information created for this cluster
+	// +optional
 	// +listType=atomic
+	// +kubebuilder:validation:MinItems=0
 	// +kubebuilder:validation:MaxItems=5
 	DNSZones []DNSZoneStatus `json:"dnsZones,omitempty"`
 }
@@ -147,7 +161,7 @@ type GCPPrivateServiceConnect struct {
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	// spec is the specification for the GCPPrivateServiceConnect.
 	// +optional
-	Spec GCPPrivateServiceConnectSpec `json:"spec,omitempty"`
+	Spec GCPPrivateServiceConnectSpec `json:"spec,omitzero"`
 	// status is the status of the GCPPrivateServiceConnect.
 	// +optional
 	Status GCPPrivateServiceConnectStatus `json:"status,omitempty"`

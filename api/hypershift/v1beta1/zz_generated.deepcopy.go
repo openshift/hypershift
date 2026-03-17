@@ -1604,7 +1604,7 @@ func (in *GCPNodeServiceAccount) DeepCopyInto(out *GCPNodeServiceAccount) {
 	*out = *in
 	if in.Email != nil {
 		in, out := &in.Email, &out.Email
-		*out = new(string)
+		*out = new(GCPServiceAccountEmail)
 		**out = **in
 	}
 	if in.Scopes != nil {

@@ -322,7 +322,7 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 
 	// Create credential secrets following AWS pattern
 	var errs []error
-	syncSecret := func(secret *corev1.Secret, serviceAccountEmail string) error {
+	syncSecret := func(secret *corev1.Secret, serviceAccountEmail hyperv1.GCPServiceAccountEmail) error {
 		credentials, err := buildGCPWorkloadIdentityCredentials(hcluster.Spec.Platform.GCP.WorkloadIdentity, serviceAccountEmail)
 		if err != nil {
 			return fmt.Errorf("failed to build cloud credentials secret %s/%s: %w", secret.Namespace, secret.Name, err)
@@ -338,7 +338,7 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	}
 
 	// Create credential secrets for all configured service accounts
-	credentialSecrets := map[string]*corev1.Secret{
+	credentialSecrets := map[hyperv1.GCPServiceAccountEmail]*corev1.Secret{
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool:        NodePoolManagementCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane:    ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController: CloudControllerCredsSecret(controlPlaneNamespace),
@@ -450,7 +450,7 @@ type gcpExternalAccountCredential struct {
 
 // buildGCPWorkloadIdentityCredentials creates the credential configuration for Google Cloud SDK
 // to use Workload Identity Federation with a specific service account email.
-func buildGCPWorkloadIdentityCredentials(wif hyperv1.GCPWorkloadIdentityConfig, serviceAccountEmail string) (string, error) {
+func buildGCPWorkloadIdentityCredentials(wif hyperv1.GCPWorkloadIdentityConfig, serviceAccountEmail hyperv1.GCPServiceAccountEmail) (string, error) {
 	if wif.ProjectNumber == "" {
 		return "", fmt.Errorf("project number cannot be empty in GCP Workload Identity Federation credentials")
 	}
