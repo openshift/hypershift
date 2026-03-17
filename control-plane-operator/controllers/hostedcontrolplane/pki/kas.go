@@ -70,12 +70,16 @@ func ReconcileHCCOClientCertSecret(secret, ca *corev1.Secret, ownerRef config.Ow
 }
 
 func ReconcileServiceAccountKubeconfig(secret, csrSigner *corev1.Secret, ca *corev1.ConfigMap, hcp *hyperv1.HostedControlPlane, serviceAccountNamespace, serviceAccountName string) error {
+	svcURL := inClusterKASURL(hcp.Spec.Platform.Type)
+	return ReconcileServiceAccountKubeconfigWithURL(secret, csrSigner, ca, serviceAccountNamespace, serviceAccountName, svcURL)
+}
+
+func ReconcileServiceAccountKubeconfigWithURL(secret, csrSigner *corev1.Secret, ca *corev1.ConfigMap, serviceAccountNamespace, serviceAccountName, kubeconfigURL string) error {
 	cn := serviceaccount.MakeUsername(serviceAccountNamespace, serviceAccountName)
 	if err := reconcileSignedCert(secret, csrSigner, config.OwnerRef{}, cn, serviceaccount.MakeGroupNames(serviceAccountNamespace), X509UsageClientAuth); err != nil {
 		return fmt.Errorf("failed to reconcile serviceaccount client cert: %w", err)
 	}
-	svcURL := inClusterKASURL(hcp.Spec.Platform.Type)
-	return ReconcileKubeConfig(secret, secret, ca, svcURL, "", manifests.KubeconfigScopeLocal, config.OwnerRef{})
+	return ReconcileKubeConfig(secret, secret, ca, kubeconfigURL, "", manifests.KubeconfigScopeLocal, config.OwnerRef{})
 }
 
 func ReconcileKubeConfig(secret, cert *corev1.Secret, ca *corev1.ConfigMap, url string, key string, scope manifests.KubeconfigScope, ownerRef config.OwnerRef) error {
