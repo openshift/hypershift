@@ -39,7 +39,7 @@ func NewCVOParams(hcp *hyperv1.HostedControlPlane, releaseImageProvider *imagepr
 		p.ReleaseImage = hcp.Spec.ReleaseImage
 	}
 
-	if enableCVOManagementClusterMetricsAccess {
+	if IsManagementClusterMetricsAccessEnabled(hcp, enableCVOManagementClusterMetricsAccess) {
 		p.DeploymentConfig.AdditionalLabels = map[string]string{
 			config.NeedMetricsServerAccessLabel: "true",
 		}
