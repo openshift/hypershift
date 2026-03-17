@@ -22,6 +22,8 @@ import (
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/aws-sdk-go/service/sqs"
 
+	"k8s.io/apimachinery/pkg/util/wait"
+
 	"github.com/go-logr/logr"
 )
 
@@ -177,4 +179,61 @@ func CleanupOIDCBucketObjects(ctx context.Context, log logr.Logger, s3Client aws
 			log.Error(err, "failed to delete OIDC objects from S3 bucket", "bucketName", bucketName)
 		}
 	}
+}
+
+// CreateCapacityReservation creates an EC2 capacity reservation and returns its ID and a cleanup function
+// that cancels the reservation. The caller is responsible for calling the cleanup function.
+func CreateCapacityReservation(ctx context.Context, awsCreds, awsRegion, instanceType, availabilityZone string, instanceCount int64) (string, func() error, error) {
+	awsSession := awsutil.NewSession("e2e-capacity-reservation", awsCreds, "", "", awsRegion)
+	awsConfig := awsutil.NewConfig()
+	ec2Client := ec2.New(awsSession, awsConfig)
+
+	result, err := ec2Client.CreateCapacityReservationWithContext(ctx, &ec2.CreateCapacityReservationInput{
+		InstanceType:          aws.String(instanceType),
+		InstancePlatform:      aws.String("Linux/UNIX"),
+		AvailabilityZone:      aws.String(availabilityZone),
+		InstanceCount:         aws.Int64(instanceCount),
+		InstanceMatchCriteria: aws.String("targeted"),
+		EndDateType:           aws.String("unlimited"),
+	})
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create capacity reservation: %w", err)
+	}
+
+	crID := aws.StringValue(result.CapacityReservation.CapacityReservationId)
+
+	if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 3*time.Minute, true, func(ctx context.Context) (bool, error) {
+		desc, err := ec2Client.DescribeCapacityReservationsWithContext(ctx, &ec2.DescribeCapacityReservationsInput{
+			CapacityReservationIds: []*string{aws.String(crID)},
+		})
+		if err != nil {
+			return false, nil // transient error, retry
+		}
+		if len(desc.CapacityReservations) == 0 {
+			return false, nil
+		}
+		switch aws.StringValue(desc.CapacityReservations[0].State) {
+		case ec2.CapacityReservationStateActive:
+			return true, nil
+		case ec2.CapacityReservationStateFailed, ec2.CapacityReservationStateCancelled, ec2.CapacityReservationStateExpired:
+			return false, fmt.Errorf("capacity reservation %s entered terminal state %q", crID, aws.StringValue(desc.CapacityReservations[0].State))
+		}
+		return false, nil
+	}); err != nil {
+		return "", nil, fmt.Errorf("waiting for capacity reservation %s to become active: %w", crID, err)
+	}
+
+	cleanupFunc := func() error {
+		cancelCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		_, err := ec2Client.CancelCapacityReservationWithContext(cancelCtx, &ec2.CancelCapacityReservationInput{
+			CapacityReservationId: aws.String(crID),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to cancel capacity reservation %s: %w", crID, err)
+		}
+		return nil
+	}
+
+	return crID, cleanupFunc, nil
 }
