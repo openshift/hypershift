@@ -28,8 +28,8 @@ linters:
           lintersConfig:
             conditions:
               isFirstField: Warn
-              usePatchStrategy: Ignore
-              useProtobuf: Ignore
+              usePatchStrategy: Forbid # Variation from openshift/api as HyperShift only supports CRDs.
+              useProtobuf: Forbid # Variation from openshift/api as HyperShift only supports CRDs.
             forbiddenmarkers:
               markers:
               - identifier: "openshift:enable:FeatureSets"
