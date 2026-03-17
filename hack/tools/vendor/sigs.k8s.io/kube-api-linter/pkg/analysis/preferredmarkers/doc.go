@@ -43,6 +43,7 @@ limitations under the License.
 *       - preferredIdentifier: "k8s:optional"
 *         equivalentIdentifiers:
 *           - "kubebuilder:validation:Optional"
+*         message: "Use k8s:optional to ensure consistency with upstream Kubernetes types."
 * ```
 *
 * **Scenario:** Enforce using a custom marker instead of multiple equivalent markers

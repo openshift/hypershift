@@ -32,14 +32,14 @@ type Config struct {
 	Rules []Rule `mapstructure:"rules"`
 }
 
-// Rule defines a dependency rule where a main marker requires a set of dependent markers.
+// Rule defines a dependency rule where a specific marker requires a set of other markers.
 type Rule struct {
 	// Identifier is the marker that requires other markers.
 	Identifier string `mapstructure:"identifier"`
-	// Dependents are the markers that are required by Main.
-	Dependents []string `mapstructure:"dependents"`
-	// Type defines how to interpret the dependents list.
+	// DependsOn are the markers that are required when the identifier is present.
+	DependsOn []string `mapstructure:"dependsOn"`
+	// Type defines how to interpret the dependsOn list.
 	// When set to All, every dependent in the list must be present when the identifier is present on a field or type.
-	// When set to Any, at least one of the listed dependents must be present when the identifier is present on a field or type.
+	// When set to Any, at least one of the listed dependsOn must be present when the identifier is present on a field or type.
 	Type DependencyType `mapstructure:"type,omitempty"`
 }

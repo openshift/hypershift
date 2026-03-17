@@ -36,6 +36,9 @@ const (
 	// KubebuilderStatusSubresourceMarker is the marker that indicates that the CRD generated for a struct should include the /status subresource.
 	KubebuilderStatusSubresourceMarker = "kubebuilder:subresource:status"
 
+	// KubebuilderAtLeastOneOfMarker is the marker that indicates that a type has a CEL validation in kubebuilder enforcing that at least one field is set.
+	KubebuilderAtLeastOneOfMarker = "kubebuilder:validation:AtLeastOneOf"
+
 	// KubebuilderEnumMarker is the marker that indicates that a field has an enum in kubebuilder.
 	KubebuilderEnumMarker = "kubebuilder:validation:Enum"
 
@@ -93,7 +96,7 @@ const (
 	// KubebuilderRequiredMarker is the marker that indicates that a field is required in kubebuilder.
 	KubebuilderRequiredMarker = "kubebuilder:validation:Required"
 
-	// KubebuilderExactlyOneOf is the marker that indicates that a field has an exactly one of in kubebuilder.
+	// KubebuilderExactlyOneOf is the marker that indicates that a type has a CEL validation in kubebuilder enforcing that exactly one field is set.
 	KubebuilderExactlyOneOf = "kubebuilder:validation:ExactlyOneOf"
 
 	// KubebuilderItemsMaxLengthMarker is the marker that indicates that a field has a maximum length in kubebuilder.
@@ -205,4 +208,7 @@ const (
 
 	// K8sListMapKeyMarker is the marker that indicates that a field is a map in k8s declarative validation.
 	K8sListMapKeyMarker = "k8s:listMapKey"
+
+	// K8sDefaultMarker is the marker that indicates the default value for a field in k8s declarative validation.
+	K8sDefaultMarker = "k8s:default"
 )
