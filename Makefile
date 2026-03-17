@@ -87,15 +87,19 @@ KUBEAPILINTER_PLUGIN := $(abspath $(TOOLS_BIN_DIR)/kube-api-linter.so)
 $(KUBEAPILINTER_PLUGIN): $(TOOLS_DIR)/go.mod # Build kube-api-linter as Go plugin
 	cd $(TOOLS_DIR); CGO_ENABLED=1 $(GO) build -buildmode=plugin -o $(KUBEAPILINTER_PLUGIN) sigs.k8s.io/kube-api-linter/pkg/plugin
 
+# When not otherwise set, diff/lint against the local main branch.
+# This is always set in OpenShift CI.
+PULL_BASE_SHA ?= main
+
 .PHONY: lint
 lint: generate $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v
-	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v
+	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --new-from-rev=${PULL_BASE_SHA}
 
 .PHONY: lint-fix
 lint-fix: generate $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
 	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
-	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
+	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v --new-from-rev=${PULL_BASE_SHA}
 
 .PHONY: verify
 verify: generate update staticcheck fmt vet verify-codespell lint cpo-container-sync run-gitlint

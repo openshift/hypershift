@@ -39,6 +39,10 @@ type Marker struct {
 	// preferred identifier.
 	// Must have at least one entry.
 	EquivalentIdentifiers []EquivalentIdentifier `json:"equivalentIdentifiers"`
+
+	// message is an explanation of why the preferred identifier should be used.
+	// If not provided, a default message will be used.
+	Message string `json:"message,omitempty"`
 }
 
 // EquivalentIdentifier represents a marker identifier that should be
