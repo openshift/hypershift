@@ -78,7 +78,7 @@ func (opts TokenMinterContainerOptions) injectTokenMinterContainer(cpContext Con
 // (K8s >= 1.29), it injects as an init container with RestartPolicy=Always and a StartupProbe that blocks
 // main containers until the token file exists. Otherwise, it falls back to a regular sidecar container.
 func (opts TokenMinterContainerOptions) injectContainer(nativeSidecarsEnabled bool, podSpec *corev1.PodSpec, container corev1.Container, mainContainerMountPath string, volumeName string) {
-	if nativeSidecarsEnabled {
+	if nativeSidecarsEnabled && !opts.OneShot {
 		restartAlways := corev1.ContainerRestartPolicyAlways
 		container.RestartPolicy = &restartAlways
 		container.StartupProbe = &corev1.Probe{
