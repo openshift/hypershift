@@ -61,6 +61,8 @@ filters:
     labels:
     - area/ai
   "^api/.*":
+    approvers:
+    - api-approvers
     labels:
     - area/api
   "^availability-prober/.*":
