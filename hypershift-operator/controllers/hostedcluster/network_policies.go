@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	"github.com/openshift/hypershift/support/upsert"
+	hyperutil "github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -39,12 +40,20 @@ const (
 func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, log logr.Logger, createOrUpdate upsert.CreateOrUpdateFN, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, version semver.Version, controlPlaneOperatorAppliesManagementKASNetworkPolicyLabel bool) error {
 	controlPlaneNamespaceName := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 
-	// Reconcile openshift-ingress Network Policy
+	// Reconcile openshift-ingress Network Policy.
+	// Only needed when routes are served by the management cluster's default ingress controller,
+	// i.e., when routes are NOT labeled for the HCP router.
 	policy := networkpolicy.OpenshiftIngressNetworkPolicy(controlPlaneNamespaceName)
-	if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
-		return reconcileOpenshiftIngressNetworkPolicy(policy)
-	}); err != nil {
-		return fmt.Errorf("failed to reconcile ingress network policy: %w", err)
+	if !hyperutil.LabelHCPRoutes(hcp) {
+		if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
+			return reconcileOpenshiftIngressNetworkPolicy(policy)
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile ingress network policy: %w", err)
+		}
+	} else {
+		if _, err := hyperutil.DeleteIfNeeded(ctx, r.Client, policy); err != nil {
+			return fmt.Errorf("failed to delete ingress network policy: %w", err)
+		}
 	}
 
 	// Reconcile same-namespace Network Policy

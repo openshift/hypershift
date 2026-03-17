@@ -80,6 +80,7 @@ spec:
           secretName: my-secret
       - name: my-configmap
         configMap:
+          name: my-configmap
           defaultMode: 000
           items:
           - key: config-key

@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
+	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/images"
 	"github.com/openshift/hypershift/support/releaseinfo"
@@ -25,8 +26,6 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	agentv1 "github.com/openshift/cluster-api-provider-agent/api/v1beta1"
-
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -98,7 +97,7 @@ type NodePoolReconciler struct {
 	HypershiftOperatorImage string
 	ImageMetadataProvider   supportutil.ImageMetadataProvider
 	KubevirtInfraClients    kvinfra.KubevirtInfraClientMap
-	EC2Client               ec2iface.EC2API
+	EC2Client               awsapi.EC2API
 	InstanceTypeProvider    instancetype.Provider
 }
 
@@ -758,10 +757,10 @@ func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.Rel
 		return "", fmt.Errorf("couldn't find OS metadata for architecture %q", specifiedArch)
 	}
 
-	if len(arch.Images.GCP.Image) == 0 {
+	if len(arch.Images.GCP.Project) == 0 || len(arch.Images.GCP.Name) == 0 {
 		return "", fmt.Errorf("release image metadata has no GCP image for architecture %q", specifiedArch)
 	}
-	return arch.Images.GCP.Image, nil
+	return fmt.Sprintf("projects/%s/global/images/%s", arch.Images.GCP.Project, arch.Images.GCP.Name), nil
 }
 
 // MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas

@@ -10,13 +10,14 @@ This document describes the AI-assisted CI jobs that help automate issue resolut
 
 ## Overview
 
-HyperShift uses two AI-assisted CI jobs powered by Claude Code to help with development workflows:
+HyperShift uses AI-assisted CI jobs powered by Claude Code to help with development workflows:
 
 | Job | Purpose | Schedule |
 |-----|---------|----------|
 | `periodic-jira-agent` | Analyzes Jira issues and creates draft PRs with fixes | Weekly on Mondays at 8:30 AM UTC |
 | `periodic-review-agent` | Addresses PR review comments on agent-created PRs | Every 3 hours (8:00-23:00 UTC) daily |
 | `address-review-comments` | On-demand job to address review comments on a single PR | Triggered via `/test address-review-comments` |
+| `periodic-hypershift-dependabot-triage` | Consolidates open dependabot PRs into a single weekly PR | Weekly on Fridays at 12:00 UTC |
 
 ### Usage Scope
 
@@ -210,6 +211,100 @@ flowchart TD
 
 ---
 
+## Dependabot Triage Agent
+
+### Overview
+
+The Dependabot Triage Agent (`periodic-hypershift-dependabot-triage`) automatically consolidates open dependabot PRs into a single weekly pull request, reducing noise and simplifying dependency updates.
+
+- **Job name**: `periodic-hypershift-dependabot-triage`
+- **Schedule**: Weekly on Fridays at 12:00 UTC (`0 12 * * 5`)
+- **Process timeout**: 2 hours
+- **Max agentic turns**: 100
+- **Jira**: [CNTRLPLANE-2588](https://issues.redhat.com/browse/CNTRLPLANE-2588)
+- **Prow config PR**: [openshift/release#73790](https://github.com/openshift/release/pull/73790)
+
+### How It Works
+
+1. **Setup**: Verifies Claude Code CLI availability
+2. **PR Discovery**: Queries all open dependabot PRs via `gh pr list` on the `openshift/hypershift` repository
+3. **Filtering**: Excludes PRs that bump `k8s.io` or `sigs.k8s.io` dependencies (these are managed manually as part of coordinated Kubernetes rebases)
+4. **Processing**: Invokes Claude Code to process each PR individually:
+      - Cherry-picks commits onto a consolidation branch
+      - Runs `make verify` and `make test` after each PR
+      - Resets and skips any PR that fails validation
+5. **Commit Reorganization** (deterministic bash, not LLM): Flattens all cherry-pick commits via `git reset` and reorganizes into logical groups:
+      1. Root `go.mod`/`go.sum`
+      2. Root `vendor/`
+      3. `api/go.mod`/`api/go.sum`
+      4. `api/vendor/`
+      5. `hack/tools/go.mod`/`hack/tools/go.sum`
+      6. `hack/tools/vendor/`
+      7. Regenerated CRD assets (`cmd/install/assets/`)
+      8. Remaining generated files
+      Empty groups are skipped automatically.
+6. **Final Validation**: Runs two-pass `make verify` and `make test` on the consolidated branch
+7. **Output**: Creates a single consolidated PR from `hypershift-community:fix/weekly-dependabot-consolidation` to `openshift/hypershift`
+8. **Reporting**: Generates an HTML report with token usage, cost breakdown, and detailed output
+
+### Data Flow
+
+```mermaid
+flowchart TD
+    subgraph "Prow CI Environment"
+        A[Periodic Job Trigger<br/>Weekly Friday 12:00 UTC] --> B[Setup Step]
+        B --> C[Process Step]
+        C --> D[Report Step]
+
+        subgraph "Process Step"
+            C --> E[Generate GitHub App Tokens]
+            E --> F[Clone Fork<br/>hypershift-community/hypershift]
+            F --> G[Query Open Dependabot PRs]
+            G --> H{PRs Found?}
+            H -->|No| I[Exit Successfully]
+            H -->|Yes| J[Filter Out k8s.io Bumps]
+            J --> K[For Each PR]
+            K --> L[Cherry-pick + Validate<br/>make verify & make test]
+            L --> M{Passed?}
+            M -->|Yes| N[Keep on Branch]
+            M -->|No| O[Reset & Skip]
+            N --> P{More PRs?}
+            O --> P
+            P -->|Yes| K
+            P -->|No| Q[Reorganize Commits<br/>Deterministic Bash]
+            Q --> R[Final Validation<br/>make verify & make test]
+            R --> S[Create PR]
+        end
+    end
+
+    subgraph "External Systems"
+        G <--> GH[(GitHub API<br/>github.com)]
+        L <--> CLAUDE[Claude API<br/>via Vertex AI]
+        S <--> FORK[(GitHub Fork<br/>hypershift-community)]
+        S <--> UPSTREAM[(GitHub Upstream<br/>openshift/hypershift)]
+    end
+```
+
+### Configuration
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| Schedule | `0 12 * * 5` | Fridays at 12:00 UTC (7:00 AM ET) |
+| Process timeout | 2 hours | Maximum time for the process step |
+| Max Claude turns | 100 | Maximum agentic turns per run |
+| Excluded deps | `k8s.io`, `sigs.k8s.io` | Dependencies managed via manual Kubernetes rebases |
+
+### What Gets Excluded
+
+Dependabot PRs bumping the following module prefixes are **automatically skipped**:
+
+- `k8s.io/*` - Core Kubernetes libraries
+- `sigs.k8s.io/*` - Kubernetes SIG libraries
+
+These dependencies are updated manually as part of coordinated Kubernetes version rebases to ensure compatibility across the full dependency tree.
+
+---
+
 ## User Guide
 
 ### Submitting Issues for Processing
@@ -226,9 +321,10 @@ The issue will be picked up on the next weekly run (Mondays at 8:30 AM UTC).
 
 ### Viewing AI-Generated Output
 
-Track PRs created by the Jira Agent:
+Track PRs created by the AI agents:
 
-- **PR List**: [github.com/openshift/hypershift/pulls?q=is:pr+author:app/hypershift-jira-solve-ci](https://github.com/openshift/hypershift/pulls?q=is%3Apr+author%3Aapp%2Fhypershift-jira-solve-ci)
+- **Jira Agent PRs**: [github.com/openshift/hypershift/pulls?q=is:pr+author:app/hypershift-jira-solve-ci](https://github.com/openshift/hypershift/pulls?q=is%3Apr+author%3Aapp%2Fhypershift-jira-solve-ci)
+- **Dependabot Triage PRs**: [github.com/openshift/hypershift/pulls?q=is:pr+head:fix/weekly-dependabot-consolidation](https://github.com/openshift/hypershift/pulls?q=is%3Apr+head%3Afix%2Fweekly-dependabot-consolidation)
 
 PRs are created as **drafts** and require human review before merging.
 
@@ -255,7 +351,7 @@ This runs the review agent for that specific PR only.
 
 - **AI may produce incorrect or incomplete solutions** - always review carefully
 - **Complex issues may not be fully addressed** - multi-faceted problems may need human intervention
-- **Rate limited**: 1 issue per weekly run (jira-agent), 10 PRs per run (review-agent)
+- **Rate limited**: 1 issue per weekly run (jira-agent), 10 PRs per run (review-agent), all non-k8s dependabot PRs per run (dependabot-triage)
 - **Cannot access private resources** - no access to internal systems beyond Jira/GitHub
 - **Cannot execute destructive operations** - no ability to delete resources or force-push
 - **Maximum agentic turns**: 100 per issue (jira-agent), 100 per PR (review-agent)

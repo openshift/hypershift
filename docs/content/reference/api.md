@@ -517,7 +517,8 @@ AutoNode
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoNode specifies the configuration for the autoNode feature.</p>
+<p>autoNode specifies the configuration for automatic node provisioning and lifecycle management.
+When set, the provisioner(e.g. Karpenter) will be used to provision nodes for targeted workloads.</p>
 </td>
 </tr>
 <tr>
@@ -1886,6 +1887,25 @@ created in a different AWS account and is shared with the AWS account where the 
 will be created.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>terminationHandlerQueueURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>terminationHandlerQueueURL specifies the SQS queue URL for EC2 spot interruption events.
+This is required when using spot instances (marketType: Spot) in NodePools to enable
+graceful handling of spot instance terminations.</p>
+<p>The queue should be configured to receive EC2 Spot Instance Interruption Warnings
+and EC2 Instance Rebalance Recommendations via EventBridge rules.
+The AWS Node Termination Handler will poll this queue and cordon/drain nodes
+before they are terminated, providing a best effort for graceful shutdown.</p>
+<p>Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSPlatformStatus { #hypershift.openshift.io/v1beta1.AWSPlatformStatus }
@@ -2871,7 +2891,7 @@ string
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>We expose here internal configuration knobs that won&rsquo;t be exposed to the service.</p>
+<p>AutoNode specifies the configuration for automatic node provisioning and lifecycle management.</p>
 </p>
 <table>
 <thead>
@@ -2883,7 +2903,7 @@ string
 <tbody>
 <tr>
 <td>
-<code>provisionerConfig</code></br>
+<code>provisionerConfig,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">
 ProvisionerConfig
@@ -2891,7 +2911,7 @@ ProvisionerConfig
 </em>
 </td>
 <td>
-<p>provisionerConfig is the implementation used for Node auto provisioning.</p>
+<p>provisionerConfig specifies the provisioner used for automatic node management.</p>
 </td>
 </tr>
 </tbody>
@@ -4108,11 +4128,12 @@ MarketType
 </td>
 <td>
 <em>(Optional)</em>
-<p>marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values are OnDemand, CapacityBlocks and omitted:
+<p>marketType specifies the market type of the CapacityReservation for the EC2 instances.</p>
+<p>Deprecated: Use placement.marketType instead. This field is maintained for backward compatibility.
+When both placement.marketType and capacityReservation.marketType are set, placement.marketType takes precedence.</p>
+<p>Valid values are OnDemand, CapacityBlocks and omitted:
 - &ldquo;OnDemand&rdquo;: EC2 instances run as standard On-Demand instances.
-- &ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Capacity Blocks is recommended when GPUs are needed to support ML workloads.
-When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
-The current default value is CapacityBlocks.</p>
+- &ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Recommended for GPU/ML workloads.</p>
 <p>When set to &lsquo;CapacityBlocks&rsquo;, a specific Capacity Reservation ID must be provided.</p>
 </td>
 </tr>
@@ -5023,6 +5044,18 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 </tr><tr><td><p>&#34;RolloutComplete&#34;</p></td>
 <td><p>ControlPlaneComponentRolloutComplete indicates whether the ControlPlaneComponent has completed its rollout.</p>
 </td>
+</tr><tr><td><p>&#34;ControlPlaneConnectionAvailable&#34;</p></td>
+<td><p>ControlPlaneConnectionAvailable indicates whether data plane workloads have a successful
+network connection to the control plane components. This condition is computed using
+a 3-replica Deployment that tests the full data path (DNS resolution of kubernetes.default.svc
+-&gt; advertise address on lo -&gt; apiserver proxy -&gt; KAS on HCP) and reports results to a shared
+ConfigMap. The HCCO evaluates the staleness of the lastSucceeded timestamp in the ConfigMap.
+<strong>True</strong> means the data plane can successfully reach the control plane (a recent successful check was recorded).
+<strong>False</strong> means there are connectivity failures preventing the data plane from reaching the control plane,
+or the last successful check is stale (older than 5 minutes).
+<strong>Unknown</strong> means the status cannot be determined due to true inability to inspect (e.g., no worker nodes exist or inspection cannot be performed),
+not due to missing required components.</p>
+</td>
 </tr><tr><td><p>&#34;DataPlaneConnectionAvailable&#34;</p></td>
 <td><p>DataPlaneConnectionAvailable indicates whether the control plane has a successful
 network connection to the data plane components.
@@ -5030,7 +5063,8 @@ network connection to the data plane components.
 <strong>False</strong> means there are network connection issues preventing the control plane from reaching the data plane.
 A failure here suggests potential issues such as: network policy restrictions,
 firewall rules, missing data plane nodes, or problems with infrastructure
-components like the konnectivity-agent workload.</p>
+components like the konnectivity-agent workload.
+<strong>Unknown</strong> means the status cannot be determined (e.g., no worker nodes available or unable to inspect).</p>
 </td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
@@ -7277,7 +7311,8 @@ AutoNode
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoNode specifies the configuration for the autoNode feature.</p>
+<p>autoNode specifies the configuration for automatic node provisioning and lifecycle management.
+When set, the provisioner(e.g. Karpenter) will be used to provision nodes for targeted workloads.</p>
 </td>
 </tr>
 <tr>
@@ -8273,7 +8308,10 @@ AutoNode
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoNode specifies the configuration for the autoNode feature.</p>
+<p>autoNode specifies the configuration for automatic node provisioning
+and lifecycle management. When set, nodes are automatically provisioned
+using the specified provisioner (e.g. Karpenter) instead of requiring
+manual NodePool management.</p>
 </td>
 </tr>
 <tr>
@@ -9143,6 +9181,7 @@ AzureKMSSpec
 <a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">KarpenterConfig</a>)
 </p>
 <p>
+<p>KarpenterAWSConfig specifies AWS-specific configuration for the Karpenter provisioner.</p>
 </p>
 <table>
 <thead>
@@ -9160,7 +9199,237 @@ string
 </em>
 </td>
 <td>
-<p>roleARN specifies the ARN of the Karpenter provisioner.</p>
+<p>roleARN specifies the ARN of the IAM role that Karpenter assumes to provision
+and manage EC2 instances in the hosted cluster&rsquo;s AWS account.</p>
+<p>The referenced role must have a trust relationship that allows it to be assumed
+by the karpenter service account in the hosted cluster via OIDC.
+Example:
+{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Principal&rdquo;: {
+&ldquo;Federated&rdquo;: &ldquo;<oidc-provider-arn>&rdquo;
+},
+&ldquo;Action&rdquo;: &ldquo;sts:AssumeRoleWithWebIdentity&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;<oidc-provider-name>:sub&rdquo;: &ldquo;system:serviceaccount:kube-system:karpenter&rdquo;
+}
+}
+}
+]
+}</p>
+<p>The following is an example of the policy document for this role.</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedEC2InstanceAccessActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:<em>:ec2:</em>::image/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>::snapshot/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:security-group/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:subnet/</em>&rdquo;
+],
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:RunInstances&rdquo;,
+&ldquo;ec2:CreateFleet&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedEC2LaunchTemplateAccessActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:ec2:</em>:<em>:launch-template/</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:RunInstances&rdquo;,
+&ldquo;ec2:CreateFleet&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedEC2InstanceActionsWithTags&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:<em>:ec2:</em>:<em>:fleet/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:instance/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:volume/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:network-interface/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:launch-template/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:spot-instances-request/</em>&rdquo;
+],
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:RunInstances&rdquo;,
+&ldquo;ec2:CreateFleet&rdquo;,
+&ldquo;ec2:CreateLaunchTemplate&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:RequestTag/karpenter.sh/nodepool&rdquo;: &ldquo;<em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedResourceCreationTagging&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:</em>:ec2:<em>:</em>:fleet/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:instance/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:volume/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:network-interface/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:launch-template/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:spot-instances-request/<em>&rdquo;
+],
+&ldquo;Action&rdquo;: &ldquo;ec2:CreateTags&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;ec2:CreateAction&rdquo;: [
+&ldquo;RunInstances&rdquo;,
+&ldquo;CreateFleet&rdquo;,
+&ldquo;CreateLaunchTemplate&rdquo;
+]
+},
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:RequestTag/karpenter.sh/nodepool&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedResourceTagging&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:ec2:</em>:<em>:instance/</em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;ec2:CreateTags&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.sh/nodepool&rdquo;: &ldquo;<em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedDeletion&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:</em>:ec2:<em>:</em>:instance/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:launch-template/<em>&rdquo;
+],
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:TerminateInstances&rdquo;,
+&ldquo;ec2:DeleteLaunchTemplate&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.sh/nodepool&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowRegionalReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;<em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:DescribeImages&rdquo;,
+&ldquo;ec2:DescribeInstances&rdquo;,
+&ldquo;ec2:DescribeInstanceTypeOfferings&rdquo;,
+&ldquo;ec2:DescribeInstanceTypes&rdquo;,
+&ldquo;ec2:DescribeLaunchTemplates&rdquo;,
+&ldquo;ec2:DescribeSecurityGroups&rdquo;,
+&ldquo;ec2:DescribeSpotPriceHistory&rdquo;,
+&ldquo;ec2:DescribeSubnets&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowSSMReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:</em>:ssm:<em>::parameter/aws/service/</em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;ssm:GetParameter&rdquo;
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowPricingReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;<em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;pricing:GetProducts&rdquo;
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowInterruptionQueueActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;sqs:DeleteMessage&rdquo;,
+&ldquo;sqs:GetQueueUrl&rdquo;,
+&ldquo;sqs:ReceiveMessage&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowPassingInstanceRole&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:iam::</em>:role/<em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;iam:PassRole&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;iam:PassedToService&rdquo;: [
+&ldquo;ec2.amazonaws.com&rdquo;,
+&ldquo;ec2.amazonaws.com.cn&rdquo;
+]
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedInstanceProfileCreationActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:</em>:iam::<em>:instance-profile/</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;iam:CreateInstanceProfile&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:RequestTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;<em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedInstanceProfileTagActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:</em>:iam::<em>:instance-profile/</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;iam:TagInstanceProfile&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;<em>&rdquo;,
+&ldquo;aws:RequestTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedInstanceProfileActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:iam::</em>:instance-profile/<em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;iam:AddRoleToInstanceProfile&rdquo;,
+&ldquo;iam:RemoveRoleFromInstanceProfile&rdquo;,
+&ldquo;iam:DeleteInstanceProfile&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowInstanceProfileReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:iam::</em>:instance-profile/<em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;iam:GetInstanceProfile&rdquo;
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowUnscopedInstanceProfileListAction&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;</em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;iam:ListInstanceProfiles&rdquo;
+}
+]
+}</p>
 </td>
 </tr>
 </tbody>
@@ -9171,6 +9440,8 @@ string
 <a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">ProvisionerConfig</a>)
 </p>
 <p>
+<p>KarpenterConfig specifies the configuration for the Karpenter provisioner
+including the target platform and platform-specific settings.</p>
 </p>
 <table>
 <thead>
@@ -9190,7 +9461,7 @@ PlatformType
 </em>
 </td>
 <td>
-<p>platform specifies the platform-specific configuration for Karpenter.</p>
+<p>platform specifies the infrastructure platform that Karpenter should provision nodes on.</p>
 </td>
 </tr>
 <tr>
@@ -10466,10 +10737,11 @@ credentialsSecretName must also be unique within the Azure Key Vault. See more d
 ###MarketType { #hypershift.openshift.io/v1beta1.MarketType }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>)
+<a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>, 
+<a href="#hypershift.openshift.io/v1beta1.PlacementOptions">PlacementOptions</a>)
 </p>
 <p>
-<p>MarketType describes the market type of the CapacityReservation for an Instance.</p>
+<p>MarketType describes the market type for EC2 instances.</p>
 </p>
 <table>
 <thead>
@@ -10479,10 +10751,14 @@ credentialsSecretName must also be unique within the Azure Key Vault. See more d
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;CapacityBlocks&#34;</p></td>
-<td><p>MarketTypeCapacityBlock is a MarketType enum value</p>
+<td><p>MarketTypeCapacityBlock is a MarketType enum value for Capacity Blocks.</p>
 </td>
 </tr><tr><td><p>&#34;OnDemand&#34;</p></td>
-<td><p>MarketTypeOnDemand is a MarketType enum value</p>
+<td><p>MarketTypeOnDemand is a MarketType enum value for standard on-demand instances.</p>
+</td>
+</tr><tr><td><p>&#34;Spot&#34;</p></td>
+<td><p>MarketTypeSpot is a MarketType enum value for Spot instances.
+Spot instances use spare EC2 capacity at reduced prices but may be interrupted.</p>
 </td>
 </tr></tbody>
 </table>
@@ -12041,6 +12317,10 @@ This field is immutable</p>
 </p>
 <p>
 <p>PlacementOptions specifies the placement options for the EC2 instances.</p>
+<p>The instance market type is determined by the marketType field:
+- &ldquo;OnDemand&rdquo; (default): Standard on-demand instances
+- &ldquo;Spot&rdquo;: Spot instances using spare EC2 capacity at reduced prices
+- &ldquo;CapacityBlocks&rdquo;: Scheduled pre-purchased compute capacity for ML workloads</p>
 </p>
 <table>
 <thead>
@@ -12070,6 +12350,45 @@ as AWS does not support Capacity Reservations with Dedicated Hosts.</p>
 </tr>
 <tr>
 <td>
+<code>marketType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MarketType">
+MarketType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>marketType specifies the EC2 instance purchasing model.
+Supported values are &ldquo;OnDemand&rdquo; for standard on-demand instances,
+&ldquo;Spot&rdquo; for spot instances that use spare EC2 capacity at reduced prices
+but may be interrupted (optionally accepts spot options and requires
+terminationHandlerQueueURL on the HostedCluster), and &ldquo;CapacityBlocks&rdquo; for scheduled pre-purchased
+compute capacity recommended for GPU/ML workloads (requires
+capacityReservation with a specific reservation ID).
+When omitted, the default is &ldquo;OnDemand&rdquo;.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>spot,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SpotOptions">
+SpotOptions
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>spot configures optional Spot instance overrides.
+When omitted, Spot instances use AWS defaults.</p>
+<p>Spot instances use spare EC2 capacity at reduced prices but may be interrupted
+with a 2-minute warning. Requires terminationHandlerQueueURL to be set on the
+HostedCluster&rsquo;s AWS platform spec for graceful handling of interruptions.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>capacityReservation</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">
@@ -12082,6 +12401,7 @@ CapacityReservationOptions
 <p>capacityReservation specifies Capacity Reservation options for the NodePool instances.</p>
 <p>Cannot be specified when tenancy is set to &ldquo;host&rdquo; as Dedicated Hosts
 do not support Capacity Reservations. Compatible with &ldquo;default&rdquo; and &ldquo;dedicated&rdquo; tenancy.</p>
+<p>Required when marketType is &ldquo;CapacityBlocks&rdquo;.</p>
 </td>
 </tr>
 </tbody>
@@ -13032,7 +13352,7 @@ This field is immutable. Once set, it cannot be changed.</p>
 <a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">ProvisionerConfig</a>)
 </p>
 <p>
-<p>provisioner is a enum specifying the strategy for auto managing Nodes.</p>
+<p>Provisioner is the name of a supported node provisioner.</p>
 </p>
 <table>
 <thead>
@@ -13042,7 +13362,8 @@ This field is immutable. Once set, it cannot be changed.</p>
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;Karpenter&#34;</p></td>
-<td></td>
+<td><p>ProvisionerKarpenter indicates that Karpenter is used for automatic node provisioning.</p>
+</td>
 </tr></tbody>
 </table>
 ###ProvisionerConfig { #hypershift.openshift.io/v1beta1.ProvisionerConfig }
@@ -13051,7 +13372,8 @@ This field is immutable. Once set, it cannot be changed.</p>
 <a href="#hypershift.openshift.io/v1beta1.AutoNode">AutoNode</a>)
 </p>
 <p>
-<p>ProvisionerConfig is a enum specifying the strategy for auto managing Nodes.</p>
+<p>ProvisionerConfig specifies the provisioner used for automatic node management
+and its associated configuration.</p>
 </p>
 <table>
 <thead>
@@ -13071,7 +13393,7 @@ Provisioner
 </em>
 </td>
 <td>
-<p>name specifies the name of the provisioner to use.</p>
+<p>name specifies the name of the provisioner to use for automatic node management.</p>
 </td>
 </tr>
 <tr>
@@ -13800,6 +14122,44 @@ ServicePublishingStrategy
 <p>ServiceType defines what control plane services can be exposed from the
 management control plane.</p>
 </p>
+###SpotOptions { #hypershift.openshift.io/v1beta1.SpotOptions }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PlacementOptions">PlacementOptions</a>)
+</p>
+<p>
+<p>SpotOptions configures options for Spot instances.</p>
+<p>Spot instances use spare EC2 capacity at reduced prices but may be interrupted
+with a 2-minute warning when EC2 needs the capacity back.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>maxPrice</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>maxPrice defines the maximum price the user is willing to pay for Spot instances.
+If not specified, the on-demand price is used as the maximum (you pay the actual spot price).
+The value should be a decimal number representing the price per hour in USD.
+For example, &ldquo;0.50&rdquo; means 50 cents per hour.</p>
+<p>Note: AWS recommends NOT setting maxPrice to reduce interruption frequency.
+When omitted, you pay the current Spot price (capped at On-Demand price).
+AWS minimum allowed value is $0.001.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###SubnetFilter { #hypershift.openshift.io/v1beta1.SubnetFilter }
 <p>
 (<em>Appears on:</em>

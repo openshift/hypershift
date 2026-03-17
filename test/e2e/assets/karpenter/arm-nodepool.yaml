@@ -1,0 +1,29 @@
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: arm-nodepool
+spec:
+  template:
+    metadata:
+      labels:
+        # This label enables the GlobalPullSecret DaemonSet to run on Karpenter-managed nodes.
+        # The GlobalPullSecret feature allows users to add custom registry credentials by creating
+        # an additional-pull-secret in kube-system, which is then merged with the cluster's pull
+        # secret and synced to kubelet on each node.
+        hypershift.openshift.io/nodepool-globalps-enabled: "true"
+    spec:
+      requirements:
+      - key: node.kubernetes.io/instance-type
+        operator: In
+        values:
+        - m6g.xlarge # ARM64 Graviton instance type
+      - key: kubernetes.io/arch
+        operator: In
+        values: ["arm64"]
+      - key: karpenter.sh/capacity-type
+        operator: In
+        values: ["on-demand"]
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default

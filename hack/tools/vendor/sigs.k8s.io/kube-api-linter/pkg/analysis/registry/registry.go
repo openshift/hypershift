@@ -100,6 +100,12 @@ func (r *registry) AllLinters() sets.Set[string] {
 	r.lock.RLock()
 	defer r.lock.RUnlock()
 
+	return r.allLinters()
+}
+
+// allLinters returns the list of all known linters without acquiring the lock.
+// Callers must hold the lock.
+func (r *registry) allLinters() sets.Set[string] {
 	linters := sets.New[string]()
 
 	for _, initializer := range r.initializers {
@@ -165,9 +171,22 @@ func (r *registry) validateLintersConfig(cfg config.Linters, lintersCfg config.L
 		}
 	}
 
-	fieldErrors = append(fieldErrors, validateUnusedLinters(lintersCfg, validatedLinters, fieldPath)...)
+	fieldErrors = append(fieldErrors, validateUnusedLinters(lintersCfg, validatedLinters, r.allConfigurableLinters(), r.allLinters(), fieldPath)...)
 
 	return fieldErrors
+}
+
+// allConfigurableLinters returns the names of all linters that are configurable.
+func (r *registry) allConfigurableLinters() sets.Set[string] {
+	configurableLinters := sets.New[string]()
+
+	for _, init := range r.initializers {
+		if _, ok := isConfigurable(init); ok {
+			configurableLinters.Insert(init.Name())
+		}
+	}
+
+	return configurableLinters
 }
 
 // getEnabledInitializers returns the initializers that are enabled by the config.
@@ -234,18 +253,34 @@ func getConfigByName(name string, lintersCfg config.LintersConfig) (any, bool) {
 	return nil, false
 }
 
-// validateUnusedLinters validates that all linters in the config are enabled.
-// It returns a list of errors for each linter that is not enabled.
-func validateUnusedLinters(lintersCfg config.LintersConfig, validatedLinters sets.Set[string], fieldPath *field.Path) field.ErrorList {
+// validateUnusedLinters validates that all linters in the config exist as configurable linters.
+// It returns a list of errors for each linter config that does not correspond to a known configurable linter.
+// It does NOT error for disabled linters that have configuration - this allows users to keep
+// configuration for linters they have temporarily disabled.
+func validateUnusedLinters(lintersCfg config.LintersConfig, validatedLinters, configurableLinters, allLinters sets.Set[string], fieldPath *field.Path) field.ErrorList {
 	fieldErrors := field.ErrorList{}
 
 	for name := range lintersCfg {
 		// Hack to allow backwards compatibility with early configuration.
 		// We use to have camelCased config names, but now it is all lowercase matched on the linter name.
 		// TODO(@JoelSpeed): Remove the strings.ToLower in a future release with a release note about the change.
-		if !validatedLinters.Has(strings.ToLower(name)) {
-			fieldErrors = append(fieldErrors, field.Invalid(fieldPath.Child(name), nil, "linter is not enabled"))
+		lowerName := strings.ToLower(name)
+
+		if validatedLinters.Has(lowerName) {
+			continue
 		}
+
+		// If the linter is configurable, it's OK to have config for it even if disabled
+		if configurableLinters.Has(lowerName) {
+			continue
+		}
+
+		if allLinters.Has(lowerName) {
+			fieldErrors = append(fieldErrors, field.Invalid(fieldPath.Child(name), name, "linter is not configurable"))
+			continue
+		}
+
+		fieldErrors = append(fieldErrors, field.Invalid(fieldPath.Child(name), name, "unknown linter"))
 	}
 
 	return fieldErrors

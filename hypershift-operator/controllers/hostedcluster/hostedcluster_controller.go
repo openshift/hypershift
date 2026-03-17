@@ -448,44 +448,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 				}
 			}
-
-			// Remove any referenced resource annotations for this hosted cluster from secrets and configmaps
-			deleteReferencedResourceAnnotation := func(obj client.Object) error {
-				annotations := obj.GetAnnotations()
-				if annotations == nil {
-					return nil
-				}
-				key := referencedResourceAnnotationPrefix + hcluster.Name
-				if _, ok := annotations[key]; !ok {
-					return nil
-				}
-				delete(annotations, key)
-				obj.SetAnnotations(annotations)
-				if err := r.Update(ctx, obj); err != nil {
-					return err
-				}
-				return nil
-			}
-
-			var secretList corev1.SecretList
-			if err := r.List(ctx, &secretList, client.InNamespace(hcluster.Namespace)); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to list secrets: %w", err)
-			}
-			for _, secret := range secretList.Items {
-				if err := deleteReferencedResourceAnnotation(&secret); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to delete referenced resource annotation on secret: %w", err)
-				}
-			}
-
-			var configmapList corev1.ConfigMapList
-			if err := r.List(ctx, &configmapList, client.InNamespace(hcluster.Namespace)); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to list configmaps: %w", err)
-			}
-			for _, configmap := range configmapList.Items {
-				if err := deleteReferencedResourceAnnotation(&configmap); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to delete referenced resource annotation on configmap: %w", err)
-				}
-			}
 		}
 	}
 
@@ -567,6 +529,44 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if len(crbs.Items) > 0 {
 			if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRoleBinding{}, selector); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to delete cluster role bindings: %w", err)
+			}
+		}
+
+		// Remove any referenced resource annotations for this hosted cluster from secrets and configmaps
+		deleteReferencedResourceAnnotation := func(obj client.Object) error {
+			annotations := obj.GetAnnotations()
+			if annotations == nil {
+				return nil
+			}
+			key := referencedResourceAnnotationPrefix + hcluster.Name
+			if _, ok := annotations[key]; !ok {
+				return nil
+			}
+			delete(annotations, key)
+			obj.SetAnnotations(annotations)
+			if err := r.Update(ctx, obj); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		var secretList corev1.SecretList
+		if err := r.List(ctx, &secretList, client.InNamespace(hcluster.Namespace)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to list secrets: %w", err)
+		}
+		for _, secret := range secretList.Items {
+			if err := deleteReferencedResourceAnnotation(&secret); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to delete referenced resource annotation on secret: %w", err)
+			}
+		}
+
+		var configmapList corev1.ConfigMapList
+		if err := r.List(ctx, &configmapList, client.InNamespace(hcluster.Namespace)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to list configmaps: %w", err)
+		}
+		for _, configmap := range configmapList.Items {
+			if err := deleteReferencedResourceAnnotation(&configmap); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to delete referenced resource annotation on configmap: %w", err)
 			}
 		}
 
@@ -829,6 +829,7 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 			hyperv1.ValidIDPConfiguration,
 			hyperv1.HostedClusterRestoredFromBackup,
 			hyperv1.DataPlaneConnectionAvailable,
+			hyperv1.ControlPlaneConnectionAvailable,
 		}
 
 		for _, conditionType := range hcpConditions {
@@ -1868,41 +1869,12 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if cpoSupportsKASCustomKubeconfig {
 		// Reconcile the HostedControlPlane external kubeconfig if one is reported
 		if len(hcp.Spec.KubeAPIServerDNSName) > 0 {
-			if hcp.Status.CustomKubeconfig != nil {
-				src := &corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: hcp.Namespace,
-						Name:      hcp.Status.CustomKubeconfig.Name,
-					},
-				}
-				err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src)
-				if err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to get controlplane custom external kubeconfig secret %q: %w", client.ObjectKeyFromObject(src), err)
-				}
-				dest := manifests.KubeConfigExternalSecret(hcluster.Namespace, hcluster.Name)
-				_, err = createOrUpdate(ctx, r.Client, dest, func() error {
-					key := hcp.Status.CustomKubeconfig.Key
-					srcData, srcHasData := src.Data[key]
-					if !srcHasData {
-						return fmt.Errorf("controlplane custom external kubeconfig secret %q must have a %q key", client.ObjectKeyFromObject(src), key)
-					}
-					dest.Labels = hcluster.Labels
-					dest.Type = corev1.SecretTypeOpaque
-					if dest.Data == nil {
-						dest.Data = map[string][]byte{}
-					}
-					dest.Data["kubeconfig"] = srcData
-					dest.SetOwnerReferences([]metav1.OwnerReference{{
-						APIVersion: hyperv1.GroupVersion.String(),
-						Kind:       "HostedCluster",
-						Name:       hcluster.Name,
-						UID:        hcluster.UID,
-					}})
-					return nil
-				})
-				if err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to reconcile hostedcluster custom external kubeconfig secret: %w", err)
-				}
+			requeue, err := r.reconcileCustomExternalKubeconfig(ctx, createOrUpdate, hcp, hcluster)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			if requeue != nil {
+				requeueAfter = requeue
 			}
 		} else {
 			// Delete the custom external kubeconfig secret if it exists and the external name is not set
@@ -2110,6 +2082,62 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		result.RequeueAfter = *requeueAfter
 	}
 	return result, nil
+}
+
+// reconcileCustomExternalKubeconfig copies the custom kubeconfig secret from the
+// HCP namespace to the HostedCluster namespace. It returns a requeue duration if
+// the source secret does not exist yet (e.g. during initial provisioning).
+func (r *HostedClusterReconciler) reconcileCustomExternalKubeconfig(ctx context.Context, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane, hcluster *hyperv1.HostedCluster) (*time.Duration, error) {
+	if hcp.Status.CustomKubeconfig == nil {
+		return nil, nil
+	}
+
+	log := ctrl.LoggerFrom(ctx)
+	src := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: hcp.Namespace,
+			Name:      hcp.Status.CustomKubeconfig.Name,
+		},
+	}
+	if err := r.Client.Get(ctx, client.ObjectKeyFromObject(src), src); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("failed to get controlplane custom external kubeconfig secret %q: %w", client.ObjectKeyFromObject(src), err)
+		}
+		// The CPO has advertised the secret name in status but the secret
+		// does not exist yet (e.g. during initial provisioning or retarget).
+		// Continue reconciliation so downstream steps like CPO deployment
+		// updates are not blocked. Requeue to retry the copy once the
+		// secret is created.
+		log.Info("custom external kubeconfig secret not found yet, will retry", "secret", client.ObjectKeyFromObject(src))
+		requeue := 30 * time.Second
+		return &requeue, nil
+	}
+
+	dest := manifests.KubeConfigExternalSecret(hcluster.Namespace, hcluster.Name)
+	_, err := createOrUpdate(ctx, r.Client, dest, func() error {
+		key := hcp.Status.CustomKubeconfig.Key
+		srcData, srcHasData := src.Data[key]
+		if !srcHasData {
+			return fmt.Errorf("controlplane custom external kubeconfig secret %q must have a %q key", client.ObjectKeyFromObject(src), key)
+		}
+		dest.Labels = hcluster.Labels
+		dest.Type = corev1.SecretTypeOpaque
+		if dest.Data == nil {
+			dest.Data = map[string][]byte{}
+		}
+		dest.Data["kubeconfig"] = srcData
+		dest.SetOwnerReferences([]metav1.OwnerReference{{
+			APIVersion: hyperv1.GroupVersion.String(),
+			Kind:       "HostedCluster",
+			Name:       hcluster.Name,
+			UID:        hcluster.UID,
+		}})
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to reconcile hostedcluster custom external kubeconfig secret: %w", err)
+	}
+	return nil, nil
 }
 
 const (
@@ -4494,6 +4522,13 @@ func (r *HostedClusterReconciler) isAWSNodeTerminationHandlerNeeded(ctx context.
 	}
 
 	for _, nodePool := range nodePools {
+		// Check API spec first - marketType: Spot
+		if nodePool.Spec.Platform.AWS != nil &&
+			nodePool.Spec.Platform.AWS.Placement != nil &&
+			nodePool.Spec.Platform.AWS.Placement.MarketType == hyperv1.MarketTypeSpot {
+			return true, nil
+		}
+		// Check annotation for backward compatibility (used for e2e testing)
 		if nodePool.Annotations != nil {
 			if _, ok := nodePool.Annotations["hypershift.openshift.io/enable-spot"]; ok {
 				return true, nil

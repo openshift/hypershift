@@ -70,7 +70,7 @@ github.com/Microsoft/go-winio/internal/fs
 github.com/Microsoft/go-winio/internal/socket
 github.com/Microsoft/go-winio/internal/stringbuffer
 github.com/Microsoft/go-winio/pkg/guid
-# github.com/MirrexOne/unqueryvet v1.5.3
+# github.com/MirrexOne/unqueryvet v1.5.4
 ## explicit; go 1.24.0
 github.com/MirrexOne/unqueryvet
 github.com/MirrexOne/unqueryvet/internal/analyzer
@@ -128,7 +128,7 @@ github.com/alecthomas/participle/v2/lexer
 # github.com/alexkohler/nakedret/v2 v2.0.6
 ## explicit; go 1.23.0
 github.com/alexkohler/nakedret/v2
-# github.com/alexkohler/prealloc v1.0.2
+# github.com/alexkohler/prealloc v1.1.0
 ## explicit; go 1.24.0
 github.com/alexkohler/prealloc/pkg
 # github.com/alfatraining/structtag v1.0.0
@@ -550,7 +550,7 @@ github.com/golangci/go-printf-func-name/pkg/analyzer
 # github.com/golangci/gofmt v0.0.0-20250106114630-d62b90e6713d
 ## explicit; go 1.22.0
 github.com/golangci/gofmt/gofmt
-# github.com/golangci/golangci-lint/v2 v2.10.1
+# github.com/golangci/golangci-lint/v2 v2.11.1
 ## explicit; go 1.25.0
 github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 github.com/golangci/golangci-lint/v2/internal/cache
@@ -871,7 +871,7 @@ github.com/karamaru-alpha/copyloopvar
 # github.com/kevinburke/ssh_config v1.2.0
 ## explicit
 github.com/kevinburke/ssh_config
-# github.com/kisielk/errcheck v1.9.0
+# github.com/kisielk/errcheck v1.10.0
 ## explicit; go 1.22.0
 github.com/kisielk/errcheck/errcheck
 # github.com/kkHAIKE/contextcheck v1.1.6
@@ -956,13 +956,14 @@ github.com/mattn/go-isatty
 # github.com/mattn/go-runewidth v0.0.16
 ## explicit; go 1.9
 github.com/mattn/go-runewidth
-# github.com/mgechev/revive v1.14.0
-## explicit; go 1.24.0
+# github.com/mgechev/revive v1.15.0
+## explicit; go 1.25.0
 github.com/mgechev/revive/config
 github.com/mgechev/revive/formatter
 github.com/mgechev/revive/internal/astutils
 github.com/mgechev/revive/internal/ifelse
 github.com/mgechev/revive/internal/rule
+github.com/mgechev/revive/internal/syncset
 github.com/mgechev/revive/internal/typeparams
 github.com/mgechev/revive/lint
 github.com/mgechev/revive/logging
@@ -1161,8 +1162,8 @@ github.com/sashamelentyev/interfacebloat/pkg/analyzer
 ## explicit; go 1.23.0
 github.com/sashamelentyev/usestdlibvars/pkg/analyzer
 github.com/sashamelentyev/usestdlibvars/pkg/analyzer/internal/mapping
-# github.com/securego/gosec/v2 v2.23.0
-## explicit; go 1.24.0
+# github.com/securego/gosec/v2 v2.24.7
+## explicit; go 1.25.0
 github.com/securego/gosec/v2
 github.com/securego/gosec/v2/analyzers
 github.com/securego/gosec/v2/cwe
@@ -1185,7 +1186,7 @@ github.com/sivchari/containedctx
 # github.com/skeema/knownhosts v1.3.1
 ## explicit; go 1.22
 github.com/skeema/knownhosts
-# github.com/sonatard/noctx v0.4.0
+# github.com/sonatard/noctx v0.5.0
 ## explicit; go 1.23.0
 github.com/sonatard/noctx
 # github.com/sourcegraph/go-diff v0.7.0
@@ -1267,8 +1268,8 @@ github.com/ultraware/funlen
 # github.com/ultraware/whitespace v0.2.0
 ## explicit; go 1.20
 github.com/ultraware/whitespace
-# github.com/uudashr/gocognit v1.2.0
-## explicit; go 1.19
+# github.com/uudashr/gocognit v1.2.1
+## explicit; go 1.24.0
 github.com/uudashr/gocognit
 # github.com/uudashr/iface v1.4.1
 ## explicit; go 1.23.0
@@ -1444,8 +1445,8 @@ golang.org/x/mod/modfile
 golang.org/x/mod/module
 golang.org/x/mod/semver
 golang.org/x/mod/sumdb/dirhash
-# golang.org/x/net v0.50.0
-## explicit; go 1.24.0
+# golang.org/x/net v0.51.0
+## explicit; go 1.25.0
 golang.org/x/net/context
 golang.org/x/net/html
 golang.org/x/net/html/atom
@@ -2237,7 +2238,7 @@ sigs.k8s.io/controller-tools/pkg/webhook
 ## explicit; go 1.23
 sigs.k8s.io/json
 sigs.k8s.io/json/internal/golang/encoding/json
-# sigs.k8s.io/kube-api-linter v0.0.0-20251205122056-74c4ae94ad3d
+# sigs.k8s.io/kube-api-linter v0.0.0-20260206102632-39e3d06a2850
 ## explicit; go 1.24.0
 sigs.k8s.io/kube-api-linter
 sigs.k8s.io/kube-api-linter/pkg/analysis/arrayofstruct
@@ -2245,6 +2246,7 @@ sigs.k8s.io/kube-api-linter/pkg/analysis/commentstart
 sigs.k8s.io/kube-api-linter/pkg/analysis/conditions
 sigs.k8s.io/kube-api-linter/pkg/analysis/conflictingmarkers
 sigs.k8s.io/kube-api-linter/pkg/analysis/defaultorrequired
+sigs.k8s.io/kube-api-linter/pkg/analysis/defaults
 sigs.k8s.io/kube-api-linter/pkg/analysis/dependenttags
 sigs.k8s.io/kube-api-linter/pkg/analysis/duplicatemarkers
 sigs.k8s.io/kube-api-linter/pkg/analysis/errors
@@ -2256,6 +2258,7 @@ sigs.k8s.io/kube-api-linter/pkg/analysis/initializer
 sigs.k8s.io/kube-api-linter/pkg/analysis/integers
 sigs.k8s.io/kube-api-linter/pkg/analysis/jsontags
 sigs.k8s.io/kube-api-linter/pkg/analysis/maxlength
+sigs.k8s.io/kube-api-linter/pkg/analysis/minlength
 sigs.k8s.io/kube-api-linter/pkg/analysis/namingconventions
 sigs.k8s.io/kube-api-linter/pkg/analysis/nobools
 sigs.k8s.io/kube-api-linter/pkg/analysis/nodurations

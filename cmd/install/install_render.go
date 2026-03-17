@@ -32,25 +32,27 @@ var (
 )
 
 var openshiftTemplateParams = TemplateParams{
-	HyperShiftImage:             "OPERATOR_IMG",
-	HyperShiftImageTag:          "IMAGE_TAG",
-	Namespace:                   "NAMESPACE",
-	HypershiftOperatorReplicas:  "OPERATOR_REPLICAS",
-	OIDCS3Name:                  "OIDC_S3_NAME",
-	OIDCS3Region:                "OIDC_S3_REGION",
-	OIDCS3CredsSecret:           "OIDC_S3_CREDS_SECRET",
-	OIDCS3CredsSecretKey:        "OIDC_S3_CREDS_SECRET_KEY",
-	AWSPrivateRegion:            "AWS_PRIVATE_REGION",
-	AWSPrivateCredsSecret:       "AWS_PRIVATE_CREDS_SECRET",
-	AWSPrivateCredsSecretKey:    "AWS_PRIVATE_CREDS_SECRET_KEY",
-	ExternalDNSCredsSecret:      "EXTERNAL_DNS_CREDS_SECRET",
-	ExternalDNSDomainFilter:     "EXTERNAL_DNS_DOMAIN_FILTER",
-	ExternalDNSTxtOwnerID:       "EXTERNAL_DNS_TXT_OWNER_ID",
-	ExternalDNSImage:            "EXTERNAL_DNS_IMAGE",
-	ExternalDNSGoogleProject:    "EXTERNAL_DNS_GOOGLE_PROJECT",
-	RegistryOverrides:           "REGISTRY_OVERRIDES",
-	AROHCPKeyVaultUsersClientID: "AZURE_KEYVAULT_CLIENT_ID",
-	TemplateNamespace:           true,
+	HyperShiftImage:                  "OPERATOR_IMG",
+	HyperShiftImageTag:               "IMAGE_TAG",
+	Namespace:                        "NAMESPACE",
+	HypershiftOperatorReplicas:       "OPERATOR_REPLICAS",
+	OIDCS3Name:                       "OIDC_S3_NAME",
+	OIDCS3Region:                     "OIDC_S3_REGION",
+	OIDCS3CredsSecret:                "OIDC_S3_CREDS_SECRET",
+	OIDCS3CredsSecretKey:             "OIDC_S3_CREDS_SECRET_KEY",
+	AWSPrivateRegion:                 "AWS_PRIVATE_REGION",
+	AWSPrivateCredsSecret:            "AWS_PRIVATE_CREDS_SECRET",
+	AWSPrivateCredsSecretKey:         "AWS_PRIVATE_CREDS_SECRET_KEY",
+	ExternalDNSCredsSecret:           "EXTERNAL_DNS_CREDS_SECRET",
+	ExternalDNSDomainFilter:          "EXTERNAL_DNS_DOMAIN_FILTER",
+	ExternalDNSTxtOwnerID:            "EXTERNAL_DNS_TXT_OWNER_ID",
+	ExternalDNSImage:                 "EXTERNAL_DNS_IMAGE",
+	ExternalDNSGoogleProject:         "EXTERNAL_DNS_GOOGLE_PROJECT",
+	ExternalDNSInterval:              "EXTERNAL_DNS_INTERVAL",
+	ExternalDNSAWSZonesCacheDuration: "EXTERNAL_DNS_AWS_ZONES_CACHE_DURATION",
+	RegistryOverrides:                "REGISTRY_OVERRIDES",
+	AROHCPKeyVaultUsersClientID:      "AZURE_KEYVAULT_CLIENT_ID",
+	TemplateNamespace:                true,
 	TemplateParamWrapper: func(name string) string {
 		return fmt.Sprintf("${%s}", name)
 	},
@@ -201,6 +203,18 @@ func openshiftTemplate(ctx context.Context, opts *Options) (crclient.Object, err
 			templateParameters = append(
 				templateParameters,
 				map[string]string{"name": openshiftTemplateParams.ExternalDNSGoogleProject, "value": opts.ExternalDNSGoogleProject},
+			)
+		}
+		if opts.ExternalDNSInterval != "" {
+			templateParameters = append(
+				templateParameters,
+				map[string]string{"name": openshiftTemplateParams.ExternalDNSInterval, "value": opts.ExternalDNSInterval},
+			)
+		}
+		if opts.ExternalDNSAWSZonesCacheDuration != "" {
+			templateParameters = append(
+				templateParameters,
+				map[string]string{"name": openshiftTemplateParams.ExternalDNSAWSZonesCacheDuration, "value": opts.ExternalDNSAWSZonesCacheDuration},
 			)
 		}
 	}

@@ -46,6 +46,7 @@ import (
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	sharedingressconfiggenerator "github.com/openshift/hypershift/sharedingress-config-generator"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/awsapi"
 	"github.com/openshift/hypershift/support/azureutil"
 	"github.com/openshift/hypershift/support/capabilities"
 	"github.com/openshift/hypershift/support/config"
@@ -57,9 +58,8 @@ import (
 
 	operatorv1 "github.com/openshift/api/operator/v1"
 
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -159,7 +159,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.EnableOCPClusterMonitoring, "enable-ocp-cluster-monitoring", opts.EnableOCPClusterMonitoring, "Development-only option that will make your OCP cluster unsupported: If the cluster Prometheus should be configured to scrape metrics")
 	cmd.Flags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
 	cmd.Flags().StringToStringVar(&opts.RegistryOverrides, "registry-overrides", map[string]string{}, "registry-overrides contains the source registry string as a key and the destination registry string as value. Images before being applied are scanned for the source registry string and if found the string is replaced with the destination registry string. Format is: sr1=dr1,sr2=dr2")
-	cmd.Flags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\", \"GCP\", or \"None\")")
+	cmd.Flags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\", \"Azure\", \"GCP\", or \"None\")")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3BucketName, "oidc-storage-provider-s3-bucket-name", "", "Name of the bucket in which to store the clusters OIDC discovery information. Required for AWS guest clusters")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", opts.OIDCStorageProviderS3Region, "Region in which the OIDC bucket is located. Required for AWS guest clusters")
 	cmd.Flags().StringVar(&opts.OIDCStorageProviderS3Credentials, "oidc-storage-provider-s3-credentials", opts.OIDCStorageProviderS3Credentials, "Location of the credentials file for the OIDC bucket. Required for AWS guest clusters.")
@@ -186,7 +186,7 @@ func NewStartCommand() *cobra.Command {
 		defer cancel()
 
 		switch hyperv1.PlatformType(opts.PrivatePlatform) {
-		case hyperv1.AWSPlatform, hyperv1.GCPPlatform, hyperv1.NonePlatform:
+		case hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.GCPPlatform, hyperv1.NonePlatform:
 		default:
 			fmt.Printf("Unsupported private platform: %q\n", opts.PrivatePlatform)
 			os.Exit(1)
@@ -414,12 +414,14 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 	}
 
-	var ec2Client ec2iface.EC2API
+	var ec2Client awsapi.EC2API
 
 	if hyperv1.PlatformType(opts.PrivatePlatform) == hyperv1.AWSPlatform {
-		awsSession := awsutil.NewSession("hypershift-operator", "", "", "", "")
-		awsConfig := awsutil.NewConfig()
-		ec2Client = ec2.New(awsSession, awsConfig)
+		awsSession := awsutil.NewSessionV2(ctx, "hypershift-operator", "", "", "", "")
+		awsConfig := awsutil.NewConfigV2()
+		ec2Client = ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+			o.Retryer = awsConfig()
+		})
 	}
 
 	npmetrics.CreateAndRegisterNodePoolsMetricsCollector(mgr.GetClient(), ec2Client)
@@ -429,9 +431,11 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 	if opts.ScaleFromZeroCreds != "" && opts.ScaleFromZeroProvider != "" {
 		switch strings.ToLower(opts.ScaleFromZeroProvider) {
 		case "aws":
-			awsSession := awsutil.NewSession("hypershift-operator-scale-from-zero", opts.ScaleFromZeroCreds, "", "", "")
-			awsConfig := awsutil.NewConfig()
-			scaleFromZeroEC2Client := ec2.New(awsSession, awsConfig)
+			awsSession := awsutil.NewSessionV2(ctx, "hypershift-operator-scale-from-zero", opts.ScaleFromZeroCreds, "", "", "")
+			awsConfig := awsutil.NewConfigV2()
+			scaleFromZeroEC2Client := ec2.NewFromConfig(*awsSession, func(o *ec2.Options) {
+				o.Retryer = awsConfig()
+			})
 			instanceTypeProvider = awsinstancetype.NewProvider(scaleFromZeroEC2Client)
 			log.Info("Instance type provider initialized", "provider", opts.ScaleFromZeroProvider)
 		default:

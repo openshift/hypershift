@@ -326,7 +326,6 @@ github.com/aws/aws-sdk-go/internal/shareddefaults
 github.com/aws/aws-sdk-go/internal/strings
 github.com/aws/aws-sdk-go/internal/sync/singleflight
 github.com/aws/aws-sdk-go/private/protocol
-github.com/aws/aws-sdk-go/private/protocol/ec2query
 github.com/aws/aws-sdk-go/private/protocol/json/jsonutil
 github.com/aws/aws-sdk-go/private/protocol/jsonrpc
 github.com/aws/aws-sdk-go/private/protocol/query
@@ -334,8 +333,6 @@ github.com/aws/aws-sdk-go/private/protocol/query/queryutil
 github.com/aws/aws-sdk-go/private/protocol/rest
 github.com/aws/aws-sdk-go/private/protocol/restjson
 github.com/aws/aws-sdk-go/private/protocol/xml/xmlutil
-github.com/aws/aws-sdk-go/service/ec2
-github.com/aws/aws-sdk-go/service/ec2/ec2iface
 github.com/aws/aws-sdk-go/service/ram
 github.com/aws/aws-sdk-go/service/ram/ramiface
 github.com/aws/aws-sdk-go/service/sqs
@@ -1724,7 +1721,7 @@ google.golang.org/genproto/googleapis/api/httpbody
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.79.1
+# google.golang.org/grpc v1.79.2
 ## explicit; go 1.24.0
 google.golang.org/grpc
 google.golang.org/grpc/attributes

@@ -69,8 +69,8 @@ var (
 		"awsclusters.infrastructure.cluster.x-k8s.io", "awsmachinetemplates.infrastructure.cluster.x-k8s.io", "awsmachines.infrastructure.cluster.x-k8s.io",
 	}
 	agentResources = []string{
-		"agentclusters.infrastructure.cluster.x-k8s.io", "agentmachinetemplates.infrastructure.cluster.x-k8s.io", "agentmachines.infrastructure.cluster.x-k8s.io",
-		"agents.agent-install.openshift.io", "infraenvs.agent-install.openshift.io", "baremetalhosts.metal3.io",
+		"agentclusters.capi-provider.agent-install.openshift.io", "agentmachinetemplates.capi-provider.agent-install.openshift.io", "agentmachines.capi-provider.agent-install.openshift.io",
+		"agents.agent-install.openshift.io", "infraenvs.agent-install.openshift.io", "nmstateconfigs.agent-install.openshift.io", "baremetalhosts.metal3.io",
 	}
 	kubevirtResources = []string{
 		"kubevirtclusters.infrastructure.cluster.x-k8s.io", "kubevirtmachinetemplates.infrastructure.cluster.x-k8s.io",

@@ -31,4 +31,4 @@ HyperShift exposes available upgrades in HostedCluster.Status by bubbling up the
 ## NodePools
 `.spec.release` dictates the version of any particular NodePool.
 
-A NodePool will perform a Replace/InPlace rolling upgrade according to `.spec.management.upgradeType`. See [NodePool Upgrades](./automated-machine-management/nodepool-lifecycle.md#upgrades-and-data-propagation) for details.
+A NodePool will perform a Replace/InPlace rolling upgrade according to `.spec.management.upgradeType`. See [NodePool Rollouts](../reference/nodepool-rollouts.md) for details on what triggers a rollout and how it is executed.

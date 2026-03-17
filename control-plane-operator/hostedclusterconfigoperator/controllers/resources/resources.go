@@ -500,9 +500,24 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent: %w", err))
 	}
 
-	log.Info("reconciling control-Plane to data-Plane status conditions")
-	if err := r.reconcileControlPlaneDataPlaneConnectivityConditions(ctx, hcp, log); err != nil {
-		errs = append(errs, fmt.Errorf("failed to update ControlPlaneToDataPlaneConnectivity condition: %w", err))
+	log.Info("reconciling KAS connection checker deployment")
+	cliImage, ok := releaseImage.ComponentImages()["cli"]
+	if !ok {
+		errs = append(errs, fmt.Errorf("failed to find cli image in release"))
+	} else {
+		if err := r.reconcileKASConnectionCheckerDeployment(ctx, hcp, cliImage); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile KAS connection checker deployment: %w", err))
+		}
+	}
+
+	log.Info("reconciling data plane connection available condition")
+	if err := r.reconcileDataPlaneConnectionAvailable(ctx, hcp, log); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile DataPlaneConnectionAvailable condition: %w", err))
+	}
+
+	log.Info("reconciling control plane connection available condition")
+	if err := r.reconcileControlPlaneConnectionAvailable(ctx, hcp); err != nil {
+		errs = append(errs, fmt.Errorf("failed to update ControlPlaneConnectionAvailable condition: %w", err))
 	}
 
 	log.Info("reconciling openshift apiserver apiservices")
@@ -735,6 +750,7 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 	case hyperv1.AzurePlatform:
 		log.Info("reconciling Azure specific resources")
 		errs = append(errs, r.reconcileAzureCloudNodeManager(ctx, releaseImage.ComponentImages()["azure-cloud-node-manager"])...)
+		errs = append(errs, r.reconcileAzureIdentityWebhook(ctx)...)
 	}
 
 	// Reconcile hostedCluster recovery if the hosted cluster was restored from backup
@@ -1090,6 +1106,9 @@ func (r *reconciler) reconcileRBAC(ctx context.Context, hcp *hyperv1.HostedContr
 		// Let this go by for now
 		manifestAndReconcile[*rbacv1.ClusterRole]{manifest: manifests.UserOAuthClusterRole, reconcile: rbac.ReconcileUserOAuthClusterRole},
 		manifestAndReconcile[*rbacv1.ClusterRoleBinding]{manifest: manifests.UserOAuthClusterRoleBinding, reconcile: rbac.ReconcileUserOAuthClusterRoleBinding},
+
+		manifestAndReconcile[*rbacv1.Role]{manifest: manifests.KASConnectionCheckerRole, reconcile: rbac.ReconcileKASConnectionCheckerRole},
+		manifestAndReconcile[*rbacv1.RoleBinding]{manifest: manifests.KASConnectionCheckerRoleBinding, reconcile: rbac.ReconcileKASConnectionCheckerRoleBinding},
 	}
 
 	if azureutil.IsAroHCP() {
@@ -1362,19 +1381,7 @@ func (r *reconciler) reconcileClusterVersion(ctx context.Context, hcp *hyperv1.H
 	return nil
 }
 
-func (r *reconciler) reconcileControlPlaneDataPlaneConnectivityConditions(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
-	patchHCPWithCondition := func(hcp *hyperv1.HostedControlPlane, condition *metav1.Condition) error {
-		originalHCP := hcp.DeepCopy()
-		if !meta.SetStatusCondition(&hcp.Status.Conditions, *condition) {
-			return nil // No status change; avoid unnecessary API call.
-		}
-		if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFrom(originalHCP)); err != nil {
-			return fmt.Errorf("failed to update HostedControlPlane status with %s condition: %w", condition.Type, err)
-		}
-		log.Info(string(hyperv1.DataPlaneConnectionAvailable) + " updated")
-		return nil
-	}
-
+func (r *reconciler) reconcileDataPlaneConnectionAvailable(ctx context.Context, hcp *hyperv1.HostedControlPlane, log logr.Logger) error {
 	condition := &metav1.Condition{
 		Type:   string(hyperv1.DataPlaneConnectionAvailable),
 		Status: metav1.ConditionFalse, // False by default
@@ -1384,20 +1391,20 @@ func (r *reconciler) reconcileControlPlaneDataPlaneConnectivityConditions(ctx co
 		condition.Status = metav1.ConditionUnknown
 		condition.Reason = hyperv1.ReconcileErrorReason
 		condition.Message = "Unable to count worker nodes: " + err.Error()
-		return patchHCPWithCondition(hcp, condition)
+		return r.patchHCPStatusCondition(ctx, hcp, condition)
 	}
 	if totalNodes == 0 {
 		condition.Status = metav1.ConditionUnknown
 		condition.Reason = hyperv1.DataPlaneConnectionNoWorkerNodesAvailableReason
 		condition.Message = "No worker nodes available"
-		return patchHCPWithCondition(hcp, condition)
+		return r.patchHCPStatusCondition(ctx, hcp, condition)
 	}
 	var podList corev1.PodList
 	if err := r.uncachedClient.List(ctx, &podList,
 		client.MatchingLabels{"app": "konnectivity-agent"}, client.InNamespace("kube-system")); err != nil {
 		condition.Reason = hyperv1.ReconciliationErrorReason
 		condition.Message = "Couldn't list konnectivity-agent PODs in kube-system namespace: " + err.Error()
-		return patchHCPWithCondition(hcp, condition)
+		return r.patchHCPStatusCondition(ctx, hcp, condition)
 	}
 
 	logsFound := false
@@ -1432,7 +1439,206 @@ func (r *reconciler) reconcileControlPlaneDataPlaneConnectivityConditions(ctx co
 		}
 	}
 
-	return patchHCPWithCondition(hcp, condition)
+	return r.patchHCPStatusCondition(ctx, hcp, condition)
+}
+
+// getKASHealthCheckEndpoint returns the appropriate KAS health check endpoint based on the platform type.
+// IBM Cloud uses a different liveness endpoint that excludes etcd and log checks.
+func getKASHealthCheckEndpoint(platformType hyperv1.PlatformType) string {
+	if platformType == hyperv1.IBMCloudPlatform {
+		return "/livez?exclude=etcd&exclude=log"
+	}
+	return "/version"
+}
+
+// patchHCPStatusCondition patches the HostedControlPlane status with the provided condition.
+// It only performs the API call if the condition actually changed.
+func (r *reconciler) patchHCPStatusCondition(ctx context.Context, hcp *hyperv1.HostedControlPlane, condition *metav1.Condition) error {
+	log := ctrl.LoggerFrom(ctx)
+	originalHCP := hcp.DeepCopy()
+	if !meta.SetStatusCondition(&hcp.Status.Conditions, *condition) {
+		return nil // No status change; avoid unnecessary API call.
+	}
+	if err := r.cpClient.Status().Patch(ctx, hcp, client.MergeFrom(originalHCP)); err != nil {
+		return fmt.Errorf("failed to update HostedControlPlane status with %s condition: %w", condition.Type, err)
+	}
+	log.Info(string(condition.Type) + " condition updated")
+	return nil
+}
+
+func (r *reconciler) reconcileKASConnectionCheckerDeployment(ctx context.Context, hcp *hyperv1.HostedControlPlane, cliImage string) error {
+	endpoint := getKASHealthCheckEndpoint(hcp.Spec.Platform.Type)
+
+	serviceAccount := manifests.KASConnectionCheckerServiceAccount()
+	if _, err := r.CreateOrUpdate(ctx, r.client, serviceAccount, func() error { return nil }); err != nil {
+		return fmt.Errorf("failed to reconcile kas-connection-checker service account: %w", err)
+	}
+
+	// Create the ConfigMap that pods will update with their check results.
+	cm := manifests.KASConnectionCheckerConfigMap()
+	if _, err := r.CreateOrUpdate(ctx, r.client, cm, func() error { return nil }); err != nil {
+		return fmt.Errorf("failed to reconcile kas-connection-checker configmap: %w", err)
+	}
+
+	// Build the curl-based check script. Each pod tests the full data path:
+	// DNS resolution of kubernetes.default.svc -> advertise address on lo -> apiserver proxy -> KAS on HCP.
+	// On success the pod PATCHes the shared ConfigMap with a lastSucceeded timestamp via the Kubernetes API.
+	// The token is re-read each iteration to handle rotation.
+	// See: https://kubernetes.io/docs/tasks/run-application/access-api-from-pod/
+	checkScript := fmt.Sprintf(`#!/bin/sh
+ENDPOINT=%s
+CONFIGMAP_NAME=%s
+NAMESPACE=%s
+while true; do
+  TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+  CACERT=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+  HTTP_CODE=$(curl --cacert ${CACERT} -s -o /dev/null -w "%%{http_code}" \
+    --connect-timeout 5 --max-time 10 \
+    "https://kubernetes.default.svc${ENDPOINT}" 2>/dev/null)
+  if [ "$HTTP_CODE" = "200" ]; then
+    NOW=$(date -u +%%Y-%%m-%%dT%%H:%%M:%%SZ)
+    curl --cacert ${CACERT} -s -o /dev/null \
+      -X PATCH \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "Content-Type: application/strategic-merge-patch+json" \
+      --data "{\"data\":{\"lastSucceeded\":\"${NOW}\"}}" \
+      "https://kubernetes.default.svc/api/v1/namespaces/${NAMESPACE}/configmaps/${CONFIGMAP_NAME}" 2>/dev/null
+  fi
+  sleep 60
+done`, endpoint, manifests.KASConnectionCheckerConfigMapName, manifests.KASConnectionCheckerNamespace)
+
+	var replicas int32 = 3
+	deployment := manifests.KASConnectionCheckerDeployment()
+	if _, err := r.CreateOrUpdate(ctx, r.client, deployment, func() error {
+		deployment.Spec.Replicas = &replicas
+		deployment.Spec.Selector = &metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"app": manifests.KASConnectionCheckerName,
+			},
+		}
+
+		deployment.Spec.Template.ObjectMeta.Labels = map[string]string{
+			"app": manifests.KASConnectionCheckerName,
+		}
+		deployment.Spec.Template.ObjectMeta.Annotations = map[string]string{
+			"openshift.io/required-scc": "restricted-v2",
+		}
+
+		deployment.Spec.Template.Spec.ServiceAccountName = manifests.KASConnectionCheckerName
+		deployment.Spec.Template.Spec.PriorityClassName = "system-node-critical"
+		automount := true
+		deployment.Spec.Template.Spec.AutomountServiceAccountToken = &automount
+
+		deployment.Spec.Template.Spec.Containers = []corev1.Container{
+			{
+				Name:    "connection-checker",
+				Image:   cliImage,
+				Command: []string{"/bin/sh", "-c", checkScript},
+				Resources: corev1.ResourceRequirements{
+					Requests: corev1.ResourceList{
+						corev1.ResourceCPU:    resource.MustParse("5m"),
+						corev1.ResourceMemory: resource.MustParse("10Mi"),
+					},
+				},
+			},
+		}
+
+		// Tolerate NoSchedule taints so it can be scheduled on tainted nodes,
+		// and specific NoExecute taints so it is not evicted from unhealthy nodes.
+		// A catch-all {Operator: Exists} toleration is NOT used because it also
+		// bypasses the NodeUnschedulable filter, causing replacement pods to be
+		// scheduled back onto cordoned nodes during drain — creating an infinite
+		// eviction loop that blocks node rollouts.
+		deployment.Spec.Template.Spec.Tolerations = []corev1.Toleration{
+			{
+				Operator: corev1.TolerationOpExists,
+				Effect:   corev1.TaintEffectNoSchedule,
+			},
+			{
+				Key:               "node.kubernetes.io/unreachable",
+				Operator:          corev1.TolerationOpExists,
+				Effect:            corev1.TaintEffectNoExecute,
+				TolerationSeconds: ptr.To[int64](120),
+			},
+			{
+				Key:               "node.kubernetes.io/not-ready",
+				Operator:          corev1.TolerationOpExists,
+				Effect:            corev1.TaintEffectNoExecute,
+				TolerationSeconds: ptr.To[int64](120),
+			},
+		}
+
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to reconcile kas-connection-checker deployment: %w", err)
+	}
+
+	return nil
+}
+
+func (r *reconciler) reconcileControlPlaneConnectionAvailable(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	condition := &metav1.Condition{
+		Type:   string(hyperv1.ControlPlaneConnectionAvailable),
+		Status: metav1.ConditionUnknown,
+		Reason: hyperv1.StatusUnknownReason,
+	}
+
+	// Check if there are any worker nodes available
+	totalNodes, err := util.CountAvailableNodes(ctx, r.client)
+	if err != nil {
+		condition.Reason = hyperv1.ReconcileErrorReason
+		condition.Message = "Unable to count worker nodes: " + err.Error()
+		return r.patchHCPStatusCondition(ctx, hcp, condition)
+	}
+	if totalNodes == 0 {
+		condition.Reason = hyperv1.ControlPlaneConnectionNoWorkerNodesAvailableReason
+		condition.Message = "No worker nodes available to verify control plane connectivity"
+		return r.patchHCPStatusCondition(ctx, hcp, condition)
+	}
+
+	// Get the connectivity check ConfigMap
+	cm := manifests.KASConnectionCheckerConfigMap()
+	if err := r.client.Get(ctx, client.ObjectKeyFromObject(cm), cm); err != nil {
+		if apierrors.IsNotFound(err) {
+			condition.Reason = hyperv1.ControlPlaneConnectionConfigMapNotFoundReason
+			condition.Message = fmt.Sprintf("Connectivity check ConfigMap %s/%s not found; the hosted cluster config operator may not have reconciled it yet",
+				manifests.KASConnectionCheckerNamespace, manifests.KASConnectionCheckerConfigMapName)
+			return r.patchHCPStatusCondition(ctx, hcp, condition)
+		}
+		condition.Reason = hyperv1.ReconcileErrorReason
+		condition.Message = fmt.Sprintf("Failed to get connectivity check ConfigMap %s/%s: %v",
+			manifests.KASConnectionCheckerNamespace, manifests.KASConnectionCheckerConfigMapName, err)
+		return r.patchHCPStatusCondition(ctx, hcp, condition)
+	}
+
+	// Check the lastSucceeded timestamp
+	lastSucceededStr, ok := cm.Data["lastSucceeded"]
+	if !ok || lastSucceededStr == "" {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.ControlPlaneConnectionKASAccessFailedReason
+		condition.Message = "Data plane to control plane connection is not available: no successful connectivity check recorded"
+		return r.patchHCPStatusCondition(ctx, hcp, condition)
+	}
+
+	lastSucceeded, err := time.Parse(time.RFC3339, lastSucceededStr)
+	if err != nil {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.ControlPlaneConnectionKASAccessFailedReason
+		condition.Message = fmt.Sprintf("Data plane to control plane connection is not available: failed to parse lastSucceeded timestamp: %v", err)
+		return r.patchHCPStatusCondition(ctx, hcp, condition)
+	}
+
+	if time.Since(lastSucceeded) > 5*time.Minute {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = hyperv1.ControlPlaneConnectionCheckStaleReason
+		condition.Message = fmt.Sprintf("Data plane to control plane connection is not available: last successful check was at %s, which is older than 5 minutes", lastSucceededStr)
+		return r.patchHCPStatusCondition(ctx, hcp, condition)
+	}
+
+	condition.Status = metav1.ConditionTrue
+	condition.Reason = hyperv1.AsExpectedReason
+	condition.Message = hyperv1.AllIsWellMessage
+	return r.patchHCPStatusCondition(ctx, hcp, condition)
 }
 
 func (r *reconciler) reconcileOpenshiftAPIServerAPIServices(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
@@ -2161,6 +2367,78 @@ func (r *reconciler) reconcileAWSIdentityWebhook(ctx context.Context) []error {
 				URL:      ptr.To("https://127.0.0.1:4443/mutate"),
 			},
 			FailurePolicy: &ignoreFailurePolicy,
+			Rules: []admissionregistrationv1.RuleWithOperations{{
+				Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},
+				Rule: admissionregistrationv1.Rule{
+					APIGroups:   []string{""},
+					APIVersions: []string{"v1"},
+					Resources:   []string{"pods"},
+				},
+			}},
+			SideEffects: &sideEffectsNone,
+		}}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", webhook, webhook.Name, err))
+	}
+
+	return errs
+}
+
+func (r *reconciler) reconcileAzureIdentityWebhook(ctx context.Context) []error {
+	var errs []error
+	clusterRole := manifests.AzureWorkloadIdentityWebhookClusterRole()
+	if _, err := r.CreateOrUpdate(ctx, r.client, clusterRole, func() error {
+		clusterRole.Rules = []rbacv1.PolicyRule{{
+			APIGroups: []string{""},
+			Resources: []string{"serviceaccounts"},
+			Verbs: []string{
+				"get",
+				"list",
+				"watch",
+			},
+		}}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterRole, clusterRole.Name, err))
+	}
+
+	clusterRoleBinding := manifests.AzureWorkloadIdentityWebhookClusterRoleBinding()
+	if _, err := r.CreateOrUpdate(ctx, r.client, clusterRoleBinding, func() error {
+		clusterRoleBinding.RoleRef.APIGroup = "rbac.authorization.k8s.io"
+		clusterRoleBinding.RoleRef.Kind = "ClusterRole"
+		clusterRoleBinding.RoleRef.Name = clusterRole.Name
+		clusterRoleBinding.Subjects = []rbacv1.Subject{{
+			Kind:      "ServiceAccount",
+			Name:      "azure-workload-identity-webhook",
+			Namespace: "openshift-authentication",
+		}}
+		return nil
+	}); err != nil {
+		errs = append(errs, fmt.Errorf("failed to reconcile %T %s: %w", clusterRoleBinding, clusterRoleBinding.Name, err))
+	}
+
+	failFailurePolicy := admissionregistrationv1.Fail
+	sideEffectsNone := admissionregistrationv1.SideEffectClassNone
+	matchEquivalent := admissionregistrationv1.Equivalent
+	reinvocationIfNeeded := admissionregistrationv1.IfNeededReinvocationPolicy
+	webhook := manifests.AzureWorkloadIdentityWebhook()
+	if _, err := r.CreateOrUpdate(ctx, r.client, webhook, func() error {
+		webhook.Webhooks = []admissionregistrationv1.MutatingWebhook{{
+			AdmissionReviewVersions: []string{"v1", "v1beta1"},
+			Name:                    "pod-identity-webhook.azure.mutate.io",
+			ClientConfig: admissionregistrationv1.WebhookClientConfig{
+				CABundle: []byte(r.rootCA),
+				URL:      ptr.To("https://127.0.0.1:9443/mutate-v1-pod"),
+			},
+			FailurePolicy:      &failFailurePolicy,
+			MatchPolicy:        &matchEquivalent,
+			ReinvocationPolicy: &reinvocationIfNeeded,
+			ObjectSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"azure.workload.identity/use": "true",
+				},
+			},
 			Rules: []admissionregistrationv1.RuleWithOperations{{
 				Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create},
 				Rule: admissionregistrationv1.Rule{

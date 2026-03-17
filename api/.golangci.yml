@@ -11,26 +11,87 @@ linters:
       kubeapilinter:
         path: ../hack/tools/bin/kube-api-linter.so
         description: kubeapilinter is the Kube-API-Linter and lints Kube like APIs based on API conventions and best practices.
-        original-url: sigs.k8s.io/kube-api-linter
         settings:
           linters:
-            # Disable all default linters and only enable specific ones.
-            # This prevents new default linters from causing unexpected failures
-            # when upgrading kube-api-linter.
-            disable:
-              - "*"
             enable:
-              - conditions
-              - duplicatemarkers
+              - forbiddenmarkers
               - maxlength
+              - minlength
+              - namingconventions
               - nobools
               - nomaps
+              - preferredmarkers
               - statussubresource
+            disable:
+              - statusoptional # This is legacy and not something we currently recommend.
+              - nonpointerstructs # This is intended for native types, not CRD types.
           lintersConfig:
             conditions:
               isFirstField: Warn
-              usePatchStrategy: Ignore
-              useProtobuf: Ignore
+              usePatchStrategy: Forbid # Variation from openshift/api as HyperShift only supports CRDs.
+              useProtobuf: Forbid # Variation from openshift/api as HyperShift only supports CRDs.
+            forbiddenmarkers:
+              markers:
+              - identifier: "openshift:enable:FeatureSets"
+              - identifier: "openshift:validation:FeatureSetAwareEnum"
+              - identifier: "openshift:validation:FeatureSetAwareXValidation"
+              - identifier: "kubebuilder:validation:UniqueItems"
+            optionalfields:
+              pointers:
+                preference: WhenRequired
+                policy: SuggestFix
+              omitEmpty:
+                # This will force omitempty on optional fields.
+                # This is in line with upstream guidance where optional fields should be omitted
+                # from the serialized output unless they are non-zero.
+                policy: SuggestFix
+              omitzero:
+                # This will force omitzero on optional struct fields.
+                # This means they can be omitted correctly and prevents the need for pointers to structs.
+                policy: SuggestFix
+            preferredmarkers:
+              markers:
+              - preferredIdentifier: "kubebuilder:validation:XValidation"
+                equivalentIdentifiers:
+                - identifier: "kubebuilder:validation:Pattern" # Use CEL expressions instead to allow more expressive error messages.
+            requiredfields:
+              pointers:
+                # This will force pointers when the field is required, but only when the zero
+                # value is a valid user choice, and has a semantic difference to being omitted (e.g. replicas allows 0).
+                policy: SuggestFix
+              omitempty:
+                # This will force omitempty on required fields.
+                # We do this so that the behaviour of not setting a value for the field is the same between
+                # both structured and unstructured clients.
+                policy: SuggestFix
+              omitzero:
+                # This will force omitzero on required struct fields.
+                # This means they can be omitted correctly and prevents the need for pointers to structs.
+                policy: SuggestFix
+            namingconventions:
+              conventions:
+              - name: nokind
+                violationMatcher: "^Kind$"
+                operation: Replacement
+                replacement: "Resource"
+                message: "API Kinds can be ambiguous and should be replaced with Resource"
+            noreferences:
+              policy: NoReferences
+            uniquemarkers:
+              customMarkers:
+              - identifier: "openshift:validation:FeatureGateAwareEnum"
+                attributes:
+                - featureGate
+                - requiredFeatureGate
+              - identifier: "openshift:validation:FeatureGateMaxItems"
+                attributes:
+                - featureGate
+                - requiredFeatureGate
+              - identifier: "openshift:validation:FeatureGateAwareXValidation"
+                attributes:
+                - featureGate
+                - requiredFeatureGate
+                - rule
   exclusions:
     warn-unused: true
     generated: lax

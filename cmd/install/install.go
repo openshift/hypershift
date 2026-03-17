@@ -27,6 +27,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/cmd/util"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	hyperapi "github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
@@ -98,6 +99,12 @@ type Options struct {
 	AWSPrivateCredentialsSecret               string
 	AWSPrivateCredentialsSecretKey            string
 	AWSPrivateRegion                          string
+	AzurePrivateCreds                         string
+	AzurePrivateCredentialsSecret             string
+	AzurePrivateCredentialsSecretKey          string
+	AzurePLSManagedIdentityClientID           string
+	AzurePLSSubscriptionID                    string
+	AzurePLSResourceGroup                     string
 	GCPProject                                string
 	GCPRegion                                 string
 	OIDCStorageProviderS3Region               string
@@ -112,6 +119,8 @@ type Options struct {
 	ExternalDNSTxtOwnerId                     string
 	ExternalDNSImage                          string
 	ExternalDNSGoogleProject                  string
+	ExternalDNSInterval                       string
+	ExternalDNSAWSZonesCacheDuration          string
 	AdditionalOperatorEnvVars                 map[string]string
 	EnableAdminRBACGeneration                 bool
 	EnableUWMTelemetryRemoteWrite             bool
@@ -162,9 +171,19 @@ func (o *Options) Validate() error {
 		if (o.GCPProject == "") != (o.GCPRegion == "") {
 			errs = append(errs, fmt.Errorf("--gcp-project and --gcp-region must be set together when --private-platform=%s", hyperv1.GCPPlatform))
 		}
+	case hyperv1.AzurePlatform:
+		if len(o.AzurePrivateCreds) > 0 && len(o.AzurePLSManagedIdentityClientID) > 0 {
+			errs = append(errs, fmt.Errorf("--azure-private-creds and --azure-pls-managed-identity-client-id are mutually exclusive"))
+		}
+		if len(o.AzurePrivateCredentialsSecret) > 0 && len(o.AzurePLSManagedIdentityClientID) > 0 {
+			errs = append(errs, fmt.Errorf("--azure-private-secret and --azure-pls-managed-identity-client-id are mutually exclusive"))
+		}
+		if len(o.AzurePLSManagedIdentityClientID) > 0 && len(o.AzurePLSSubscriptionID) == 0 {
+			errs = append(errs, fmt.Errorf("--azure-pls-subscription-id is required with --azure-pls-managed-identity-client-id"))
+		}
 	case hyperv1.NonePlatform:
 	default:
-		errs = append(errs, fmt.Errorf("--private-platform must be either %s, %s, or %s", hyperv1.AWSPlatform, hyperv1.GCPPlatform, hyperv1.NonePlatform))
+		errs = append(errs, fmt.Errorf("--private-platform must be either %s, %s, %s, or %s", hyperv1.AWSPlatform, hyperv1.AzurePlatform, hyperv1.GCPPlatform, hyperv1.NonePlatform))
 	}
 
 	if len(o.OIDCStorageProviderS3CredentialsSecret) > 0 && len(o.OIDCStorageProviderS3Credentials) > 0 {
@@ -190,6 +209,19 @@ func (o *Options) Validate() error {
 		}
 		if len(o.ExternalDNSDomainFilter) == 0 {
 			errs = append(errs, fmt.Errorf("--external-dns-domain-filter is required with --external-dns-provider"))
+		}
+		if len(o.ExternalDNSInterval) > 0 {
+			if _, err := time.ParseDuration(o.ExternalDNSInterval); err != nil {
+				errs = append(errs, fmt.Errorf("--external-dns-interval is not a valid duration: %w", err))
+			}
+		}
+		if len(o.ExternalDNSAWSZonesCacheDuration) > 0 {
+			if _, err := time.ParseDuration(o.ExternalDNSAWSZonesCacheDuration); err != nil {
+				errs = append(errs, fmt.Errorf("--external-dns-aws-zones-cache-duration is not a valid duration: %w", err))
+			}
+			if o.ExternalDNSProvider != "aws" {
+				errs = append(errs, fmt.Errorf("--external-dns-aws-zones-cache-duration is only effective with --external-dns-provider=aws"))
+			}
 		}
 	}
 	if o.HyperShiftImage != HyperShiftImage && len(o.ImageRefsFile) > 0 {
@@ -293,11 +325,17 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", opts.ExcludeEtcdManifests, "Leave out etcd manifests")
 	cmd.PersistentFlags().Var(&opts.PlatformMonitoring, "platform-monitoring", "Select an option for enabling platform cluster monitoring. Valid values are: None, OperatorOnly, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
-	cmd.PersistentFlags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\", \"GCP\", or \"None\")")
+	cmd.PersistentFlags().StringVar(&opts.PrivatePlatform, "private-platform", opts.PrivatePlatform, "Platform on which private clusters are supported by this operator (supports \"AWS\", \"Azure\", \"GCP\", or \"None\")")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCreds, "aws-private-creds", opts.AWSPrivateCreds, "Path to an AWS credentials file with privileges sufficient to manage private cluster resources")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecret, "aws-private-secret", "", "Name of an existing secret containing the AWS private link credentials.")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateCredentialsSecretKey, "aws-private-secret-key", opts.AWSPrivateCredentialsSecretKey, "Name of the secret key containing the AWS private link credentials.")
 	cmd.PersistentFlags().StringVar(&opts.AWSPrivateRegion, "aws-private-region", opts.AWSPrivateRegion, "AWS region where private clusters are supported by this operator")
+	cmd.PersistentFlags().StringVar(&opts.AzurePrivateCreds, "azure-private-creds", opts.AzurePrivateCreds, "Path to an Azure credentials file with privileges sufficient to manage private cluster resources")
+	cmd.PersistentFlags().StringVar(&opts.AzurePrivateCredentialsSecret, "azure-private-secret", "", "Name of an existing secret containing the Azure private link credentials")
+	cmd.PersistentFlags().StringVar(&opts.AzurePrivateCredentialsSecretKey, "azure-private-secret-key", "credentials", "Name of the secret key containing the Azure private link credentials")
+	cmd.PersistentFlags().StringVar(&opts.AzurePLSManagedIdentityClientID, "azure-pls-managed-identity-client-id", "", "Client ID of the managed identity for Azure Private Link Service operations (alternative to credential file; uses Azure Workload Identity federation)")
+	cmd.PersistentFlags().StringVar(&opts.AzurePLSSubscriptionID, "azure-pls-subscription-id", "", "Azure subscription ID for Private Link Service operations (required with --azure-pls-managed-identity-client-id)")
+	cmd.PersistentFlags().StringVar(&opts.AzurePLSResourceGroup, "azure-pls-resource-group", "", "Azure resource group of the management cluster where Private Link Services and load balancers reside (required with --private-platform=Azure for self-managed clusters)")
 	cmd.PersistentFlags().StringVar(&opts.GCPProject, "gcp-project", "", "GCP project ID for the operator when using --private-platform=GCP")
 	cmd.PersistentFlags().StringVar(&opts.GCPRegion, "gcp-region", "", "GCP region for the operator when using --private-platform=GCP")
 	cmd.PersistentFlags().StringVar(&opts.OIDCStorageProviderS3Region, "oidc-storage-provider-s3-region", "", "Region of the OIDC bucket. Required for AWS guest clusters")
@@ -312,6 +350,8 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSTxtOwnerId, "external-dns-txt-owner-id", "", "external-dns TXT registry owner ID.")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSImage, "external-dns-image", opts.ExternalDNSImage, "Image to use for external-dns")
 	cmd.PersistentFlags().StringVar(&opts.ExternalDNSGoogleProject, "external-dns-google-project", "", "Google Cloud project ID for DNS zone (optional for GCP provider; falls back to EXTERNAL_DNS_GOOGLE_PROJECT env var or GCP metadata server)")
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSInterval, "external-dns-interval", "", fmt.Sprintf("Polling interval for external-dns DNS record reconciliation (default: %s)", assets.DefaultExternalDNSInterval))
+	cmd.PersistentFlags().StringVar(&opts.ExternalDNSAWSZonesCacheDuration, "external-dns-aws-zones-cache-duration", "", fmt.Sprintf("Cache duration for AWS Route53 hosted zones list; only effective with AWS provider (default: %s)", assets.DefaultExternalDNSAWSZonesCacheDuration))
 	cmd.PersistentFlags().BoolVar(&opts.EnableAdminRBACGeneration, "enable-admin-rbac-generation", opts.EnableAdminRBACGeneration, "Generate RBAC manifests for hosted cluster admins")
 	cmd.PersistentFlags().StringVar(&opts.ImageRefsFile, "image-refs", opts.ImageRefsFile, "Image references to user in Hypershift installation")
 	cmd.PersistentFlags().StringVar(&opts.AdditionalTrustBundle, "additional-trust-bundle", opts.AdditionalTrustBundle, "Path to a file with user CA bundle")
@@ -684,6 +724,12 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 	monitoringObjs := setupMonitoring(opts, operatorNamespace)
 	objects = append(objects, monitoringObjs...)
 
+	// Setup Shared Ingress resources (ARO HCP only)
+	if opts.ManagedService == hyperv1.AroHCP {
+		sharedIngressObjs := setupSharedIngress()
+		objects = append(objects, sharedIngressObjs...)
+	}
+
 	crds, err = setupCRDs(ctx, client, opts, operatorNamespace, operatorService)
 	if err != nil {
 		return nil, nil, err
@@ -887,6 +933,55 @@ func setupMonitoring(opts Options, operatorNamespace *corev1.Namespace) []crclie
 	return objects
 }
 
+// setupSharedIngress returns the shared ingress resources that need to be included
+// in the install manifests so they are cleaned up during uninstallation.
+// The namespace deletion cascades to all namespaced resources (router deployment,
+// service, PDB, network policy, etc.). Cluster-scoped resources (ClusterRole,
+// ClusterRoleBinding) must be explicitly included.
+func setupSharedIngress() []crclient.Object {
+	objects := make([]crclient.Object, 0, 3)
+
+	namespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: sharedingress.RouterNamespace,
+			Labels: map[string]string{
+				"hypershift.openshift.io/component": "shared-ingress",
+			},
+		},
+	}
+	objects = append(objects, namespace)
+
+	// ClusterRole and ClusterRoleBinding are deletion markers only; actual RBAC rules
+	// are populated by the SharedIngressReconciler at runtime via createOrUpdate.
+	clusterRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: sharedingress.ConfigGeneratorName,
+		},
+	}
+	objects = append(objects, clusterRole)
+
+	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: sharedingress.ConfigGeneratorName,
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     sharedingress.ConfigGeneratorName,
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "router",
+				Namespace: sharedingress.RouterNamespace,
+			},
+		},
+	}
+	objects = append(objects, clusterRoleBinding)
+
+	return objects
+}
+
 // setupOperatorResources creates the operator Deployment and Service resources.
 //
 // Returns the Service and a list of resources to apply.
@@ -1020,15 +1115,17 @@ func setupExternalDNS(opts Options, operatorNamespace *corev1.Namespace) ([]crcl
 	}
 
 	externalDNSDeployment := assets.ExternalDNSDeployment{
-		Namespace:         operatorNamespace,
-		Image:             opts.ExternalDNSImage,
-		ServiceAccount:    externalDNSServiceAccount,
-		Provider:          assets.ExternalDNSProvider(opts.ExternalDNSProvider),
-		DomainFilter:      opts.ExternalDNSDomainFilter,
-		CredentialsSecret: externalDNSSecret,
-		TxtOwnerId:        opts.ExternalDNSTxtOwnerId,
-		Proxy:             proxy,
-		GoogleProject:     opts.ExternalDNSGoogleProject,
+		Namespace:             operatorNamespace,
+		Image:                 opts.ExternalDNSImage,
+		ServiceAccount:        externalDNSServiceAccount,
+		Provider:              assets.ExternalDNSProvider(opts.ExternalDNSProvider),
+		DomainFilter:          opts.ExternalDNSDomainFilter,
+		CredentialsSecret:     externalDNSSecret,
+		TxtOwnerId:            opts.ExternalDNSTxtOwnerId,
+		Proxy:                 proxy,
+		GoogleProject:         opts.ExternalDNSGoogleProject,
+		Interval:              opts.ExternalDNSInterval,
+		AWSZonesCacheDuration: opts.ExternalDNSAWSZonesCacheDuration,
 	}.Build()
 	objects = append(objects, externalDNSDeployment)
 

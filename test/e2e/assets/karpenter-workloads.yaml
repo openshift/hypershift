@@ -25,7 +25,7 @@ spec:
         runAsGroup: 3000
         fsGroup: 2000
       containers:
-      - image: quay.io/openshift/origin-pod:4.19.0
+      - image: quay.io/openshift/origin-pod:4.22.0
         name: web-app
         resources:
           requests:

@@ -1,4 +1,10 @@
 aliases:
+  api-approvers:
+    - enxebre
+    - csrwng
+    - sjenning
+    - joelspeed
+    - everettraven
   tech-leads:
     - enxebre
     - csrwng

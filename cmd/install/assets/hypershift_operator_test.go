@@ -484,3 +484,107 @@ func TestHyperShiftOperatorDeployment_Build(t *testing.T) {
 		})
 	}
 }
+
+func TestExternalDNSDeployment_Build(t *testing.T) {
+	baseDeployment := func() ExternalDNSDeployment {
+		return ExternalDNSDeployment{
+			Namespace: &corev1.Namespace{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "hypershift",
+				},
+			},
+			Image: "external-dns:latest",
+			ServiceAccount: &corev1.ServiceAccount{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "external-dns",
+				},
+			},
+			Provider:     AWSExternalDNSProvider,
+			DomainFilter: "example.com",
+			CredentialsSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "dns-creds",
+				},
+			},
+			TxtOwnerId: "test-owner",
+		}
+	}
+
+	tests := map[string]struct {
+		modify     func(*ExternalDNSDeployment)
+		assertArgs func(*GomegaWithT, []string)
+	}{
+		"When no interval is specified it should use the default 1m interval": {
+			modify: func(d *ExternalDNSDeployment) {},
+			assertArgs: func(g *GomegaWithT, args []string) {
+				g.Expect(args).To(ContainElement("--interval=" + DefaultExternalDNSInterval))
+			},
+		},
+		"When a custom interval is specified it should use the custom interval": {
+			modify: func(d *ExternalDNSDeployment) {
+				d.Interval = "5m"
+			},
+			assertArgs: func(g *GomegaWithT, args []string) {
+				g.Expect(args).To(ContainElement("--interval=5m"))
+				g.Expect(args).NotTo(ContainElement("--interval=" + DefaultExternalDNSInterval))
+			},
+		},
+		"When no AWS zones cache duration is specified it should use the default 1h for AWS provider": {
+			modify: func(d *ExternalDNSDeployment) {},
+			assertArgs: func(g *GomegaWithT, args []string) {
+				g.Expect(args).To(ContainElement("--aws-zones-cache-duration=" + DefaultExternalDNSAWSZonesCacheDuration))
+			},
+		},
+		"When a custom AWS zones cache duration is specified it should use the custom value": {
+			modify: func(d *ExternalDNSDeployment) {
+				d.AWSZonesCacheDuration = "10m"
+			},
+			assertArgs: func(g *GomegaWithT, args []string) {
+				g.Expect(args).To(ContainElement("--aws-zones-cache-duration=10m"))
+				g.Expect(args).NotTo(ContainElement("--aws-zones-cache-duration=" + DefaultExternalDNSAWSZonesCacheDuration))
+			},
+		},
+		"When both custom interval and AWS zones cache duration are specified it should use both custom values": {
+			modify: func(d *ExternalDNSDeployment) {
+				d.Interval = "10m"
+				d.AWSZonesCacheDuration = "30m"
+			},
+			assertArgs: func(g *GomegaWithT, args []string) {
+				g.Expect(args).To(ContainElement("--interval=10m"))
+				g.Expect(args).To(ContainElement("--aws-zones-cache-duration=30m"))
+			},
+		},
+		"When Azure provider is used it should not include AWS zones cache duration arg": {
+			modify: func(d *ExternalDNSDeployment) {
+				d.Provider = AzureExternalDNSProvider
+			},
+			assertArgs: func(g *GomegaWithT, args []string) {
+				g.Expect(args).To(ContainElement("--interval=" + DefaultExternalDNSInterval))
+				for _, arg := range args {
+					g.Expect(arg).NotTo(HavePrefix("--aws-zones-cache-duration"))
+				}
+			},
+		},
+		"When GCP provider is used it should not include AWS zones cache duration arg": {
+			modify: func(d *ExternalDNSDeployment) {
+				d.Provider = GCPExternalDNSProvider
+			},
+			assertArgs: func(g *GomegaWithT, args []string) {
+				g.Expect(args).To(ContainElement("--interval=" + DefaultExternalDNSInterval))
+				for _, arg := range args {
+					g.Expect(arg).NotTo(HavePrefix("--aws-zones-cache-duration"))
+				}
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			d := baseDeployment()
+			test.modify(&d)
+			deployment := d.Build()
+			test.assertArgs(g, deployment.Spec.Template.Spec.Containers[0].Args)
+		})
+	}
+}

@@ -2780,7 +2780,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 ## Cilium
 ### Deployment
 
-In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
+In this scenario we are using the Cilium version v1.15.1 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
@@ -2804,7 +2804,7 @@ In this scenario we are using the Cilium version v1.14.5 which is the last one a
     ~~~sh
     #!/bin/bash
 
-    version="1.14.5"
+    version="1.15.1"
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-03-cilium-ciliumconfigs-crd.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00000-cilium-namespace.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00001-cilium-olm-serviceaccount.yaml
@@ -3059,7 +3059,7 @@ In order for Cilium connectivity test pods to run on OpenShift, a simple custom 
   ~~~
 
   ~~~sh
-  version="1.14.5"
+  version="1.15.1"
   oc apply -n cilium-test -f https://raw.githubusercontent.com/cilium/cilium/${version}/examples/kubernetes/connectivity-check/connectivity-check.yaml
   ~~~
 
@@ -3873,35 +3873,14 @@ NodePools represent homogeneous groups of Nodes with a common lifecycle manageme
 
 ## Upgrades and data propagation
 
-There are three main areas that will trigger rolling upgrades across the Nodes when they are changed:
-
-- OCP Version dictated by `spec.release`.
-- Machine configuration via `spec.config`, a knob for `machineconfiguration.openshift.io`.
-- Platform specific changes via `.spec.platform`. Some fields might be immutable whereas other might allow changes e.g. aws instance type.
-
-Some cluster config changes (e.g. proxy, certs) may also trigger a rolling upgrade if the change needs to be propagated to the node.
-
-NodePools support two types of rolling upgrades: Replace and InPlace, specified via UpgradeType.
+NodePools support two types of rolling upgrades: **Replace** and **InPlace**, specified via UpgradeType.
 
 !!! important
 
-    You cannot switch the UpgradeType once the NodePool is created. You must specify UpgradeType during NodePool 
+    You cannot switch the UpgradeType once the NodePool is created. You must specify UpgradeType during NodePool
     creation. Modifying the field after the fact may cause nodes to become unmanaged.
 
-### Replace Upgrades
-
-This will create new instances in the new version while removing old nodes in a rolling fashion. This is usually a good choice in cloud environments where this level of immutability is cost effective.
-
-### InPlace Upgrades
-
-This will directly perform updates to the Operating System of the existing instances. This is usually a good choice for environments where the infrastructure constraints are higher e.g. bare metal.
-
-When you are using in place upgrades, Platform specific changes will only affect upcoming new Nodes.
-
-### Data propagation
-
-There some fields which will only propagate in place regardless of the upgrade strategy that is set.
-`.spec.nodeLabels` and `.spec.taints` will be propagated only to new upcoming machines.
+For a comprehensive reference on what triggers a rollout, upgrade strategies, rollout lifecycle, and monitoring, see NodePool Rollouts.
 
 
 ## Triggering Upgrades examples
@@ -6819,7 +6798,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 ## Cilium
 ### Deployment
 
-In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
+In this scenario we are using the Cilium version v1.15.1 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
@@ -6843,7 +6822,7 @@ In this scenario we are using the Cilium version v1.14.5 which is the last one a
     ~~~sh
     #!/bin/bash
 
-    version="1.14.5"
+    version="1.15.1"
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-03-cilium-ciliumconfigs-crd.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00000-cilium-namespace.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00001-cilium-olm-serviceaccount.yaml
@@ -7098,7 +7077,7 @@ In order for Cilium connectivity test pods to run on OpenShift, a simple custom 
   ~~~
 
   ~~~sh
-  version="1.14.5"
+  version="1.15.1"
   oc apply -n cilium-test -f https://raw.githubusercontent.com/cilium/cilium/${version}/examples/kubernetes/connectivity-check/connectivity-check.yaml
   ~~~
 
@@ -10080,13 +10059,14 @@ This document describes the AI-assisted CI jobs that help automate issue resolut
 
 ## Overview
 
-HyperShift uses two AI-assisted CI jobs powered by Claude Code to help with development workflows:
+HyperShift uses AI-assisted CI jobs powered by Claude Code to help with development workflows:
 
 | Job | Purpose | Schedule |
 |-----|---------|----------|
 | `periodic-jira-agent` | Analyzes Jira issues and creates draft PRs with fixes | Weekly on Mondays at 8:30 AM UTC |
 | `periodic-review-agent` | Addresses PR review comments on agent-created PRs | Every 3 hours (8:00-23:00 UTC) daily |
 | `address-review-comments` | On-demand job to address review comments on a single PR | Triggered via `/test address-review-comments` |
+| `periodic-hypershift-dependabot-triage` | Consolidates open dependabot PRs into a single weekly PR | Weekly on Fridays at 12:00 UTC |
 
 ### Usage Scope
 
@@ -10280,6 +10260,100 @@ flowchart TD
 
 ---
 
+## Dependabot Triage Agent
+
+### Overview
+
+The Dependabot Triage Agent (`periodic-hypershift-dependabot-triage`) automatically consolidates open dependabot PRs into a single weekly pull request, reducing noise and simplifying dependency updates.
+
+- **Job name**: `periodic-hypershift-dependabot-triage`
+- **Schedule**: Weekly on Fridays at 12:00 UTC (`0 12 * * 5`)
+- **Process timeout**: 2 hours
+- **Max agentic turns**: 100
+- **Jira**: CNTRLPLANE-2588
+- **Prow config PR**: openshift/release#73790
+
+### How It Works
+
+1. **Setup**: Verifies Claude Code CLI availability
+2. **PR Discovery**: Queries all open dependabot PRs via `gh pr list` on the `openshift/hypershift` repository
+3. **Filtering**: Excludes PRs that bump `k8s.io` or `sigs.k8s.io` dependencies (these are managed manually as part of coordinated Kubernetes rebases)
+4. **Processing**: Invokes Claude Code to process each PR individually:
+      - Cherry-picks commits onto a consolidation branch
+      - Runs `make verify` and `make test` after each PR
+      - Resets and skips any PR that fails validation
+5. **Commit Reorganization** (deterministic bash, not LLM): Flattens all cherry-pick commits via `git reset` and reorganizes into logical groups:
+      1. Root `go.mod`/`go.sum`
+      2. Root `vendor/`
+      3. `api/go.mod`/`api/go.sum`
+      4. `api/vendor/`
+      5. `hack/tools/go.mod`/`hack/tools/go.sum`
+      6. `hack/tools/vendor/`
+      7. Regenerated CRD assets (`cmd/install/assets/`)
+      8. Remaining generated files
+      Empty groups are skipped automatically.
+6. **Final Validation**: Runs two-pass `make verify` and `make test` on the consolidated branch
+7. **Output**: Creates a single consolidated PR from `hypershift-community:fix/weekly-dependabot-consolidation` to `openshift/hypershift`
+8. **Reporting**: Generates an HTML report with token usage, cost breakdown, and detailed output
+
+### Data Flow
+
+```mermaid
+flowchart TD
+    subgraph "Prow CI Environment"
+        A[Periodic Job Trigger<br/>Weekly Friday 12:00 UTC] --> B[Setup Step]
+        B --> C[Process Step]
+        C --> D[Report Step]
+
+        subgraph "Process Step"
+            C --> E[Generate GitHub App Tokens]
+            E --> F[Clone Fork<br/>hypershift-community/hypershift]
+            F --> G[Query Open Dependabot PRs]
+            G --> H{PRs Found?}
+            H -->|No| I[Exit Successfully]
+            H -->|Yes| J[Filter Out k8s.io Bumps]
+            J --> K[For Each PR]
+            K --> L[Cherry-pick + Validate<br/>make verify & make test]
+            L --> M{Passed?}
+            M -->|Yes| N[Keep on Branch]
+            M -->|No| O[Reset & Skip]
+            N --> P{More PRs?}
+            O --> P
+            P -->|Yes| K
+            P -->|No| Q[Reorganize Commits<br/>Deterministic Bash]
+            Q --> R[Final Validation<br/>make verify & make test]
+            R --> S[Create PR]
+        end
+    end
+
+    subgraph "External Systems"
+        G <--> GH[(GitHub API<br/>github.com)]
+        L <--> CLAUDE[Claude API<br/>via Vertex AI]
+        S <--> FORK[(GitHub Fork<br/>hypershift-community)]
+        S <--> UPSTREAM[(GitHub Upstream<br/>openshift/hypershift)]
+    end
+```
+
+### Configuration
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| Schedule | `0 12 * * 5` | Fridays at 12:00 UTC (7:00 AM ET) |
+| Process timeout | 2 hours | Maximum time for the process step |
+| Max Claude turns | 100 | Maximum agentic turns per run |
+| Excluded deps | `k8s.io`, `sigs.k8s.io` | Dependencies managed via manual Kubernetes rebases |
+
+### What Gets Excluded
+
+Dependabot PRs bumping the following module prefixes are **automatically skipped**:
+
+- `k8s.io/*` - Core Kubernetes libraries
+- `sigs.k8s.io/*` - Kubernetes SIG libraries
+
+These dependencies are updated manually as part of coordinated Kubernetes version rebases to ensure compatibility across the full dependency tree.
+
+---
+
 ## User Guide
 
 ### Submitting Issues for Processing
@@ -10296,9 +10370,10 @@ The issue will be picked up on the next weekly run (Mondays at 8:30 AM UTC).
 
 ### Viewing AI-Generated Output
 
-Track PRs created by the Jira Agent:
+Track PRs created by the AI agents:
 
-- **PR List**: github.com/openshift/hypershift/pulls?q=is:pr+author:app/hypershift-jira-solve-ci
+- **Jira Agent PRs**: github.com/openshift/hypershift/pulls?q=is:pr+author:app/hypershift-jira-solve-ci
+- **Dependabot Triage PRs**: github.com/openshift/hypershift/pulls?q=is:pr+head:fix/weekly-dependabot-consolidation
 
 PRs are created as **drafts** and require human review before merging.
 
@@ -10325,7 +10400,7 @@ This runs the review agent for that specific PR only.
 
 - **AI may produce incorrect or incomplete solutions** - always review carefully
 - **Complex issues may not be fully addressed** - multi-faceted problems may need human intervention
-- **Rate limited**: 1 issue per weekly run (jira-agent), 10 PRs per run (review-agent)
+- **Rate limited**: 1 issue per weekly run (jira-agent), 10 PRs per run (review-agent), all non-k8s dependabot PRs per run (dependabot-triage)
 - **Cannot access private resources** - no access to internal systems beyond Jira/GitHub
 - **Cannot execute destructive operations** - no ability to delete resources or force-push
 - **Maximum agentic turns**: 100 per issue (jira-agent), 100 per PR (review-agent)
@@ -14271,6 +14346,7 @@ By default, the backup includes the following resources. The exact set of resour
 
 **Additional Resources (always included):**
 - Routes (`routes.route.openshift.io`), ClusterDeployments (`clusterdeployments.hive.openshift.io`)
+- NMStateConfig (`nmstateconfigs.agent-install.openshift.io`)
 
 **Platform-Specific Resources (automatically detected):**
 
@@ -14340,6 +14416,7 @@ The following table lists all available resource types for the `--included-resou
 | | `machines.cluster.x-k8s.io` | Machine resources |
 | **OpenShift** | `routes.route.openshift.io` | OpenShift Routes |
 | | `clusterdeployments.hive.openshift.io` | ClusterDeployment resources |
+| | `nmstateconfigs.agent-install.openshift.io` | NMStateConfig resources |
 
 > **Platform Detection**: When using default resources (no `--included-resources` flag), only the platform-specific resources matching your HostedCluster's platform will be included automatically.
 
@@ -22160,7 +22237,7 @@ The HostedCluster deployment will continue, at this point the SDN is running.
 ## Cilium
 ### Deployment
 
-In this scenario we are using the Cilium version v1.14.5 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
+In this scenario we are using the Cilium version v1.15.1 which is the last one at the time of this writing. The steps followed rely on the docs by Cilium project to deploy Cilium on OpenShift.
 
 1. Create a `HostedCluster` and set its `HostedCluster.spec.networking.networkType` to `Other`.
 
@@ -22184,7 +22261,7 @@ In this scenario we are using the Cilium version v1.14.5 which is the last one a
     ~~~sh
     #!/bin/bash
 
-    version="1.14.5"
+    version="1.15.1"
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-03-cilium-ciliumconfigs-crd.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00000-cilium-namespace.yaml
     oc apply -f https://raw.githubusercontent.com/isovalent/olm-for-cilium/main/manifests/cilium.v${version}/cluster-network-06-cilium-00001-cilium-olm-serviceaccount.yaml
@@ -22439,7 +22516,7 @@ In order for Cilium connectivity test pods to run on OpenShift, a simple custom 
   ~~~
 
   ~~~sh
-  version="1.14.5"
+  version="1.15.1"
   oc apply -n cilium-test -f https://raw.githubusercontent.com/cilium/cilium/${version}/examples/kubernetes/connectivity-check/connectivity-check.yaml
   ~~~
 
@@ -22664,7 +22741,7 @@ HyperShift exposes available upgrades in HostedCluster.Status by bubbling up the
 ## NodePools
 `.spec.release` dictates the version of any particular NodePool.
 
-A NodePool will perform a Replace/InPlace rolling upgrade according to `.spec.management.upgradeType`. See NodePool Upgrades for details.
+A NodePool will perform a Replace/InPlace rolling upgrade according to `.spec.management.upgradeType`. See NodePool Rollouts for details on what triggers a rollout and how it is executed.
 
 
 ---
@@ -28886,6 +28963,172 @@ The following manifest sets `runc` as the default runtime.
 
 ---
 
+## Source: docs/content/recipes/common/spo-audit-logging-seccomp.md
+
+# Configuring Security Profiles Operator (SPO) in Hosted Control Planes
+
+The Security Profiles Operator (SPO) enables capturing `exec`, `rsh`, and `debug` sessions using advanced audit logging combined with seccomp log mode. The standard OCP documentation assumes a self-managed cluster where node-level components like CRI-O can be configured directly (e.g., `--privileged-seccomp-profile`). In a Hosted Control Plane (HCP) environment, the control plane and worker infrastructure are separated, so the configuration steps differ.
+
+This recipe covers the HCP-specific steps required to set up SPO with audit logging and seccomp log mode.
+
+## Prerequisites
+
+- A running HostedCluster managed by HyperShift
+- `oc` CLI with access to both the management cluster and the hosted cluster
+- Familiarity with the SPO documentation for standard OCP
+
+## Step 1: Configure the Audit Log Profile
+
+SPO requires an audit log profile that captures request bodies (e.g., `WriteRequestBodies` or `AllRequestBodies`). In HCP, the Kubernetes API Server (KAS) configuration is managed through the HostedCluster resource on the management cluster.
+
+Patch the HostedCluster to set the desired audit profile:
+
+```bash
+oc patch hostedcluster <hosted_cluster_name> \
+  -n <hosted_cluster_namespace> \
+  --type=merge \
+  -p '{"spec": {"configuration": {"apiServer": {"audit": {"profile": "AllRequestBodies"}}}}}'
+```
+
+!!! note
+    Replace `<hosted_cluster_name>` and `<hosted_cluster_namespace>` with the name and namespace of your HostedCluster resource on the management cluster.
+
+!!! tip
+    You can also use `WriteRequestBodies` if you only need to capture write operations. `AllRequestBodies` captures both read and write request bodies and generates more log data.
+
+After patching, the control plane operator will roll out the KAS pods with the updated audit configuration. You can monitor the rollout:
+
+```bash
+oc get pods -n <hosted_control_plane_namespace> -l app=kube-apiserver -w
+```
+
+## Step 2: Understanding Audit Log Location in HCP
+
+In a standard OCP cluster, audit logs are stored on the control plane nodes and are directly accessible by components running on the same cluster. In HCP, the architecture is fundamentally different: the KAS runs as pods on the **management cluster**, while SPO runs on the **hosted (guest) cluster**.
+
+!!! warning "Key Architectural Difference"
+    The KAS audit logs are **not accessible from the guest cluster**. The KAS pods reside in the HostedControlPlane namespace on the management cluster, and there is no direct path from the guest cluster's data plane to those logs. SPO, running on the guest cluster, cannot natively read the KAS audit logs the way it does on a standard OCP cluster.
+
+### Viewing Audit Logs from the Management Cluster
+
+An administrator with access to the management cluster can view the audit logs directly:
+
+```bash
+oc get pods -n <hosted_control_plane_namespace> -l app=kube-apiserver
+```
+
+```bash
+oc logs -n <hosted_control_plane_namespace> <kas_pod_name> -c kube-apiserver | grep audit
+```
+
+!!! note
+    The `<hosted_control_plane_namespace>` is typically `<hosted_cluster_namespace>-<hosted_cluster_name>` on the management cluster.
+
+### Making Audit Logs Available to SPO
+
+Since SPO on the guest cluster cannot directly access the KAS audit logs on the management cluster, you need to establish a mechanism to forward or expose those logs. Some approaches to consider:
+
+- **Log forwarding via ClusterLogForwarder**: Configure log forwarding on the management cluster to send KAS audit logs to a centralized logging backend (e.g., Elasticsearch, Loki, Splunk). SPO and security teams can then consume audit data from the shared logging infrastructure.
+- **Audit Log Persistence with external access**: Enable the Audit Log Persistence feature to store audit logs in PersistentVolumes on the management cluster, then export or sync them to a location accessible to the guest cluster or to your security tooling.
+- **Audit webhook backend**: Configure the KAS audit webhook backend to send audit events to an external endpoint that SPO or your security infrastructure can consume. This can be configured via the HostedCluster's `spec.configuration.apiServer.audit` settings.
+
+!!! tip
+    The specific approach depends on your organization's logging architecture and security requirements. In all cases, the audit logs must be forwarded or exported from the management cluster since the guest cluster has no direct access to the KAS pods.
+
+## Step 3: Configure Worker Nodes for Seccomp Logging
+
+SPO requires CRI-O configuration on worker nodes to enable the `--privileged-seccomp-profile` or seccomp log mode. In HCP, worker node configuration is applied via MachineConfig through the NodePool.
+
+### Creating the MachineConfig for Seccomp
+
+- Create a CRI-O configuration file that enables the seccomp log annotation:
+
+```bash
+cat <<EOF > crio-seccomp-config.conf
+[crio.runtime]
+seccomp_use_default_when_empty = false
+
+[crio.runtime.runtimes.runc]
+allowed_annotations = [
+    "io.containers.trace-syscall",
+]
+EOF
+```
+
+- Get the base64 encoding of the file content:
+
+```bash
+export SECCOMP_CONFIG_HASH=$(cat crio-seccomp-config.conf | base64 -w0)
+```
+
+- Create the MachineConfig manifest:
+
+```bash
+cat <<EOF > mc-seccomp-logging.yaml
+apiVersion: machineconfiguration.openshift.io/v1
+kind: MachineConfig
+metadata:
+  name: 60-seccomp-logging
+spec:
+  config:
+    ignition:
+      version: 3.2.0
+    storage:
+      files:
+      - contents:
+          source: data:text/plain;charset=utf-8;base64,${SECCOMP_CONFIG_HASH}
+        mode: 420
+        path: /etc/crio/crio.conf.d/99-seccomp-logging.conf
+EOF
+```
+
+- Create a ConfigMap containing the MachineConfig in the HostedCluster namespace:
+
+```bash
+oc create -n <hosted_cluster_namespace> configmap mcp-seccomp-logging \
+  --from-file config=mc-seccomp-logging.yaml
+```
+
+- Patch the NodePool to apply the MachineConfig:
+
+```bash
+oc patch -n <hosted_cluster_namespace> nodepool <nodepool_name> \
+  --type=json \
+  -p='[{"op": "add", "path": "/spec/config", "value": [{"name": "mcp-seccomp-logging"}]}]'
+```
+
+!!! warning
+    If your NodePool already has existing config entries in `/spec/config`, use `"op": "add", "path": "/spec/config/-"` instead to append rather than replace the existing configuration.
+
+!!! note
+    After patching the NodePool, worker nodes will be rolled out with the new CRI-O configuration. This may cause temporary disruption as nodes are drained and replaced. For more details on MachineConfig management in HCP, see the Configure Machines documentation.
+
+## Step 4: Install and Configure SPO
+
+Once the audit profile and worker node seccomp configuration are in place, install and configure the Security Profiles Operator on the hosted cluster following the standard SPO installation guide.
+
+The SPO installation itself is the same as on a standard OCP cluster since it runs on the hosted cluster's data plane.
+
+## Summary of Differences from Standard OCP
+
+| Configuration | Standard OCP | HCP |
+|---|---|---|
+| Audit log profile | Configured via `openshift-kube-apiserver` operator | Patch HostedCluster resource on management cluster |
+| Audit log location | Control plane node filesystem (accessible by SPO) | KAS pod logs in HostedControlPlane namespace on management cluster (**not accessible from guest cluster**) |
+| Audit log access for SPO | Direct access on the same cluster | Requires log forwarding, audit webhook, or external export from management cluster |
+| CRI-O seccomp config | MachineConfigPool on cluster nodes | MachineConfig via ConfigMap + NodePool patch |
+| SPO installation | Standard OLM install | Same (runs on hosted cluster data plane) |
+
+## Related Documentation
+
+- Audit Log Persistence - Persistent storage for KAS audit logs in HCP
+- Configure Machines - Applying MachineConfig via NodePool
+- Replace CRI-O Runtime - Another recipe for CRI-O configuration in HCP
+- OCP Security Profiles Operator Documentation - Full SPO reference
+
+
+---
+
 ## Source: docs/content/recipes/index.md
 
 ---
@@ -29452,7 +29695,8 @@ AutoNode
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoNode specifies the configuration for the autoNode feature.</p>
+<p>autoNode specifies the configuration for automatic node provisioning and lifecycle management.
+When set, the provisioner(e.g. Karpenter) will be used to provision nodes for targeted workloads.</p>
 </td>
 </tr>
 <tr>
@@ -30821,6 +31065,25 @@ created in a different AWS account and is shared with the AWS account where the 
 will be created.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>terminationHandlerQueueURL</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>terminationHandlerQueueURL specifies the SQS queue URL for EC2 spot interruption events.
+This is required when using spot instances (marketType: Spot) in NodePools to enable
+graceful handling of spot instance terminations.</p>
+<p>The queue should be configured to receive EC2 Spot Instance Interruption Warnings
+and EC2 Instance Rebalance Recommendations via EventBridge rules.
+The AWS Node Termination Handler will poll this queue and cordon/drain nodes
+before they are terminated, providing a best effort for graceful shutdown.</p>
+<p>Supports both standard and FIFO queues (FIFO queues end with .fifo suffix).</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###AWSPlatformStatus { #hypershift.openshift.io/v1beta1.AWSPlatformStatus }
@@ -31806,7 +32069,7 @@ string
 <a href="#hypershift.openshift.io/v1beta1.HostedControlPlaneSpec">HostedControlPlaneSpec</a>)
 </p>
 <p>
-<p>We expose here internal configuration knobs that won&rsquo;t be exposed to the service.</p>
+<p>AutoNode specifies the configuration for automatic node provisioning and lifecycle management.</p>
 </p>
 <table>
 <thead>
@@ -31818,7 +32081,7 @@ string
 <tbody>
 <tr>
 <td>
-<code>provisionerConfig</code></br>
+<code>provisionerConfig,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">
 ProvisionerConfig
@@ -31826,7 +32089,7 @@ ProvisionerConfig
 </em>
 </td>
 <td>
-<p>provisionerConfig is the implementation used for Node auto provisioning.</p>
+<p>provisionerConfig specifies the provisioner used for automatic node management.</p>
 </td>
 </tr>
 </tbody>
@@ -33043,11 +33306,12 @@ MarketType
 </td>
 <td>
 <em>(Optional)</em>
-<p>marketType specifies the market type of the CapacityReservation for the EC2 instances. Valid values are OnDemand, CapacityBlocks and omitted:
+<p>marketType specifies the market type of the CapacityReservation for the EC2 instances.</p>
+<p>Deprecated: Use placement.marketType instead. This field is maintained for backward compatibility.
+When both placement.marketType and capacityReservation.marketType are set, placement.marketType takes precedence.</p>
+<p>Valid values are OnDemand, CapacityBlocks and omitted:
 - &ldquo;OnDemand&rdquo;: EC2 instances run as standard On-Demand instances.
-- &ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Capacity Blocks is recommended when GPUs are needed to support ML workloads.
-When omitted, this means no opinion and the platform is left to choose a reasonable default, which is subject to change over time.
-The current default value is CapacityBlocks.</p>
+- &ldquo;CapacityBlocks&rdquo;: scheduled pre-purchased compute capacity. Recommended for GPU/ML workloads.</p>
 <p>When set to &lsquo;CapacityBlocks&rsquo;, a specific Capacity Reservation ID must be provided.</p>
 </td>
 </tr>
@@ -33958,6 +34222,18 @@ underlying cluster&rsquo;s ClusterVersion.</p>
 </tr><tr><td><p>&#34;RolloutComplete&#34;</p></td>
 <td><p>ControlPlaneComponentRolloutComplete indicates whether the ControlPlaneComponent has completed its rollout.</p>
 </td>
+</tr><tr><td><p>&#34;ControlPlaneConnectionAvailable&#34;</p></td>
+<td><p>ControlPlaneConnectionAvailable indicates whether data plane workloads have a successful
+network connection to the control plane components. This condition is computed using
+a 3-replica Deployment that tests the full data path (DNS resolution of kubernetes.default.svc
+-&gt; advertise address on lo -&gt; apiserver proxy -&gt; KAS on HCP) and reports results to a shared
+ConfigMap. The HCCO evaluates the staleness of the lastSucceeded timestamp in the ConfigMap.
+<strong>True</strong> means the data plane can successfully reach the control plane (a recent successful check was recorded).
+<strong>False</strong> means there are connectivity failures preventing the data plane from reaching the control plane,
+or the last successful check is stale (older than 5 minutes).
+<strong>Unknown</strong> means the status cannot be determined due to true inability to inspect (e.g., no worker nodes exist or inspection cannot be performed),
+not due to missing required components.</p>
+</td>
 </tr><tr><td><p>&#34;DataPlaneConnectionAvailable&#34;</p></td>
 <td><p>DataPlaneConnectionAvailable indicates whether the control plane has a successful
 network connection to the data plane components.
@@ -33965,7 +34241,8 @@ network connection to the data plane components.
 <strong>False</strong> means there are network connection issues preventing the control plane from reaching the data plane.
 A failure here suggests potential issues such as: network policy restrictions,
 firewall rules, missing data plane nodes, or problems with infrastructure
-components like the konnectivity-agent workload.</p>
+components like the konnectivity-agent workload.
+<strong>Unknown</strong> means the status cannot be determined (e.g., no worker nodes available or unable to inspect).</p>
 </td>
 </tr><tr><td><p>&#34;EtcdAvailable&#34;</p></td>
 <td><p>EtcdAvailable bubbles up the same condition from HCP. It signals if etcd is available.
@@ -36212,7 +36489,8 @@ AutoNode
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoNode specifies the configuration for the autoNode feature.</p>
+<p>autoNode specifies the configuration for automatic node provisioning and lifecycle management.
+When set, the provisioner(e.g. Karpenter) will be used to provision nodes for targeted workloads.</p>
 </td>
 </tr>
 <tr>
@@ -37208,7 +37486,10 @@ AutoNode
 </td>
 <td>
 <em>(Optional)</em>
-<p>autoNode specifies the configuration for the autoNode feature.</p>
+<p>autoNode specifies the configuration for automatic node provisioning
+and lifecycle management. When set, nodes are automatically provisioned
+using the specified provisioner (e.g. Karpenter) instead of requiring
+manual NodePool management.</p>
 </td>
 </tr>
 <tr>
@@ -38078,6 +38359,7 @@ AzureKMSSpec
 <a href="#hypershift.openshift.io/v1beta1.KarpenterConfig">KarpenterConfig</a>)
 </p>
 <p>
+<p>KarpenterAWSConfig specifies AWS-specific configuration for the Karpenter provisioner.</p>
 </p>
 <table>
 <thead>
@@ -38095,7 +38377,237 @@ string
 </em>
 </td>
 <td>
-<p>roleARN specifies the ARN of the Karpenter provisioner.</p>
+<p>roleARN specifies the ARN of the IAM role that Karpenter assumes to provision
+and manage EC2 instances in the hosted cluster&rsquo;s AWS account.</p>
+<p>The referenced role must have a trust relationship that allows it to be assumed
+by the karpenter service account in the hosted cluster via OIDC.
+Example:
+{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Principal&rdquo;: {
+&ldquo;Federated&rdquo;: &ldquo;<oidc-provider-arn>&rdquo;
+},
+&ldquo;Action&rdquo;: &ldquo;sts:AssumeRoleWithWebIdentity&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;<oidc-provider-name>:sub&rdquo;: &ldquo;system:serviceaccount:kube-system:karpenter&rdquo;
+}
+}
+}
+]
+}</p>
+<p>The following is an example of the policy document for this role.</p>
+<p>{
+&ldquo;Version&rdquo;: &ldquo;2012-10-17&rdquo;,
+&ldquo;Statement&rdquo;: [
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedEC2InstanceAccessActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:<em>:ec2:</em>::image/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>::snapshot/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:security-group/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:subnet/</em>&rdquo;
+],
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:RunInstances&rdquo;,
+&ldquo;ec2:CreateFleet&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedEC2LaunchTemplateAccessActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:ec2:</em>:<em>:launch-template/</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:RunInstances&rdquo;,
+&ldquo;ec2:CreateFleet&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedEC2InstanceActionsWithTags&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:<em>:ec2:</em>:<em>:fleet/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:instance/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:volume/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:network-interface/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:launch-template/</em>&rdquo;,
+&ldquo;arn:<em>:ec2:</em>:<em>:spot-instances-request/</em>&rdquo;
+],
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:RunInstances&rdquo;,
+&ldquo;ec2:CreateFleet&rdquo;,
+&ldquo;ec2:CreateLaunchTemplate&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:RequestTag/karpenter.sh/nodepool&rdquo;: &ldquo;<em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedResourceCreationTagging&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:</em>:ec2:<em>:</em>:fleet/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:instance/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:volume/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:network-interface/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:launch-template/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:spot-instances-request/<em>&rdquo;
+],
+&ldquo;Action&rdquo;: &ldquo;ec2:CreateTags&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;ec2:CreateAction&rdquo;: [
+&ldquo;RunInstances&rdquo;,
+&ldquo;CreateFleet&rdquo;,
+&ldquo;CreateLaunchTemplate&rdquo;
+]
+},
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:RequestTag/karpenter.sh/nodepool&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedResourceTagging&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:ec2:</em>:<em>:instance/</em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;ec2:CreateTags&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.sh/nodepool&rdquo;: &ldquo;<em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedDeletion&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: [
+&ldquo;arn:</em>:ec2:<em>:</em>:instance/<em>&rdquo;,
+&ldquo;arn:</em>:ec2:<em>:</em>:launch-template/<em>&rdquo;
+],
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:TerminateInstances&rdquo;,
+&ldquo;ec2:DeleteLaunchTemplate&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.sh/nodepool&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowRegionalReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;<em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;ec2:DescribeImages&rdquo;,
+&ldquo;ec2:DescribeInstances&rdquo;,
+&ldquo;ec2:DescribeInstanceTypeOfferings&rdquo;,
+&ldquo;ec2:DescribeInstanceTypes&rdquo;,
+&ldquo;ec2:DescribeLaunchTemplates&rdquo;,
+&ldquo;ec2:DescribeSecurityGroups&rdquo;,
+&ldquo;ec2:DescribeSpotPriceHistory&rdquo;,
+&ldquo;ec2:DescribeSubnets&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowSSMReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:</em>:ssm:<em>::parameter/aws/service/</em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;ssm:GetParameter&rdquo;
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowPricingReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;<em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;pricing:GetProducts&rdquo;
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowInterruptionQueueActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;sqs:DeleteMessage&rdquo;,
+&ldquo;sqs:GetQueueUrl&rdquo;,
+&ldquo;sqs:ReceiveMessage&rdquo;
+]
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowPassingInstanceRole&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:iam::</em>:role/<em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;iam:PassRole&rdquo;,
+&ldquo;Condition&rdquo;: {
+&ldquo;StringEquals&rdquo;: {
+&ldquo;iam:PassedToService&rdquo;: [
+&ldquo;ec2.amazonaws.com&rdquo;,
+&ldquo;ec2.amazonaws.com.cn&rdquo;
+]
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedInstanceProfileCreationActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:</em>:iam::<em>:instance-profile/</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;iam:CreateInstanceProfile&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:RequestTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;<em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedInstanceProfileTagActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:</em>:iam::<em>:instance-profile/</em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;iam:TagInstanceProfile&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;<em>&rdquo;,
+&ldquo;aws:RequestTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowScopedInstanceProfileActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:iam::</em>:instance-profile/<em>&rdquo;,
+&ldquo;Action&rdquo;: [
+&ldquo;iam:AddRoleToInstanceProfile&rdquo;,
+&ldquo;iam:RemoveRoleFromInstanceProfile&rdquo;,
+&ldquo;iam:DeleteInstanceProfile&rdquo;
+],
+&ldquo;Condition&rdquo;: {
+&ldquo;StringLike&rdquo;: {
+&ldquo;aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass&rdquo;: &ldquo;</em>&rdquo;
+}
+}
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowInstanceProfileReadActions&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;arn:<em>:iam::</em>:instance-profile/<em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;iam:GetInstanceProfile&rdquo;
+},
+{
+&ldquo;Sid&rdquo;: &ldquo;AllowUnscopedInstanceProfileListAction&rdquo;,
+&ldquo;Effect&rdquo;: &ldquo;Allow&rdquo;,
+&ldquo;Resource&rdquo;: &ldquo;</em>&rdquo;,
+&ldquo;Action&rdquo;: &ldquo;iam:ListInstanceProfiles&rdquo;
+}
+]
+}</p>
 </td>
 </tr>
 </tbody>
@@ -38106,6 +38618,8 @@ string
 <a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">ProvisionerConfig</a>)
 </p>
 <p>
+<p>KarpenterConfig specifies the configuration for the Karpenter provisioner
+including the target platform and platform-specific settings.</p>
 </p>
 <table>
 <thead>
@@ -38125,7 +38639,7 @@ PlatformType
 </em>
 </td>
 <td>
-<p>platform specifies the platform-specific configuration for Karpenter.</p>
+<p>platform specifies the infrastructure platform that Karpenter should provision nodes on.</p>
 </td>
 </tr>
 <tr>
@@ -39401,10 +39915,11 @@ credentialsSecretName must also be unique within the Azure Key Vault. See more d
 ###MarketType { #hypershift.openshift.io/v1beta1.MarketType }
 <p>
 (<em>Appears on:</em>
-<a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>)
+<a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">CapacityReservationOptions</a>, 
+<a href="#hypershift.openshift.io/v1beta1.PlacementOptions">PlacementOptions</a>)
 </p>
 <p>
-<p>MarketType describes the market type of the CapacityReservation for an Instance.</p>
+<p>MarketType describes the market type for EC2 instances.</p>
 </p>
 <table>
 <thead>
@@ -39414,10 +39929,14 @@ credentialsSecretName must also be unique within the Azure Key Vault. See more d
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;CapacityBlocks&#34;</p></td>
-<td><p>MarketTypeCapacityBlock is a MarketType enum value</p>
+<td><p>MarketTypeCapacityBlock is a MarketType enum value for Capacity Blocks.</p>
 </td>
 </tr><tr><td><p>&#34;OnDemand&#34;</p></td>
-<td><p>MarketTypeOnDemand is a MarketType enum value</p>
+<td><p>MarketTypeOnDemand is a MarketType enum value for standard on-demand instances.</p>
+</td>
+</tr><tr><td><p>&#34;Spot&#34;</p></td>
+<td><p>MarketTypeSpot is a MarketType enum value for Spot instances.
+Spot instances use spare EC2 capacity at reduced prices but may be interrupted.</p>
 </td>
 </tr></tbody>
 </table>
@@ -40976,6 +41495,10 @@ This field is immutable</p>
 </p>
 <p>
 <p>PlacementOptions specifies the placement options for the EC2 instances.</p>
+<p>The instance market type is determined by the marketType field:
+- &ldquo;OnDemand&rdquo; (default): Standard on-demand instances
+- &ldquo;Spot&rdquo;: Spot instances using spare EC2 capacity at reduced prices
+- &ldquo;CapacityBlocks&rdquo;: Scheduled pre-purchased compute capacity for ML workloads</p>
 </p>
 <table>
 <thead>
@@ -41005,6 +41528,45 @@ as AWS does not support Capacity Reservations with Dedicated Hosts.</p>
 </tr>
 <tr>
 <td>
+<code>marketType</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.MarketType">
+MarketType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>marketType specifies the EC2 instance purchasing model.
+Supported values are &ldquo;OnDemand&rdquo; for standard on-demand instances,
+&ldquo;Spot&rdquo; for spot instances that use spare EC2 capacity at reduced prices
+but may be interrupted (optionally accepts spot options and requires
+terminationHandlerQueueURL on the HostedCluster), and &ldquo;CapacityBlocks&rdquo; for scheduled pre-purchased
+compute capacity recommended for GPU/ML workloads (requires
+capacityReservation with a specific reservation ID).
+When omitted, the default is &ldquo;OnDemand&rdquo;.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>spot,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.SpotOptions">
+SpotOptions
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>spot configures optional Spot instance overrides.
+When omitted, Spot instances use AWS defaults.</p>
+<p>Spot instances use spare EC2 capacity at reduced prices but may be interrupted
+with a 2-minute warning. Requires terminationHandlerQueueURL to be set on the
+HostedCluster&rsquo;s AWS platform spec for graceful handling of interruptions.</p>
+</td>
+</tr>
+<tr>
+<td>
 <code>capacityReservation</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.CapacityReservationOptions">
@@ -41017,6 +41579,7 @@ CapacityReservationOptions
 <p>capacityReservation specifies Capacity Reservation options for the NodePool instances.</p>
 <p>Cannot be specified when tenancy is set to &ldquo;host&rdquo; as Dedicated Hosts
 do not support Capacity Reservations. Compatible with &ldquo;default&rdquo; and &ldquo;dedicated&rdquo; tenancy.</p>
+<p>Required when marketType is &ldquo;CapacityBlocks&rdquo;.</p>
 </td>
 </tr>
 </tbody>
@@ -41967,7 +42530,7 @@ This field is immutable. Once set, it cannot be changed.</p>
 <a href="#hypershift.openshift.io/v1beta1.ProvisionerConfig">ProvisionerConfig</a>)
 </p>
 <p>
-<p>provisioner is a enum specifying the strategy for auto managing Nodes.</p>
+<p>Provisioner is the name of a supported node provisioner.</p>
 </p>
 <table>
 <thead>
@@ -41977,7 +42540,8 @@ This field is immutable. Once set, it cannot be changed.</p>
 </tr>
 </thead>
 <tbody><tr><td><p>&#34;Karpenter&#34;</p></td>
-<td></td>
+<td><p>ProvisionerKarpenter indicates that Karpenter is used for automatic node provisioning.</p>
+</td>
 </tr></tbody>
 </table>
 ###ProvisionerConfig { #hypershift.openshift.io/v1beta1.ProvisionerConfig }
@@ -41986,7 +42550,8 @@ This field is immutable. Once set, it cannot be changed.</p>
 <a href="#hypershift.openshift.io/v1beta1.AutoNode">AutoNode</a>)
 </p>
 <p>
-<p>ProvisionerConfig is a enum specifying the strategy for auto managing Nodes.</p>
+<p>ProvisionerConfig specifies the provisioner used for automatic node management
+and its associated configuration.</p>
 </p>
 <table>
 <thead>
@@ -42006,7 +42571,7 @@ Provisioner
 </em>
 </td>
 <td>
-<p>name specifies the name of the provisioner to use.</p>
+<p>name specifies the name of the provisioner to use for automatic node management.</p>
 </td>
 </tr>
 <tr>
@@ -42735,6 +43300,44 @@ ServicePublishingStrategy
 <p>ServiceType defines what control plane services can be exposed from the
 management control plane.</p>
 </p>
+###SpotOptions { #hypershift.openshift.io/v1beta1.SpotOptions }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.PlacementOptions">PlacementOptions</a>)
+</p>
+<p>
+<p>SpotOptions configures options for Spot instances.</p>
+<p>Spot instances use spare EC2 capacity at reduced prices but may be interrupted
+with a 2-minute warning when EC2 needs the capacity back.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>maxPrice</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>maxPrice defines the maximum price the user is willing to pay for Spot instances.
+If not specified, the on-demand price is used as the maximum (you pay the actual spot price).
+The value should be a decimal number representing the price per hour in USD.
+For example, &ldquo;0.50&rdquo; means 50 cents per hour.</p>
+<p>Note: AWS recommends NOT setting maxPrice to reduce interruption frequency.
+When omitted, you pay the current Spot price (capped at On-Demand price).
+AWS minimum allowed value is $0.001.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ###SubnetFilter { #hypershift.openshift.io/v1beta1.SubnetFilter }
 <p>
 (<em>Appears on:</em>
@@ -48620,6 +49223,196 @@ This document outlines the support matrix that involved these three entities.
 - Some HostedCluster features might dictate coupling with the management cluster, e.g. an AWS private HostedCluster requires an AWS management cluster.
 - For cloud provider platforms e.g. AWS, Azure, etc. HostedClusters are only tested with the same management cluster platform or a provider-agnostic platform e.g. Kubevirt, Agent, None. Mixed cloud providers e.g AWS management cluster and Azure HostedCluster is a best effort support level.
 - Non OCP management is a best effort support level. The HyperShift Operator will try to auto-discover the management clusters features it has available.
+
+
+---
+
+## Source: docs/content/reference/nodepool-rollouts.md
+
+---
+title: NodePool Rollouts
+---
+
+# NodePool Rollouts
+
+A NodePool rollout is the process by which existing Nodes are replaced or updated when a change in the NodePool or HostedCluster configuration requires it. Understanding what triggers a rollout and how it is executed helps you plan changes with minimal disruption to your workloads.
+
+## What Triggers a Rollout
+
+There are three independent categories of changes that trigger a rollout. A rollout occurs when any one of them detects a difference between the desired state and the current state.
+
+### OCP Release Version
+
+Changing `NodePool.spec.release.image` triggers a rollout. The controller extracts the OCP version from the release image metadata and compares it against the version currently running on the Nodes. If they differ, a rollout begins.
+
+!!! important
+
+    NodePool version must be compatible with the HostedCluster version. See Versioning Support for details on the version skew policy.
+
+### Node Configuration
+
+Changes to the following fields alter the configuration hash that the controller tracks. When the hash changes, a rollout is triggered:
+
+- **`NodePool.spec.config`** — ConfigMaps containing any of the supported machine configuration APIs:
+    - `MachineConfig`
+    - `KubeletConfig`
+    - `ContainerRuntimeConfig`
+    - `ImageContentSourcePolicy`
+    - `ImageDigestMirrorSet`
+    - `ClusterImagePolicy`
+
+- **`NodePool.spec.tuningConfig`** — references to `Tuned` resources that the Node Tuning Operator translates into `MachineConfig` objects.
+
+- **`HostedCluster.spec.pullSecret`** — a change in the **name** of the referenced Secret triggers a rollout. Changing the content of the Secret without changing the name does not trigger a rollout.
+
+- **`HostedCluster.spec.additionalTrustBundle`** — same behavior as `pullSecret`: only a change in the referenced ConfigMap **name** triggers a rollout.
+
+- **`HostedCluster.spec.imageContentSources`** — changes to image content source policies managed at the HostedCluster level produce an additional core ignition config that alters the configuration hash.
+
+### HostedCluster Global Configuration
+
+Some fields in `HostedCluster.spec.configuration` affect all Nodes and therefore trigger a rollout across **every NodePool** in the cluster when they change:
+
+- **`proxy`** — cluster-wide proxy settings (`httpProxy`, `httpsProxy`, `noProxy`, `trustedCA`). The controller also computes the full `noProxy` list automatically, adding the cluster, service, and machine network CIDRs, cloud metadata endpoints (e.g. `169.254.169.254` for AWS and Azure), and internal compute domains.
+
+- **`image`** — image registry policies (`allowedRegistriesForImport`, `externalRegistryHostnames`, `additionalTrustedCA`, `registrySources`). Although this configuration is served directly by the ignition server rather than embedded in the node user-data, a change still triggers a rollout so Nodes pick up the new configuration.
+
+!!! note
+
+    Other fields inside `HostedCluster.spec.configuration` such as `oauth`, `apiServer`, `authentication`, `scheduler`, or `ingress` do **not** trigger a NodePool rollout. They are reconciled through other control plane mechanisms.
+
+### Platform-Specific Machine Template
+
+Changes to platform-specific infrastructure fields produce a new machine template, which triggers a rollout. The exact fields depend on the platform:
+
+**AWS:**
+
+| Field | Description |
+|-------|-------------|
+| `spec.platform.aws.ami` | The AMI ID for the worker instances |
+| `spec.platform.aws.instanceType` | EC2 instance type |
+| `spec.platform.aws.instanceProfile` | IAM instance profile |
+| `spec.platform.aws.subnet` | Subnet configuration |
+| `spec.platform.aws.securityGroups` | Security group references |
+| `spec.platform.aws.rootVolume` | Root volume type, size, IOPS, encryption |
+| `spec.platform.aws.placement` | Tenancy and capacity reservation settings |
+
+!!! note
+
+    `spec.platform.aws.resourceTags` is explicitly **excluded** from rollout triggers. Changing tags alone does not cause Nodes to be replaced.
+
+**Other platforms (Azure, KubeVirt, OpenStack, Agent, PowerVS):**
+
+Any change to the platform-specific machine template spec triggers a rollout. Refer to the API reference for the full list of fields per platform.
+
+## What Does Not Trigger a Rollout
+
+The following fields are propagated in-place to existing Nodes without triggering a rollout:
+
+| Field | Behavior |
+|-------|----------|
+| `spec.nodeLabels` | Propagated directly to existing Machine objects |
+| `spec.taints` | Propagated directly to existing Machine objects |
+| `spec.replicas` / `spec.autoScaling` | Only changes the number of Nodes, no replacement |
+| `spec.nodeDrainTimeout` | Updated on existing Machines without replacement |
+| `spec.nodeVolumeDetachTimeout` | Updated on existing Machines without replacement |
+| `spec.management.replace.rollingUpdate` | Changes rollout parameters (maxSurge, maxUnavailable) but does not itself cause a rollout |
+| `spec.management.autoRepair` | Toggles MachineHealthCheck without replacing Nodes |
+
+## Upgrade Types
+
+The upgrade type determines **how** Nodes are replaced or updated during a rollout. It is set once at NodePool creation and **cannot be changed** afterward.
+
+### Replace
+
+Replace upgrades create new Node instances with the updated configuration and remove old ones. This is the default and recommended approach for cloud environments where creating and destroying instances is cost-effective.
+
+The replacement process is governed by the `spec.management.replace` field:
+
+#### RollingUpdate Strategy (default)
+
+New Nodes are created before old Nodes are removed, ensuring workload availability during the rollout.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `maxSurge` | `1` | Maximum number of Nodes that can be provisioned above the desired count during the rollout. Can be an absolute number or a percentage. |
+| `maxUnavailable` | `0` | Maximum number of Nodes that can be unavailable during the rollout. Can be an absolute number or a percentage. |
+
+With the defaults (`maxSurge=1`, `maxUnavailable=0`), one new Node is created at a time, and old Nodes are only removed after the new Node is ready. This is the safest configuration but also the slowest.
+
+To speed up the rollout, you can increase `maxSurge` (more Nodes created in parallel) or increase `maxUnavailable` (allow removing old Nodes before new ones are ready), at the cost of reduced capacity during the rollout.
+
+!!! important
+
+    `maxSurge` and `maxUnavailable` cannot both be `0`.
+
+#### OnDelete Strategy
+
+Old Nodes are only replaced when they are manually deleted. This gives you full control over the rollout pace and order. Once an old Node is deleted, a new Node with the updated configuration is created to replace it.
+
+### InPlace
+
+InPlace upgrades update the operating system of existing Node instances without creating new ones. This is the recommended approach for environments with high infrastructure constraints, such as bare metal.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `maxUnavailable` | `1` | Maximum number of Nodes that can be unavailable during the in-place update. Can be an absolute number or a percentage. The minimum enforced value is `1`. |
+
+!!! important
+
+    When using InPlace upgrades, platform-specific machine template changes (e.g. instance type, AMI) will **only apply to new Nodes** that are created after the change. Existing Nodes are not affected by platform changes.
+
+## Rollout Lifecycle
+
+When a rollout is triggered, the controller follows this sequence:
+
+1. **Change detection** — the controller compares the desired state (from the NodePool and HostedCluster specs) against the current state tracked in the NodePool status and annotations.
+
+2. **New configuration artifacts** — a new ignition token Secret and user-data Secret are generated with names derived from a hash of the new configuration. The previous token is marked as expired.
+
+3. **New machine template** (if platform fields changed) — a new platform-specific machine template is created. Its name includes a hash of the spec, so any change produces a distinct template.
+
+4. **Rollout execution**:
+      - **Replace:** the MachineDeployment is updated with the new user-data Secret, machine template, and version references. CAPI orchestrates Node creation and deletion according to the configured strategy (RollingUpdate or OnDelete).
+      - **InPlace:** the MachineSet is updated with the new target configuration. An in-place upgrader applies the changes to existing Nodes, respecting `maxUnavailable`.
+
+5. **Completion** — the rollout is considered complete when:
+      - **Replace:** all desired replicas are updated and available.
+      - **InPlace:** all Nodes report the target configuration version.
+
+6. **Status update** — `NodePool.status.version` is updated and the internal tracking annotations are set to the new values.
+
+### Monitoring Rollout Progress
+
+You can monitor rollout progress through the following NodePool conditions:
+
+| Condition | Meaning |
+|-----------|---------|
+| `UpdatingVersion` | A version rollout is in progress |
+| `UpdatingConfig` | A configuration rollout is in progress |
+| `UpdatingPlatformMachineTemplate` | A platform machine template rollout is in progress |
+
+These conditions are set to `True` while the corresponding rollout is in progress and are cleared when it completes.
+
+## Summary Table
+
+| Change | Triggers Rollout | Affects |
+|--------|:---:|---------|
+| `NodePool.spec.release.image` | Yes | The changed NodePool |
+| `NodePool.spec.config` | Yes | The changed NodePool |
+| `NodePool.spec.tuningConfig` | Yes | The changed NodePool |
+| `HostedCluster.spec.pullSecret` (name change) | Yes | All NodePools |
+| `HostedCluster.spec.additionalTrustBundle` (name change) | Yes | All NodePools |
+| `HostedCluster.spec.imageContentSources` | Yes | All NodePools |
+| `HostedCluster.spec.configuration.proxy` | Yes | All NodePools |
+| `HostedCluster.spec.configuration.image` | Yes | All NodePools |
+| Platform machine template fields | Yes | The changed NodePool |
+| `NodePool.spec.nodeLabels` | No | Propagated in-place |
+| `NodePool.spec.taints` | No | Propagated in-place |
+| `NodePool.spec.replicas` / `autoScaling` | No | Scale only |
+| `NodePool.spec.nodeDrainTimeout` | No | Propagated in-place |
+| `NodePool.spec.management.autoRepair` | No | MachineHealthCheck toggle |
+| AWS `spec.platform.aws.resourceTags` | No | Applied without rollout |
 
 
 ---

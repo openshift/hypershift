@@ -4639,7 +4639,7 @@ func TestReconcileComponents(t *testing.T) {
 			},
 			ReleaseImage: "quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64",
 			AutoNode: &hyperv1.AutoNode{
-				Provisioner: &hyperv1.ProvisionerConfig{
+				Provisioner: hyperv1.ProvisionerConfig{
 					Name: "test-provisioner",
 					Karpenter: &hyperv1.KarpenterConfig{
 						Platform: hyperv1.AWSPlatform,
@@ -5644,6 +5644,72 @@ func TestIsAWSNodeTerminationHandlerNeeded(t *testing.T) {
 			expectedResult: false,
 		},
 		{
+			name: "When AWS platform with NodePool with spot market type it should return true",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			nodePools: []crclient.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "nodepool-spot-api",
+						Namespace: "test-namespace",
+					},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "test-cluster",
+						Platform: hyperv1.NodePoolPlatform{
+							AWS: &hyperv1.AWSNodePoolPlatform{
+								Placement: &hyperv1.PlacementOptions{
+									MarketType: hyperv1.MarketTypeSpot,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name: "When AWS platform with NodePool with non-spot market type it should return false",
+			hcluster: &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-cluster",
+					Namespace: "test-namespace",
+				},
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			nodePools: []crclient.Object{
+				&hyperv1.NodePool{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "nodepool-on-demand",
+						Namespace: "test-namespace",
+					},
+					Spec: hyperv1.NodePoolSpec{
+						ClusterName: "test-cluster",
+						Platform: hyperv1.NodePoolPlatform{
+							AWS: &hyperv1.AWSNodePoolPlatform{
+								Placement: &hyperv1.PlacementOptions{
+									MarketType: hyperv1.MarketTypeOnDemand,
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedResult: false,
+		},
+		{
 			name: "When AWS platform with NodePool with spot annotation it should return true",
 			hcluster: &hyperv1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -5919,6 +5985,106 @@ func TestComputeGCPPSCCondition(t *testing.T) {
 			condition := computeGCPPSCCondition(gcpPSCList, tc.conditionType)
 			if condition != tc.expected {
 				t.Errorf("error, expected %v\nbut got %v", tc.expected, condition)
+			}
+		})
+	}
+}
+
+func TestReconcileCustomExternalKubeconfig(t *testing.T) {
+	hcpNamespace := "test-hcp-ns"
+	hclusterNamespace := "test-hc-ns"
+	hclusterName := "test-cluster"
+
+	tests := []struct {
+		name           string
+		hcpStatus      *hyperv1.KubeconfigSecretRef
+		secretExists   bool
+		expectRequeue  bool
+		expectError    bool
+		expectDestCopy bool
+	}{
+		{
+			name:      "When CustomKubeconfig status is nil it should be a no-op",
+			hcpStatus: nil,
+		},
+		{
+			name: "When CustomKubeconfig references a non-existent secret it should continue and requeue",
+			hcpStatus: &hyperv1.KubeconfigSecretRef{
+				Name: "custom-admin-kubeconfig",
+				Key:  "kubeconfig",
+			},
+			secretExists:  false,
+			expectRequeue: true,
+		},
+		{
+			name: "When CustomKubeconfig references an existing secret it should copy it",
+			hcpStatus: &hyperv1.KubeconfigSecretRef{
+				Name: "custom-admin-kubeconfig",
+				Key:  "kubeconfig",
+			},
+			secretExists:   true,
+			expectDestCopy: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			hcp := &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: hcpNamespace,
+					Name:      hclusterName,
+				},
+				Status: hyperv1.HostedControlPlaneStatus{
+					CustomKubeconfig: tc.hcpStatus,
+				},
+			}
+
+			hcluster := &hyperv1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: hclusterNamespace,
+					Name:      hclusterName,
+					UID:       "test-uid",
+				},
+			}
+
+			objs := []crclient.Object{hcp}
+			if tc.secretExists {
+				objs = append(objs, &corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: hcpNamespace,
+						Name:      "custom-admin-kubeconfig",
+					},
+					Data: map[string][]byte{
+						"kubeconfig": []byte("test-kubeconfig-data"),
+					},
+				})
+			}
+
+			cli := fake.NewClientBuilder().WithScheme(api.Scheme).WithObjects(objs...).Build()
+			r := &HostedClusterReconciler{Client: cli}
+			ctx := ctrl.LoggerInto(t.Context(), zap.New(zap.UseDevMode(true), zap.Level(zapcore.DebugLevel)))
+
+			requeue, err := r.reconcileCustomExternalKubeconfig(ctx, ctrl.CreateOrUpdate, hcp, hcluster)
+
+			if tc.expectError {
+				g.Expect(err).ToNot(BeNil())
+				return
+			}
+			g.Expect(err).To(BeNil())
+
+			if tc.expectRequeue {
+				g.Expect(requeue).ToNot(BeNil(), "expected a requeue duration")
+			} else {
+				g.Expect(requeue).To(BeNil(), "did not expect a requeue")
+			}
+
+			if tc.expectDestCopy {
+				dest := &corev1.Secret{}
+				err := cli.Get(ctx, crclient.ObjectKey{Namespace: hclusterNamespace, Name: hclusterName + "-custom-admin-kubeconfig"}, dest)
+				g.Expect(err).To(BeNil(), "expected destination secret to exist")
+				g.Expect(dest.Data["kubeconfig"]).To(Equal([]byte("test-kubeconfig-data")))
 			}
 		})
 	}

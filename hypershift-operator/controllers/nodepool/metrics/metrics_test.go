@@ -1,14 +1,16 @@
 package metrics
 
 import (
+	"context"
 	"strconv"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/awsapi"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/clock"
@@ -20,6 +22,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	"go.uber.org/mock/gomock"
 )
 
 var (
@@ -31,35 +34,31 @@ type nodePoolParams struct {
 	ec2InstanceType     string
 }
 
-type Ec2ClientMock struct {
-	ec2iface.EC2API
-}
-
-func (c *Ec2ClientMock) DescribeInstanceTypes(input *ec2.DescribeInstanceTypesInput) (*ec2.DescribeInstanceTypesOutput, error) {
-	var instanceTypesInfo []*ec2.InstanceTypeInfo
-
-	for _, instanceType := range input.InstanceTypes {
-		if instanceType != nil {
-			var vCpusCount *int64
-
-			switch *instanceType {
-			case "m5.xlarge":
-				vCpusCount = ptr.To[int64](4)
-			case "m5.2xlarge":
-				vCpusCount = ptr.To[int64](8)
+// newEC2MockWithVCpuMap creates a mock EC2 client that returns vCPU info
+// based on the requested instance types. Known types return specific vCPU
+// counts; unknown types return nil (simulating unexpected AWS output).
+func newEC2MockWithVCpuMap(t *testing.T) awsapi.EC2API {
+	t.Helper()
+	m := awsapi.NewMockEC2API(gomock.NewController(t))
+	m.EXPECT().DescribeInstanceTypes(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, input *ec2.DescribeInstanceTypesInput, _ ...func(*ec2.Options)) (*ec2.DescribeInstanceTypesOutput, error) {
+			var instanceTypesInfo []ec2types.InstanceTypeInfo
+			for _, instanceType := range input.InstanceTypes {
+				var vCpusCount *int32
+				switch string(instanceType) {
+				case "m5.xlarge":
+					vCpusCount = ptr.To[int32](4)
+				case "m5.2xlarge":
+					vCpusCount = ptr.To[int32](8)
+				}
+				instanceTypesInfo = append(instanceTypesInfo, ec2types.InstanceTypeInfo{
+					InstanceType: instanceType,
+					VCpuInfo:     &ec2types.VCpuInfo{DefaultVCpus: vCpusCount},
+				})
 			}
-
-			instanceTypesInfo = append(instanceTypesInfo, &ec2.InstanceTypeInfo{
-				InstanceType: instanceType,
-				VCpuInfo: &ec2.VCpuInfo{
-					DefaultVCpus: vCpusCount,
-				},
-			})
-		}
-
-	}
-
-	return &ec2.DescribeInstanceTypesOutput{InstanceTypes: instanceTypesInfo}, nil
+			return &ec2.DescribeInstanceTypesOutput{InstanceTypes: instanceTypesInfo}, nil
+		}).AnyTimes()
+	return m
 }
 
 func TestReportVCpusCountByHCluster(t *testing.T) {
@@ -147,7 +146,7 @@ func TestReportVCpusCountByHCluster(t *testing.T) {
 			}
 
 			reg := prometheus.NewPedanticRegistry()
-			reg.MustRegister(createNodePoolsMetricsCollector(clientBuilder.Build(), &Ec2ClientMock{}, clock.RealClock{}))
+			reg.MustRegister(createNodePoolsMetricsCollector(clientBuilder.Build(), newEC2MockWithVCpuMap(t), clock.RealClock{}))
 
 			allMetricsValues, err := reg.Gather()
 			if err != nil {

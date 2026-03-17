@@ -100,7 +100,7 @@ func TestReconcile(t *testing.T) {
 				Name: "pull-secret",
 			},
 			AutoNode: &hyperv1.AutoNode{
-				Provisioner: &hyperv1.ProvisionerConfig{
+				Provisioner: hyperv1.ProvisionerConfig{
 					Name: hyperv1.ProvisionerKarpenter,
 					Karpenter: &hyperv1.KarpenterConfig{
 						Platform: hyperv1.AWSPlatform,
@@ -415,7 +415,7 @@ func TestReconcileVersionResolution(t *testing.T) {
 					Name: "pull-secret",
 				},
 				AutoNode: &hyperv1.AutoNode{
-					Provisioner: &hyperv1.ProvisionerConfig{
+					Provisioner: hyperv1.ProvisionerConfig{
 						Name: hyperv1.ProvisionerKarpenter,
 						Karpenter: &hyperv1.KarpenterConfig{
 							Platform: hyperv1.AWSPlatform,
@@ -651,6 +651,7 @@ kind: Config`),
 		g.Expect(versionCondition).NotTo(BeNil(), "VersionResolved condition should be set")
 		g.Expect(versionCondition.Status).To(Equal(metav1.ConditionFalse))
 		g.Expect(versionCondition.Reason).To(Equal("ResolutionFailed"))
+
 	})
 
 	t.Run("When channel is set it should pass HCP channel to resolver", func(t *testing.T) {

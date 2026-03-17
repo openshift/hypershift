@@ -3,6 +3,7 @@ package nodeclass
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -44,6 +45,9 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 	hcp := &hyperv1.HostedControlPlane{
 		Spec: hyperv1.HostedControlPlaneSpec{
 			InfraID: "test-infra",
+			Platform: hyperv1.PlatformSpec{
+				Type: hyperv1.AWSPlatform,
+			},
 		},
 	}
 
@@ -60,7 +64,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
 					{
 						Tags: map[string]string{
-							"karpenter.sh/discovery": testInfraID,
+							"kubernetes.io/role/internal-elb":                    "1",
+							fmt.Sprintf("kubernetes.io/cluster/%s", testInfraID): "*",
 						},
 					},
 				},
@@ -162,6 +167,9 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					InfraID: testInfraID,
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
 				},
 			},
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{},
@@ -169,7 +177,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
 					{
 						Tags: map[string]string{
-							"karpenter.sh/discovery": testInfraID,
+							"kubernetes.io/role/internal-elb":                    "1",
+							fmt.Sprintf("kubernetes.io/cluster/%s", testInfraID): "*",
 						},
 					},
 				},
@@ -203,6 +212,9 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				},
 				Spec: hyperv1.HostedControlPlaneSpec{
 					InfraID: testInfraID,
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
 				},
 			},
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{},
@@ -210,7 +222,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
 					{
 						Tags: map[string]string{
-							"karpenter.sh/discovery": testInfraID,
+							"kubernetes.io/role/internal-elb":                    "1",
+							fmt.Sprintf("kubernetes.io/cluster/%s", testInfraID): "*",
 						},
 					},
 				},
@@ -240,7 +253,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
 					{
 						Tags: map[string]string{
-							"karpenter.sh/discovery": testInfraID,
+							"kubernetes.io/role/internal-elb":                    "1",
+							fmt.Sprintf("kubernetes.io/cluster/%s", testInfraID): "*",
 						},
 					},
 				},
@@ -275,6 +289,7 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				Spec: hyperv1.HostedControlPlaneSpec{
 					InfraID: "test-infra",
 					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{
 							ResourceTags: []hyperv1.AWSResourceTag{
 								{Key: "red-hat-managed", Value: "true"},
@@ -289,7 +304,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
 					{
 						Tags: map[string]string{
-							"karpenter.sh/discovery": "test-infra",
+							"kubernetes.io/role/internal-elb":                    "1",
+							fmt.Sprintf("kubernetes.io/cluster/%s", testInfraID): "*",
 						},
 					},
 				},
@@ -330,6 +346,7 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				Spec: hyperv1.HostedControlPlaneSpec{
 					InfraID: "test-infra",
 					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
 						AWS: &hyperv1.AWSPlatformSpec{
 							ResourceTags: []hyperv1.AWSResourceTag{
 								{Key: "red-hat-clustertype", Value: "rosa"}, // This should override nodeclass tag
@@ -343,7 +360,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
 					{
 						Tags: map[string]string{
-							"karpenter.sh/discovery": "test-infra",
+							"kubernetes.io/role/internal-elb":                    "1",
+							fmt.Sprintf("kubernetes.io/cluster/%s", testInfraID): "*",
 						},
 					},
 				},
@@ -548,6 +566,124 @@ func TestGetUserDataSecret(t *testing.T) {
 	}
 }
 
+func TestComputeReadyCondition(t *testing.T) {
+	testCases := []struct {
+		name                string
+		conditions          []metav1.Condition
+		expectedReadyStatus metav1.ConditionStatus
+		expectedReadyReason string
+		readyShouldChange   bool
+	}{
+		{
+			name: "When VersionResolved is False it should set Ready to False",
+			conditions: []metav1.Condition{
+				{
+					Type:    hyperkarpenterv1.ConditionTypeReady,
+					Status:  metav1.ConditionTrue,
+					Reason:  "Ready",
+					Message: "EC2NodeClass is ready",
+				},
+				{
+					Type:    hyperkarpenterv1.ConditionTypeVersionResolved,
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperkarpenterv1.ConditionReasonResolutionFailed,
+					Message: "Failed to resolve version \"4.17.0\": Cincinnati API unavailable",
+				},
+			},
+			expectedReadyStatus: metav1.ConditionFalse,
+			expectedReadyReason: hyperkarpenterv1.ConditionReasonResolutionFailed,
+			readyShouldChange:   true,
+		},
+		{
+			name: "When VersionResolved is True it should not override Ready",
+			conditions: []metav1.Condition{
+				{
+					Type:    hyperkarpenterv1.ConditionTypeReady,
+					Status:  metav1.ConditionTrue,
+					Reason:  "Ready",
+					Message: "EC2NodeClass is ready",
+				},
+				{
+					Type:    hyperkarpenterv1.ConditionTypeVersionResolved,
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperkarpenterv1.ConditionReasonVersionResolved,
+					Message: "Version resolved",
+				},
+			},
+			expectedReadyStatus: metav1.ConditionTrue,
+			expectedReadyReason: "Ready",
+			readyShouldChange:   false,
+		},
+		{
+			name: "When VersionResolved condition is absent it should set Ready to False",
+			conditions: []metav1.Condition{
+				{
+					Type:    hyperkarpenterv1.ConditionTypeReady,
+					Status:  metav1.ConditionTrue,
+					Reason:  "Ready",
+					Message: "EC2NodeClass is ready",
+				},
+			},
+			expectedReadyStatus: metav1.ConditionFalse,
+			expectedReadyReason: hyperkarpenterv1.ConditionReasonResolutionFailed,
+			readyShouldChange:   true,
+		},
+		{
+			name: "When VersionResolved is Unknown it should set Ready to False",
+			conditions: []metav1.Condition{
+				{
+					Type:    hyperkarpenterv1.ConditionTypeReady,
+					Status:  metav1.ConditionTrue,
+					Reason:  "Ready",
+					Message: "EC2NodeClass is ready",
+				},
+				{
+					Type:    hyperkarpenterv1.ConditionTypeVersionResolved,
+					Status:  metav1.ConditionUnknown,
+					Reason:  "Unknown",
+					Message: "Version resolution status is unknown",
+				},
+			},
+			expectedReadyStatus: metav1.ConditionFalse,
+			expectedReadyReason: "Unknown",
+			readyShouldChange:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			openshiftNodeClass := &hyperkarpenterv1.OpenshiftEC2NodeClass{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-nodeclass",
+					Generation: 1,
+				},
+				Status: hyperkarpenterv1.OpenshiftEC2NodeClassStatus{
+					Conditions: tc.conditions,
+				},
+			}
+
+			r := &EC2NodeClassReconciler{}
+			r.computeReadyCondition(openshiftNodeClass)
+
+			readyCond := findCondition(openshiftNodeClass.Status.Conditions, hyperkarpenterv1.ConditionTypeReady)
+			g.Expect(readyCond).NotTo(BeNil())
+			g.Expect(readyCond.Status).To(Equal(tc.expectedReadyStatus))
+			g.Expect(readyCond.Reason).To(Equal(tc.expectedReadyReason))
+		})
+	}
+}
+
+func findCondition(conditions []metav1.Condition, condType string) *metav1.Condition {
+	for i, c := range conditions {
+		if c.Type == condType {
+			return &conditions[i]
+		}
+	}
+	return nil
+}
+
 func TestKarpenterSecretPredicate(t *testing.T) {
 	testCases := []struct {
 		name           string
@@ -685,6 +821,79 @@ func TestKarpenterSecretPredicate(t *testing.T) {
 			}
 
 			g.Expect(result).To(Equal(tc.expectedResult))
+		})
+	}
+}
+
+func TestAMISelectorTerms(t *testing.T) {
+	testCases := []struct {
+		name           string
+		userDataSecret *corev1.Secret
+		platform       hyperv1.PlatformType
+		expectedError  string
+		expectedAMIs   []awskarpenterv1.AMISelectorTerm
+	}{
+		{
+			name:     "when user data secret is created for supported platform, and labels exist it should return the expected AMIs",
+			platform: hyperv1.AWSPlatform,
+			userDataSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-data-secret",
+					Namespace: "test-namespace",
+					Labels: map[string]string{
+						karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64): "ami-123",
+						karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureARM64): "ami-456",
+					},
+				},
+			},
+			expectedAMIs: []awskarpenterv1.AMISelectorTerm{
+				{
+					ID: "ami-123",
+				},
+				{
+					ID: "ami-456",
+				},
+			},
+		},
+		{
+			name:     "when user data secret is created for unsupported platform, and labels exist it should return an error",
+			platform: hyperv1.AzurePlatform,
+			userDataSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-data-secret",
+					Namespace: "test-namespace",
+					Labels: map[string]string{
+						karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureAMD64): "ami-123",
+						karpenterutil.ArchToAMILabelKey(hyperv1.ArchitectureARM64): "ami-456",
+					},
+				},
+			},
+			expectedError: "failed to get supported architectures: unsupported platform: Azure",
+		},
+		{
+			name:     "when user data secret is created for supported platform, but no AMIs labels exist it should return an error",
+			platform: hyperv1.AWSPlatform,
+			userDataSecret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "user-data-secret",
+					Namespace: "test-namespace",
+					Labels:    map[string]string{},
+				},
+			},
+			expectedError: "no AMIs found for supported architectures: [amd64 arm64]",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			amis, err := AMISelectorTerms(tc.userDataSecret, tc.platform)
+			if tc.expectedError != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(Equal(tc.expectedError))
+				return
+			}
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(amis).To(Equal(tc.expectedAMIs))
 		})
 	}
 }

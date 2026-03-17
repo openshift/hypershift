@@ -74,9 +74,8 @@ type CoreOSImages struct {
 
 // CoreOSGCPImage contains GCP image information from stream metadata.
 // GCP images are global (not regional like AWS), so there's a single image reference.
+// The image path is constructed as projects/{Project}/global/images/{Name}.
 type CoreOSGCPImage struct {
-	// Image is the full GCP image path (e.g., projects/rhcos-cloud/global/images/rhcos-xxx)
-	Image string `json:"image"`
 	// Project is the GCP project hosting the image (e.g., rhcos-cloud)
 	Project string `json:"project"`
 	// Name is the image name within the project
@@ -301,7 +300,7 @@ func parseComponentVersionsLabel(label, displayNames string) (ComponentVersions,
 				return nil, fmt.Errorf("the version name %q must only be ASCII alphanumerics and internal hyphens", parts[0])
 			}
 			if !reAllowedDisplayNameKey.MatchString(parts[1]) {
-				return nil, fmt.Errorf("the display name %q must only be alphanumerics, spaces, and symbols in [():-]", parts[1])
+				return nil, fmt.Errorf("the display name %q must only be alphanumerics, spaces, and symbols in [().:-]", parts[1])
 			}
 			names[parts[0]] = parts[1]
 		}
@@ -340,7 +339,7 @@ var (
 	// reAllowedVersionKey limits the allowed component name to a strict subset
 	reAllowedVersionKey = regexp.MustCompile(`^[a-z0-9]+[\-a-z0-9]*[a-z0-9]+$`)
 	// reAllowedDisplayNameKey limits the allowed component name to a strict subset
-	reAllowedDisplayNameKey = regexp.MustCompile(`^[a-zA-Z0-9\-\:\s\(\)]+$`)
+	reAllowedDisplayNameKey = regexp.MustCompile(`^[a-zA-Z0-9\-\:\.\s\(\)]+$`)
 )
 
 // ComponentVersion includes the version and optional display name.

@@ -638,7 +638,9 @@ type HostedClusterSpec struct {
 	// +optional
 	Autoscaling ClusterAutoscaling `json:"autoscaling,omitempty"`
 
-	// autoNode specifies the configuration for the autoNode feature.
+	// autoNode specifies the configuration for automatic node provisioning and lifecycle management.
+	// When set, the provisioner(e.g. Karpenter) will be used to provision nodes for targeted workloads.
+	//
 	// +openshift:enable:FeatureGate=AutoNodeKarpenter
 	// +optional
 	AutoNode *AutoNode `json:"autoNode,omitempty"`
@@ -1370,45 +1372,302 @@ type Release struct {
 	Image string `json:"image"`
 }
 
-// We expose here internal configuration knobs that won't be exposed to the service.
+// AutoNode specifies the configuration for automatic node provisioning and lifecycle management.
 type AutoNode struct {
-	// provisionerConfig is the implementation used for Node auto provisioning.
+	// provisionerConfig specifies the provisioner used for automatic node management.
 	// +required
-	Provisioner *ProvisionerConfig `json:"provisionerConfig"`
+	Provisioner ProvisionerConfig `json:"provisionerConfig,omitzero"`
 }
 
-// ProvisionerConfig is a enum specifying the strategy for auto managing Nodes.
+// ProvisionerConfig specifies the provisioner used for automatic node management
+// and its associated configuration.
+//
+// +kubebuilder:validation:XValidation:rule="self.name == 'Karpenter' ? has(self.karpenter) : !has(self.karpenter)",message="karpenter is required when name is Karpenter, and forbidden otherwise"
+// +union
 type ProvisionerConfig struct {
-	// name specifies the name of the provisioner to use.
+	// name specifies the name of the provisioner to use for automatic node management.
+	//
 	// +required
-	Name Provisioner `json:"name"`
+	// +unionDiscriminator
+	// +kubebuilder:validation:Enum=Karpenter
+	Name Provisioner `json:"name,omitempty"`
+
 	// karpenter specifies the configuration for the Karpenter provisioner.
+	//
 	// +optional
+	// +unionMember
 	Karpenter *KarpenterConfig `json:"karpenter,omitempty"`
 }
 
+// KarpenterConfig specifies the configuration for the Karpenter provisioner
+// including the target platform and platform-specific settings.
+//
+// +kubebuilder:validation:XValidation:rule="self.platform == 'AWS' ? has(self.aws) : !has(self.aws)",message="aws is required when platform is AWS, and forbidden otherwise"
+// +union
 type KarpenterConfig struct {
-	// platform specifies the platform-specific configuration for Karpenter.
+	// platform specifies the infrastructure platform that Karpenter should provision nodes on.
+	//
 	// +required
-	Platform PlatformType `json:"platform"`
+	// +unionDiscriminator
+	// +kubebuilder:validation:Enum=AWS
+	Platform PlatformType `json:"platform,omitempty"`
+
 	// aws specifies the AWS-specific configuration for Karpenter.
+	//
 	// +optional
+	// +unionMember
 	AWS *KarpenterAWSConfig `json:"aws,omitempty"`
 }
 
+// KarpenterAWSConfig specifies AWS-specific configuration for the Karpenter provisioner.
 type KarpenterAWSConfig struct {
-	// roleARN specifies the ARN of the Karpenter provisioner.
+	// roleARN specifies the ARN of the IAM role that Karpenter assumes to provision
+	// and manage EC2 instances in the hosted cluster's AWS account.
+	//
+	// The referenced role must have a trust relationship that allows it to be assumed
+	// by the karpenter service account in the hosted cluster via OIDC.
+	// Example:
+	// {
+	// 	"Version": "2012-10-17",
+	// 	"Statement": [
+	// 		{
+	// 			"Effect": "Allow",
+	// 			"Principal": {
+	// 				"Federated": "<oidc-provider-arn>"
+	// 			},
+	// 			"Action": "sts:AssumeRoleWithWebIdentity",
+	// 			"Condition": {
+	// 				"StringEquals": {
+	// 					"<oidc-provider-name>:sub": "system:serviceaccount:kube-system:karpenter"
+	// 				}
+	// 			}
+	// 		}
+	// 	]
+	// }
+	//
+	// The following is an example of the policy document for this role.
+	//
+	// {
+	// 	"Version": "2012-10-17",
+	// 	"Statement": [
+	// 		{
+	// 			"Sid": "AllowScopedEC2InstanceAccessActions",
+	// 			"Effect": "Allow",
+	// 			"Resource": [
+	// 				"arn:*:ec2:*::image/*",
+	// 				"arn:*:ec2:*::snapshot/*",
+	// 				"arn:*:ec2:*:*:security-group/*",
+	// 				"arn:*:ec2:*:*:subnet/*"
+	// 			],
+	// 			"Action": [
+	// 				"ec2:RunInstances",
+	// 				"ec2:CreateFleet"
+	// 			]
+	// 		},
+	// 		{
+	// 			"Sid": "AllowScopedEC2LaunchTemplateAccessActions",
+	// 			"Effect": "Allow",
+	// 			"Resource": "arn:*:ec2:*:*:launch-template/*",
+	// 			"Action": [
+	// 				"ec2:RunInstances",
+	// 				"ec2:CreateFleet"
+	// 			]
+	// 		},
+	// 		{
+	// 			"Sid": "AllowScopedEC2InstanceActionsWithTags",
+	// 			"Effect": "Allow",
+	// 			"Resource": [
+	// 				"arn:*:ec2:*:*:fleet/*",
+	// 				"arn:*:ec2:*:*:instance/*",
+	// 				"arn:*:ec2:*:*:volume/*",
+	// 				"arn:*:ec2:*:*:network-interface/*",
+	// 				"arn:*:ec2:*:*:launch-template/*",
+	// 				"arn:*:ec2:*:*:spot-instances-request/*"
+	// 			],
+	// 			"Action": [
+	// 				"ec2:RunInstances",
+	// 				"ec2:CreateFleet",
+	// 				"ec2:CreateLaunchTemplate"
+	// 			],
+	// 			"Condition": {
+	// 				"StringLike": {
+	// 					"aws:RequestTag/karpenter.sh/nodepool": "*"
+	// 				}
+	// 			}
+	// 		},
+	// 		{
+	// 			"Sid": "AllowScopedResourceCreationTagging",
+	// 			"Effect": "Allow",
+	// 			"Resource": [
+	// 				"arn:*:ec2:*:*:fleet/*",
+	// 				"arn:*:ec2:*:*:instance/*",
+	// 				"arn:*:ec2:*:*:volume/*",
+	// 				"arn:*:ec2:*:*:network-interface/*",
+	// 				"arn:*:ec2:*:*:launch-template/*",
+	// 				"arn:*:ec2:*:*:spot-instances-request/*"
+	// 			],
+	// 			"Action": "ec2:CreateTags",
+	// 			"Condition": {
+	// 				"StringEquals": {
+	// 					"ec2:CreateAction": [
+	// 						"RunInstances",
+	// 						"CreateFleet",
+	// 						"CreateLaunchTemplate"
+	// 					]
+	// 				},
+	// 				"StringLike": {
+	// 					"aws:RequestTag/karpenter.sh/nodepool": "*"
+	// 				}
+	// 			}
+	// 		},
+	// 		{
+	// 			"Sid": "AllowScopedResourceTagging",
+	// 			"Effect": "Allow",
+	// 			"Resource": "arn:*:ec2:*:*:instance/*",
+	// 			"Action": "ec2:CreateTags",
+	// 			"Condition": {
+	// 				"StringLike": {
+	// 					"aws:ResourceTag/karpenter.sh/nodepool": "*"
+	// 				}
+	// 			}
+	// 		},
+	// 		{
+	// 			"Sid": "AllowScopedDeletion",
+	// 			"Effect": "Allow",
+	// 			"Resource": [
+	// 				"arn:*:ec2:*:*:instance/*",
+	// 				"arn:*:ec2:*:*:launch-template/*"
+	// 			],
+	// 			"Action": [
+	// 				"ec2:TerminateInstances",
+	// 				"ec2:DeleteLaunchTemplate"
+	// 			],
+	// 			"Condition": {
+	// 				"StringLike": {
+	// 					"aws:ResourceTag/karpenter.sh/nodepool": "*"
+	// 				}
+	// 			}
+	// 		},
+	// 		{
+	// 			"Sid": "AllowRegionalReadActions",
+	// 			"Effect": "Allow",
+	// 			"Resource": "*",
+	// 			"Action": [
+	// 				"ec2:DescribeImages",
+	// 				"ec2:DescribeInstances",
+	// 				"ec2:DescribeInstanceTypeOfferings",
+	// 				"ec2:DescribeInstanceTypes",
+	// 				"ec2:DescribeLaunchTemplates",
+	// 				"ec2:DescribeSecurityGroups",
+	// 				"ec2:DescribeSpotPriceHistory",
+	// 				"ec2:DescribeSubnets"
+	// 			]
+	// 		},
+	// 		{
+	// 			"Sid": "AllowSSMReadActions",
+	// 			"Effect": "Allow",
+	// 			"Resource": "arn:*:ssm:*::parameter/aws/service/*",
+	// 			"Action": "ssm:GetParameter"
+	// 		},
+	// 		{
+	// 			"Sid": "AllowPricingReadActions",
+	// 			"Effect": "Allow",
+	// 			"Resource": "*",
+	// 			"Action": "pricing:GetProducts"
+	// 		},
+	// 		{
+	// 			"Sid": "AllowInterruptionQueueActions",
+	// 			"Effect": "Allow",
+	// 			"Resource": "*",
+	// 			"Action": [
+	// 				"sqs:DeleteMessage",
+	// 				"sqs:GetQueueUrl",
+	// 				"sqs:ReceiveMessage"
+	// 			]
+	// 		},
+	// 		{
+	// 			"Sid": "AllowPassingInstanceRole",
+	// 			"Effect": "Allow",
+	// 			"Resource": "arn:*:iam::*:role/*",
+	// 			"Action": "iam:PassRole",
+	// 			"Condition": {
+	// 				"StringEquals": {
+	// 					"iam:PassedToService": [
+	// 						"ec2.amazonaws.com",
+	// 						"ec2.amazonaws.com.cn"
+	// 					]
+	// 				}
+	// 			}
+	// 		},
+	// 		{
+	// 			"Sid": "AllowScopedInstanceProfileCreationActions",
+	// 			"Effect": "Allow",
+	// 			"Resource": "arn:*:iam::*:instance-profile/*",
+	// 			"Action": [
+	// 				"iam:CreateInstanceProfile"
+	// 			],
+	// 			"Condition": {
+	// 				"StringLike": {
+	// 					"aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": "*"
+	// 				}
+	// 			}
+	// 		},
+	// 		{
+	// 			"Sid": "AllowScopedInstanceProfileTagActions",
+	// 			"Effect": "Allow",
+	// 			"Resource": "arn:*:iam::*:instance-profile/*",
+	// 			"Action": [
+	// 				"iam:TagInstanceProfile"
+	// 			],
+	// 			"Condition": {
+	// 				"StringLike": {
+	// 					"aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": "*",
+	// 					"aws:RequestTag/karpenter.k8s.aws/ec2nodeclass": "*"
+	// 				}
+	// 			}
+	// 		},
+	// 		{
+	// 			"Sid": "AllowScopedInstanceProfileActions",
+	// 			"Effect": "Allow",
+	// 			"Resource": "arn:*:iam::*:instance-profile/*",
+	// 			"Action": [
+	// 				"iam:AddRoleToInstanceProfile",
+	// 				"iam:RemoveRoleFromInstanceProfile",
+	// 				"iam:DeleteInstanceProfile"
+	// 			],
+	// 			"Condition": {
+	// 				"StringLike": {
+	// 					"aws:ResourceTag/karpenter.k8s.aws/ec2nodeclass": "*"
+	// 				}
+	// 			}
+	// 		},
+	// 		{
+	// 			"Sid": "AllowInstanceProfileReadActions",
+	// 			"Effect": "Allow",
+	// 			"Resource": "arn:*:iam::*:instance-profile/*",
+	// 			"Action": "iam:GetInstanceProfile"
+	// 		},
+	// 		{
+	// 			"Sid": "AllowUnscopedInstanceProfileListAction",
+	// 			"Effect": "Allow",
+	// 			"Resource": "*",
+	// 			"Action": "iam:ListInstanceProfiles"
+	// 		}
+	// 	]
+	// }
+	//
 	// +required
-	// +kubebuilder:validation:MaxLength=255
-	RoleARN string `json:"roleARN"`
+	// +kubebuilder:validation:XValidation:rule="self.matches('^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:role/.+$')",message="roleARN must be a valid AWS IAM role ARN (e.g. arn:aws:iam::123456789012:role/MyRole)"
+	// +kubebuilder:validation:MaxLength=2048
+	RoleARN string `json:"roleARN,omitempty"`
 }
 
 const (
+	// ProvisionerKarpenter indicates that Karpenter is used for automatic node provisioning.
 	ProvisionerKarpenter Provisioner = "Karpenter"
 )
 
-// provisioner is a enum specifying the strategy for auto managing Nodes.
-// +kubebuilder:validation:Enum=Karpenter
+// Provisioner is the name of a supported node provisioner.
 type Provisioner string
 
 // Configures when and how to scale down cluster nodes.

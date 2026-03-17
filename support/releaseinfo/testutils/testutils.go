@@ -71,7 +71,8 @@ func InitReleaseImageOrDie(version string) *releaseinfo.ReleaseImage {
 							},
 						},
 						GCP: releaseinfo.CoreOSGCPImage{
-							Image: "projects/rhcos-cloud/global/images/rhcos-x86-64-test",
+							Project: "rhcos-cloud",
+							Name:    "rhcos-x86-64-test",
 						},
 					},
 				},
@@ -90,7 +91,8 @@ func InitReleaseImageOrDie(version string) *releaseinfo.ReleaseImage {
 							},
 						},
 						GCP: releaseinfo.CoreOSGCPImage{
-							Image: "projects/rhcos-cloud/global/images/rhcos-aarch64-test",
+							Project: "rhcos-cloud",
+							Name:    "rhcos-aarch64-test",
 						},
 					},
 				},

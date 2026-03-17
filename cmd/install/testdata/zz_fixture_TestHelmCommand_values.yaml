@@ -7,10 +7,12 @@ azure:
   keyVault:
     clientId: ""
 externaldns:
+  awsZonesCacheDuration: ""
   credsSecret: ""
   domainFilter: ""
   googleProject: ""
   image: ""
+  interval: ""
   txtOwnerId: ""
 image: ""
 imagetag: ""

@@ -7,8 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
+	aws "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	corev1 "k8s.io/api/core/v1"
@@ -85,15 +86,15 @@ func (k *KMSRootVolumeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes [
 	t.Logf("instanceID: %s", instanceID)
 
 	ec2client := ec2Client(k.clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, k.clusterOpts.AWSPlatform.Region)
-	output, err := ec2client.DescribeVolumesWithContext(k.ctx, &ec2.DescribeVolumesInput{
-		Filters: []*ec2.Filter{
+	output, err := ec2client.DescribeVolumes(k.ctx, &ec2.DescribeVolumesInput{
+		Filters: []ec2types.Filter{
 			{
 				Name:   aws.String("attachment.instance-id"),
-				Values: aws.StringSlice([]string{instanceID}),
+				Values: []string{instanceID},
 			},
 			{
 				Name:   aws.String("encrypted"),
-				Values: aws.StringSlice([]string{"true"}),
+				Values: []string{"true"},
 			},
 		},
 	})
@@ -103,14 +104,14 @@ func (k *KMSRootVolumeTest) Run(t *testing.T, nodePool hyperv1.NodePool, nodes [
 	rootVolume := output.Volumes[0]
 
 	if nodePool.Spec.Platform.AWS.RootVolume.EncryptionKey == "" {
-		resp, err := ec2client.GetEbsDefaultKmsKeyId(&ec2.GetEbsDefaultKmsKeyIdInput{})
+		resp, err := ec2client.GetEbsDefaultKmsKeyId(k.ctx, &ec2.GetEbsDefaultKmsKeyIdInput{})
 		g.Expect(err).ToNot(HaveOccurred())
 		g.Expect(resp).NotTo(BeNil())
 		g.Expect(resp.KmsKeyId).NotTo(BeNil())
 		g.Expect(resp.KmsKeyId).To(BeElementOf())
 		// When using a default EBS KMS Key, "alias/aws/ebs" will be returned if it hasn't been modified
 		// or the actual ID if the default EBS KMS Key is a custom KMS key
-		g.Expect(*resp.KmsKeyId).Should(BeElementOf("alias/aws/ebs", *rootVolume.KmsKeyId))
+		g.Expect(aws.ToString(resp.KmsKeyId)).Should(BeElementOf("alias/aws/ebs", aws.ToString(rootVolume.KmsKeyId)))
 	} else {
 		g.Expect(rootVolume.KmsKeyId).To(HaveValue(Equal(nodePool.Spec.Platform.AWS.RootVolume.EncryptionKey)))
 	}

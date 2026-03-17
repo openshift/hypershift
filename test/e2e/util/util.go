@@ -44,10 +44,10 @@ import (
 	routev1client "github.com/openshift/client-go/route/clientset/versioned"
 	"github.com/openshift/library-go/test/library/metrics"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
+	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	route53v2 "github.com/aws/aws-sdk-go-v2/service/route53"
 	route53types "github.com/aws/aws-sdk-go-v2/service/route53/types"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/ec2"
 
 	k8sadmissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
@@ -134,6 +134,7 @@ var (
 		// temporary workaround for https://issues.redhat.com/browse/CNV-76520
 		"kubevirt-cloud-controller-manager": 2,
 		// Allow 1 restart for token-minter sidecar race condition: https://issues.redhat.com/browse/GCP-441
+		// TODO(GCP-447): Remove this toleration once token-minter is injected as a native sidecar init container.
 		"gcp-cloud-controller-manager": 1,
 	}
 )
@@ -1616,6 +1617,7 @@ func EnsurePodsWithEmptyDirPVsHaveSafeToEvictAnnotations(t *testing.T, ctx conte
 			"openstack-manila-csi":                   "app",
 			"karpenter":                              "app",
 			"karpenter-operator":                     "app",
+			"aws-node-termination-handler":           "app",
 		}
 
 		hcpPods := &corev1.PodList{}
@@ -1939,13 +1941,9 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 			t.Skip("InPlace upgrade type is not supported for GlobalPullSecret")
 		}
 
-		// Get current available nodes count instead of using NodePool replicas
-		// This is because the test runs in parallel with other tests, and the actual number of nodes
-		// may differ from the NodePool replicas due to multi-zone configuration or other test interference
-		nodeCount, err := hyperutil.CountAvailableNodes(ctx, guestClient)
-		g.Expect(err).NotTo(HaveOccurred(), "failed to count available nodes")
-
-		t.Logf("NodePool replicas: %d, Available nodes: %d", *np.Spec.Replicas, nodeCount)
+		// Use NodePool replicas as the authoritative source for expected node count.
+		nodeCount := *np.Spec.Replicas
+		t.Logf("NodePool replicas: %d", nodeCount)
 
 		// Create the additional-pull-secret secret in the DataPlane using the dummy pull secret.
 		// The dummy pull secret is not authorized to pull restricted images.
@@ -1979,15 +1977,10 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		})
 
 		t.Run("Wait for critical DaemonSets to be ready - first check", func(t *testing.T) {
-			daemonSetsToCheck := []DaemonSetManifest{
-				{GetFunc: OpenshiftOVNKubeDaemonSet, AllowPartialNodes: false},
-				// Allow partial nodes for GlobalPullSecretDaemonSet to prevent E2E flakes when tests run in parallel
-				{GetFunc: hccomanifests.GlobalPullSecretDaemonSet, AllowPartialNodes: true},
-				{GetFunc: hccomanifests.KonnectivityAgentDaemonSet, AllowPartialNodes: true},
-			}
-
-			err := waitForDaemonSetsReady(t, ctx, guestClient, daemonSetsToCheck, nodeCount)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to wait for DaemonSets to be ready")
+			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, "ovnkube-node", "openshift-ovn-kubernetes", nodeCount)).To(Succeed())
+			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, nodeCount)).To(Succeed())
+			konnectivityDS := hccomanifests.KonnectivityAgentDaemonSet()
+			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, nodeCount)).To(Succeed())
 		})
 
 		// Create a pod which uses the restricted image, should fail
@@ -2006,6 +1999,10 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 			g.Expect(err).NotTo(HaveOccurred(), "failed to update additional-pull-secret secret")
 		})
 
+		// Wait for all nodes to return to Ready state after kubelet restart triggered by pull secret update
+		t.Log("Waiting for nodes to stabilize after pull secret update")
+		WaitForReadyNodesByNodePool(t, ctx, guestClient, np, entryHostedCluster.Spec.Platform.Type)
+
 		// Check if GlobalPullSecret secret is updated in the DataPlane
 		t.Run("Check if GlobalPullSecret secret is updated in the DataPlane", func(t *testing.T) {
 			globalPullSecret := hccomanifests.GlobalPullSecret()
@@ -2022,15 +2019,10 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 		})
 
 		t.Run("Wait for critical DaemonSets to be ready - second check", func(t *testing.T) {
-			daemonSetsToCheck := []DaemonSetManifest{
-				{GetFunc: OpenshiftOVNKubeDaemonSet, AllowPartialNodes: false},
-				// Allow partial nodes for GlobalPullSecretDaemonSet to prevent E2E flakes when tests run in parallel
-				{GetFunc: hccomanifests.GlobalPullSecretDaemonSet, AllowPartialNodes: true},
-				{GetFunc: hccomanifests.KonnectivityAgentDaemonSet, AllowPartialNodes: true},
-			}
-
-			err := waitForDaemonSetsReady(t, ctx, guestClient, daemonSetsToCheck, nodeCount)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to wait for DaemonSets to be ready")
+			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, "ovnkube-node", "openshift-ovn-kubernetes", nodeCount)).To(Succeed())
+			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, nodeCount)).To(Succeed())
+			konnectivityDS := hccomanifests.KonnectivityAgentDaemonSet()
+			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, konnectivityDS.Name, konnectivityDS.Namespace, nodeCount)).To(Succeed())
 		})
 
 		// Check if we can run a pod with the restricted image
@@ -2058,26 +2050,19 @@ func EnsureGlobalPullSecret(t *testing.T, ctx context.Context, mgmtClient crclie
 			}, 30*time.Second, 5*time.Second).Should(Succeed(), "global-pull-secret secret is still present")
 		})
 
-		// Wait for all nodes to stabilize after global-pull-secret deletion
+		// Wait for all nodes to return to Ready state after kubelet restart triggered by pull secret deletion
+		t.Log("Waiting for nodes to stabilize after pull secret deletion")
+		WaitForReadyNodesByNodePool(t, ctx, guestClient, np, entryHostedCluster.Spec.Platform.Type)
+
+		// Wait for all DaemonSets to be ready after nodes stabilize
 		t.Run("Wait for pull secret synchronization to stabilize across all nodes", func(t *testing.T) {
 			t.Log("Waiting for GlobalPullSecretDaemonSet to process the deletion and stabilize all nodes")
-
-			// Get current available nodes count instead of using DesiredNumberScheduled
-			// This is because the test runs in parallel with other tests, and some nodes may be unavailable, causing flakes in the CI.
-			availableNodesCount, err := hyperutil.CountAvailableNodes(ctx, guestClient)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to count available nodes")
-
-			daemonSetsToCheck := []DaemonSetManifest{
-				{GetFunc: hccomanifests.GlobalPullSecretDaemonSet, AllowPartialNodes: true},
-			}
-
-			err = waitForDaemonSetsReady(t, ctx, guestClient, daemonSetsToCheck, availableNodesCount)
-			g.Expect(err).NotTo(HaveOccurred(), "failed to wait for DaemonSets to be ready")
+			g.Expect(waitForDaemonSetReady(t, ctx, guestClient, hccomanifests.GlobalPullSecretDSName, hccomanifests.GlobalPullSecretNamespace, nodeCount)).To(Succeed())
 		})
 
 		// Check if the config.json is updated in all of the nodes
 		t.Run("Check if the config.json is correct in all of the nodes", func(t *testing.T) {
-			VerifyKubeletConfigWithDaemonSet(t, ctx, guestClient, dsImage)
+			VerifyKubeletConfigWithDaemonSet(t, ctx, guestClient, dsImage, nodeCount)
 		})
 	})
 }
@@ -2101,75 +2086,48 @@ func createAdditionalPullSecret(ctx context.Context, guestClient crclient.Client
 	return nil
 }
 
-// DaemonSetManifest represents a DaemonSet to be verified
-type DaemonSetManifest struct {
-	GetFunc           func() *appsv1.DaemonSet
-	AllowPartialNodes bool
-}
+// waitForDaemonSetReady waits for a DaemonSet to have all pods ready.
+// minExpected is a sanity check to ensure we don't succeed when DesiredNumberScheduled is temporarily 0.
+func waitForDaemonSetReady(t *testing.T, ctx context.Context, client crclient.Client, name, namespace string, minExpected int32) error {
+	t.Logf("Waiting for %s DaemonSet to be ready (min expected: %d)", name, minExpected)
 
-// waitForDaemonSetsReady waits for all specified DaemonSets to be ready
-func waitForDaemonSetsReady(t *testing.T, ctx context.Context, guestClient crclient.Client, daemonSets []DaemonSetManifest, nodeCount int32) error {
-	for _, dsManifest := range daemonSets {
-		daemonSetTemplate := dsManifest.GetFunc()
-		dsName := daemonSetTemplate.Name
-		allowPartialNodes := dsManifest.AllowPartialNodes
-
-		if allowPartialNodes {
-			t.Logf("Waiting for %s DaemonSet to be ready (using DesiredNumberScheduled)", dsName)
-		} else {
-			t.Logf("Waiting for %s DaemonSet to be ready with %d nodes", dsName, nodeCount)
-		}
-
-		err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
-			daemonSet := dsManifest.GetFunc()
-			err = guestClient.Get(ctx, crclient.ObjectKey{Name: daemonSet.Name, Namespace: daemonSet.Namespace}, daemonSet)
-			if err != nil {
-				t.Logf("Failed to get DaemonSet %s: %v", dsName, err)
-				return false, nil
-			}
-
-			if daemonSet.Status.ObservedGeneration < daemonSet.Generation {
-				t.Logf("DaemonSet %s status has not observed generation %d yet (current %d)", dsName, daemonSet.Generation, daemonSet.Status.ObservedGeneration)
-				return false, nil
-			}
-
-			actualReady := daemonSet.Status.NumberReady
-
-			if allowPartialNodes {
-				// Use the DaemonSet's own DesiredNumberScheduled which reflects current cluster state.
-				// This avoids race conditions where nodeCount was captured before additional nodes became available,
-				// which would cause the check to fail indefinitely with "X/Y pods ready" where X > Y.
-				desiredCount := daemonSet.Status.DesiredNumberScheduled
-
-				// For partial nodes mode, we wait for the rollout to complete but don't require
-				// all pods to be ready. This allows for nodes that may be temporarily unavailable.
-				if daemonSet.Status.UpdatedNumberScheduled != desiredCount {
-					t.Logf("DaemonSet %s update in flight: %d/%d pods updated",
-						dsName, daemonSet.Status.UpdatedNumberScheduled, desiredCount)
-					return false, nil
-				}
-
-				// Rollout complete - consider ready (partial readiness is acceptable)
-				t.Logf("DaemonSet %s ready: %d/%d pods ready, rollout complete", dsName, actualReady, desiredCount)
-				return true, nil
-			} else {
-				// Exact match for normal mode
-				if actualReady != nodeCount {
-					t.Logf("DaemonSet %s not ready: %d/%d pods ready", dsName, actualReady, nodeCount)
-					return false, nil
-				}
-
-				t.Logf("DaemonSet %s ready: %d/%d pods", dsName, actualReady, nodeCount)
-				return true, nil
-			}
-		})
+	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, 20*time.Minute, true, func(ctx context.Context) (done bool, err error) {
+		daemonSet := &appsv1.DaemonSet{}
+		err = client.Get(ctx, crclient.ObjectKey{Name: name, Namespace: namespace}, daemonSet)
 		if err != nil {
-			return fmt.Errorf("failed to wait for DaemonSet %s to be ready: %w", dsName, err)
+			t.Logf("Failed to get DaemonSet %s: %v", name, err)
+			return false, nil
 		}
 
-		t.Logf("✓ %s DaemonSet is ready", dsName)
+		if daemonSet.Status.ObservedGeneration < daemonSet.Generation {
+			t.Logf("DaemonSet %s status has not observed generation %d yet (current %d)", name, daemonSet.Generation, daemonSet.Status.ObservedGeneration)
+			return false, nil
+		}
+
+		desired := daemonSet.Status.DesiredNumberScheduled
+		ready := daemonSet.Status.NumberReady
+
+		// Ensure we have at least the minimum expected nodes
+		if desired < minExpected {
+			t.Logf("DaemonSet %s: desired=%d < minExpected=%d, waiting for nodes", name, desired, minExpected)
+			return false, nil
+		}
+
+		// Wait for all desired pods to be ready
+		if ready != desired {
+			t.Logf("DaemonSet %s not ready: %d/%d pods ready", name, ready, desired)
+			return false, nil
+		}
+
+		t.Logf("DaemonSet %s ready: %d/%d pods", name, ready, desired)
+		return true, nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to wait for DaemonSet %s to be ready: %w", name, err)
 	}
 
+	t.Logf("✓ %s DaemonSet is ready", name)
 	return nil
 }
 
@@ -2961,6 +2919,7 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 		expectedConditions[hyperv1.ClusterVersionProgressing] = metav1.ConditionTrue
 		delete(expectedConditions, hyperv1.ValidKubeVirtInfraNetworkMTU)
 		expectedConditions[hyperv1.DataPlaneConnectionAvailable] = metav1.ConditionUnknown
+		expectedConditions[hyperv1.ControlPlaneConnectionAvailable] = metav1.ConditionUnknown
 	}
 	if IsLessThan(Version415) {
 		// ValidKubeVirtInfraNetworkMTU condition is not present in versions < 4.15
@@ -2969,6 +2928,17 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 
 	if IsLessThan(Version421) {
 		delete(expectedConditions, hyperv1.DataPlaneConnectionAvailable)
+	}
+
+	if IsLessThan(Version422) {
+		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
+	}
+
+	// TODO: TEMPORARY - Remove this once ControlPlaneConnectionAvailable condition is merged and stable.
+	// Exclude ControlPlaneConnectionAvailable during upgrade tests as the condition
+	// may not be present in all builds during the upgrade window.
+	if strings.Contains(t.Name(), "Upgrade") {
+		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
 	}
 
 	var predicates []Predicate[*hyperv1.HostedCluster]
@@ -3420,14 +3390,14 @@ func EnsureDefaultSecurityGroupTags(t *testing.T, ctx context.Context, client cr
 
 		// Ensure that day2 tag is correctly applied to the default security group.
 		g.Eventually(func(g Gomega) {
-			sg, err := GetDefaultSecurityGroup(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
+			sg, err := GetDefaultSecurityGroup(ctx, clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region, hostedCluster.Status.Platform.AWS.DefaultWorkerSecurityGroupID)
 			g.Expect(err).NotTo(HaveOccurred(), "failed to get default security group")
 
-			g.Expect(sg.Tags).To(ContainElement(&ec2.Tag{
+			g.Expect(sg.Tags).To(ContainElement(ec2types.Tag{
 				Key:   aws.String(day2TagKey),
 				Value: aws.String(day2TagValue),
 			}))
-		}).WithContext(ctx).WithTimeout(time.Minute * 2).WithPolling(time.Second).Should(Succeed())
+		}).WithContext(ctx).WithTimeout(time.Minute * 10).WithPolling(time.Second).Should(Succeed())
 	})
 }
 
