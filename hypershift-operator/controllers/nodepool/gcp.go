@@ -162,8 +162,8 @@ func resolveGCPImage(nodePool *hyperv1.NodePool, releaseImage *releaseinfo.Relea
 	gcpPlatform := nodePool.Spec.Platform.GCP
 
 	// If user specified a custom image, use it
-	if gcpPlatform.Image != nil && *gcpPlatform.Image != "" {
-		return *gcpPlatform.Image, nil
+	if gcpPlatform.Image != "" {
+		return gcpPlatform.Image, nil
 	}
 
 	// Resolve image from release metadata
@@ -218,8 +218,8 @@ func configureGCPServiceAccount(saConfig *hyperv1.GCPNodeServiceAccount) *capigc
 	}
 
 	email := ""
-	if saConfig.Email != nil {
-		email = *saConfig.Email
+	if saConfig.Email != "" {
+		email = string(saConfig.Email)
 	}
 	return &capigcp.ServiceAccount{
 		Email:  email,
@@ -254,7 +254,7 @@ func configureGCPBootDisk(bootDiskConfig *hyperv1.GCPBootDisk) GCPBootDiskConfig
 	}
 
 	// Configure encryption if specified
-	if bootDiskConfig != nil && bootDiskConfig.EncryptionKey != nil {
+	if bootDiskConfig != nil && bootDiskConfig.EncryptionKey.KMSKeyName != "" {
 		config.EncryptionKey = &capigcp.CustomerEncryptionKey{
 			KeyType: capigcp.CustomerManagedKey,
 			ManagedKey: &capigcp.ManagedKey{

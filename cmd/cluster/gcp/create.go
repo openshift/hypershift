@@ -278,11 +278,11 @@ func (o *CreateOptions) ApplyPlatformSpecifics(hostedCluster *hyperv1.HostedClus
 			PoolID:        o.WorkloadIdentityPoolID,
 			ProviderID:    o.WorkloadIdentityProviderID,
 			ServiceAccountsEmails: hyperv1.GCPServiceAccountsEmails{
-				NodePool:        o.NodePoolServiceAccount,
-				ControlPlane:    o.ControlPlaneServiceAccount,
-				CloudController: o.CloudControllerServiceAccount,
-				Storage:         o.StorageServiceAccount,
-				ImageRegistry:   o.ImageRegistryServiceAccount,
+				NodePool:        hyperv1.GCPServiceAccountEmail(o.NodePoolServiceAccount),
+				ControlPlane:    hyperv1.GCPServiceAccountEmail(o.ControlPlaneServiceAccount),
+				CloudController: hyperv1.GCPServiceAccountEmail(o.CloudControllerServiceAccount),
+				Storage:         hyperv1.GCPServiceAccountEmail(o.StorageServiceAccount),
+				ImageRegistry:   hyperv1.GCPServiceAccountEmail(o.ImageRegistryServiceAccount),
 			},
 		},
 		EndpointAccess: hyperv1.GCPEndpointAccessType(o.EndpointAccess),
@@ -337,16 +337,11 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 	if subnet == "" {
 		subnet = o.PrivateServiceConnectSubnet
 	}
-	var bootImage *string
-	if o.BootImage != "" {
-		bootImage = &o.BootImage
-	}
-
 	nodePool.Spec.Platform.GCP = &hyperv1.GCPNodePoolPlatform{
 		MachineType: machineType,
 		Zone:        zone,
 		Subnet:      subnet,
-		Image:       bootImage,
+		Image:       o.BootImage,
 	}
 	return []*hyperv1.NodePool{nodePool}
 }

@@ -58,11 +58,11 @@ func TestCreateOptionsApplyPlatformSpecifics(t *testing.T) {
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ProjectNumber).To(Equal("123456789012"))
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.PoolID).To(Equal("test-pool-id"))
 	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ProviderID).To(Equal("test-provider-id"))
-	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool).To(Equal("nodepool@test-project-123.iam.gserviceaccount.com"))
-	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane).To(Equal("controlplane@test-project-123.iam.gserviceaccount.com"))
-	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController).To(Equal("cloudcontroller@test-project-123.iam.gserviceaccount.com"))
-	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage).To(Equal("storage@test-project-123.iam.gserviceaccount.com"))
-	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry).To(Equal("imageregistry@test-project-123.iam.gserviceaccount.com"))
+	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool).To(Equal(hyperv1.GCPServiceAccountEmail("nodepool@test-project-123.iam.gserviceaccount.com")))
+	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane).To(Equal(hyperv1.GCPServiceAccountEmail("controlplane@test-project-123.iam.gserviceaccount.com")))
+	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController).To(Equal(hyperv1.GCPServiceAccountEmail("cloudcontroller@test-project-123.iam.gserviceaccount.com")))
+	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.Storage).To(Equal(hyperv1.GCPServiceAccountEmail("storage@test-project-123.iam.gserviceaccount.com")))
+	g.Expect(hostedCluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ImageRegistry).To(Equal(hyperv1.GCPServiceAccountEmail("imageregistry@test-project-123.iam.gserviceaccount.com")))
 }
 
 func TestValidateGCPOptions(t *testing.T) {

@@ -338,7 +338,7 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	}
 
 	// Create credential secrets for all configured service accounts
-	credentialSecrets := map[string]*corev1.Secret{
+	credentialSecrets := map[hyperv1.GCPServiceAccountEmail]*corev1.Secret{
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool:        NodePoolManagementCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane:    ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController: CloudControllerCredsSecret(controlPlaneNamespace),
@@ -347,7 +347,7 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	}
 
 	for email, secret := range credentialSecrets {
-		if err := syncSecret(secret, email); err != nil {
+		if err := syncSecret(secret, string(email)); err != nil {
 			errs = append(errs, err)
 		}
 	}

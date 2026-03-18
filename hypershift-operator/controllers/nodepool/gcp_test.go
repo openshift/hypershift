@@ -237,7 +237,7 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 						GCP: &hyperv1.GCPNodePoolPlatform{
 							MachineType: "n1-standard-2",
 							Zone:        "us-central1-a",
-							Image:       ptr.To("projects/my-project/global/images/custom-rhcos-image"),
+							Image:       "projects/my-project/global/images/custom-rhcos-image",
 						},
 					},
 				},
@@ -345,7 +345,7 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 							BootDisk: &hyperv1.GCPBootDisk{
 								DiskSizeGB: ptr.To[int64](64),
 								DiskType:   ptr.To("pd-standard"),
-								EncryptionKey: &hyperv1.GCPDiskEncryptionKey{
+								EncryptionKey: hyperv1.GCPDiskEncryptionKey{
 									KMSKeyName: "projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key",
 								},
 							},
@@ -444,7 +444,7 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 							MachineType: "n1-standard-2",
 							Zone:        "us-central1-a",
 							ServiceAccount: &hyperv1.GCPNodeServiceAccount{
-								Email: ptr.To("test-nodepool@test-project.iam.gserviceaccount.com"),
+								Email: "test-nodepool@test-project.iam.gserviceaccount.com",
 								Scopes: []string{
 									"https://www.googleapis.com/auth/cloud-platform",
 								},

@@ -34940,7 +34940,7 @@ If not specified, defaults to &ldquo;pd-balanced&rdquo;.</p>
 </tr>
 <tr>
 <td>
-<code>encryptionKey</code></br>
+<code>encryptionKey,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPDiskEncryptionKey">
 GCPDiskEncryptionKey
@@ -35029,7 +35029,7 @@ private node communication with the control plane via Private Service Connect.</
 <tbody>
 <tr>
 <td>
-<code>network</code></br>
+<code>network,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
 GCPResourceReference
@@ -35042,7 +35042,7 @@ GCPResourceReference
 </tr>
 <tr>
 <td>
-<code>privateServiceConnectSubnet</code></br>
+<code>privateServiceConnectSubnet,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
 GCPResourceReference
@@ -35257,7 +35257,9 @@ If not specified, defaults to &ldquo;MIGRATE&rdquo; for Standard instances and &
 <td>
 <code>email</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -35360,7 +35362,7 @@ For a full list of valid regions, see: <a href="https://cloud.google.com/compute
 </tr>
 <tr>
 <td>
-<code>networkConfig</code></br>
+<code>networkConfig,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPNetworkConfig">
 GCPNetworkConfig
@@ -35663,10 +35665,9 @@ string
 </em>
 </td>
 <td>
-<em>(Optional)</em>
 <p>value is the value part of the label. A label value can have a maximum of 63 characters.
-Empty values are allowed by GCP. If non-empty, it must start with a lowercase letter,
-contain only lowercase letters, digits, underscores, or hyphens, and end with a lowercase letter or digit.
+Empty values are allowed by GCP. Values may contain only lowercase letters, digits,
+underscores, or hyphens.
 See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a> for Compute Engine label requirements.</p>
 </td>
 </tr>
@@ -35707,6 +35708,16 @@ See <a href="https://cloud.google.com/compute/docs/naming-resources">https://clo
 </tr>
 </tbody>
 </table>
+###GCPServiceAccountEmail { #hypershift.openshift.io/v1beta1.GCPServiceAccountEmail }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodeServiceAccount">GCPNodeServiceAccount</a>, 
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountsEmails">GCPServiceAccountsEmails</a>)
+</p>
+<p>
+<p>GCPServiceAccountEmail is the email address of a Google Service Account.
+Format: service-account-name@project-id.iam.gserviceaccount.com</p>
+</p>
 ###GCPServiceAccountsEmails { #hypershift.openshift.io/v1beta1.GCPServiceAccountsEmails }
 <p>
 (<em>Appears on:</em>
@@ -35728,7 +35739,9 @@ Each service account should have the appropriate IAM permissions for its specifi
 <td>
 <code>nodePool</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -35749,7 +35762,9 @@ the required service accounts with appropriate IAM roles and WIF bindings.</p>
 <td>
 <code>controlPlane</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -35770,7 +35785,9 @@ the required service accounts with appropriate IAM roles and WIF bindings.</p>
 <td>
 <code>cloudController</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -35791,7 +35808,9 @@ the required service accounts with appropriate IAM roles and WIF bindings.</p>
 <td>
 <code>storage</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -35813,7 +35832,9 @@ the required service accounts with appropriate IAM roles and WIF bindings.</p>
 <td>
 <code>imageRegistry</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
