@@ -975,10 +975,17 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 }
 
 type HyperShiftOperatorService struct {
-	Namespace *corev1.Namespace
+	Namespace              *corev1.Namespace
+	SelfSignedWebhookCerts bool
 }
 
 func (o HyperShiftOperatorService) Build() *corev1.Service {
+	annotations := map[string]string{}
+	if !o.SelfSignedWebhookCerts {
+		// On OpenShift, the service-ca operator creates the serving cert secret
+		annotations["service.beta.openshift.io/serving-cert-secret-name"] = "manager-serving-cert"
+	}
+
 	return &corev1.Service{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Service",
@@ -990,9 +997,7 @@ func (o HyperShiftOperatorService) Build() *corev1.Service {
 			Labels: map[string]string{
 				"name": HypershiftOperatorName,
 			},
-			Annotations: map[string]string{
-				"service.beta.openshift.io/serving-cert-secret-name": "manager-serving-cert",
-			},
+			Annotations: annotations,
 		},
 		Spec: corev1.ServiceSpec{
 			Type: corev1.ServiceTypeClusterIP,

@@ -140,11 +140,9 @@ func InstallHyperShiftOperator(ctx context.Context, logger logr.Logger, opts *Op
 		"--outputs=resources",
 		"--hypershift-image", opts.HyperShiftOperatorImage,
 		"--enable-ci-debug-output",
-		// Since it is hard to get all of the necessary setup done for the webhooks (serving certs, etc), we
-		// choose to omit the webhooks in these tests. The webhooks are not strictly required, and even some
-		// production deployments of HyperShift do not run the, so it is not extremely risky to do this, but
-		// we should keep in mind that we're drifting from an ideal production deployment by turning them off.
-		"--enable-conversion-webhook=false",
+		// Use self-signed certs for webhooks since integration tests don't have the
+		// OpenShift service-ca operator to provision webhook serving certificates.
+		"--self-signed-webhook-certs",
 		"--enable-defaulting-webhook=false",
 		"--enable-validating-webhook=false",
 		"--enable-size-tagging",

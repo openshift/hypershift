@@ -17,6 +17,8 @@ package install
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"fmt"
 	"io"
 	"os"
@@ -29,6 +31,7 @@ import (
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	hyperapi "github.com/openshift/hypershift/support/api"
+	"github.com/openshift/hypershift/support/certs"
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/metrics"
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
@@ -86,7 +89,7 @@ type Options struct {
 	Development                               bool
 	EnableDefaultingWebhook                   bool
 	EnableValidatingWebhook                   bool
-	EnableConversionWebhook                   bool
+	SelfSignedWebhookCerts                    bool
 	Template                                  bool
 	Format                                    string
 	OutputFile                                string
@@ -299,10 +302,9 @@ func (o *Options) ApplyDefaults() {
 	switch {
 	case o.Development:
 		o.HyperShiftOperatorReplicas = 0
-	case o.EnableDefaultingWebhook || o.EnableConversionWebhook || o.EnableValidatingWebhook:
-		o.HyperShiftOperatorReplicas = 2
 	default:
-		o.HyperShiftOperatorReplicas = 1
+		// CAPI 1.11 always requires conversion webhooks, so we always need 2 replicas.
+		o.HyperShiftOperatorReplicas = 2
 	}
 }
 
@@ -321,7 +323,7 @@ func NewCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&opts.Development, "development", opts.Development, "Enable tweaks to facilitate local development")
 	cmd.PersistentFlags().BoolVar(&opts.EnableDefaultingWebhook, "enable-defaulting-webhook", opts.EnableDefaultingWebhook, "Enable webhook for defaulting hypershift API types")
 	cmd.PersistentFlags().BoolVar(&opts.EnableValidatingWebhook, "enable-validating-webhook", opts.EnableValidatingWebhook, "Enable webhook for validating hypershift API types")
-	cmd.PersistentFlags().BoolVar(&opts.EnableConversionWebhook, "enable-conversion-webhook", opts.EnableConversionWebhook, "Enable webhook for converting hypershift API types")
+	cmd.PersistentFlags().BoolVar(&opts.SelfSignedWebhookCerts, "self-signed-webhook-certs", opts.SelfSignedWebhookCerts, "Generate self-signed certificates for webhook serving instead of relying on the OpenShift service-ca operator")
 	cmd.PersistentFlags().BoolVar(&opts.ExcludeEtcdManifests, "exclude-etcd", opts.ExcludeEtcdManifests, "Leave out etcd manifests")
 	cmd.PersistentFlags().Var(&opts.PlatformMonitoring, "platform-monitoring", "Select an option for enabling platform cluster monitoring. Valid values are: None, OperatorOnly, All")
 	cmd.PersistentFlags().BoolVar(&opts.EnableCIDebugOutput, "enable-ci-debug-output", opts.EnableCIDebugOutput, "If extra CI debug output should be enabled")
@@ -445,7 +447,7 @@ func NewInstallOptionsWithDefaults() Options {
 	opts.CertRotationScale = 24 * time.Hour
 	opts.Development = false
 	opts.EnableAdminRBACGeneration = false
-	opts.EnableConversionWebhook = true
+	opts.SelfSignedWebhookCerts = false
 	opts.EnableDedicatedRequestServingIsolation = true
 	opts.EnableDefaultingWebhook = false
 	opts.EnableEtcdRecovery = true
@@ -729,7 +731,29 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 		objects = append(objects, sharedIngressObjs...)
 	}
 
-	crds, err = setupCRDs(ctx, client, opts, operatorNamespace, operatorService)
+	// Generate self-signed webhook certs for non-OpenShift clusters (AKS, GKE)
+	var selfSignedCA []byte
+	if opts.SelfSignedWebhookCerts {
+		caCert, tlsCert, tlsKey, err := generateWebhookServingCerts(operatorNamespace.Name, operatorService.Name)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to generate self-signed webhook certs: %w", err)
+		}
+		selfSignedCA = caCert
+		servingCertSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "manager-serving-cert",
+				Namespace: operatorNamespace.Name,
+			},
+			Type: corev1.SecretTypeTLS,
+			Data: map[string][]byte{
+				corev1.TLSCertKey:       tlsCert,
+				corev1.TLSPrivateKeyKey: tlsKey,
+			},
+		}
+		objects = append(objects, servingCertSecret)
+	}
+
+	crds, err = setupCRDs(ctx, client, opts, operatorNamespace, operatorService, selfSignedCA)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -769,10 +793,12 @@ var ipamCRDNames = set.New(
 // setupCRDs returns the CRDs from all the manifests under the assets directory as list of CustomResourceDefinition objects
 //
 // The CRDs are filtered based on the options provided. If the option ExcludeEtcdManifests is set to true, the CRDs
-// related to etcd are excluded from the list. If the option EnableConversionWebhook is set to true, the CRDs related
-// to hypershift.openshift.io group are annotated with the necessary annotations to enable the conversion webhook.
+// related to etcd are excluded from the list. CAPI CRDs that need conversion webhooks (v1beta1 <-> v1beta2) are
+// always configured with conversion webhook settings.
+// If selfSignedCA is provided, the CA bundle is set directly on CRDs; otherwise the service-ca inject-cabundle
+// annotation is used (OpenShift only).
 // If a client is provided, IPAM CRDs that already exist in the cluster are skipped to avoid conflicts.
-func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service) ([]crclient.Object, error) {
+func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operatorNamespace *corev1.Namespace, operatorService *corev1.Service, selfSignedCA []byte) ([]crclient.Object, error) {
 	// Build a set of existing IPAM CRDs if a client is available
 	existingIPAMCRDs := set.New[string]()
 	if client != nil {
@@ -841,47 +867,78 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 				}
 				return true
 			}, func(crd *apiextensionsv1.CustomResourceDefinition) {
-				// Check if this CRD needs a conversion webhook
-				var needsConversion bool
-				var conversionReviewVersions []string
-
-				// Hypershift conversion can be toggled with a flag
-				if crd.Spec.Group == "hypershift.openshift.io" && opts.EnableConversionWebhook {
-					needsConversion = true
-					conversionReviewVersions = []string{"v1beta1", "v1alpha1"}
-
-					// CAPI conversion is always required during v1beta1 -> v1beta2 transition period
-				} else if override, ok := assets.CAPICRDOverrides[crd.Name]; ok && override.NeedsConversion {
-					needsConversion = true
-					conversionReviewVersions = []string{"v1beta1", "v1beta2"}
-				}
-
-				if !needsConversion {
+				// CAPI CRD conversion is always required during v1beta1 -> v1beta2 transition period.
+				override, ok := assets.CAPICRDOverrides[crd.Name]
+				if !ok || !override.NeedsConversion {
 					return
 				}
 
 				if crd.Annotations == nil {
 					crd.Annotations = map[string]string{}
 				}
-				crd.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
+
+				webhookClientConfig := &apiextensionsv1.WebhookClientConfig{
+					Service: &apiextensionsv1.ServiceReference{
+						Namespace: operatorNamespace.Name,
+						Name:      operatorService.Name,
+						Port:      ptr.To[int32](443),
+						Path:      ptr.To("/convert"),
+					},
+				}
+
+				if opts.SelfSignedWebhookCerts {
+					// Non-OpenShift clusters: set caBundle directly from self-signed CA
+					webhookClientConfig.CABundle = selfSignedCA
+				} else {
+					// OpenShift clusters: let service-ca inject the CA bundle
+					crd.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
+				}
+
 				crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
 					Strategy: apiextensionsv1.WebhookConverter,
 					Webhook: &apiextensionsv1.WebhookConversion{
-						ClientConfig: &apiextensionsv1.WebhookClientConfig{
-							Service: &apiextensionsv1.ServiceReference{
-								Namespace: operatorNamespace.Name,
-								Name:      operatorService.Name,
-								Port:      ptr.To[int32](443),
-								Path:      ptr.To("/convert"),
-							},
-						},
-						ConversionReviewVersions: conversionReviewVersions,
+						ClientConfig:             webhookClientConfig,
+						ConversionReviewVersions: []string{"v1beta1", "v1beta2"},
 					},
 				}
 			},
 		)...,
 	)
 	return crds, nil
+}
+
+// generateWebhookServingCerts generates a self-signed CA and a serving certificate for the webhook server.
+// This is used on non-OpenShift clusters (AKS, GKE) where the service-ca operator is not available.
+func generateWebhookServingCerts(namespace, serviceName string) (caCertPEM, tlsCertPEM, tlsKeyPEM []byte, err error) {
+	caCfg := &certs.CertCfg{
+		Subject:   pkix.Name{CommonName: "hypershift-webhook-ca", OrganizationalUnit: []string{"openshift"}},
+		KeyUsages: x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+		Validity:  certs.ValidityTenYears,
+		IsCA:      true,
+	}
+	caKey, caCrt, err := certs.GenerateSelfSignedCertificate(caCfg)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to generate webhook CA: %w", err)
+	}
+
+	servingCfg := &certs.CertCfg{
+		Subject:      pkix.Name{CommonName: serviceName + "." + namespace + ".svc", OrganizationalUnit: []string{"openshift"}},
+		KeyUsages:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		Validity:     certs.ValidityOneYear,
+		DNSNames: []string{
+			serviceName,
+			serviceName + "." + namespace,
+			serviceName + "." + namespace + ".svc",
+			serviceName + "." + namespace + ".svc.cluster.local",
+		},
+	}
+	servingKey, servingCrt, err := certs.GenerateSignedCertificate(caKey, caCrt, servingCfg)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to generate webhook serving cert: %w", err)
+	}
+
+	return certs.CertToPem(caCrt), certs.CertToPem(servingCrt), certs.PrivateKeyToPem(servingKey), nil
 }
 
 func isAWSPlatformEnabled(platformsToInstall []string) bool {
@@ -1008,7 +1065,7 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		Replicas:                                opts.HyperShiftOperatorReplicas,
 		EnableOCPClusterMonitoring:              opts.PlatformMonitoring == metrics.PlatformMonitoringAll,
 		EnableCIDebugOutput:                     opts.EnableCIDebugOutput,
-		EnableWebhook:                           opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || opts.EnableValidatingWebhook || opts.EnableAuditLogPersistence,
+		EnableWebhook:                           true, // Always required: CAPI 1.11 conversion webhooks need cert infrastructure
 		EnableValidatingWebhook:                 opts.EnableValidatingWebhook,
 		PrivatePlatform:                         opts.PrivatePlatform,
 		AWSPrivateRegion:                        opts.AWSPrivateRegion,
@@ -1046,7 +1103,8 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		ScaleFromZeroProvider:                   opts.ScaleFromZeroProvider,
 	}.Build()
 	operatorService := assets.HyperShiftOperatorService{
-		Namespace: operatorNamespace,
+		Namespace:              operatorNamespace,
+		SelfSignedWebhookCerts: opts.SelfSignedWebhookCerts,
 	}.Build()
 
 	return operatorService, []crclient.Object{operatorDeployment, operatorService}
