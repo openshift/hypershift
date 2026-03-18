@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/blang/semver"
-
 	configv1 "github.com/openshift/api/config/v1"
 	imagestreamv1 "github.com/openshift/api/image/v1"
 	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
@@ -15,6 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
+
+	"github.com/blang/semver"
 )
 
 type CapabiltyChecker interface {

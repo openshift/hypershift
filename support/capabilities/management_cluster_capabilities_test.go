@@ -304,7 +304,6 @@ func (f fakeFailableDiscoveryClient) ServerVersion() (*apiversion.Info, error) {
 	return &apiversion.Info{GitVersion: f.gitVersion}, nil
 }
 
-
 func TestDetectNativeSidecarCapability(t *testing.T) {
 	tests := []struct {
 		name            string
