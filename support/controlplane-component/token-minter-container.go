@@ -102,6 +102,9 @@ func (opts TokenMinterContainerOptions) injectContainer(nativeSidecarsEnabled bo
 		podSpec.Containers = append(podSpec.Containers, container)
 	}
 
+	if len(podSpec.Containers) == 0 {
+		panic("injectContainer: podSpec.Containers must have at least one container")
+	}
 	podSpec.Containers[0].VolumeMounts = append(podSpec.Containers[0].VolumeMounts, corev1.VolumeMount{
 		Name:      volumeName,
 		MountPath: mainContainerMountPath,
