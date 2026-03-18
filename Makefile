@@ -91,15 +91,21 @@ $(KUBEAPILINTER_PLUGIN): $(TOOLS_DIR)/go.mod # Build kube-api-linter as Go plugi
 # This is always set in OpenShift CI.
 PULL_BASE_SHA ?= main
 
-.PHONY: lint
-lint: generate $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
-	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v
+.PHONY: api-lint
+api-lint: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v --new-from-rev=${PULL_BASE_SHA}
 
-.PHONY: lint-fix
-lint-fix: generate $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
-	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
+.PHONY: api-lint-fix
+api-lint-fix: $(GOLANGCI_LINT) $(KUBEAPILINTER_PLUGIN)
 	cd api && $(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v --new-from-rev=${PULL_BASE_SHA}
+
+.PHONY: lint
+lint: generate api-lint
+	$(GOLANGCI_LINT) run --config ./.golangci.yml --modules-download-mode=readonly -v
+
+.PHONY: lint-fix
+lint-fix: generate api-lint-fix
+	$(GOLANGCI_LINT) run --config ./.golangci.yml --fix -v
 
 .PHONY: verify
 verify: generate update staticcheck fmt vet verify-codespell lint cpo-container-sync run-gitlint
