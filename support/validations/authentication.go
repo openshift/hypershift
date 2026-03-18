@@ -64,7 +64,7 @@ func ValidateAuthenticationSpecForTypeOIDC(ctx context.Context, client crclient.
 	if err != nil {
 		return fmt.Errorf("parsing kubernetes version %q", kubeVersion.String())
 	}
-	celCompiler := cel.NewCompiler(environment.MustBaseEnvSet(envVersion, true))
+	celCompiler := cel.NewCompiler(environment.MustBaseEnvSet(envVersion))
 
 	apiServerAuthConfig, err := kas.HCPAuthConfigToAPIServerAuthConfig(authConfig)
 	if err != nil {
