@@ -74,11 +74,17 @@ func (opts TokenMinterContainerOptions) injectTokenMinterContainer(cpContext Con
 	}
 }
 
-// injectContainer adds the token-minter container to the pod spec. When native sidecar containers are supported
-// (K8s >= 1.29), it injects as an init container with RestartPolicy=Always and a StartupProbe that blocks
-// main containers until the token file exists. Otherwise, it falls back to a regular sidecar container.
+// injectContainer adds the token-minter container to the pod spec.
+// - OneShot minters are injected as regular init containers, which run to completion before main containers start.
+// - When native sidecar containers are supported (K8s >= 1.29), it injects as an init container with
+//   RestartPolicy=Always and a StartupProbe that blocks main containers until the token file exists.
+// - Otherwise, it falls back to a regular sidecar container.
 func (opts TokenMinterContainerOptions) injectContainer(nativeSidecarsEnabled bool, podSpec *corev1.PodSpec, container corev1.Container, mainContainerMountPath string, volumeName string) {
-	if nativeSidecarsEnabled && !opts.OneShot {
+	if opts.OneShot {
+		// OneShot minters run once and exit. As a regular init container, K8s guarantees
+		// they complete before main containers start, so no probe is needed.
+		podSpec.InitContainers = append(podSpec.InitContainers, container)
+	} else if nativeSidecarsEnabled {
 		restartAlways := corev1.ContainerRestartPolicyAlways
 		container.RestartPolicy = &restartAlways
 		container.StartupProbe = &corev1.Probe{

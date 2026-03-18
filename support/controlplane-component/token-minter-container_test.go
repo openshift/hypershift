@@ -89,7 +89,7 @@ func TestInjectContainer(t *testing.T) {
 		g.Expect(sidecar.StartupProbe).To(BeNil())
 	})
 
-	t.Run("When native sidecars are enabled and OneShot is true it should inject as regular sidecar container", func(t *testing.T) {
+	t.Run("When OneShot is true it should inject as regular init container without restart policy or probe", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
 		oneShotOpts := TokenMinterContainerOptions{
@@ -99,13 +99,15 @@ func TestInjectContainer(t *testing.T) {
 			OneShot:                 true,
 		}
 
-		podSpec := basePodSpec()
-		oneShotOpts.injectContainer(true, podSpec, baseContainer, cloudTokenFileMountPath, "cloud-token")
+		for _, nativeSidecars := range []bool{true, false} {
+			podSpec := basePodSpec()
+			oneShotOpts.injectContainer(nativeSidecars, podSpec, baseContainer, cloudTokenFileMountPath, "cloud-token")
 
-		g.Expect(podSpec.InitContainers).To(BeEmpty(), "oneshot minters should not be injected as init containers")
-		g.Expect(podSpec.Containers).To(HaveLen(2))
-		g.Expect(podSpec.Containers[1].RestartPolicy).To(BeNil())
-		g.Expect(podSpec.Containers[1].StartupProbe).To(BeNil())
+			g.Expect(podSpec.InitContainers).To(HaveLen(1), "oneshot minters should be injected as init containers")
+			g.Expect(podSpec.Containers).To(HaveLen(1), "oneshot minters should not be added to regular containers")
+			g.Expect(podSpec.InitContainers[0].RestartPolicy).To(BeNil())
+			g.Expect(podSpec.InitContainers[0].StartupProbe).To(BeNil())
+		}
 	})
 
 	t.Run("When injecting it should always add volume mount to the main container", func(t *testing.T) {
