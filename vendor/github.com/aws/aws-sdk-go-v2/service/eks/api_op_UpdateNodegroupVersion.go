@@ -103,8 +103,9 @@ type UpdateNodegroupVersionInput struct {
 	// [Amazon EKS optimized Windows AMI versions]: https://docs.aws.amazon.com/eks/latest/userguide/eks-ami-versions-windows.html
 	ReleaseVersion *string
 
-	// The Kubernetes version to update to. If no version is specified, then the
-	// Kubernetes version of the node group does not change. You can specify the
+	// The Kubernetes version to update to. If no version is specified, then the node
+	// group will be updated to match the cluster's current Kubernetes version, and the
+	// latest available AMI for that version will be used. You can also specify the
 	// Kubernetes version of the cluster to update the node group to the latest AMI
 	// version of the cluster's Kubernetes version. If you specify launchTemplate , and
 	// your launch template uses a custom AMI, then don't specify version , or the node
@@ -225,40 +226,7 @@ func (c *Client) addOperationUpdateNodegroupVersionMiddlewares(stack *middleware
 	if err = addInterceptAttempt(stack, options); err != nil {
 		return err
 	}
-	if err = addInterceptExecution(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptBeforeSerialization(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptAfterSerialization(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptBeforeSigning(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptAfterSigning(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptTransmit(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptBeforeDeserialization(stack, options); err != nil {
-		return err
-	}
-	if err = addInterceptAfterDeserialization(stack, options); err != nil {
-		return err
-	}
-	if err = addSpanInitializeStart(stack); err != nil {
-		return err
-	}
-	if err = addSpanInitializeEnd(stack); err != nil {
-		return err
-	}
-	if err = addSpanBuildRequestStart(stack); err != nil {
-		return err
-	}
-	if err = addSpanBuildRequestEnd(stack); err != nil {
+	if err = addInterceptors(stack, options); err != nil {
 		return err
 	}
 	return nil
