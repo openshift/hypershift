@@ -123,8 +123,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				InstanceStorePolicy: hyperkarpenterv1.InstanceStorePolicyRAID0,
 				Monitoring:          hyperkarpenterv1.MonitoringStateDetailed,
 				MetadataOptions: hyperkarpenterv1.MetadataOptions{
-					HTTPEndpoint:            hyperkarpenterv1.MetadataEndpointStateEnabled,
-					HTTPProtocolIPv6:        hyperkarpenterv1.MetadataProtocolIPv6StateDisabled,
+					Access:                  hyperkarpenterv1.MetadataAccessHTTPEndpoint,
+					HTTPProtocolIP:          hyperkarpenterv1.MetadataHTTPProtocolIPv4,
 					HTTPPutResponseHopLimit: 1,
 					HTTPTokens:              hyperkarpenterv1.MetadataHTTPTokensStateRequired,
 				},
@@ -173,8 +173,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 			name: "When MetadataOptions is specified it should be mapped to EC2NodeClass",
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
 				MetadataOptions: hyperkarpenterv1.MetadataOptions{
-					HTTPEndpoint:            hyperkarpenterv1.MetadataEndpointStateEnabled,
-					HTTPProtocolIPv6:        hyperkarpenterv1.MetadataProtocolIPv6StateDisabled,
+					Access:                  hyperkarpenterv1.MetadataAccessHTTPEndpoint,
+					HTTPProtocolIP:          hyperkarpenterv1.MetadataHTTPProtocolIPv4,
 					HTTPPutResponseHopLimit: 2,
 					HTTPTokens:              hyperkarpenterv1.MetadataHTTPTokensStateRequired,
 				},

@@ -485,8 +485,8 @@ func TestKarpenter(t *testing.T) {
 						{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
 					},
 					MetadataOptions: hyperkarpenterv1.MetadataOptions{
-						HTTPEndpoint:            hyperkarpenterv1.MetadataEndpointStateEnabled,
-						HTTPProtocolIPv6:        hyperkarpenterv1.MetadataProtocolIPv6StateDisabled,
+						Access:                  hyperkarpenterv1.MetadataAccessHTTPEndpoint,
+						HTTPProtocolIP:          hyperkarpenterv1.MetadataHTTPProtocolIPv4,
 						HTTPPutResponseHopLimit: 2,
 						HTTPTokens:              hyperkarpenterv1.MetadataHTTPTokensStateRequired,
 					},

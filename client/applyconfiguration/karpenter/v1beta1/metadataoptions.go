@@ -24,10 +24,10 @@ import (
 // MetadataOptionsApplyConfiguration represents a declarative configuration of the MetadataOptions type for use
 // with apply.
 type MetadataOptionsApplyConfiguration struct {
-	HTTPEndpoint            *karpenterv1beta1.MetadataEndpointState     `json:"httpEndpoint,omitempty"`
-	HTTPProtocolIPv6        *karpenterv1beta1.MetadataProtocolIPv6State `json:"httpProtocolIPv6,omitempty"`
-	HTTPPutResponseHopLimit *int64                                      `json:"httpPutResponseHopLimit,omitempty"`
-	HTTPTokens              *karpenterv1beta1.MetadataHTTPTokensState   `json:"httpTokens,omitempty"`
+	Access                  *karpenterv1beta1.MetadataAccess          `json:"access,omitempty"`
+	HTTPProtocolIP          *karpenterv1beta1.MetadataHTTPProtocol    `json:"httpProtocolIP,omitempty"`
+	HTTPPutResponseHopLimit *int64                                    `json:"httpPutResponseHopLimit,omitempty"`
+	HTTPTokens              *karpenterv1beta1.MetadataHTTPTokensState `json:"httpTokens,omitempty"`
 }
 
 // MetadataOptionsApplyConfiguration constructs a declarative configuration of the MetadataOptions type for use with
@@ -36,19 +36,19 @@ func MetadataOptions() *MetadataOptionsApplyConfiguration {
 	return &MetadataOptionsApplyConfiguration{}
 }
 
-// WithHTTPEndpoint sets the HTTPEndpoint field in the declarative configuration to the given value
+// WithAccess sets the Access field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the HTTPEndpoint field is set to the value of the last call.
-func (b *MetadataOptionsApplyConfiguration) WithHTTPEndpoint(value karpenterv1beta1.MetadataEndpointState) *MetadataOptionsApplyConfiguration {
-	b.HTTPEndpoint = &value
+// If called multiple times, the Access field is set to the value of the last call.
+func (b *MetadataOptionsApplyConfiguration) WithAccess(value karpenterv1beta1.MetadataAccess) *MetadataOptionsApplyConfiguration {
+	b.Access = &value
 	return b
 }
 
-// WithHTTPProtocolIPv6 sets the HTTPProtocolIPv6 field in the declarative configuration to the given value
+// WithHTTPProtocolIP sets the HTTPProtocolIP field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the HTTPProtocolIPv6 field is set to the value of the last call.
-func (b *MetadataOptionsApplyConfiguration) WithHTTPProtocolIPv6(value karpenterv1beta1.MetadataProtocolIPv6State) *MetadataOptionsApplyConfiguration {
-	b.HTTPProtocolIPv6 = &value
+// If called multiple times, the HTTPProtocolIP field is set to the value of the last call.
+func (b *MetadataOptionsApplyConfiguration) WithHTTPProtocolIP(value karpenterv1beta1.MetadataHTTPProtocol) *MetadataOptionsApplyConfiguration {
+	b.HTTPProtocolIP = &value
 	return b
 }
 

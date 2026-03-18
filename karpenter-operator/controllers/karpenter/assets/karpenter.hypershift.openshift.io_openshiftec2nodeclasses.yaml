@@ -203,47 +203,37 @@ spec:
                   Required.
                 minProperties: 1
                 properties:
-                  httpEndpoint:
-                    default: Enabled
+                  access:
                     description: |-
-                      httpEndpoint enables or disables the HTTP metadata endpoint on provisioned
-                      nodes. If metadata options is non-nil, but this parameter is not specified,
-                      the default state is "Enabled".
-
-                      If you specify a value of "Disabled", instance metadata will not be accessible
-                      on the node.
+                      access specifies how the instance metadata endpoint is accessed on
+                      provisioned nodes. When omitted, the platform defaults to HTTP endpoint access.
                     enum:
-                    - Enabled
-                    - Disabled
+                    - HTTPEndpoint
+                    - None
                     type: string
-                  httpProtocolIPv6:
-                    default: Disabled
+                  httpProtocolIP:
                     description: |-
-                      httpProtocolIPv6 enables or disables the IPv6 endpoint for the instance metadata
-                      service on provisioned nodes. If metadata options is non-nil, but this parameter
-                      is not specified, the default state is "Disabled".
+                      httpProtocolIP specifies the IP protocol version for the instance metadata
+                      service endpoint on provisioned nodes. When omitted, the platform defaults
+                      to IPv4.
                     enum:
-                    - Enabled
-                    - Disabled
+                    - IPv4
+                    - IPv6
                     type: string
                   httpPutResponseHopLimit:
-                    default: 1
                     description: |-
                       httpPutResponseHopLimit is the desired HTTP PUT response hop limit for
                       instance metadata requests. The larger the number, the further instance
                       metadata requests can travel. Possible values are integers from 1 to 64.
-                      If metadata options is non-nil, but this parameter is not specified, the
-                      default value is 1.
+                      When omitted, the platform defaults to a hop limit of 1.
                     format: int64
                     maximum: 64
                     minimum: 1
                     type: integer
                   httpTokens:
-                    default: Required
                     description: |-
                       httpTokens determines the state of token usage for instance metadata
-                      requests. If metadata options is non-nil, but this parameter is not
-                      specified, the default state is "Required".
+                      requests. When omitted, the platform defaults to "Required" (IMDSv2).
 
                       If the state is "Optional", one can choose to retrieve instance metadata with
                       or without a signed token header on the request. If one retrieves the IAM

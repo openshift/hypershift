@@ -411,26 +411,26 @@ type BlockDevice struct {
 	VolumeType VolumeType `json:"volumeType,omitempty"`
 }
 
-// MetadataEndpointState controls the HTTP metadata endpoint on provisioned nodes.
-// +kubebuilder:validation:Enum=Enabled;Disabled
-type MetadataEndpointState string
+// MetadataAccess specifies how the instance metadata endpoint is accessed on provisioned nodes.
+// +kubebuilder:validation:Enum=HTTPEndpoint;None
+type MetadataAccess string
 
 const (
-	// MetadataEndpointStateEnabled enables the HTTP metadata endpoint.
-	MetadataEndpointStateEnabled MetadataEndpointState = "Enabled"
-	// MetadataEndpointStateDisabled disables the HTTP metadata endpoint.
-	MetadataEndpointStateDisabled MetadataEndpointState = "Disabled"
+	// MetadataAccessHTTPEndpoint enables access to instance metadata via the HTTP endpoint.
+	MetadataAccessHTTPEndpoint MetadataAccess = "HTTPEndpoint"
+	// MetadataAccessNone disables access to instance metadata.
+	MetadataAccessNone MetadataAccess = "None"
 )
 
-// MetadataProtocolIPv6State controls the IPv6 endpoint for the instance metadata service.
-// +kubebuilder:validation:Enum=Enabled;Disabled
-type MetadataProtocolIPv6State string
+// MetadataHTTPProtocol specifies the IP protocol version for the instance metadata service endpoint.
+// +kubebuilder:validation:Enum=IPv4;IPv6
+type MetadataHTTPProtocol string
 
 const (
-	// MetadataProtocolIPv6StateEnabled enables the IPv6 metadata endpoint.
-	MetadataProtocolIPv6StateEnabled MetadataProtocolIPv6State = "Enabled"
-	// MetadataProtocolIPv6StateDisabled disables the IPv6 metadata endpoint.
-	MetadataProtocolIPv6StateDisabled MetadataProtocolIPv6State = "Disabled"
+	// MetadataHTTPProtocolIPv4 uses the IPv4 endpoint for the instance metadata service.
+	MetadataHTTPProtocolIPv4 MetadataHTTPProtocol = "IPv4"
+	// MetadataHTTPProtocolIPv6 uses the IPv6 endpoint for the instance metadata service.
+	MetadataHTTPProtocolIPv6 MetadataHTTPProtocol = "IPv6"
 )
 
 // MetadataHTTPTokensState determines the state of token usage for instance metadata requests.
@@ -446,36 +446,30 @@ const (
 
 // MetadataOptions contains parameters for specifying the exposure of the
 // Instance Metadata Service to provisioned EC2 nodes.
+// When omitted, the platform preserves control over default behaviour which
+// is subject to change over time. Currently defaults to HTTP endpoint access
+// with IPv4, a hop limit of 1, and required tokens (IMDSv2).
 // +kubebuilder:validation:MinProperties=1
 type MetadataOptions struct {
-	// httpEndpoint enables or disables the HTTP metadata endpoint on provisioned
-	// nodes. If metadata options is non-nil, but this parameter is not specified,
-	// the default state is "Enabled".
-	//
-	// If you specify a value of "Disabled", instance metadata will not be accessible
-	// on the node.
-	// +kubebuilder:default=Enabled
+	// access specifies how the instance metadata endpoint is accessed on
+	// provisioned nodes. When omitted, the platform defaults to HTTP endpoint access.
 	// +optional
-	HTTPEndpoint MetadataEndpointState `json:"httpEndpoint,omitempty"`
-	// httpProtocolIPv6 enables or disables the IPv6 endpoint for the instance metadata
-	// service on provisioned nodes. If metadata options is non-nil, but this parameter
-	// is not specified, the default state is "Disabled".
-	// +kubebuilder:default=Disabled
+	Access MetadataAccess `json:"access,omitempty"`
+	// httpProtocolIP specifies the IP protocol version for the instance metadata
+	// service endpoint on provisioned nodes. When omitted, the platform defaults
+	// to IPv4.
 	// +optional
-	HTTPProtocolIPv6 MetadataProtocolIPv6State `json:"httpProtocolIPv6,omitempty"`
+	HTTPProtocolIP MetadataHTTPProtocol `json:"httpProtocolIP,omitempty"`
 	// httpPutResponseHopLimit is the desired HTTP PUT response hop limit for
 	// instance metadata requests. The larger the number, the further instance
 	// metadata requests can travel. Possible values are integers from 1 to 64.
-	// If metadata options is non-nil, but this parameter is not specified, the
-	// default value is 1.
-	// +kubebuilder:default=1
+	// When omitted, the platform defaults to a hop limit of 1.
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=64
 	// +optional
 	HTTPPutResponseHopLimit int64 `json:"httpPutResponseHopLimit,omitempty"`
 	// httpTokens determines the state of token usage for instance metadata
-	// requests. If metadata options is non-nil, but this parameter is not
-	// specified, the default state is "Required".
+	// requests. When omitted, the platform defaults to "Required" (IMDSv2).
 	//
 	// If the state is "Optional", one can choose to retrieve instance metadata with
 	// or without a signed token header on the request. If one retrieves the IAM
@@ -487,7 +481,6 @@ type MetadataOptions struct {
 	// instance metadata retrieval requests. In this state, retrieving the IAM
 	// role credentials always returns the version 2.0 credentials; the version
 	// 1.0 credentials are not available.
-	// +kubebuilder:default=Required
 	// +optional
 	HTTPTokens MetadataHTTPTokensState `json:"httpTokens,omitempty"`
 }

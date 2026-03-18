@@ -46,21 +46,30 @@ func (spec OpenshiftEC2NodeClassSpec) KarpenterAssociatePublicIPAddress() *bool 
 
 func (spec OpenshiftEC2NodeClassSpec) KarpenterMetadataOptions() *awskarpenterv1.MetadataOptions {
 	mo := spec.MetadataOptions
-	if mo.HTTPEndpoint == "" && mo.HTTPProtocolIPv6 == "" && mo.HTTPPutResponseHopLimit == 0 && mo.HTTPTokens == "" {
+	if mo.Access == "" && mo.HTTPProtocolIP == "" && mo.HTTPPutResponseHopLimit == 0 && mo.HTTPTokens == "" {
 		return nil
 	}
 	opts := &awskarpenterv1.MetadataOptions{}
-	if mo.HTTPEndpoint != "" {
-		opts.HTTPEndpoint = ptr.To(strings.ToLower(string(mo.HTTPEndpoint)))
+	switch mo.Access {
+	case MetadataAccessHTTPEndpoint:
+		opts.HTTPEndpoint = ptr.To("enabled")
+	case MetadataAccessNone:
+		opts.HTTPEndpoint = ptr.To("disabled")
 	}
-	if mo.HTTPProtocolIPv6 != "" {
-		opts.HTTPProtocolIPv6 = ptr.To(strings.ToLower(string(mo.HTTPProtocolIPv6)))
+	switch mo.HTTPProtocolIP {
+	case MetadataHTTPProtocolIPv6:
+		opts.HTTPProtocolIPv6 = ptr.To("enabled")
+	case MetadataHTTPProtocolIPv4:
+		opts.HTTPProtocolIPv6 = ptr.To("disabled")
 	}
 	if mo.HTTPPutResponseHopLimit != 0 {
 		opts.HTTPPutResponseHopLimit = ptr.To(mo.HTTPPutResponseHopLimit)
 	}
-	if mo.HTTPTokens != "" {
-		opts.HTTPTokens = ptr.To(strings.ToLower(string(mo.HTTPTokens)))
+	switch mo.HTTPTokens {
+	case MetadataHTTPTokensStateRequired:
+		opts.HTTPTokens = ptr.To("required")
+	case MetadataHTTPTokensStateOptional:
+		opts.HTTPTokens = ptr.To("optional")
 	}
 	return opts
 }
