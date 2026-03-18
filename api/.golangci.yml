@@ -103,7 +103,7 @@ linters:
     rules:
       - linters:
           - kubeapilinter
-        path-except: hypershift//*
+        path: ^vendor/
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/aws.go
