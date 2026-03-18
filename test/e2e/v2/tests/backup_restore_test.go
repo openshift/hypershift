@@ -274,13 +274,16 @@ var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func
 			By("Waiting for control plane deployments to be ready")
 			err = internal.WaitForControlPlaneDeploymentsReadiness(testCtx, backuprestore.RestoreTimeout, platformCfg.excludeWorkloads)
 			Expect(err).NotTo(HaveOccurred())
-			By("Validating NodePool conditions")
-			Eventually(func(g Gomega) {
-				nodePool, err := getNodePool(testCtx)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(nodePool).NotTo(BeNil())
-				internal.ValidateConditions(g, nodePool, expectedConditions)
-			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.OIDCTimeout).Should(Succeed())
+			// TODO(mgencur): Remove this condition once https://redhat.atlassian.net/browse/MGMT-23509 is fixed
+			if testCtx.GetHostedCluster().Spec.Platform.Type != hyperv1.AgentPlatform {
+				By("Validating NodePool conditions")
+				Eventually(func(g Gomega) {
+					nodePool, err := getNodePool(testCtx)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(nodePool).NotTo(BeNil())
+					internal.ValidateConditions(g, nodePool, expectedConditions)
+				}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.OIDCTimeout).Should(Succeed())
+			}
 		})
 	})
 })
