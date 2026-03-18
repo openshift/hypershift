@@ -6877,8 +6877,8 @@ string
 </td>
 <td>
 <p>value is the value part of the label. A label value can have a maximum of 63 characters.
-Empty values are allowed by GCP. Values may contain only lowercase letters, digits,
-underscores, or hyphens.
+Empty values are allowed by GCP. If non-empty, it must start with a lowercase letter,
+contain only lowercase letters, digits, underscores, or hyphens, and end with a lowercase letter or digit.
 See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://cloud.google.com/compute/docs/labeling-resources</a> for Compute Engine label requirements.</p>
 </td>
 </tr>

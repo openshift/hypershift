@@ -38,14 +38,14 @@ type GCPResourceLabel struct {
 	Key string `json:"key,omitempty"`
 
 	// value is the value part of the label. A label value can have a maximum of 63 characters.
-	// Empty values are allowed by GCP. Values may contain only lowercase letters, digits,
-	// underscores, or hyphens.
+	// Empty values are allowed by GCP. If non-empty, it must start with a lowercase letter,
+	// contain only lowercase letters, digits, underscores, or hyphens, and end with a lowercase letter or digit.
 	// See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
 	//
 	// +required
 	// +kubebuilder:validation:MinLength=0
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9_-]*$')",message="value must contain only lowercase letters, digits, underscores, or hyphens"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^$|^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')",message="value must be empty or start with a lowercase letter, contain only lowercase letters, digits, underscores, or hyphens, and end with a letter or digit"
 	Value *string `json:"value,omitempty"`
 }
 
@@ -161,6 +161,7 @@ type GCPPlatformSpec struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=key
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=60
 	ResourceLabels []GCPResourceLabel `json:"resourceLabels,omitempty"`
 
@@ -253,7 +254,7 @@ type GCPWorkloadIdentityConfig struct {
 // Format: service-account-name@project-id.iam.gserviceaccount.com
 //
 // +kubebuilder:validation:MinLength=37
-// +kubebuilder:validation:MaxLength=100
+// +kubebuilder:validation:MaxLength=85
 // +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\\\.iam\\\\.gserviceaccount\\\\.com$')",message="email must be a valid GCP service account email (format: name@project.iam.gserviceaccount.com)"
 type GCPServiceAccountEmail string
 
@@ -438,6 +439,7 @@ type GCPNodePoolPlatform struct {
 	// +optional
 	// +listType=map
 	// +listMapKey=key
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=60
 	ResourceLabels []GCPResourceLabel `json:"resourceLabels,omitempty"`
 
@@ -451,10 +453,11 @@ type GCPNodePoolPlatform struct {
 	//
 	// +optional
 	// +listType=set
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=64
 	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=63
-	// +kubebuilder:validation:items:XValidation:rule="self.matches('^[a-z][a-z0-9-]*[a-z0-9]$') || self.size() == 1",message="network tags must start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and not end with a hyphen"
+	// +kubebuilder:validation:items:XValidation:rule="self.matches('^[a-z][a-z0-9-]*[a-z0-9]$') || self.matches('^[a-z]$')",message="network tags must start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and not end with a hyphen"
 	NetworkTags []string `json:"networkTags,omitempty"`
 
 	// provisioningModel specifies the provisioning model for node instances.
@@ -542,6 +545,7 @@ type GCPNodeServiceAccount struct {
 	//
 	// +optional
 	// +listType=set
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=50
 	// +kubebuilder:validation:items:MaxLength=512
 	Scopes []string `json:"scopes,omitempty"`

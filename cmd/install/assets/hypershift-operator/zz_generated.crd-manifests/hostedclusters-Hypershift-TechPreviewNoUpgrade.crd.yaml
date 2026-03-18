@@ -5945,21 +5945,24 @@ spec:
                             value:
                               description: |-
                                 value is the value part of the label. A label value can have a maximum of 63 characters.
-                                Empty values are allowed by GCP. Values may contain only lowercase letters, digits,
-                                underscores, or hyphens.
+                                Empty values are allowed by GCP. If non-empty, it must start with a lowercase letter,
+                                contain only lowercase letters, digits, underscores, or hyphens, and end with a lowercase letter or digit.
                                 See https://cloud.google.com/compute/docs/labeling-resources for Compute Engine label requirements.
                               maxLength: 63
                               minLength: 0
                               type: string
                               x-kubernetes-validations:
-                              - message: value must contain only lowercase letters,
-                                  digits, underscores, or hyphens
-                                rule: self.matches('^[a-z0-9_-]*$')
+                              - message: value must be empty or start with a lowercase
+                                  letter, contain only lowercase letters, digits,
+                                  underscores, or hyphens, and end with a letter or
+                                  digit
+                                rule: self.matches('^$|^[a-z]([_a-z0-9-]{0,61}[a-z0-9])?$')
                           required:
                           - key
                           - value
                           type: object
                         maxItems: 60
+                        minItems: 1
                         type: array
                         x-kubernetes-list-map-keys:
                         - key
@@ -6062,7 +6065,7 @@ spec:
                                   This is a user-provided value referencing a pre-created Google Service Account.
                                   Typically obtained from the output of `hypershift infra create gcp` which creates
                                   the required service accounts with appropriate IAM roles and WIF bindings.
-                                maxLength: 100
+                                maxLength: 85
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
@@ -6085,7 +6088,7 @@ spec:
                                   This is a user-provided value referencing a pre-created Google Service Account.
                                   Typically obtained from the output of `hypershift infra create gcp` which creates
                                   the required service accounts with appropriate IAM roles and WIF bindings.
-                                maxLength: 100
+                                maxLength: 85
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
@@ -6106,7 +6109,7 @@ spec:
                                   This is a user-provided value referencing a pre-created Google Service Account.
                                   Typically obtained from the output of `hypershift infra create gcp` which creates
                                   the required service accounts with appropriate IAM roles and WIF bindings.
-                                maxLength: 100
+                                maxLength: 85
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
@@ -6129,7 +6132,7 @@ spec:
                                   This is a user-provided value referencing a pre-created Google Service Account.
                                   Typically obtained from the output of `hypershift infra create gcp` which creates
                                   the required service accounts with appropriate IAM roles and WIF bindings.
-                                maxLength: 100
+                                maxLength: 85
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
@@ -6153,7 +6156,7 @@ spec:
                                   This is a user-provided value referencing a pre-created Google Service Account.
                                   Typically obtained from the output of `hypershift infra create gcp` which creates
                                   the required service accounts with appropriate IAM roles and WIF bindings.
-                                maxLength: 100
+                                maxLength: 85
                                 minLength: 37
                                 type: string
                                 x-kubernetes-validations:
