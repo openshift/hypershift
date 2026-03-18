@@ -35,6 +35,7 @@ import (
 const (
 	TokenSecretTokenGenerationTime       = "hypershift.openshift.io/last-token-generation-time"
 	TokenSecretReleaseKey                = "release"
+	TokenSecretReleaseVersionKey         = "release-version"
 	TokenSecretTokenKey                  = "token"
 	TokenSecretPullSecretHashKey         = "pull-secret-hash"
 	TokenSecretHCConfigurationHashKey    = "hc-configuration-hash"
@@ -344,6 +345,7 @@ func (t *Token) reconcileTokenSecret(tokenSecret *corev1.Secret) error {
 		tokenSecret.Annotations[TokenSecretTokenGenerationTime] = time.Now().Format(time.RFC3339Nano)
 		tokenSecret.Data[TokenSecretTokenKey] = []byte(uuid.New().String())
 		tokenSecret.Data[TokenSecretReleaseKey] = []byte(t.nodePool.Spec.Release.Image)
+		tokenSecret.Data[TokenSecretReleaseVersionKey] = []byte(t.releaseImage.Version())
 		tokenSecret.Data[TokenSecretConfigKey] = compressedConfig.Bytes()
 
 		// Hash values that are used by the "token secret controller" / "local ignition provider"  to determine if this input

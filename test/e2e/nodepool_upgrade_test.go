@@ -191,6 +191,27 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 		e2eutil.WithTimeout(10*time.Second),
 	)
 
+	// Validate NodesInfo is populated with the previous version before upgrade.
+	t.Logf("Validating NodesInfo is populated with version %s before upgrade", previousReleaseInfo.Version())
+	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to have NodesInfo with version %s", nodePool.Namespace, nodePool.Name, previousReleaseInfo.Version()),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			np := &hyperv1.NodePool{}
+			err := ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)
+			return np, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			func(pool *hyperv1.NodePool) (done bool, reasons string, err error) {
+				for _, nv := range pool.Status.NodesInfo.NodeVersions {
+					if nv.OCPVersion == previousReleaseInfo.Version() && *nv.ReadyNodeCount > 0 {
+						return true, fmt.Sprintf("found version %s with %d ready nodes", nv.OCPVersion, nv.ReadyNodeCount), nil
+					}
+				}
+				return false, fmt.Sprintf("no NodeVersion entry with ocpVersion %s and ready nodes found in %+v", previousReleaseInfo.Version(), pool.Status.NodesInfo.NodeVersions), nil
+			},
+		},
+		e2eutil.WithTimeout(2*time.Minute),
+	)
+
 	// Update NodePool images to the latest.
 	err = ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), &nodePool)
 	g.Expect(err).NotTo(HaveOccurred(), "failed to get NodePool")
@@ -234,4 +255,25 @@ func (ru *NodePoolUpgradeTest) Run(t *testing.T, nodePool hyperv1.NodePool, node
 	)
 	newNodes := e2eutil.WaitForReadyNodesByNodePool(t, ctx, ru.hostedClusterClient, &nodePool, ru.hostedCluster.Spec.Platform.Type)
 	e2eutil.EnsureNodesRuntime(t, newNodes)
+
+	// Validate NodesInfo is populated with the latest version after upgrade.
+	t.Logf("Validating NodesInfo is populated with version %s after upgrade", latestReleaseInfo.Version())
+	e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("NodePool %s/%s to have NodesInfo with version %s after upgrade", nodePool.Namespace, nodePool.Name, latestReleaseInfo.Version()),
+		func(ctx context.Context) (*hyperv1.NodePool, error) {
+			np := &hyperv1.NodePool{}
+			err := ru.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(&nodePool), np)
+			return np, err
+		},
+		[]e2eutil.Predicate[*hyperv1.NodePool]{
+			func(pool *hyperv1.NodePool) (done bool, reasons string, err error) {
+				for _, nv := range pool.Status.NodesInfo.NodeVersions {
+					if nv.OCPVersion == latestReleaseInfo.Version() && *nv.ReadyNodeCount > 0 {
+						return true, fmt.Sprintf("found version %s with %d ready nodes", nv.OCPVersion, nv.ReadyNodeCount), nil
+					}
+				}
+				return false, fmt.Sprintf("no NodeVersion entry with ocpVersion %s and ready nodes found in %+v", latestReleaseInfo.Version(), pool.Status.NodesInfo.NodeVersions), nil
+			},
+		},
+		e2eutil.WithTimeout(2*time.Minute),
+	)
 }

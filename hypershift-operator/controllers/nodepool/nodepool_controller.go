@@ -273,6 +273,13 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hcluster.Namespace, hcluster.Name)
 	infraID := hcluster.Spec.InfraID
 
+	// Aggregate node version and health information into NodesInfo status.
+	// This is done before the conditions loop so that nodesInfo stays accurate
+	// even when later validations (e.g. release image) short-circuit the reconcile.
+	if err := r.setNodesInfoStatus(ctx, nodePool); err != nil {
+		log.Error(err, "Failed to set NodesInfo status")
+	}
+
 	// Loop over all conditions.
 	// Order matter as conditions might choose to short circuit returning ctrl.Result or error.
 	signalConditions := []func(ctx context.Context, nodePool *hyperv1.NodePool, hcluster *hyperv1.HostedCluster) (*ctrl.Result, error){
