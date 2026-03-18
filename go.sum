@@ -616,12 +616,12 @@ github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJw
 github.com/opencontainers/image-spec v1.1.1/go.mod h1:qpqAh3Dmcf36wStyyWU+kCeDgrGnAve2nCC8+7h8Q0M=
 github.com/opencontainers/selinux v1.13.0 h1:Zza88GWezyT7RLql12URvoxsbLfjFx988+LGaWfbL84=
 github.com/opencontainers/selinux v1.13.0/go.mod h1:XxWTed+A/s5NNq4GmYScVy+9jzXhGBVEOAyucdRUY8s=
-github.com/openshift/api v0.0.0-20260120150926-4c643a652d54 h1:Gm81lfkiXFgg/N0x90WsplERGF2NqYjK0vd8YY/aFpU=
-github.com/openshift/api v0.0.0-20260120150926-4c643a652d54/go.mod h1:d5uzF0YN2nQQFA0jIEWzzOZ+edmo6wzlGLvx5Fhz4uY=
+github.com/openshift/api v0.0.0-20260306002634-d3bbdada155c h1:YQYiDzOLJzwQunxCaa5OpyNyMLPz4HJ2CLaKqUQOQjQ=
+github.com/openshift/api v0.0.0-20260306002634-d3bbdada155c/go.mod h1:pyVjK0nZ4sRs4fuQVQ4rubsJdahI1PB94LnQ8sGdvxo=
 github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260311064431-f0be9c72e5bf h1:ymEMrGiXp+PTd+Xd0Y7Jx8cNzaidg51AFyy+5tcvz+c=
 github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260311064431-f0be9c72e5bf/go.mod h1:haTI4wyFLUfsU6JhdKnLMxa+SpbKAC0sal2KKD6bwzU=
-github.com/openshift/client-go v0.0.0-20251202151200-fb4471581cf8 h1:97rgISdT4IOmXlmEUV5Wr6d8BzzjPclzAjCARLbSlT0=
-github.com/openshift/client-go v0.0.0-20251202151200-fb4471581cf8/go.mod h1:WVJnsrbSO1J8x8KceOmv1d5CpoN34Uzsaz1O4MIOKJI=
+github.com/openshift/client-go v0.0.0-20260302182750-20813ce71ca6 h1:wJv4Ia+R4OxoaJcTUyvMtBc5rWFvfTiEA8d5f1MBPqI=
+github.com/openshift/client-go v0.0.0-20260302182750-20813ce71ca6/go.mod h1:3lkVff575BlbDUUhMsrD1IyvfkZ+oKUB7iZuVy1m0W0=
 github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3 h1:cr5nU1+O8sEvZHpAAk1mTTGu3NMbgj0dC2cFxFjwmzw=
 github.com/openshift/cloud-credential-operator v0.0.0-20250225003505-216fd1a30ec3/go.mod h1:WHi2cToOBZyHQea0Yq3qVnOQRl6OMTGBPJMi0c4/GS8=
 github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250624174747-899af6573f5f h1:bV9TkOD4E3lJwlb9z00VNBhjjVeuSOU8FjckL451Fxg=
@@ -634,8 +634,8 @@ github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87
 github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87/go.mod h1:DB/Mf2oTeiAmVVX1gN+NEqweonAPY0TKUwADizj8+ZA=
 github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260310165629-67e201b559d5 h1:vkWMN8h47VGeqtES4jvRDfWWDqPIGTMtm2ltcg8GcuA=
 github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260310165629-67e201b559d5/go.mod h1:qQOhEoIl4nqo6vkGhEw95tzcXou5Osjn/mvLzIVFw5A=
-github.com/openshift/library-go v0.0.0-20251204132909-8814e976a023 h1:N3lDu1F0sA9Equpje5Cuvs0it0L6Ef6Mmcv9eoh8jtE=
-github.com/openshift/library-go v0.0.0-20251204132909-8814e976a023/go.mod h1:ErDfiIrPHH+menTP/B4LKd0nxFDdvCbTamAc6SWMIh8=
+github.com/openshift/library-go v0.0.0-20260311094140-ac826d10cb40 h1:0Q7pg6Et+9Zg5wlom0hX4viqTtyRSj2uVjX74N6gcBw=
+github.com/openshift/library-go v0.0.0-20260311094140-ac826d10cb40/go.mod h1:D797O/ssKTNglbrGchjIguFq+DbyRYdeds5w4/VTrKM=
 github.com/openshift/multi-operator-manager v0.0.0-20260112172834-b64ebc8c627b h1:KT/Lnx+xlPZ4cN9z58KGjTShfnr9FqRpXm1etTv158Q=
 github.com/openshift/multi-operator-manager v0.0.0-20260112172834-b64ebc8c627b/go.mod h1:I/ZGCCccD9fBEOFGEp8mfOtq5h4o2lbCC2KWxOstMHM=
 github.com/opentracing/opentracing-go v1.1.0/go.mod h1:UkNAQd3GIcIGf0SeVgPpRdFStlNbqXla1AfSYxPUl2o=

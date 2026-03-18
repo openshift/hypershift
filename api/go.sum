@@ -138,8 +138,8 @@ github.com/onsi/ginkgo/v2 v2.27.5 h1:ZeVgZMx2PDMdJm/+w5fE/OyG6ILo1Y3e+QX4zSR0zTE
 github.com/onsi/ginkgo/v2 v2.27.5/go.mod h1:ArE1D/XhNXBXCBkKOLkbsb2c81dQHCRcF5zwn/ykDRo=
 github.com/onsi/gomega v1.39.0 h1:y2ROC3hKFmQZJNFeGAMeHZKkjBL65mIZcvrLQBF9k6Q=
 github.com/onsi/gomega v1.39.0/go.mod h1:ZCU1pkQcXDO5Sl9/VVEGlDyp+zm0m1cmeG5TOzLgdh4=
-github.com/openshift/api v0.0.0-20260120150926-4c643a652d54 h1:Gm81lfkiXFgg/N0x90WsplERGF2NqYjK0vd8YY/aFpU=
-github.com/openshift/api v0.0.0-20260120150926-4c643a652d54/go.mod h1:d5uzF0YN2nQQFA0jIEWzzOZ+edmo6wzlGLvx5Fhz4uY=
+github.com/openshift/api v0.0.0-20260306002634-d3bbdada155c h1:YQYiDzOLJzwQunxCaa5OpyNyMLPz4HJ2CLaKqUQOQjQ=
+github.com/openshift/api v0.0.0-20260306002634-d3bbdada155c/go.mod h1:pyVjK0nZ4sRs4fuQVQ4rubsJdahI1PB94LnQ8sGdvxo=
 github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260311064431-f0be9c72e5bf h1:ymEMrGiXp+PTd+Xd0Y7Jx8cNzaidg51AFyy+5tcvz+c=
 github.com/openshift/aws-karpenter-provider-aws v0.0.0-20260311064431-f0be9c72e5bf/go.mod h1:haTI4wyFLUfsU6JhdKnLMxa+SpbKAC0sal2KKD6bwzU=
 github.com/openshift/kubernetes-sigs-karpenter v0.0.0-20260310165629-67e201b559d5 h1:vkWMN8h47VGeqtES4jvRDfWWDqPIGTMtm2ltcg8GcuA=
