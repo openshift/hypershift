@@ -11,10 +11,7 @@ type GCPResourceReference struct {
 	// See https://cloud.google.com/compute/docs/naming-resources for details.
 	//
 	// +required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')",message="name must start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and not end with a hyphen"
-	Name string `json:"name,omitempty"`
+	Name GCPResourceName `json:"name,omitempty"`
 }
 
 // GCPResourceLabel is a label to apply to GCP resources created for the cluster.
@@ -120,23 +117,19 @@ type GCPPlatformSpec struct {
 	// +immutable
 	// +kubebuilder:validation:MinLength=6
 	// +kubebuilder:validation:MaxLength=30
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([a-z0-9-]{4,28}[a-z0-9])$')",message="project must start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and end with a letter or digit"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]$')",message="project must start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and end with a letter or digit"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Project is immutable"
 	Project string `json:"project,omitempty"`
 
-	// region is the GCP region in which the cluster resides.
-	// Must be in the form of <geographic-area>-<location><number> (e.g., us-central1, europe-west12).
-	// Must contain exactly one hyphen separating the geographic area from the location.
-	// Must end with one or more digits.
-	// Valid examples: "us-central1", "europe-west2", "europe-west12", "northamerica-northeast1"
-	// Invalid examples: "us1" (no hyphen), "us-central" (no trailing digits), "us-central1-a" (zone suffix)
+	// region is the GCP region in which the cluster resides (e.g., us-central1, europe-west2).
+	// Must start with lowercase letters, contain exactly one hyphen, and end with digits.
 	// For a full list of valid regions, see: https://cloud.google.com/compute/docs/regions-zones.
 	//
 	// +required
 	// +immutable
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]+-[a-z]+[0-9]+$')",message="region must be in the form of geographic-area-location-number (e.g., us-central1)"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]+-[a-z]+[0-9]+$')",message="region must be a valid GCP region (e.g., us-central1, europe-west2)"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Region is immutable"
 	Region string `json:"region,omitempty"`
 
@@ -217,7 +210,7 @@ type GCPWorkloadIdentityConfig struct {
 	// +immutable
 	// +kubebuilder:validation:MinLength=4
 	// +kubebuilder:validation:MaxLength=32
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([a-z0-9-]{2,30}[a-z0-9])$')",message="poolID must start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and end with a letter or digit"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{2,30}[a-z0-9]$')",message="poolID must start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and end with a letter or digit"
 	// +kubebuilder:validation:XValidation:rule="!self.startsWith('gcp-')", message="Pool ID cannot start with reserved prefix 'gcp-'"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Pool ID is immutable"
 	PoolID string `json:"poolID,omitempty"`
@@ -236,7 +229,7 @@ type GCPWorkloadIdentityConfig struct {
 	// +immutable
 	// +kubebuilder:validation:MinLength=4
 	// +kubebuilder:validation:MaxLength=32
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([a-z0-9-]{2,30}[a-z0-9])$')",message="providerID must start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and end with a letter or digit"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{2,30}[a-z0-9]$')",message="providerID must start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and end with a letter or digit"
 	// +kubebuilder:validation:XValidation:rule="!self.startsWith('gcp-')", message="Provider ID cannot start with reserved prefix 'gcp-'"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="Provider ID is immutable"
 	ProviderID string `json:"providerID,omitempty"`
@@ -257,6 +250,16 @@ type GCPWorkloadIdentityConfig struct {
 // +kubebuilder:validation:MaxLength=85
 // +kubebuilder:validation:XValidation:rule="self.matches('^[a-z][a-z0-9-]{4,28}[a-z0-9]@[a-z][a-z0-9-]{4,28}[a-z0-9]\\\\.iam\\\\.gserviceaccount\\\\.com$')",message="email must be a valid GCP service account email (format: name@project.iam.gserviceaccount.com)"
 type GCPServiceAccountEmail string
+
+// GCPResourceName is the name of a GCP resource following RFC 1035 naming conventions.
+// Must start with a lowercase letter, contain only lowercase letters, digits, and hyphens,
+// must not end with a hyphen, and be 1-63 characters long.
+// See https://cloud.google.com/compute/docs/naming-resources for details.
+//
+// +kubebuilder:validation:MinLength=1
+// +kubebuilder:validation:MaxLength=63
+// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')",message="must start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and not end with a hyphen"
+type GCPResourceName string
 
 // GCPServiceAccountsEmails contains email addresses of Google Service Accounts for different controllers.
 // Each service account should have the appropriate IAM permissions for its specific role.
@@ -398,10 +401,7 @@ type GCPNodePoolPlatform struct {
 	// The subnet must have enough IP addresses available for the expected number of nodes.
 	//
 	// +required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')",message="subnet must start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and not end with a hyphen"
-	Subnet string `json:"subnet,omitempty"`
+	Subnet GCPResourceName `json:"subnet,omitempty"`
 
 	// image specifies the boot image for node instances.
 	// If unspecified, the default RHCOS image will be used based on the NodePool release payload.
@@ -455,10 +455,7 @@ type GCPNodePoolPlatform struct {
 	// +listType=set
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=64
-	// +kubebuilder:validation:items:MinLength=1
-	// +kubebuilder:validation:items:MaxLength=63
-	// +kubebuilder:validation:items:XValidation:rule="self.matches('^[a-z][a-z0-9-]*[a-z0-9]$') || self.matches('^[a-z]$')",message="network tags must start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and not end with a hyphen"
-	NetworkTags []string `json:"networkTags,omitempty"`
+	NetworkTags []GCPResourceName `json:"networkTags,omitempty"`
 
 	// provisioningModel specifies the provisioning model for node instances.
 	// Spot and Preemptible instances cost less but can be terminated by GCP with 30 seconds notice.

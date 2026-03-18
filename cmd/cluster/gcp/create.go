@@ -267,10 +267,10 @@ func (o *CreateOptions) ApplyPlatformSpecifics(hostedCluster *hyperv1.HostedClus
 		Region:  o.Region,
 		NetworkConfig: hyperv1.GCPNetworkConfig{
 			Network: hyperv1.GCPResourceReference{
-				Name: o.Network,
+				Name: hyperv1.GCPResourceName(o.Network),
 			},
 			PrivateServiceConnectSubnet: hyperv1.GCPResourceReference{
-				Name: o.PrivateServiceConnectSubnet,
+				Name: hyperv1.GCPResourceName(o.PrivateServiceConnectSubnet),
 			},
 		},
 		WorkloadIdentity: hyperv1.GCPWorkloadIdentityConfig{
@@ -340,7 +340,7 @@ func (o *CreateOptions) GenerateNodePools(constructor core.DefaultNodePoolConstr
 	nodePool.Spec.Platform.GCP = &hyperv1.GCPNodePoolPlatform{
 		MachineType: machineType,
 		Zone:        zone,
-		Subnet:      subnet,
+		Subnet:      hyperv1.GCPResourceName(subnet),
 		Image:       o.BootImage,
 	}
 	return []*hyperv1.NodePool{nodePool}

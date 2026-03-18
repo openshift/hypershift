@@ -67,9 +67,7 @@ type GCPPrivateServiceConnectSpec struct {
 	// forwardingRuleName is the name of the Internal Load Balancer forwarding rule
 	// Populated by the reconciler via GCP API lookup
 	// +optional
-	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')",message="forwardingRuleName must start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and not end with a hyphen"
-	ForwardingRuleName string `json:"forwardingRuleName,omitempty"`
+	ForwardingRuleName GCPResourceName `json:"forwardingRuleName,omitempty"`
 
 	// consumerAcceptList specifies which customer projects can connect
 	// Accepts both project IDs (e.g. "my-project-123") and project numbers (e.g. "123456789012")
@@ -79,15 +77,13 @@ type GCPPrivateServiceConnectSpec struct {
 	// +kubebuilder:validation:MaxItems=50
 	// +kubebuilder:validation:items:MinLength=1
 	// +kubebuilder:validation:items:MaxLength=30
-	// +kubebuilder:validation:items:XValidation:rule="self.matches('^([a-z][a-z0-9-]{4,28}[a-z0-9]|[0-9]{6,12})$')",message="each entry must be a valid GCP project ID or project number"
+	// +kubebuilder:validation:items:XValidation:rule="self.matches('^([a-z][a-z0-9-]{4,28}[a-z0-9]|[0-9]{1,30})$')",message="each entry must be a valid GCP project ID or project number"
 	ConsumerAcceptList []string `json:"consumerAcceptList,omitempty"`
 
 	// natSubnet is the subnet used for NAT by the Service Attachment
 	// Auto-populated by the HyperShift Operator
 	// +optional
-	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')",message="natSubnet must start with a lowercase letter, contain only lowercase letters, digits, or hyphens, and not end with a hyphen"
-	NATSubnet string `json:"natSubnet,omitempty"`
+	NATSubnet GCPResourceName `json:"natSubnet,omitempty"`
 }
 
 // GCPPrivateServiceConnectStatus defines the observed state of PSC infrastructure
@@ -112,7 +108,7 @@ type GCPPrivateServiceConnectStatus struct {
 	// Format: projects/{project}/regions/{region}/serviceAttachments/{name}
 	// +optional
 	// +kubebuilder:validation:MaxLength=2048
-	// +kubebuilder:validation:XValidation:rule="self.matches('^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/regions/[a-z]+-[a-z0-9]+[0-9]/serviceAttachments/[a-z]([-a-z0-9]*[a-z0-9])?$')",message="serviceAttachmentURI must be in the format projects/{project}/regions/{region}/serviceAttachments/{name}"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/regions/[a-z]+-[a-z]+[0-9]+/serviceAttachments/[a-z]([-a-z0-9]*[a-z0-9])?$')",message="serviceAttachmentURI must be in the format projects/{project}/regions/{region}/serviceAttachments/{name}"
 	ServiceAttachmentURI string `json:"serviceAttachmentURI,omitempty"`
 
 	// Customer Side Status (PSC Endpoint and DNS)

@@ -107,8 +107,12 @@ func gcpMachineTemplateSpec(
 	// Configure labels
 	labels := configureGCPLabels(hcGCPPlatform, gcpPlatform, infraName, hostedCluster.Name)
 
-	// Configure network tags
-	networkTags := configureGCPNetworkTags(gcpPlatform.NetworkTags, infraName)
+	// Configure network tags - convert []GCPResourceName to []string for configureGCPNetworkTags
+	var networkTagStrings []string
+	for _, tag := range gcpPlatform.NetworkTags {
+		networkTagStrings = append(networkTagStrings, string(tag))
+	}
+	networkTags := configureGCPNetworkTags(networkTagStrings, infraName)
 
 	// Configure maintenance behavior
 	onHostMaintenance := configureGCPMaintenanceBehavior(gcpPlatform.OnHostMaintenance, gcpPlatform.ProvisioningModel)
@@ -182,12 +186,12 @@ func resolveGCPSubnet(gcpPlatform *hyperv1.GCPNodePoolPlatform, hcGCPPlatform *h
 	if gcpPlatform != nil && gcpPlatform.Subnet != "" {
 		// CAPG will automatically prepend "projects/{project}/regions/{region}/subnetworks/"
 		// so we only provide the subnet name
-		return gcpPlatform.Subnet, nil
+		return string(gcpPlatform.Subnet), nil
 	}
 
 	// Fall back to HostedCluster PrivateServiceConnectSubnet if configured
 	if hcGCPPlatform.NetworkConfig.PrivateServiceConnectSubnet.Name != "" {
-		return hcGCPPlatform.NetworkConfig.PrivateServiceConnectSubnet.Name, nil
+		return string(hcGCPPlatform.NetworkConfig.PrivateServiceConnectSubnet.Name), nil
 	}
 
 	// Default to using the default subnet name - CAPG will construct the full path

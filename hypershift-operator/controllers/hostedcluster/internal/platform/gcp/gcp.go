@@ -131,13 +131,13 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 	// to preserve server-defaulted values (Mtu, Purpose, StackType) that CAPG sets
 	// after creation. Overwriting them with zero values triggers the loop detector.
 	if gcpSpec.NetworkConfig.Network.Name != "" {
-		gcpCluster.Spec.Network.Name = ptr.To(gcpSpec.NetworkConfig.Network.Name)
+		gcpCluster.Spec.Network.Name = ptr.To(string(gcpSpec.NetworkConfig.Network.Name))
 
 		if gcpSpec.NetworkConfig.PrivateServiceConnectSubnet.Name != "" {
 			if len(gcpCluster.Spec.Network.Subnets) == 0 {
 				gcpCluster.Spec.Network.Subnets = []capigcp.SubnetSpec{{}}
 			}
-			gcpCluster.Spec.Network.Subnets[0].Name = gcpSpec.NetworkConfig.PrivateServiceConnectSubnet.Name
+			gcpCluster.Spec.Network.Subnets[0].Name = string(gcpSpec.NetworkConfig.PrivateServiceConnectSubnet.Name)
 			gcpCluster.Spec.Network.Subnets[0].Region = gcpSpec.Region
 		}
 	}

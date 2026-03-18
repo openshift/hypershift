@@ -287,7 +287,7 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 								{Key: "env", Value: ptr.To("test")},
 								{Key: "team", Value: ptr.To("platform")},
 							},
-							NetworkTags: []string{"allow-ssh", "allow-internal"},
+							NetworkTags: []hyperv1.GCPResourceName{"allow-ssh", "allow-internal"},
 						},
 					},
 				},

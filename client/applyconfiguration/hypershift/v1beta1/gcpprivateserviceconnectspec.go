@@ -17,13 +17,17 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+)
+
 // GCPPrivateServiceConnectSpecApplyConfiguration represents a declarative configuration of the GCPPrivateServiceConnectSpec type for use
 // with apply.
 type GCPPrivateServiceConnectSpecApplyConfiguration struct {
-	LoadBalancerIP     *string  `json:"loadBalancerIP,omitempty"`
-	ForwardingRuleName *string  `json:"forwardingRuleName,omitempty"`
-	ConsumerAcceptList []string `json:"consumerAcceptList,omitempty"`
-	NATSubnet          *string  `json:"natSubnet,omitempty"`
+	LoadBalancerIP     *string                            `json:"loadBalancerIP,omitempty"`
+	ForwardingRuleName *hypershiftv1beta1.GCPResourceName `json:"forwardingRuleName,omitempty"`
+	ConsumerAcceptList []string                           `json:"consumerAcceptList,omitempty"`
+	NATSubnet          *hypershiftv1beta1.GCPResourceName `json:"natSubnet,omitempty"`
 }
 
 // GCPPrivateServiceConnectSpecApplyConfiguration constructs a declarative configuration of the GCPPrivateServiceConnectSpec type for use with
@@ -43,7 +47,7 @@ func (b *GCPPrivateServiceConnectSpecApplyConfiguration) WithLoadBalancerIP(valu
 // WithForwardingRuleName sets the ForwardingRuleName field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the ForwardingRuleName field is set to the value of the last call.
-func (b *GCPPrivateServiceConnectSpecApplyConfiguration) WithForwardingRuleName(value string) *GCPPrivateServiceConnectSpecApplyConfiguration {
+func (b *GCPPrivateServiceConnectSpecApplyConfiguration) WithForwardingRuleName(value hypershiftv1beta1.GCPResourceName) *GCPPrivateServiceConnectSpecApplyConfiguration {
 	b.ForwardingRuleName = &value
 	return b
 }
@@ -61,7 +65,7 @@ func (b *GCPPrivateServiceConnectSpecApplyConfiguration) WithConsumerAcceptList(
 // WithNATSubnet sets the NATSubnet field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the NATSubnet field is set to the value of the last call.
-func (b *GCPPrivateServiceConnectSpecApplyConfiguration) WithNATSubnet(value string) *GCPPrivateServiceConnectSpecApplyConfiguration {
+func (b *GCPPrivateServiceConnectSpecApplyConfiguration) WithNATSubnet(value hypershiftv1beta1.GCPResourceName) *GCPPrivateServiceConnectSpecApplyConfiguration {
 	b.NATSubnet = &value
 	return b
 }

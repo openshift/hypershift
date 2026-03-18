@@ -1565,7 +1565,7 @@ func (in *GCPNodePoolPlatform) DeepCopyInto(out *GCPNodePoolPlatform) {
 	}
 	if in.NetworkTags != nil {
 		in, out := &in.NetworkTags, &out.NetworkTags
-		*out = make([]string, len(*in))
+		*out = make([]GCPResourceName, len(*in))
 		copy(*out, *in)
 	}
 	if in.ProvisioningModel != nil {

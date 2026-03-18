@@ -1145,14 +1145,19 @@ spec:
                             - Must start with lowercase letter
                             - Cannot end with hyphen
                         items:
+                          description: |-
+                            GCPResourceName is the name of a GCP resource following RFC 1035 naming conventions.
+                            Must start with a lowercase letter, contain only lowercase letters, digits, and hyphens,
+                            must not end with a hyphen, and be 1-63 characters long.
+                            See https://cloud.google.com/compute/docs/naming-resources for details.
                           maxLength: 63
                           minLength: 1
                           type: string
                           x-kubernetes-validations:
-                          - message: network tags must start with a lowercase letter,
-                              contain only lowercase letters, digits, or hyphens,
-                              and not end with a hyphen
-                            rule: self.matches('^[a-z][a-z0-9-]*[a-z0-9]$') || self.matches('^[a-z]$')
+                          - message: must start with a lowercase letter, contain only
+                              lowercase letters, digits, or hyphens, and not end with
+                              a hyphen
+                            rule: self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')
                         maxItems: 64
                         minItems: 1
                         type: array
@@ -1290,9 +1295,9 @@ spec:
                         minLength: 1
                         type: string
                         x-kubernetes-validations:
-                        - message: subnet must start with a lowercase letter, contain
-                            only lowercase letters, digits, or hyphens, and not end
-                            with a hyphen
+                        - message: must start with a lowercase letter, contain only
+                            lowercase letters, digits, or hyphens, and not end with
+                            a hyphen
                           rule: self.matches('^[a-z]([-a-z0-9]*[a-z0-9])?$')
                       zone:
                         description: |-

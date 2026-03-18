@@ -28967,7 +28967,9 @@ This value must be a valid IPv4 or IPv6 address.</p>
 <td>
 <code>forwardingRuleName</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -28992,7 +28994,9 @@ Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers
 <td>
 <code>natSubnet</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -35107,7 +35111,9 @@ See <a href="https://cloud.google.com/compute/docs/regions-zones">https://cloud.
 <td>
 <code>subnet</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -35188,7 +35194,9 @@ taking precedence in case of conflicts.</p>
 <td>
 <code>networkTags</code></br>
 <em>
-[]string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+[]GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -35351,12 +35359,8 @@ string
 </em>
 </td>
 <td>
-<p>region is the GCP region in which the cluster resides.
-Must be in the form of <geographic-area>-<location><number> (e.g., us-central1, europe-west12).
-Must contain exactly one hyphen separating the geographic area from the location.
-Must end with one or more digits.
-Valid examples: &ldquo;us-central1&rdquo;, &ldquo;europe-west2&rdquo;, &ldquo;europe-west12&rdquo;, &ldquo;northamerica-northeast1&rdquo;
-Invalid examples: &ldquo;us1&rdquo; (no hyphen), &ldquo;us-central&rdquo; (no trailing digits), &ldquo;us-central1-a&rdquo; (zone suffix)
+<p>region is the GCP region in which the cluster resides (e.g., us-central1, europe-west2).
+Must start with lowercase letters, contain exactly one hyphen, and end with digits.
 For a full list of valid regions, see: <a href="https://cloud.google.com/compute/docs/regions-zones">https://cloud.google.com/compute/docs/regions-zones</a>.</p>
 </td>
 </tr>
@@ -35464,7 +35468,9 @@ This value must be a valid IPv4 or IPv6 address.</p>
 <td>
 <code>forwardingRuleName</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -35489,7 +35495,9 @@ Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers
 <td>
 <code>natSubnet</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -35673,6 +35681,19 @@ See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://c
 </tr>
 </tbody>
 </table>
+###GCPResourceName { #hypershift.openshift.io/v1beta1.GCPResourceName }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectSpec">GCPPrivateServiceConnectSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">GCPResourceReference</a>)
+</p>
+<p>
+<p>GCPResourceName is the name of a GCP resource following RFC 1035 naming conventions.
+Must start with a lowercase letter, contain only lowercase letters, digits, and hyphens,
+must not end with a hyphen, and be 1-63 characters long.
+See <a href="https://cloud.google.com/compute/docs/naming-resources">https://cloud.google.com/compute/docs/naming-resources</a> for details.</p>
+</p>
 ###GCPResourceReference { #hypershift.openshift.io/v1beta1.GCPResourceReference }
 <p>
 (<em>Appears on:</em>
@@ -35695,7 +35716,9 @@ See <a href="https://google.aip.dev/122">https://google.aip.dev/122</a> for GCP 
 <td>
 <code>name</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
