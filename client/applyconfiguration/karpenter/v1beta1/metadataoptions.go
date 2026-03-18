@@ -17,13 +17,17 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	karpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+)
+
 // MetadataOptionsApplyConfiguration represents a declarative configuration of the MetadataOptions type for use
 // with apply.
 type MetadataOptionsApplyConfiguration struct {
-	HTTPEndpoint            *string `json:"httpEndpoint,omitempty"`
-	HTTPProtocolIPv6        *string `json:"httpProtocolIPv6,omitempty"`
-	HTTPPutResponseHopLimit *int64  `json:"httpPutResponseHopLimit,omitempty"`
-	HTTPTokens              *string `json:"httpTokens,omitempty"`
+	HTTPEndpoint            *karpenterv1beta1.MetadataEndpointState     `json:"httpEndpoint,omitempty"`
+	HTTPProtocolIPv6        *karpenterv1beta1.MetadataProtocolIPv6State `json:"httpProtocolIPv6,omitempty"`
+	HTTPPutResponseHopLimit *int64                                      `json:"httpPutResponseHopLimit,omitempty"`
+	HTTPTokens              *karpenterv1beta1.MetadataHTTPTokensState   `json:"httpTokens,omitempty"`
 }
 
 // MetadataOptionsApplyConfiguration constructs a declarative configuration of the MetadataOptions type for use with
@@ -35,7 +39,7 @@ func MetadataOptions() *MetadataOptionsApplyConfiguration {
 // WithHTTPEndpoint sets the HTTPEndpoint field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the HTTPEndpoint field is set to the value of the last call.
-func (b *MetadataOptionsApplyConfiguration) WithHTTPEndpoint(value string) *MetadataOptionsApplyConfiguration {
+func (b *MetadataOptionsApplyConfiguration) WithHTTPEndpoint(value karpenterv1beta1.MetadataEndpointState) *MetadataOptionsApplyConfiguration {
 	b.HTTPEndpoint = &value
 	return b
 }
@@ -43,7 +47,7 @@ func (b *MetadataOptionsApplyConfiguration) WithHTTPEndpoint(value string) *Meta
 // WithHTTPProtocolIPv6 sets the HTTPProtocolIPv6 field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the HTTPProtocolIPv6 field is set to the value of the last call.
-func (b *MetadataOptionsApplyConfiguration) WithHTTPProtocolIPv6(value string) *MetadataOptionsApplyConfiguration {
+func (b *MetadataOptionsApplyConfiguration) WithHTTPProtocolIPv6(value karpenterv1beta1.MetadataProtocolIPv6State) *MetadataOptionsApplyConfiguration {
 	b.HTTPProtocolIPv6 = &value
 	return b
 }
@@ -59,7 +63,7 @@ func (b *MetadataOptionsApplyConfiguration) WithHTTPPutResponseHopLimit(value in
 // WithHTTPTokens sets the HTTPTokens field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the HTTPTokens field is set to the value of the last call.
-func (b *MetadataOptionsApplyConfiguration) WithHTTPTokens(value string) *MetadataOptionsApplyConfiguration {
+func (b *MetadataOptionsApplyConfiguration) WithHTTPTokens(value karpenterv1beta1.MetadataHTTPTokensState) *MetadataOptionsApplyConfiguration {
 	b.HTTPTokens = &value
 	return b
 }

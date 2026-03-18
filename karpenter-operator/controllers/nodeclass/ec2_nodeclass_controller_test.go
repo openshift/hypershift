@@ -122,11 +122,11 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				},
 				InstanceStorePolicy: hyperkarpenterv1.InstanceStorePolicyRAID0,
 				Monitoring:          hyperkarpenterv1.MonitoringStateDetailed,
-				MetadataOptions: &hyperkarpenterv1.MetadataOptions{
-					HTTPEndpoint:            ptr.To("enabled"),
-					HTTPProtocolIPv6:        ptr.To("disabled"),
-					HTTPPutResponseHopLimit: ptr.To(int64(1)),
-					HTTPTokens:              ptr.To("required"),
+				MetadataOptions: hyperkarpenterv1.MetadataOptions{
+					HTTPEndpoint:            hyperkarpenterv1.MetadataEndpointStateEnabled,
+					HTTPProtocolIPv6:        hyperkarpenterv1.MetadataProtocolIPv6StateDisabled,
+					HTTPPutResponseHopLimit: 1,
+					HTTPTokens:              hyperkarpenterv1.MetadataHTTPTokensStateRequired,
 				},
 			},
 			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
@@ -172,11 +172,11 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 		{
 			name: "When MetadataOptions is specified it should be mapped to EC2NodeClass",
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
-				MetadataOptions: &hyperkarpenterv1.MetadataOptions{
-					HTTPEndpoint:            ptr.To("enabled"),
-					HTTPProtocolIPv6:        ptr.To("disabled"),
-					HTTPPutResponseHopLimit: ptr.To(int64(2)),
-					HTTPTokens:              ptr.To("required"),
+				MetadataOptions: hyperkarpenterv1.MetadataOptions{
+					HTTPEndpoint:            hyperkarpenterv1.MetadataEndpointStateEnabled,
+					HTTPProtocolIPv6:        hyperkarpenterv1.MetadataProtocolIPv6StateDisabled,
+					HTTPPutResponseHopLimit: 2,
+					HTTPTokens:              hyperkarpenterv1.MetadataHTTPTokensStateRequired,
 				},
 			},
 			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
@@ -247,8 +247,8 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 		{
 			name: "When MetadataOptions has only HTTPTokens set to optional it should allow IMDSv1",
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
-				MetadataOptions: &hyperkarpenterv1.MetadataOptions{
-					HTTPTokens: ptr.To("optional"),
+				MetadataOptions: hyperkarpenterv1.MetadataOptions{
+					HTTPTokens: hyperkarpenterv1.MetadataHTTPTokensStateOptional,
 				},
 			},
 			expectedSpec: awskarpenterv1.EC2NodeClassSpec{

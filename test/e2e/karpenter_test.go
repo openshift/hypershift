@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	"github.com/blang/semver"
@@ -485,11 +484,11 @@ func TestKarpenter(t *testing.T) {
 					SecurityGroupSelectorTerms: []hyperkarpenterv1.SecurityGroupSelectorTerm{
 						{Tags: map[string]string{"karpenter.sh/discovery": hostedCluster.Spec.InfraID}},
 					},
-					MetadataOptions: &hyperkarpenterv1.MetadataOptions{
-						HTTPEndpoint:            aws.String("enabled"),
-						HTTPProtocolIPv6:        aws.String("disabled"),
-						HTTPPutResponseHopLimit: aws.Int64(2),
-						HTTPTokens:              aws.String("required"),
+					MetadataOptions: hyperkarpenterv1.MetadataOptions{
+						HTTPEndpoint:            hyperkarpenterv1.MetadataEndpointStateEnabled,
+						HTTPProtocolIPv6:        hyperkarpenterv1.MetadataProtocolIPv6StateDisabled,
+						HTTPPutResponseHopLimit: 2,
+						HTTPTokens:              hyperkarpenterv1.MetadataHTTPTokensStateRequired,
 					},
 				},
 			}

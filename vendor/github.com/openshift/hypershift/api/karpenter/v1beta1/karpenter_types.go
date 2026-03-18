@@ -245,16 +245,16 @@ type OpenshiftEC2NodeClassSpec struct {
 	// +optional
 	Monitoring MonitoringState `json:"monitoring,omitempty"`
 
-	// MetadataOptions contains parameters for specifying the exposure of the
+	// metadataOptions contains parameters for specifying the exposure of the
 	// Instance Metadata Service to provisioned EC2 nodes.
 	// Refer to recommended, security best practices
 	// (https://aws.github.io/aws-eks-best-practices/security/docs/iam/#restrict-access-to-the-instance-profile-assigned-to-the-worker-node)
 	// for limiting exposure of Instance Metadata and User Data to pods.
-	// If omitted, defaults to httpEndpoint enabled, with httpProtocolIPv6
-	// disabled, with httpPutResponseHopLimit of 1, and with httpTokens
-	// required.
+	// If omitted, defaults to httpEndpoint Enabled, with httpProtocolIPv6
+	// Disabled, with httpPutResponseHopLimit of 1, and with httpTokens
+	// Required.
 	// +optional
-	MetadataOptions *MetadataOptions `json:"metadataOptions,omitempty"`
+	MetadataOptions MetadataOptions `json:"metadataOptions,omitempty,omitzero"`
 
 	// version is an OpenShift version (e.g., "4.20.1") specifying the release version
 	// for nodes managed by this NodeClass. When set, the controller resolves this to a
@@ -411,54 +411,85 @@ type BlockDevice struct {
 	VolumeType VolumeType `json:"volumeType,omitempty"`
 }
 
+// MetadataEndpointState controls the HTTP metadata endpoint on provisioned nodes.
+// +kubebuilder:validation:Enum=Enabled;Disabled
+type MetadataEndpointState string
+
+const (
+	// MetadataEndpointStateEnabled enables the HTTP metadata endpoint.
+	MetadataEndpointStateEnabled MetadataEndpointState = "Enabled"
+	// MetadataEndpointStateDisabled disables the HTTP metadata endpoint.
+	MetadataEndpointStateDisabled MetadataEndpointState = "Disabled"
+)
+
+// MetadataProtocolIPv6State controls the IPv6 endpoint for the instance metadata service.
+// +kubebuilder:validation:Enum=Enabled;Disabled
+type MetadataProtocolIPv6State string
+
+const (
+	// MetadataProtocolIPv6StateEnabled enables the IPv6 metadata endpoint.
+	MetadataProtocolIPv6StateEnabled MetadataProtocolIPv6State = "Enabled"
+	// MetadataProtocolIPv6StateDisabled disables the IPv6 metadata endpoint.
+	MetadataProtocolIPv6StateDisabled MetadataProtocolIPv6State = "Disabled"
+)
+
+// MetadataHTTPTokensState determines the state of token usage for instance metadata requests.
+// +kubebuilder:validation:Enum=Required;Optional
+type MetadataHTTPTokensState string
+
+const (
+	// MetadataHTTPTokensStateRequired requires a signed token header for metadata requests (IMDSv2).
+	MetadataHTTPTokensStateRequired MetadataHTTPTokensState = "Required"
+	// MetadataHTTPTokensStateOptional allows metadata retrieval with or without a token (IMDSv1/v2).
+	MetadataHTTPTokensStateOptional MetadataHTTPTokensState = "Optional"
+)
+
 // MetadataOptions contains parameters for specifying the exposure of the
 // Instance Metadata Service to provisioned EC2 nodes.
+// +kubebuilder:validation:MinProperties=1
 type MetadataOptions struct {
-	// HTTPEndpoint enables or disables the HTTP metadata endpoint on provisioned
+	// httpEndpoint enables or disables the HTTP metadata endpoint on provisioned
 	// nodes. If metadata options is non-nil, but this parameter is not specified,
-	// the default state is "enabled".
+	// the default state is "Enabled".
 	//
-	// If you specify a value of "disabled", instance metadata will not be accessible
+	// If you specify a value of "Disabled", instance metadata will not be accessible
 	// on the node.
-	// +kubebuilder:default=enabled
-	// +kubebuilder:validation:Enum:={enabled,disabled}
+	// +kubebuilder:default=Enabled
 	// +optional
-	HTTPEndpoint *string `json:"httpEndpoint,omitempty"`
-	// HTTPProtocolIPv6 enables or disables the IPv6 endpoint for the instance metadata
+	HTTPEndpoint MetadataEndpointState `json:"httpEndpoint,omitempty"`
+	// httpProtocolIPv6 enables or disables the IPv6 endpoint for the instance metadata
 	// service on provisioned nodes. If metadata options is non-nil, but this parameter
-	// is not specified, the default state is "disabled".
-	// +kubebuilder:default=disabled
-	// +kubebuilder:validation:Enum:={enabled,disabled}
+	// is not specified, the default state is "Disabled".
+	// +kubebuilder:default=Disabled
 	// +optional
-	HTTPProtocolIPv6 *string `json:"httpProtocolIPv6,omitempty"`
-	// HTTPPutResponseHopLimit is the desired HTTP PUT response hop limit for
+	HTTPProtocolIPv6 MetadataProtocolIPv6State `json:"httpProtocolIPv6,omitempty"`
+	// httpPutResponseHopLimit is the desired HTTP PUT response hop limit for
 	// instance metadata requests. The larger the number, the further instance
 	// metadata requests can travel. Possible values are integers from 1 to 64.
 	// If metadata options is non-nil, but this parameter is not specified, the
 	// default value is 1.
 	// +kubebuilder:default=1
-	// +kubebuilder:validation:Minimum:=1
-	// +kubebuilder:validation:Maximum:=64
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=64
 	// +optional
-	HTTPPutResponseHopLimit *int64 `json:"httpPutResponseHopLimit,omitempty"`
-	// HTTPTokens determines the state of token usage for instance metadata
+	HTTPPutResponseHopLimit int64 `json:"httpPutResponseHopLimit,omitempty"`
+	// httpTokens determines the state of token usage for instance metadata
 	// requests. If metadata options is non-nil, but this parameter is not
-	// specified, the default state is "required".
+	// specified, the default state is "Required".
 	//
-	// If the state is optional, one can choose to retrieve instance metadata with
+	// If the state is "Optional", one can choose to retrieve instance metadata with
 	// or without a signed token header on the request. If one retrieves the IAM
 	// role credentials without a token, the version 1.0 role credentials are
 	// returned. If one retrieves the IAM role credentials using a valid signed
 	// token, the version 2.0 role credentials are returned.
 	//
-	// If the state is "required", one must send a signed token header with any
+	// If the state is "Required", one must send a signed token header with any
 	// instance metadata retrieval requests. In this state, retrieving the IAM
 	// role credentials always returns the version 2.0 credentials; the version
 	// 1.0 credentials are not available.
-	// +kubebuilder:default=required
-	// +kubebuilder:validation:Enum:={required,optional}
+	// +kubebuilder:default=Required
 	// +optional
-	HTTPTokens *string `json:"httpTokens,omitempty"`
+	HTTPTokens MetadataHTTPTokensState `json:"httpTokens,omitempty"`
 }
 
 // OpenshiftEC2NodeClassStatus defines the observed state of OpenshiftEC2NodeClass.

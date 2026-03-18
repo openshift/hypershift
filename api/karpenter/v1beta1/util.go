@@ -45,15 +45,24 @@ func (spec OpenshiftEC2NodeClassSpec) KarpenterAssociatePublicIPAddress() *bool 
 }
 
 func (spec OpenshiftEC2NodeClassSpec) KarpenterMetadataOptions() *awskarpenterv1.MetadataOptions {
-	if spec.MetadataOptions == nil {
+	mo := spec.MetadataOptions
+	if mo.HTTPEndpoint == "" && mo.HTTPProtocolIPv6 == "" && mo.HTTPPutResponseHopLimit == 0 && mo.HTTPTokens == "" {
 		return nil
 	}
-	return &awskarpenterv1.MetadataOptions{
-		HTTPEndpoint:            spec.MetadataOptions.HTTPEndpoint,
-		HTTPProtocolIPv6:        spec.MetadataOptions.HTTPProtocolIPv6,
-		HTTPPutResponseHopLimit: spec.MetadataOptions.HTTPPutResponseHopLimit,
-		HTTPTokens:              spec.MetadataOptions.HTTPTokens,
+	opts := &awskarpenterv1.MetadataOptions{}
+	if mo.HTTPEndpoint != "" {
+		opts.HTTPEndpoint = ptr.To(strings.ToLower(string(mo.HTTPEndpoint)))
 	}
+	if mo.HTTPProtocolIPv6 != "" {
+		opts.HTTPProtocolIPv6 = ptr.To(strings.ToLower(string(mo.HTTPProtocolIPv6)))
+	}
+	if mo.HTTPPutResponseHopLimit != 0 {
+		opts.HTTPPutResponseHopLimit = ptr.To(mo.HTTPPutResponseHopLimit)
+	}
+	if mo.HTTPTokens != "" {
+		opts.HTTPTokens = ptr.To(strings.ToLower(string(mo.HTTPTokens)))
+	}
+	return opts
 }
 
 func (spec OpenshiftEC2NodeClassSpec) KarpenterDetailedMonitoring() *bool {
