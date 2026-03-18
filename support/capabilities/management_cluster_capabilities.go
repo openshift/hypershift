@@ -1,7 +1,10 @@
 package capabilities
 
 import (
+	"fmt"
 	"sync"
+
+	"github.com/blang/semver"
 
 	configv1 "github.com/openshift/api/config/v1"
 	imagestreamv1 "github.com/openshift/api/image/v1"
@@ -73,6 +76,10 @@ const (
 	// CapabilityValidatingAdmissionPolicy indicates if the cluster supports ValidatingAdmissionPolicy
 	// admissionregistration.k8s.io/v1
 	CapabilityValidatingAdmissionPolicy
+
+	// CapabilityNativeSidecarContainers indicates if the management cluster supports native sidecar
+	// containers (K8s >= 1.29, where the SidecarContainers feature gate is beta and enabled by default).
+	CapabilityNativeSidecarContainers
 )
 
 // ManagementClusterCapabilities holds all information about optional capabilities of
@@ -115,7 +122,14 @@ func isAPIResourceRegistered(client discovery.ServerResourcesInterface, groupVer
 	return false, nil
 }
 
-func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterface) (*ManagementClusterCapabilities, error) {
+// ManagementClusterDiscoveryClient combines the interfaces needed for detecting
+// management cluster capabilities: API resource checks and server version checks.
+type ManagementClusterDiscoveryClient interface {
+	discovery.ServerResourcesInterface
+	discovery.ServerVersionInterface
+}
+
+func DetectManagementClusterCapabilities(client ManagementClusterDiscoveryClient) (*ManagementClusterCapabilities, error) {
 	discoveredCapabilities := map[CapabilityType]struct{}{}
 
 	// check for route capability
@@ -227,5 +241,34 @@ func DetectManagementClusterCapabilities(client discovery.ServerResourcesInterfa
 		discoveredCapabilities[CapabilityValidatingAdmissionPolicy] = struct{}{}
 	}
 
+	// check for native sidecar containers support (K8s >= 1.29)
+	hasNativeSidecarCap, err := supportsNativeSidecarContainers(client)
+	if err != nil {
+		return nil, err
+	}
+	if hasNativeSidecarCap {
+		discoveredCapabilities[CapabilityNativeSidecarContainers] = struct{}{}
+	}
+
 	return &ManagementClusterCapabilities{capabilities: discoveredCapabilities}, nil
+}
+
+// supportsNativeSidecarContainers checks if the management cluster's Kubernetes version supports
+// native sidecar containers (K8s >= 1.29, where the SidecarContainers feature gate is beta and enabled by default).
+func supportsNativeSidecarContainers(client discovery.ServerVersionInterface) (bool, error) {
+	info, err := client.ServerVersion()
+	if err != nil {
+		return false, fmt.Errorf("failed to detect management cluster version: %w", err)
+	}
+
+	version, err := semver.ParseTolerant(info.GitVersion)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse management cluster version %q: %w", info.GitVersion, err)
+	}
+
+	// Native sidecar containers (RestartPolicy=Always on init containers) are beta and enabled
+	// by default starting in K8s 1.29. See https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/
+	// Compare only major/minor to avoid semver pre-release ordering issues with vendor-suffixed
+	// versions (e.g. v1.29.0-gke.1 sorts below v1.29.0 per semver spec).
+	return version.Major > 1 || (version.Major == 1 && version.Minor >= 29), nil
 }

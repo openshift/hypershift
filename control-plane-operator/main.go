@@ -59,7 +59,6 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	"github.com/blang/semver"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap/zapcore"
 )
@@ -256,12 +255,7 @@ func NewStartCommand() *cobra.Command {
 			setupLog.Error(err, "unable to detect cluster capabilities")
 			os.Exit(1)
 		}
-
-		nativeSidecarsEnabled, err := mgmtClusterSupportsNativeSidecars(kubeDiscoveryClient)
-		if err != nil {
-			setupLog.Error(err, "unable to detect native sidecar container support, falling back to regular sidecars")
-			nativeSidecarsEnabled = false
-		}
+		nativeSidecarsEnabled := mgmtClusterCaps.Has(capabilities.CapabilityNativeSidecarContainers)
 		setupLog.Info("Native sidecar containers support", "enabled", nativeSidecarsEnabled)
 
 		hcpClient, err := hyperclient.NewForConfig(mgr.GetConfig())
@@ -588,24 +582,4 @@ func NewStartCommand() *cobra.Command {
 	}
 
 	return cmd
-}
-
-// mgmtClusterSupportsNativeSidecars checks if the management cluster's Kubernetes version supports
-// native sidecar containers (K8s >= 1.29, where the SidecarContainers feature gate is beta and enabled by default).
-func mgmtClusterSupportsNativeSidecars(client discovery.ServerVersionInterface) (bool, error) {
-	info, err := client.ServerVersion()
-	if err != nil {
-		return false, fmt.Errorf("failed to detect management cluster version: %w", err)
-	}
-
-	version, err := semver.ParseTolerant(info.GitVersion)
-	if err != nil {
-		return false, fmt.Errorf("failed to parse management cluster version %q: %w", info.GitVersion, err)
-	}
-
-	// Native sidecar containers (RestartPolicy=Always on init containers) are beta and enabled
-	// by default starting in K8s 1.29. See https://kubernetes.io/docs/concepts/workloads/pods/sidecar-containers/
-	// Compare only major/minor to avoid semver pre-release ordering issues with vendor-suffixed
-	// versions (e.g. v1.29.0-gke.1 sorts below v1.29.0 per semver spec).
-	return version.Major > 1 || (version.Major == 1 && version.Minor >= 29), nil
 }
