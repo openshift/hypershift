@@ -33,6 +33,14 @@ type GCPPrivateServiceConnectListerExpansion interface{}
 // GCPPrivateServiceConnectNamespaceLister.
 type GCPPrivateServiceConnectNamespaceListerExpansion interface{}
 
+// HCPEtcdBackupListerExpansion allows custom methods to be added to
+// HCPEtcdBackupLister.
+type HCPEtcdBackupListerExpansion interface{}
+
+// HCPEtcdBackupNamespaceListerExpansion allows custom methods to be added to
+// HCPEtcdBackupNamespaceLister.
+type HCPEtcdBackupNamespaceListerExpansion interface{}
+
 // HostedClusterListerExpansion allows custom methods to be added to
 // HostedClusterLister.
 type HostedClusterListerExpansion interface{}

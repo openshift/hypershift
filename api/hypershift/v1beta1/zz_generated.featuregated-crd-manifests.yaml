@@ -125,6 +125,41 @@ gcpprivateserviceconnects.hypershift.openshift.io:
   - GCPPlatform
   Version: v1beta1
 
+hcpetcdbackups.hypershift.openshift.io:
+  Annotations: {}
+  ApprovedPRNumber: ""
+  CRDName: hcpetcdbackups.hypershift.openshift.io
+  Capability: ""
+  Category: ""
+  FeatureGates:
+  - HCPEtcdBackup
+  FilenameOperatorName: ""
+  FilenameOperatorOrdering: ""
+  FilenameRunLevel: ""
+  GroupName: hypershift.openshift.io
+  HasStatus: true
+  KindName: HCPEtcdBackup
+  Labels: {}
+  PluralName: hcpetcdbackups
+  PrinterColumns:
+  - description: Backup completion status
+    jsonPath: .status.conditions[?(@.type=="BackupCompleted")].status
+    name: Completed
+    type: string
+  - description: Snapshot URL
+    jsonPath: .status.snapshotURL
+    name: URL
+    type: string
+  - jsonPath: .metadata.creationTimestamp
+    name: Age
+    type: date
+  Scope: Namespaced
+  ShortNames:
+  - hcpetcdbk
+  TopLevelFeatureGates:
+  - HCPEtcdBackup
+  Version: v1beta1
+
 hostedclusters.hypershift.openshift.io:
   Annotations: {}
   ApprovedPRNumber: ""
@@ -139,6 +174,7 @@ hostedclusters.hypershift.openshift.io:
   - ExternalOIDCWithUIDAndExtraClaimMappings
   - ExternalOIDCWithUpstreamParity
   - GCPPlatform
+  - HCPEtcdBackup
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
   - KMSEncryptionProvider
@@ -198,6 +234,7 @@ hostedcontrolplanes.hypershift.openshift.io:
   - ExternalOIDCWithUIDAndExtraClaimMappings
   - ExternalOIDCWithUpstreamParity
   - GCPPlatform
+  - HCPEtcdBackup
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
   - KMSEncryptionProvider

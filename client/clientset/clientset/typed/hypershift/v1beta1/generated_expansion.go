@@ -21,6 +21,8 @@ type CertificateSigningRequestApprovalExpansion interface{}
 
 type GCPPrivateServiceConnectExpansion interface{}
 
+type HCPEtcdBackupExpansion interface{}
+
 type HostedClusterExpansion interface{}
 
 type HostedControlPlaneExpansion interface{}

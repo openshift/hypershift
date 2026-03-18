@@ -1885,6 +1885,13 @@ type ManagedEtcdSpec struct {
 	// storage specifies how etcd data is persisted.
 	// +required
 	Storage ManagedEtcdStorageSpec `json:"storage"`
+
+	// backup defines the backup configuration for managed etcd, including
+	// optional KMS key settings for artifact encryption in cloud storage.
+	// This configuration is only used when an HCPEtcdBackup CR exists.
+	// +optional
+	// +openshift:enable:FeatureGate=HCPEtcdBackup
+	Backup HCPEtcdBackupConfig `json:"backup,omitzero"`
 }
 
 // ManagedEtcdStorageType is a storage type for an etcd cluster.
