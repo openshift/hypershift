@@ -26,11 +26,11 @@ import (
 type OpenshiftEC2NodeClassSpecApplyConfiguration struct {
 	SubnetSelectorTerms        []SubnetSelectorTermApplyConfiguration        `json:"subnetSelectorTerms,omitempty"`
 	SecurityGroupSelectorTerms []SecurityGroupSelectorTermApplyConfiguration `json:"securityGroupSelectorTerms,omitempty"`
-	AssociatePublicIPAddress   *bool                                         `json:"associatePublicIPAddress,omitempty"`
+	IPAddressAssociation       *karpenterv1beta1.IPAddressAssociation        `json:"ipAddressAssociation,omitempty"`
 	Tags                       map[string]string                             `json:"tags,omitempty"`
-	BlockDeviceMappings        []*karpenterv1beta1.BlockDeviceMapping        `json:"blockDeviceMappings,omitempty"`
+	BlockDeviceMappings        []BlockDeviceMappingApplyConfiguration        `json:"blockDeviceMappings,omitempty"`
 	InstanceStorePolicy        *karpenterv1beta1.InstanceStorePolicy         `json:"instanceStorePolicy,omitempty"`
-	DetailedMonitoring         *bool                                         `json:"detailedMonitoring,omitempty"`
+	Monitoring                 *karpenterv1beta1.MonitoringState             `json:"monitoring,omitempty"`
 	Version                    *string                                       `json:"version,omitempty"`
 }
 
@@ -66,11 +66,11 @@ func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithSecurityGroupSelectorT
 	return b
 }
 
-// WithAssociatePublicIPAddress sets the AssociatePublicIPAddress field in the declarative configuration to the given value
+// WithIPAddressAssociation sets the IPAddressAssociation field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the AssociatePublicIPAddress field is set to the value of the last call.
-func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithAssociatePublicIPAddress(value bool) *OpenshiftEC2NodeClassSpecApplyConfiguration {
-	b.AssociatePublicIPAddress = &value
+// If called multiple times, the IPAddressAssociation field is set to the value of the last call.
+func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithIPAddressAssociation(value karpenterv1beta1.IPAddressAssociation) *OpenshiftEC2NodeClassSpecApplyConfiguration {
+	b.IPAddressAssociation = &value
 	return b
 }
 
@@ -91,7 +91,7 @@ func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithTags(entries map[strin
 // WithBlockDeviceMappings adds the given value to the BlockDeviceMappings field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the BlockDeviceMappings field.
-func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithBlockDeviceMappings(values ...**karpenterv1beta1.BlockDeviceMapping) *OpenshiftEC2NodeClassSpecApplyConfiguration {
+func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithBlockDeviceMappings(values ...*BlockDeviceMappingApplyConfiguration) *OpenshiftEC2NodeClassSpecApplyConfiguration {
 	for i := range values {
 		if values[i] == nil {
 			panic("nil value passed to WithBlockDeviceMappings")
@@ -109,11 +109,11 @@ func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithInstanceStorePolicy(va
 	return b
 }
 
-// WithDetailedMonitoring sets the DetailedMonitoring field in the declarative configuration to the given value
+// WithMonitoring sets the Monitoring field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the DetailedMonitoring field is set to the value of the last call.
-func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithDetailedMonitoring(value bool) *OpenshiftEC2NodeClassSpecApplyConfiguration {
-	b.DetailedMonitoring = &value
+// If called multiple times, the Monitoring field is set to the value of the last call.
+func (b *OpenshiftEC2NodeClassSpecApplyConfiguration) WithMonitoring(value karpenterv1beta1.MonitoringState) *OpenshiftEC2NodeClassSpecApplyConfiguration {
+	b.Monitoring = &value
 	return b
 }
 

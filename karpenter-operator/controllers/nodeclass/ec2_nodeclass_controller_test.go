@@ -107,21 +107,21 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 						Name: "testName",
 					},
 				},
-				AssociatePublicIPAddress: ptr.To(true),
+				IPAddressAssociation: hyperkarpenterv1.IPAddressAssociationPublic,
 				Tags: map[string]string{
 					"tag1": "value1",
 				},
-				BlockDeviceMappings: []*hyperkarpenterv1.BlockDeviceMapping{
+				BlockDeviceMappings: []hyperkarpenterv1.BlockDeviceMapping{
 					{
-						DeviceName: ptr.To("xvdh"),
-						EBS: &hyperkarpenterv1.BlockDevice{
-							Encrypted:  ptr.To(true),
-							VolumeSize: resource.NewQuantity(20, resource.DecimalSI),
+						DeviceName: "xvdh",
+						EBS: hyperkarpenterv1.BlockDevice{
+							Encrypted:     hyperkarpenterv1.EncryptionStateEncrypted,
+							VolumeSizeGiB: 20,
 						},
 					},
 				},
-				InstanceStorePolicy: ptr.To(hyperkarpenterv1.InstanceStorePolicyRAID0),
-				DetailedMonitoring:  ptr.To(true),
+				InstanceStorePolicy: hyperkarpenterv1.InstanceStorePolicyRAID0,
+				Monitoring:          hyperkarpenterv1.MonitoringStateDetailed,
 			},
 			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
 				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
@@ -149,7 +149,7 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 						DeviceName: ptr.To("xvdh"),
 						EBS: &awskarpenterv1.BlockDevice{
 							Encrypted:  ptr.To(true),
-							VolumeSize: resource.NewQuantity(20, resource.DecimalSI),
+							VolumeSize: ptr.To(resource.MustParse("20Gi")),
 						},
 					},
 				},

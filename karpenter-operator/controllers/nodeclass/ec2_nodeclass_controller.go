@@ -269,9 +269,9 @@ func reconcileEC2NodeClass(ctx context.Context, ec2NodeClass *awskarpenterv1.EC2
 		UserData:                 ptr.To(string(userDataSecret.Data["value"])),
 		AMIFamily:                ptr.To("Custom"),
 		AMISelectorTerms:         amiSelectorTerms,
-		AssociatePublicIPAddress: openshiftEC2NodeClass.Spec.AssociatePublicIPAddress,
+		AssociatePublicIPAddress: openshiftEC2NodeClass.Spec.KarpenterAssociatePublicIPAddress(),
 		Tags:                     mergeEC2NodeClassTags(ctx, openshiftEC2NodeClass, hcp),
-		DetailedMonitoring:       openshiftEC2NodeClass.Spec.DetailedMonitoring,
+		DetailedMonitoring:       openshiftEC2NodeClass.Spec.KarpenterDetailedMonitoring(),
 		BlockDeviceMappings:      openshiftEC2NodeClass.Spec.KarpenterBlockDeviceMapping(),
 		InstanceStorePolicy:      openshiftEC2NodeClass.Spec.KarpenterInstanceStorePolicy(),
 	}
