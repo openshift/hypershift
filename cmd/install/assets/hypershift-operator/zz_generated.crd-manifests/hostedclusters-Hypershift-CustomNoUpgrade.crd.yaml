@@ -3366,19 +3366,13 @@ spec:
                                   encryptionKeyURL is the URL of the Azure Key Vault key to use for encrypting etcd backup artifacts.
                                   Must be a valid Azure Key Vault key URL in the format
                                   "https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]".
-                                maxLength: 512
+                                maxLength: 210
                                 minLength: 1
                                 type: string
                                 x-kubernetes-validations:
-                                - message: encryptionKeyURL must be a valid HTTPS
-                                    URL
-                                  rule: isURL(self) && url(self).getScheme() == 'https'
-                                - message: encryptionKeyURL must point to an Azure
-                                    Key Vault (*.vault.azure.net)
-                                  rule: url(self).getHostname().matches('[a-zA-Z0-9-]+\\.vault\\.azure\\.net$')
-                                - message: encryptionKeyURL path must be /keys/<key-name>
-                                    or /keys/<key-name>/<key-version>
-                                  rule: url(self).getEscapedPath().matches('^/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')
+                                - message: encryptionKeyURL must be a valid Azure
+                                    Key Vault HTTPS URL (https://<vault>.vault.azure.net/keys/<key-name>[/<key-version>])
+                                  rule: self.matches('^https://[a-zA-Z0-9-]+\\.vault\\.azure\\.net/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')
                             required:
                             - encryptionKeyURL
                             type: object

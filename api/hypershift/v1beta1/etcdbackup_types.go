@@ -183,10 +183,8 @@ type HCPEtcdBackupAzureBlob struct {
 	// This field is immutable once set and cannot be removed.
 	// +optional
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=512
-	// +kubebuilder:validation:XValidation:rule="isURL(self) && url(self).getScheme() == 'https'",message="encryptionKeyURL must be a valid HTTPS URL"
-	// +kubebuilder:validation:XValidation:rule="url(self).getHostname().matches('[a-zA-Z0-9-]+\\\\.vault\\\\.azure\\\\.net$')",message="encryptionKeyURL must point to an Azure Key Vault (*.vault.azure.net)"
-	// +kubebuilder:validation:XValidation:rule="url(self).getEscapedPath().matches('^/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')",message="encryptionKeyURL path must be /keys/<key-name> or /keys/<key-name>/<key-version>"
+	// +kubebuilder:validation:MaxLength=210
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[a-zA-Z0-9-]+\\\\.vault\\\\.azure\\\\.net/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')",message="encryptionKeyURL must be a valid Azure Key Vault HTTPS URL (https://<vault>.vault.azure.net/keys/<key-name>[/<key-version>])"
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="encryptionKeyURL is immutable"
 	EncryptionKeyURL string `json:"encryptionKeyURL,omitempty"`
 }
@@ -209,8 +207,7 @@ type HCPEtcdBackupStatus struct {
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=2048
-	// +kubebuilder:validation:XValidation:rule="isURL(self)",message="snapshotURL must be a valid URL"
-	// +kubebuilder:validation:XValidation:rule="url(self).getScheme() == 'https' || url(self).getScheme() == 's3'",message="snapshotURL scheme must be https or s3"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^(https|s3)://.*')",message="snapshotURL must be a valid URL with scheme https or s3"
 	SnapshotURL string `json:"snapshotURL,omitempty"`
 
 	// encryptionMetadata contains metadata about the encryption of the backup.
@@ -256,10 +253,8 @@ type HCPEtcdBackupEncryptionMetadataAzure struct {
 	// "https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]".
 	// +required
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=512
-	// +kubebuilder:validation:XValidation:rule="isURL(self) && url(self).getScheme() == 'https'",message="encryptionKeyURL must be a valid HTTPS URL"
-	// +kubebuilder:validation:XValidation:rule="url(self).getHostname().matches('[a-zA-Z0-9-]+\\\\.vault\\\\.azure\\\\.net$')",message="encryptionKeyURL must point to an Azure Key Vault (*.vault.azure.net)"
-	// +kubebuilder:validation:XValidation:rule="url(self).getEscapedPath().matches('^/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')",message="encryptionKeyURL path must be /keys/<key-name> or /keys/<key-name>/<key-version>"
+	// +kubebuilder:validation:MaxLength=210
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[a-zA-Z0-9-]+\\\\.vault\\\\.azure\\\\.net/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')",message="encryptionKeyURL must be a valid Azure Key Vault HTTPS URL (https://<vault>.vault.azure.net/keys/<key-name>[/<key-version>])"
 	EncryptionKeyURL string `json:"encryptionKeyURL,omitempty"`
 }
 
@@ -358,9 +353,7 @@ type HCPEtcdBackupConfigAzure struct {
 	// "https://<vault-name>.vault.azure.net/keys/<key-name>[/<key-version>]".
 	// +required
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=512
-	// +kubebuilder:validation:XValidation:rule="isURL(self) && url(self).getScheme() == 'https'",message="encryptionKeyURL must be a valid HTTPS URL"
-	// +kubebuilder:validation:XValidation:rule="url(self).getHostname().matches('[a-zA-Z0-9-]+\\\\.vault\\\\.azure\\\\.net$')",message="encryptionKeyURL must point to an Azure Key Vault (*.vault.azure.net)"
-	// +kubebuilder:validation:XValidation:rule="url(self).getEscapedPath().matches('^/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')",message="encryptionKeyURL path must be /keys/<key-name> or /keys/<key-name>/<key-version>"
+	// +kubebuilder:validation:MaxLength=210
+	// +kubebuilder:validation:XValidation:rule="self.matches('^https://[a-zA-Z0-9-]+\\\\.vault\\\\.azure\\\\.net/keys/[a-zA-Z0-9-]+(/[a-zA-Z0-9]+)?$')",message="encryptionKeyURL must be a valid Azure Key Vault HTTPS URL (https://<vault>.vault.azure.net/keys/<key-name>[/<key-version>])"
 	EncryptionKeyURL string `json:"encryptionKeyURL,omitempty"`
 }
