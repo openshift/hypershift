@@ -2060,6 +2060,9 @@ func (r *HostedControlPlaneReconciler) cleanupOldRouterResources(ctx context.Con
 }
 
 func (r *HostedControlPlaneReconciler) removeHCPIngressFromRoutes(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	if !r.ManagementClusterCapabilities.Has(capabilities.CapabilityRoute) {
+		return nil
+	}
 	routeList := &routev1.RouteList{}
 	if err := r.List(ctx, routeList, client.InNamespace(hcp.Namespace)); err != nil {
 		return fmt.Errorf("failed to list routes: %w", err)
