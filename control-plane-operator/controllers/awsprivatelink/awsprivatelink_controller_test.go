@@ -2,6 +2,7 @@ package awsprivatelink
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
@@ -413,6 +414,40 @@ func TestReconcileDeletion(t *testing.T) {
 			expectError:     true,
 			expectFinalizer: true,
 		},
+		{
+			name: "When security group deletion returns DependencyViolation it should requeue without error",
+			awsEndpointSvc: &hyperv1.AWSEndpointService{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:              "private-router",
+					Namespace:         "clusters-test",
+					DeletionTimestamp: &now,
+					Finalizers:        []string{finalizer},
+				},
+				Status: hyperv1.AWSEndpointServiceStatus{
+					SecurityGroupID: "sg-12345",
+				},
+			},
+			setupMocks: func(mockCtrl *gomock.Controller) *MockawsClientProvider {
+				mockBuilder := NewMockawsClientProvider(mockCtrl)
+				mockEC2 := awsapi.NewMockEC2API(mockCtrl)
+				mockRoute53 := awsapi.NewMockROUTE53API(mockCtrl)
+				mockEC2.EXPECT().DescribeSecurityGroups(gomock.Any(), gomock.Any()).Return(&ec2v2.DescribeSecurityGroupsOutput{
+					SecurityGroups: []ec2types.SecurityGroup{{
+						GroupId:             aws.String("sg-12345"),
+						IpPermissions:       []ec2types.IpPermission{ingressPermission},
+						IpPermissionsEgress: []ec2types.IpPermission{egressPermission},
+					}},
+				}, nil)
+				mockEC2.EXPECT().RevokeSecurityGroupIngress(gomock.Any(), gomock.Any()).Return(&ec2v2.RevokeSecurityGroupIngressOutput{}, nil)
+				mockEC2.EXPECT().RevokeSecurityGroupEgress(gomock.Any(), gomock.Any()).Return(&ec2v2.RevokeSecurityGroupEgressOutput{}, nil)
+				mockEC2.EXPECT().DeleteSecurityGroup(gomock.Any(), gomock.Any()).Return(nil, &smithy.GenericAPIError{Code: "DependencyViolation", Message: "resource has a dependent object"})
+				mockBuilder.EXPECT().getClients(gomock.Any()).Return(mockEC2, mockRoute53, nil)
+				return mockBuilder
+			},
+			expectError:     false,
+			expectRequeue:   true,
+			expectFinalizer: true,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -572,6 +607,7 @@ func TestDeleteSecurityGroup(t *testing.T) {
 		setupEC2Mock          func(*gomock.Controller) *awsapi.MockEC2API
 		expectedError         bool
 		expectedErrorContains string
+		expectedSentinel      error
 	}{
 		{
 			name: "When security group is deleted successfully it should complete without error",
@@ -613,8 +649,8 @@ func TestDeleteSecurityGroup(t *testing.T) {
 				m.EXPECT().RevokeSecurityGroupIngress(gomock.Any(), gomock.Any()).Return(nil, &smithy.GenericAPIError{Code: "DependencyViolation", Message: "resource has a dependent object"})
 				return m
 			},
-			expectedError:         true,
-			expectedErrorContains: "security group has dependencies",
+			expectedError:    true,
+			expectedSentinel: errDependencyViolation,
 		},
 		{
 			name: "When revoking egress returns DependencyViolation it should return error for retry",
@@ -625,8 +661,8 @@ func TestDeleteSecurityGroup(t *testing.T) {
 				m.EXPECT().RevokeSecurityGroupEgress(gomock.Any(), gomock.Any()).Return(nil, &smithy.GenericAPIError{Code: "DependencyViolation", Message: "resource has a dependent object"})
 				return m
 			},
-			expectedError:         true,
-			expectedErrorContains: "security group has dependencies",
+			expectedError:    true,
+			expectedSentinel: errDependencyViolation,
 		},
 		{
 			name: "When deleting security group returns DependencyViolation it should return error for retry",
@@ -638,8 +674,8 @@ func TestDeleteSecurityGroup(t *testing.T) {
 				m.EXPECT().DeleteSecurityGroup(gomock.Any(), gomock.Any()).Return(nil, &smithy.GenericAPIError{Code: "DependencyViolation", Message: "resource has a dependent object"})
 				return m
 			},
-			expectedError:         true,
-			expectedErrorContains: "security group has dependencies",
+			expectedError:    true,
+			expectedSentinel: errDependencyViolation,
 		},
 		{
 			name: "When revoking ingress returns other error it should return that error",
@@ -704,6 +740,9 @@ func TestDeleteSecurityGroup(t *testing.T) {
 				g.Expect(err).To(HaveOccurred())
 				if tc.expectedErrorContains != "" {
 					g.Expect(err.Error()).To(ContainSubstring(tc.expectedErrorContains))
+				}
+				if tc.expectedSentinel != nil {
+					g.Expect(errors.Is(err, tc.expectedSentinel)).To(BeTrue(), "expected error to wrap %v", tc.expectedSentinel)
 				}
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())

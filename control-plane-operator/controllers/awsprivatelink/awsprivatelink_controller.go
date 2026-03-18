@@ -184,6 +184,11 @@ func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request
 	return ctrl.Result{}, nil
 }
 
+// errDependencyViolation is returned when AWS reports a DependencyViolation,
+// indicating the VPC endpoint is still being deleted. The caller translates
+// this into a controlled requeue rather than an error-driven requeue.
+var errDependencyViolation = errors.New("security group dependency violation")
+
 const (
 	finalizer                              = "hypershift.openshift.io/control-plane-operator-finalizer"
 	endpointServiceDeletionRequeueDuration = 5 * time.Second
@@ -1064,6 +1069,10 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 
 	if awsEndpointService.Status.SecurityGroupID != "" {
 		if err := r.deleteSecurityGroup(ctx, ec2Client, awsEndpointService.Status.SecurityGroupID); err != nil {
+			if errors.Is(err, errDependencyViolation) {
+				log.Info("security group has dependencies, will retry", "id", awsEndpointService.Status.SecurityGroupID)
+				return false, nil
+			}
 			return false, err
 		}
 		log.Info("security group deleted", "id", awsEndpointService.Status.SecurityGroupID)
@@ -1116,9 +1125,8 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissions,
 		}); err != nil {
-			// DependencyViolation indicates the VPC endpoint is still being deleted
 			if supportawsutil.AWSErrorCode(err) == supportawsutil.DependencyViolation {
-				return fmt.Errorf("security group has dependencies, VPC endpoint deletion may still be in progress: %w", err)
+				return fmt.Errorf("%w: %w", errDependencyViolation, err)
 			}
 			return fmt.Errorf("failed to revoke security group %s ingress rules: %w", awsv2.ToString(sg.GroupId), err)
 		}
@@ -1129,9 +1137,8 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissionsEgress,
 		}); err != nil {
-			// DependencyViolation indicates the VPC endpoint is still being deleted
 			if supportawsutil.AWSErrorCode(err) == supportawsutil.DependencyViolation {
-				return fmt.Errorf("security group has dependencies, VPC endpoint deletion may still be in progress: %w", err)
+				return fmt.Errorf("%w: %w", errDependencyViolation, err)
 			}
 			return fmt.Errorf("failed to revoke security group %s egress rules: %w", awsv2.ToString(sg.GroupId), err)
 		}
@@ -1140,9 +1147,8 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 	if _, err = ec2Client.DeleteSecurityGroup(ctx, &ec2v2.DeleteSecurityGroupInput{
 		GroupId: sg.GroupId,
 	}); err != nil {
-		// DependencyViolation indicates the VPC endpoint is still being deleted
 		if supportawsutil.AWSErrorCode(err) == supportawsutil.DependencyViolation {
-			return fmt.Errorf("security group has dependencies, VPC endpoint deletion may still be in progress: %w", err)
+			return fmt.Errorf("%w: %w", errDependencyViolation, err)
 		}
 		return fmt.Errorf("failed to delete security group %s: %w", awsv2.ToString(sg.GroupId), err)
 	}
