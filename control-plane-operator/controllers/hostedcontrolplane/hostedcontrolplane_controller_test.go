@@ -24,6 +24,7 @@ import (
 	oapiv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/oapi"
 	"github.com/openshift/hypershift/support/api"
 	"github.com/openshift/hypershift/support/azureutil"
+	"github.com/openshift/hypershift/support/capabilities"
 	fakecapabilities "github.com/openshift/hypershift/support/capabilities/fake"
 	"github.com/openshift/hypershift/support/certs"
 	controlplanecomponent "github.com/openshift/hypershift/support/controlplane-component"
@@ -1747,11 +1748,48 @@ func TestRemoveHCPIngressFromRoutes(t *testing.T) {
 	tests := []struct {
 		name           string
 		hcp            *hyperv1.HostedControlPlane
+		capabilities   capabilities.CapabiltyChecker
 		existingRoutes []*routev1.Route
 		expectedRoutes []routev1.Route
 		expectError    bool
 		errorContains  string
 	}{
+		{
+			name: "When CapabilityRoute is absent, it should skip route processing",
+			hcp: &hyperv1.HostedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "hcp",
+					Namespace: namespace,
+				},
+			},
+			capabilities: fakecapabilities.NewSupportAllExcept(capabilities.CapabilityRoute),
+			existingRoutes: []*routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "example.com"},
+						},
+					},
+				},
+			},
+			expectedRoutes: []routev1.Route{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "regular-route",
+						Namespace: namespace,
+					},
+					Status: routev1.RouteStatus{
+						Ingress: []routev1.RouteIngress{
+							{RouterName: "router", Host: "example.com"},
+						},
+					},
+				},
+			},
+		},
 		{
 			name: "Route with HCPRouteLabel is skipped",
 			hcp: &hyperv1.HostedControlPlane{
@@ -2077,9 +2115,15 @@ func TestRemoveHCPIngressFromRoutes(t *testing.T) {
 				WithStatusSubresource(&routev1.Route{}).
 				Build()
 
+			caps := tc.capabilities
+			if caps == nil {
+				caps = &fakecapabilities.FakeSupportAllCapabilities{}
+			}
+
 			r := &HostedControlPlaneReconciler{
-				Client: fakeClient,
-				Log:    ctrl.LoggerFrom(ctx),
+				Client:                        fakeClient,
+				Log:                           ctrl.LoggerFrom(ctx),
+				ManagementClusterCapabilities: caps,
 			}
 
 			err := r.removeHCPIngressFromRoutes(ctx, tc.hcp)
