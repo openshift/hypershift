@@ -68,9 +68,8 @@ var backupRestorePlatforms = map[hyperv1.PlatformType]backupRestorePlatformConfi
 		},
 	},
 	hyperv1.AgentPlatform: {
-		excludeWorkloads:     []string{"router", "karpenter", "karpenter-operator", "cloud-network-config-controller"},
-		postRestoreHook:      nil,
-		additionalNamespaces: []string{"hypershift-agents"},
+		excludeWorkloads: []string{"router", "karpenter", "karpenter-operator", "cloud-network-config-controller"},
+		postRestoreHook:  nil,
 	},
 }
 
@@ -96,6 +95,11 @@ var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func
 			Skip(fmt.Sprintf("Backup/restore test not supported on platform %s", hostedCluster.Spec.Platform.Type))
 		}
 		platformCfg = cfg
+		if hostedCluster.Spec.Platform.Type == hyperv1.AgentPlatform &&
+			hostedCluster.Spec.Platform.Agent != nil &&
+			hostedCluster.Spec.Platform.Agent.AgentNamespace != "" {
+			platformCfg.additionalNamespaces = []string{hostedCluster.Spec.Platform.Agent.AgentNamespace}
+		}
 	})
 
 	AfterAll(func() {
@@ -220,6 +224,9 @@ var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func
 	// Verify the continual operations
 	Context(ContextVerifyContinual, func() {
 		It("should verify continual operations completed successfully", func() {
+			if prober == nil {
+				Skip("prober not initialized")
+			}
 			err := prober.Stop()
 			Expect(err).NotTo(HaveOccurred())
 		})

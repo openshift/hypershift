@@ -4,7 +4,6 @@ package backuprestore
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -75,7 +74,7 @@ func BreakHostedClusterPreservingMachines(testCtx *internal.TestContext, logger 
 	// some resources may have been recreated with new finalizers by controllers,
 	// so we strip finalizers again and retry with the standard timeout.
 	if err := deleteControlPlaneNamespace(testCtx, 1*time.Minute); err != nil {
-		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, wait.ErrWaitTimeout) {
+		if !wait.Interrupted(err) {
 			return fmt.Errorf("failed to delete control plane namespace: %w", err)
 		}
 		logger.Info("Control plane namespace did not delete within initial timeout, removing finalizers again and retrying")
@@ -89,7 +88,7 @@ func BreakHostedClusterPreservingMachines(testCtx *internal.TestContext, logger 
 
 	// Step 7: Delete hosted cluster namespace
 	if err := deleteHostedClusterNamespace(testCtx, 1*time.Minute); err != nil {
-		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, wait.ErrWaitTimeout) {
+		if !wait.Interrupted(err) {
 			return fmt.Errorf("failed to delete hosted cluster namespace: %w", err)
 		}
 		logger.Info("Hosted cluster namespace did not delete within initial timeout, removing finalizers again and retrying")
