@@ -420,8 +420,12 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 		// SharedVPC role ARNs in the AWSEndpointService status. See
 		// TestReconcileDeletionSharedVPC for details.
 		hcpList := &hyperv1.HostedControlPlaneList{}
-		if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: req.Namespace}); err == nil && len(hcpList.Items) == 1 {
+		if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: req.Namespace}); err != nil {
+			log.Error(err, "failed to list HostedControlPlanes for deletion initialization")
+		} else if len(hcpList.Items) == 1 {
 			r.awsClientBuilder.initializeWithHCP(log, &hcpList.Items[0])
+		} else {
+			log.Info("skipping deletion client initialization, unexpected HostedControlPlane count", "count", len(hcpList.Items))
 		}
 
 		ec2Client, route53Client, err := r.awsClientBuilder.getClients(ctx)
@@ -1095,7 +1099,6 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 }
 
 func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, ec2Client awsapi.EC2API, sgID string) error {
-	log := ctrl.LoggerFrom(ctx)
 	describeSGResult, err := ec2Client.DescribeSecurityGroups(ctx, &ec2v2.DescribeSecurityGroupsInput{GroupIds: []string{sgID}})
 	if err != nil {
 		if supportawsutil.AWSErrorCode(err) == "InvalidGroup.NotFound" {
@@ -1117,8 +1120,7 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 			if supportawsutil.AWSErrorCode(err) == supportawsutil.DependencyViolation {
 				return fmt.Errorf("security group has dependencies, VPC endpoint deletion may still be in progress: %w", err)
 			}
-			log.Error(err, "failed to revoke security group ingress permissions", "SecurityGroupID", awsv2.ToString(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
-			return fmt.Errorf("failed to revoke security group ingress rules: %s", supportawsutil.AWSErrorCode(err))
+			return fmt.Errorf("failed to revoke security group %s ingress rules: %w", awsv2.ToString(sg.GroupId), err)
 		}
 	}
 
@@ -1131,8 +1133,7 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 			if supportawsutil.AWSErrorCode(err) == supportawsutil.DependencyViolation {
 				return fmt.Errorf("security group has dependencies, VPC endpoint deletion may still be in progress: %w", err)
 			}
-			log.Error(err, "failed to revoke security group egress permissions", "SecurityGroupID", awsv2.ToString(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
-			return fmt.Errorf("failed to revoke security group egress rules: %s", supportawsutil.AWSErrorCode(err))
+			return fmt.Errorf("failed to revoke security group %s egress rules: %w", awsv2.ToString(sg.GroupId), err)
 		}
 	}
 
@@ -1143,8 +1144,7 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 		if supportawsutil.AWSErrorCode(err) == supportawsutil.DependencyViolation {
 			return fmt.Errorf("security group has dependencies, VPC endpoint deletion may still be in progress: %w", err)
 		}
-		log.Error(err, "failed to delete security group", "SecurityGroupID", awsv2.ToString(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
-		return fmt.Errorf("failed to delete security group %s: %s", awsv2.ToString(sg.GroupId), supportawsutil.AWSErrorCode(err))
+		return fmt.Errorf("failed to delete security group %s: %w", awsv2.ToString(sg.GroupId), err)
 	}
 
 	return nil

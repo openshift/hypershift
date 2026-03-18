@@ -650,7 +650,7 @@ func TestDeleteSecurityGroup(t *testing.T) {
 				return m
 			},
 			expectedError:         true,
-			expectedErrorContains: "failed to revoke security group ingress rules",
+			expectedErrorContains: "failed to revoke security group " + sgID + " ingress rules",
 		},
 		{
 			name: "When security group has no ingress rules it should skip revoke ingress",
