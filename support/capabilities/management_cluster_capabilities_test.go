@@ -362,4 +362,18 @@ func TestDetectNativeSidecarCapability(t *testing.T) {
 			g.Expect(caps.Has(CapabilityNativeSidecarContainers)).To(Equal(tc.expectedSupport))
 		})
 	}
+
+	t.Run("When K8s version is malformed it should return an error", func(t *testing.T) {
+		g := NewWithT(t)
+
+		for _, badVersion := range []string{"not-a-version", "abc.def.ghi"} {
+			client := fakeFailableDiscoveryClient{
+				Resources:  []*metav1.APIResourceList{},
+				gitVersion: badVersion,
+			}
+
+			_, err := DetectManagementClusterCapabilities(client)
+			g.Expect(err).To(HaveOccurred())
+		}
+	})
 }
