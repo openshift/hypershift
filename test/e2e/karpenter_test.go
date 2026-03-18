@@ -746,6 +746,87 @@ func TestKarpenter(t *testing.T) {
 			t.Logf("OpenshiftEC2NodeClass %q has SupportedVersionSkew=False for version %s (exceeds n-3 skew from CP %s)", nc.Name, skewVersion, cpVersion)
 		})
 
+		t.Run("AutoNode enable/disable lifecycle", func(t *testing.T) {
+			g := NewWithT(t)
+
+			// Refresh to get current spec (including AutoNode config with RoleARN).
+			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+			g.Expect(err).NotTo(HaveOccurred())
+			savedAutoNode := hostedCluster.Spec.AutoNode
+
+			// Disable Karpenter.
+			t.Log("Disabling AutoNode (Karpenter) on HostedCluster")
+			err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+				obj.Spec.AutoNode = nil
+			})
+			g.Expect(err).NotTo(HaveOccurred(), "failed to disable AutoNode")
+
+			// Note: we do NOT poll for AutoNodeProgressing during disable. The disable path completes
+			// in a single reconcile loop (~<1s), which is shorter than our poll interval (3s), making
+			// the transient Progressing state unreliably catchable. Go straight to the final state.
+
+			// Expect fully disabled (components removed).
+			t.Log("Waiting for AutoNodeEnabled=False/AutoNodeNotConfigured (disable complete)")
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNodeEnabled=False/AutoNodeNotConfigured", hostedCluster.Namespace, hostedCluster.Name),
+				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+					hc := &hyperv1.HostedCluster{}
+					err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+					return hc, err
+				},
+				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+					e2eutil.ConditionPredicate[*hyperv1.HostedCluster](e2eutil.Condition{
+						Type:   string(hyperv1.AutoNodeEnabled),
+						Status: metav1.ConditionFalse,
+						Reason: hyperv1.AutoNodeNotConfiguredReason,
+					}),
+				},
+				e2eutil.WithTimeout(5*time.Minute),
+			)
+
+			// Re-enable Karpenter.
+			t.Log("Re-enabling AutoNode (Karpenter) on HostedCluster")
+			err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+				obj.Spec.AutoNode = savedAutoNode
+			})
+			g.Expect(err).NotTo(HaveOccurred(), "failed to re-enable AutoNode")
+
+			// Expect progressing (enable in flight — components being created/rolled out).
+			t.Log("Waiting for AutoNodeEnabled=False/AutoNodeProgressing (enable in progress)")
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNodeEnabled=False/AutoNodeProgressing", hostedCluster.Namespace, hostedCluster.Name),
+				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+					hc := &hyperv1.HostedCluster{}
+					err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+					return hc, err
+				},
+				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+					e2eutil.ConditionPredicate[*hyperv1.HostedCluster](e2eutil.Condition{
+						Type:   string(hyperv1.AutoNodeEnabled),
+						Status: metav1.ConditionFalse,
+						Reason: hyperv1.AutoNodeProgressingReason,
+					}),
+				},
+				e2eutil.WithTimeout(2*time.Minute),
+			)
+
+			// Expect fully enabled (both components rolled out).
+			t.Log("Waiting for AutoNodeEnabled=True/AsExpected (enable complete)")
+			e2eutil.EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have AutoNodeEnabled=True/AsExpected", hostedCluster.Namespace, hostedCluster.Name),
+				func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+					hc := &hyperv1.HostedCluster{}
+					err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+					return hc, err
+				},
+				[]e2eutil.Predicate[*hyperv1.HostedCluster]{
+					e2eutil.ConditionPredicate[*hyperv1.HostedCluster](e2eutil.Condition{
+						Type:   string(hyperv1.AutoNodeEnabled),
+						Status: metav1.ConditionTrue,
+						Reason: hyperv1.AsExpectedReason,
+					}),
+				},
+				e2eutil.WithTimeout(5*time.Minute),
+			)
+		})
+
 		// TODO(jkyros): This test doesn't clean up after itself (I think intentionally) so we can test general cluster
 		// cleanup, but as a result it needs to run last, otherwise it will pollute any other cases that come after it
 		// and its "on-demand" nodepool may service requests that are not intended for it
