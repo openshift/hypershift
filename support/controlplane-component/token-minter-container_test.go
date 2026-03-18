@@ -193,6 +193,40 @@ func TestInjectTokenMinterContainer(t *testing.T) {
 		g.Expect(podSpec.Containers[2].Name).To(Equal("apiserver-token-minter"))
 	})
 
+	t.Run("When CloudToken on GCP with native sidecars it should inject one cloud init container", func(t *testing.T) {
+		g := NewGomegaWithT(t)
+
+		gcpOpts := TokenMinterContainerOptions{
+			TokenType:               CloudToken,
+			ServiceAccountName:      "test-sa",
+			ServiceAccountNameSpace: "test-ns",
+		}
+
+		podSpec := &corev1.PodSpec{
+			Containers: []corev1.Container{
+				{Name: "main"},
+			},
+		}
+
+		cpContext := ControlPlaneContext{
+			HCP: &hyperv1.HostedControlPlane{
+				Spec: hyperv1.HostedControlPlaneSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.GCPPlatform,
+					},
+				},
+			},
+			ReleaseImageProvider:           fakeImageProvider,
+			NativeSidecarContainersEnabled: true,
+		}
+
+		gcpOpts.injectTokenMinterContainer(cpContext, podSpec)
+
+		g.Expect(podSpec.InitContainers).To(HaveLen(1))
+		g.Expect(podSpec.InitContainers[0].Name).To(Equal("cloud-token-minter"))
+		g.Expect(podSpec.Containers).To(HaveLen(1), "should not add token-minter to regular containers")
+	})
+
 	t.Run("When KubeAPIServerToken on non-cloud platform with native sidecars it should inject one init container", func(t *testing.T) {
 		g := NewGomegaWithT(t)
 
