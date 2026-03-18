@@ -6,13 +6,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/blang/semver"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 )
 
 const (
 	defaultArch          = "multi"
-	defaultCincinnatiURL = "https://api.openshift.com/api/upgrades_info/v1/graph"
+	defaultCincinnatiURL = "https://api.openshift.com/api/upgrades_info/graph"
 	cacheTTL             = 10 * time.Minute
 )
 
@@ -25,6 +30,7 @@ type VersionResolver interface {
 
 type cacheEntry struct {
 	releaseImage string
+	channels     Set[string]
 	expiry       time.Time
 }
 
@@ -63,44 +69,56 @@ type cincinnatiNode struct {
 // Resolve resolves an OpenShift version (e.g., "4.20.1") to a fully qualified
 // release image pullspec by querying the Cincinnati graph API with the given channel.
 func (r *CincinnatiVersionResolver) Resolve(ctx context.Context, version, channel string) (string, error) {
-	cacheKey := channel + "/" + version
+	// Derive the Cincinnati channel. Use the input channel if set, otherwise default to "fast-<major>.<minor>".
+	if channel == "" {
+		parsedVersion, err := semver.Parse(version)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse version %q: %w", version, err)
+		}
+		channel = fmt.Sprintf("fast-%d.%d", parsedVersion.Major, parsedVersion.Minor)
+	}
+
+	arch := defaultArch
+
+	cacheKey := arch + "/" + version
 
 	// Check cache
 	r.mu.RLock()
 	if entry, ok := r.cache[cacheKey]; ok && time.Now().Before(entry.expiry) {
 		r.mu.RUnlock()
+		if !entry.channels.Has(channel) {
+			return "", fmt.Errorf("%q not found in channel %q, although it is in %s", version, channel, strings.Join(sets.List(entry.channels), ", "))
+		}
 		return entry.releaseImage, nil
 	}
 	r.mu.RUnlock()
 
-	releaseImage, err := r.fetchVersion(ctx, version, channel)
+	entry, err := r.fetchVersion(ctx, version, channel, arch)
 	if err != nil {
 		return "", err
 	}
 
 	// Update cache
 	r.mu.Lock()
-	r.cache[cacheKey] = cacheEntry{
-		releaseImage: releaseImage,
-		expiry:       time.Now().Add(cacheTTL),
-	}
+	r.cache[cacheKey] = entry
 	r.mu.Unlock()
 
-	return releaseImage, nil
+	return entry.releaseImage, nil
 }
 
-func (r *CincinnatiVersionResolver) fetchVersion(ctx context.Context, version, channel string) (string, error) {
-	url := fmt.Sprintf("%s?channel=%s&arch=%s", r.baseURL, channel, defaultArch)
+func (r *CincinnatiVersionResolver) fetchVersion(ctx context.Context, version, channel arch, string) (cacheEntry, error) {
+	url := fmt.Sprintf("%s?channel=%s&arch=%s", r.baseURL, channel, arch)
+	entry := cacheEntry{}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return entry, fmt.Errorf("failed to create request: %w", err)
 	}
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/vnd.redhat.cincinnati.v1+json")
 
 	resp, err := r.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to query Cincinnati API: %w", err)
+		return entry, fmt.Errorf("failed to query Cincinnati API: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -111,17 +129,31 @@ func (r *CincinnatiVersionResolver) fetchVersion(ctx context.Context, version, c
 
 	var graph cincinnatiGraph
 	if err := json.NewDecoder(resp.Body).Decode(&graph); err != nil {
-		return "", fmt.Errorf("failed to decode Cincinnati API response: %w", err)
+		return entry, fmt.Errorf("failed to decode Cincinnati API response: %w", err)
 	}
 
 	for _, node := range graph.Nodes {
 		if node.Version == version {
 			if node.Payload == "" {
-				return "", fmt.Errorf("empty payload for version %q in Cincinnati graph", version)
+				return entry, fmt.Errorf("empty payload for version %q in Cincinnati graph", version)
 			}
-			return node.Payload, nil
+			entry.expiry = time.Now().Add(cacheTTL),
+			entry.releaseImage = node.Payload
+			entry.channels = sets.New[string]()
+			channelsString := node.Metadata["io.openshift.upgrades.graph.release.channels"]
+			channels := strings.Split(node.Metadata["io.openshift.upgrades.graph.release.channels"], ",")
+			for _, channel := range channels {
+				if len(channel) > 0 {
+					entry.channels.Insert(channel)
+				}
+			}
+			if entry.Channels.Len() == 0 {
+				klog.V(2).Infof("no non-empty, comma-delimited channels in io.openshift.upgrades.graph.release.channels for %q in %s: %q", version, req.URL, channelsString)
+				entry.channels.Insert(channel)
+			}
+			return entry, nil
 		}
 	}
 
-	return "", fmt.Errorf("version %q not found in Cincinnati graph for channel %q", version, channel)
+	return entry, fmt.Errorf("version %q not found in Cincinnati graph for channel %q", version, channel)
 }
