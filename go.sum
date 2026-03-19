@@ -39,12 +39,16 @@ github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns v
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns v1.3.0/go.mod h1:GE4m0rnnfwLGX0Y9A9A25Zx5N/90jneT5ABevqzhuFQ=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0 h1:Dd+RhdJn0OTtVGaeDLZpcumkIVCtA/3/Fo42+eoYvVM=
 github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0/go.mod h1:5kakwfW5CjC9KK+Q4wjXAg+ShuIm2mBMua0ZFj2C8PE=
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage v1.8.1 h1:/Zt+cDPnpC3OVDm/JKLOs7M2DKmLRIIp3XIx9pHHiig=
+github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage v1.8.1/go.mod h1:Ng3urmn6dYe8gnbCMoHHVl5APYz2txho3koEkV2o2HA=
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.4.0 h1:E4MgwLBGeVB5f2MdcIVD3ELVAWpr+WD6MUe1i+tM/PA=
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.4.0/go.mod h1:Y2b/1clN4zsAoUd/pgNAQHjLDnTis/6ROkUfyob6psM=
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.3.1 h1:mrkDCdkMsD4l9wjFGhofFHFrV43Y3c53RSLKOCJ5+Ow=
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets v1.3.1/go.mod h1:hPv41DbqMmnxcGralanA/kVlfdH5jv3T4LxGku2E1BY=
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0 h1:nCYfgcSyHZXJI8J0IWE5MsCGlb2xp9fJiXyxWgmOFg4=
 github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/internal v1.2.0/go.mod h1:ucUjca2JtSZboY8IoUqyQyuuXvwbMBVwFOm0vdQPNhA=
+github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.4 h1:jWQK1GI+LeGGUKBADtcH2rRqPxYB1Ljwms5gFA2LqrM=
+github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.4/go.mod h1:8mwH4klAm9DUgR2EEHyEEAQlRDvLPyg5fQry3y+cDew=
 github.com/Azure/azure-service-operator/v2 v2.13.0 h1:24xDkuGOjSDKKkthECRo/I76slmlt3u0buYQ4rvX3pQ=
 github.com/Azure/azure-service-operator/v2 v2.13.0/go.mod h1:3xfZMZm4yjdcjr3lh1kWqP2dtvZS/nCy7wpNERYDatg=
 github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 h1:L/gRVlceqvL25UVaW/CKtUDjefjrs0SPonmDGUVOYP0=

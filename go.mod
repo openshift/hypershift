@@ -12,6 +12,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/privatedns/armprivatedns v1.3.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.4.0
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.4
 	github.com/Azure/msi-dataplane v0.4.3
 	github.com/IBM-Cloud/power-go-client v1.11.0
 	github.com/IBM/go-sdk-core/v5 v5.19.1
