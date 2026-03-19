@@ -101,6 +101,8 @@ func commandFor(name string) *cobra.Command {
 		cmd = syncfgconfigmap.NewRunCommand()
 	case "sync-global-pullsecret":
 		cmd = syncglobalpullsecret.NewRunCommand()
+	case "fetch-etcd-certs":
+		cmd = etcdbackup.NewFetchCertsCommand()
 	case "endpoint-resolver":
 		cmd = endpointresolver.NewStartCommand()
 	default:
@@ -153,6 +155,7 @@ func defaultCommand() *cobra.Command {
 	cmd.AddCommand(kubernetesdefaultproxy.NewStartCommand())
 	cmd.AddCommand(dnsresolver.NewCommand())
 	cmd.AddCommand(etcdbackup.NewStartCommand())
+	cmd.AddCommand(etcdbackup.NewFetchCertsCommand())
 	cmd.AddCommand(kasbootstrap.NewRunCommand())
 	cmd.AddCommand(syncfgconfigmap.NewRunCommand())
 	cmd.AddCommand(syncglobalpullsecret.NewRunCommand())
