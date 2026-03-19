@@ -34,9 +34,6 @@ const (
 	// awsNodeTerminationHandlerDeploymentName is the name of the termination handler deployment.
 	awsNodeTerminationHandlerDeploymentName = "aws-node-termination-handler"
 
-	// testSQSQueueName is the SQS queue name used for testing.
-	testSQSQueueName = "agarcial-nth-queue"
-
 	// rebalanceRecommendationTaintKey is the taint key applied by the AWS Node Termination Handler
 	// when it receives an EC2 rebalance recommendation event.
 	rebalanceRecommendationTaintKey = "aws-node-termination-handler/rebalance-recommendation"
@@ -145,16 +142,26 @@ func (s *SpotTerminationHandlerTest) Run(t *testing.T, nodePool hyperv1.NodePool
 			}
 		}()
 
-		// Step 1: Discover SQS queue URL and add it to the HostedCluster spec
+		// Step 1: Create an SQS queue for testing and add it to the HostedCluster spec
 		sqsClient := e2eutil.GetSQSClient(s.clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, s.clusterOpts.AWSPlatform.Region)
-		queueURLResult, err := sqsClient.GetQueueUrl(&sqs.GetQueueUrlInput{
-			QueueName: aws.String(testSQSQueueName),
+		sqsQueueName := s.hostedCluster.Name + "-nth-queue"
+		t.Logf("Creating SQS queue %s", sqsQueueName)
+		createQueueResult, err := sqsClient.CreateQueue(&sqs.CreateQueueInput{
+			QueueName: aws.String(sqsQueueName),
 		})
 		if err != nil {
-			t.Fatalf("failed to get SQS queue URL for queue %s: %v", testSQSQueueName, err)
+			t.Fatalf("failed to create SQS queue %s: %v", sqsQueueName, err)
 		}
-		sqsQueueURL := aws.StringValue(queueURLResult.QueueUrl)
-		t.Logf("Discovered SQS queue URL: %s", sqsQueueURL)
+		sqsQueueURL := aws.StringValue(createQueueResult.QueueUrl)
+		t.Logf("Created SQS queue: %s", sqsQueueURL)
+		defer func() {
+			t.Logf("Cleaning up: deleting SQS queue %s", sqsQueueName)
+			if _, err := sqsClient.DeleteQueue(&sqs.DeleteQueueInput{
+				QueueUrl: aws.String(sqsQueueURL),
+			}); err != nil {
+				t.Logf("warning: failed to delete SQS queue: %v", err)
+			}
+		}()
 
 		t.Logf("Adding SQS queue URL to HostedCluster spec %s/%s", s.hostedCluster.Namespace, s.hostedCluster.Name)
 		err = e2eutil.UpdateObject(t, s.ctx, s.mgmtClient, s.hostedCluster, func(obj *hyperv1.HostedCluster) {
