@@ -1,7 +1,7 @@
 apiVersion: v1
 data:
   aws.conf: "[Global]\nZone = \nVPC = \nKubernetesClusterID = \nSubnetID = \nClusterServiceLoadBalancerHealthProbeMode
-    = Shared"
+    = Shared\nNLBSecurityGroupMode = Managed"
 kind: ConfigMap
 metadata:
   name: aws-cloud-config
