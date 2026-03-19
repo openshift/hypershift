@@ -241,6 +241,8 @@ func (o *CreateOptions) GenerateScheduleObject(platform string) (*unstructured.U
 		"snapshotVolumes":          true,
 	}
 
+	applyPlatformBackupSpec(backupTemplate, platform)
+
 	// Create schedule spec
 	spec := map[string]interface{}{
 		"template":                   backupTemplate,

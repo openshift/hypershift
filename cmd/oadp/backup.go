@@ -231,6 +231,19 @@ func (o *CreateOptions) GenerateBackupObjectWithPlatform(platform string) (*unst
 		includedResources = getDefaultResourcesForPlatform(platform)
 	}
 
+	spec := map[string]interface{}{
+		"includedNamespaces":       buildIncludedNamespaces(o.HCNamespace, o.HCName, o.IncludeNamespaces),
+		"includedResources":        includedResources,
+		"storageLocation":          o.StorageLocation,
+		"ttl":                      o.TTL.String(),
+		"snapshotMoveData":         o.SnapshotMoveData,
+		"defaultVolumesToFsBackup": o.DefaultVolumesToFsBackup,
+		"dataMover":                "velero",
+		"snapshotVolumes":          true,
+	}
+
+	applyPlatformBackupSpec(spec, platform)
+
 	// Create backup object using unstructured to avoid Velero dependency
 	backup := &unstructured.Unstructured{
 		Object: map[string]interface{}{
@@ -243,16 +256,7 @@ func (o *CreateOptions) GenerateBackupObjectWithPlatform(platform string) (*unst
 					"velero.io/storage-location": o.StorageLocation,
 				},
 			},
-			"spec": map[string]interface{}{
-				"includedNamespaces":       buildIncludedNamespaces(o.HCNamespace, o.HCName, o.IncludeNamespaces),
-				"includedResources":        includedResources,
-				"storageLocation":          o.StorageLocation,
-				"ttl":                      o.TTL.String(),
-				"snapshotMoveData":         o.SnapshotMoveData,
-				"defaultVolumesToFsBackup": o.DefaultVolumesToFsBackup,
-				"dataMover":                "velero",
-				"snapshotVolumes":          true,
-			},
+			"spec": spec,
 		},
 	}
 	return backup, backupName, nil

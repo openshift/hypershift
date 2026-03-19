@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"sigs.k8s.io/yaml"
@@ -28,6 +29,22 @@ func renderYAMLObject(obj *unstructured.Unstructured) error {
 		return fmt.Errorf("failed to write YAML to stdout: %w", err)
 	}
 	return nil
+}
+
+// applyPlatformBackupSpec adds platform-specific fields to a backup spec map.
+// For KubeVirt, this adds a labelSelector to exclude RHCOS boot image PVCs
+// since they are recreated when new VMs are provisioned post-restore.
+func applyPlatformBackupSpec(spec map[string]interface{}, platform string) {
+	if strings.ToUpper(platform) == "KUBEVIRT" {
+		spec["labelSelector"] = map[string]interface{}{
+			"matchExpressions": []interface{}{
+				map[string]interface{}{
+					"key":      v1beta1.IsKubeVirtRHCOSVolumeLabelName,
+					"operator": "DoesNotExist",
+				},
+			},
+		}
+	}
 }
 
 // getDefaultResourcesForPlatform returns the default resource list based on the platform
