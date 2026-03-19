@@ -575,11 +575,14 @@ spec:
                               ciphers:
                                 description: |-
                                   ciphers is used to specify the cipher algorithms that are negotiated
-                                  during the TLS handshake.  Operators may remove entries their operands
-                                  do not support.  For example, to use DES-CBC3-SHA  (yaml):
+                                  during the TLS handshake. Operators may remove entries that their operands
+                                  do not support. For example, to use only ECDHE-RSA-AES128-GCM-SHA256 (yaml):
 
                                     ciphers:
-                                      - DES-CBC3-SHA
+                                      - ECDHE-RSA-AES128-GCM-SHA256
+
+                                  TLS 1.3 cipher suites (e.g. TLS_AES_128_GCM_SHA256) are not configurable
+                                  and are always enabled when TLS 1.3 is negotiated.
                                 items:
                                   type: string
                                 type: array
@@ -604,9 +607,6 @@ spec:
                               legacy clients and want to remain highly secure while being compatible with
                               most clients currently in use.
 
-                              The cipher list includes TLS 1.3 ciphers for forward compatibility, followed
-                              by the "intermediate" profile ciphers.
-
                               This profile is equivalent to a Custom profile specified as:
                                 minTLSVersion: VersionTLS12
                                 ciphers:
@@ -619,8 +619,6 @@ spec:
                                   - ECDHE-RSA-AES256-GCM-SHA384
                                   - ECDHE-ECDSA-CHACHA20-POLY1305
                                   - ECDHE-RSA-CHACHA20-POLY1305
-                                  - DHE-RSA-AES128-GCM-SHA256
-                                  - DHE-RSA-AES256-GCM-SHA384
                             nullable: true
                             type: object
                           modern:
@@ -641,9 +639,6 @@ spec:
                               old is a TLS profile for use when services need to be accessed by very old
                               clients or libraries and should be used only as a last resort.
 
-                              The cipher list includes TLS 1.3 ciphers for forward compatibility, followed
-                              by the "old" profile ciphers.
-
                               This profile is equivalent to a Custom profile specified as:
                                 minTLSVersion: VersionTLS10
                                 ciphers:
@@ -656,23 +651,15 @@ spec:
                                   - ECDHE-RSA-AES256-GCM-SHA384
                                   - ECDHE-ECDSA-CHACHA20-POLY1305
                                   - ECDHE-RSA-CHACHA20-POLY1305
-                                  - DHE-RSA-AES128-GCM-SHA256
-                                  - DHE-RSA-AES256-GCM-SHA384
-                                  - DHE-RSA-CHACHA20-POLY1305
                                   - ECDHE-ECDSA-AES128-SHA256
                                   - ECDHE-RSA-AES128-SHA256
                                   - ECDHE-ECDSA-AES128-SHA
                                   - ECDHE-RSA-AES128-SHA
-                                  - ECDHE-ECDSA-AES256-SHA384
-                                  - ECDHE-RSA-AES256-SHA384
                                   - ECDHE-ECDSA-AES256-SHA
                                   - ECDHE-RSA-AES256-SHA
-                                  - DHE-RSA-AES128-SHA256
-                                  - DHE-RSA-AES256-SHA256
                                   - AES128-GCM-SHA256
                                   - AES256-GCM-SHA384
                                   - AES128-SHA256
-                                  - AES256-SHA256
                                   - AES128-SHA
                                   - AES256-SHA
                                   - DES-CBC3-SHA
@@ -683,9 +670,10 @@ spec:
                               type is one of Old, Intermediate, Modern or Custom. Custom provides the
                               ability to specify individual TLS security profile parameters.
 
-                              The profiles are currently based on version 5.0 of the Mozilla Server Side TLS
-                              configuration guidelines (released 2019-06-28) with TLS 1.3 ciphers added for
-                              forward compatibility. See: https://ssl-config.mozilla.org/guidelines/5.0.json
+                              The profiles are based on version 5.7 of the Mozilla Server Side TLS
+                              configuration guidelines. The cipher lists consist of the configuration's
+                              "ciphersuites" followed by the Go-specific "ciphers" from the guidelines.
+                              See: https://ssl-config.mozilla.org/guidelines/5.7.json
 
                               The profiles are intent based, so they may change over time as new ciphers are
                               developed and existing ciphers are found to be insecure. Depending on
@@ -1059,6 +1047,9 @@ spec:
 
                           Once set, changing domain is not currently supported.
                         type: string
+                        x-kubernetes-validations:
+                        - message: domain is immutable once set
+                          rule: self == oldSelf
                       loadBalancer:
                         description: |-
                           loadBalancer contains the load balancer details in general which are not only specific to the underlying infrastructure
@@ -1336,6 +1327,154 @@ spec:
                                 x-kubernetes-list-type: atomic
                             type: object
                         type: object
+                      networkDiagnostics:
+                        description: |-
+                          networkDiagnostics defines network diagnostics configuration.
+
+                          Takes precedence over spec.disableNetworkDiagnostics in network.operator.openshift.io.
+                          If networkDiagnostics is not specified or is empty,
+                          and the spec.disableNetworkDiagnostics flag in network.operator.openshift.io is set to true,
+                          the network diagnostics feature will be disabled.
+                        properties:
+                          mode:
+                            description: |-
+                              mode controls the network diagnostics mode
+
+                              When omitted, this means the user has no opinion and the platform is left
+                              to choose reasonable defaults. These defaults are subject to change over time.
+                              The current default is All.
+                            enum:
+                            - ""
+                            - All
+                            - Disabled
+                            type: string
+                          sourcePlacement:
+                            description: |-
+                              sourcePlacement controls the scheduling of network diagnostics source deployment
+
+                              See NetworkDiagnosticsSourcePlacement for more details about default values.
+                            properties:
+                              nodeSelector:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  nodeSelector is the node selector applied to network diagnostics components
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is `kubernetes.io/os: linux`.
+                                type: object
+                              tolerations:
+                                description: |-
+                                  tolerations is a list of tolerations applied to network diagnostics components
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is an empty list.
+                                items:
+                                  description: |-
+                                    The pod this Toleration is attached to tolerates any taint that matches
+                                    the triple <key,value,effect> using the matching operator <operator>.
+                                  properties:
+                                    effect:
+                                      description: |-
+                                        Effect indicates the taint effect to match. Empty means match all taint effects.
+                                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                                      type: string
+                                    key:
+                                      description: |-
+                                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                                      type: string
+                                    operator:
+                                      description: |-
+                                        Operator represents a key's relationship to the value.
+                                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                                        Exists is equivalent to wildcard for value, so that a pod can
+                                        tolerate all taints of a particular category.
+                                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                                      type: string
+                                    tolerationSeconds:
+                                      description: |-
+                                        TolerationSeconds represents the period of time the toleration (which must be
+                                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                        it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                        negative values will be treated as 0 (evict immediately) by the system.
+                                      format: int64
+                                      type: integer
+                                    value:
+                                      description: |-
+                                        Value is the taint value the toleration matches to.
+                                        If the operator is Exists, the value should be empty, otherwise just a regular string.
+                                      type: string
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            type: object
+                          targetPlacement:
+                            description: |-
+                              targetPlacement controls the scheduling of network diagnostics target daemonset
+
+                              See NetworkDiagnosticsTargetPlacement for more details about default values.
+                            properties:
+                              nodeSelector:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  nodeSelector is the node selector applied to network diagnostics components
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is `kubernetes.io/os: linux`.
+                                type: object
+                              tolerations:
+                                description: |-
+                                  tolerations is a list of tolerations applied to network diagnostics components
+
+                                  When omitted, this means the user has no opinion and the platform is left
+                                  to choose reasonable defaults. These defaults are subject to change over time.
+                                  The current default is `- operator: "Exists"` which means that all taints are tolerated.
+                                items:
+                                  description: |-
+                                    The pod this Toleration is attached to tolerates any taint that matches
+                                    the triple <key,value,effect> using the matching operator <operator>.
+                                  properties:
+                                    effect:
+                                      description: |-
+                                        Effect indicates the taint effect to match. Empty means match all taint effects.
+                                        When specified, allowed values are NoSchedule, PreferNoSchedule and NoExecute.
+                                      type: string
+                                    key:
+                                      description: |-
+                                        Key is the taint key that the toleration applies to. Empty means match all taint keys.
+                                        If the key is empty, operator must be Exists; this combination means to match all values and all keys.
+                                      type: string
+                                    operator:
+                                      description: |-
+                                        Operator represents a key's relationship to the value.
+                                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                                        Exists is equivalent to wildcard for value, so that a pod can
+                                        tolerate all taints of a particular category.
+                                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
+                                      type: string
+                                    tolerationSeconds:
+                                      description: |-
+                                        TolerationSeconds represents the period of time the toleration (which must be
+                                        of effect NoExecute, otherwise this field is ignored) tolerates the taint. By default,
+                                        it is not set, which means tolerate the taint forever (do not evict). Zero and
+                                        negative values will be treated as 0 (evict immediately) by the system.
+                                      format: int64
+                                      type: integer
+                                    value:
+                                      description: |-
+                                        Value is the taint value the toleration matches to.
+                                        If the operator is Exists, the value should be empty, otherwise just a regular string.
+                                      type: string
+                                  type: object
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            type: object
+                        type: object
                       networkType:
                         description: |-
                           networkType is the plugin that is to be deployed (e.g. OVNKubernetes).
@@ -1365,6 +1504,12 @@ spec:
                         pattern: ^([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])-([0-9]{1,4}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$
                         type: string
                     type: object
+                    x-kubernetes-validations:
+                    - message: cannot set networkDiagnostics.sourcePlacement and networkDiagnostics.targetPlacement
+                        when networkDiagnostics.mode is Disabled
+                      rule: '!has(self.networkDiagnostics) || !has(self.networkDiagnostics.mode)
+                        || self.networkDiagnostics.mode!=''Disabled'' || !has(self.networkDiagnostics.sourcePlacement)
+                        && !has(self.networkDiagnostics.targetPlacement)'
                   oauth:
                     description: |-
                       oauth holds cluster-wide information about OAuth.
@@ -5956,9 +6101,10 @@ spec:
                     operator:
                       description: |-
                         Operator represents a key's relationship to the value.
-                        Valid operators are Exists and Equal. Defaults to Equal.
+                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
                         Exists is equivalent to wildcard for value, so that a pod can
                         tolerate all taints of a particular category.
+                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                       type: string
                     tolerationSeconds:
                       description: |-

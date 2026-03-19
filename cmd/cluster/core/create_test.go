@@ -28,7 +28,7 @@ import (
 func TestValidateMgmtClusterAndNodePoolCPUArchitectures(t *testing.T) {
 	ctx := t.Context()
 
-	fakeKubeClient := fakekubeclient.NewSimpleClientset()
+	fakeKubeClient := fakekubeclient.NewClientset()
 	fakeDiscovery, ok := fakeKubeClient.Discovery().(*fakediscovery.FakeDiscovery)
 	if !ok {
 		t.Fatalf("failed to convert FakeDiscovery")

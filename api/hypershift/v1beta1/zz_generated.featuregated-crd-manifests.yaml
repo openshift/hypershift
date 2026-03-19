@@ -178,7 +178,6 @@ hostedclusters.hypershift.openshift.io:
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
   - KMSEncryptionProvider
-  - NetworkDiagnosticsConfig
   - OpenStack
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
@@ -238,7 +237,6 @@ hostedcontrolplanes.hypershift.openshift.io:
   - HyperShiftOnlyDynamicResourceAllocation
   - ImageStreamImportMode
   - KMSEncryptionProvider
-  - NetworkDiagnosticsConfig
   - OpenStack
   FilenameOperatorName: ""
   FilenameOperatorOrdering: ""
