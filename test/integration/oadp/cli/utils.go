@@ -1,7 +1,7 @@
 //go:build integration
 // +build integration
 
-package oadp
+package cli
 
 import (
 	"context"
