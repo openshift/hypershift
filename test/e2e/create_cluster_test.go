@@ -19,11 +19,13 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/api/util/ipnet"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests/controlplaneoperator"
 	"github.com/openshift/hypershift/support/assets"
 	"github.com/openshift/hypershift/support/azureutil"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 	"github.com/openshift/hypershift/test/integration"
 	integrationframework "github.com/openshift/hypershift/test/integration/framework"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
@@ -2912,6 +2914,168 @@ func testCreateClusterPrivate(t *testing.T, enableExternalDNS bool) {
 		err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
 		g.Expect(err).ToNot(HaveOccurred(), "failed to get hostedCluster")
 	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "private", globalOpts.ServiceAccountSigningKey)
+}
+
+// TestPrivateLinkDeletionAfterCPORestart validates that AWSEndpointService resources
+// remain properly managed after a control-plane-operator restart.
+// When CPO restarts during deletion, the fix for OCPBUGS-74960 ensures AWS clients
+// are re-initialized via a best-effort HCP lookup, preventing orphaned VPC endpoints,
+// security groups, and Route53 records.
+func TestPrivateLinkDeletionAfterCPORestart(t *testing.T) {
+	if globalOpts.Platform != hyperv1.AWSPlatform {
+		t.Skip("test only supported on platform AWS")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(testContext)
+	defer cancel()
+
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
+	clusterOpts.ControlPlaneAvailabilityPolicy = string(hyperv1.SingleReplica)
+	clusterOpts.AWSPlatform.EndpointAccess = string(hyperv1.Private)
+	clusterOpts.NodePoolReplicas = 0
+
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		testPrivateLinkDeletionAfterCPORestart(t, ctx, g, mgtClient, hostedCluster)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "private-link-cpo-restart", globalOpts.ServiceAccountSigningKey)
+}
+
+func testPrivateLinkDeletionAfterCPORestart(t *testing.T, ctx context.Context, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	t.Helper()
+
+	hcpNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+	t.Logf("Hosted control plane namespace is %s", hcpNamespace)
+
+	const cpoFinalizer = "hypershift.openshift.io/control-plane-operator-finalizer"
+
+	// Step 1: Wait for AWSEndpointService CRs to be fully reconciled.
+	// NLBs can take 5-10 min to provision, so use a 20 min timeout.
+	t.Log("Waiting for AWSEndpointService CRs to be fully reconciled")
+	e2eutil.EventuallyObjects(t, ctx, "AWSEndpointService CRs to be fully reconciled",
+		func(ctx context.Context) ([]*hyperv1.AWSEndpointService, error) {
+			list := &hyperv1.AWSEndpointServiceList{}
+			if err := mgtClient.List(ctx, list, crclient.InNamespace(hcpNamespace)); err != nil {
+				return nil, err
+			}
+			items := make([]*hyperv1.AWSEndpointService, len(list.Items))
+			for i := range list.Items {
+				items[i] = &list.Items[i]
+			}
+			return items, nil
+		},
+		[]e2eutil.Predicate[[]*hyperv1.AWSEndpointService]{
+			func(items []*hyperv1.AWSEndpointService) (bool, string, error) {
+				if len(items) == 0 {
+					return false, "no AWSEndpointService CRs found", nil
+				}
+				return true, fmt.Sprintf("found %d AWSEndpointService CRs", len(items)), nil
+			},
+		},
+		[]e2eutil.Predicate[*hyperv1.AWSEndpointService]{
+			func(aes *hyperv1.AWSEndpointService) (bool, string, error) {
+				if aes.Status.EndpointServiceName == "" {
+					return false, fmt.Sprintf("%s: EndpointServiceName not yet populated", aes.Name), nil
+				}
+				if !slices.Contains(aes.Finalizers, cpoFinalizer) {
+					return false, fmt.Sprintf("%s: CPO finalizer not yet present", aes.Name), nil
+				}
+				return true, fmt.Sprintf("%s: reconciled (EndpointServiceName=%s)", aes.Name, aes.Status.EndpointServiceName), nil
+			},
+		},
+		e2eutil.WithTimeout(20*time.Minute),
+	)
+
+	// Step 2: Snapshot pre-restart state.
+	list := &hyperv1.AWSEndpointServiceList{}
+	err := mgtClient.List(ctx, list, crclient.InNamespace(hcpNamespace))
+	g.Expect(err).ToNot(HaveOccurred(), "failed to list AWSEndpointService CRs")
+	for i := range list.Items {
+		t.Logf("Pre-restart AWSEndpointService %s: EndpointServiceName=%s, EndpointID=%s, SecurityGroupID=%s",
+			list.Items[i].Name,
+			list.Items[i].Status.EndpointServiceName,
+			list.Items[i].Status.EndpointID,
+			list.Items[i].Status.SecurityGroupID,
+		)
+	}
+	preRestartCount := len(list.Items)
+
+	// Step 3: Delete CPO pods to simulate a restart.
+	t.Log("Deleting control-plane-operator pods to simulate restart")
+	cpoPods := &corev1.PodList{}
+	err = mgtClient.List(ctx, cpoPods, &crclient.ListOptions{
+		Namespace:     hcpNamespace,
+		LabelSelector: labels.SelectorFromSet(labels.Set{"app": "control-plane-operator"}),
+	})
+	g.Expect(err).ToNot(HaveOccurred(), "failed to list CPO pods")
+	g.Expect(cpoPods.Items).NotTo(BeEmpty(), "no CPO pods found")
+
+	for i := range cpoPods.Items {
+		pod := &cpoPods.Items[i]
+		t.Logf("Deleting CPO pod %s", pod.Name)
+		err = mgtClient.Delete(ctx, pod, &crclient.DeleteOptions{
+			GracePeriodSeconds: ptr.To[int64](0),
+		})
+		g.Expect(err).ToNot(HaveOccurred(), "failed to delete CPO pod %s", pod.Name)
+	}
+
+	// Step 4: Wait for CPO deployment to recover.
+	t.Log("Waiting for control-plane-operator deployment to recover")
+	e2eutil.EventuallyObject(t, ctx, "control-plane-operator deployment to be available",
+		func(ctx context.Context) (*appsv1.Deployment, error) {
+			dep := controlplaneoperator.OperatorDeployment(hcpNamespace)
+			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(dep), dep)
+			return dep, err
+		},
+		[]e2eutil.Predicate[*appsv1.Deployment]{
+			func(dep *appsv1.Deployment) (bool, string, error) {
+				want := ptr.Deref(dep.Spec.Replicas, 1)
+				got := dep.Status.AvailableReplicas
+				return got == want, fmt.Sprintf("available replicas: %d/%d", got, want), nil
+			},
+		},
+		e2eutil.WithTimeout(10*time.Minute),
+		e2eutil.WithoutConditionDump(),
+	)
+
+	// Step 5: Verify AWSEndpointService CRs are intact after restart.
+	t.Log("Verifying AWSEndpointService CRs are intact after CPO restart")
+	e2eutil.EventuallyObjects(t, ctx, "AWSEndpointService CRs to remain intact after CPO restart",
+		func(ctx context.Context) ([]*hyperv1.AWSEndpointService, error) {
+			list := &hyperv1.AWSEndpointServiceList{}
+			if err := mgtClient.List(ctx, list, crclient.InNamespace(hcpNamespace)); err != nil {
+				return nil, err
+			}
+			items := make([]*hyperv1.AWSEndpointService, len(list.Items))
+			for i := range list.Items {
+				items[i] = &list.Items[i]
+			}
+			return items, nil
+		},
+		[]e2eutil.Predicate[[]*hyperv1.AWSEndpointService]{
+			func(items []*hyperv1.AWSEndpointService) (bool, string, error) {
+				if len(items) != preRestartCount {
+					return false, fmt.Sprintf("expected %d AWSEndpointService CRs, got %d", preRestartCount, len(items)), nil
+				}
+				return true, fmt.Sprintf("found expected %d AWSEndpointService CRs", preRestartCount), nil
+			},
+		},
+		[]e2eutil.Predicate[*hyperv1.AWSEndpointService]{
+			func(aes *hyperv1.AWSEndpointService) (bool, string, error) {
+				if !slices.Contains(aes.Finalizers, cpoFinalizer) {
+					return false, fmt.Sprintf("%s: CPO finalizer missing after restart (fix for OCPBUGS-74960 prevents this)", aes.Name), nil
+				}
+				if aes.Status.EndpointServiceName == "" {
+					return false, fmt.Sprintf("%s: EndpointServiceName empty after restart", aes.Name), nil
+				}
+				return true, fmt.Sprintf("%s: intact (finalizer present, EndpointServiceName=%s)", aes.Name, aes.Status.EndpointServiceName), nil
+			},
+		},
+		e2eutil.WithTimeout(10*time.Minute),
+	)
+
+	// Step 6: Refresh hostedCluster for framework's after() validation.
+	err = mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to get hostedCluster")
 }
 
 func testSwitchEndpointAccess(ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, endpointAccess hyperv1.AWSEndpointAccessType, expectGuestKubeconfHostChange bool) func(t *testing.T) {
