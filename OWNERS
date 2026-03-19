@@ -60,11 +60,6 @@ filters:
   "^\\.cursor/.*":
     labels:
     - area/ai
-  "^api/.*":
-    approvers:
-    - api-approvers
-    labels:
-    - area/api
   "^availability-prober/.*":
     labels:
     - area/control-plane-operator
