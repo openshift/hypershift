@@ -1,0 +1,245 @@
+version: '3'
+
+# This file handles hosted cluster lifecycle
+
+tasks:
+  # === RESOURCE GROUPS ===
+
+  create-rgs:
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Creating Hosted Cluster Resource Groups"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - az group create --name {{.MANAGED_RG_NAME}} --location {{.LOCATION}} --output none
+      - az group create --name {{.CUSTOMER_VNET_RG_NAME}} --location {{.LOCATION}} --output none
+      - az group create --name {{.CUSTOMER_NSG_RG_NAME}} --location {{.LOCATION}} --output none
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Hosted Cluster RGs
+          Managed RG,{{.MANAGED_RG_NAME}}
+          VNet RG,{{.CUSTOMER_VNET_RG_NAME}}
+          NSG RG,{{.CUSTOMER_NSG_RG_NAME}}
+          Status,✓ Created" | gum table --print --border rounded
+        silent: true
+
+  # === NETWORKING ===
+
+  create-nsg:
+    internal: true
+    cmds:
+      - az network nsg create --resource-group {{.CUSTOMER_NSG_RG_NAME}} --name {{.CUSTOMER_NSG}} --output none
+
+  create-vnet:
+    internal: true
+    vars:
+      NSG_ID:
+        sh: 'az network nsg list --query "[?name==''{{.CUSTOMER_NSG}}''].id" -o tsv'
+    cmds:
+      - |
+        az network vnet create \
+          --name {{.CUSTOMER_VNET_NAME}} \
+          --resource-group {{.CUSTOMER_VNET_RG_NAME}} \
+          --address-prefix 10.0.0.0/16 \
+          --subnet-name {{.CUSTOMER_VNET_SUBNET1}} \
+          --subnet-prefixes 10.0.0.0/24 \
+          --nsg "{{.NSG_ID}}" \
+          --output none
+
+  create-network:
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Creating Network Infrastructure"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - task: create-nsg
+      - task: create-vnet
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Network Infrastructure
+          NSG,{{.CUSTOMER_NSG}}
+          VNet,{{.CUSTOMER_VNET_NAME}}
+          Subnet,{{.CUSTOMER_VNET_SUBNET1}}
+          Status,✓ Created" | gum table --print --border rounded
+        silent: true
+
+  # === HOSTED CLUSTER ===
+
+  create-hc:
+    vars:
+      VNET_ID:
+        sh: 'az network vnet list --query "[?name==''{{.CUSTOMER_VNET_NAME}}''].id" -o tsv'
+      SUBNET_ID:
+        sh: 'az network vnet subnet show --vnet-name {{.CUSTOMER_VNET_NAME}} --name {{.CUSTOMER_VNET_SUBNET1}} --resource-group {{.CUSTOMER_VNET_RG_NAME}} --query id --output tsv'
+      NSG_ID:
+        sh: 'az network nsg list --query "[?name==''{{.CUSTOMER_NSG}}''].id" -o tsv'
+      HYPERSHIFT_CMD:
+        sh: 'test -n "{{.HYPERSHIFT_BINARY_PATH}}" && echo "{{.HYPERSHIFT_BINARY_PATH}}/hypershift" || echo "hypershift"'
+    preconditions:
+      - sh: test -f {{.CP_OUTPUT_FILE}}
+        msg: "Control plane identities file not found at {{.CP_OUTPUT_FILE}}"
+      - sh: test -f {{.DP_OUTPUT_FILE}}
+        msg: "Data plane identities file not found at {{.DP_OUTPUT_FILE}}"
+      - sh: test -f {{.PULL_SECRET}}
+        msg: "Pull secret not found at {{.PULL_SECRET}}"
+      - sh: test -f {{.SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}}
+        msg: "SA token issuer private key not found at {{.SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}}"
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Creating Hosted Cluster {{.CLUSTER_NAME}}"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - |
+        {{.HYPERSHIFT_CMD}} create cluster azure \
+          --name {{.CLUSTER_NAME}} \
+          --azure-creds {{.AZURE_CREDS}} \
+          --location {{.LOCATION}} \
+          --node-pool-replicas {{.NODE_POOL_REPLICAS}} \
+          --base-domain {{.PARENT_DNS_ZONE}} \
+          --pull-secret {{.PULL_SECRET}} \
+          --generate-ssh \
+          --release-image {{.RELEASE_IMAGE}} \
+          --external-dns-domain {{.MGMT_DNS_ZONE_NAME}} \
+          --resource-group-name {{.MANAGED_RG_NAME}} \
+          --vnet-id "{{.VNET_ID}}" \
+          --subnet-id "{{.SUBNET_ID}}" \
+          --network-security-group-id "{{.NSG_ID}}" \
+          --sa-token-issuer-private-key-path {{.SA_TOKEN_ISSUER_PRIVATE_KEY_PATH}} \
+          --oidc-issuer-url {{.OIDC_ISSUER_URL}} \
+          --annotations hypershift.openshift.io/pod-security-admission-label-override=baseline \
+          --marketplace-publisher azureopenshift \
+          --marketplace-offer aro4 \
+          --marketplace-sku aro_417 \
+          --marketplace-version 417.94.20240701 \
+          --dns-zone-rg-name {{.PERSISTENT_RG_NAME}} \
+          --assign-service-principal-roles \
+          --managed-identities-file {{.CP_OUTPUT_FILE}} \
+          --data-plane-identities-file {{.DP_OUTPUT_FILE}} \
+          --diagnostics-storage-account-type Managed
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Create Hosted Cluster
+          Name,{{.CLUSTER_NAME}}
+          Location,{{.LOCATION}}
+          Release Image,{{.RELEASE_IMAGE}}
+          Base Domain,{{.PARENT_DNS_ZONE}}
+          External DNS,{{.MGMT_DNS_ZONE_NAME}}
+          OIDC Issuer,{{.OIDC_ISSUER_URL}}
+          Node Replicas,{{.NODE_POOL_REPLICAS}}
+          Managed RG,{{.MANAGED_RG_NAME}}
+          Kubeconfig,./kubeconfig-{{.CLUSTER_NAME}}
+          Status,✓ Created" | gum table --print --border rounded
+        silent: true
+      - cmd: gum format "○ Run 'task cluster:wait' to wait for it to be ready"
+        silent: true
+
+  # === CLUSTER STATUS ===
+
+  wait:
+    desc: Wait for hosted cluster to be ready
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Waiting for Hosted Cluster"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - kubectl wait --for=condition=Available hostedcluster/{{.CLUSTER_NAME}} -n clusters --timeout=1800s
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Wait for Cluster
+          Name,{{.CLUSTER_NAME}}
+          Namespace,clusters
+          Status,✓ Ready" | gum table --print --border rounded
+        silent: true
+
+  get-kubeconfig:
+    desc: Get hosted cluster kubeconfig
+    vars:
+      HYPERSHIFT_CMD:
+        sh: 'test -n "{{.HYPERSHIFT_BINARY_PATH}}" && echo "{{.HYPERSHIFT_BINARY_PATH}}/hypershift" || echo "hypershift"'
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Getting Hosted Cluster Kubeconfig"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - '{{.HYPERSHIFT_CMD}} create kubeconfig --name {{.CLUSTER_NAME}} --namespace clusters > ./kubeconfig-{{.CLUSTER_NAME}}'
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Get Kubeconfig
+          Cluster,{{.CLUSTER_NAME}}
+          File,./kubeconfig-{{.CLUSTER_NAME}}
+          Status,✓ Saved" | gum table --print --border rounded
+        silent: true
+      - cmd: 'gum format "○ To use: export KUBECONFIG=./kubeconfig-{{.CLUSTER_NAME}}"'
+        silent: true
+
+  show:
+    desc: Show hosted cluster status
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Hosted Cluster Status"
+        silent: true
+      - cmd: kubectl get hostedcluster {{.CLUSTER_NAME}} -n clusters
+        ignore_error: true
+      - cmd: kubectl get nodepools -n clusters
+        ignore_error: true
+
+  # === DESTRUCTION ===
+
+  destroy-hc:
+    vars:
+      HYPERSHIFT_CMD:
+        sh: 'test -n "{{.HYPERSHIFT_BINARY_PATH}}" && echo "{{.HYPERSHIFT_BINARY_PATH}}/hypershift" || echo "hypershift"'
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Destroying Hosted Cluster"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - cmd: |
+          {{.HYPERSHIFT_CMD}} destroy cluster azure \
+            --name {{.CLUSTER_NAME}} \
+            --azure-creds {{.AZURE_CREDS}} \
+            --resource-group-name {{.MANAGED_RG_NAME}} \
+            --location {{.LOCATION}}
+        ignore_error: true
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Destroy Hosted Cluster
+          Name,{{.CLUSTER_NAME}}
+          Status,✓ Destroyed" | gum table --print --border rounded
+        silent: true
+
+  delete-rgs:
+    cmds:
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 212 "Deleting Hosted Cluster Resource Groups"
+        silent: true
+      - cmd: gum style --faint "Output:"
+        silent: true
+      - cmd: az group delete --name {{.CUSTOMER_VNET_RG_NAME}} --yes --no-wait
+        ignore_error: true
+      - cmd: az group delete --name {{.CUSTOMER_NSG_RG_NAME}} --yes --no-wait
+        ignore_error: true
+      - cmd: az group delete --name {{.MANAGED_RG_NAME}} --yes --no-wait
+        ignore_error: true
+      - rm -f ./kubeconfig-{{.CLUSTER_NAME}}
+      - cmd: gum style --border normal --padding "0 1" --border-foreground 10 "Task Summary"
+        silent: true
+      - cmd: |
+          echo "Property,Value
+          Task,Delete Resource Groups
+          Managed RG,{{.MANAGED_RG_NAME}}
+          VNet RG,{{.CUSTOMER_VNET_RG_NAME}}
+          NSG RG,{{.CUSTOMER_NSG_RG_NAME}}
+          Kubeconfig,./kubeconfig-{{.CLUSTER_NAME}}
+          Status,✓ Deletion initiated" | gum table --print --border rounded
+        silent: true
