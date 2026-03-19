@@ -119,7 +119,7 @@ type GCPPrivateServiceConnectStatus struct {
 	// endpointIP is the reserved IP address for the PSC endpoint
 	// This value must be a valid IPv4 or IPv6 address.
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="self == '' || isIP(self)",message="endpointIP must be a valid IPv4 or IPv6 address"
+	// +kubebuilder:validation:XValidation:rule="isIP(self)",message="endpointIP must be a valid IPv4 or IPv6 address"
 	// +kubebuilder:validation:MinLength=3
 	// +kubebuilder:validation:MaxLength=39
 	EndpointIP string `json:"endpointIP,omitempty"`

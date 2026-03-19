@@ -217,7 +217,7 @@ spec:
                 type: string
                 x-kubernetes-validations:
                 - message: endpointIP must be a valid IPv4 or IPv6 address
-                  rule: self == '' || isIP(self)
+                  rule: isIP(self)
               serviceAttachmentName:
                 description: serviceAttachmentName is the name of the created Service
                   Attachment
