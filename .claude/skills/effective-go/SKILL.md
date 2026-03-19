@@ -28,5 +28,5 @@ Follow the conventions and patterns documented at https://go.dev/doc/effective_g
 ## References
 
 - Official Guide: https://go.dev/doc/effective_go
-- Code Review Comments: https://github.com/golang/go/wiki/CodeReviewComments
+- Code Review Comments: https://go.dev/wiki/CodeReviewComments
 - Standard Library: Use as reference for idiomatic patterns
