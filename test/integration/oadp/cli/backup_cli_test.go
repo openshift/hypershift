@@ -249,7 +249,7 @@ func validateBackupPlatformResources(t *testing.T, obj map[string]interface{}, p
 
 	platformSpecific := map[string][]string{
 		"AWS":       {"awsclusters.infrastructure.cluster.x-k8s.io"},
-		"AGENT":     {"agentclusters.infrastructure.cluster.x-k8s.io"},
+		"AGENT":     {"agentclusters.capi-provider.agent-install.openshift.io"},
 		"KUBEVIRT":  {"kubevirtclusters.infrastructure.cluster.x-k8s.io"},
 		"AZURE":     {"azureclusters.infrastructure.cluster.x-k8s.io"},
 		"OPENSTACK": {"openstackclusters.infrastructure.cluster.x-k8s.io"},
