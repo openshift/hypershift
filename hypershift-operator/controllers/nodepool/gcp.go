@@ -118,23 +118,20 @@ func gcpMachineTemplateSpec(
 	onHostMaintenance := configureGCPMaintenanceBehavior(gcpPlatform.OnHostMaintenance, gcpPlatform.ProvisioningModel)
 
 	// Determine preemptible setting and provisioning model for CAPG
-	preemptible := gcpPlatform.ProvisioningModel != nil &&
-		*gcpPlatform.ProvisioningModel == hyperv1.GCPProvisioningModelPreemptible
+	preemptible := gcpPlatform.ProvisioningModel == hyperv1.GCPProvisioningModelPreemptible
 
 	// Map hypershift provisioning model to CAPG provisioning model
 	// CAPG uses ProvisioningModel for Spot VMs (separate from Preemptible boolean)
 	var provisioningModel *capigcp.ProvisioningModel
-	if gcpPlatform.ProvisioningModel != nil {
-		switch *gcpPlatform.ProvisioningModel {
-		case hyperv1.GCPProvisioningModelSpot:
-			spot := capigcp.ProvisioningModelSpot
-			provisioningModel = &spot
-		case hyperv1.GCPProvisioningModelStandard:
-			standard := capigcp.ProvisioningModelStandard
-			provisioningModel = &standard
-			// For Preemptible, we use the Preemptible boolean field (legacy)
-			// and don't set ProvisioningModel
-		}
+	switch gcpPlatform.ProvisioningModel {
+	case hyperv1.GCPProvisioningModelSpot:
+		spot := capigcp.ProvisioningModelSpot
+		provisioningModel = &spot
+	case hyperv1.GCPProvisioningModelStandard:
+		standard := capigcp.ProvisioningModelStandard
+		provisioningModel = &standard
+		// For Preemptible, we use the Preemptible boolean field (legacy)
+		// and don't set ProvisioningModel
 	}
 
 	spec := &capigcp.GCPMachineSpec{
@@ -244,11 +241,11 @@ func configureGCPBootDisk(bootDiskConfig *hyperv1.GCPBootDisk) GCPBootDiskConfig
 	diskType := capigcp.DiskType("pd-balanced") // Default type (matches API +kubebuilder:default="pd-balanced")
 
 	if bootDiskConfig != nil {
-		if bootDiskConfig.DiskSizeGB != nil && *bootDiskConfig.DiskSizeGB > 0 {
-			diskSizeGB = *bootDiskConfig.DiskSizeGB
+		if bootDiskConfig.DiskSizeGB > 0 {
+			diskSizeGB = bootDiskConfig.DiskSizeGB
 		}
-		if bootDiskConfig.DiskType != nil && *bootDiskConfig.DiskType != "" {
-			diskType = capigcp.DiskType(*bootDiskConfig.DiskType)
+		if bootDiskConfig.DiskType != "" {
+			diskType = capigcp.DiskType(bootDiskConfig.DiskType)
 		}
 	}
 
@@ -311,16 +308,16 @@ func configureGCPNetworkTags(userTags []string, infraID string) []string {
 }
 
 // configureGCPMaintenanceBehavior determines the host maintenance behavior.
-func configureGCPMaintenanceBehavior(userMaintenance *string, provisioningModel *hyperv1.GCPProvisioningModel) capigcp.HostMaintenancePolicy {
-	if userMaintenance != nil && *userMaintenance != "" {
-		if *userMaintenance == string(hyperv1.GCPOnHostMaintenanceTerminate) {
+func configureGCPMaintenanceBehavior(userMaintenance hyperv1.GCPOnHostMaintenance, provisioningModel hyperv1.GCPProvisioningModel) capigcp.HostMaintenancePolicy {
+	if userMaintenance != "" {
+		if userMaintenance == hyperv1.GCPOnHostMaintenanceTerminate {
 			return capigcp.HostMaintenancePolicyTerminate
 		}
 		return capigcp.HostMaintenancePolicyMigrate
 	}
 
 	// For preemptible or spot instances, must use TERMINATE
-	if provisioningModel != nil && (*provisioningModel == hyperv1.GCPProvisioningModelPreemptible || *provisioningModel == hyperv1.GCPProvisioningModelSpot) {
+	if provisioningModel == hyperv1.GCPProvisioningModelPreemptible || provisioningModel == hyperv1.GCPProvisioningModelSpot {
 		return capigcp.HostMaintenancePolicyTerminate
 	}
 

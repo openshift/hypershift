@@ -5963,6 +5963,7 @@ spec:
                             characters: Only lowercase letters (`a-z`), digits (`0-9`), and hyphens (`-`) are allowed
                             start and end: Must begin with a lowercase letter and must not end with a hyphen
                             valid examples: "my-project", "my-project-1", "my-project-123".
+                          See https://cloud.google.com/resource-manager/docs/creating-managing-projects for project ID naming rules.
                         maxLength: 30
                         minLength: 6
                         type: string
@@ -6068,6 +6069,7 @@ spec:
                               Allowed characters: lowercase letters (a-z), digits (0-9), hyphens (-).
                               Cannot start or end with a hyphen.
                               The prefix "gcp-" is reserved by Google and cannot be used.
+                              See https://cloud.google.com/iam/docs/manage-workload-identity-pools-providers for naming rules.
 
                               This is a user-provided value referencing a pre-created Workload Identity Pool.
                               Typically obtained from the output of `hypershift infra create gcp` which creates
@@ -6089,6 +6091,7 @@ spec:
                               projectNumber is the numeric GCP project identifier for WIF configuration.
                               This differs from the project ID and is required for workload identity pools.
                               Must be a numeric string representing the GCP project number.
+                              See https://cloud.google.com/resource-manager/docs/creating-managing-projects for project number details.
 
                               This is a user-provided value obtained from GCP (found in GCP Console or via `gcloud projects describe PROJECT_ID`).
                               Also available in the output of `hypershift infra create gcp`.
@@ -6108,6 +6111,7 @@ spec:
                               Allowed characters: lowercase letters (a-z), digits (0-9), hyphens (-).
                               Cannot start or end with a hyphen.
                               The prefix "gcp-" is reserved by Google and cannot be used.
+                              See https://cloud.google.com/iam/docs/manage-workload-identity-pools-providers for naming rules.
 
                               This is a user-provided value referencing a pre-created OIDC Provider within the WIF Pool.
                               Typically obtained from the output of `hypershift infra create gcp`.

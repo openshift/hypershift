@@ -89,8 +89,8 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 							MachineType: "n1-standard-2",
 							Zone:        "us-central1-a",
 							BootDisk: &hyperv1.GCPBootDisk{
-								DiskSizeGB: ptr.To[int64](100),
-								DiskType:   ptr.To("pd-ssd"),
+								DiskSizeGB: 100,
+								DiskType:   "pd-ssd",
 							},
 						},
 					},
@@ -138,7 +138,7 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 						GCP: &hyperv1.GCPNodePoolPlatform{
 							MachineType:       "n1-standard-2",
 							Zone:              "us-central1-a",
-							ProvisioningModel: ptr.To(hyperv1.GCPProvisioningModelPreemptible),
+							ProvisioningModel: hyperv1.GCPProvisioningModelPreemptible,
 						},
 					},
 				},
@@ -187,7 +187,7 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 						GCP: &hyperv1.GCPNodePoolPlatform{
 							MachineType:       "n1-standard-2",
 							Zone:              "us-central1-a",
-							ProvisioningModel: ptr.To(hyperv1.GCPProvisioningModelSpot),
+							ProvisioningModel: hyperv1.GCPProvisioningModelSpot,
 						},
 					},
 				},
@@ -343,8 +343,8 @@ func TestGcpMachineTemplateSpec(t *testing.T) {
 							MachineType: "n1-standard-2",
 							Zone:        "us-central1-a",
 							BootDisk: &hyperv1.GCPBootDisk{
-								DiskSizeGB: ptr.To[int64](64),
-								DiskType:   ptr.To("pd-standard"),
+								DiskSizeGB: 64,
+								DiskType:   "pd-standard",
 								EncryptionKey: hyperv1.GCPDiskEncryptionKey{
 									KMSKeyName: "projects/test-project/locations/us-central1/keyRings/test-ring/cryptoKeys/test-key",
 								},
@@ -678,38 +678,38 @@ func TestDefaultNodePoolGCPImage(t *testing.T) {
 func TestConfigureGCPMaintenanceBehavior(t *testing.T) {
 	testCases := []struct {
 		name              string
-		userMaintenance   *string
-		provisioningModel *hyperv1.GCPProvisioningModel
+		userMaintenance   hyperv1.GCPOnHostMaintenance
+		provisioningModel hyperv1.GCPProvisioningModel
 		expectedBehavior  capigcp.HostMaintenancePolicy
 	}{
 		{
 			name:              "When user specifies TERMINATE maintenance, it should return terminate policy",
-			userMaintenance:   ptr.To("TERMINATE"),
-			provisioningModel: ptr.To(hyperv1.GCPProvisioningModelStandard),
+			userMaintenance:   hyperv1.GCPOnHostMaintenanceTerminate,
+			provisioningModel: hyperv1.GCPProvisioningModelStandard,
 			expectedBehavior:  capigcp.HostMaintenancePolicyTerminate,
 		},
 		{
 			name:              "When user specifies MIGRATE maintenance, it should return migrate policy",
-			userMaintenance:   ptr.To("MIGRATE"),
-			provisioningModel: ptr.To(hyperv1.GCPProvisioningModelStandard),
+			userMaintenance:   hyperv1.GCPOnHostMaintenanceMigrate,
+			provisioningModel: hyperv1.GCPProvisioningModelStandard,
 			expectedBehavior:  capigcp.HostMaintenancePolicyMigrate,
 		},
 		{
 			name:              "When instance is preemptible with no user setting, it should return terminate policy",
-			userMaintenance:   ptr.To(""),
-			provisioningModel: ptr.To(hyperv1.GCPProvisioningModelPreemptible),
+			userMaintenance:   "",
+			provisioningModel: hyperv1.GCPProvisioningModelPreemptible,
 			expectedBehavior:  capigcp.HostMaintenancePolicyTerminate,
 		},
 		{
 			name:              "When instance is Spot with no user setting, it should return terminate policy",
-			userMaintenance:   ptr.To(""),
-			provisioningModel: ptr.To(hyperv1.GCPProvisioningModelSpot),
+			userMaintenance:   "",
+			provisioningModel: hyperv1.GCPProvisioningModelSpot,
 			expectedBehavior:  capigcp.HostMaintenancePolicyTerminate,
 		},
 		{
 			name:              "When instance is not preemptible with no user setting, it should return migrate policy",
-			userMaintenance:   ptr.To(""),
-			provisioningModel: ptr.To(hyperv1.GCPProvisioningModelStandard),
+			userMaintenance:   "",
+			provisioningModel: hyperv1.GCPProvisioningModelStandard,
 			expectedBehavior:  capigcp.HostMaintenancePolicyMigrate,
 		},
 	}

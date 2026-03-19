@@ -112,6 +112,7 @@ type GCPPlatformSpec struct {
 	//   characters: Only lowercase letters (`a-z`), digits (`0-9`), and hyphens (`-`) are allowed
 	//   start and end: Must begin with a lowercase letter and must not end with a hyphen
 	//   valid examples: "my-project", "my-project-1", "my-project-123".
+	// See https://cloud.google.com/resource-manager/docs/creating-managing-projects for project ID naming rules.
 	//
 	// +required
 	// +immutable
@@ -183,6 +184,7 @@ type GCPWorkloadIdentityConfig struct {
 	// projectNumber is the numeric GCP project identifier for WIF configuration.
 	// This differs from the project ID and is required for workload identity pools.
 	// Must be a numeric string representing the GCP project number.
+	// See https://cloud.google.com/resource-manager/docs/creating-managing-projects for project number details.
 	//
 	// This is a user-provided value obtained from GCP (found in GCP Console or via `gcloud projects describe PROJECT_ID`).
 	// Also available in the output of `hypershift infra create gcp`.
@@ -201,6 +203,7 @@ type GCPWorkloadIdentityConfig struct {
 	// Allowed characters: lowercase letters (a-z), digits (0-9), hyphens (-).
 	// Cannot start or end with a hyphen.
 	// The prefix "gcp-" is reserved by Google and cannot be used.
+	// See https://cloud.google.com/iam/docs/manage-workload-identity-pools-providers for naming rules.
 	//
 	// This is a user-provided value referencing a pre-created Workload Identity Pool.
 	// Typically obtained from the output of `hypershift infra create gcp` which creates
@@ -221,6 +224,7 @@ type GCPWorkloadIdentityConfig struct {
 	// Allowed characters: lowercase letters (a-z), digits (0-9), hyphens (-).
 	// Cannot start or end with a hyphen.
 	// The prefix "gcp-" is reserved by Google and cannot be used.
+	// See https://cloud.google.com/iam/docs/manage-workload-identity-pools-providers for naming rules.
 	//
 	// This is a user-provided value referencing a pre-created OIDC Provider within the WIF Pool.
 	// Typically obtained from the output of `hypershift infra create gcp`.
@@ -245,6 +249,7 @@ type GCPWorkloadIdentityConfig struct {
 
 // GCPServiceAccountEmail is the email address of a Google Service Account.
 // Format: service-account-name@project-id.iam.gserviceaccount.com
+// See https://cloud.google.com/iam/docs/service-accounts-create for service account naming rules.
 //
 // +kubebuilder:validation:MinLength=37
 // +kubebuilder:validation:MaxLength=85
@@ -381,7 +386,7 @@ type GCPNodePoolPlatform struct {
 	// +required
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=255
-	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]+(-[a-z0-9]+)*$')",message="machineType must contain only lowercase letters, digits, and hyphens"
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[a-z0-9]+(-[a-z0-9]+)*$')",message="machineType must start and end with a lowercase letter or digit, and contain only lowercase letters, digits, and hyphens"
 	MachineType string `json:"machineType,omitempty"`
 
 	// zone is the GCP zone where node instances will be created.
@@ -466,7 +471,7 @@ type GCPNodePoolPlatform struct {
 	// +optional
 	// +default="Standard"
 	// +kubebuilder:validation:Enum=Standard;Spot;Preemptible
-	ProvisioningModel *GCPProvisioningModel `json:"provisioningModel,omitempty"`
+	ProvisioningModel GCPProvisioningModel `json:"provisioningModel,omitempty"`
 
 	// onHostMaintenance specifies the behavior when host maintenance occurs.
 	// For Spot and Preemptible instances, this must be "TERMINATE".
@@ -475,7 +480,7 @@ type GCPNodePoolPlatform struct {
 	//
 	// +optional
 	// +kubebuilder:validation:Enum=MIGRATE;TERMINATE
-	OnHostMaintenance *string `json:"onHostMaintenance,omitempty"`
+	OnHostMaintenance GCPOnHostMaintenance `json:"onHostMaintenance,omitempty"`
 }
 
 // GCPBootDisk specifies configuration for the boot disk of GCP node instances.
@@ -487,7 +492,7 @@ type GCPBootDisk struct {
 	// +default=64
 	// +kubebuilder:validation:Minimum=20
 	// +kubebuilder:validation:Maximum=65536
-	DiskSizeGB *int64 `json:"diskSizeGB,omitempty"`
+	DiskSizeGB int64 `json:"diskSizeGB,omitempty"`
 
 	// diskType specifies the disk type for the boot disk.
 	// Valid values include:
@@ -499,7 +504,7 @@ type GCPBootDisk struct {
 	// +optional
 	// +default="pd-balanced"
 	// +kubebuilder:validation:Enum=pd-standard;pd-ssd;pd-balanced
-	DiskType *string `json:"diskType,omitempty"`
+	DiskType string `json:"diskType,omitempty"`
 
 	// encryptionKey specifies customer-managed encryption key (CMEK) configuration.
 	// If not specified, Google-managed encryption keys are used.

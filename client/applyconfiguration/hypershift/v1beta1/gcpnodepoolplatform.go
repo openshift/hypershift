@@ -33,7 +33,7 @@ type GCPNodePoolPlatformApplyConfiguration struct {
 	ResourceLabels    []GCPResourceLabelApplyConfiguration     `json:"resourceLabels,omitempty"`
 	NetworkTags       []hypershiftv1beta1.GCPResourceName      `json:"networkTags,omitempty"`
 	ProvisioningModel *hypershiftv1beta1.GCPProvisioningModel  `json:"provisioningModel,omitempty"`
-	OnHostMaintenance *string                                  `json:"onHostMaintenance,omitempty"`
+	OnHostMaintenance *hypershiftv1beta1.GCPOnHostMaintenance  `json:"onHostMaintenance,omitempty"`
 }
 
 // GCPNodePoolPlatformApplyConfiguration constructs a declarative configuration of the GCPNodePoolPlatform type for use with
@@ -124,7 +124,7 @@ func (b *GCPNodePoolPlatformApplyConfiguration) WithProvisioningModel(value hype
 // WithOnHostMaintenance sets the OnHostMaintenance field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the OnHostMaintenance field is set to the value of the last call.
-func (b *GCPNodePoolPlatformApplyConfiguration) WithOnHostMaintenance(value string) *GCPNodePoolPlatformApplyConfiguration {
+func (b *GCPNodePoolPlatformApplyConfiguration) WithOnHostMaintenance(value hypershiftv1beta1.GCPOnHostMaintenance) *GCPNodePoolPlatformApplyConfiguration {
 	b.OnHostMaintenance = &value
 	return b
 }

@@ -500,31 +500,6 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/endpointservice_types.go
         text: 'optionalfields: field Status should be a pointer'
-      # GCP: EndpointAccess is an enum with +default, zero value is valid
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/gcp.go
-        text: 'optionalfields: field EndpointAccess should be a pointer'
-      # GCP: ProvisioningModel has +default="Standard", zero value is valid
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/gcp.go
-        text: 'optionalfields: field ProvisioningModel should be a pointer'
-      # GCP: OnHostMaintenance nil means "derive from provisioningModel"
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/gcp.go
-        text: 'optionalfields: field OnHostMaintenance should be a pointer'
-      # GCP: DiskSizeGB has +default=64, int zero is distinct
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/gcp.go
-        text: 'optionalfields: field DiskSizeGB should be a pointer'
-      # GCP: DiskType has +default="pd-balanced", Enum type
-      - linters:
-          - kubeapilinter
-        path: hypershift/v1beta1/gcp.go
-        text: 'optionalfields: field DiskType should be a pointer'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/hosted_controlplane.go

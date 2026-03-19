@@ -59,9 +59,9 @@ type GCPPrivateServiceConnectSpec struct {
 	// Populated by the observer from service status
 	// This value must be a valid IPv4 or IPv6 address.
 	// +required
-	// +kubebuilder:validation:XValidation:rule="self.isIP()",message="loadBalancerIP must be a valid IPv4 or IPv6 address"
+	// +kubebuilder:validation:XValidation:rule="isIP(self)",message="loadBalancerIP must be a valid IPv4 or IPv6 address"
 	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=45
+	// +kubebuilder:validation:MaxLength=39
 	LoadBalancerIP string `json:"loadBalancerIP,omitempty"`
 
 	// forwardingRuleName is the name of the Internal Load Balancer forwarding rule
@@ -69,8 +69,10 @@ type GCPPrivateServiceConnectSpec struct {
 	// +optional
 	ForwardingRuleName GCPResourceName `json:"forwardingRuleName,omitempty"`
 
-	// consumerAcceptList specifies which customer projects can connect
-	// Accepts both project IDs (e.g. "my-project-123") and project numbers (e.g. "123456789012")
+	// consumerAcceptList specifies which customer projects can connect.
+	// Accepts both project IDs (e.g. "my-project-123") and project numbers (e.g. "123456789012").
+	// A maximum of 50 entries are allowed.
+	// See https://cloud.google.com/resource-manager/docs/creating-managing-projects for project ID and number formats.
 	// +required
 	// +listType=set
 	// +kubebuilder:validation:MinItems=1
@@ -104,8 +106,9 @@ type GCPPrivateServiceConnectStatus struct {
 	// +kubebuilder:validation:MaxLength=63
 	ServiceAttachmentName string `json:"serviceAttachmentName,omitempty"`
 
-	// serviceAttachmentURI is the URI customers use to connect
+	// serviceAttachmentURI is the URI customers use to connect.
 	// Format: projects/{project}/regions/{region}/serviceAttachments/{name}
+	// See https://cloud.google.com/vpc/docs/configure-private-service-connect-producer for service attachment details.
 	// +optional
 	// +kubebuilder:validation:MaxLength=2048
 	// +kubebuilder:validation:XValidation:rule="self.matches('^projects/[a-z][a-z0-9-]{4,28}[a-z0-9]/regions/[a-z]+-[a-z]+[0-9]+/serviceAttachments/[a-z]([-a-z0-9]*[a-z0-9])?$')",message="serviceAttachmentURI must be in the format projects/{project}/regions/{region}/serviceAttachments/{name}"
@@ -116,8 +119,9 @@ type GCPPrivateServiceConnectStatus struct {
 	// endpointIP is the reserved IP address for the PSC endpoint
 	// This value must be a valid IPv4 or IPv6 address.
 	// +optional
-	// +kubebuilder:validation:XValidation:rule="self == '' || self.isIP()",message="endpointIP must be a valid IPv4 or IPv6 address"
-	// +kubebuilder:validation:MaxLength=45
+	// +kubebuilder:validation:XValidation:rule="self == '' || isIP(self)",message="endpointIP must be a valid IPv4 or IPv6 address"
+	// +kubebuilder:validation:MinLength=3
+	// +kubebuilder:validation:MaxLength=39
 	EndpointIP string `json:"endpointIP,omitempty"`
 
 	// dnsZones contains DNS zone information created for this cluster
