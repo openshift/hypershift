@@ -266,6 +266,11 @@ spec:
                       on a node.
                     format: int32
                     type: integer
+                  podPidsLimit:
+                    description: PodPidsLimit is the maximum number of PIDs in any
+                      pod.
+                    format: int64
+                    type: integer
                   podsPerCore:
                     description: PodsPerCore is the maximum number of pods per core.
                       Cannot exceed MaxPods.
