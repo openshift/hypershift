@@ -134,7 +134,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 		})
 	}
 
-	h.after(hostedCluster, platform)
+	h.after(hostedCluster, platform, opts)
 
 	if h.Failed() {
 		numNodes := opts.ExpectedNodeCount()
@@ -187,7 +187,7 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 }
 
 // runs after each test.
-func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hyperv1.PlatformType) {
+func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hyperv1.PlatformType, opts *PlatformAgnosticOptions) {
 	if h.Failed() {
 		// skip if Main failed
 		return
@@ -251,8 +251,8 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 		// so skipping until we fix it.
 		// TODO(alberto): consider drop this gate when we fix OCPBUGS-61291.
 		if hostedCluster.Spec.Platform.Type != hyperv1.NonePlatform {
-			// Private clusters may won't be reachable from the test runner; assume workers exist.
-			hasWorkerNodes := true
+			// Private clusters may not be reachable from the test runner; use expected node count.
+			hasWorkerNodes := opts.ExpectedNodeCount() > 0
 			if !util.IsPrivateHC(hostedCluster) {
 				guestClient := WaitForGuestClient(t, t.Context(), h.client, hostedCluster)
 				var nodeList corev1.NodeList
