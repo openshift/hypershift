@@ -102,6 +102,7 @@ If your DNS domain is a subdomain of an existing zone, delegate it by adding NS 
 ```bash
 PARENT_DNS_PROJECT=<parent-dns-project-id>
 PARENT_DNS_ZONE=<parent-zone-name>
+PARENT_DNS_DOMAIN=<parent-domain>
 SUBDOMAIN_NAME=<subdomain>
 
 # Get name servers from your new zone

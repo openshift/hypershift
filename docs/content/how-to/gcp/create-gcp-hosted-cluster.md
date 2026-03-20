@@ -80,7 +80,6 @@ hypershift create cluster gcp \
 | `--feature-set` | Yes | Must be `TechPreviewNoUpgrade` for GCP platform |
 | `--machine-type` | No | GCP machine type (default: `n2-standard-4`) |
 | `--zone` | No | GCP zone for nodes (default: `{region}-a`) |
-| `--subnet` | No | Subnet for nodes (defaults to PSC subnet value) |
 | `--boot-image` | No | Override RHCOS boot image from release payload |
 
 ## Monitor Cluster Creation
