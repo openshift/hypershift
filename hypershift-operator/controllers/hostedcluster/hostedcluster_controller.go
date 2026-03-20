@@ -445,44 +445,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 					return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 				}
 			}
-
-			// Remove any referenced resource annotations for this hosted cluster from secrets and configmaps
-			deleteReferencedResourceAnnotation := func(obj client.Object) error {
-				annotations := obj.GetAnnotations()
-				if annotations == nil {
-					return nil
-				}
-				key := referencedResourceAnnotationPrefix + hcluster.Name
-				if _, ok := annotations[key]; !ok {
-					return nil
-				}
-				delete(annotations, key)
-				obj.SetAnnotations(annotations)
-				if err := r.Update(ctx, obj); err != nil {
-					return err
-				}
-				return nil
-			}
-
-			var secretList corev1.SecretList
-			if err := r.List(ctx, &secretList, client.InNamespace(hcluster.Namespace)); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to list secrets: %w", err)
-			}
-			for _, secret := range secretList.Items {
-				if err := deleteReferencedResourceAnnotation(&secret); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to delete referenced resource annotation on secret: %w", err)
-				}
-			}
-
-			var configmapList corev1.ConfigMapList
-			if err := r.List(ctx, &configmapList, client.InNamespace(hcluster.Namespace)); err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to list configmaps: %w", err)
-			}
-			for _, configmap := range configmapList.Items {
-				if err := deleteReferencedResourceAnnotation(&configmap); err != nil {
-					return ctrl.Result{}, fmt.Errorf("failed to delete referenced resource annotation on configmap: %w", err)
-				}
-			}
 		}
 	}
 
@@ -564,6 +526,44 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if len(crbs.Items) > 0 {
 			if err := r.DeleteAllOf(ctx, &rbacv1.ClusterRoleBinding{}, selector); err != nil {
 				return ctrl.Result{}, fmt.Errorf("failed to delete cluster role bindings: %w", err)
+			}
+		}
+
+		// Remove any referenced resource annotations for this hosted cluster from secrets and configmaps
+		deleteReferencedResourceAnnotation := func(obj client.Object) error {
+			annotations := obj.GetAnnotations()
+			if annotations == nil {
+				return nil
+			}
+			key := referencedResourceAnnotationPrefix + hcluster.Name
+			if _, ok := annotations[key]; !ok {
+				return nil
+			}
+			delete(annotations, key)
+			obj.SetAnnotations(annotations)
+			if err := r.Update(ctx, obj); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		var secretList corev1.SecretList
+		if err := r.List(ctx, &secretList, client.InNamespace(hcluster.Namespace)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to list secrets: %w", err)
+		}
+		for _, secret := range secretList.Items {
+			if err := deleteReferencedResourceAnnotation(&secret); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to delete referenced resource annotation on secret: %w", err)
+			}
+		}
+
+		var configmapList corev1.ConfigMapList
+		if err := r.List(ctx, &configmapList, client.InNamespace(hcluster.Namespace)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to list configmaps: %w", err)
+		}
+		for _, configmap := range configmapList.Items {
+			if err := deleteReferencedResourceAnnotation(&configmap); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to delete referenced resource annotation on configmap: %w", err)
 			}
 		}
 
