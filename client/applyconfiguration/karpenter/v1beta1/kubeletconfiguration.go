@@ -24,19 +24,50 @@ import (
 // KubeletConfigurationApplyConfiguration represents a declarative configuration of the KubeletConfiguration type for use
 // with apply.
 type KubeletConfigurationApplyConfiguration struct {
-	ClusterDNS                  []string               `json:"clusterDNS,omitempty"`
-	MaxPods                     *int32                 `json:"maxPods,omitempty"`
-	PodsPerCore                 *int32                 `json:"podsPerCore,omitempty"`
-	SystemReserved              map[string]string      `json:"systemReserved,omitempty"`
-	KubeReserved                map[string]string      `json:"kubeReserved,omitempty"`
-	EvictionHard                map[string]string      `json:"evictionHard,omitempty"`
-	EvictionSoft                map[string]string      `json:"evictionSoft,omitempty"`
-	EvictionSoftGracePeriod     map[string]v1.Duration `json:"evictionSoftGracePeriod,omitempty"`
-	EvictionMaxPodGracePeriod   *int32                 `json:"evictionMaxPodGracePeriod,omitempty"`
-	ImageGCHighThresholdPercent *int32                 `json:"imageGCHighThresholdPercent,omitempty"`
-	ImageGCLowThresholdPercent  *int32                 `json:"imageGCLowThresholdPercent,omitempty"`
-	CPUCFSQuota                 *bool                  `json:"cpuCFSQuota,omitempty"`
-	PodPidsLimit                *int64                 `json:"podPidsLimit,omitempty"`
+	RegistryPullQPS                  *int32                 `json:"registryPullQPS,omitempty"`
+	RegistryBurst                    *int32                 `json:"registryBurst,omitempty"`
+	EventRecordQPS                   *int32                 `json:"eventRecordQPS,omitempty"`
+	EventBurst                       *int32                 `json:"eventBurst,omitempty"`
+	OOMScoreAdj                      *int32                 `json:"oomScoreAdj,omitempty"`
+	StreamingConnectionIdleTimeout   *v1.Duration           `json:"streamingConnectionIdleTimeout,omitempty"`
+	NodeStatusUpdateFrequency        *v1.Duration           `json:"nodeStatusUpdateFrequency,omitempty"`
+	NodeStatusReportFrequency        *v1.Duration           `json:"nodeStatusReportFrequency,omitempty"`
+	ImageMinimumGCAge                *v1.Duration           `json:"imageMinimumGCAge,omitempty"`
+	ImageMaximumGCAge                *v1.Duration           `json:"imageMaximumGCAge,omitempty"`
+	ImageGCHighThresholdPercent      *int32                 `json:"imageGCHighThresholdPercent,omitempty"`
+	ImageGCLowThresholdPercent       *int32                 `json:"imageGCLowThresholdPercent,omitempty"`
+	SingleProcessOOMKill             *bool                  `json:"singleProcessOOMKill,omitempty"`
+	QOSReserved                      map[string]string      `json:"qosReserved,omitempty"`
+	MaxPods                          *int32                 `json:"maxPods,omitempty"`
+	PodPidsLimit                     *int64                 `json:"podPidsLimit,omitempty"`
+	ResolverConfig                   *string                `json:"resolvConf,omitempty"`
+	CPUCFSQuota                      *bool                  `json:"cpuCFSQuota,omitempty"`
+	CPUCFSQuotaPeriod                *v1.Duration           `json:"cpuCFSQuotaPeriod,omitempty"`
+	NodeStatusMaxImages              *int32                 `json:"nodeStatusMaxImages,omitempty"`
+	MaxOpenFiles                     *int64                 `json:"maxOpenFiles,omitempty"`
+	KubeAPIQPS                       *int32                 `json:"kubeAPIQPS,omitempty"`
+	KubeAPIBurst                     *int32                 `json:"kubeAPIBurst,omitempty"`
+	SerializeImagePulls              *bool                  `json:"serializeImagePulls,omitempty"`
+	MaxParallelImagePulls            *int32                 `json:"maxParallelImagePulls,omitempty"`
+	EvictionHard                     map[string]string      `json:"evictionHard,omitempty"`
+	EvictionSoft                     map[string]string      `json:"evictionSoft,omitempty"`
+	EvictionSoftGracePeriod          map[string]v1.Duration `json:"evictionSoftGracePeriod,omitempty"`
+	EvictionPressureTransitionPeriod *v1.Duration           `json:"evictionPressureTransitionPeriod,omitempty"`
+	EvictionMaxPodGracePeriod        *int32                 `json:"evictionMaxPodGracePeriod,omitempty"`
+	EvictionMinimumReclaim           map[string]string      `json:"evictionMinimumReclaim,omitempty"`
+	PodsPerCore                      *int32                 `json:"podsPerCore,omitempty"`
+	EnableControllerAttachDetach     *bool                  `json:"enableControllerAttachDetach,omitempty"`
+	ProtectKernelDefaults            *bool                  `json:"protectKernelDefaults,omitempty"`
+	FailSwapOn                       *bool                  `json:"failSwapOn,omitempty"`
+	ContainerLogMaxSize              *string                `json:"containerLogMaxSize,omitempty"`
+	ContainerLogMaxFiles             *int32                 `json:"containerLogMaxFiles,omitempty"`
+	ContainerLogMaxWorkers           *int32                 `json:"containerLogMaxWorkers,omitempty"`
+	ContainerLogMonitorInterval      *v1.Duration           `json:"containerLogMonitorInterval,omitempty"`
+	SystemReserved                   map[string]string      `json:"systemReserved,omitempty"`
+	KubeReserved                     map[string]string      `json:"kubeReserved,omitempty"`
+	AllowedUnsafeSysctls             []string               `json:"allowedUnsafeSysctls,omitempty"`
+	SeccompDefault                   *bool                  `json:"seccompDefault,omitempty"`
+	LocalStorageCapacityIsolation    *bool                  `json:"localStorageCapacityIsolation,omitempty"`
 }
 
 // KubeletConfigurationApplyConfiguration constructs a declarative configuration of the KubeletConfiguration type for use with
@@ -45,12 +76,120 @@ func KubeletConfiguration() *KubeletConfigurationApplyConfiguration {
 	return &KubeletConfigurationApplyConfiguration{}
 }
 
-// WithClusterDNS adds the given value to the ClusterDNS field in the declarative configuration
+// WithRegistryPullQPS sets the RegistryPullQPS field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the RegistryPullQPS field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithRegistryPullQPS(value int32) *KubeletConfigurationApplyConfiguration {
+	b.RegistryPullQPS = &value
+	return b
+}
+
+// WithRegistryBurst sets the RegistryBurst field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the RegistryBurst field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithRegistryBurst(value int32) *KubeletConfigurationApplyConfiguration {
+	b.RegistryBurst = &value
+	return b
+}
+
+// WithEventRecordQPS sets the EventRecordQPS field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the EventRecordQPS field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithEventRecordQPS(value int32) *KubeletConfigurationApplyConfiguration {
+	b.EventRecordQPS = &value
+	return b
+}
+
+// WithEventBurst sets the EventBurst field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the EventBurst field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithEventBurst(value int32) *KubeletConfigurationApplyConfiguration {
+	b.EventBurst = &value
+	return b
+}
+
+// WithOOMScoreAdj sets the OOMScoreAdj field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the OOMScoreAdj field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithOOMScoreAdj(value int32) *KubeletConfigurationApplyConfiguration {
+	b.OOMScoreAdj = &value
+	return b
+}
+
+// WithStreamingConnectionIdleTimeout sets the StreamingConnectionIdleTimeout field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the StreamingConnectionIdleTimeout field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithStreamingConnectionIdleTimeout(value v1.Duration) *KubeletConfigurationApplyConfiguration {
+	b.StreamingConnectionIdleTimeout = &value
+	return b
+}
+
+// WithNodeStatusUpdateFrequency sets the NodeStatusUpdateFrequency field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the NodeStatusUpdateFrequency field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithNodeStatusUpdateFrequency(value v1.Duration) *KubeletConfigurationApplyConfiguration {
+	b.NodeStatusUpdateFrequency = &value
+	return b
+}
+
+// WithNodeStatusReportFrequency sets the NodeStatusReportFrequency field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the NodeStatusReportFrequency field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithNodeStatusReportFrequency(value v1.Duration) *KubeletConfigurationApplyConfiguration {
+	b.NodeStatusReportFrequency = &value
+	return b
+}
+
+// WithImageMinimumGCAge sets the ImageMinimumGCAge field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ImageMinimumGCAge field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithImageMinimumGCAge(value v1.Duration) *KubeletConfigurationApplyConfiguration {
+	b.ImageMinimumGCAge = &value
+	return b
+}
+
+// WithImageMaximumGCAge sets the ImageMaximumGCAge field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ImageMaximumGCAge field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithImageMaximumGCAge(value v1.Duration) *KubeletConfigurationApplyConfiguration {
+	b.ImageMaximumGCAge = &value
+	return b
+}
+
+// WithImageGCHighThresholdPercent sets the ImageGCHighThresholdPercent field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ImageGCHighThresholdPercent field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithImageGCHighThresholdPercent(value int32) *KubeletConfigurationApplyConfiguration {
+	b.ImageGCHighThresholdPercent = &value
+	return b
+}
+
+// WithImageGCLowThresholdPercent sets the ImageGCLowThresholdPercent field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ImageGCLowThresholdPercent field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithImageGCLowThresholdPercent(value int32) *KubeletConfigurationApplyConfiguration {
+	b.ImageGCLowThresholdPercent = &value
+	return b
+}
+
+// WithSingleProcessOOMKill sets the SingleProcessOOMKill field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the SingleProcessOOMKill field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithSingleProcessOOMKill(value bool) *KubeletConfigurationApplyConfiguration {
+	b.SingleProcessOOMKill = &value
+	return b
+}
+
+// WithQOSReserved puts the entries into the QOSReserved field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, values provided by each call will be appended to the ClusterDNS field.
-func (b *KubeletConfigurationApplyConfiguration) WithClusterDNS(values ...string) *KubeletConfigurationApplyConfiguration {
-	for i := range values {
-		b.ClusterDNS = append(b.ClusterDNS, values[i])
+// If called multiple times, the entries provided by each call will be put on the QOSReserved field,
+// overwriting an existing map entries in QOSReserved field with the same key.
+func (b *KubeletConfigurationApplyConfiguration) WithQOSReserved(entries map[string]string) *KubeletConfigurationApplyConfiguration {
+	if b.QOSReserved == nil && len(entries) > 0 {
+		b.QOSReserved = make(map[string]string, len(entries))
+	}
+	for k, v := range entries {
+		b.QOSReserved[k] = v
 	}
 	return b
 }
@@ -63,39 +202,83 @@ func (b *KubeletConfigurationApplyConfiguration) WithMaxPods(value int32) *Kubel
 	return b
 }
 
-// WithPodsPerCore sets the PodsPerCore field in the declarative configuration to the given value
+// WithPodPidsLimit sets the PodPidsLimit field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the PodsPerCore field is set to the value of the last call.
-func (b *KubeletConfigurationApplyConfiguration) WithPodsPerCore(value int32) *KubeletConfigurationApplyConfiguration {
-	b.PodsPerCore = &value
+// If called multiple times, the PodPidsLimit field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithPodPidsLimit(value int64) *KubeletConfigurationApplyConfiguration {
+	b.PodPidsLimit = &value
 	return b
 }
 
-// WithSystemReserved puts the entries into the SystemReserved field in the declarative configuration
-// and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, the entries provided by each call will be put on the SystemReserved field,
-// overwriting an existing map entries in SystemReserved field with the same key.
-func (b *KubeletConfigurationApplyConfiguration) WithSystemReserved(entries map[string]string) *KubeletConfigurationApplyConfiguration {
-	if b.SystemReserved == nil && len(entries) > 0 {
-		b.SystemReserved = make(map[string]string, len(entries))
-	}
-	for k, v := range entries {
-		b.SystemReserved[k] = v
-	}
+// WithResolverConfig sets the ResolverConfig field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ResolverConfig field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithResolverConfig(value string) *KubeletConfigurationApplyConfiguration {
+	b.ResolverConfig = &value
 	return b
 }
 
-// WithKubeReserved puts the entries into the KubeReserved field in the declarative configuration
-// and returns the receiver, so that objects can be build by chaining "With" function invocations.
-// If called multiple times, the entries provided by each call will be put on the KubeReserved field,
-// overwriting an existing map entries in KubeReserved field with the same key.
-func (b *KubeletConfigurationApplyConfiguration) WithKubeReserved(entries map[string]string) *KubeletConfigurationApplyConfiguration {
-	if b.KubeReserved == nil && len(entries) > 0 {
-		b.KubeReserved = make(map[string]string, len(entries))
-	}
-	for k, v := range entries {
-		b.KubeReserved[k] = v
-	}
+// WithCPUCFSQuota sets the CPUCFSQuota field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the CPUCFSQuota field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithCPUCFSQuota(value bool) *KubeletConfigurationApplyConfiguration {
+	b.CPUCFSQuota = &value
+	return b
+}
+
+// WithCPUCFSQuotaPeriod sets the CPUCFSQuotaPeriod field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the CPUCFSQuotaPeriod field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithCPUCFSQuotaPeriod(value v1.Duration) *KubeletConfigurationApplyConfiguration {
+	b.CPUCFSQuotaPeriod = &value
+	return b
+}
+
+// WithNodeStatusMaxImages sets the NodeStatusMaxImages field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the NodeStatusMaxImages field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithNodeStatusMaxImages(value int32) *KubeletConfigurationApplyConfiguration {
+	b.NodeStatusMaxImages = &value
+	return b
+}
+
+// WithMaxOpenFiles sets the MaxOpenFiles field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MaxOpenFiles field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithMaxOpenFiles(value int64) *KubeletConfigurationApplyConfiguration {
+	b.MaxOpenFiles = &value
+	return b
+}
+
+// WithKubeAPIQPS sets the KubeAPIQPS field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the KubeAPIQPS field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithKubeAPIQPS(value int32) *KubeletConfigurationApplyConfiguration {
+	b.KubeAPIQPS = &value
+	return b
+}
+
+// WithKubeAPIBurst sets the KubeAPIBurst field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the KubeAPIBurst field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithKubeAPIBurst(value int32) *KubeletConfigurationApplyConfiguration {
+	b.KubeAPIBurst = &value
+	return b
+}
+
+// WithSerializeImagePulls sets the SerializeImagePulls field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the SerializeImagePulls field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithSerializeImagePulls(value bool) *KubeletConfigurationApplyConfiguration {
+	b.SerializeImagePulls = &value
+	return b
+}
+
+// WithMaxParallelImagePulls sets the MaxParallelImagePulls field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the MaxParallelImagePulls field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithMaxParallelImagePulls(value int32) *KubeletConfigurationApplyConfiguration {
+	b.MaxParallelImagePulls = &value
 	return b
 }
 
@@ -141,6 +324,14 @@ func (b *KubeletConfigurationApplyConfiguration) WithEvictionSoftGracePeriod(ent
 	return b
 }
 
+// WithEvictionPressureTransitionPeriod sets the EvictionPressureTransitionPeriod field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the EvictionPressureTransitionPeriod field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithEvictionPressureTransitionPeriod(value v1.Duration) *KubeletConfigurationApplyConfiguration {
+	b.EvictionPressureTransitionPeriod = &value
+	return b
+}
+
 // WithEvictionMaxPodGracePeriod sets the EvictionMaxPodGracePeriod field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the EvictionMaxPodGracePeriod field is set to the value of the last call.
@@ -149,34 +340,134 @@ func (b *KubeletConfigurationApplyConfiguration) WithEvictionMaxPodGracePeriod(v
 	return b
 }
 
-// WithImageGCHighThresholdPercent sets the ImageGCHighThresholdPercent field in the declarative configuration to the given value
-// and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the ImageGCHighThresholdPercent field is set to the value of the last call.
-func (b *KubeletConfigurationApplyConfiguration) WithImageGCHighThresholdPercent(value int32) *KubeletConfigurationApplyConfiguration {
-	b.ImageGCHighThresholdPercent = &value
+// WithEvictionMinimumReclaim puts the entries into the EvictionMinimumReclaim field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, the entries provided by each call will be put on the EvictionMinimumReclaim field,
+// overwriting an existing map entries in EvictionMinimumReclaim field with the same key.
+func (b *KubeletConfigurationApplyConfiguration) WithEvictionMinimumReclaim(entries map[string]string) *KubeletConfigurationApplyConfiguration {
+	if b.EvictionMinimumReclaim == nil && len(entries) > 0 {
+		b.EvictionMinimumReclaim = make(map[string]string, len(entries))
+	}
+	for k, v := range entries {
+		b.EvictionMinimumReclaim[k] = v
+	}
 	return b
 }
 
-// WithImageGCLowThresholdPercent sets the ImageGCLowThresholdPercent field in the declarative configuration to the given value
+// WithPodsPerCore sets the PodsPerCore field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the ImageGCLowThresholdPercent field is set to the value of the last call.
-func (b *KubeletConfigurationApplyConfiguration) WithImageGCLowThresholdPercent(value int32) *KubeletConfigurationApplyConfiguration {
-	b.ImageGCLowThresholdPercent = &value
+// If called multiple times, the PodsPerCore field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithPodsPerCore(value int32) *KubeletConfigurationApplyConfiguration {
+	b.PodsPerCore = &value
 	return b
 }
 
-// WithCPUCFSQuota sets the CPUCFSQuota field in the declarative configuration to the given value
+// WithEnableControllerAttachDetach sets the EnableControllerAttachDetach field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the CPUCFSQuota field is set to the value of the last call.
-func (b *KubeletConfigurationApplyConfiguration) WithCPUCFSQuota(value bool) *KubeletConfigurationApplyConfiguration {
-	b.CPUCFSQuota = &value
+// If called multiple times, the EnableControllerAttachDetach field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithEnableControllerAttachDetach(value bool) *KubeletConfigurationApplyConfiguration {
+	b.EnableControllerAttachDetach = &value
 	return b
 }
 
-// WithPodPidsLimit sets the PodPidsLimit field in the declarative configuration to the given value
+// WithProtectKernelDefaults sets the ProtectKernelDefaults field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the PodPidsLimit field is set to the value of the last call.
-func (b *KubeletConfigurationApplyConfiguration) WithPodPidsLimit(value int64) *KubeletConfigurationApplyConfiguration {
-	b.PodPidsLimit = &value
+// If called multiple times, the ProtectKernelDefaults field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithProtectKernelDefaults(value bool) *KubeletConfigurationApplyConfiguration {
+	b.ProtectKernelDefaults = &value
+	return b
+}
+
+// WithFailSwapOn sets the FailSwapOn field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the FailSwapOn field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithFailSwapOn(value bool) *KubeletConfigurationApplyConfiguration {
+	b.FailSwapOn = &value
+	return b
+}
+
+// WithContainerLogMaxSize sets the ContainerLogMaxSize field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ContainerLogMaxSize field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithContainerLogMaxSize(value string) *KubeletConfigurationApplyConfiguration {
+	b.ContainerLogMaxSize = &value
+	return b
+}
+
+// WithContainerLogMaxFiles sets the ContainerLogMaxFiles field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ContainerLogMaxFiles field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithContainerLogMaxFiles(value int32) *KubeletConfigurationApplyConfiguration {
+	b.ContainerLogMaxFiles = &value
+	return b
+}
+
+// WithContainerLogMaxWorkers sets the ContainerLogMaxWorkers field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ContainerLogMaxWorkers field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithContainerLogMaxWorkers(value int32) *KubeletConfigurationApplyConfiguration {
+	b.ContainerLogMaxWorkers = &value
+	return b
+}
+
+// WithContainerLogMonitorInterval sets the ContainerLogMonitorInterval field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ContainerLogMonitorInterval field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithContainerLogMonitorInterval(value v1.Duration) *KubeletConfigurationApplyConfiguration {
+	b.ContainerLogMonitorInterval = &value
+	return b
+}
+
+// WithSystemReserved puts the entries into the SystemReserved field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, the entries provided by each call will be put on the SystemReserved field,
+// overwriting an existing map entries in SystemReserved field with the same key.
+func (b *KubeletConfigurationApplyConfiguration) WithSystemReserved(entries map[string]string) *KubeletConfigurationApplyConfiguration {
+	if b.SystemReserved == nil && len(entries) > 0 {
+		b.SystemReserved = make(map[string]string, len(entries))
+	}
+	for k, v := range entries {
+		b.SystemReserved[k] = v
+	}
+	return b
+}
+
+// WithKubeReserved puts the entries into the KubeReserved field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, the entries provided by each call will be put on the KubeReserved field,
+// overwriting an existing map entries in KubeReserved field with the same key.
+func (b *KubeletConfigurationApplyConfiguration) WithKubeReserved(entries map[string]string) *KubeletConfigurationApplyConfiguration {
+	if b.KubeReserved == nil && len(entries) > 0 {
+		b.KubeReserved = make(map[string]string, len(entries))
+	}
+	for k, v := range entries {
+		b.KubeReserved[k] = v
+	}
+	return b
+}
+
+// WithAllowedUnsafeSysctls adds the given value to the AllowedUnsafeSysctls field in the declarative configuration
+// and returns the receiver, so that objects can be build by chaining "With" function invocations.
+// If called multiple times, values provided by each call will be appended to the AllowedUnsafeSysctls field.
+func (b *KubeletConfigurationApplyConfiguration) WithAllowedUnsafeSysctls(values ...string) *KubeletConfigurationApplyConfiguration {
+	for i := range values {
+		b.AllowedUnsafeSysctls = append(b.AllowedUnsafeSysctls, values[i])
+	}
+	return b
+}
+
+// WithSeccompDefault sets the SeccompDefault field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the SeccompDefault field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithSeccompDefault(value bool) *KubeletConfigurationApplyConfiguration {
+	b.SeccompDefault = &value
+	return b
+}
+
+// WithLocalStorageCapacityIsolation sets the LocalStorageCapacityIsolation field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the LocalStorageCapacityIsolation field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithLocalStorageCapacityIsolation(value bool) *KubeletConfigurationApplyConfiguration {
+	b.LocalStorageCapacityIsolation = &value
 	return b
 }

@@ -191,6 +191,366 @@ spec:
                 - Public
                 - SubnetDefault
                 type: string
+              kubelet:
+                description: |-
+                  Kubelet configures kubelet settings for nodes provisioned by this NodeClass.
+                  These settings are injected into the node's ignition configuration via MachineConfig.
+                properties:
+                  allowedUnsafeSysctls:
+                    description: |-
+                      A comma separated whitelist of unsafe sysctls or sysctl patterns (ending in `*`).
+                      Unsafe sysctl groups are `kernel.shm*`, `kernel.msg*`, `kernel.sem`, `fs.mqueue.*`,
+                      and `net.*`. For example: "`kernel.msg*,net.ipv4.route.min_pmtu`"
+                      Default: []
+                    items:
+                      type: string
+                    type: array
+                  containerLogMaxFiles:
+                    description: |-
+                      containerLogMaxFiles specifies the maximum number of container log files that can
+                      be present for a container.
+                      Default: 5
+                    format: int32
+                    type: integer
+                  containerLogMaxSize:
+                    description: |-
+                      containerLogMaxSize is a quantity defining the maximum size of the container log
+                      file before it is rotated. For example: "5Mi" or "256Ki".
+                      Default: "10Mi"
+                    type: string
+                  containerLogMaxWorkers:
+                    description: |-
+                      ContainerLogMaxWorkers specifies the maximum number of concurrent workers to spawn
+                      for performing the log rotate operations. Set this count to 1 for disabling the
+                      concurrent log rotation workflows
+                      Default: 1
+                    format: int32
+                    type: integer
+                  containerLogMonitorInterval:
+                    description: |-
+                      ContainerLogMonitorInterval specifies the duration at which the container logs are monitored
+                      for performing the log rotate operation. This defaults to 10 * time.Seconds. But can be
+                      customized to a smaller value based on the log generation rate and the size required to be
+                      rotated against
+                      Default: 10s
+                    type: string
+                  cpuCFSQuota:
+                    description: |-
+                      cpuCFSQuota enables CPU CFS quota enforcement for containers that
+                      specify CPU limits.
+                      Default: true
+                    type: boolean
+                  cpuCFSQuotaPeriod:
+                    description: |-
+                      cpuCFSQuotaPeriod is the CPU CFS quota period value, `cpu.cfs_period_us`.
+                      The value must be between 1 ms and 1 second, inclusive.
+                      Requires the CustomCPUCFSQuotaPeriod feature gate to be enabled.
+                      Default: "100ms"
+                    type: string
+                  enableControllerAttachDetach:
+                    description: |-
+                      enableControllerAttachDetach enables the Attach/Detach controller to
+                      manage attachment/detachment of volumes scheduled to this node, and
+                      disables kubelet from executing any attach/detach operations.
+                      Note: attaching/detaching CSI volumes is not supported by the kubelet,
+                      so this option needs to be true for that use case.
+                      Default: true
+                    type: boolean
+                  eventBurst:
+                    description: |-
+                      eventBurst is the maximum size of a burst of event creations, temporarily
+                      allows event creations to burst to this number, while still not exceeding
+                      eventRecordQPS. This field canot be a negative number and it is only used
+                      when eventRecordQPS > 0.
+                      Default: 100
+                    format: int32
+                    type: integer
+                  eventRecordQPS:
+                    description: |-
+                      eventRecordQPS is the maximum event creations per second. If 0, there
+                      is no limit enforced. The value cannot be a negative number.
+                      Default: 50
+                    format: int32
+                    type: integer
+                  evictionHard:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      evictionHard is a map of signal names to quantities that defines hard eviction
+                      thresholds. For example: `{"memory.available": "300Mi"}`.
+                      To explicitly disable, pass a 0% or 100% threshold on an arbitrary resource.
+                      Default:
+                        memory.available:  "100Mi"
+                        nodefs.available:  "10%"
+                        nodefs.inodesFree: "5%"
+                        imagefs.available: "15%"
+                    type: object
+                  evictionMaxPodGracePeriod:
+                    description: |-
+                      evictionMaxPodGracePeriod is the maximum allowed grace period (in seconds) to use
+                      when terminating pods in response to a soft eviction threshold being met. This value
+                      effectively caps the Pod's terminationGracePeriodSeconds value during soft evictions.
+                      Default: 0
+                    format: int32
+                    type: integer
+                  evictionMinimumReclaim:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      evictionMinimumReclaim is a map of signal names to quantities that defines minimum reclaims,
+                      which describe the minimum amount of a given resource the kubelet will reclaim when
+                      performing a pod eviction while that resource is under pressure.
+                      For example: `{"imagefs.available": "2Gi"}`.
+                      Default: nil
+                    type: object
+                  evictionPressureTransitionPeriod:
+                    description: |-
+                      evictionPressureTransitionPeriod is the duration for which the kubelet has to wait
+                      before transitioning out of an eviction pressure condition.
+                      Default: "5m"
+                    type: string
+                  evictionSoft:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      evictionSoft is a map of signal names to quantities that defines soft eviction thresholds.
+                      For example: `{"memory.available": "300Mi"}`.
+                      Default: nil
+                    type: object
+                  evictionSoftGracePeriod:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      evictionSoftGracePeriod is a map of signal names to quantities that defines grace
+                      periods for each soft eviction signal. For example: `{"memory.available": "30s"}`.
+                      Default: nil
+                    type: object
+                  failSwapOn:
+                    description: |-
+                      failSwapOn tells the Kubelet to fail to start if swap is enabled on the node.
+                      Default: true
+                    type: boolean
+                  imageGCHighThresholdPercent:
+                    description: |-
+                      imageGCHighThresholdPercent is the percent of disk usage after which
+                      image garbage collection is always run. The percent is calculated by
+                      dividing this field value by 100, so this field must be between 0 and
+                      100, inclusive. When specified, the value must be greater than
+                      imageGCLowThresholdPercent.
+                      Default: 85
+                    format: int32
+                    type: integer
+                  imageGCLowThresholdPercent:
+                    description: |-
+                      imageGCLowThresholdPercent is the percent of disk usage before which
+                      image garbage collection is never run. Lowest disk usage to garbage
+                      collect to. The percent is calculated by dividing this field value by 100,
+                      so the field value must be between 0 and 100, inclusive. When specified, the
+                      value must be less than imageGCHighThresholdPercent.
+                      Default: 80
+                    format: int32
+                    type: integer
+                  imageMaximumGCAge:
+                    description: |-
+                      imageMaximumGCAge is the maximum age an image can be unused before it is garbage collected.
+                      The default of this field is "0s", which disables this field--meaning images won't be garbage
+                      collected based on being unused for too long.
+                      Default: "0s" (disabled)
+                    type: string
+                  imageMinimumGCAge:
+                    description: |-
+                      imageMinimumGCAge is the minimum age for an unused image before it is
+                      garbage collected.
+                      Default: "2m"
+                    type: string
+                  kubeAPIBurst:
+                    description: |-
+                      kubeAPIBurst is the burst to allow while talking with kubernetes API server.
+                      This field cannot be a negative number.
+                      Default: 100
+                    format: int32
+                    type: integer
+                  kubeAPIQPS:
+                    description: |-
+                      kubeAPIQPS is the QPS to use while talking with kubernetes apiserver.
+                      Default: 50
+                    format: int32
+                    type: integer
+                  kubeReserved:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      kubeReserved is a set of ResourceName=ResourceQuantity (e.g. cpu=200m,memory=150G) pairs
+                      that describe resources reserved for kubernetes system components.
+                      Currently cpu, memory and local storage for root file system are supported.
+                      See https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources
+                      for more details.
+                      Default: nil
+                    type: object
+                  localStorageCapacityIsolation:
+                    description: |-
+                      LocalStorageCapacityIsolation enables local ephemeral storage isolation feature. The default setting is true.
+                      This feature allows users to set request/limit for container's ephemeral storage and manage it in a similar way
+                      as cpu and memory. It also allows setting sizeLimit for emptyDir volume, which will trigger pod eviction if disk
+                      usage from the volume exceeds the limit.
+                      This feature depends on the capability of detecting correct root file system disk usage. For certain systems,
+                      such as kind rootless, if this capability cannot be supported, the feature LocalStorageCapacityIsolation should be
+                      disabled. Once disabled, user should not set request/limit for container's ephemeral storage, or sizeLimit for emptyDir.
+                      Default: true
+                    type: boolean
+                  maxOpenFiles:
+                    description: |-
+                      maxOpenFiles is Number of files that can be opened by Kubelet process.
+                      The value must be a non-negative number.
+                      Default: 1000000
+                    format: int64
+                    type: integer
+                  maxParallelImagePulls:
+                    description: |-
+                      MaxParallelImagePulls sets the maximum number of image pulls in parallel.
+                      This field cannot be set if SerializeImagePulls is true.
+                      Setting it to nil means no limit.
+                      Default: nil
+                    format: int32
+                    type: integer
+                  maxPods:
+                    description: |-
+                      maxPods is the maximum number of Pods that can run on this Kubelet.
+                      The value must be a non-negative integer.
+                      Default: 110
+                    format: int32
+                    type: integer
+                  nodeStatusMaxImages:
+                    description: |-
+                      nodeStatusMaxImages caps the number of images reported in Node.status.images.
+                      The value must be greater than -2.
+                      Note: If -1 is specified, no cap will be applied. If 0 is specified, no image is returned.
+                      Default: 50
+                    format: int32
+                    type: integer
+                  nodeStatusReportFrequency:
+                    description: |-
+                      nodeStatusReportFrequency is the frequency that kubelet posts node
+                      status to master if node status does not change. Kubelet will ignore this
+                      frequency and post node status immediately if any change is detected. It is
+                      only used when node lease feature is enabled. nodeStatusReportFrequency's
+                      default value is 5m. But if nodeStatusUpdateFrequency is set explicitly,
+                      nodeStatusReportFrequency's default value will be set to
+                      nodeStatusUpdateFrequency for backward compatibility.
+                      Default: "5m"
+                    type: string
+                  nodeStatusUpdateFrequency:
+                    description: |-
+                      nodeStatusUpdateFrequency is the frequency that kubelet computes node
+                      status. If node lease feature is not enabled, it is also the frequency that
+                      kubelet posts node status to master.
+                      Note: When node lease feature is not enabled, be cautious when changing the
+                      constant, it must work with nodeMonitorGracePeriod in nodecontroller.
+                      Default: "10s"
+                    type: string
+                  oomScoreAdj:
+                    description: |-
+                      oomScoreAdj is The oom-score-adj value for kubelet process. Values
+                      must be within the range [-1000, 1000].
+                      Default: -999
+                    format: int32
+                    type: integer
+                  podPidsLimit:
+                    description: |-
+                      podPidsLimit is the maximum number of PIDs in any pod.
+                      Default: -1
+                    format: int64
+                    type: integer
+                  podsPerCore:
+                    description: |-
+                      podsPerCore is the maximum number of pods per core. Cannot exceed maxPods.
+                      The value must be a non-negative integer.
+                      If 0, there is no limit on the number of Pods.
+                      Default: 0
+                    format: int32
+                    type: integer
+                  protectKernelDefaults:
+                    description: |-
+                      protectKernelDefaults, if true, causes the Kubelet to error if kernel
+                      flags are not as it expects. Otherwise the Kubelet will attempt to modify
+                      kernel flags to match its expectation.
+                      Default: false
+                    type: boolean
+                  qosReserved:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      qosReserved is a set of resource name to percentage pairs that specify
+                      the minimum percentage of a resource reserved for exclusive use by the
+                      guaranteed QoS tier.
+                      Currently supported resources: "memory"
+                      Requires the QOSReserved feature gate to be enabled.
+                      Default: nil
+                    type: object
+                  registryBurst:
+                    description: |-
+                      registryBurst is the maximum size of bursty pulls, temporarily allows
+                      pulls to burst to this number, while still not exceeding registryPullQPS.
+                      The value must not be a negative number.
+                      Only used if registryPullQPS is greater than 0.
+                      Default: 10
+                    format: int32
+                    type: integer
+                  registryPullQPS:
+                    description: |-
+                      registryPullQPS is the limit of registry pulls per second.
+                      The value must not be a negative number.
+                      Setting it to 0 means no limit.
+                      Default: 5
+                    format: int32
+                    type: integer
+                  resolvConf:
+                    description: |-
+                      resolvConf is the resolver configuration file used as the basis
+                      for the container DNS resolution configuration.
+                      If set to the empty string, will override the default and effectively disable DNS lookups.
+                      Default: "/etc/resolv.conf"
+                    type: string
+                  seccompDefault:
+                    description: |-
+                      SeccompDefault enables the use of `RuntimeDefault` as the default seccomp profile for all workloads.
+                      Default: false
+                    type: boolean
+                  serializeImagePulls:
+                    description: |-
+                      serializeImagePulls when enabled, tells the Kubelet to pull images one
+                      at a time. We recommend *not* changing the default value on nodes that
+                      run docker daemon with version  < 1.9 or an Aufs storage backend.
+                      Issue #10959 has more details.
+                      Default: true
+                    type: boolean
+                  singleProcessOOMKill:
+                    description: |-
+                      singleProcessOOMKill, if true, will prevent the `memory.oom.group` flag from being set for container
+                      cgroups in cgroups v2. This causes processes in the container to be OOM killed individually instead of as
+                      a group. It means that if true, the behavior aligns with the behavior of cgroups v1.
+                      The default value is determined automatically when you don't specify.
+                      On non-linux such as windows, only null / absent is allowed.
+                      On cgroup v1 linux, only null / absent and true are allowed.
+                      On cgroup v2 linux, null / absent, true and false are allowed. The default value is false.
+                    type: boolean
+                  streamingConnectionIdleTimeout:
+                    description: |-
+                      streamingConnectionIdleTimeout is the maximum time a streaming connection
+                      can be idle before the connection is automatically closed.
+                      Default: "4h"
+                    type: string
+                  systemReserved:
+                    additionalProperties:
+                      type: string
+                    description: |-
+                      systemReserved is a set of ResourceName=ResourceQuantity (e.g. cpu=200m,memory=150G)
+                      pairs that describe resources reserved for non-kubernetes components.
+                      Currently only cpu and memory are supported.
+                      See https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources for more detail.
+                      Default: nil
+                    type: object
+                type: object
               monitoring:
                 description: |-
                   monitoring controls the monitoring level for instances that are launched.
@@ -204,86 +564,6 @@ spec:
                 - Detailed
                 - Basic
                 type: string
-              kubelet:
-                description: |-
-                  Kubelet configures kubelet settings for nodes provisioned by this NodeClass.
-                  These settings are injected into the node's ignition configuration via MachineConfig.
-                properties:
-                  clusterDNS:
-                    description: ClusterDNS is a list of IP addresses for the cluster
-                      DNS server.
-                    items:
-                      type: string
-                    type: array
-                  cpuCFSQuota:
-                    description: CPUCFSQuota enables CPU CFS quota enforcement for
-                      containers that specify CPU limits.
-                    type: boolean
-                  evictionHard:
-                    additionalProperties:
-                      type: string
-                    description: EvictionHard is a map of signal names to quantities
-                      that defines hard eviction thresholds.
-                    type: object
-                  evictionMaxPodGracePeriod:
-                    description: |-
-                      EvictionMaxPodGracePeriod is the maximum allowed grace period (in seconds) to use
-                      when terminating pods in response to soft eviction thresholds.
-                    format: int32
-                    type: integer
-                  evictionSoft:
-                    additionalProperties:
-                      type: string
-                    description: EvictionSoft is a map of signal names to quantities
-                      that defines soft eviction thresholds.
-                    type: object
-                  evictionSoftGracePeriod:
-                    additionalProperties:
-                      type: string
-                    description: |-
-                      EvictionSoftGracePeriod is a map of signal names to quantities that defines grace periods
-                      for each soft eviction signal.
-                    type: object
-                  imageGCHighThresholdPercent:
-                    description: ImageGCHighThresholdPercent is the percent of disk
-                      usage which triggers image garbage collection.
-                    format: int32
-                    type: integer
-                  imageGCLowThresholdPercent:
-                    description: ImageGCLowThresholdPercent is the percent of disk
-                      usage to which image garbage collection attempts to free.
-                    format: int32
-                    type: integer
-                  kubeReserved:
-                    additionalProperties:
-                      type: string
-                    description: |-
-                      KubeReserved is a set of ResourceName=ResourceQuantity pairs that describe
-                      resources reserved for kubernetes system components.
-                    type: object
-                  maxPods:
-                    description: MaxPods is the maximum number of pods that can run
-                      on a node.
-                    format: int32
-                    type: integer
-                  podPidsLimit:
-                    description: PodPidsLimit is the maximum number of PIDs in any
-                      pod.
-                    format: int64
-                    type: integer
-                  podsPerCore:
-                    description: PodsPerCore is the maximum number of pods per core.
-                      Cannot exceed MaxPods.
-                    format: int32
-                    type: integer
-                  systemReserved:
-                    additionalProperties:
-                      type: string
-                    description: |-
-                      SystemReserved is a set of ResourceName=ResourceQuantity pairs that describe
-                      resources reserved for non-kubernetes components.
-                    type: object
-                type: object
               securityGroupSelectorTerms:
                 description: securityGroupSelectorTerms is a list of or security group
                   selector terms. The terms are ORed.

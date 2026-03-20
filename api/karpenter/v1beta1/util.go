@@ -44,25 +44,6 @@ func (spec OpenshiftEC2NodeClassSpec) KarpenterAssociatePublicIPAddress() *bool 
 	}
 }
 
-func (spec OpenshiftEC2NodeClassSpec) KarpenterKubeletConfiguration() *awskarpenterv1.KubeletConfiguration {
-	if spec.Kubelet == nil {
-		return nil
-	}
-	return &awskarpenterv1.KubeletConfiguration{
-		MaxPods:                     spec.Kubelet.MaxPods,
-		PodsPerCore:                 spec.Kubelet.PodsPerCore,
-		SystemReserved:              spec.Kubelet.SystemReserved,
-		KubeReserved:                spec.Kubelet.KubeReserved,
-		EvictionHard:                spec.Kubelet.EvictionHard,
-		EvictionSoft:                spec.Kubelet.EvictionSoft,
-		EvictionSoftGracePeriod:     spec.Kubelet.EvictionSoftGracePeriod,
-		EvictionMaxPodGracePeriod:   spec.Kubelet.EvictionMaxPodGracePeriod,
-		ImageGCHighThresholdPercent: spec.Kubelet.ImageGCHighThresholdPercent,
-		ImageGCLowThresholdPercent:  spec.Kubelet.ImageGCLowThresholdPercent,
-		CPUCFSQuota:                 spec.Kubelet.CPUCFSQuota,
-	}
-}
-
 func (spec OpenshiftEC2NodeClassSpec) KarpenterDetailedMonitoring() *bool {
 	switch spec.Monitoring {
 	case MonitoringStateDetailed:
