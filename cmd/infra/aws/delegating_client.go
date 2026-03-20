@@ -8,17 +8,13 @@ import (
 	"github.com/openshift/hypershift/support/awsapi"
 
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	configv2 "github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/route53"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/request"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/sqs"
-	"github.com/aws/aws-sdk-go/service/sqs/sqsiface"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/smithy-go/middleware"
 )
 
@@ -32,11 +28,10 @@ func NewDelegatingClient(
 	nodePoolCredentialsFile string,
 	openshiftImageRegistryCredentialsFile string,
 ) (*DelegatingClient, error) {
-	awsConfig := awsutil.NewConfig()
 	awsConfigv2 := awsutil.NewConfigV2()
-	awsEbsCsiDriverControllerCfg, err := configv2.LoadDefaultConfig(ctx,
-		configv2.WithSharedConfigFiles([]string{awsEbsCsiDriverControllerCredentialsFile}),
-		configv2.WithAPIOptions([]func(*middleware.Stack) error{
+	awsEbsCsiDriverControllerCfg, err := config.LoadDefaultConfig(ctx,
+		config.WithSharedConfigFiles([]string{awsEbsCsiDriverControllerCredentialsFile}),
+		config.WithAPIOptions([]func(*middleware.Stack) error{
 			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", "aws-ebs-csi-driver-controller"),
 		}))
 	if err != nil {
@@ -47,9 +42,9 @@ func NewDelegatingClient(
 			o.Retryer = awsConfigv2()
 		}),
 	}
-	cloudControllerCfg, err := configv2.LoadDefaultConfig(ctx,
-		configv2.WithSharedConfigFiles([]string{cloudControllerCredentialsFile}),
-		configv2.WithAPIOptions([]func(*middleware.Stack) error{
+	cloudControllerCfg, err := config.LoadDefaultConfig(ctx,
+		config.WithSharedConfigFiles([]string{cloudControllerCredentialsFile}),
+		config.WithAPIOptions([]func(*middleware.Stack) error{
 			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", "cloud-controller"),
 		}))
 	if err != nil {
@@ -66,9 +61,9 @@ func NewDelegatingClient(
 			o.Retryer = awsConfigv2()
 		}),
 	}
-	cloudNetworkConfigControllerCfg, err := configv2.LoadDefaultConfig(ctx,
-		configv2.WithSharedConfigFiles([]string{cloudNetworkConfigControllerCredentialsFile}),
-		configv2.WithAPIOptions([]func(*middleware.Stack) error{
+	cloudNetworkConfigControllerCfg, err := config.LoadDefaultConfig(ctx,
+		config.WithSharedConfigFiles([]string{cloudNetworkConfigControllerCredentialsFile}),
+		config.WithAPIOptions([]func(*middleware.Stack) error{
 			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", "cloud-network-config-controller"),
 		}))
 	if err != nil {
@@ -79,9 +74,9 @@ func NewDelegatingClient(
 			o.Retryer = awsConfigv2()
 		}),
 	}
-	controlPlaneOperatorCfg, err := configv2.LoadDefaultConfig(ctx,
-		configv2.WithSharedConfigFiles([]string{controlPlaneOperatorCredentialsFile}),
-		configv2.WithAPIOptions([]func(*middleware.Stack) error{
+	controlPlaneOperatorCfg, err := config.LoadDefaultConfig(ctx,
+		config.WithSharedConfigFiles([]string{controlPlaneOperatorCredentialsFile}),
+		config.WithAPIOptions([]func(*middleware.Stack) error{
 			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", "control-plane-operator"),
 		}))
 	if err != nil {
@@ -95,17 +90,9 @@ func NewDelegatingClient(
 			o.Retryer = awsConfigv2()
 		}),
 	}
-	nodePoolSession, err := session.NewSessionWithOptions(session.Options{SharedConfigFiles: []string{nodePoolCredentialsFile}})
-	if err != nil {
-		return nil, fmt.Errorf("error creating new AWS session for nodePool: %w", err)
-	}
-	nodePoolSession.Handlers.Build.PushBackNamed(request.NamedHandler{
-		Name: "openshift.io/hypershift",
-		Fn:   request.MakeAddToUserAgentHandler("openshift.io hypershift", "node-pool"),
-	})
-	nodePoolCfg, err := configv2.LoadDefaultConfig(ctx,
-		configv2.WithSharedConfigFiles([]string{nodePoolCredentialsFile}),
-		configv2.WithAPIOptions([]func(*middleware.Stack) error{
+	nodePoolCfg, err := config.LoadDefaultConfig(ctx,
+		config.WithSharedConfigFiles([]string{nodePoolCredentialsFile}),
+		config.WithAPIOptions([]func(*middleware.Stack) error{
 			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", "node-pool"),
 		}))
 	if err != nil {
@@ -115,11 +102,13 @@ func NewDelegatingClient(
 		ec2Client: ec2.NewFromConfig(nodePoolCfg, func(o *ec2.Options) {
 			o.Retryer = awsConfigv2()
 		}),
-		sqsClient: sqs.New(nodePoolSession, awsConfig),
+		sqsClient: sqs.NewFromConfig(nodePoolCfg, func(o *sqs.Options) {
+			o.Retryer = awsConfigv2()
+		}),
 	}
-	openshiftImageRegistryCfg, err := configv2.LoadDefaultConfig(ctx,
-		configv2.WithSharedConfigFiles([]string{openshiftImageRegistryCredentialsFile}),
-		configv2.WithAPIOptions([]func(*middleware.Stack) error{
+	openshiftImageRegistryCfg, err := config.LoadDefaultConfig(ctx,
+		config.WithSharedConfigFiles([]string{openshiftImageRegistryCredentialsFile}),
+		config.WithAPIOptions([]func(*middleware.Stack) error{
 			awsmiddleware.AddUserAgentKeyValue("openshift.io hypershift", "openshift-image-registry"),
 		}))
 	if err != nil {
@@ -155,7 +144,7 @@ func NewDelegatingClient(
 			S3API:                  nil,
 			openshiftImageRegistry: openshiftImageRegistry,
 		},
-		SQSAPI: &sqsClient{
+		SQSClient: &sqsClient{
 			SQSAPI:   nil,
 			nodePool: nodePool,
 		},
@@ -183,7 +172,7 @@ type controlPlaneOperatorClientDelegate struct {
 
 type nodePoolClientDelegate struct {
 	ec2Client awsapi.EC2API
-	sqsClient sqsiface.SQSAPI
+	sqsClient awsapi.SQSAPI
 }
 
 type openshiftImageRegistryClientDelegate struct {
@@ -197,7 +186,7 @@ type DelegatingClient struct {
 	ELBV2Client   awsapi.ELBV2API
 	ROUTE53Client awsapi.ROUTE53API
 	S3Client      awsapi.S3API
-	sqsiface.SQSAPI
+	SQSClient     awsapi.SQSAPI
 }
 
 // ec2Client delegates to individual component clients for API calls we know those components will have privileges to make.
@@ -646,14 +635,14 @@ func (c *s3Client) PutPublicAccessBlock(ctx context.Context, input *s3.PutPublic
 // sqsClient delegates to individual component clients for API calls we know those components will have privileges to make.
 type sqsClient struct {
 	// embedding this fulfills the interface and falls back to a panic for APIs we don't have privileges for
-	sqsiface.SQSAPI
+	awsapi.SQSAPI
 
 	nodePool *nodePoolClientDelegate
 }
 
-func (c *sqsClient) DeleteMessageWithContext(ctx aws.Context, input *sqs.DeleteMessageInput, opts ...request.Option) (*sqs.DeleteMessageOutput, error) {
-	return c.nodePool.sqsClient.DeleteMessageWithContext(ctx, input, opts...)
+func (c *sqsClient) DeleteMessage(ctx context.Context, input *sqs.DeleteMessageInput, optFns ...func(*sqs.Options)) (*sqs.DeleteMessageOutput, error) {
+	return c.nodePool.sqsClient.DeleteMessage(ctx, input, optFns...)
 }
-func (c *sqsClient) ReceiveMessageWithContext(ctx aws.Context, input *sqs.ReceiveMessageInput, opts ...request.Option) (*sqs.ReceiveMessageOutput, error) {
-	return c.nodePool.sqsClient.ReceiveMessageWithContext(ctx, input, opts...)
+func (c *sqsClient) ReceiveMessage(ctx context.Context, input *sqs.ReceiveMessageInput, optFns ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error) {
+	return c.nodePool.sqsClient.ReceiveMessage(ctx, input, optFns...)
 }
