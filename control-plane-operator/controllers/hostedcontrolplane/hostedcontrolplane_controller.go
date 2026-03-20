@@ -2959,6 +2959,9 @@ func setKASCustomKubeconfigStatus(ctx context.Context, hcp *hyperv1.HostedContro
 		if !apierrors.IsNotFound(err) {
 			return fmt.Errorf("failed to get custom kubeconfig secret: %w", err)
 		}
+		// Secret does not exist yet; do not advertise it in status.
+		hcp.Status.CustomKubeconfig = nil
+		return nil
 	}
 
 	if len(hcp.Spec.KubeAPIServerDNSName) > 0 {
