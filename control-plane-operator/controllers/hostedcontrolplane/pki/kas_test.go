@@ -1,6 +1,15 @@
 package pki
 
-import "testing"
+import (
+	"crypto/x509/pkix"
+	"testing"
+
+	"github.com/openshift/hypershift/support/certs"
+	"github.com/openshift/hypershift/support/util"
+
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/clientcmd"
+)
 
 func TestAddBracketsIfIPv6(t *testing.T) {
 	tests := []struct {
@@ -49,6 +58,62 @@ func TestAddBracketsIfIPv6(t *testing.T) {
 			got := AddBracketsIfIPv6(tt.apiAddress)
 			if got != tt.want {
 				t.Errorf("AddBracketsIfIPv6() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReconcileServiceAccountKubeconfigWithURL(t *testing.T) {
+	t.Parallel()
+
+	caCfg := certs.CertCfg{
+		IsCA:    true,
+		Subject: pkix.Name{CommonName: "root-ca", OrganizationalUnit: []string{"unit"}},
+	}
+	caKey, caCert, err := certs.GenerateSelfSignedCertificate(&caCfg)
+	if err != nil {
+		t.Fatalf("failed to generate CA: %v", err)
+	}
+
+	csrSigner := &corev1.Secret{
+		Data: map[string][]byte{
+			certs.CASignerCertMapKey: certs.CertToPem(caCert),
+			certs.CASignerKeyMapKey:  certs.PrivateKeyToPem(caKey),
+		},
+	}
+	caConfigMap := &corev1.ConfigMap{
+		Data: map[string]string{
+			certs.CASignerCertMapKey: string(certs.CertToPem(caCert)),
+		},
+	}
+	secret := &corev1.Secret{}
+	localhostURL := "https://localhost:9443"
+
+	testCases := []struct {
+		name string
+	}{
+		{
+			name: "When reconciling service account kubeconfig with explicit URL it should use that URL as cluster server",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := ReconcileServiceAccountKubeconfigWithURL(secret, csrSigner, caConfigMap, "openshift-authentication", "azure-workload-identity-webhook", localhostURL); err != nil {
+				t.Fatalf("failed to reconcile kubeconfig: %v", err)
+			}
+
+			kubeconfigData, hasKubeconfig := secret.Data[util.KubeconfigKey]
+			if !hasKubeconfig {
+				t.Fatalf("expected %q key to be present in secret data", util.KubeconfigKey)
+			}
+
+			kubeconfig, err := clientcmd.Load(kubeconfigData)
+			if err != nil {
+				t.Fatalf("failed to parse kubeconfig data: %v", err)
+			}
+			if kubeconfig.Clusters["cluster"].Server != localhostURL {
+				t.Fatalf("expected kubeconfig server %q, got %q", localhostURL, kubeconfig.Clusters["cluster"].Server)
 			}
 		})
 	}
