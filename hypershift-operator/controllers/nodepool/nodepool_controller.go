@@ -12,6 +12,7 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
 	haproxy "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/apiserver-haproxy"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/kubevirt"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
@@ -97,8 +98,8 @@ type NodePoolReconciler struct {
 	HypershiftOperatorImage string
 	ImageMetadataProvider   supportutil.ImageMetadataProvider
 	KubevirtInfraClients    kvinfra.KubevirtInfraClientMap
-
-	EC2Client ec2iface.EC2API
+	EC2Client               ec2iface.EC2API
+	InstanceTypeProvider    instancetype.Provider
 }
 
 type NotReadyError struct {
@@ -406,7 +407,22 @@ func (r *NodePoolReconciler) reconcile(ctx context.Context, hcluster *hyperv1.Ho
 		}
 		return ctrl.Result{}, err
 	}
+
+	// Set scale-from-zero annotations if provider is configured and platform is supported
+	// This works for both Replace (MachineDeployment) and InPlace (MachineSet) upgrade types
+	if isAutoscalingEnabled(nodePool) && r.InstanceTypeProvider != nil && supportedScaleFromZeroPlatform(nodePool.Spec.Platform.Type) {
+		if err = r.reconcileScaleFromZeroAnnotations(ctx, nodePool, capi); err != nil {
+			log.Error(err, "Failed to set scale-from-zero annotations, will retry")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
+	}
+
 	return ctrl.Result{}, nil
+}
+
+// supportedScaleFromZeroPlatform checks if the platform supports scale-from-zero functionality.
+func supportedScaleFromZeroPlatform(platform hyperv1.PlatformType) bool {
+	return platform == hyperv1.AWSPlatform
 }
 
 func (r *NodePoolReconciler) token(ctx context.Context, hcluster *hyperv1.HostedCluster, nodePool *hyperv1.NodePool) (*Token, error) {
@@ -1093,6 +1109,80 @@ func deleteConfigByLabel(ctx context.Context, c client.Client, lbl map[string]st
 			return err
 		}
 	}
+	return nil
+}
+
+// reconcileScaleFromZeroAnnotations sets scale-from-zero annotations on MachineDeployment/MachineSet.
+// It supports multiple platforms by switching on the NodePool's platform type.
+func (r *NodePoolReconciler) reconcileScaleFromZeroAnnotations(ctx context.Context, nodePool *hyperv1.NodePool, capi *CAPI) error {
+	// Get the platform-specific machine template
+	var machineTemplate interface{}
+	switch nodePool.Spec.Platform.Type {
+	case hyperv1.AWSPlatform:
+		awsMachineTemplate := &capiaws.AWSMachineTemplate{}
+		if err := capi.getExistingMachineTemplate(ctx, awsMachineTemplate); err != nil {
+			if apierrors.IsNotFound(err) {
+				// Machine template doesn't exist yet, skip annotation (it will be reconciled later)
+				return nil
+			}
+			return fmt.Errorf("failed to get AWSMachineTemplate: %w", err)
+		}
+		machineTemplate = awsMachineTemplate
+
+	// Future platform support can be added here:
+	// case hyperv1.AzurePlatform:
+	//     azureTemplate := &capiazure.AzureMachineTemplate{}
+	//     if err := capi.getExistingMachineTemplate(ctx, azureTemplate); err != nil {
+	//         if apierrors.IsNotFound(err) {
+	//             return nil
+	//         }
+	//         return fmt.Errorf("failed to get AzureMachineTemplate: %w", err)
+	//     }
+	//     machineTemplate = azureTemplate
+
+	default:
+		return fmt.Errorf("unsupported platform for scale-from-zero: %s", nodePool.Spec.Platform.Type)
+	}
+
+	// Get the appropriate CAPI object (MachineSet for InPlace, MachineDeployment for Replace)
+	var obj client.Object
+	if nodePool.Spec.Management.UpgradeType == hyperv1.UpgradeTypeInPlace {
+		// InPlace mode uses MachineSet
+		ms := capi.machineSet()
+		if err := capi.Get(ctx, client.ObjectKeyFromObject(ms), ms); err != nil {
+			if apierrors.IsNotFound(err) {
+				// MachineSet doesn't exist yet, skip annotation
+				return nil
+			}
+			return fmt.Errorf("failed to get MachineSet: %w", err)
+		}
+		obj = ms
+	} else {
+		// Replace mode uses MachineDeployment
+		md := capi.machineDeployment()
+		if err := capi.Get(ctx, client.ObjectKeyFromObject(md), md); err != nil {
+			if apierrors.IsNotFound(err) {
+				// MachineDeployment doesn't exist yet, skip annotation
+				return nil
+			}
+			return fmt.Errorf("failed to get MachineDeployment: %w", err)
+		}
+		obj = md
+	}
+
+	// Create a patch base before modifying the object
+	patch := client.MergeFrom(obj.DeepCopyObject().(client.Object))
+
+	// Set scale-from-zero annotations on the object
+	if err := setScaleFromZeroAnnotationsOnObject(ctx, r.InstanceTypeProvider, nodePool, obj, machineTemplate); err != nil {
+		return fmt.Errorf("failed to set scale-from-zero annotations: %w", err)
+	}
+
+	// Patch only sends the diff, avoiding unnecessary API updates when annotations haven't changed
+	if err := capi.Patch(ctx, obj, patch); err != nil {
+		return fmt.Errorf("failed to patch with scale-from-zero annotations: %w", err)
+	}
+
 	return nil
 }
 

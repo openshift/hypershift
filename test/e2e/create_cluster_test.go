@@ -25,6 +25,7 @@ import (
 	"github.com/openshift/hypershift/test/integration"
 	integrationframework "github.com/openshift/hypershift/test/integration/framework"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/clientcmd"
@@ -2266,6 +2267,155 @@ func TestOnCreateAPIUX(t *testing.T) {
 							}
 							np.Spec.Platform.AWS.InstanceType = "m6i.large"
 							np.Spec.Platform.AWS.ImageType = hyperv1.ImageTypeLinux
+						},
+						expectedErrorSubstring: "",
+					},
+				},
+			},
+			{
+				name: "when autoscaling min=0 (scale-from-zero) is configured it should only be allowed on AWS platform",
+				file: "nodepool-base.yaml",
+				validations: []struct {
+					name                   string
+					mutateInput            func(*hyperv1.NodePool)
+					expectedErrorSubstring string
+				}{
+					{
+						name: "when autoScaling min=0 on AWS platform it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Replicas = nil
+							np.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
+								Min: ptr.To[int32](0),
+								Max: 3,
+							}
+							np.Spec.Platform.Type = hyperv1.AWSPlatform
+							np.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
+								InstanceType:    "m6a.2xlarge",
+								InstanceProfile: "a-profile",
+								Subnet: hyperv1.AWSResourceReference{
+									ID: ptr.To("subnet-01234567"),
+								},
+								RootVolume: &hyperv1.Volume{
+									Type: "gp3",
+									Size: 120,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when autoScaling min=0 on Azure platform it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Replicas = nil
+							np.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
+								Min: ptr.To[int32](0),
+								Max: 3,
+							}
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.AWS = nil
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v4",
+								Image: hyperv1.AzureVMImage{
+									Type:             hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "Scale-from-zero (autoScaling.min=0) is currently only supported for AWS platform",
+					},
+					{
+						name: "when autoScaling min=0 on Agent platform it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Replicas = nil
+							np.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
+								Min: ptr.To[int32](0),
+								Max: 3,
+							}
+							np.Spec.Platform.Type = hyperv1.AgentPlatform
+							np.Spec.Platform.AWS = nil
+							np.Spec.Platform.Agent = &hyperv1.AgentNodePoolPlatform{}
+						},
+						expectedErrorSubstring: "Scale-from-zero (autoScaling.min=0) is currently only supported for AWS platform",
+					},
+					{
+						name: "when autoScaling min=0 on KubeVirt platform it should fail",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Replicas = nil
+							np.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
+								Min: ptr.To[int32](0),
+								Max: 3,
+							}
+							np.Spec.Platform.Type = hyperv1.KubevirtPlatform
+							np.Spec.Platform.AWS = nil
+							np.Spec.Platform.Kubevirt = &hyperv1.KubevirtNodePoolPlatform{
+								RootVolume: &hyperv1.KubevirtRootVolume{
+									KubevirtVolume: hyperv1.KubevirtVolume{
+										Type: hyperv1.KubevirtVolumeTypePersistent,
+										Persistent: &hyperv1.KubevirtPersistentVolume{
+											Size: ptr.To(resource.MustParse("32Gi")),
+										},
+									},
+								},
+							}
+						},
+						expectedErrorSubstring: "Scale-from-zero (autoScaling.min=0) is currently only supported for AWS platform",
+					},
+					{
+						name: "when autoScaling min=1 on Azure platform it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Replicas = nil
+							np.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
+								Min: ptr.To[int32](1),
+								Max: 3,
+							}
+							np.Spec.Platform.Type = hyperv1.AzurePlatform
+							np.Spec.Platform.AWS = nil
+							np.Spec.Platform.Azure = &hyperv1.AzureNodePoolPlatform{
+								VMSize: "Standard_D4s_v4",
+								Image: hyperv1.AzureVMImage{
+									Type:             hyperv1.AzureMarketplace,
+									AzureMarketplace: &hyperv1.AzureMarketplaceImage{},
+								},
+								OSDisk: hyperv1.AzureNodePoolOSDisk{
+									DiskStorageAccountType: hyperv1.DiskStorageAccountTypesPremiumLRS,
+								},
+								SubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when autoScaling min=1 on AWS platform it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.Replicas = nil
+							np.Spec.AutoScaling = &hyperv1.NodePoolAutoScaling{
+								Min: ptr.To[int32](1),
+								Max: 3,
+							}
+							np.Spec.Platform.Type = hyperv1.AWSPlatform
+							np.Spec.Platform.AWS = &hyperv1.AWSNodePoolPlatform{
+								InstanceType:    "m6a.2xlarge",
+								InstanceProfile: "a-profile",
+								Subnet: hyperv1.AWSResourceReference{
+									ID: ptr.To("subnet-any"),
+								},
+								RootVolume: &hyperv1.Volume{
+									Type: "gp3",
+									Size: 120,
+								},
+							}
+						},
+						expectedErrorSubstring: "",
+					},
+					{
+						name: "when autoScaling is not set it should pass",
+						mutateInput: func(np *hyperv1.NodePool) {
+							np.Spec.AutoScaling = nil
+							np.Spec.Replicas = ptr.To[int32](1)
 						},
 						expectedErrorSubstring: "",
 					},
