@@ -26,14 +26,14 @@ import (
 type GCPNodePoolPlatformApplyConfiguration struct {
 	MachineType       *string                                  `json:"machineType,omitempty"`
 	Zone              *string                                  `json:"zone,omitempty"`
-	Subnet            *string                                  `json:"subnet,omitempty"`
+	Subnet            *hypershiftv1beta1.GCPResourceName       `json:"subnet,omitempty"`
 	Image             *string                                  `json:"image,omitempty"`
 	BootDisk          *GCPBootDiskApplyConfiguration           `json:"bootDisk,omitempty"`
 	ServiceAccount    *GCPNodeServiceAccountApplyConfiguration `json:"serviceAccount,omitempty"`
 	ResourceLabels    []GCPResourceLabelApplyConfiguration     `json:"resourceLabels,omitempty"`
-	NetworkTags       []string                                 `json:"networkTags,omitempty"`
+	NetworkTags       []hypershiftv1beta1.GCPResourceName      `json:"networkTags,omitempty"`
 	ProvisioningModel *hypershiftv1beta1.GCPProvisioningModel  `json:"provisioningModel,omitempty"`
-	OnHostMaintenance *string                                  `json:"onHostMaintenance,omitempty"`
+	OnHostMaintenance *hypershiftv1beta1.GCPOnHostMaintenance  `json:"onHostMaintenance,omitempty"`
 }
 
 // GCPNodePoolPlatformApplyConfiguration constructs a declarative configuration of the GCPNodePoolPlatform type for use with
@@ -61,7 +61,7 @@ func (b *GCPNodePoolPlatformApplyConfiguration) WithZone(value string) *GCPNodeP
 // WithSubnet sets the Subnet field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the Subnet field is set to the value of the last call.
-func (b *GCPNodePoolPlatformApplyConfiguration) WithSubnet(value string) *GCPNodePoolPlatformApplyConfiguration {
+func (b *GCPNodePoolPlatformApplyConfiguration) WithSubnet(value hypershiftv1beta1.GCPResourceName) *GCPNodePoolPlatformApplyConfiguration {
 	b.Subnet = &value
 	return b
 }
@@ -106,7 +106,7 @@ func (b *GCPNodePoolPlatformApplyConfiguration) WithResourceLabels(values ...*GC
 // WithNetworkTags adds the given value to the NetworkTags field in the declarative configuration
 // and returns the receiver, so that objects can be build by chaining "With" function invocations.
 // If called multiple times, values provided by each call will be appended to the NetworkTags field.
-func (b *GCPNodePoolPlatformApplyConfiguration) WithNetworkTags(values ...string) *GCPNodePoolPlatformApplyConfiguration {
+func (b *GCPNodePoolPlatformApplyConfiguration) WithNetworkTags(values ...hypershiftv1beta1.GCPResourceName) *GCPNodePoolPlatformApplyConfiguration {
 	for i := range values {
 		b.NetworkTags = append(b.NetworkTags, values[i])
 	}
@@ -124,7 +124,7 @@ func (b *GCPNodePoolPlatformApplyConfiguration) WithProvisioningModel(value hype
 // WithOnHostMaintenance sets the OnHostMaintenance field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the OnHostMaintenance field is set to the value of the last call.
-func (b *GCPNodePoolPlatformApplyConfiguration) WithOnHostMaintenance(value string) *GCPNodePoolPlatformApplyConfiguration {
+func (b *GCPNodePoolPlatformApplyConfiguration) WithOnHostMaintenance(value hypershiftv1beta1.GCPOnHostMaintenance) *GCPNodePoolPlatformApplyConfiguration {
 	b.OnHostMaintenance = &value
 	return b
 }

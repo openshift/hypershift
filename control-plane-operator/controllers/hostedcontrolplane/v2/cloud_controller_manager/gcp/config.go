@@ -20,7 +20,7 @@ func adaptConfig(cpContext component.WorkloadContext, cm *corev1.ConfigMap) erro
 	}
 
 	projectID := gcpPlatform.Project
-	networkName := gcpPlatform.NetworkConfig.Network.Name
+	networkName := string(gcpPlatform.NetworkConfig.Network.Name)
 
 	// Node tags are used for firewall rules. The nodepool controller applies
 	// the tag "{infraID}-worker" to all worker nodes. GCP network tags must be

@@ -23,11 +23,11 @@ import (
 
 const (
 	// Test service account emails used across GCP tests
-	testNodePoolGSA        = "test-capg-sa@test-project.iam.gserviceaccount.com"
-	testControlPlaneGSA    = "test-control-plane-sa@test-project.iam.gserviceaccount.com"
-	testCloudControllerGSA = "test-cloud-controller@test-project.iam.gserviceaccount.com"
-	testStorageGSA         = "test-storage@test-project.iam.gserviceaccount.com"
-	testImageRegistryGSA   = "test-image-registry@test-project.iam.gserviceaccount.com"
+	testNodePoolGSA        hyperv1.GCPServiceAccountEmail = "test-capg-sa@test-project.iam.gserviceaccount.com"
+	testControlPlaneGSA    hyperv1.GCPServiceAccountEmail = "test-control-plane-sa@test-project.iam.gserviceaccount.com"
+	testCloudControllerGSA hyperv1.GCPServiceAccountEmail = "test-cloud-controller@test-project.iam.gserviceaccount.com"
+	testStorageGSA         hyperv1.GCPServiceAccountEmail = "test-storage@test-project.iam.gserviceaccount.com"
+	testImageRegistryGSA   hyperv1.GCPServiceAccountEmail = "test-image-registry@test-project.iam.gserviceaccount.com"
 )
 
 // testCreateOrUpdate is a test helper that implements createOrUpdate functionality
@@ -311,7 +311,7 @@ func TestBuildGCPWorkloadIdentityCredentials(t *testing.T) {
 
 	// Using NodePool GSA as an example - the function is generic and works the same
 	// for any service account email (NodePool, ControlPlane, CloudController, etc.)
-	credentials, err := buildGCPWorkloadIdentityCredentials(wif, wif.ServiceAccountsEmails.NodePool)
+	credentials, err := buildGCPWorkloadIdentityCredentials(wif, string(wif.ServiceAccountsEmails.NodePool))
 	g.Expect(err).To(BeNil())
 	g.Expect(credentials).To(ContainSubstring(`"type":"external_account"`))
 	g.Expect(credentials).To(ContainSubstring("123456789012"))
@@ -379,7 +379,7 @@ func TestBuildGCPWorkloadIdentityCredentialsValidation(t *testing.T) {
 			}
 			// Using NodePool GSA as the serviceAccountEmail parameter - the function
 			// is generic and works the same for any service account email
-			_, err := buildGCPWorkloadIdentityCredentials(wif, wif.ServiceAccountsEmails.NodePool)
+			_, err := buildGCPWorkloadIdentityCredentials(wif, string(wif.ServiceAccountsEmails.NodePool))
 			if tt.errorMsg != "" {
 				g.Expect(err).ToNot(BeNil())
 				g.Expect(err.Error()).To(ContainSubstring(tt.errorMsg))

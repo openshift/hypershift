@@ -131,13 +131,13 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 	// to preserve server-defaulted values (Mtu, Purpose, StackType) that CAPG sets
 	// after creation. Overwriting them with zero values triggers the loop detector.
 	if gcpSpec.NetworkConfig.Network.Name != "" {
-		gcpCluster.Spec.Network.Name = ptr.To(gcpSpec.NetworkConfig.Network.Name)
+		gcpCluster.Spec.Network.Name = ptr.To(string(gcpSpec.NetworkConfig.Network.Name))
 
 		if gcpSpec.NetworkConfig.PrivateServiceConnectSubnet.Name != "" {
 			if len(gcpCluster.Spec.Network.Subnets) == 0 {
 				gcpCluster.Spec.Network.Subnets = []capigcp.SubnetSpec{{}}
 			}
-			gcpCluster.Spec.Network.Subnets[0].Name = gcpSpec.NetworkConfig.PrivateServiceConnectSubnet.Name
+			gcpCluster.Spec.Network.Subnets[0].Name = string(gcpSpec.NetworkConfig.PrivateServiceConnectSubnet.Name)
 			gcpCluster.Spec.Network.Subnets[0].Region = gcpSpec.Region
 		}
 	}
@@ -338,7 +338,7 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	}
 
 	// Create credential secrets for all configured service accounts
-	credentialSecrets := map[string]*corev1.Secret{
+	credentialSecrets := map[hyperv1.GCPServiceAccountEmail]*corev1.Secret{
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.NodePool:        NodePoolManagementCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.ControlPlane:    ControlPlaneOperatorCredsSecret(controlPlaneNamespace),
 		hcluster.Spec.Platform.GCP.WorkloadIdentity.ServiceAccountsEmails.CloudController: CloudControllerCredsSecret(controlPlaneNamespace),
@@ -347,7 +347,7 @@ func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOr
 	}
 
 	for email, secret := range credentialSecrets {
-		if err := syncSecret(secret, email); err != nil {
+		if err := syncSecret(secret, string(email)); err != nil {
 			errs = append(errs, err)
 		}
 	}

@@ -28967,7 +28967,9 @@ This value must be a valid IPv4 or IPv6 address.</p>
 <td>
 <code>forwardingRuleName</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -28984,15 +28986,19 @@ Populated by the reconciler via GCP API lookup</p>
 </em>
 </td>
 <td>
-<p>consumerAcceptList specifies which customer projects can connect
-Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers (e.g. &ldquo;123456789012&rdquo;)</p>
+<p>consumerAcceptList specifies which customer projects can connect.
+Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers (e.g. &ldquo;123456789012&rdquo;).
+A maximum of 50 entries are allowed.
+See <a href="https://cloud.google.com/resource-manager/docs/creating-managing-projects">https://cloud.google.com/resource-manager/docs/creating-managing-projects</a> for project ID and number formats.</p>
 </td>
 </tr>
 <tr>
 <td>
 <code>natSubnet</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -34940,7 +34946,7 @@ If not specified, defaults to &ldquo;pd-balanced&rdquo;.</p>
 </tr>
 <tr>
 <td>
-<code>encryptionKey</code></br>
+<code>encryptionKey,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPDiskEncryptionKey">
 GCPDiskEncryptionKey
@@ -35029,7 +35035,7 @@ private node communication with the control plane via Private Service Connect.</
 <tbody>
 <tr>
 <td>
-<code>network</code></br>
+<code>network,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
 GCPResourceReference
@@ -35042,7 +35048,7 @@ GCPResourceReference
 </tr>
 <tr>
 <td>
-<code>privateServiceConnectSubnet</code></br>
+<code>privateServiceConnectSubnet,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">
 GCPResourceReference
@@ -35107,7 +35113,9 @@ See <a href="https://cloud.google.com/compute/docs/regions-zones">https://cloud.
 <td>
 <code>subnet</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -35188,7 +35196,9 @@ taking precedence in case of conflicts.</p>
 <td>
 <code>networkTags</code></br>
 <em>
-[]string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+[]GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -35224,7 +35234,9 @@ If not specified, defaults to &ldquo;Standard&rdquo;.</p>
 <td>
 <code>onHostMaintenance</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPOnHostMaintenance">
+GCPOnHostMaintenance
+</a>
 </em>
 </td>
 <td>
@@ -35257,7 +35269,9 @@ If not specified, defaults to &ldquo;MIGRATE&rdquo; for Standard instances and &
 <td>
 <code>email</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -35291,6 +35305,10 @@ Common scopes include:
 </tbody>
 </table>
 ###GCPOnHostMaintenance { #hypershift.openshift.io/v1beta1.GCPOnHostMaintenance }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>)
+</p>
 <p>
 <p>GCPOnHostMaintenance defines the behavior when a host maintenance event occurs.</p>
 </p>
@@ -35338,7 +35356,8 @@ A valid project ID must satisfy the following rules:
 length: Must be between 6 and 30 characters, inclusive
 characters: Only lowercase letters (<code>a-z</code>), digits (<code>0-9</code>), and hyphens (<code>-</code>) are allowed
 start and end: Must begin with a lowercase letter and must not end with a hyphen
-valid examples: &ldquo;my-project&rdquo;, &ldquo;my-project-1&rdquo;, &ldquo;my-project-123&rdquo;.</p>
+valid examples: &ldquo;my-project&rdquo;, &ldquo;my-project-1&rdquo;, &ldquo;my-project-123&rdquo;.
+See <a href="https://cloud.google.com/resource-manager/docs/creating-managing-projects">https://cloud.google.com/resource-manager/docs/creating-managing-projects</a> for project ID naming rules.</p>
 </td>
 </tr>
 <tr>
@@ -35349,18 +35368,14 @@ string
 </em>
 </td>
 <td>
-<p>region is the GCP region in which the cluster resides.
-Must be in the form of <geographic-area>-<location><number> (e.g., us-central1, europe-west12).
-Must contain exactly one hyphen separating the geographic area from the location.
-Must end with one or more digits.
-Valid examples: &ldquo;us-central1&rdquo;, &ldquo;europe-west2&rdquo;, &ldquo;europe-west12&rdquo;, &ldquo;northamerica-northeast1&rdquo;
-Invalid examples: &ldquo;us1&rdquo; (no hyphen), &ldquo;us-central&rdquo; (no trailing digits), &ldquo;us-central1-a&rdquo; (zone suffix)
+<p>region is the GCP region in which the cluster resides (e.g., us-central1, europe-west2).
+Must start with lowercase letters, contain exactly one hyphen, and end with digits.
 For a full list of valid regions, see: <a href="https://cloud.google.com/compute/docs/regions-zones">https://cloud.google.com/compute/docs/regions-zones</a>.</p>
 </td>
 </tr>
 <tr>
 <td>
-<code>networkConfig</code></br>
+<code>networkConfig,omitzero</code></br>
 <em>
 <a href="#hypershift.openshift.io/v1beta1.GCPNetworkConfig">
 GCPNetworkConfig
@@ -35462,7 +35477,9 @@ This value must be a valid IPv4 or IPv6 address.</p>
 <td>
 <code>forwardingRuleName</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -35479,15 +35496,19 @@ Populated by the reconciler via GCP API lookup</p>
 </em>
 </td>
 <td>
-<p>consumerAcceptList specifies which customer projects can connect
-Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers (e.g. &ldquo;123456789012&rdquo;)</p>
+<p>consumerAcceptList specifies which customer projects can connect.
+Accepts both project IDs (e.g. &ldquo;my-project-123&rdquo;) and project numbers (e.g. &ldquo;123456789012&rdquo;).
+A maximum of 50 entries are allowed.
+See <a href="https://cloud.google.com/resource-manager/docs/creating-managing-projects">https://cloud.google.com/resource-manager/docs/creating-managing-projects</a> for project ID and number formats.</p>
 </td>
 </tr>
 <tr>
 <td>
 <code>natSubnet</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -35550,8 +35571,9 @@ string
 </td>
 <td>
 <em>(Optional)</em>
-<p>serviceAttachmentURI is the URI customers use to connect
-Format: projects/{project}/regions/{region}/serviceAttachments/{name}</p>
+<p>serviceAttachmentURI is the URI customers use to connect.
+Format: projects/{project}/regions/{region}/serviceAttachments/{name}
+See <a href="https://cloud.google.com/vpc/docs/configure-private-service-connect-producer">https://cloud.google.com/vpc/docs/configure-private-service-connect-producer</a> for service attachment details.</p>
 </td>
 </tr>
 <tr>
@@ -35663,7 +35685,6 @@ string
 </em>
 </td>
 <td>
-<em>(Optional)</em>
 <p>value is the value part of the label. A label value can have a maximum of 63 characters.
 Empty values are allowed by GCP. If non-empty, it must start with a lowercase letter,
 contain only lowercase letters, digits, underscores, or hyphens, and end with a lowercase letter or digit.
@@ -35672,6 +35693,19 @@ See <a href="https://cloud.google.com/compute/docs/labeling-resources">https://c
 </tr>
 </tbody>
 </table>
+###GCPResourceName { #hypershift.openshift.io/v1beta1.GCPResourceName }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodePoolPlatform">GCPNodePoolPlatform</a>, 
+<a href="#hypershift.openshift.io/v1beta1.GCPPrivateServiceConnectSpec">GCPPrivateServiceConnectSpec</a>, 
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceReference">GCPResourceReference</a>)
+</p>
+<p>
+<p>GCPResourceName is the name of a GCP resource following RFC 1035 naming conventions.
+Must start with a lowercase letter, contain only lowercase letters, digits, and hyphens,
+must not end with a hyphen, and be 1-63 characters long.
+See <a href="https://cloud.google.com/compute/docs/naming-resources">https://cloud.google.com/compute/docs/naming-resources</a> for details.</p>
+</p>
 ###GCPResourceReference { #hypershift.openshift.io/v1beta1.GCPResourceReference }
 <p>
 (<em>Appears on:</em>
@@ -35694,7 +35728,9 @@ See <a href="https://google.aip.dev/122">https://google.aip.dev/122</a> for GCP 
 <td>
 <code>name</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPResourceName">
+GCPResourceName
+</a>
 </em>
 </td>
 <td>
@@ -35707,6 +35743,17 @@ See <a href="https://cloud.google.com/compute/docs/naming-resources">https://clo
 </tr>
 </tbody>
 </table>
+###GCPServiceAccountEmail { #hypershift.openshift.io/v1beta1.GCPServiceAccountEmail }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.GCPNodeServiceAccount">GCPNodeServiceAccount</a>, 
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountsEmails">GCPServiceAccountsEmails</a>)
+</p>
+<p>
+<p>GCPServiceAccountEmail is the email address of a Google Service Account.
+Format: service-account-name@project-id.iam.gserviceaccount.com
+See <a href="https://cloud.google.com/iam/docs/service-accounts-create">https://cloud.google.com/iam/docs/service-accounts-create</a> for service account naming rules.</p>
+</p>
 ###GCPServiceAccountsEmails { #hypershift.openshift.io/v1beta1.GCPServiceAccountsEmails }
 <p>
 (<em>Appears on:</em>
@@ -35728,7 +35775,9 @@ Each service account should have the appropriate IAM permissions for its specifi
 <td>
 <code>nodePool</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -35749,7 +35798,9 @@ the required service accounts with appropriate IAM roles and WIF bindings.</p>
 <td>
 <code>controlPlane</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -35770,7 +35821,9 @@ the required service accounts with appropriate IAM roles and WIF bindings.</p>
 <td>
 <code>cloudController</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -35791,7 +35844,9 @@ the required service accounts with appropriate IAM roles and WIF bindings.</p>
 <td>
 <code>storage</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -35813,7 +35868,9 @@ the required service accounts with appropriate IAM roles and WIF bindings.</p>
 <td>
 <code>imageRegistry</code></br>
 <em>
-string
+<a href="#hypershift.openshift.io/v1beta1.GCPServiceAccountEmail">
+GCPServiceAccountEmail
+</a>
 </em>
 </td>
 <td>
@@ -35858,7 +35915,8 @@ string
 <td>
 <p>projectNumber is the numeric GCP project identifier for WIF configuration.
 This differs from the project ID and is required for workload identity pools.
-Must be a numeric string representing the GCP project number.</p>
+Must be a numeric string representing the GCP project number.
+See <a href="https://cloud.google.com/resource-manager/docs/creating-managing-projects">https://cloud.google.com/resource-manager/docs/creating-managing-projects</a> for project number details.</p>
 <p>This is a user-provided value obtained from GCP (found in GCP Console or via <code>gcloud projects describe PROJECT_ID</code>).
 Also available in the output of <code>hypershift infra create gcp</code>.</p>
 </td>
@@ -35876,7 +35934,8 @@ This pool is used to manage external identity mappings.
 Must be 4-32 characters and start with a lowercase letter.
 Allowed characters: lowercase letters (a-z), digits (0-9), hyphens (-).
 Cannot start or end with a hyphen.
-The prefix &ldquo;gcp-&rdquo; is reserved by Google and cannot be used.</p>
+The prefix &ldquo;gcp-&rdquo; is reserved by Google and cannot be used.
+See <a href="https://cloud.google.com/iam/docs/manage-workload-identity-pools-providers">https://cloud.google.com/iam/docs/manage-workload-identity-pools-providers</a> for naming rules.</p>
 <p>This is a user-provided value referencing a pre-created Workload Identity Pool.
 Typically obtained from the output of <code>hypershift infra create gcp</code> which creates
 the WIF infrastructure and generates appropriate pool IDs.</p>
@@ -35895,7 +35954,8 @@ This provider handles the token exchange between external and GCP identities.
 Must be 4-32 characters and start with a lowercase letter.
 Allowed characters: lowercase letters (a-z), digits (0-9), hyphens (-).
 Cannot start or end with a hyphen.
-The prefix &ldquo;gcp-&rdquo; is reserved by Google and cannot be used.</p>
+The prefix &ldquo;gcp-&rdquo; is reserved by Google and cannot be used.
+See <a href="https://cloud.google.com/iam/docs/manage-workload-identity-pools-providers">https://cloud.google.com/iam/docs/manage-workload-identity-pools-providers</a> for naming rules.</p>
 <p>This is a user-provided value referencing a pre-created OIDC Provider within the WIF Pool.
 Typically obtained from the output of <code>hypershift infra create gcp</code>.</p>
 </td>

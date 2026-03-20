@@ -542,7 +542,7 @@ func ReconcileDNS(ctx context.Context, hcp *hyperv1.HostedControlPlane, pscEndpo
 	clusterName := hcp.Name
 	baseDomain := hcp.Spec.DNS.BaseDomain
 	projectID := gcpSpec.Project
-	vpcNetwork := gcpSpec.NetworkConfig.Network.Name
+	vpcNetwork := string(gcpSpec.NetworkConfig.Network.Name)
 
 	// Generate zone names
 	names, err := generateZoneNames(clusterName, baseDomain)
