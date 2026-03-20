@@ -760,6 +760,24 @@ func TestKarpenter(t *testing.T) {
 					}
 					return true, nil
 				})
+				// Wait for the subnet to be removed from all AWSEndpointService.Spec.SubnetIDs
+				// in the HCP namespace. The hypershift-operator reconciles ConfigMap changes
+				// into Spec.SubnetIDs; we must wait for this before deleting the AWS subnet
+				// to avoid the CPO hitting InvalidSubnetId.NotFound when it calls ModifyVpcEndpoint.
+				_ = wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+					list := &hyperv1.AWSEndpointServiceList{}
+					if err := mgtClient.List(ctx, list, crclient.InNamespace(hcpNS)); err != nil {
+						return false, nil
+					}
+					for _, es := range list.Items {
+						for _, id := range es.Spec.SubnetIDs {
+							if id == subnetID {
+								return false, nil // still present
+							}
+						}
+					}
+					return true, nil // gone from all AWSEndpointServices
+				})
 				cleanupSubnet()
 			})
 			t.Logf("Created OpenshiftEC2NodeClass %q selecting subnet %s", customNodeClass.Name, subnetID)
