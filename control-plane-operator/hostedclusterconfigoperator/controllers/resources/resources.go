@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cco"
 	ccm "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/cloudcontrollermanager/azure"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/crd"
+	gcpresources "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/gcp"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/ingress"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/kas"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/konnectivity"
@@ -2036,6 +2037,10 @@ func (r *reconciler) reconcileCloudCredentialSecrets(ctx context.Context, hcp *h
 			if err != nil {
 				errs = append(errs, fmt.Errorf("failed to reconcile powervs image registry cloud credentials secret %w", err))
 			}
+		}
+	case hyperv1.GCPPlatform:
+		if hcp.Spec.Platform.GCP != nil {
+			errs = append(errs, gcpresources.SetupOperandCredentials(ctx, r.client, r.CreateOrUpdateProvider, hcp)...)
 		}
 	}
 	return errs
