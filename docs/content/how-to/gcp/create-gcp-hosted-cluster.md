@@ -61,8 +61,8 @@ hypershift create cluster gcp \
 | `--project` | Yes | Hosted cluster GCP project ID |
 | `--region` | Yes | GCP region |
 | `--network` | Yes | VPC network name (from `create infra gcp` output) |
-| `--subnet` | Yes | Subnet name for worker nodes (from `create infra gcp` output) |
-| `--private-service-connect-subnet` | Yes | Subnet for PSC endpoints in the HC project (from `create infra gcp` output) |
+| `--subnet` | Yes | Subnet for worker nodes (from `create infra gcp` output: `subnetName`) |
+| `--private-service-connect-subnet` | Yes | Subnet for PSC endpoints (same as `--subnet`) |
 | `--endpoint-access` | Yes | `Private` or `PublicAndPrivate` |
 | `--workload-identity-project-number` | Yes | GCP project number (from `create iam gcp` output) |
 | `--workload-identity-pool-id` | Yes | WIF pool ID (from `create iam gcp` output) |
