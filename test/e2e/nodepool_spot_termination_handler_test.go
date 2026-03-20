@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/google/uuid"
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -143,20 +143,20 @@ func (s *SpotTerminationHandlerTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		}()
 
 		// Step 1: Create an SQS queue for testing and add it to the HostedCluster spec
-		sqsClient := e2eutil.GetSQSClient(s.clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, s.clusterOpts.AWSPlatform.Region)
+		sqsClient := e2eutil.GetSQSClient(s.ctx, s.clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, s.clusterOpts.AWSPlatform.Region)
 		sqsQueueName := s.hostedCluster.Name + "-nth-queue"
 		t.Logf("Creating SQS queue %s", sqsQueueName)
-		createQueueResult, err := sqsClient.CreateQueue(&sqs.CreateQueueInput{
+		createQueueResult, err := sqsClient.CreateQueue(s.ctx, &sqs.CreateQueueInput{
 			QueueName: aws.String(sqsQueueName),
 		})
 		if err != nil {
 			t.Fatalf("failed to create SQS queue %s: %v", sqsQueueName, err)
 		}
-		sqsQueueURL := aws.StringValue(createQueueResult.QueueUrl)
+		sqsQueueURL := aws.ToString(createQueueResult.QueueUrl)
 		t.Logf("Created SQS queue: %s", sqsQueueURL)
 		defer func() {
 			t.Logf("Cleaning up: deleting SQS queue %s", sqsQueueName)
-			if _, err := sqsClient.DeleteQueue(&sqs.DeleteQueueInput{
+			if _, err := sqsClient.DeleteQueue(s.ctx, &sqs.DeleteQueueInput{
 				QueueUrl: aws.String(sqsQueueURL),
 			}); err != nil {
 				t.Logf("warning: failed to delete SQS queue: %v", err)
@@ -262,7 +262,7 @@ func (s *SpotTerminationHandlerTest) Run(t *testing.T, nodePool hyperv1.NodePool
 			t.Fatalf("failed to marshal rebalance event: %v", err)
 		}
 
-		_, err = sqsClient.SendMessage(&sqs.SendMessageInput{
+		_, err = sqsClient.SendMessage(s.ctx, &sqs.SendMessageInput{
 			QueueUrl:    aws.String(sqsQueueURL),
 			MessageBody: aws.String(string(eventJSON)),
 		})
