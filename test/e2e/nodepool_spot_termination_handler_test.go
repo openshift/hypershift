@@ -34,9 +34,6 @@ const (
 	// awsNodeTerminationHandlerDeploymentName is the name of the termination handler deployment.
 	awsNodeTerminationHandlerDeploymentName = "aws-node-termination-handler"
 
-	// testSQSQueueName is the SQS queue name used for testing.
-	testSQSQueueName = "agarcial-nth-queue"
-
 	// rebalanceRecommendationTaintKey is the taint key applied by the AWS Node Termination Handler
 	// when it receives an EC2 rebalance recommendation event.
 	rebalanceRecommendationTaintKey = "aws-node-termination-handler/rebalance-recommendation"
@@ -69,6 +66,9 @@ type SpotTerminationHandlerTest struct {
 	hostedCluster       *hyperv1.HostedCluster
 	hostedClusterClient crclient.Client
 	clusterOpts         e2eutil.PlatformAgnosticOptions
+
+	// sqsQueueURL is the URL of the SQS queue created dynamically during Setup.
+	sqsQueueURL string
 }
 
 func NewSpotTerminationHandlerTest(ctx context.Context, mgmtClient crclient.Client, hostedCluster *hyperv1.HostedCluster, hcClient crclient.Client, clusterOpts e2eutil.PlatformAgnosticOptions) *SpotTerminationHandlerTest {
@@ -88,6 +88,31 @@ func (s *SpotTerminationHandlerTest) Setup(t *testing.T) {
 	if e2eutil.IsLessThan(e2eutil.Version422) {
 		t.Skip("test only supported on version 4.22 and above")
 	}
+
+	// Create a dedicated SQS queue for this test run and register cleanup.
+	queueName := e2eutil.SimpleNameGenerator.GenerateName("e2e-nth-")
+	sqsClient := e2eutil.GetSQSClient(s.clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, s.clusterOpts.AWSPlatform.Region)
+	createCtx, createCancel := context.WithTimeout(s.ctx, 30*time.Second)
+	defer createCancel()
+	createResult, err := sqsClient.CreateQueueWithContext(createCtx, &sqs.CreateQueueInput{
+		QueueName: aws.String(queueName),
+	})
+	if err != nil {
+		t.Fatalf("failed to create SQS queue %s: %v", queueName, err)
+	}
+	s.sqsQueueURL = aws.StringValue(createResult.QueueUrl)
+	t.Logf("Created SQS queue for test: %s", s.sqsQueueURL)
+
+	t.Cleanup(func() {
+		t.Logf("Cleaning up: deleting SQS queue %s", s.sqsQueueURL)
+		deleteCtx, deleteCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer deleteCancel()
+		if _, err := sqsClient.DeleteQueueWithContext(deleteCtx, &sqs.DeleteQueueInput{
+			QueueUrl: aws.String(s.sqsQueueURL),
+		}); err != nil {
+			t.Logf("warning: failed to delete SQS queue %s: %v", s.sqsQueueURL, err)
+		}
+	})
 }
 
 func (s *SpotTerminationHandlerTest) BuildNodePoolManifest(defaultNodepool hyperv1.NodePool) (*hyperv1.NodePool, error) {
@@ -145,16 +170,10 @@ func (s *SpotTerminationHandlerTest) Run(t *testing.T, nodePool hyperv1.NodePool
 			}
 		}()
 
-		// Step 1: Discover SQS queue URL and add it to the HostedCluster spec
+		// Step 1: Add the SQS queue URL (created during Setup) to the HostedCluster spec
 		sqsClient := e2eutil.GetSQSClient(s.clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, s.clusterOpts.AWSPlatform.Region)
-		queueURLResult, err := sqsClient.GetQueueUrl(&sqs.GetQueueUrlInput{
-			QueueName: aws.String(testSQSQueueName),
-		})
-		if err != nil {
-			t.Fatalf("failed to get SQS queue URL for queue %s: %v", testSQSQueueName, err)
-		}
-		sqsQueueURL := aws.StringValue(queueURLResult.QueueUrl)
-		t.Logf("Discovered SQS queue URL: %s", sqsQueueURL)
+		sqsQueueURL := s.sqsQueueURL
+		t.Logf("Using SQS queue URL: %s", sqsQueueURL)
 
 		t.Logf("Adding SQS queue URL to HostedCluster spec %s/%s", s.hostedCluster.Namespace, s.hostedCluster.Name)
 		err = e2eutil.UpdateObject(t, s.ctx, s.mgmtClient, s.hostedCluster, func(obj *hyperv1.HostedCluster) {
