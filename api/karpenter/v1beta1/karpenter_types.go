@@ -47,6 +47,9 @@ type KubeletConfiguration struct {
 	// CPUCFSQuota enables CPU CFS quota enforcement for containers that specify CPU limits.
 	// +optional
 	CPUCFSQuota *bool `json:"cpuCFSQuota,omitempty"`
+	// PodPidsLimit is the maximum number of PIDs in any pod.
+	// +optional
+	PodPidsLimit *int64 `json:"podPidsLimit,omitempty"`
 }
 
 const (

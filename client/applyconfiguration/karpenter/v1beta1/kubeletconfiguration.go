@@ -36,6 +36,7 @@ type KubeletConfigurationApplyConfiguration struct {
 	ImageGCHighThresholdPercent *int32                 `json:"imageGCHighThresholdPercent,omitempty"`
 	ImageGCLowThresholdPercent  *int32                 `json:"imageGCLowThresholdPercent,omitempty"`
 	CPUCFSQuota                 *bool                  `json:"cpuCFSQuota,omitempty"`
+	PodPidsLimit                *int64                 `json:"podPidsLimit,omitempty"`
 }
 
 // KubeletConfigurationApplyConfiguration constructs a declarative configuration of the KubeletConfiguration type for use with
@@ -169,5 +170,13 @@ func (b *KubeletConfigurationApplyConfiguration) WithImageGCLowThresholdPercent(
 // If called multiple times, the CPUCFSQuota field is set to the value of the last call.
 func (b *KubeletConfigurationApplyConfiguration) WithCPUCFSQuota(value bool) *KubeletConfigurationApplyConfiguration {
 	b.CPUCFSQuota = &value
+	return b
+}
+
+// WithPodPidsLimit sets the PodPidsLimit field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the PodPidsLimit field is set to the value of the last call.
+func (b *KubeletConfigurationApplyConfiguration) WithPodPidsLimit(value int64) *KubeletConfigurationApplyConfiguration {
+	b.PodPidsLimit = &value
 	return b
 }

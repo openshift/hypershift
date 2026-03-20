@@ -389,6 +389,104 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "When Kubelet config is set it should set scheduling-relevant fields on EC2NodeClass",
+			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				Kubelet: &hyperkarpenterv1.KubeletConfiguration{
+					MaxPods:     ptr.To(int32(110)),
+					PodsPerCore: ptr.To(int32(10)),
+					SystemReserved: map[string]string{
+						"cpu":    "100m",
+						"memory": "256Mi",
+					},
+					KubeReserved: map[string]string{
+						"cpu":    "200m",
+						"memory": "512Mi",
+					},
+					EvictionHard: map[string]string{
+						"memory.available": "100Mi",
+					},
+					CPUCFSQuota:  ptr.To(true),
+					PodPidsLimit: ptr.To(int64(4096)),
+				},
+			},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						Tags: map[string]string{
+							"kubernetes.io/role/internal-elb":                    "1",
+							fmt.Sprintf("kubernetes.io/cluster/%s", testInfraID): "*",
+						},
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				BlockDeviceMappings: []*awskarpenterv1.BlockDeviceMapping{
+					{
+						DeviceName: ptr.To("/dev/xvda"),
+						EBS: &awskarpenterv1.BlockDevice{
+							VolumeSize: ptr.To(resource.MustParse("120Gi")),
+							VolumeType: ptr.To("gp3"),
+							Encrypted:  ptr.To(true),
+						},
+					},
+				},
+				Kubelet: &awskarpenterv1.KubeletConfiguration{
+					MaxPods:     ptr.To(int32(110)),
+					PodsPerCore: ptr.To(int32(10)),
+					SystemReserved: map[string]string{
+						"cpu":    "100m",
+						"memory": "256Mi",
+					},
+					KubeReserved: map[string]string{
+						"cpu":    "200m",
+						"memory": "512Mi",
+					},
+					EvictionHard: map[string]string{
+						"memory.available": "100Mi",
+					},
+					CPUCFSQuota: ptr.To(true),
+				},
+			},
+		},
+		{
+			name: "When Kubelet config is nil it should not set Kubelet on EC2NodeClass",
+			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
+				Kubelet: nil,
+			},
+			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
+				SubnetSelectorTerms: []awskarpenterv1.SubnetSelectorTerm{
+					{
+						Tags: map[string]string{
+							"kubernetes.io/role/internal-elb":                    "1",
+							fmt.Sprintf("kubernetes.io/cluster/%s", testInfraID): "*",
+						},
+					},
+				},
+				SecurityGroupSelectorTerms: []awskarpenterv1.SecurityGroupSelectorTerm{
+					{
+						Tags: map[string]string{
+							"karpenter.sh/discovery": testInfraID,
+						},
+					},
+				},
+				BlockDeviceMappings: []*awskarpenterv1.BlockDeviceMapping{
+					{
+						DeviceName: ptr.To("/dev/xvda"),
+						EBS: &awskarpenterv1.BlockDevice{
+							VolumeSize: ptr.To(resource.MustParse("120Gi")),
+							VolumeType: ptr.To("gp3"),
+							Encrypted:  ptr.To(true),
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range testCases {
