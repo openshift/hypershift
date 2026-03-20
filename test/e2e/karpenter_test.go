@@ -719,7 +719,6 @@ func TestKarpenter(t *testing.T) {
 
 			// Create a small test subnet in the VPC.
 			subnetID, cleanupSubnet := e2eutil.CreateTestSubnet(ctx, t, ec2client, vpcID, az, hostedCluster.Spec.InfraID)
-			t.Cleanup(cleanupSubnet)
 			t.Logf("Created test subnet %s in AZ %s", subnetID, az)
 
 			// Create an OpenshiftEC2NodeClass that selects the subnet by ID.
@@ -733,7 +732,36 @@ func TestKarpenter(t *testing.T) {
 				},
 			}
 			g.Expect(guestClient.Create(ctx, customNodeClass)).To(Succeed())
-			defer func() { _ = guestClient.Delete(ctx, customNodeClass) }()
+			t.Cleanup(func() {
+				// Delete the NodeClass first so controllers stop referencing the subnet.
+				if err := guestClient.Delete(ctx, customNodeClass); err != nil {
+					t.Logf("cleanup: failed to delete OpenshiftEC2NodeClass %q: %v", customNodeClass.Name, err)
+				}
+				// Wait for the subnet to be removed from the karpenter-subnets ConfigMap
+				// before deleting it in AWS, to avoid InvalidSubnetId.NotFound errors
+				// when the CPO tries to modify VPC endpoints.
+				hcpNS := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
+				_ = wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+					cm := &corev1.ConfigMap{}
+					if err := mgtClient.Get(ctx, crclient.ObjectKey{
+						Namespace: hcpNS,
+						Name:      karpenterutil.KarpenterSubnetsConfigMapName,
+					}, cm); err != nil {
+						return false, nil
+					}
+					var ids []string
+					if err := json.Unmarshal([]byte(cm.Data["subnetIDs"]), &ids); err != nil {
+						return false, nil
+					}
+					for _, id := range ids {
+						if id == subnetID {
+							return false, nil
+						}
+					}
+					return true, nil
+				})
+				cleanupSubnet()
+			})
 			t.Logf("Created OpenshiftEC2NodeClass %q selecting subnet %s", customNodeClass.Name, subnetID)
 
 			// Wait for OpenshiftEC2NodeClass.Status.Subnets to contain the subnet ID.
@@ -765,17 +793,29 @@ func TestKarpenter(t *testing.T) {
 			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 			t.Logf("karpenter-subnets ConfigMap contains subnet %s", subnetID)
 
-			// Wait for AWSEndpointService.Spec.SubnetIDs to include the subnet ID.
-			t.Logf("Waiting for AWSEndpointService kube-apiserver-private to include subnet %s", subnetID)
+			// Wait for any AWSEndpointService in the HCP namespace to include the subnet ID.
+			// Which AWSEndpointService resources exist depends on the APIServer publishing
+			// strategy: with LoadBalancer publishing, "kube-apiserver-private" is created;
+			// with Route publishing (used when ExternalDNS is configured), only
+			// "private-router" exists. We check all of them to be independent of the
+			// publishing strategy.
+			t.Logf("Waiting for any AWSEndpointService in %s to include subnet %s", hcpNamespace, subnetID)
 			g.Eventually(func(g Gomega) {
-				endpointService := &hyperv1.AWSEndpointService{}
-				g.Expect(mgtClient.Get(ctx, crclient.ObjectKey{
-					Namespace: hcpNamespace,
-					Name:      "kube-apiserver-private",
-				}, endpointService)).To(Succeed())
-				g.Expect(endpointService.Spec.SubnetIDs).To(ContainElement(subnetID), "AWSEndpointService should include the test subnet")
+				list := &hyperv1.AWSEndpointServiceList{}
+				g.Expect(mgtClient.List(ctx, list, crclient.InNamespace(hcpNamespace))).To(Succeed())
+				g.Expect(list.Items).NotTo(BeEmpty(), "expected at least one AWSEndpointService in namespace %s", hcpNamespace)
+				found := false
+				for _, es := range list.Items {
+					for _, id := range es.Spec.SubnetIDs {
+						if id == subnetID {
+							t.Logf("AWSEndpointService %q includes subnet %s", es.Name, subnetID)
+							found = true
+							break
+						}
+					}
+				}
+				g.Expect(found).To(BeTrue(), "no AWSEndpointService in %s contains subnet %s", hcpNamespace, subnetID)
 			}).WithTimeout(3 * time.Minute).WithPolling(10 * time.Second).Should(Succeed())
-			t.Logf("AWSEndpointService kube-apiserver-private includes subnet %s", subnetID)
 
 			// Launch a node in the custom subnet to verify it's functional.
 			testNodePool := karpenterNodePool.DeepCopy()
