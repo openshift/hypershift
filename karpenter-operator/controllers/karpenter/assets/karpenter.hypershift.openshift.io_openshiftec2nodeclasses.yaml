@@ -195,27 +195,31 @@ spec:
                 description: |-
                   metadataOptions contains parameters for specifying the exposure of the
                   Instance Metadata Service to provisioned EC2 nodes.
-                  Refer to recommended, security best practices
-                  (https://aws.github.io/aws-eks-best-practices/security/docs/iam/#restrict-access-to-the-instance-profile-assigned-to-the-worker-node)
-                  for limiting exposure of Instance Metadata and User Data to pods.
-                  If omitted, defaults to httpEndpoint Enabled, with httpProtocolIPv6
-                  Disabled, with httpPutResponseHopLimit of 1, and with httpTokens
-                  Required.
+                  When omitted, the platform preserves control over default behaviour
+                  which is subject to change over time. Currently defaults to access
+                  HTTPEndpoint, httpIPProtocol IPv4, httpPutResponseHopLimit of 1,
+                  and httpTokens Required (IMDSv2).
                 minProperties: 1
                 properties:
                   access:
                     description: |-
                       access specifies how the instance metadata endpoint is accessed on
-                      provisioned nodes. When omitted, the platform defaults to HTTP endpoint access.
+                      provisioned nodes. Valid values are "HTTPEndpoint" and "None".
+                      When set to "HTTPEndpoint", the instance metadata service is accessible
+                      via the HTTP endpoint. When set to "None", instance metadata is not
+                      accessible on the node.
+                      When omitted, the platform defaults to HTTP endpoint access.
                     enum:
                     - HTTPEndpoint
                     - None
                     type: string
-                  httpProtocolIP:
+                  httpIPProtocol:
                     description: |-
-                      httpProtocolIP specifies the IP protocol version for the instance metadata
-                      service endpoint on provisioned nodes. When omitted, the platform defaults
-                      to IPv4.
+                      httpIPProtocol specifies the IP protocol version for the instance metadata
+                      service endpoint on provisioned nodes. Valid values are "IPv4" and "IPv6".
+                      When set to "IPv4", the metadata endpoint uses the IPv4 protocol.
+                      When set to "IPv6", the metadata endpoint uses the IPv6 protocol.
+                      When omitted, the platform defaults to IPv4.
                     enum:
                     - IPv4
                     - IPv6
@@ -223,8 +227,11 @@ spec:
                   httpPutResponseHopLimit:
                     description: |-
                       httpPutResponseHopLimit is the desired HTTP PUT response hop limit for
-                      instance metadata requests. The larger the number, the further instance
-                      metadata requests can travel. Possible values are integers from 1 to 64.
+                      instance metadata requests. Possible values are integers from 1 to 64.
+                      A value of 1 restricts IMDS access to the EC2 instance only, preventing
+                      pods from reaching it. A value of 2 allows pods to access IMDS through
+                      the container network bridge. Values above 2 are for advanced networking
+                      scenarios such as nested virtualization.
                       When omitted, the platform defaults to a hop limit of 1.
                     format: int64
                     maximum: 64
@@ -233,18 +240,11 @@ spec:
                   httpTokens:
                     description: |-
                       httpTokens determines the state of token usage for instance metadata
-                      requests. When omitted, the platform defaults to "Required" (IMDSv2).
-
-                      If the state is "Optional", one can choose to retrieve instance metadata with
-                      or without a signed token header on the request. If one retrieves the IAM
-                      role credentials without a token, the version 1.0 role credentials are
-                      returned. If one retrieves the IAM role credentials using a valid signed
-                      token, the version 2.0 role credentials are returned.
-
-                      If the state is "Required", one must send a signed token header with any
-                      instance metadata retrieval requests. In this state, retrieving the IAM
-                      role credentials always returns the version 2.0 credentials; the version
-                      1.0 credentials are not available.
+                      requests. Valid values are "Required" and "Optional".
+                      When set to "Required", a signed token header (IMDSv2) must be used for
+                      all metadata requests. When set to "Optional", metadata can be retrieved
+                      with or without a token (IMDSv1/v2).
+                      When omitted, the platform defaults to requiring tokens (IMDSv2).
                     enum:
                     - Required
                     - Optional

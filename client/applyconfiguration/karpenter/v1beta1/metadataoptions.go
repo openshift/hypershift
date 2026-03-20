@@ -25,7 +25,7 @@ import (
 // with apply.
 type MetadataOptionsApplyConfiguration struct {
 	Access                  *karpenterv1beta1.MetadataAccess          `json:"access,omitempty"`
-	HTTPProtocolIP          *karpenterv1beta1.MetadataHTTPProtocol    `json:"httpProtocolIP,omitempty"`
+	HTTPIPProtocol          *karpenterv1beta1.MetadataHTTPProtocol    `json:"httpIPProtocol,omitempty"`
 	HTTPPutResponseHopLimit *int64                                    `json:"httpPutResponseHopLimit,omitempty"`
 	HTTPTokens              *karpenterv1beta1.MetadataHTTPTokensState `json:"httpTokens,omitempty"`
 }
@@ -44,11 +44,11 @@ func (b *MetadataOptionsApplyConfiguration) WithAccess(value karpenterv1beta1.Me
 	return b
 }
 
-// WithHTTPProtocolIP sets the HTTPProtocolIP field in the declarative configuration to the given value
+// WithHTTPIPProtocol sets the HTTPIPProtocol field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
-// If called multiple times, the HTTPProtocolIP field is set to the value of the last call.
-func (b *MetadataOptionsApplyConfiguration) WithHTTPProtocolIP(value karpenterv1beta1.MetadataHTTPProtocol) *MetadataOptionsApplyConfiguration {
-	b.HTTPProtocolIP = &value
+// If called multiple times, the HTTPIPProtocol field is set to the value of the last call.
+func (b *MetadataOptionsApplyConfiguration) WithHTTPIPProtocol(value karpenterv1beta1.MetadataHTTPProtocol) *MetadataOptionsApplyConfiguration {
+	b.HTTPIPProtocol = &value
 	return b
 }
 

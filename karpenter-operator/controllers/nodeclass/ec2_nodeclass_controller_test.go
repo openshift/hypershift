@@ -124,7 +124,7 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 				Monitoring:          hyperkarpenterv1.MonitoringStateDetailed,
 				MetadataOptions: hyperkarpenterv1.MetadataOptions{
 					Access:                  hyperkarpenterv1.MetadataAccessHTTPEndpoint,
-					HTTPProtocolIP:          hyperkarpenterv1.MetadataHTTPProtocolIPv4,
+					HTTPIPProtocol:          hyperkarpenterv1.MetadataHTTPProtocolIPv4,
 					HTTPPutResponseHopLimit: 1,
 					HTTPTokens:              hyperkarpenterv1.MetadataHTTPTokensStateRequired,
 				},
@@ -174,7 +174,7 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 			spec: hyperkarpenterv1.OpenshiftEC2NodeClassSpec{
 				MetadataOptions: hyperkarpenterv1.MetadataOptions{
 					Access:                  hyperkarpenterv1.MetadataAccessHTTPEndpoint,
-					HTTPProtocolIP:          hyperkarpenterv1.MetadataHTTPProtocolIPv4,
+					HTTPIPProtocol:          hyperkarpenterv1.MetadataHTTPProtocolIPv4,
 					HTTPPutResponseHopLimit: 2,
 					HTTPTokens:              hyperkarpenterv1.MetadataHTTPTokensStateRequired,
 				},

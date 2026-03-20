@@ -486,7 +486,7 @@ func TestKarpenter(t *testing.T) {
 					},
 					MetadataOptions: hyperkarpenterv1.MetadataOptions{
 						Access:                  hyperkarpenterv1.MetadataAccessHTTPEndpoint,
-						HTTPProtocolIP:          hyperkarpenterv1.MetadataHTTPProtocolIPv4,
+						HTTPIPProtocol:          hyperkarpenterv1.MetadataHTTPProtocolIPv4,
 						HTTPPutResponseHopLimit: 2,
 						HTTPTokens:              hyperkarpenterv1.MetadataHTTPTokensStateRequired,
 					},
