@@ -14,7 +14,7 @@ import (
 
 	"io"
 
-	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	awskarpenterv1 "github.com/aws/karpenter-provider-aws/pkg/apis/v1"
 	"github.com/blang/semver"
 	. "github.com/onsi/gomega"

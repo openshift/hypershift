@@ -23,10 +23,9 @@ func TestKarpenterKubeletConfiguration(t *testing.T) {
 			expected: nil,
 		},
 		{
-			name: "When all fields are set it should map only upstream-supported fields",
+			name: "When all karpenter-mapped fields are set it should map only upstream-supported fields",
 			spec: OpenshiftEC2NodeClassSpec{
 				Kubelet: &KubeletConfiguration{
-					ClusterDNS:  []string{"10.0.0.10"},
 					MaxPods:     ptr.To(int32(110)),
 					PodsPerCore: ptr.To(int32(10)),
 					SystemReserved: map[string]string{
@@ -50,7 +49,11 @@ func TestKarpenterKubeletConfiguration(t *testing.T) {
 					ImageGCHighThresholdPercent: ptr.To(int32(85)),
 					ImageGCLowThresholdPercent:  ptr.To(int32(80)),
 					CPUCFSQuota:                 ptr.To(true),
-					PodPidsLimit:                ptr.To(int64(4096)),
+					// Fields below exist in our struct but NOT in Karpenter's
+					PodPidsLimit:         ptr.To(int64(4096)),
+					OOMScoreAdj:          ptr.To(int32(-999)),
+					AllowedUnsafeSysctls: []string{"net.ipv4.ip_forward"},
+					SeccompDefault:       ptr.To(true),
 				},
 			},
 			expected: &awskarpenterv1.KubeletConfiguration{
@@ -80,10 +83,12 @@ func TestKarpenterKubeletConfiguration(t *testing.T) {
 			},
 		},
 		{
-			name: "When only PodPidsLimit is set it should return non-nil but effectively empty struct",
+			name: "When only non-karpenter fields are set it should return non-nil but effectively empty struct",
 			spec: OpenshiftEC2NodeClassSpec{
 				Kubelet: &KubeletConfiguration{
-					PodPidsLimit: ptr.To(int64(4096)),
+					PodPidsLimit:         ptr.To(int64(4096)),
+					OOMScoreAdj:          ptr.To(int32(-999)),
+					AllowedUnsafeSysctls: []string{"net.ipv4.ip_forward"},
 				},
 			},
 			expected: &awskarpenterv1.KubeletConfiguration{},

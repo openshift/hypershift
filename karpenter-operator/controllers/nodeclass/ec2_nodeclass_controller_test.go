@@ -408,6 +408,9 @@ func TestReconcileEC2NodeClass(t *testing.T) {
 					},
 					CPUCFSQuota:  ptr.To(true),
 					PodPidsLimit: ptr.To(int64(4096)),
+					// New fields from generated struct (not in Karpenter, should be silently dropped)
+					OOMScoreAdj:    ptr.To(int32(-999)),
+					SeccompDefault: ptr.To(true),
 				},
 			},
 			expectedSpec: awskarpenterv1.EC2NodeClassSpec{
