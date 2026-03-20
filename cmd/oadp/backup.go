@@ -10,10 +10,8 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/oadp"
-	utilroute "github.com/openshift/hypershift/support/util"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/spf13/cobra"
@@ -92,9 +90,14 @@ func (o *CreateOptions) RunBackup(ctx context.Context) error {
 				// In render mode, if we can't connect to cluster, we'll still render but skip validations
 				o.Log.Info("Warning: Cannot connect to cluster for validation, skipping all checks")
 				// Step: Generate backup object with default platform (AWS)
-				backup, _, err := o.GenerateBackupObjectWithPlatform("AWS")
+				backup, resourcePolicyCM, err := o.GenerateBackupObject("AWS")
 				if err != nil {
 					return fmt.Errorf("backup generation failed: %w", err)
+				}
+				if resourcePolicyCM != nil {
+					if err := renderYAMLObject(resourcePolicyCM); err != nil {
+						return err
+					}
 				}
 				return renderYAMLObject(backup)
 			}
@@ -148,15 +151,19 @@ func (o *CreateOptions) RunBackup(ctx context.Context) error {
 	}
 
 	// Step 4: Generate backup object with detected platform
-	backup, backupName, err := o.GenerateBackupObjectWithPlatform(platform)
+	backup, resourcePolicyCM, err := o.GenerateBackupObject(platform)
 	if err != nil {
 		return fmt.Errorf("backup generation failed: %w", err)
 	}
 
 	if o.Render {
 		// Render mode: output YAML to STDOUT
-		err := renderYAMLObject(backup)
-		if err != nil {
+		if resourcePolicyCM != nil {
+			if err := renderYAMLObject(resourcePolicyCM); err != nil {
+				return err
+			}
+		}
+		if err := renderYAMLObject(backup); err != nil {
 			return err
 		}
 		// Ensure proper newline after render for terminal prompt
@@ -169,11 +176,16 @@ func (o *CreateOptions) RunBackup(ctx context.Context) error {
 			return fmt.Errorf("kubernetes client is required for resource creation (not in render mode)")
 		}
 
+		// Create resource policy ConfigMap if needed (KubeVirt platform)
+		if err := createResourcePolicyConfigMap(ctx, o.Client, resourcePolicyCM, o.OADPNamespace, o.Log); err != nil {
+			return err
+		}
+
 		o.Log.Info("Creating backup...")
 		if err := o.Client.Create(ctx, backup); err != nil {
 			return fmt.Errorf("failed to create backup resource: %w", err)
 		}
-		o.Log.Info("Backup created successfully", "name", backupName, "namespace", o.OADPNamespace, "platform", platform)
+		o.Log.Info("Backup created successfully", "name", backup.GetName(), "namespace", o.OADPNamespace, "platform", platform)
 	}
 
 	return nil
@@ -181,13 +193,10 @@ func (o *CreateOptions) RunBackup(ctx context.Context) error {
 
 // Note: randomStringGenerator type is now in types.go
 
-// GenerateBackupName creates a backup name using the format: {hcName}-{hcNamespace}-{randomSuffix}
-// If the name is too long, it uses utils.ShortenName to ensure it doesn't exceed 63 characters
+// GenerateBackupName creates a backup name using the format: {hcName}-{hcNamespace}-{randomSuffix}.
+// If the name is too long, it uses utils.ShortenName to ensure it doesn't exceed 63 characters.
 func GenerateBackupName(hcName, hcNamespace string) string {
-	randomSuffix := utilrand.String(6)
-	baseName := fmt.Sprintf("%s-%s", hcName, hcNamespace)
-	// Use ShortenName to ensure it doesn't exceed DNS1123 subdomain max length (63 chars)
-	return utilroute.ShortenName(baseName, randomSuffix, validation.DNS1123LabelMaxLength)
+	return generateName(hcName, hcNamespace)
 }
 
 // ValidateBackupName validates the custom backup name if provided
@@ -205,7 +214,9 @@ func (o *CreateOptions) ValidateBackupName() error {
 	return nil
 }
 
-func (o *CreateOptions) GenerateBackupObjectWithPlatform(platform string) (*unstructured.Unstructured, string, error) {
+// GenerateBackupObject generates a backup object and, for KubeVirt platform,
+// also returns a resource policy ConfigMap that tells Velero to skip RHCOS boot image PVCs.
+func (o *CreateOptions) GenerateBackupObject(platform string) (*unstructured.Unstructured, *unstructured.Unstructured, error) {
 	// Apply default values if not set
 	if o.StorageLocation == "" {
 		o.StorageLocation = "default"
@@ -244,6 +255,9 @@ func (o *CreateOptions) GenerateBackupObjectWithPlatform(platform string) (*unst
 
 	applyPlatformBackupSpec(spec, platform)
 
+	// For KubeVirt, generate a resource policy ConfigMap to skip RHCOS boot image PVCs
+	resourcePolicyConfigMap := maybeGenerateResourcePolicy(platform, o.HCName, o.HCNamespace, o.OADPNamespace, spec)
+
 	// Create backup object using unstructured to avoid Velero dependency
 	backup := &unstructured.Unstructured{
 		Object: map[string]interface{}{
@@ -259,5 +273,5 @@ func (o *CreateOptions) GenerateBackupObjectWithPlatform(platform string) (*unst
 			"spec": spec,
 		},
 	}
-	return backup, backupName, nil
+	return backup, resourcePolicyConfigMap, nil
 }

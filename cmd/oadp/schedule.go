@@ -10,10 +10,8 @@ import (
 	"github.com/openshift/hypershift/cmd/log"
 	"github.com/openshift/hypershift/cmd/util"
 	"github.com/openshift/hypershift/support/oadp"
-	utilroute "github.com/openshift/hypershift/support/util"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/apimachinery/pkg/util/validation"
 
 	"github.com/spf13/cobra"
@@ -97,13 +95,10 @@ https://hypershift.pages.dev/how-to/disaster-recovery/dr-cli/`,
 	return cmd
 }
 
-// GenerateScheduleName creates a schedule name using the format: {hcName}-{hcNamespace}-{randomSuffix}
-// If the name is too long, it uses utils.ShortenName to ensure it doesn't exceed 63 characters
+// GenerateScheduleName creates a schedule name using the format: {hcName}-{hcNamespace}-{randomSuffix}.
+// If the name is too long, it uses utils.ShortenName to ensure it doesn't exceed 63 characters.
 func GenerateScheduleName(hcName, hcNamespace string) string {
-	randomSuffix := utilrand.String(6)
-	baseName := fmt.Sprintf("%s-%s", hcName, hcNamespace)
-	// Use ShortenName to ensure it doesn't exceed DNS1123 subdomain max length (63 chars)
-	return utilroute.ShortenName(baseName, randomSuffix, validation.DNS1123LabelMaxLength)
+	return generateName(hcName, hcNamespace)
 }
 
 func (o *CreateOptions) RunSchedule(ctx context.Context) error {
@@ -174,13 +169,18 @@ func (o *CreateOptions) RunSchedule(ctx context.Context) error {
 	}
 
 	// Step 6: Generate schedule object
-	schedule, scheduleName, err := o.GenerateScheduleObject(platform)
+	schedule, resourcePolicyCM, err := o.GenerateScheduleObject(platform)
 	if err != nil {
 		return fmt.Errorf("failed to generate schedule object: %w", err)
 	}
 
 	// Step 7: Create or render the schedule
 	if o.Render {
+		if resourcePolicyCM != nil {
+			if err := renderYAMLObject(resourcePolicyCM); err != nil {
+				return err
+			}
+		}
 		return renderYAMLObject(schedule)
 	} else {
 		// Validate that client is available for creation
@@ -188,17 +188,24 @@ func (o *CreateOptions) RunSchedule(ctx context.Context) error {
 			return fmt.Errorf("kubernetes client is required for resource creation (not in render mode)")
 		}
 
+		// Create resource policy ConfigMap if needed (KubeVirt platform)
+		if err := createResourcePolicyConfigMap(ctx, o.Client, resourcePolicyCM, o.OADPNamespace, o.Log); err != nil {
+			return err
+		}
+
 		o.Log.Info("Creating schedule...")
 		if err := o.Client.Create(ctx, schedule); err != nil {
 			return fmt.Errorf("failed to create schedule resource: %w", err)
 		}
-		o.Log.Info("Schedule created successfully", "name", scheduleName, "namespace", o.OADPNamespace, "platform", platform, "schedule", o.Schedule)
+		o.Log.Info("Schedule created successfully", "name", schedule.GetName(), "namespace", o.OADPNamespace, "platform", platform, "schedule", o.Schedule)
 	}
 
 	return nil
 }
 
-func (o *CreateOptions) GenerateScheduleObject(platform string) (*unstructured.Unstructured, string, error) {
+// GenerateScheduleObject generates a schedule object and, for KubeVirt platform,
+// also returns a resource policy ConfigMap that tells Velero to skip RHCOS boot image PVCs.
+func (o *CreateOptions) GenerateScheduleObject(platform string) (*unstructured.Unstructured, *unstructured.Unstructured, error) {
 	// Use the name from flag, or generate if empty
 	scheduleName := o.ScheduleName
 	if scheduleName == "" {
@@ -243,6 +250,9 @@ func (o *CreateOptions) GenerateScheduleObject(platform string) (*unstructured.U
 
 	applyPlatformBackupSpec(backupTemplate, platform)
 
+	// For KubeVirt, generate a resource policy ConfigMap to skip RHCOS boot image PVCs
+	resourcePolicyConfigMap := maybeGenerateResourcePolicy(platform, o.HCName, o.HCNamespace, o.OADPNamespace, backupTemplate)
+
 	// Create schedule spec
 	spec := map[string]interface{}{
 		"template":                   backupTemplate,
@@ -270,7 +280,7 @@ func (o *CreateOptions) GenerateScheduleObject(platform string) (*unstructured.U
 		},
 	}
 
-	return schedule, scheduleName, nil
+	return schedule, resourcePolicyConfigMap, nil
 }
 
 func (o *CreateOptions) ValidateSchedulePace() error {

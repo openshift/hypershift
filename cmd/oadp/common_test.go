@@ -1,14 +1,17 @@
 package oadp
 
 import (
+	"strings"
 	"testing"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
 func TestApplyPlatformBackupSpec(t *testing.T) {
 	tests := []struct {
-		name                  string
-		platform              string
-		expectLabelSelector   bool
+		name                string
+		platform            string
+		expectLabelSelector bool
 	}{
 		{
 			name:                "When platform is KUBEVIRT it should add labelSelector",
@@ -83,6 +86,122 @@ func TestApplyPlatformBackupSpec(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGenerateResourcePolicyConfigMap(t *testing.T) {
+	t.Run("When generating a resource policy ConfigMap it should have correct structure", func(t *testing.T) {
+		cm := GenerateResourcePolicyConfigMap("test-policy", "openshift-adp")
+
+		if cm.GetKind() != "ConfigMap" {
+			t.Errorf("Expected kind 'ConfigMap', got %s", cm.GetKind())
+		}
+		if cm.GetAPIVersion() != "v1" {
+			t.Errorf("Expected apiVersion 'v1', got %s", cm.GetAPIVersion())
+		}
+		if cm.GetName() != "test-policy" {
+			t.Errorf("Expected name 'test-policy', got %s", cm.GetName())
+		}
+		if cm.GetNamespace() != "openshift-adp" {
+			t.Errorf("Expected namespace 'openshift-adp', got %s", cm.GetNamespace())
+		}
+
+		data, found, err := unstructured.NestedString(cm.Object, "data", "policies.yaml")
+		if err != nil || !found {
+			t.Fatal("Expected data.policies.yaml to be set")
+		}
+		if !strings.Contains(data, "hypershift.openshift.io/is-kubevirt-rhcos") {
+			t.Error("Expected policies.yaml to contain the RHCOS label name")
+		}
+		if !strings.Contains(data, "type: skip") {
+			t.Error("Expected policies.yaml to contain skip action")
+		}
+		if !strings.Contains(data, "volumePolicies") {
+			t.Error("Expected policies.yaml to contain volumePolicies")
+		}
+	})
+}
+
+func TestGenerateResourcePolicyName(t *testing.T) {
+	t.Run("When generating a resource policy name it should follow the naming pattern", func(t *testing.T) {
+		name := GenerateResourcePolicyName("test-cluster", "test-ns")
+		expectedPrefix := "test-cluster-test-ns-"
+		if !strings.HasPrefix(name, expectedPrefix) {
+			t.Errorf("Expected name to start with '%s', got '%s'", expectedPrefix, name)
+		}
+		if len(name) != len(expectedPrefix)+6 {
+			t.Errorf("Expected name length %d, got %d", len(expectedPrefix)+6, len(name))
+		}
+	})
+
+	t.Run("When called with the same inputs it should return the same name", func(t *testing.T) {
+		name1 := GenerateResourcePolicyName("test-cluster", "test-ns")
+		name2 := GenerateResourcePolicyName("test-cluster", "test-ns")
+		if name1 != name2 {
+			t.Errorf("Expected deterministic name, got '%s' and '%s'", name1, name2)
+		}
+	})
+
+	t.Run("When called with different inputs it should return different names", func(t *testing.T) {
+		name1 := GenerateResourcePolicyName("cluster-a", "ns-a")
+		name2 := GenerateResourcePolicyName("cluster-b", "ns-b")
+		if name1 == name2 {
+			t.Errorf("Expected different names for different inputs, both got '%s'", name1)
+		}
+	})
+
+	t.Run("When HC name and namespace exceed 63 chars it should shorten properly", func(t *testing.T) {
+		name := GenerateResourcePolicyName("very-long-hostedcluster-name-12345", "very-long-namespace-name-12345")
+		if len(name) > 63 {
+			t.Errorf("Expected name <= 63 chars, got %d: %s", len(name), name)
+		}
+		if len(name) == 0 {
+			t.Error("Expected non-empty name")
+		}
+	})
+}
+
+func TestIsKubeVirtPlatform(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform string
+		expected bool
+	}{
+		{"When platform is KUBEVIRT it should return true", "KUBEVIRT", true},
+		{"When platform is lowercase kubevirt it should return true", "kubevirt", true},
+		{"When platform is mixed case KubeVirt it should return true", "KubeVirt", true},
+		{"When platform is AWS it should return false", "AWS", false},
+		{"When platform is empty it should return false", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isKubeVirtPlatform(tt.platform); got != tt.expected {
+				t.Errorf("isKubeVirtPlatform(%q) = %v, want %v", tt.platform, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestApplyResourcePolicy(t *testing.T) {
+	t.Run("When applying resource policy it should set configmap reference", func(t *testing.T) {
+		spec := map[string]interface{}{}
+		applyResourcePolicy(spec, "my-policy")
+
+		rp, found := spec["resourcePolicy"]
+		if !found {
+			t.Fatal("Expected resourcePolicy to be set")
+		}
+		rpMap, ok := rp.(map[string]interface{})
+		if !ok {
+			t.Fatalf("Expected resourcePolicy to be map, got %T", rp)
+		}
+		if rpMap["kind"] != "configmap" {
+			t.Errorf("Expected kind 'configmap', got %v", rpMap["kind"])
+		}
+		if rpMap["name"] != "my-policy" {
+			t.Errorf("Expected name 'my-policy', got %v", rpMap["name"])
+		}
+	})
 }
 
 func TestApplyPlatformBackupSpecPreservesExistingFields(t *testing.T) {
