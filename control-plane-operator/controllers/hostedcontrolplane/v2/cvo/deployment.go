@@ -204,18 +204,6 @@ func preparePayloadScript(platformType hyperv1.PlatformType, oauthEnabled bool, 
 		fmt.Sprintf("cp -R /release-manifests %s/", payloadDir),
 	)
 
-	// NOTE: We would need to leverage part of the manifest.Include logic (https://github.com/openshift/library-go/blob/0064ad7bd060b9fd52f7840972c1d3e72186d0f0/pkg/manifest/manifest.go#L190-L196)
-	// to properly evaluate which CVO manifests to select based on featureset.
-	// We only have access to bash, so we must filter based on the feature-set annotation in the manifests manually.
-	// Any file that has a feature-set annotation must have a value that matches the current feature set else it is removed.
-	// Files that do not have a feature-set annotation are included unconditionally.
-	stmts = append(stmts, fmt.Sprintf(`for file in $(find %s/manifests/ -name "*.yaml"); do
-    IFS=',' read -ra feature_sets <<< "$(cat $file | grep "release.openshift.io/feature-set:" | awk '{print $2}')"
-    if [[ "${#feature_sets[@]}" -gt 0 ]] && ! [[ " ${feature_sets[*]} " =~ "%s" ]]; then
-        rm -vf $file
-    fi
-done`, payloadDir, featureSet))
-
 	for _, manifest := range manifestsToOmit {
 		if platformType == hyperv1.IBMCloudPlatform || platformType == hyperv1.PowerVSPlatform {
 			if manifest == "0000_50_cluster-storage-operator_10_deployment-ibm-cloud-managed.yaml" || manifest == "0000_50_cluster-csi-snapshot-controller-operator_07_deployment-ibm-cloud-managed.yaml" {

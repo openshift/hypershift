@@ -91,13 +91,11 @@ spec:
           cat > /tmp/clusterversion.json <<EOF
           ${CLUSTER_VERSION_JSON}
           EOF
-          oc get ns openshift-config &> /dev/null || oc create ns openshift-config
-          oc get ns openshift-config-managed &> /dev/null || oc create ns openshift-config-managed
-          oc apply -f /var/payload/manifests/0000_00_cluster-version-operator_01_clusterversions*
-          oc apply -f /tmp/clusterversion.json
-          while true; do
+          echo 'Deciding whether bootstrap resources need to be applied...'
+          ls -l $(grep -rl 'include.release.openshift.io/bootstrap-cluster-version-operator: .*hypershift' /var/payload/manifests) /tmp/clusterversion.json
+          while test -z "$(oc get -o jsonpath='{.status.history[0].version}' clusterversions.config.openshift.io version)"; do
             echo "Applying CVO bootstrap manifests..."
-            if oc apply -f /var/payload/manifests; then
+            if oc apply $(grep -rl 'include.release.openshift.io/bootstrap-cluster-version-operator: .*hypershift' /var/payload/manifests | sed 's/^/-f /') -f /tmp/clusterversion.json; then
               echo "Bootstrap manifests applied successfully."
               break
             fi
