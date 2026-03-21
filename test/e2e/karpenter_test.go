@@ -737,11 +737,10 @@ func TestKarpenter(t *testing.T) {
 				if err := guestClient.Delete(ctx, customNodeClass); err != nil {
 					t.Logf("cleanup: failed to delete OpenshiftEC2NodeClass %q: %v", customNodeClass.Name, err)
 				}
-				// Wait for the subnet to be removed from the karpenter-subnets ConfigMap
-				// before deleting it in AWS, to avoid InvalidSubnetId.NotFound errors
-				// when the CPO tries to modify VPC endpoints.
+				// Wait for the subnet to be removed from the karpenter-subnets ConfigMap.
+				// The karpenter-operator removes it during NodeClass deletion reconciliation.
 				hcpNS := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
-				_ = wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+				if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
 					cm := &corev1.ConfigMap{}
 					if err := mgtClient.Get(ctx, crclient.ObjectKey{
 						Namespace: hcpNS,
@@ -759,12 +758,14 @@ func TestKarpenter(t *testing.T) {
 						}
 					}
 					return true, nil
-				})
-				// Wait for the subnet to be removed from all AWSEndpointService.Spec.SubnetIDs
-				// in the HCP namespace. The hypershift-operator reconciles ConfigMap changes
-				// into Spec.SubnetIDs; we must wait for this before deleting the AWS subnet
-				// to avoid the CPO hitting InvalidSubnetId.NotFound when it calls ModifyVpcEndpoint.
-				_ = wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
+				}); err != nil {
+					t.Logf("cleanup: timed out waiting for subnet %s to leave ConfigMap: %v", subnetID, err)
+				} else {
+					t.Logf("cleanup: subnet %s removed from karpenter-subnets ConfigMap", subnetID)
+				}
+				// Wait for the subnet to be removed from all AWSEndpointService.Spec.SubnetIDs.
+				// The hypershift-operator watches the ConfigMap and reconciles Spec.SubnetIDs.
+				if err := wait.PollUntilContextTimeout(ctx, 5*time.Second, 2*time.Minute, true, func(ctx context.Context) (bool, error) {
 					list := &hyperv1.AWSEndpointServiceList{}
 					if err := mgtClient.List(ctx, list, crclient.InNamespace(hcpNS)); err != nil {
 						return false, nil
@@ -772,12 +773,16 @@ func TestKarpenter(t *testing.T) {
 					for _, es := range list.Items {
 						for _, id := range es.Spec.SubnetIDs {
 							if id == subnetID {
-								return false, nil // still present
+								return false, nil
 							}
 						}
 					}
-					return true, nil // gone from all AWSEndpointServices
-				})
+					return true, nil
+				}); err != nil {
+					t.Logf("cleanup: timed out waiting for subnet %s to leave AWSEndpointService specs: %v", subnetID, err)
+				} else {
+					t.Logf("cleanup: subnet %s removed from all AWSEndpointService specs", subnetID)
+				}
 				cleanupSubnet()
 			})
 			t.Logf("Created OpenshiftEC2NodeClass %q selecting subnet %s", customNodeClass.Name, subnetID)

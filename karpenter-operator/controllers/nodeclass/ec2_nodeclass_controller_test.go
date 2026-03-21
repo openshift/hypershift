@@ -1038,6 +1038,36 @@ func TestReconcileKarpenterSubnetsConfigMap(t *testing.T) {
 			},
 			expectConfigMap: false,
 		},
+		{
+			name: "When an OpenshiftEC2NodeClass is being deleted it should exclude its subnets from the ConfigMap",
+			guestObjects: []client.Object{
+				&hyperkarpenterv1.OpenshiftEC2NodeClass{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "being-deleted",
+						DeletionTimestamp: &metav1.Time{Time: time.Now()},
+						Finalizers:        []string{finalizer},
+					},
+					Status: hyperkarpenterv1.OpenshiftEC2NodeClassStatus{
+						Subnets: []hyperkarpenterv1.Subnet{
+							{ID: "subnet-being-deleted", Zone: "us-east-1a"},
+						},
+					},
+				},
+				&hyperkarpenterv1.OpenshiftEC2NodeClass{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "remaining",
+					},
+					Status: hyperkarpenterv1.OpenshiftEC2NodeClassStatus{
+						Subnets: []hyperkarpenterv1.Subnet{
+							{ID: "subnet-keep", Zone: "us-east-1b"},
+						},
+					},
+				},
+			},
+			expectConfigMap:     true,
+			expectedSubnetCount: 1,
+			expectedSubnets:     []string{"subnet-keep"},
+		},
 	}
 
 	for _, tc := range testCases {

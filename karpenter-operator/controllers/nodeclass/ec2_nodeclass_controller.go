@@ -174,7 +174,7 @@ func (r *EC2NodeClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
-	if !controllerutil.ContainsFinalizer(hcp, finalizer) {
+	if !controllerutil.ContainsFinalizer(openshiftEC2NodeClass, finalizer) {
 		original := openshiftEC2NodeClass.DeepCopy()
 		controllerutil.AddFinalizer(openshiftEC2NodeClass, finalizer)
 		if err := r.guestClient.Patch(ctx, openshiftEC2NodeClass, client.MergeFromWithOptions(original, client.MergeFromWithOptimisticLock{})); err != nil {
@@ -431,6 +431,11 @@ func (r *EC2NodeClassReconciler) reconcileKarpenterSubnetsConfigMap(ctx context.
 
 	subnetIDSet := sets.NewString()
 	for _, nodeClass := range openshiftEC2NodeClassList.Items {
+		// Skip NodeClasses that are being deleted — their subnets should no
+		// longer be propagated to VPC endpoints.
+		if !nodeClass.DeletionTimestamp.IsZero() {
+			continue
+		}
 		for _, subnet := range nodeClass.Status.Subnets {
 			if subnet.ID != "" {
 				subnetIDSet.Insert(subnet.ID)
