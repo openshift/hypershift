@@ -411,3 +411,226 @@ func TestReconcileCredentials(t *testing.T) {
 		})
 	}
 }
+
+func TestValidCredentials(t *testing.T) {
+	testCases := []struct {
+		name               string
+		hostedCluster      *hyperv1.HostedCluster
+		expectedValidCreds bool
+	}{
+		{
+			name: "when no conditions indicate credential failure it should return true",
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ValidAzureKMSConfig),
+							Status: metav1.ConditionTrue,
+							Reason: string(hyperv1.AsExpectedReason),
+						},
+					},
+				},
+			},
+			expectedValidCreds: true,
+		},
+		{
+			name: "when a condition has InvalidAzureCredentialsReason it should return false",
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ValidAzureKMSConfig),
+							Status: metav1.ConditionFalse,
+							Reason: string(hyperv1.InvalidAzureCredentialsReason),
+						},
+					},
+				},
+			},
+			expectedValidCreds: false,
+		},
+		{
+			name: "when conditions exist but with different reasons it should return true",
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ValidAzureKMSConfig),
+							Status: metav1.ConditionFalse,
+							Reason: string(hyperv1.AzureErrorReason),
+						},
+					},
+				},
+			},
+			expectedValidCreds: true,
+		},
+		{
+			name: "when conditions list is empty it should return true",
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{},
+				},
+			},
+			expectedValidCreds: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			g := NewWithT(t)
+			result := ValidCredentials(tc.hostedCluster)
+			g.Expect(result).To(Equal(tc.expectedValidCreds))
+		})
+	}
+}
+
+func TestDeleteOrphanedMachines(t *testing.T) {
+	controlPlaneNamespace := "test-cp-namespace"
+
+	testCases := []struct {
+		name                      string
+		hostedCluster             *hyperv1.HostedCluster
+		azureMachines             []capiazure.AzureMachine
+		expectedFinalizersRemoved bool
+		expectedError             bool
+	}{
+		{
+			name: "when credentials are valid it should return early without modifying machines",
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ValidAzureKMSConfig),
+							Status: metav1.ConditionTrue,
+							Reason: string(hyperv1.AsExpectedReason),
+						},
+					},
+				},
+			},
+			azureMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-1",
+						Namespace:         controlPlaneNamespace,
+						Finalizers:        []string{"azuremachine.infrastructure.cluster.x-k8s.io"},
+						DeletionTimestamp: &metav1.Time{},
+					},
+				},
+			},
+			expectedFinalizersRemoved: false,
+			expectedError:             false,
+		},
+		{
+			name: "when credentials are invalid with no machines it should succeed",
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ValidAzureKMSConfig),
+							Status: metav1.ConditionFalse,
+							Reason: string(hyperv1.InvalidAzureCredentialsReason),
+						},
+					},
+				},
+			},
+			azureMachines:             []capiazure.AzureMachine{},
+			expectedFinalizersRemoved: false,
+			expectedError:             false,
+		},
+		{
+			name: "when credentials are invalid with machines pending deletion it should remove finalizers",
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ValidAzureKMSConfig),
+							Status: metav1.ConditionFalse,
+							Reason: string(hyperv1.InvalidAzureCredentialsReason),
+						},
+					},
+				},
+			},
+			azureMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "machine-1",
+						Namespace:         controlPlaneNamespace,
+						Finalizers:        []string{"azuremachine.infrastructure.cluster.x-k8s.io"},
+						DeletionTimestamp: &metav1.Time{},
+					},
+				},
+			},
+			expectedFinalizersRemoved: true,
+			expectedError:             false,
+		},
+		{
+			name: "when credentials are invalid with machines not pending deletion it should not modify",
+			hostedCluster: &hyperv1.HostedCluster{
+				Status: hyperv1.HostedClusterStatus{
+					Conditions: []metav1.Condition{
+						{
+							Type:   string(hyperv1.ValidAzureKMSConfig),
+							Status: metav1.ConditionFalse,
+							Reason: string(hyperv1.InvalidAzureCredentialsReason),
+						},
+					},
+				},
+			},
+			azureMachines: []capiazure.AzureMachine{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       "machine-1",
+						Namespace:  controlPlaneNamespace,
+						Finalizers: []string{"azuremachine.infrastructure.cluster.x-k8s.io"},
+					},
+				},
+			},
+			expectedFinalizersRemoved: false,
+			expectedError:             false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+			ctx := context.Background()
+
+			// Create a fake client with the test machines
+			objects := make([]client.Object, len(tc.azureMachines))
+			for i := range tc.azureMachines {
+				objects[i] = &tc.azureMachines[i]
+			}
+
+			fakeClient := fake.NewClientBuilder().
+				WithScheme(api.Scheme).
+				WithObjects(objects...).
+				Build()
+
+			// Create Azure platform instance
+			azure := Azure{}
+
+			// Call the function under test
+			err := azure.DeleteOrphanedMachines(ctx, fakeClient, tc.hostedCluster, controlPlaneNamespace)
+
+			// Validate error expectation
+			if tc.expectedError {
+				g.Expect(err).To(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+			}
+
+			// Validate finalizers were removed if expected
+			if tc.expectedFinalizersRemoved {
+				azureMachineList := &capiazure.AzureMachineList{}
+				err := fakeClient.List(ctx, azureMachineList, client.InNamespace(controlPlaneNamespace))
+				g.Expect(err).ToNot(HaveOccurred())
+
+				for _, machine := range azureMachineList.Items {
+					if !machine.DeletionTimestamp.IsZero() {
+						g.Expect(machine.Finalizers).To(BeEmpty(), "Finalizers should be removed for machines with deletion timestamp")
+					}
+				}
+			}
+		})
+	}
+}
