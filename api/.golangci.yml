@@ -185,7 +185,11 @@ linters:
       # marking API issues for future review. Each should be evaluated
       # to determine if it should be fixed or permanently excepted.
 
-      # arrayofstruct (4 issues)
+      # arrayofstruct (5 issues)
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1beta1/karpenter_types.go
+        text: 'arrayofstruct: OpenshiftEC2NodeClassSpec.BlockDeviceMappings is an array of structs, but the struct has no required fields. At least one field should be marked as required to prevent ambiguous YAML configurations'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/aws.go
@@ -343,7 +347,11 @@ linters:
         path: hypershift/v1beta1/hostedcluster_types.go
         text: 'nonullable: field ClusterVersionStatus.AvailableUpdates has forbidden marker "nullable"'
 
-      # optionalfields (138 issues)
+      # optionalfields (139 issues)
+      - linters:
+          - kubeapilinter
+        path: karpenter/v1beta1/karpenter_types.go
+        text: 'optionalfields: field OpenshiftEC2NodeClassSpec.Kubelet does not allow the zero value. The field does not need to be a pointer.'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/aws.go

@@ -193,8 +193,9 @@ spec:
                 type: string
               kubelet:
                 description: |-
-                  Kubelet configures kubelet settings for nodes provisioned by this NodeClass.
+                  kubelet configures kubelet settings for nodes provisioned by this NodeClass.
                   These settings are injected into the node's ignition configuration via MachineConfig.
+                minProperties: 1
                 properties:
                   allowedUnsafeSysctls:
                     description: |-

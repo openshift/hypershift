@@ -255,10 +255,10 @@ type OpenshiftEC2NodeClassSpec struct {
 	// +optional
 	Version string `json:"version,omitempty"`
 
-	// Kubelet configures kubelet settings for nodes provisioned by this NodeClass.
+	// kubelet configures kubelet settings for nodes provisioned by this NodeClass.
 	// These settings are injected into the node's ignition configuration via MachineConfig.
 	// +optional
-	Kubelet *KubeletConfiguration `json:"kubelet,omitempty"`
+	Kubelet *KubeletConfiguration `json:"kubelet,omitempty,omitzero"`
 }
 
 // SubnetSelectorTerm defines selection logic for a subnet used by Karpenter to launch nodes.
