@@ -1426,6 +1426,11 @@ func componentsFakeObjects(namespace string, featureSet configv1.FeatureSet) ([]
 		corev1.TLSCertKey:       []byte("fake"),
 		corev1.TLSPrivateKeyKey: []byte("fake"),
 	}
+	kasBootstrapContainerCertSecret := manifests.KASBootstrapContainerClientCertSecret(namespace)
+	kasBootstrapContainerCertSecret.Data = map[string][]byte{
+		corev1.TLSCertKey:       []byte("fake"),
+		corev1.TLSPrivateKeyKey: []byte("fake"),
+	}
 
 	azureCredentialsSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1459,7 +1464,7 @@ func componentsFakeObjects(namespace string, featureSet configv1.FeatureSet) ([]
 	privateRouterSvc.Spec.ClusterIP = "172.30.0.100"
 
 	return []client.Object{
-		rootCA, authenticatorCertSecret, bootsrapCertSecret, adminCertSecert, hccoCertSecert,
+		rootCA, authenticatorCertSecret, bootsrapCertSecret, adminCertSecert, hccoCertSecert, kasBootstrapContainerCertSecret,
 		manifests.KubeControllerManagerClientCertSecret(namespace),
 		manifests.KubeSchedulerClientCertSecret(namespace),
 		azureCredentialsSecret,
