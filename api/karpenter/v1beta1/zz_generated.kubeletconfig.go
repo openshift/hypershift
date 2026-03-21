@@ -24,6 +24,7 @@ import (
 // KubeletConfiguration configures kubelet settings for nodes provisioned by this NodeClass.
 // These settings are injected into the node's ignition configuration via MachineConfig.
 // This struct is auto-generated from the upstream KubeletConfiguration.
+// +kubebuilder:validation:MinProperties=1
 type KubeletConfiguration struct {
 	// registryPullQPS is the limit of registry pulls per second.
 	// The value must not be a negative number.
