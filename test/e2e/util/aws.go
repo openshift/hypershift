@@ -17,6 +17,7 @@ import (
 
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	ec2v2 "github.com/aws/aws-sdk-go-v2/service/ec2"
+	smithy "github.com/aws/smithy-go"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamtypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
@@ -248,11 +249,27 @@ func CreateTestSubnet(ctx context.Context, t *testing.T, client *ec2v2.Client, v
 		}); err != nil {
 			t.Logf("CreateTestSubnet cleanup: failed to disassociate route table from subnet %s: %v", subnetID, err)
 		}
-		if _, err := client.DeleteSubnet(ctx, &ec2v2.DeleteSubnetInput{SubnetId: awsv2.String(subnetID)}); err != nil {
-			t.Logf("CreateTestSubnet cleanup: failed to delete subnet %s: %v", subnetID, err)
-		} else {
-			t.Logf("CreateTestSubnet cleanup: deleted subnet %s", subnetID)
+		// Retry DeleteSubnet because VPC endpoint ENIs in this subnet are cleaned
+		// up asynchronously by AWS after ModifyVpcEndpoint removes the subnet.
+		var lastErr error
+		for attempt := 0; attempt < 12; attempt++ {
+			if attempt > 0 {
+				time.Sleep(10 * time.Second)
+			}
+			_, lastErr = client.DeleteSubnet(ctx, &ec2v2.DeleteSubnetInput{SubnetId: awsv2.String(subnetID)})
+			if lastErr == nil {
+				t.Logf("CreateTestSubnet cleanup: deleted subnet %s", subnetID)
+				return
+			}
+			// Only retry on DependencyViolation; other errors are not transient.
+			var apiErr smithy.APIError
+			if errors.As(lastErr, &apiErr) && apiErr.ErrorCode() == "DependencyViolation" {
+				t.Logf("CreateTestSubnet cleanup: subnet %s has dependencies (attempt %d/12), retrying in 10s", subnetID, attempt+1)
+				continue
+			}
+			break
 		}
+		t.Logf("CreateTestSubnet cleanup: failed to delete subnet %s: %v", subnetID, lastErr)
 	}
 	return subnetID, cleanup
 }
