@@ -43,6 +43,7 @@ import (
 	cvov2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/cvo"
 	dnsoperatorv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/dnsoperator"
 	endpointresolverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/endpoint_resolver"
+	etcdudn "github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/etcd"
 	etcdv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/etcd"
 	fgv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/fg"
 	ignitionserverv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/ignitionserver"
@@ -1192,6 +1193,17 @@ func (r *HostedControlPlaneReconciler) reconcileCPOV2(ctx context.Context, hcp *
 		r.Log.Info("Reconciling component", "component_name", c.Name())
 		if err := c.Reconcile(cpContext); err != nil {
 			errs = append(errs, err)
+		}
+	}
+
+	// On Primary UDN namespaces, the default etcd-client/etcd-discovery EndpointSlices
+	// carry default-network IPs that are unreachable from UDN pods. Create UDN-annotated
+	// EndpointSlices and orphan the defaults so kube-apiserver can reach etcd.
+	// This MUST run in the CPO (not the HCCO) because the HCCO is only deployed after
+	// kube-apiserver is available, creating a chicken-and-egg problem.
+	if hcp.Spec.Platform.Type == hyperv1.KubevirtPlatform && hcp.Annotations["hypershift.openshift.io/primary-udn"] == "true" {
+		if err := etcdudn.ReconcileUDNEndpointSlices(ctx, r.Client, upsert.New(r.EnableCIDebugOutput), hcp.Namespace); err != nil {
+			errs = append(errs, fmt.Errorf("failed to reconcile etcd UDN EndpointSlices: %w", err))
 		}
 	}
 

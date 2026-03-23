@@ -22,6 +22,7 @@ import (
 	operatorv1 "github.com/openshift/api/operator/v1"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -133,6 +134,11 @@ func Mgr(ctx context.Context, cfg, cpConfig *rest.Config, namespace string, hcpN
 
 		// Needed for inplace upgrader.
 		&corev1.Node{}: allSelector,
+
+		// Needed for primary UDN guest DNS/OAuth fixups.
+		&appsv1.DaemonSet{}:    allSelector,
+		&corev1.Endpoints{}:    allSelector,
+		&operatorv1.DNS{}:      allSelector,
 
 		// Needed for resource cleanup
 		&corev1.Service{}:               allSelector,
