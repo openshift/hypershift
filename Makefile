@@ -143,8 +143,16 @@ hypershift-operator:
 karpenter-operator:
 	$(GO_BUILD_RECIPE) -o $(OUT_DIR)/karpenter-operator ./karpenter-operator
 
+.PHONY: kubelet-config-sync
+kubelet-config-sync:
+	$(GO) run ./hack/tools/kubelet-config-sync/main.go
+
+.PHONY: verify-kubelet-config-sync
+verify-kubelet-config-sync: kubelet-config-sync
+	git diff --exit-code api/karpenter/v1beta1/zz_generated.kubeletconfig.go api/karpenter/v1beta1/zz_generated.kubeletconfig_karpenter.go
+
 .PHONY: karpenter-api
-karpenter-api:
+karpenter-api: kubelet-config-sync
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) paths="./api/karpenter/..." output:crd:artifacts:config=karpenter-operator/controllers/karpenter/assets
 
 .PHONY: control-plane-operator
@@ -414,7 +422,7 @@ run-operator-locally-aws-dev:
 
 .PHONY: verify-codespell
 verify-codespell: codespell ## Verify codespell.
-	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*"
+	@$(CODESPELL) --count --ignore-words=./.codespellignore --skip="./hack/tools/bin/codespell_dist,./docs/site/*,./vendor/*,./api/vendor/*,./hack/tools/vendor/*,./api/hypershift/v1alpha1/*,./support/thirdparty/*,./docs/content/reference/*,./hack/tools/bin/*,./cmd/install/assets/*,./go.sum,./hack/workspace/go.work.sum,./api/hypershift/v1beta1/zz_generated.featuregated-crd-manifests,./hack/tools/go.mod,./hack/tools/go.sum,./karpenter-operator/controllers/karpenter/assets/*.yaml,./dev/*,./api/karpenter/v1beta1/zz_generated.kubeletconfig.go"
 
 .PHONY: run-gitlint
 run-gitlint: $(GITLINT)

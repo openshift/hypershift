@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/utils/ptr"
 
@@ -265,6 +266,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		}
 	}
 
+	// Moved here from hypershift operator. Consumed by our ignition controller to taint our nodes
+	// on firstboot so our nodes don't get workloads on them until karpenter okays it. Centralized here
+	// so each nodeclass doesn't need its own separate taint configmap.
+	// TODO(jkyros): this still doesn't get cleaned on disable, we need to make sure it does eventually
+	if err := r.reconcileTaintConfigMap(ctx, hcp); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to reconcile taint configmap: %w", err)
+	}
+
 	// Don't reconcile if Karpenter E2E override is set.
 	if hcp.Annotations[hyperkarpenterv1.KarpenterCoreE2EOverrideAnnotation] != "true" {
 		if err := r.reconcileOpenshiftEC2NodeClassDefault(ctx, hcp); err != nil {
@@ -281,6 +290,25 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// reconcileTaintConfigMap ensures the set-karpenter-taint ConfigMap exists in the HCP namespace.
+func (r *Reconciler) reconcileTaintConfigMap(ctx context.Context, hcp *hyperv1.HostedControlPlane) error {
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      karpenterutil.KarpenterTaintConfigMapName,
+			Namespace: hcp.Namespace,
+		},
+	}
+	_, err := r.CreateOrUpdate(ctx, r.ManagementClient, cm, func() error {
+		manifest, err := karpenterutil.KarpenterTaintConfigManifest()
+		if err != nil {
+			return fmt.Errorf("failed to generate taint config manifest: %w", err)
+		}
+		cm.Data = map[string]string{"config": manifest}
+		return nil
+	})
+	return err
 }
 
 // reconcileCRDs reconcile the Karpenter CRDs, if onlyCreate is true it uses an only write non cached client.
