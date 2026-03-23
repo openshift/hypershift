@@ -1,6 +1,7 @@
 package azure
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -21,6 +22,65 @@ import (
 
 	"github.com/spf13/pflag"
 )
+
+func TestValidateTopology(t *testing.T) {
+	tests := map[string]struct {
+		topology                                      string
+		topologyPrivateNATSubnetID                    string
+		topologyPrivateAdditionalAllowedSubscriptions []string
+		expectError                                   bool
+		expectedErrorMsg                              string
+	}{
+		"When topology has an invalid value it should return an error": {
+			topology:         "InvalidValue",
+			expectError:      true,
+			expectedErrorMsg: "--topology must be one of: Public, PublicAndPrivate, Private",
+		},
+		"When topology is Private but topology-private-nat-subnet-id is missing it should return an error": {
+			topology:         "Private",
+			expectError:      true,
+			expectedErrorMsg: "--topology-private-nat-subnet-id is required when --topology is not Public",
+		},
+		"When topology is PublicAndPrivate but topology-private-nat-subnet-id is missing it should return an error": {
+			topology:         "PublicAndPrivate",
+			expectError:      true,
+			expectedErrorMsg: "--topology-private-nat-subnet-id is required when --topology is not Public",
+		},
+		"When topology is Private with nat-subnet-id it should succeed without additional subscriptions": {
+			topology:                   "Private",
+			topologyPrivateNATSubnetID: "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/nat-subnet",
+			expectError:                false,
+		},
+		"When topology is Public it should succeed without private connectivity fields": {
+			topology:    "Public",
+			expectError: false,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			opts := DefaultOptions()
+			opts.CredentialsFile = "fake"
+			opts.Topology = test.topology
+			opts.TopologyPrivateNATSubnetID = test.topologyPrivateNATSubnetID
+			opts.TopologyPrivateAdditionalAllowedSubscriptions = test.topologyPrivateAdditionalAllowedSubscriptions
+
+			_, err := opts.Validate(context.Background(), &core.CreateOptions{})
+			if test.expectError {
+				if err == nil {
+					t.Fatalf("expected error but got nil")
+				}
+				if err.Error() != test.expectedErrorMsg {
+					t.Fatalf("expected error %q but got %q", test.expectedErrorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("expected no error but got: %v", err)
+				}
+			}
+		})
+	}
+}
 
 func TestCreateCluster(t *testing.T) {
 	utilrand.Seed(1234567890)
@@ -217,6 +277,21 @@ func TestCreateCluster(t *testing.T) {
 				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
 				"--availability-zones=1,2,3",
 				"--image-generation=Gen1",
+			},
+		},
+		{
+			name: "When topology is Private with topology-private flags it should render HostedCluster with Private topology",
+			args: []string{
+				"--azure-creds=" + credentialsFile,
+				"--infra-json=" + infraFile,
+				"--render-sensitive",
+				"--name=example",
+				"--pull-secret=" + pullSecretFile,
+				"--managed-identities-file", filepath.Join(tempDir, "managedIdentities.json"),
+				"--data-plane-identities-file", filepath.Join(tempDir, "dataPlaneIdentities.json"),
+				"--topology=Private",
+				"--topology-private-nat-subnet-id=/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/nat-subnet",
+				"--topology-private-additional-allowed-subscriptions=sub-1,sub-2",
 			},
 		},
 	} {

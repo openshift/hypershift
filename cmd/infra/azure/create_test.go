@@ -26,6 +26,39 @@ func TestValidate(t *testing.T) {
 			errorContains: "--base-domain is required",
 			description:   "Should require base domain",
 		},
+		"When topology is Public it should pass validation": {
+			opts: CreateInfraOptions{
+				BaseDomain: "example.com",
+				Topology:   "Public",
+			},
+			expectedError: false,
+			description:   "Should pass with valid topology Public",
+		},
+		"When topology is Private it should pass validation": {
+			opts: CreateInfraOptions{
+				BaseDomain: "example.com",
+				Topology:   "Private",
+			},
+			expectedError: false,
+			description:   "Should pass with valid topology Private",
+		},
+		"When topology is PublicAndPrivate it should pass validation": {
+			opts: CreateInfraOptions{
+				BaseDomain: "example.com",
+				Topology:   "PublicAndPrivate",
+			},
+			expectedError: false,
+			description:   "Should pass with valid topology PublicAndPrivate",
+		},
+		"When topology is invalid it should return an error": {
+			opts: CreateInfraOptions{
+				BaseDomain: "example.com",
+				Topology:   "InvalidValue",
+			},
+			expectedError: true,
+			errorContains: "--topology must be one of",
+			description:   "Should reject invalid topology value",
+		},
 	}
 
 	for name, test := range tests {

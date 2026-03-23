@@ -2,9 +2,7 @@ package azure
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/support/azureutil"
@@ -54,7 +52,7 @@ func (i *IdentityManager) deleteFederatedIdentityCredential(ctx context.Context,
 
 	_, err = client.Delete(ctx, resourceGroupName, identityName, credentialName, nil)
 	if err != nil {
-		if isNotFoundError(err) {
+		if azureutil.IsAzureNotFoundError(err) {
 			l.Info("Federated identity credential not found, skipping deletion",
 				"credentialName", credentialName,
 				"identityName", identityName)
@@ -91,7 +89,7 @@ func (i *IdentityManager) deleteManagedIdentity(ctx context.Context, l logr.Logg
 	_, err = client.Delete(ctx, resourceGroupName, identityName, nil)
 	if err != nil {
 		// Check if the error indicates the identity doesn't exist
-		if isNotFoundError(err) {
+		if azureutil.IsAzureNotFoundError(err) {
 			l.Info("Managed identity not found, skipping deletion",
 				"name", identityName,
 				"resourceGroup", resourceGroupName)
@@ -105,18 +103,6 @@ func (i *IdentityManager) deleteManagedIdentity(ctx context.Context, l logr.Logg
 		"resourceGroup", resourceGroupName)
 
 	return nil
-}
-
-// isNotFoundError checks if the error indicates a resource was not found
-func isNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
-	var respErr *azcore.ResponseError
-	if errors.As(err, &respErr) {
-		return respErr.StatusCode == http.StatusNotFound
-	}
-	return false
 }
 
 // createManagedIdentity creates a managed identity using Azure SDK
@@ -178,9 +164,10 @@ type WorkloadIdentityDefinition struct {
 
 // GetWorkloadIdentityDefinitions returns all workload identity definitions for a cluster.
 // This is the single source of truth for identity names and their federated credentials,
-// used by both create and destroy operations.
-func GetWorkloadIdentityDefinitions(clusterName string) []WorkloadIdentityDefinition {
-	return []WorkloadIdentityDefinition{
+// used by both create and destroy operations. The topology parameter controls whether
+// private-topology-only identities (e.g., controlPlaneOperator) are included.
+func GetWorkloadIdentityDefinitions(clusterName string, topology string) []WorkloadIdentityDefinition {
+	definitions := []WorkloadIdentityDefinition{
 		{
 			ComponentName:      "disk",
 			IdentityNameSuffix: "-disk",
@@ -284,6 +271,22 @@ func GetWorkloadIdentityDefinitions(clusterName string) []WorkloadIdentityDefini
 			},
 		},
 	}
+
+	if topology != string(hyperv1.AzureTopologyPublic) {
+		definitions = append(definitions, WorkloadIdentityDefinition{
+			ComponentName:      "controlPlaneOperator",
+			IdentityNameSuffix: "-control-plane-operator",
+			FederatedCredentials: []FederatedCredentialConfig{
+				{
+					CredentialName: clusterName + "-cpo-fed-id",
+					Subject:        "system:serviceaccount:kube-system:control-plane-operator",
+					Audience:       "openshift",
+				},
+			},
+		})
+	}
+
+	return definitions
 }
 
 // createFederatedIdentityCredential creates a federated identity credential for a managed identity using Azure SDK
@@ -333,7 +336,7 @@ func (i *IdentityManager) createFederatedIdentityCredential(ctx context.Context,
 // for workload identity using CreateIAMOptions. This is used by the standalone IAM create command.
 func (i *IdentityManager) CreateWorkloadIdentitiesFromIAMOptions(ctx context.Context, l logr.Logger, opts *CreateIAMOptions, resourceGroupName string) (*hyperv1.AzureWorkloadIdentities, error) {
 	workloadIdentities := &hyperv1.AzureWorkloadIdentities{}
-	definitions := GetWorkloadIdentityDefinitions(opts.Name)
+	definitions := GetWorkloadIdentityDefinitions(opts.Name, opts.Topology)
 
 	for _, def := range definitions {
 		identityName := opts.Name + def.IdentityNameSuffix
@@ -361,6 +364,10 @@ func (i *IdentityManager) CreateWorkloadIdentitiesFromIAMOptions(ctx context.Con
 			workloadIdentities.NodePoolManagement.ClientID = hyperv1.AzureClientID(clientID)
 		case "network":
 			workloadIdentities.Network.ClientID = hyperv1.AzureClientID(clientID)
+		case "controlPlaneOperator":
+			workloadIdentities.ControlPlaneOperator = hyperv1.WorkloadIdentity{
+				ClientID: hyperv1.AzureClientID(clientID),
+			}
 		default:
 			return nil, fmt.Errorf("unknown workload identity component: %s", def.ComponentName)
 		}
@@ -380,7 +387,8 @@ func (i *IdentityManager) CreateWorkloadIdentitiesFromIAMOptions(ctx context.Con
 // Federated credentials are explicitly deleted first, then the managed identity is deleted.
 // The method continues deleting remaining identities even if some fail, logging errors as it goes.
 func (i *IdentityManager) DestroyWorkloadIdentities(ctx context.Context, l logr.Logger, clusterName string, infraID string, resourceGroupName string) error {
-	definitions := GetWorkloadIdentityDefinitions(clusterName)
+	// Pass empty topology to include all identities (including CPO) during cleanup
+	definitions := GetWorkloadIdentityDefinitions(clusterName, "")
 	var errors []error
 
 	for _, def := range definitions {
