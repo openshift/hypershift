@@ -258,6 +258,33 @@ func (s *Store) scanReviewComments(rows *sql.Rows) ([]ReviewComment, error) {
 	return comments, rows.Err()
 }
 
+// GetReviewCommentByID retrieves a single review comment by its ID.
+func (s *Store) GetReviewCommentByID(id int64) (*ReviewComment, error) {
+	row := s.db.QueryRow(
+		`SELECT id, issue_id, github_comment_id, author, body, created_at, severity, topic, ai_classified, human_override
+		 FROM review_comments WHERE id = ?`, id,
+	)
+	var c ReviewComment
+	var severity, topic sql.NullString
+	var aiClassified, humanOverride int
+	err := row.Scan(
+		&c.ID, &c.IssueID, &c.GitHubCommentID, &c.Author, &c.Body, &c.CreatedAt,
+		&severity, &topic, &aiClassified, &humanOverride,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if severity.Valid {
+		c.Severity = severity.String
+	}
+	if topic.Valid {
+		c.Topic = topic.String
+	}
+	c.AIClassified = aiClassified != 0
+	c.HumanOverride = humanOverride != 0
+	return &c, nil
+}
+
 // UpdateCommentClassification updates the severity, topic, and human_override for a comment.
 func (s *Store) UpdateCommentClassification(id int64, severity, topic string, humanOverride bool) error {
 	_, err := s.db.Exec(
