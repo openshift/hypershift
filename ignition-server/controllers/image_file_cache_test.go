@@ -83,6 +83,64 @@ func TestImageFileCache(t *testing.T) {
 	t.Log("failure message returned:", err5)
 }
 
+func TestDownloadImageErrorHashStripping(t *testing.T) {
+	tests := []struct {
+		name        string
+		regErr      string
+		wantContain string
+		wantExclude string
+	}{
+		{
+			name:        "When error contains a sha256 hash it should remove only the hash",
+			regErr:      "unable to access the source layer sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4: connection refused",
+			wantContain: "unable to access the source layer: connection refused",
+			wantExclude: "sha256:",
+		},
+		{
+			name:        "When error contains multiple sha256 hashes it should remove all of them",
+			regErr:      "layer sha256:a3ed95caeb02ffe68cdd9fd84406680ae93d633cb16422d00e8a7c22955b46d4 and sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb failed",
+			wantContain: "layer and failed",
+			wantExclude: "sha256:",
+		},
+		{
+			name:        "When error contains no sha256 hash it should preserve the message unchanged",
+			regErr:      "connection refused",
+			wantContain: "connection refused",
+		},
+		{
+			name:        "When error contains a short hex string after sha256 prefix it should not strip it",
+			regErr:      "unexpected sha256:abcdef value",
+			wantContain: "sha256:abcdef",
+		},
+		{
+			name:        "When error contains sha256 with uppercase hex it should still strip it",
+			regErr:      "layer sha256:A3ED95CAEB02FFE68CDD9FD84406680AE93D633CB16422D00E8A7C22955B46D4 gone",
+			wantContain: "layer gone",
+			wantExclude: "sha256:",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			regClientFuncMock := func(ctx context.Context, imageRef string, pullSecret []byte, file string, out io.Writer) error {
+				return errors.New(tt.regErr)
+			}
+
+			cacheDir := t.TempDir()
+			_, err := downloadImageFile(t.Context(), regClientFuncMock, "quay.io/test/image:latest", []byte("pull-secret"), "usr/bin/test", cacheDir)
+
+			g.Expect(err).To(HaveOccurred())
+			g.Expect(err.Error()).To(ContainSubstring("failed to extract image file"))
+			g.Expect(err.Error()).To(ContainSubstring(tt.wantContain))
+			if tt.wantExclude != "" {
+				g.Expect(err.Error()).NotTo(ContainSubstring(tt.wantExclude))
+			}
+		})
+	}
+}
+
 func getImageFile(t *testing.T, sut *imageFileCache, imageRef string, imageFile string) (string, error) {
 	var buff bytes.Buffer
 	sutErr := sut.extractImageFile(t.Context(), imageRef, []byte("pull-secret"), imageFile, &buff)
@@ -97,7 +155,7 @@ func simulateFileCorruption(t *testing.T, cacheDir string) {
 	fileInfo := files[0] // only one file is supposed to be in the directory
 	cachedFileName := filepath.Join(cacheDir, fileInfo.Name())
 	t.Log("adding some garbage into file:", cachedFileName)
-	cachedFile, err := os.OpenFile(cachedFileName, os.O_APPEND|os.O_WRONLY, 0644)
+	cachedFile, err := os.OpenFile(cachedFileName, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		t.Fatal("failed to open cache file", err)
 	}
