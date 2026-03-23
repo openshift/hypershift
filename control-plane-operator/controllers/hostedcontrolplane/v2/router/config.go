@@ -131,6 +131,8 @@ func generateRouterConfig(routeList *routev1.RouteList, svcsNameToIP map[string]
 			p.Backends = append(p.Backends, backendDesc{Name: "oauth_internal", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: 6443})
 		case manifests.MetricsForwarderRoute("").Name:
 			p.Backends = append(p.Backends, backendDesc{Name: "metrics_forwarder", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: route.Spec.Port.TargetPort.IntVal})
+		case manifests.MetricsProxyRoute("").Name:
+			p.Backends = append(p.Backends, backendDesc{Name: "metrics_proxy", HostName: route.Spec.Host, DestinationServiceIP: svcsNameToIP[route.Spec.To.Name], DestinationPort: 443})
 		}
 	}
 
