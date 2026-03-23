@@ -32,7 +32,7 @@ Automatically update outdated Konflux Tekton tasks based on enterprise contract 
      - Extract all outdated Tekton task warnings that mention "newer version exists"
      - Parse out task names, current digests, and latest digests
    - If no log file is provided:
-     - Run `hack/tools/scripts/update_trusted_task_bundles.py .tekton/*.yaml --dry-run --json`
+     - Run `hack/tools/scripts/update_trusted_task_bundles.py .tekton/*.yaml --dry-run --json --upgrade-versions`
      - Parse the JSON output to identify tasks needing updates
      - The JSON output contains updates and available_upgrades per file with task_name, current_version, current_digest, latest_version, latest_digest, and is_version_bump fields
 
