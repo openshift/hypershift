@@ -23,8 +23,11 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
+	hyperapi "github.com/openshift/hypershift/support/api"
 	e2eutil "github.com/openshift/hypershift/test/e2e/util"
 
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/clientcmd"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -42,6 +45,8 @@ type TestContext struct {
 	ArtifactDir           string
 	hostedCluster         *hyperv1.HostedCluster
 	hostedClusterOnce     sync.Once
+	guestClient           crclient.Client
+	guestClientOnce       sync.Once
 }
 
 // GetHostedCluster returns the HostedCluster associated with this test context.
@@ -71,6 +76,45 @@ func (tc *TestContext) GetHostedCluster() *hyperv1.HostedCluster {
 		tc.hostedCluster = hostedCluster
 	})
 	return tc.hostedCluster
+}
+
+// GetGuestClient returns a controller-runtime client for the guest cluster.
+// It reads the kubeconfig from the secret referenced by the HostedCluster status.
+// The client is lazily initialized and cached.
+// Returns nil if the guest client cannot be created (e.g., HostedCluster not ready).
+func (tc *TestContext) GetGuestClient() crclient.Client {
+	tc.guestClientOnce.Do(func() {
+		hc := tc.GetHostedCluster()
+		if hc == nil || hc.Status.KubeConfig == nil {
+			return
+		}
+
+		var kubeconfigSecret corev1.Secret
+		err := tc.MgmtClient.Get(context.Background(), crclient.ObjectKey{
+			Namespace: hc.Namespace,
+			Name:      hc.Status.KubeConfig.Name,
+		}, &kubeconfigSecret)
+		if err != nil {
+			return
+		}
+
+		kubeconfigData, ok := kubeconfigSecret.Data["kubeconfig"]
+		if !ok {
+			return
+		}
+
+		restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfigData)
+		if err != nil {
+			return
+		}
+
+		client, err := crclient.New(restConfig, crclient.Options{Scheme: hyperapi.Scheme})
+		if err != nil {
+			return
+		}
+		tc.guestClient = client
+	})
+	return tc.guestClient
 }
 
 var (
