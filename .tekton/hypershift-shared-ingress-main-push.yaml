@@ -39,8 +39,6 @@ spec:
     value: shared-ingress
   - name: prefetch-input
     value: '[{"type": "rpm", "path": "shared-ingress"}]'
-  - name: dev-package-managers
-    value: "true"
   pipelineRef:
     name: hypershift-common-operator-build
   taskRunTemplate:
