@@ -1731,6 +1731,20 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 			return fmt.Errorf("failed to reconcile %s secret: %w", azureWorkloadIdentityWebhookServingCert.Name, err)
 		}
 
+		// Azure-disk CSI driver Operator metrics Serving Cert
+		AzureDiskCsiDriverOperatorServingCert := manifests.AzureDiskCSIDriverOperatorServingCertSecret(hcp.Namespace)
+		AzureDiskCsiDriverOperatorService := manifests.AzureDiskCSIDriverOperatorMetricsService(hcp.Namespace)
+		err := removeServiceCAAnnotationAndSecret(ctx, r.Client, AzureDiskCsiDriverOperatorService, AzureDiskCsiDriverOperatorServingCert)
+		if err != nil {
+			r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+		}
+		if _, err = createOrUpdate(ctx, r, AzureDiskCsiDriverOperatorServingCert, func() error {
+			z := pki.ReconcileAzureDiskCsiDriverOperatorMetricsServingCertSecret(AzureDiskCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
+			return z
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile azure-disk csi driver operator serving cert: %w", err)
+		}
+
 		azureDiskCsiDriverControllerMetricsService := manifests.AzureDiskCsiDriverControllerMetricsService(hcp.Namespace)
 		if err = r.Get(ctx, client.ObjectKeyFromObject(azureDiskCsiDriverControllerMetricsService), azureDiskCsiDriverControllerMetricsService); err != nil {
 			if !apierrors.IsNotFound(err) {
@@ -1751,6 +1765,20 @@ func (r *HostedControlPlaneReconciler) reconcilePKI(ctx context.Context, hcp *hy
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile azure disk csi driver controller metrics serving cert: %w", err)
 			}
+		}
+
+		// Azure-file CSI driver Operator metrics Serving Cert
+		AzureFileCsiDriverOperatorServingCert := manifests.AzureFileCSIDriverOperatorServingCertSecret(hcp.Namespace)
+		AzureFileCsiDriverOperatorService := manifests.AzureFileCSIDriverOperatorMetricsService(hcp.Namespace)
+		err = removeServiceCAAnnotationAndSecret(ctx, r.Client, AzureFileCsiDriverOperatorService, AzureFileCsiDriverOperatorServingCert)
+		if err != nil {
+			r.Log.Error(err, "failed to remove service ca annotation and secret: %w")
+		}
+		if _, err = createOrUpdate(ctx, r, AzureFileCsiDriverOperatorServingCert, func() error {
+			z := pki.ReconcileAzureFileCsiDriverOperatorMetricsServingCertSecret(AzureFileCsiDriverOperatorServingCert, rootCASecret, p.OwnerRef)
+			return z
+		}); err != nil {
+			return fmt.Errorf("failed to reconcile azure-file csi driver operator serving cert: %w", err)
 		}
 
 		azureFileCsiDriverControllerMetricsService := manifests.AzureFileCsiDriverControllerMetricsService(hcp.Namespace)
