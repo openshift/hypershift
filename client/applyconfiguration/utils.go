@@ -119,6 +119,16 @@ func ForKind(kind schema.GroupVersionKind) interface{} {
 		return &hypershiftv1beta1.AzureNodePoolPlatformApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzurePlatformSpec"):
 		return &hypershiftv1beta1.AzurePlatformSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzurePrivateLinkService"):
+		return &hypershiftv1beta1.AzurePrivateLinkServiceApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzurePrivateLinkServiceSpec"):
+		return &hypershiftv1beta1.AzurePrivateLinkServiceSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzurePrivateLinkServiceStatus"):
+		return &hypershiftv1beta1.AzurePrivateLinkServiceStatusApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzurePrivateLinkSpec"):
+		return &hypershiftv1beta1.AzurePrivateLinkSpecApplyConfiguration{}
+	case v1beta1.SchemeGroupVersion.WithKind("AzurePrivateSpec"):
+		return &hypershiftv1beta1.AzurePrivateSpecApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureResourceManagedIdentities"):
 		return &hypershiftv1beta1.AzureResourceManagedIdentitiesApplyConfiguration{}
 	case v1beta1.SchemeGroupVersion.WithKind("AzureVMImage"):
