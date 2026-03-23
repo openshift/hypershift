@@ -25,7 +25,7 @@ spec:
     metadata:
       annotations:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: cloud-token,apiserver-token,tmp-dir
-        component.hypershift.openshift.io/config-hash: 87ecf31a
+        component.hypershift.openshift.io/config-hash: 7ab93c6087ecf31a
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
       labels:
         app: cluster-image-registry-operator
@@ -88,6 +88,8 @@ spec:
           done
 
           exec /usr/bin/cluster-image-registry-operator \
+            --config=/var/run/configmaps/image-registry-controller-config/config.yaml \
+            --files=/var/run/configmaps/image-registry-controller-config/config.yaml \
             --files="/etc/secrets/tls.crt" \
             --files="/etc/secrets/tls.key"
         command:
@@ -133,6 +135,8 @@ spec:
           name: ca-bundle
         - mountPath: /etc/secrets
           name: serving-cert
+        - mountPath: /var/run/configmaps/image-registry-controller-config
+          name: image-registry-controller-config
         - mountPath: /var/run/secrets/openshift/serviceaccount
           name: cloud-token
         - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
@@ -224,6 +228,10 @@ spec:
         secret:
           defaultMode: 416
           secretName: root-ca
+      - configMap:
+          defaultMode: 420
+          name: image-registry-controller-config
+        name: image-registry-controller-config
       - emptyDir:
           medium: Memory
         name: cloud-token

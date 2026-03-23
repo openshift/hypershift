@@ -22,6 +22,9 @@ status:
   - group: secrets-store.csi.x-k8s.io
     kind: SecretProviderClass
     name: managed-azure-image-registry
+  - group: ""
+    kind: ConfigMap
+    name: image-registry-controller-config
   - group: monitoring.coreos.com
     kind: PodMonitor
     name: cluster-image-registry-operator
