@@ -34,6 +34,10 @@ const (
 	// awsNodeTerminationHandlerDeploymentName is the name of the termination handler deployment.
 	awsNodeTerminationHandlerDeploymentName = "aws-node-termination-handler"
 
+	// spotInterruptionSignalAnnotation is applied to the Machine by the spot remediation
+	// controller before deletion, for auditability.
+	spotInterruptionSignalAnnotation = "hypershift.openshift.io/spot-interruption-signal"
+
 	// rebalanceRecommendationTaintKey is the taint key applied by the AWS Node Termination Handler
 	// when it receives an EC2 rebalance recommendation event.
 	rebalanceRecommendationTaintKey = "aws-node-termination-handler/rebalance-recommendation"
@@ -232,9 +236,10 @@ func (s *SpotTerminationHandlerTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		)
 		t.Logf("Spot MachineHealthCheck is created with correct label selector")
 
-		// Step 4: Verify we have at least one ready spot node (passed from the test framework)
-		if len(nodes) == 0 {
-			t.Fatal("expected at least one ready node from the spot nodepool")
+		// Step 4: Verify we have exactly one ready spot node (passed from the test framework)
+		// The NodePool is created with 1 replica, so we expect exactly 1 node.
+		if len(nodes) != 1 {
+			t.Fatalf("expected exactly 1 ready node from the spot nodepool, got %d", len(nodes))
 		}
 		spotNode := &nodes[0]
 		t.Logf("Found ready spot node: %s with providerID: %s", spotNode.Name, spotNode.Spec.ProviderID)
@@ -293,7 +298,110 @@ func (s *SpotTerminationHandlerTest) Run(t *testing.T, nodePool hyperv1.NodePool
 		)
 		t.Logf("Node %s has the rebalance recommendation taint", spotNode.Name)
 
-		// Step 7: Clean up - remove the SQS queue URL from spec
+		// Step 7: Verify the spot remediation controller annotates the Machine with spot-interruption-signal.
+		// The Node has CAPI annotations that reference its Machine.
+		machineName := spotNode.Annotations[capiv1.MachineAnnotation]
+		machineNamespace := spotNode.Annotations[capiv1.ClusterNamespaceAnnotation]
+		if machineName == "" || machineNamespace == "" {
+			t.Fatalf("Node %s is missing CAPI Machine annotations (machine=%q, namespace=%q)", spotNode.Name, machineName, machineNamespace)
+		}
+		t.Logf("Node %s maps to Machine %s/%s", spotNode.Name, machineNamespace, machineName)
+
+		originalMachine := &capiv1.Machine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      machineName,
+				Namespace: machineNamespace,
+			},
+		}
+		t.Logf("Waiting for Machine %s to be annotated with %s", machineName, spotInterruptionSignalAnnotation)
+		e2eutil.EventuallyObject(t, s.ctx, fmt.Sprintf("Waiting for Machine %s/%s to have spot-interruption-signal annotation", machineNamespace, machineName),
+			func(ctx context.Context) (*capiv1.Machine, error) {
+				err := s.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(originalMachine), originalMachine)
+				return originalMachine, err
+			},
+			[]e2eutil.Predicate[*capiv1.Machine]{
+				func(obj *capiv1.Machine) (bool, string, error) {
+					if obj.Annotations == nil {
+						return false, "Machine has no annotations", nil
+					}
+					if _, ok := obj.Annotations[spotInterruptionSignalAnnotation]; !ok {
+						return false, fmt.Sprintf("Machine does not have annotation %s", spotInterruptionSignalAnnotation), nil
+					}
+					return true, fmt.Sprintf("Machine has annotation %s=%s", spotInterruptionSignalAnnotation, obj.Annotations[spotInterruptionSignalAnnotation]), nil
+				},
+			},
+			e2eutil.WithInterval(5*time.Second), e2eutil.WithTimeout(5*time.Minute),
+		)
+		t.Logf("Machine %s has spot-interruption-signal annotation", machineName)
+
+		// Step 8: Verify the Machine is deleted (deletionTimestamp set).
+		t.Logf("Waiting for Machine %s to be marked for deletion", machineName)
+		e2eutil.EventuallyObject(t, s.ctx, fmt.Sprintf("Waiting for Machine %s/%s to have deletionTimestamp", machineNamespace, machineName),
+			func(ctx context.Context) (*capiv1.Machine, error) {
+				m := &capiv1.Machine{}
+				err := s.mgmtClient.Get(ctx, crclient.ObjectKeyFromObject(originalMachine), m)
+				return m, err
+			},
+			[]e2eutil.Predicate[*capiv1.Machine]{
+				func(obj *capiv1.Machine) (bool, string, error) {
+					if obj.DeletionTimestamp != nil {
+						return true, fmt.Sprintf("Machine has deletionTimestamp %s", obj.DeletionTimestamp.Time), nil
+					}
+					return false, "Machine does not have deletionTimestamp", nil
+				},
+			},
+			e2eutil.WithInterval(5*time.Second), e2eutil.WithTimeout(5*time.Minute),
+		)
+		t.Logf("Machine %s is marked for deletion", machineName)
+
+		// Step 9: Verify exactly 1 replacement Machine is created with the interruptible-instance label.
+		// The replacement must have a different name than the original, proving CAPI created a new one.
+		// The spot label on the replacement proves it inherits from the MachineDeployment template.
+		t.Logf("Waiting for a replacement Machine (not %s) with label %s", machineName, interruptibleInstanceLabel)
+		e2eutil.EventuallyObjects(t, s.ctx, "Waiting for replacement Machine with spot label",
+			func(ctx context.Context) ([]*capiv1.Machine, error) {
+				list := &capiv1.MachineList{}
+				err := s.mgmtClient.List(ctx, list,
+					crclient.InNamespace(machineNamespace),
+					crclient.MatchingLabels{interruptibleInstanceLabel: ""},
+				)
+				if err != nil {
+					return nil, err
+				}
+				var replacements []*capiv1.Machine
+				for i := range list.Items {
+					m := &list.Items[i]
+					if m.Name == machineName {
+						continue
+					}
+					if m.DeletionTimestamp != nil {
+						continue
+					}
+					replacements = append(replacements, m)
+				}
+				return replacements, nil
+			},
+			[]e2eutil.Predicate[[]*capiv1.Machine]{
+				func(machines []*capiv1.Machine) (bool, string, error) {
+					if len(machines) == 1 {
+						return true, fmt.Sprintf("Found exactly 1 replacement Machine: %s", machines[0].Name), nil
+					}
+					return false, fmt.Sprintf("Expected exactly 1 replacement Machine, found %d", len(machines)), nil
+				},
+			},
+			[]e2eutil.Predicate[*capiv1.Machine]{
+				func(obj *capiv1.Machine) (bool, string, error) {
+					if _, ok := obj.Labels[interruptibleInstanceLabel]; ok {
+						return true, fmt.Sprintf("Replacement Machine %s has interruptible-instance label", obj.Name), nil
+					}
+					return false, fmt.Sprintf("Replacement Machine %s missing interruptible-instance label", obj.Name), nil
+				},
+			},
+			e2eutil.WithInterval(10*time.Second), e2eutil.WithTimeout(10*time.Minute),
+		)
+		t.Logf("Replacement Machine with interruptible-instance label is created")
+
+		// Step 10: Clean up - remove the SQS queue URL from spec
 		t.Logf("Cleaning up: removing SQS queue URL from HostedCluster spec")
 		err = e2eutil.UpdateObject(t, s.ctx, s.mgmtClient, s.hostedCluster, func(obj *hyperv1.HostedCluster) {
 			if obj.Spec.Platform.AWS != nil {
