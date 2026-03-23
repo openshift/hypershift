@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: jira-agent-dashboard
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - secrets.yaml
+  - dashboard-deployment.yaml
+  - dashboard-route.yaml
+  - scraper-cronjob.yaml

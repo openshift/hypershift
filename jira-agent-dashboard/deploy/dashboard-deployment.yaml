@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  namespace: jira-agent-dashboard
+  labels:
+    app: jira-agent-dashboard
+    component: dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jira-agent-dashboard
+      component: dashboard
+  template:
+    metadata:
+      labels:
+        app: jira-agent-dashboard
+        component: dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: quay.io/openshift/jira-agent-dashboard:latest
+          command: ["/usr/local/bin/dashboard"]
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: DB_PATH
+              value: /data/dashboard.db
+            - name: PORT
+              value: "8080"
+            - name: WEB_DIR
+              value: /opt/dashboard/web
+          volumeMounts:
+            - name: db
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: db
+          persistentVolumeClaim:
+            claimName: dashboard-db
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard
+  namespace: jira-agent-dashboard
+  labels:
+    app: jira-agent-dashboard
+spec:
+  selector:
+    app: jira-agent-dashboard
+    component: dashboard
+  ports:
+    - port: 8080
+      targetPort: 8080
+      name: http
