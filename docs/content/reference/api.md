@@ -2438,6 +2438,7 @@ string
 &ldquo;ec2:DescribeAvailabilityZones&rdquo;,
 &ldquo;ec2:DescribeImages&rdquo;,
 &ldquo;ec2:DescribeInstances&rdquo;,
+&ldquo;ec2:DescribeInstanceTypes&rdquo;,
 &ldquo;ec2:DescribeInternetGateways&rdquo;,
 &ldquo;ec2:DescribeNatGateways&rdquo;,
 &ldquo;ec2:DescribeNetworkInterfaces&rdquo;,
@@ -2446,6 +2447,7 @@ string
 &ldquo;ec2:DescribeSecurityGroups&rdquo;,
 &ldquo;ec2:DescribeSubnets&rdquo;,
 &ldquo;ec2:DescribeVpcs&rdquo;,
+&ldquo;ec2:DescribeDhcpOptions&rdquo;,
 &ldquo;ec2:DescribeVpcAttribute&rdquo;,
 &ldquo;ec2:DescribeVolumes&rdquo;,
 &ldquo;ec2:DetachInternetGateway&rdquo;,
@@ -2463,7 +2465,9 @@ string
 &ldquo;ec2:DescribeLaunchTemplates&rdquo;,
 &ldquo;ec2:DescribeLaunchTemplateVersions&rdquo;,
 &ldquo;ec2:DeleteLaunchTemplate&rdquo;,
-&ldquo;ec2:DeleteLaunchTemplateVersions&rdquo;
+&ldquo;ec2:DeleteLaunchTemplateVersions&rdquo;,
+&ldquo;sqs:DeleteMessage&rdquo;,
+&ldquo;sqs:ReceiveMessage&rdquo;
 ],
 &ldquo;Resource&rdquo;: [
 &ldquo;<em>&rdquo;
