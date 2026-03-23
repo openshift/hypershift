@@ -644,36 +644,47 @@ func (r *AWSEndpointServiceReconciler) rejectVpcEndpointConnections(ctx context.
 		return nil, fmt.Errorf("no logger found: %w", err)
 	}
 
-	existingConnectionsResult, describeConnectionsErr := r.ec2Client.DescribeVpcEndpointConnections(ctx, &ec2.DescribeVpcEndpointConnectionsInput{
-		Filters: []ec2types.Filter{
-			{
-				Name:   aws.String("service-id"),
-				Values: []string{serviceID},
-			},
-		},
-	})
-	if describeConnectionsErr != nil {
-		return nil, unwrapError(log, describeConnectionsErr)
-	}
-
 	var actionableEndpointIDs []string
 	var transitionalCount int
-	for _, conn := range existingConnectionsResult.VpcEndpointConnections {
-		endpointID := aws.ToString(conn.VpcEndpointId)
-		switch conn.VpcEndpointState {
-		case ec2types.StatePendingAcceptance, ec2types.StatePending, ec2types.StateAvailable:
-			// Actionable: these connections can be rejected
-			actionableEndpointIDs = append(actionableEndpointIDs, endpointID)
-			log.Info("vpc endpoint connection in actionable state", "endpointID", endpointID, "state", conn.VpcEndpointState)
-		case ec2types.StateDeleted, ec2types.StateFailed, ec2types.StateExpired:
-			// Terminal: these connections should not block deletion
-			log.Info("vpc endpoint connection in terminal state", "endpointID", endpointID, "state", conn.VpcEndpointState)
-		default:
-			// Transitional (Deleting, Rejected, Partial, or any unknown state):
-			// these are in progress and must be waited out
-			transitionalCount++
-			log.Info("vpc endpoint connection in transitional state, waiting for it to complete", "endpointID", endpointID, "state", conn.VpcEndpointState)
+
+	// Paginate through all DescribeVpcEndpointConnections results to ensure no connections are missed.
+	var nextToken *string
+	for {
+		existingConnectionsResult, describeConnectionsErr := r.ec2Client.DescribeVpcEndpointConnections(ctx, &ec2.DescribeVpcEndpointConnectionsInput{
+			Filters: []ec2types.Filter{
+				{
+					Name:   aws.String("service-id"),
+					Values: []string{serviceID},
+				},
+			},
+			NextToken: nextToken,
+		})
+		if describeConnectionsErr != nil {
+			return nil, unwrapError(log, describeConnectionsErr)
 		}
+
+		for _, conn := range existingConnectionsResult.VpcEndpointConnections {
+			endpointID := aws.ToString(conn.VpcEndpointId)
+			switch conn.VpcEndpointState {
+			case ec2types.StatePendingAcceptance, ec2types.StatePending, ec2types.StateAvailable:
+				// Actionable: these connections can be rejected
+				actionableEndpointIDs = append(actionableEndpointIDs, endpointID)
+				log.Info("vpc endpoint connection in actionable state", "endpointID", endpointID, "state", conn.VpcEndpointState)
+			case ec2types.StateDeleted, ec2types.StateFailed, ec2types.StateExpired:
+				// Terminal: these connections should not block deletion
+				log.Info("vpc endpoint connection in terminal state", "endpointID", endpointID, "state", conn.VpcEndpointState)
+			default:
+				// Transitional (Deleting, Rejected, Partial, or any unknown state):
+				// these are in progress and must be waited out
+				transitionalCount++
+				log.Info("vpc endpoint connection in transitional state, waiting for it to complete", "endpointID", endpointID, "state", conn.VpcEndpointState)
+			}
+		}
+
+		if existingConnectionsResult.NextToken == nil {
+			break
+		}
+		nextToken = existingConnectionsResult.NextToken
 	}
 
 	if len(actionableEndpointIDs) > 0 {

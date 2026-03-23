@@ -507,6 +507,59 @@ func TestRejectVpcEndpointConnections(t *testing.T) {
 			t.Errorf("expected nil result, got %v", result)
 		}
 	})
+
+	t.Run("When paginated results span multiple pages it should aggregate all connections", func(t *testing.T) {
+		mockEC2 := awsapi.NewMockEC2API(gomock.NewController(t))
+		page1Token := "page2-token"
+		// First page returns one actionable connection and a NextToken
+		firstCall := mockEC2.EXPECT().DescribeVpcEndpointConnections(gomock.Any(), gomock.Any()).Return(
+			&ec2.DescribeVpcEndpointConnectionsOutput{
+				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
+					{VpcEndpointId: aws.String("vpce-page1"), VpcEndpointState: ec2types.StateAvailable},
+				},
+				NextToken: &page1Token,
+			}, nil)
+		// Second page returns another actionable connection and a transitional one, no NextToken
+		mockEC2.EXPECT().DescribeVpcEndpointConnections(gomock.Any(), gomock.Any()).After(firstCall).Return(
+			&ec2.DescribeVpcEndpointConnectionsOutput{
+				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
+					{VpcEndpointId: aws.String("vpce-page2"), VpcEndpointState: ec2types.StatePendingAcceptance},
+					{VpcEndpointId: aws.String("vpce-page2-deleting"), VpcEndpointState: ec2types.StateDeleting},
+				},
+			}, nil)
+
+		// Both actionable endpoints from both pages should be rejected in a single call
+		mockEC2.EXPECT().RejectVpcEndpointConnections(gomock.Any(), gomock.Any()).
+			Do(func(_ context.Context, in *ec2.RejectVpcEndpointConnectionsInput, _ ...func(*ec2.Options)) {
+				if len(in.VpcEndpointIds) != 2 {
+					t.Errorf("expected 2 endpoint IDs to reject, got %d", len(in.VpcEndpointIds))
+				}
+				actualIDs := map[string]bool{}
+				for _, id := range in.VpcEndpointIds {
+					actualIDs[id] = true
+				}
+				if !actualIDs["vpce-page1"] {
+					t.Error("expected vpce-page1 to be rejected")
+				}
+				if !actualIDs["vpce-page2"] {
+					t.Error("expected vpce-page2 to be rejected")
+				}
+			}).
+			Return(nil, nil)
+
+		r := AWSEndpointServiceReconciler{
+			ec2Client: mockEC2,
+		}
+
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+		result, err := r.rejectVpcEndpointConnections(ctx, "vpce-svc-test")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !result.hasTransitionalConnections {
+			t.Error("expected hasTransitionalConnections=true due to Deleting connection on page 2")
+		}
+	})
 }
 
 func Test_controlPlaneOperatorRoleARNWithoutPath(t *testing.T) {
