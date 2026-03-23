@@ -107,6 +107,7 @@ func (o HyperShiftNamespace) Build() *corev1.Namespace {
 
 const (
 	awsCredsSecretName            = "hypershift-operator-aws-credentials"
+	azureCredsSecretName          = "hypershift-operator-azure-credentials"
 	oidcProviderS3CredsSecretName = "hypershift-operator-oidc-provider-s3-credentials"
 	scaleFromZeroCredsSecretName  = "hypershift-operator-scale-from-zero-credentials"
 	externaDNSCredsSecretName     = "external-dns-credentials"
@@ -130,6 +131,29 @@ func (o HyperShiftOperatorCredentialsSecret) Build() *corev1.Secret {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      awsCredsSecretName,
+			Namespace: o.Namespace.Name,
+		},
+		Data: map[string][]byte{
+			o.CredsKey: o.CredsBytes,
+		},
+	}
+	return secret
+}
+
+type HyperShiftOperatorAzureCredentialsSecret struct {
+	Namespace  *corev1.Namespace
+	CredsBytes []byte
+	CredsKey   string
+}
+
+func (o HyperShiftOperatorAzureCredentialsSecret) Build() *corev1.Secret {
+	secret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: corev1.SchemeGroupVersion.String(),
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      azureCredsSecretName,
 			Namespace: o.Namespace.Name,
 		},
 		Data: map[string][]byte{
@@ -455,6 +479,11 @@ type HyperShiftOperatorDeployment struct {
 	AWSPrivateSecret                        *corev1.Secret
 	AWSPrivateSecretKey                     string
 	AWSPrivateRegion                        string
+	AzurePrivateSecret                      *corev1.Secret
+	AzurePrivateSecretKey                   string
+	AzurePLSManagedIdentityClientID         string
+	AzurePLSSubscriptionID                  string
+	AzurePLSResourceGroup                   string
 	GCPProject                              string
 	GCPRegion                               string
 	OIDCBucketName                          string
@@ -723,6 +752,46 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 					Name:  "AWS_SDK_LOAD_CONFIG",
 					Value: "1",
 				})
+		case hyperv1.AzurePlatform:
+			if o.AzurePLSResourceGroup != "" {
+				envVars = append(envVars, corev1.EnvVar{
+					Name:  "AZURE_RESOURCE_GROUP",
+					Value: o.AzurePLSResourceGroup,
+				})
+			}
+			if o.AzurePLSManagedIdentityClientID != "" {
+				// Workload identity mode: the SA annotation triggers Azure AD Workload Identity
+				// webhook to inject federated tokens. Set the client ID as an env var so the
+				// HO platform controller can construct credentials.
+				envVars = append(envVars, corev1.EnvVar{
+					Name:  "AZURE_PLS_CLIENT_ID",
+					Value: o.AzurePLSManagedIdentityClientID,
+				})
+				if o.AzurePLSSubscriptionID != "" {
+					envVars = append(envVars, corev1.EnvVar{
+						Name:  "AZURE_SUBSCRIPTION_ID",
+						Value: o.AzurePLSSubscriptionID,
+					})
+				}
+			} else if o.AzurePrivateSecret != nil && len(o.AzurePrivateSecret.Name) > 0 && len(o.AzurePrivateSecretKey) > 0 {
+				volumes = append(volumes, corev1.Volume{
+					Name: "azure-credentials",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{
+							SecretName: o.AzurePrivateSecret.Name,
+						},
+					},
+				})
+				volumeMounts = append(volumeMounts, corev1.VolumeMount{
+					Name:      "azure-credentials",
+					MountPath: "/etc/azure-provider",
+					ReadOnly:  true,
+				})
+				envVars = append(envVars, corev1.EnvVar{
+					Name:  "AZURE_CREDENTIALS_FILE",
+					Value: "/etc/azure-provider/" + o.AzurePrivateSecretKey,
+				})
+			}
 		case hyperv1.GCPPlatform:
 			if o.GCPProject != "" {
 				envVars = append(envVars, corev1.EnvVar{
@@ -924,6 +993,12 @@ func (o HyperShiftOperatorDeployment) Build() *appsv1.Deployment {
 				},
 			},
 		},
+	}
+
+	// Azure Workload Identity requires this pod label for the webhook to inject
+	// federated tokens (AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_FEDERATED_TOKEN_FILE).
+	if o.AzurePLSManagedIdentityClientID != "" {
+		deployment.Spec.Template.Labels["azure.workload.identity/use"] = "true"
 	}
 
 	if o.IncludeVersion {

@@ -6089,3 +6089,425 @@ func TestReconcileCustomExternalKubeconfig(t *testing.T) {
 		})
 	}
 }
+
+func TestComputeAzurePLSCondition(t *testing.T) {
+	tests := []struct {
+		name          string
+		plsConditions []metav1.Condition
+		conditionType hyperv1.ConditionType
+		expected      metav1.Condition
+	}{
+		{
+			name: "When AzurePrivateLinkServiceAvailable is true it should return condition true",
+			plsConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.AzurePrivateLinkServiceAvailable),
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperv1.AzurePLSSuccessReason,
+					Message: hyperv1.AllIsWellMessage,
+				},
+			},
+			conditionType: hyperv1.AzurePrivateLinkServiceAvailable,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.AzurePrivateLinkServiceAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.AzurePLSSuccessReason,
+				Message: hyperv1.AllIsWellMessage,
+			},
+		},
+		{
+			name: "When AzurePLSCreated is false it should return condition false",
+			plsConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.AzurePLSCreated),
+					Status:  metav1.ConditionFalse,
+					Reason:  hyperv1.AzurePLSErrorReason,
+					Message: "PLS creation failed",
+				},
+			},
+			conditionType: hyperv1.AzurePLSCreated,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.AzurePLSCreated),
+				Status:  metav1.ConditionFalse,
+				Reason:  hyperv1.AzurePLSErrorReason,
+				Message: "PLS creation failed",
+			},
+		},
+		{
+			name:          "When PLS has no conditions it should return condition unknown",
+			plsConditions: []metav1.Condition{},
+			conditionType: hyperv1.AzurePrivateLinkServiceAvailable,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.AzurePrivateLinkServiceAvailable),
+				Status:  metav1.ConditionUnknown,
+				Reason:  hyperv1.StatusUnknownReason,
+				Message: "AzurePrivateLinkService conditions not found",
+			},
+		},
+		{
+			name: "When AzureInternalLoadBalancerAvailable is true it should return condition true",
+			plsConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.AzureInternalLoadBalancerAvailable),
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperv1.AzurePLSSuccessReason,
+					Message: "Internal Load Balancer found",
+				},
+			},
+			conditionType: hyperv1.AzureInternalLoadBalancerAvailable,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.AzureInternalLoadBalancerAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.AzurePLSSuccessReason,
+				Message: hyperv1.AllIsWellMessage,
+			},
+		},
+		{
+			name: "When AzurePrivateEndpointAvailable is true it should return condition true",
+			plsConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.AzurePrivateEndpointAvailable),
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperv1.AzurePLSSuccessReason,
+					Message: "Private Endpoint is available",
+				},
+			},
+			conditionType: hyperv1.AzurePrivateEndpointAvailable,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.AzurePrivateEndpointAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.AzurePLSSuccessReason,
+				Message: hyperv1.AllIsWellMessage,
+			},
+		},
+		{
+			name: "When AzurePrivateDNSAvailable is true it should return condition true",
+			plsConditions: []metav1.Condition{
+				{
+					Type:    string(hyperv1.AzurePrivateDNSAvailable),
+					Status:  metav1.ConditionTrue,
+					Reason:  hyperv1.AzurePLSSuccessReason,
+					Message: "Private DNS zone and A records are available",
+				},
+			},
+			conditionType: hyperv1.AzurePrivateDNSAvailable,
+			expected: metav1.Condition{
+				Type:    string(hyperv1.AzurePrivateDNSAvailable),
+				Status:  metav1.ConditionTrue,
+				Reason:  hyperv1.AzurePLSSuccessReason,
+				Message: hyperv1.AllIsWellMessage,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			azPLSList := hyperv1.AzurePrivateLinkServiceList{
+				Items: []hyperv1.AzurePrivateLinkService{
+					{
+						ObjectMeta: metav1.ObjectMeta{
+							Name: "test-pls",
+						},
+						Status: hyperv1.AzurePrivateLinkServiceStatus{
+							Conditions: tc.plsConditions,
+						},
+					},
+				},
+			}
+			condition := computeAzurePLSCondition(azPLSList, tc.conditionType)
+			if condition != tc.expected {
+				t.Errorf("error, expected %v\nbut got %v", tc.expected, condition)
+			}
+		})
+	}
+}
+
+func TestValidateAzureConfig(t *testing.T) {
+	testCases := []struct {
+		name        string
+		hc          *hyperv1.HostedCluster
+		expectError bool
+		errorMsg    string
+		setup       func(t *testing.T)
+	}{
+		{
+			name: "When platform is not Azure it should return nil",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AWSPlatform,
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When platform is Azure but Azure spec is nil it should return an error",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:  hyperv1.AzurePlatform,
+						Azure: nil,
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    "azurecluster needs .spec.platform.azure to be filled",
+		},
+		{
+			name: "When topology is Private without Private config it should return an error",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPrivate,
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    `spec.platform.azure.private.privateLink: Invalid value: null: private.privateLink is required when topology is "Private"`,
+		},
+		{
+			name: "When topology is PublicAndPrivate without Private config it should return an error",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPublicAndPrivate,
+						},
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    `spec.platform.azure.private.privateLink: Invalid value: null: private.privateLink is required when topology is "PublicAndPrivate"`,
+		},
+		{
+			name: "When topology is Public without Private config it should succeed",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPublic,
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When topology is Private with Private config it should succeed",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPrivate,
+							Private: hyperv1.AzurePrivateSpec{
+								Type: hyperv1.AzurePrivateTypePrivateLink,
+								PrivateLink: &hyperv1.AzurePrivateLinkSpec{
+									NATSubnetID:                    "/subscriptions/sub-1/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/vnet/subnets/nat-subnet",
+									AdditionalAllowedSubscriptions: []string{"sub-1"},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "When ARO HCP has Private topology without Private config it should succeed",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type: hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{
+							Topology: hyperv1.AzureTopologyPrivate,
+						},
+					},
+				},
+			},
+			expectError: false,
+			setup: func(t *testing.T) {
+				azureutil.SetAsAroHCPTest(t)
+			},
+		},
+		{
+			name: "When endpointAccess is zero value it should succeed as it defaults to Public",
+			hc: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Platform: hyperv1.PlatformSpec{
+						Type:  hyperv1.AzurePlatform,
+						Azure: &hyperv1.AzurePlatformSpec{},
+					},
+				},
+			},
+			expectError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.setup != nil {
+				tc.setup(t)
+			}
+			r := &HostedClusterReconciler{}
+			err := r.validateAzureConfig(tc.hc)
+			if tc.expectError {
+				if err == nil {
+					t.Fatalf("expected error but got nil")
+				}
+				if err.Error() != tc.errorMsg {
+					t.Errorf("expected error message %q but got %q", tc.errorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("expected no error but got: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestComputeEndpointServiceCondition(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	const (
+		testErrorReason   = "TestError"
+		testSuccessReason = "TestSuccess"
+		testNotFoundMsg   = "test conditions not found"
+		testConditionType = "TestAvailable"
+	)
+
+	tests := []struct {
+		name               string
+		resourceConditions [][]metav1.Condition
+		conditionType      hyperv1.ConditionType
+		expected           metav1.Condition
+	}{
+		{
+			name:               "When no resource conditions exist it should return unknown",
+			resourceConditions: [][]metav1.Condition{},
+			conditionType:      testConditionType,
+			expected: metav1.Condition{
+				Type:    testConditionType,
+				Status:  metav1.ConditionUnknown,
+				Reason:  hyperv1.StatusUnknownReason,
+				Message: testNotFoundMsg,
+			},
+		},
+		{
+			name: "When no matching condition type exists it should return unknown",
+			resourceConditions: [][]metav1.Condition{
+				{
+					{
+						Type:   "OtherCondition",
+						Status: metav1.ConditionTrue,
+					},
+				},
+			},
+			conditionType: testConditionType,
+			expected: metav1.Condition{
+				Type:    testConditionType,
+				Status:  metav1.ConditionUnknown,
+				Reason:  hyperv1.StatusUnknownReason,
+				Message: testNotFoundMsg,
+			},
+		},
+		{
+			name: "When all conditions are true it should return true with success reason",
+			resourceConditions: [][]metav1.Condition{
+				{
+					{
+						Type:    testConditionType,
+						Status:  metav1.ConditionTrue,
+						Reason:  testSuccessReason,
+						Message: hyperv1.AllIsWellMessage,
+					},
+				},
+				{
+					{
+						Type:    testConditionType,
+						Status:  metav1.ConditionTrue,
+						Reason:  testSuccessReason,
+						Message: hyperv1.AllIsWellMessage,
+					},
+				},
+			},
+			conditionType: testConditionType,
+			expected: metav1.Condition{
+				Type:    testConditionType,
+				Status:  metav1.ConditionTrue,
+				Reason:  testSuccessReason,
+				Message: hyperv1.AllIsWellMessage,
+			},
+		},
+		{
+			name: "When any condition is false it should return false with aggregated messages",
+			resourceConditions: [][]metav1.Condition{
+				{
+					{
+						Type:    testConditionType,
+						Status:  metav1.ConditionTrue,
+						Reason:  testSuccessReason,
+						Message: hyperv1.AllIsWellMessage,
+					},
+				},
+				{
+					{
+						Type:    testConditionType,
+						Status:  metav1.ConditionFalse,
+						Reason:  testErrorReason,
+						Message: "resource 1 error",
+					},
+				},
+				{
+					{
+						Type:    testConditionType,
+						Status:  metav1.ConditionFalse,
+						Reason:  testErrorReason,
+						Message: "resource 2 error",
+					},
+				},
+			},
+			conditionType: testConditionType,
+			expected: metav1.Condition{
+				Type:    testConditionType,
+				Status:  metav1.ConditionFalse,
+				Reason:  testErrorReason,
+				Message: "resource 1 error; resource 2 error",
+			},
+		},
+		{
+			name: "When a single condition is false it should return false with error reason",
+			resourceConditions: [][]metav1.Condition{
+				{
+					{
+						Type:    testConditionType,
+						Status:  metav1.ConditionFalse,
+						Reason:  testErrorReason,
+						Message: "something went wrong",
+					},
+				},
+			},
+			conditionType: testConditionType,
+			expected: metav1.Condition{
+				Type:    testConditionType,
+				Status:  metav1.ConditionFalse,
+				Reason:  testErrorReason,
+				Message: "something went wrong",
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			condition := computeEndpointServiceCondition(tc.resourceConditions, tc.conditionType, testErrorReason, testSuccessReason, testNotFoundMsg)
+			g.Expect(condition).To(Equal(tc.expected))
+		})
+	}
+}

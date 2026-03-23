@@ -140,6 +140,84 @@ func TestOptions_Validate(t *testing.T) {
 			},
 			expectError: false,
 		},
+		"When Azure private platform is specified without credentials, it should error": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.AzurePlatform),
+			},
+			expectError: true,
+		},
+		"When Azure private platform is specified with creds file, it should succeed": {
+			inputOptions: Options{
+				PrivatePlatform:       string(hyperv1.AzurePlatform),
+				AzurePrivateCreds:     "/dev/null",
+				AzurePLSResourceGroup: "rg-mgmt",
+			},
+			expectError: false,
+		},
+		"When Azure private platform is specified with secret reference, it should succeed": {
+			inputOptions: Options{
+				PrivatePlatform:               string(hyperv1.AzurePlatform),
+				AzurePrivateCredentialsSecret: "my-azure-secret",
+				AzurePLSResourceGroup:         "rg-mgmt",
+			},
+			expectError: false,
+		},
+		"When Azure private platform is specified with both creds and secret, it should error": {
+			inputOptions: Options{
+				PrivatePlatform:               string(hyperv1.AzurePlatform),
+				AzurePrivateCreds:             "/dev/null",
+				AzurePrivateCredentialsSecret: "my-azure-secret",
+			},
+			expectError: true,
+		},
+		"When Azure private platform is specified for ARO HCP without credentials, it should succeed": {
+			inputOptions: Options{
+				PrivatePlatform: string(hyperv1.AzurePlatform),
+				ManagedService:  hyperv1.AroHCP,
+			},
+			expectError: false,
+		},
+		"When Azure private platform is specified with managed identity and subscription ID, it should succeed": {
+			inputOptions: Options{
+				PrivatePlatform:                 string(hyperv1.AzurePlatform),
+				AzurePLSManagedIdentityClientID: "00000000-0000-0000-0000-000000000001",
+				AzurePLSSubscriptionID:          "00000000-0000-0000-0000-000000000002",
+				AzurePLSResourceGroup:           "rg-mgmt",
+			},
+			expectError: false,
+		},
+		"When Azure private platform is specified without resource group, it should error": {
+			inputOptions: Options{
+				PrivatePlatform:   string(hyperv1.AzurePlatform),
+				AzurePrivateCreds: "/dev/null",
+			},
+			expectError: true,
+		},
+		"When Azure private platform is specified with managed identity but no subscription ID, it should error": {
+			inputOptions: Options{
+				PrivatePlatform:                 string(hyperv1.AzurePlatform),
+				AzurePLSManagedIdentityClientID: "00000000-0000-0000-0000-000000000001",
+			},
+			expectError: true,
+		},
+		"When Azure private platform is specified with managed identity and creds file, it should error": {
+			inputOptions: Options{
+				PrivatePlatform:                 string(hyperv1.AzurePlatform),
+				AzurePLSManagedIdentityClientID: "00000000-0000-0000-0000-000000000001",
+				AzurePLSSubscriptionID:          "00000000-0000-0000-0000-000000000002",
+				AzurePrivateCreds:               "/dev/null",
+			},
+			expectError: true,
+		},
+		"When Azure private platform is specified with managed identity and secret, it should error": {
+			inputOptions: Options{
+				PrivatePlatform:                 string(hyperv1.AzurePlatform),
+				AzurePLSManagedIdentityClientID: "00000000-0000-0000-0000-000000000001",
+				AzurePLSSubscriptionID:          "00000000-0000-0000-0000-000000000002",
+				AzurePrivateCredentialsSecret:   "my-azure-secret",
+			},
+			expectError: true,
+		},
 		"when all data specified there is no error": {
 			inputOptions: Options{
 				PrivatePlatform:                           string(hyperv1.NonePlatform),
@@ -200,13 +278,15 @@ func TestOptions_Validate(t *testing.T) {
 				PrivatePlatform:                 string(hyperv1.AzurePlatform),
 				AzurePLSManagedIdentityClientID: "client-id",
 				AzurePLSSubscriptionID:          "sub-id",
+				AzurePLSResourceGroup:           "rg-mgmt",
 			},
 			expectError: false,
 		},
 		"When Azure private platform with creds file it should succeed": {
 			inputOptions: Options{
-				PrivatePlatform:   string(hyperv1.AzurePlatform),
-				AzurePrivateCreds: "/path/to/credentials",
+				PrivatePlatform:       string(hyperv1.AzurePlatform),
+				AzurePrivateCreds:     "/path/to/credentials",
+				AzurePLSResourceGroup: "rg-mgmt",
 			},
 			expectError: false,
 		},
