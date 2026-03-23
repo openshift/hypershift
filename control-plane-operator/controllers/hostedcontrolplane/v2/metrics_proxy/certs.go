@@ -46,6 +46,15 @@ func adaptServingCertSecret(cpContext component.WorkloadContext, secret *corev1.
 		return fmt.Errorf("failed to get metrics-proxy ca-cert secret: %w", err)
 	}
 
+	dnsNames := []string{
+		"metrics-proxy",
+		fmt.Sprintf("metrics-proxy.%s.svc", cpContext.HCP.Namespace),
+		fmt.Sprintf("metrics-proxy.%s.svc.cluster.local", cpContext.HCP.Namespace),
+	}
+
+	// Include the route hostname as a SAN if available. On management clusters
+	// without an OpenShift router (e.g. AKS), the route may never be admitted,
+	// so we must not block cert generation on its availability.
 	metricsProxyRoute := &routev1.Route{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: cpContext.HCP.Namespace,
@@ -53,21 +62,11 @@ func adaptServingCertSecret(cpContext component.WorkloadContext, secret *corev1.
 		},
 	}
 	if err := cpContext.Client.Get(cpContext, client.ObjectKeyFromObject(metricsProxyRoute), metricsProxyRoute); err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get metrics-proxy route: %w", err)
 		}
-		return fmt.Errorf("failed to get metrics-proxy route: %w", err)
-	}
-	if len(metricsProxyRoute.Status.Ingress) == 0 || len(metricsProxyRoute.Status.Ingress[0].Host) == 0 {
-		return nil
-	}
-	metricsProxyAddress := metricsProxyRoute.Status.Ingress[0].Host
-
-	dnsNames := []string{
-		metricsProxyAddress,
-		"metrics-proxy",
-		fmt.Sprintf("metrics-proxy.%s.svc", cpContext.HCP.Namespace),
-		fmt.Sprintf("metrics-proxy.%s.svc.cluster.local", cpContext.HCP.Namespace),
+	} else if len(metricsProxyRoute.Status.Ingress) > 0 && len(metricsProxyRoute.Status.Ingress[0].Host) > 0 {
+		dnsNames = append([]string{metricsProxyRoute.Status.Ingress[0].Host}, dnsNames...)
 	}
 
 	secret.Type = corev1.SecretTypeTLS
