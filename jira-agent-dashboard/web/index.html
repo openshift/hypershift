@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JIRA Agent Dashboard - Overview</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <nav>
+      <h1>JIRA Agent</h1>
+      <ul>
+        <li><a href="index.html" class="active">Overview</a></li>
+        <li><a href="issues.html">Issues</a></li>
+        <li><a href="comments.html">Comments</a></li>
+      </ul>
+    </nav>
+
+    <main>
+      <div class="page-header">
+        <h2>Dashboard Overview</h2>
+      </div>
+
+      <!-- Time Range Selector -->
+      <div class="time-range">
+        <label>Time Range:</label>
+        <button id="range-30d">Last 30 Days</button>
+        <button id="range-90d" class="active">Last 90 Days</button>
+        <span>|</span>
+        <label for="date-from">From:</label>
+        <input type="date" id="date-from">
+        <label for="date-to">To:</label>
+        <input type="date" id="date-to">
+      </div>
+
+      <!-- Summary Cards -->
+      <div class="summary-cards">
+        <div class="card">
+          <h3>Total Issues</h3>
+          <div class="value" id="total-issues">-</div>
+        </div>
+        <div class="card">
+          <h3>Merge Rate</h3>
+          <div class="value" id="merge-rate">-</div>
+        </div>
+        <div class="card">
+          <h3>Avg Cost</h3>
+          <div class="value" id="avg-cost">-</div>
+        </div>
+        <div class="card">
+          <h3>Avg Review Comments</h3>
+          <div class="value" id="avg-comments">-</div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="charts">
+        <div class="chart-container">
+          <h3>Merge Rate Trend</h3>
+          <canvas id="merge-rate-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Review Comments Trend</h3>
+          <canvas id="review-comments-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Cost Trend</h3>
+          <canvas id="cost-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Merge Duration Trend</h3>
+          <canvas id="duration-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Quality Score Trend</h3>
+          <canvas id="quality-score-chart"></canvas>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/trends.js"></script>
+</body>
+</html>

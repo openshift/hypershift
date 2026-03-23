@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JIRA Agent Dashboard - Comments</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <nav>
+      <h1>JIRA Agent</h1>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="issues.html">Issues</a></li>
+        <li><a href="comments.html" class="active">Comments</a></li>
+      </ul>
+    </nav>
+
+    <main>
+      <div class="page-header">
+        <h2>Comment Classification Summary</h2>
+      </div>
+
+      <!-- Time Range Selector -->
+      <div class="time-range">
+        <label>Time Range:</label>
+        <button id="range-30d">Last 30 Days</button>
+        <button id="range-90d" class="active">Last 90 Days</button>
+        <span>|</span>
+        <label for="date-from">From:</label>
+        <input type="date" id="date-from">
+        <label for="date-to">To:</label>
+        <input type="date" id="date-to">
+      </div>
+
+      <!-- Charts -->
+      <div class="charts">
+        <div class="chart-container">
+          <h3>Severity Breakdown</h3>
+          <canvas id="severity-chart"></canvas>
+        </div>
+        <div class="chart-container">
+          <h3>Topic Breakdown</h3>
+          <canvas id="topic-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Pattern Table -->
+      <div class="table-container pattern-table">
+        <h3 style="padding: 20px 20px 0;">Top Comment Patterns</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Severity</th>
+              <th>Topic</th>
+              <th>Count</th>
+            </tr>
+          </thead>
+          <tbody id="pattern-tbody">
+            <tr><td colspan="3" style="text-align:center;">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/comments.js"></script>
+</body>
+</html>
