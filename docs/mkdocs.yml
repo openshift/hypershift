@@ -135,6 +135,13 @@ nav:
     - 'Troubleshooting':
         - how-to/azure/troubleshooting/index.md
         - how-to/azure/troubleshooting/debug-nodes.md
+  - 'GCP':
+    - how-to/gcp/index.md
+    - how-to/gcp/setup-management-cluster.md
+    - how-to/gcp/create-gcp-infra.md
+    - how-to/gcp/create-gcp-iam.md
+    - how-to/gcp/create-gcp-hosted-cluster.md
+    - how-to/gcp/e2e-gke-ci-job.md
   - 'Agent':
     - how-to/agent/create-agent-cluster.md
     - how-to/agent/create-heterogeneous-nodepools.md
