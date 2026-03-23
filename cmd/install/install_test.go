@@ -1,6 +1,7 @@
 package install
 
 import (
+	"io"
 	"io/fs"
 	"path/filepath"
 	"strings"
@@ -11,12 +12,19 @@ import (
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/install/assets"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
+	hyperapi "github.com/openshift/hypershift/support/api"
+
+	operatorv1alpha1 "github.com/openshift/api/operator/v1alpha1"
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/set"
 
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestOptions_Validate(t *testing.T) {
@@ -468,6 +476,182 @@ func TestHyperShiftOperatorManifests_SharedIngress(t *testing.T) {
 				g.Expect(hasSharedIngressClusterRole).To(BeFalse(), "expected shared ingress ClusterRole to not be present")
 				g.Expect(hasSharedIngressClusterRoleBinding).To(BeFalse(), "expected shared ingress ClusterRoleBinding to not be present")
 			}
+		})
+	}
+}
+
+// fakeDiscovery implements discovery.ServerResourcesInterface for testing.
+type fakeDiscovery struct {
+	resources []*metav1.APIResourceList
+}
+
+func (f *fakeDiscovery) ServerResourcesForGroupVersion(groupVersion string) (*metav1.APIResourceList, error) {
+	for _, rl := range f.resources {
+		if rl.GroupVersion == groupVersion {
+			return rl, nil
+		}
+	}
+	return nil, &apierrors.StatusError{
+		ErrStatus: metav1.Status{
+			Status: metav1.StatusFailure,
+			Reason: metav1.StatusReasonNotFound,
+		},
+	}
+}
+
+func TestIsClusterAPIRegistered(t *testing.T) {
+	tests := []struct {
+		name           string
+		resources      []*metav1.APIResourceList
+		expectedResult bool
+	}{
+		{
+			name: "When ClusterAPI API is registered it should detect CCAPIO presence",
+			resources: []*metav1.APIResourceList{
+				{
+					GroupVersion: "operator.openshift.io/v1alpha1",
+					APIResources: []metav1.APIResource{
+						{Name: "imagecontentsourcepolicies", Kind: "ImageContentSourcePolicy"},
+						{Name: "clusterapis", Kind: "ClusterAPI"},
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			name:           "When ClusterAPI API is not registered it should skip CCAPIO coordination",
+			resources:      nil,
+			expectedResult: false,
+		},
+		{
+			name: "When operator.openshift.io/v1alpha1 exists but ClusterAPI kind is not present it should return false",
+			resources: []*metav1.APIResourceList{
+				{
+					GroupVersion: "operator.openshift.io/v1alpha1",
+					APIResources: []metav1.APIResource{
+						{Name: "imagecontentsourcepolicies", Kind: "ImageContentSourcePolicy"},
+					},
+				},
+			},
+			expectedResult: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			disco := &fakeDiscovery{resources: tc.resources}
+
+			registered, err := isClusterAPIRegistered(disco)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(registered).To(Equal(tc.expectedResult))
+		})
+	}
+}
+
+func TestEnsureUnmanagedCRDs(t *testing.T) {
+	capiCRDs := []crclient.Object{
+		&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "clusters.cluster.x-k8s.io"}},
+		&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "machines.cluster.x-k8s.io"}},
+		&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "nodepools.hypershift.openshift.io"}},
+	}
+
+	tests := []struct {
+		name             string
+		existingConfig   *operatorv1alpha1.ClusterAPI
+		crds             []crclient.Object
+		expectedCRDNames []string
+		expectCreate     bool
+		expectNoChange   bool
+	}{
+		{
+			name:           "When ClusterAPI config does not exist it should create it with unmanaged CRDs",
+			existingConfig: nil,
+			crds:           capiCRDs,
+			expectedCRDNames: []string{
+				"clusters.cluster.x-k8s.io",
+				"machines.cluster.x-k8s.io",
+			},
+			expectCreate: true,
+		},
+		{
+			name: "When ClusterAPI config exists it should merge unmanaged CRDs with existing entries",
+			existingConfig: &operatorv1alpha1.ClusterAPI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cluster",
+				},
+				Spec: &operatorv1alpha1.ClusterAPISpec{
+					UnmanagedCustomResourceDefinitions: []string{
+						"clusters.cluster.x-k8s.io",
+						"machinesets.cluster.x-k8s.io",
+					},
+				},
+			},
+			crds: capiCRDs,
+			expectedCRDNames: []string{
+				"clusters.cluster.x-k8s.io",
+				"machines.cluster.x-k8s.io",
+				"machinesets.cluster.x-k8s.io",
+			},
+		},
+		{
+			name: "When all CRDs already listed it should not update",
+			existingConfig: &operatorv1alpha1.ClusterAPI{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "cluster",
+				},
+				Spec: &operatorv1alpha1.ClusterAPISpec{
+					UnmanagedCustomResourceDefinitions: []string{
+						"clusters.cluster.x-k8s.io",
+						"machines.cluster.x-k8s.io",
+					},
+				},
+			},
+			crds:           capiCRDs,
+			expectNoChange: true,
+		},
+		{
+			name:           "When populating unmanaged CRDs it should only include CAPI CRDs",
+			existingConfig: nil,
+			crds: []crclient.Object{
+				&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "nodepools.hypershift.openshift.io"}},
+				&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{Name: "hostedclusters.hypershift.openshift.io"}},
+			},
+			expectNoChange: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+			builder := fake.NewClientBuilder().WithScheme(hyperapi.Scheme)
+			if tc.existingConfig != nil {
+				builder = builder.WithObjects(tc.existingConfig)
+			}
+			client := builder.Build()
+
+			err := ensureUnmanagedCRDs(t.Context(), io.Discard, client, tc.crds)
+			g.Expect(err).ToNot(HaveOccurred())
+
+			if tc.expectNoChange {
+				config := &operatorv1alpha1.ClusterAPI{}
+				err := client.Get(t.Context(), crclient.ObjectKey{Name: "cluster"}, config)
+				if tc.existingConfig == nil {
+					g.Expect(err).To(HaveOccurred(), "expected no ClusterAPI config to be created")
+					return
+				}
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(config.Spec).ToNot(BeNil())
+				g.Expect(config.Spec.UnmanagedCustomResourceDefinitions).
+					To(ConsistOf(tc.existingConfig.Spec.UnmanagedCustomResourceDefinitions))
+				return
+			}
+
+			config := &operatorv1alpha1.ClusterAPI{}
+			err = client.Get(t.Context(), crclient.ObjectKey{Name: "cluster"}, config)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(config.Spec).ToNot(BeNil())
+			g.Expect(config.Spec.UnmanagedCustomResourceDefinitions).To(ConsistOf(tc.expectedCRDNames))
 		})
 	}
 }
