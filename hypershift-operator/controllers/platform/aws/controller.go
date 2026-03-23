@@ -598,7 +598,7 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	// or when it has active connections, instead returning errors within output.Unsuccessful
 	// https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DeleteVpcEndpointServiceConfigurations.html
 	if output != nil && len(output.Unsuccessful) != 0 && output.Unsuccessful[0].Error != nil {
-		log.Error(err, "unsuccessful deleting vpc endpoint service", "serviceID", serviceID)
+		log.Info("unsuccessful deleting vpc endpoint service", "serviceID", serviceID)
 		itemErr := *output.Unsuccessful[0].Error
 		if itemErr.Code != nil {
 			switch *itemErr.Code {
@@ -611,8 +611,9 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 				if rejectErr != nil {
 					return false, unwrapError(log, rejectErr)
 				}
-				if result != nil && result.hasTransitionalConnections {
+				if result.hasTransitionalConnections {
 					log.Info("endpoint service has connections in transitional states (e.g. Deleting, Rejected), waiting for them to complete before retrying deletion", "serviceID", serviceID)
+					return false, nil
 				}
 			}
 		}

@@ -2,6 +2,7 @@ package aws
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -143,11 +144,26 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 }
 
 func TestDeleteAWSEndpointService(t *testing.T) {
+	existingConnectionsDeleteOut := &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
+		Unsuccessful: []ec2types.UnsuccessfulItem{
+			{
+				Error: &ec2types.UnsuccessfulItemError{
+					Code:    aws.String("ExistingVpcEndpointConnections"),
+					Message: aws.String("Service has existing active VPC Endpoint connections!"),
+				},
+				ResourceId: aws.String("vpce-svc-id"),
+			},
+		},
+	}
+
 	tests := []struct {
 		name         string
 		deleteOut    *ec2.DeleteVpcEndpointServiceConfigurationsOutput
+		deleteErr    error
 		describeOut  *ec2.DescribeVpcEndpointConnectionsOutput
+		describeErr  error
 		expectReject bool
+		rejectErr    error
 		expected     bool
 		expectErr    bool
 	}{
@@ -176,18 +192,8 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name: "When existing connections are in Available state it should reject them",
-			deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
-				Unsuccessful: []ec2types.UnsuccessfulItem{
-					{
-						Error: &ec2types.UnsuccessfulItemError{
-							Code:    aws.String("ExistingVpcEndpointConnections"),
-							Message: aws.String("Service has existing active VPC Endpoint connections!"),
-						},
-						ResourceId: aws.String("vpce-svc-id"),
-					},
-				},
-			},
+			name:      "When existing connections are in Available state it should reject them",
+			deleteOut: existingConnectionsDeleteOut,
 			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
 				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
 					{
@@ -201,18 +207,8 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			expectErr:    true,
 		},
 		{
-			name: "When existing connections are in Rejected state it should not reject and return not completed",
-			deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
-				Unsuccessful: []ec2types.UnsuccessfulItem{
-					{
-						Error: &ec2types.UnsuccessfulItemError{
-							Code:    aws.String("ExistingVpcEndpointConnections"),
-							Message: aws.String("Service has existing active VPC Endpoint connections!"),
-						},
-						ResourceId: aws.String("vpce-svc-id"),
-					},
-				},
-			},
+			name:      "When existing connections are in Rejected state it should not reject and return not completed without error",
+			deleteOut: existingConnectionsDeleteOut,
 			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
 				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
 					{
@@ -223,21 +219,11 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			},
 			expectReject: false,
 			expected:     false,
-			expectErr:    true,
+			expectErr:    false,
 		},
 		{
-			name: "When existing connections are in Deleting state it should not reject and return not completed",
-			deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
-				Unsuccessful: []ec2types.UnsuccessfulItem{
-					{
-						Error: &ec2types.UnsuccessfulItemError{
-							Code:    aws.String("ExistingVpcEndpointConnections"),
-							Message: aws.String("Service has existing active VPC Endpoint connections!"),
-						},
-						ResourceId: aws.String("vpce-svc-id"),
-					},
-				},
-			},
+			name:      "When existing connections are in Deleting state it should not reject and return not completed without error",
+			deleteOut: existingConnectionsDeleteOut,
 			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
 				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
 					{
@@ -248,21 +234,11 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			},
 			expectReject: false,
 			expected:     false,
-			expectErr:    true,
+			expectErr:    false,
 		},
 		{
-			name: "When existing connections are a mix of Available and Rejected it should only reject the Available ones",
-			deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
-				Unsuccessful: []ec2types.UnsuccessfulItem{
-					{
-						Error: &ec2types.UnsuccessfulItemError{
-							Code:    aws.String("ExistingVpcEndpointConnections"),
-							Message: aws.String("Service has existing active VPC Endpoint connections!"),
-						},
-						ResourceId: aws.String("vpce-svc-id"),
-					},
-				},
-			},
+			name:      "When existing connections are a mix of Available and Rejected it should reject the Available ones and return not completed without error",
+			deleteOut: existingConnectionsDeleteOut,
 			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
 				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
 					{
@@ -281,6 +257,57 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			},
 			expectReject: true,
 			expected:     false,
+			expectErr:    false,
+		},
+		{
+			name:      "When existing connections are all in terminal states it should return not completed with error",
+			deleteOut: existingConnectionsDeleteOut,
+			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
+				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
+					{
+						VpcEndpointId:    aws.String("vpce-deleted"),
+						VpcEndpointState: ec2types.StateDeleted,
+					},
+					{
+						VpcEndpointId:    aws.String("vpce-failed"),
+						VpcEndpointState: ec2types.StateFailed,
+					},
+				},
+			},
+			expectReject: false,
+			expected:     false,
+			expectErr:    true,
+		},
+		{
+			name:      "When DeleteVpcEndpointServiceConfigurations returns an API error it should attempt to reject and return error",
+			deleteErr: fmt.Errorf("aws api error"),
+			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
+				VpcEndpointConnections: []ec2types.VpcEndpointConnection{},
+			},
+			expected:  false,
+			expectErr: true,
+		},
+		{
+			name:        "When DescribeVpcEndpointConnections fails it should return error",
+			deleteOut:   existingConnectionsDeleteOut,
+			describeErr: fmt.Errorf("describe connections error"),
+			expected:    false,
+			expectErr:   true,
+		},
+		{
+			name:      "When RejectVpcEndpointConnections fails it should return error",
+			deleteOut: existingConnectionsDeleteOut,
+			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
+				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
+					{
+						VpcEndpointId:    aws.String("vpce-id"),
+						VpcEndpointState: ec2types.StateAvailable,
+					},
+				},
+			},
+			expectReject: true,
+			rejectErr:    fmt.Errorf("reject connections error"),
+			expected:     false,
 			expectErr:    true,
 		},
 	}
@@ -288,11 +315,11 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			mockEC2 := awsapi.NewMockEC2API(gomock.NewController(t))
-			mockEC2.EXPECT().DeleteVpcEndpointServiceConfigurations(gomock.Any(), gomock.Any()).Return(test.deleteOut, nil)
-			if test.describeOut != nil {
-				mockEC2.EXPECT().DescribeVpcEndpointConnections(gomock.Any(), gomock.Any()).Return(test.describeOut, nil)
+			mockEC2.EXPECT().DeleteVpcEndpointServiceConfigurations(gomock.Any(), gomock.Any()).Return(test.deleteOut, test.deleteErr)
+			if test.describeOut != nil || test.describeErr != nil {
+				mockEC2.EXPECT().DescribeVpcEndpointConnections(gomock.Any(), gomock.Any()).Return(test.describeOut, test.describeErr)
 				if test.expectReject {
-					mockEC2.EXPECT().RejectVpcEndpointConnections(gomock.Any(), gomock.Any()).Return(nil, nil)
+					mockEC2.EXPECT().RejectVpcEndpointConnections(gomock.Any(), gomock.Any()).Return(nil, test.rejectErr)
 				}
 			}
 
@@ -438,6 +465,48 @@ func TestRejectVpcEndpointConnections(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("When DescribeVpcEndpointConnections fails it should return error", func(t *testing.T) {
+		mockEC2 := awsapi.NewMockEC2API(gomock.NewController(t))
+		mockEC2.EXPECT().DescribeVpcEndpointConnections(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("describe error"))
+
+		r := AWSEndpointServiceReconciler{
+			ec2Client: mockEC2,
+		}
+
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+		result, err := r.rejectVpcEndpointConnections(ctx, "vpce-svc-test")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if result != nil {
+			t.Errorf("expected nil result, got %v", result)
+		}
+	})
+
+	t.Run("When RejectVpcEndpointConnections fails it should return error", func(t *testing.T) {
+		mockEC2 := awsapi.NewMockEC2API(gomock.NewController(t))
+		mockEC2.EXPECT().DescribeVpcEndpointConnections(gomock.Any(), gomock.Any()).Return(
+			&ec2.DescribeVpcEndpointConnectionsOutput{
+				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
+					{VpcEndpointId: aws.String("vpce-1"), VpcEndpointState: ec2types.StateAvailable},
+				},
+			}, nil)
+		mockEC2.EXPECT().RejectVpcEndpointConnections(gomock.Any(), gomock.Any()).Return(nil, fmt.Errorf("reject error"))
+
+		r := AWSEndpointServiceReconciler{
+			ec2Client: mockEC2,
+		}
+
+		ctx := log.IntoContext(t.Context(), testr.New(t))
+		result, err := r.rejectVpcEndpointConnections(ctx, "vpce-svc-test")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+		if result != nil {
+			t.Errorf("expected nil result, got %v", result)
+		}
+	})
 }
 
 func Test_controlPlaneOperatorRoleARNWithoutPath(t *testing.T) {
