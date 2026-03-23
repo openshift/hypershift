@@ -41442,6 +41442,28 @@ this means no opinions and the default configuration is used. Check individual
 fields within ipv4 for details of default values.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>mtu</code></br>
+<em>
+int32
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>mtu is the MTU to use for the tunnel interface on hosted cluster nodes.
+This must be 100 bytes smaller than the uplink MTU.
+When unset, the cluster-network-operator will determine the MTU automatically
+based on the infrastructure (e.g., for commercial AWS regions, it defaults
+to 8901 based on the 9001 uplink MTU minus 100 bytes overhead).
+Some non-commercial AWS regions do not support 9001 uplink MTU,
+requiring this field to be explicitly set to a lower value.
+The maximum is 9216, which is the standard jumbo frame upper limit
+supported by datacenter and cloud network interfaces.
+The minimum is 576, which is the minimum IPv4 MTU per RFC 791.
+This field is immutable once set.</p>
+</td>
+</tr>
 </tbody>
 </table>
 ###ObjectEncodingFormat { #hypershift.openshift.io/v1beta1.ObjectEncodingFormat }
