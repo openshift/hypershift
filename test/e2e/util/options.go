@@ -502,8 +502,11 @@ func (o *Options) Complete() error {
 			o.ArtifactDir = os.Getenv("ARTIFACT_DIR")
 		}
 		if len(o.ConfigurableClusterOptions.BaseDomain) == 0 && o.Platform != hyperv1.KubevirtPlatform {
-			// TODO: make this an envvar with change to openshift/release, then change here
-			o.ConfigurableClusterOptions.BaseDomain = DefaultCIBaseDomain
+			if baseDomain := os.Getenv("BASE_DOMAIN"); len(baseDomain) > 0 {
+				o.ConfigurableClusterOptions.BaseDomain = baseDomain
+			} else {
+				o.ConfigurableClusterOptions.BaseDomain = DefaultCIBaseDomain
+			}
 		}
 	}
 
