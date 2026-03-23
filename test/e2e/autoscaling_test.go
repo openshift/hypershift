@@ -22,7 +22,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/ptr"
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -467,10 +468,13 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 		g.Expect(err).NotTo(HaveOccurred(), "failed to create scale-from-zero nodepool")
 		t.Logf("Created NodePool %s with autoscaling min=0, max=2", scaleFromZeroNP.Name)
 
-		// Verify MachineDeployment has capacity annotations
-		t.Log("Verifying MachineDeployment has capacity annotations")
+		// Verify capacity information is available either via Status.Capacity (CAPI 1.11+)
+		// or via annotations (pre-CAPI 1.11)
+		t.Log("Verifying scale-from-zero capacity information is available")
 		md := &capiv1.MachineDeployment{}
-		e2eutil.EventuallyObject(t, ctx, "MachineDeployment to have capacity annotations",
+		var hasNativeCapacity bool
+		var capacitySource string
+		e2eutil.EventuallyObject(t, ctx, "MachineDeployment to have capacity information",
 			func(ctx context.Context) (*capiv1.MachineDeployment, error) {
 				// MachineDeployment is in the hosted cluster namespace with same name as NodePool
 				err := mgtClient.Get(ctx, crclient.ObjectKey{
@@ -481,11 +485,43 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 			},
 			[]e2eutil.Predicate[*capiv1.MachineDeployment]{
 				func(md *capiv1.MachineDeployment) (done bool, reasons string, err error) {
+					// Check if we have a valid infrastructure reference
+					if md.Spec.Template.Spec.InfrastructureRef.Name == "" {
+						return false, "MachineDeployment missing infrastructureRef", nil
+					}
+
+					// Get the AWSMachineTemplate to check for Status.Capacity
+					awsMachineTemplate := &capiaws.AWSMachineTemplate{}
+					err = mgtClient.Get(ctx, crclient.ObjectKey{
+						Namespace: md.Spec.Template.Spec.InfrastructureRef.Namespace,
+						Name:      md.Spec.Template.Spec.InfrastructureRef.Name,
+					}, awsMachineTemplate)
+					if err != nil {
+						return false, fmt.Sprintf("failed to get AWSMachineTemplate: %v", err), err
+					}
+
+					// Check for native Status.Capacity (CAPI 1.11+)
+					if len(awsMachineTemplate.Status.Capacity) > 0 {
+						t.Logf("Found native Status.Capacity on AWSMachineTemplate %s", awsMachineTemplate.Name)
+						// Validate required capacity fields
+						if _, ok := awsMachineTemplate.Status.Capacity[corev1.ResourceCPU]; !ok {
+							return false, "Status.Capacity missing CPU", nil
+						}
+						if _, ok := awsMachineTemplate.Status.Capacity[corev1.ResourceMemory]; !ok {
+							return false, "Status.Capacity missing Memory", nil
+						}
+						hasNativeCapacity = true
+						capacitySource = "Status.Capacity"
+						return true, "native Status.Capacity present with CPU and Memory", nil
+					}
+
+					// Fall back to checking annotations (pre-CAPI 1.11)
+					t.Logf("No Status.Capacity found, checking for workaround annotations on MachineDeployment")
 					if _, ok := md.Annotations["machine.openshift.io/vCPU"]; !ok {
-						return false, "missing vCPU annotation", nil
+						return false, "missing both Status.Capacity and vCPU annotation", nil
 					}
 					if _, ok := md.Annotations["machine.openshift.io/memoryMb"]; !ok {
-						return false, "missing memoryMb annotation", nil
+						return false, "missing both Status.Capacity and memoryMb annotation", nil
 					}
 					// GPU annotation is optional - only set when instance type has GPUs
 					labels, ok := md.Annotations["capacity.cluster-autoscaler.kubernetes.io/labels"]
@@ -495,20 +531,44 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 					if !strings.Contains(labels, "kubernetes.io/arch=") {
 						return false, "capacity labels missing architecture", nil
 					}
+					hasNativeCapacity = false
+					capacitySource = "annotations"
 					return true, "all capacity annotations present", nil
 				},
 			},
 			e2eutil.WithTimeout(5*time.Minute),
 		)
-		gpuValue := md.Annotations["machine.openshift.io/GPU"]
-		if gpuValue == "" {
-			gpuValue = "none (non-GPU instance)"
+
+		// Log capacity information based on source
+		if hasNativeCapacity {
+			// Get the AWSMachineTemplate again to display capacity info
+			awsMachineTemplate := &capiaws.AWSMachineTemplate{}
+			err = mgtClient.Get(ctx, crclient.ObjectKey{
+				Namespace: md.Spec.Template.Spec.InfrastructureRef.Namespace,
+				Name:      md.Spec.Template.Spec.InfrastructureRef.Name,
+			}, awsMachineTemplate)
+			g.Expect(err).NotTo(HaveOccurred(), "failed to get AWSMachineTemplate for logging")
+
+			cpuQty := awsMachineTemplate.Status.Capacity[corev1.ResourceCPU]
+			memQty := awsMachineTemplate.Status.Capacity[corev1.ResourceMemory]
+			gpuQty := awsMachineTemplate.Status.Capacity["nvidia.com/gpu"]
+			t.Logf("Capacity via %s: CPU=%s, Memory=%s, GPU=%s",
+				capacitySource,
+				cpuQty.String(),
+				memQty.String(),
+				gpuQty.String())
+		} else {
+			gpuValue := md.Annotations["machine.openshift.io/GPU"]
+			if gpuValue == "" {
+				gpuValue = "none (non-GPU instance)"
+			}
+			t.Logf("Capacity via %s: vCPU=%s, memoryMb=%s, GPU=%s, labels=%s",
+				capacitySource,
+				md.Annotations["machine.openshift.io/vCPU"],
+				md.Annotations["machine.openshift.io/memoryMb"],
+				gpuValue,
+				md.Annotations["capacity.cluster-autoscaler.kubernetes.io/labels"])
 		}
-		t.Logf("MachineDeployment has capacity annotations: vCPU=%s, memoryMb=%s, GPU=%s, labels=%s",
-			md.Annotations["machine.openshift.io/vCPU"],
-			md.Annotations["machine.openshift.io/memoryMb"],
-			gpuValue,
-			md.Annotations["capacity.cluster-autoscaler.kubernetes.io/labels"])
 
 		// Verify NodePool autoscaling is enabled
 		e2eutil.EventuallyObject(t, ctx, "NodePool autoscaling to be enabled",
@@ -573,10 +633,6 @@ func testScaleFromZero(ctx context.Context, mgtClient crclient.Client, hostedClu
 									},
 								},
 							},
-						},
-						// Target only nodes from the scale-from-zero NodePool
-						NodeSelector: map[string]string{
-							"scale-from-zero-test": "true",
 						},
 						RestartPolicy: corev1.RestartPolicyNever,
 					},

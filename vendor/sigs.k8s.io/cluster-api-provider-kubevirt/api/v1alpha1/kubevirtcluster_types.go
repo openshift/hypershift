@@ -19,7 +19,7 @@ package v1alpha1
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta1" //nolint SA1019
 )
 
 const (
@@ -28,7 +28,7 @@ const (
 	ClusterFinalizer = "kubevirtcluster.infrastructure.cluster.x-k8s.io"
 )
 
-const ( //labels
+const ( // labels
 	KubevirtMachineNameLabel      = "capk.cluster.x-k8s.io/kubevirt-machine-name"
 	KubevirtMachineNamespaceLabel = "capk.cluster.x-k8s.io/kubevirt-machine-namespace"
 
@@ -78,7 +78,7 @@ type KubevirtClusterStatus struct {
 
 	// Conditions defines current service state of the KubevirtCluster.
 	// +optional
-	Conditions clusterv1.Conditions `json:"conditions,omitempty"`
+	Conditions []clusterv1.Condition `json:"conditions,omitempty"`
 }
 
 // APIEndpoint represents a reachable Kubernetes API endpoint.
