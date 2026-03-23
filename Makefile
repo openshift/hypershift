@@ -313,7 +313,7 @@ setup-envtest: $(SETUP_ENVTEST) ## Setup envtest binaries (etcd, kube-apiserver)
 # Determine the number of CPU cores
 NUM_CORES := $(shell getconf _NPROCESSORS_ONLN || echo 1)
 
-test: generate setup-envtest
+test: generate setup-envtest test-envtest-api-all
 	@echo "Running tests with $(NUM_CORES) parallel jobs..."
 	KUBEBUILDER_ASSETS="$(shell $(SETUP_ENVTEST) use --use-env --bin-dir $(ENVTEST_ASSETS_DIR) -p path $(KUBEBUILDER_ENVTEST_KUBERNETES_VERSION))" $(GO) test -race -parallel=$(NUM_CORES) -count=1 -timeout=30m ./... -coverprofile cover.out
 
@@ -324,28 +324,28 @@ ENVTEST_OCP_INDEX := https://raw.githubusercontent.com/openshift/api/master/envt
 ENVTEST_OCP_K8S_VERSIONS ?= 1.30.3 1.31.2 1.32.1 1.33.2 1.34.1 1.35.1
 
 # Vanilla Kubernetes versions for envtest (upstream kubebuilder assets)
-ENVTEST_KUBE_VERSIONS ?= 1.28.0 1.29.0 1.30.0 1.31.0 1.32.0 1.33.0 1.34.0 1.35.0
+ENVTEST_KUBE_VERSIONS ?= 1.31.0 1.32.0 1.33.0 1.34.0 1.35.0
 
 .PHONY: test-envtest-ocp
 test-envtest-ocp: generate $(SETUP_ENVTEST) ## Run envtest tests for all supported OCP versions (4.17-4.22)
 	@for k8s_ver in $(ENVTEST_OCP_K8S_VERSIONS); do \
 		echo "=== Running envtest for OCP (K8s $$k8s_ver) ==="; \
 		KUBEBUILDER_ASSETS="$$($(SETUP_ENVTEST) use --use-env --bin-dir $(ENVTEST_OCP_ASSETS_DIR) -p path --index $(ENVTEST_OCP_INDEX) $$k8s_ver)" \
-		echo "KUBEBUILDER_ASSETS=$$KUBEBUILDER_ASSETS" || exit 1; \
+		$(GO) test -race -count=1 -timeout=30m ./test/envtest/... || exit 1; \
 	done
 	@echo "=== All OCP envtest versions passed ==="
 
 .PHONY: test-envtest-kube
-test-envtest-kube: generate $(SETUP_ENVTEST) ## Run envtest tests for all supported vanilla Kubernetes versions (1.28-1.35)
+test-envtest-kube: generate $(SETUP_ENVTEST) ## Run envtest tests for all supported vanilla Kubernetes versions (1.31-1.35)
 	@for k8s_ver in $(ENVTEST_KUBE_VERSIONS); do \
 		echo "=== Running envtest for Kubernetes $$k8s_ver ==="; \
 		KUBEBUILDER_ASSETS="$$($(SETUP_ENVTEST) use --use-env --bin-dir $(ENVTEST_KUBE_ASSETS_DIR) -p path $$k8s_ver)" \
-		echo "KUBEBUILDER_ASSETS=$$KUBEBUILDER_ASSETS" || exit 1; \
+		$(GO) test -race -count=1 -timeout=30m ./test/envtest/... || exit 1; \
 	done
 	@echo "=== All Kubernetes envtest versions passed ==="
 
-.PHONY: test-envtest-all
-test-envtest-all: test-envtest-ocp test-envtest-kube ## Run envtest tests for all supported OCP and Kubernetes versions
+.PHONY: test-envtest-api-all
+test-envtest-api-all: test-envtest-ocp test-envtest-kube ## Run envtest API tests for all supported OCP and Kubernetes versions
 
 .PHONY: e2e
 e2e: reqserving-e2e e2ev2 backuprestore-e2e
