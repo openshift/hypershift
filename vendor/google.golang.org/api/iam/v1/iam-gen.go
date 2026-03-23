@@ -1273,6 +1273,15 @@ type GoogleIamAdminV1WorkforcePoolProviderExtraAttributesOAuth2Client struct {
 	// user's groups that are returned from Microsoft Entra ID can be mapped by
 	// using the following attributes: * OIDC: `assertion.groups` * SAML:
 	// `assertion.attributes.groups`
+	//   "AZURE_AD_GROUPS_DISPLAY_NAME" - Used to get the user's group claims from
+	// the Microsoft Entra ID identity provider using the configuration provided in
+	// ExtraAttributesOAuth2Client. The `displayName` property of the
+	// `microsoft.graph.group` object is used for claim mapping. See
+	// https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0#properties
+	// for more details on `microsoft.graph.group` properties. The display names of
+	// the user's groups that are returned from Microsoft Entra ID can be mapped by
+	// using the following attributes: * OIDC: `assertion.groups` * SAML:
+	// `assertion.attributes.groups`
 	AttributesType string `json:"attributesType,omitempty"`
 	// ClientId: Required. The OAuth 2.0 client ID for retrieving extra attributes
 	// from the identity provider. Required to get the Access Token using client
@@ -1559,6 +1568,15 @@ type InlineCertificateIssuanceConfig struct {
 	// initiated. Must be between 50 and 80. If no value is specified, rotation
 	// window percentage is defaulted to 50.
 	RotationWindowPercentage int64 `json:"rotationWindowPercentage,omitempty"`
+	// UseDefaultSharedCa: Optional. If set to true, the trust domain will utilize
+	// the GCP-provisioned default CA. A default CA in the same region as the
+	// workload will be selected to issue the certificate. Enabling this will clear
+	// any existing `ca_pools` configuration to provision the certificates. NOTE:
+	// This field is mutually exclusive with `ca_pools`. If this flag is enabled,
+	// certificates will be automatically provisioned from the default shared CAs.
+	// This flag should not be set if you want to use your own CA pools to
+	// provision the certificates.
+	UseDefaultSharedCa bool `json:"useDefaultSharedCa,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "CaPools") to unconditionally
 	// include in API requests. By default, fields with empty or default values are
 	// omitted from API requests. See
@@ -3571,6 +3589,11 @@ type TrustStore struct {
 	// validation against a given TrustStore. The incoming end entity's certificate
 	// must be in the trust chain of one of the trust anchors here.
 	TrustAnchors []*TrustAnchor `json:"trustAnchors,omitempty"`
+	// TrustDefaultSharedCa: Optional. If set to True, the trust bundle will
+	// include the private ca managed identity regional root public certificates.
+	// Important: `trust_default_shared_ca` is only supported for managed identity
+	// trust domain resource.
+	TrustDefaultSharedCa bool `json:"trustDefaultSharedCa,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "IntermediateCas") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
