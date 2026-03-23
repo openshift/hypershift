@@ -1,6 +1,11 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
+  annotations:
+    hypershift.openshift.io/metrics-endpoint: etcd-metrics
+    hypershift.openshift.io/metrics-job: etcd
+    hypershift.openshift.io/metrics-namespace: openshift-etcd
+    hypershift.openshift.io/metrics-service: etcd
   name: etcd
   namespace: hcp-namespace
   ownerReferences:
