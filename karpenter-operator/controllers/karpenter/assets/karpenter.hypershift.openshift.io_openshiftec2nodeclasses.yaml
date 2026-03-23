@@ -191,6 +191,65 @@ spec:
                 - Public
                 - SubnetDefault
                 type: string
+              metadataOptions:
+                description: |-
+                  metadataOptions contains parameters for specifying the exposure of the
+                  Instance Metadata Service to provisioned EC2 nodes.
+                  When omitted, the platform preserves control over default behaviour
+                  which is subject to change over time. Currently defaults to access
+                  HTTPEndpoint, httpIPProtocol IPv4, httpPutResponseHopLimit of 1,
+                  and httpTokens Required (IMDSv2).
+                minProperties: 1
+                properties:
+                  access:
+                    description: |-
+                      access specifies how the instance metadata endpoint is accessed on
+                      provisioned nodes. Valid values are "HTTPEndpoint" and "None".
+                      When set to "HTTPEndpoint", the instance metadata service is accessible
+                      via the HTTP endpoint. When set to "None", instance metadata is not
+                      accessible on the node.
+                      When omitted, the platform defaults to HTTP endpoint access.
+                    enum:
+                    - HTTPEndpoint
+                    - None
+                    type: string
+                  httpIPProtocol:
+                    description: |-
+                      httpIPProtocol specifies the IP protocol version for the instance metadata
+                      service endpoint on provisioned nodes. Valid values are "IPv4" and "IPv6".
+                      When set to "IPv4", the metadata endpoint uses the IPv4 protocol.
+                      When set to "IPv6", the metadata endpoint uses the IPv6 protocol.
+                      When omitted, the platform defaults to IPv4.
+                    enum:
+                    - IPv4
+                    - IPv6
+                    type: string
+                  httpPutResponseHopLimit:
+                    description: |-
+                      httpPutResponseHopLimit is the desired HTTP PUT response hop limit for
+                      instance metadata requests. Possible values are integers from 1 to 64.
+                      A value of 1 restricts IMDS access to the EC2 instance only, preventing
+                      pods from reaching it. A value of 2 allows pods to access IMDS through
+                      the container network bridge. Values above 2 are for advanced networking
+                      scenarios such as nested virtualization.
+                      When omitted, the platform defaults to a hop limit of 1.
+                    format: int64
+                    maximum: 64
+                    minimum: 1
+                    type: integer
+                  httpTokens:
+                    description: |-
+                      httpTokens determines the state of token usage for instance metadata
+                      requests. Valid values are "Required" and "Optional".
+                      When set to "Required", a signed token header (IMDSv2) must be used for
+                      all metadata requests. When set to "Optional", metadata can be retrieved
+                      with or without a token (IMDSv1/v2).
+                      When omitted, the platform defaults to requiring tokens (IMDSv2).
+                    enum:
+                    - Required
+                    - Optional
+                    type: string
+                type: object
               monitoring:
                 description: |-
                   monitoring controls the monitoring level for instances that are launched.

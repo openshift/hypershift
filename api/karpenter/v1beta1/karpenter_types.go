@@ -245,6 +245,15 @@ type OpenshiftEC2NodeClassSpec struct {
 	// +optional
 	Monitoring MonitoringState `json:"monitoring,omitempty"`
 
+	// metadataOptions contains parameters for specifying the exposure of the
+	// Instance Metadata Service to provisioned EC2 nodes.
+	// When omitted, the platform preserves control over default behaviour
+	// which is subject to change over time. Currently defaults to access
+	// HTTPEndpoint, httpIPProtocol IPv4, httpPutResponseHopLimit of 1,
+	// and httpTokens Required (IMDSv2).
+	// +optional
+	MetadataOptions MetadataOptions `json:"metadataOptions,omitzero"`
+
 	// version is an OpenShift version (e.g., "4.20.1") specifying the release version
 	// for nodes managed by this NodeClass. When set, the controller resolves this to a
 	// release image via the Cincinnati graph API. When not set, nodes use the control plane's
@@ -398,6 +407,82 @@ type BlockDevice struct {
 	// in the Amazon Elastic Compute Cloud User Guide.
 	// +optional
 	VolumeType VolumeType `json:"volumeType,omitempty"`
+}
+
+// MetadataAccess specifies how the instance metadata endpoint is accessed on provisioned nodes.
+// +kubebuilder:validation:Enum=HTTPEndpoint;None
+type MetadataAccess string
+
+const (
+	// MetadataAccessHTTPEndpoint enables access to instance metadata via the HTTP endpoint.
+	MetadataAccessHTTPEndpoint MetadataAccess = "HTTPEndpoint"
+	// MetadataAccessNone disables access to instance metadata.
+	MetadataAccessNone MetadataAccess = "None"
+)
+
+// MetadataHTTPProtocol specifies the IP protocol version for the instance metadata service endpoint.
+// +kubebuilder:validation:Enum=IPv4;IPv6
+type MetadataHTTPProtocol string
+
+const (
+	// MetadataHTTPProtocolIPv4 uses the IPv4 endpoint for the instance metadata service.
+	MetadataHTTPProtocolIPv4 MetadataHTTPProtocol = "IPv4"
+	// MetadataHTTPProtocolIPv6 uses the IPv6 endpoint for the instance metadata service.
+	MetadataHTTPProtocolIPv6 MetadataHTTPProtocol = "IPv6"
+)
+
+// MetadataHTTPTokensState determines the state of token usage for instance metadata requests.
+// +kubebuilder:validation:Enum=Required;Optional
+type MetadataHTTPTokensState string
+
+const (
+	// MetadataHTTPTokensStateRequired requires a signed token header for metadata requests (IMDSv2).
+	MetadataHTTPTokensStateRequired MetadataHTTPTokensState = "Required"
+	// MetadataHTTPTokensStateOptional allows metadata retrieval with or without a token (IMDSv1/v2).
+	MetadataHTTPTokensStateOptional MetadataHTTPTokensState = "Optional"
+)
+
+// MetadataOptions contains parameters for specifying the exposure of the
+// Instance Metadata Service to provisioned EC2 nodes.
+// When omitted, the platform preserves control over default behaviour which
+// is subject to change over time. Currently defaults to HTTP endpoint access
+// with IPv4, a hop limit of 1, and required tokens (IMDSv2).
+// +kubebuilder:validation:MinProperties=1
+type MetadataOptions struct {
+	// access specifies how the instance metadata endpoint is accessed on
+	// provisioned nodes. Valid values are "HTTPEndpoint" and "None".
+	// When set to "HTTPEndpoint", the instance metadata service is accessible
+	// via the HTTP endpoint. When set to "None", instance metadata is not
+	// accessible on the node.
+	// When omitted, the platform defaults to HTTP endpoint access.
+	// +optional
+	Access MetadataAccess `json:"access,omitempty"`
+	// httpIPProtocol specifies the IP protocol version for the instance metadata
+	// service endpoint on provisioned nodes. Valid values are "IPv4" and "IPv6".
+	// When set to "IPv4", the metadata endpoint uses the IPv4 protocol.
+	// When set to "IPv6", the metadata endpoint uses the IPv6 protocol.
+	// When omitted, the platform defaults to IPv4.
+	// +optional
+	HTTPIPProtocol MetadataHTTPProtocol `json:"httpIPProtocol,omitempty"`
+	// httpPutResponseHopLimit is the desired HTTP PUT response hop limit for
+	// instance metadata requests. Possible values are integers from 1 to 64.
+	// A value of 1 restricts IMDS access to the EC2 instance only, preventing
+	// pods from reaching it. A value of 2 allows pods to access IMDS through
+	// the container network bridge. Values above 2 are for advanced networking
+	// scenarios such as nested virtualization.
+	// When omitted, the platform defaults to a hop limit of 1.
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=64
+	// +optional
+	HTTPPutResponseHopLimit int64 `json:"httpPutResponseHopLimit,omitempty"`
+	// httpTokens determines the state of token usage for instance metadata
+	// requests. Valid values are "Required" and "Optional".
+	// When set to "Required", a signed token header (IMDSv2) must be used for
+	// all metadata requests. When set to "Optional", metadata can be retrieved
+	// with or without a token (IMDSv1/v2).
+	// When omitted, the platform defaults to requiring tokens (IMDSv2).
+	// +optional
+	HTTPTokens MetadataHTTPTokensState `json:"httpTokens,omitempty"`
 }
 
 // OpenshiftEC2NodeClassStatus defines the observed state of OpenshiftEC2NodeClass.

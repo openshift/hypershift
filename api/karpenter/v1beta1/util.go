@@ -44,6 +44,36 @@ func (spec OpenshiftEC2NodeClassSpec) KarpenterAssociatePublicIPAddress() *bool 
 	}
 }
 
+func (spec OpenshiftEC2NodeClassSpec) KarpenterMetadataOptions() *awskarpenterv1.MetadataOptions {
+	mo := spec.MetadataOptions
+	if mo.Access == "" && mo.HTTPIPProtocol == "" && mo.HTTPPutResponseHopLimit == 0 && mo.HTTPTokens == "" {
+		return nil
+	}
+	opts := &awskarpenterv1.MetadataOptions{}
+	switch mo.Access {
+	case MetadataAccessHTTPEndpoint:
+		opts.HTTPEndpoint = ptr.To("enabled")
+	case MetadataAccessNone:
+		opts.HTTPEndpoint = ptr.To("disabled")
+	}
+	switch mo.HTTPIPProtocol {
+	case MetadataHTTPProtocolIPv6:
+		opts.HTTPProtocolIPv6 = ptr.To("enabled")
+	case MetadataHTTPProtocolIPv4:
+		opts.HTTPProtocolIPv6 = ptr.To("disabled")
+	}
+	if mo.HTTPPutResponseHopLimit != 0 {
+		opts.HTTPPutResponseHopLimit = ptr.To(mo.HTTPPutResponseHopLimit)
+	}
+	switch mo.HTTPTokens {
+	case MetadataHTTPTokensStateRequired:
+		opts.HTTPTokens = ptr.To("required")
+	case MetadataHTTPTokensStateOptional:
+		opts.HTTPTokens = ptr.To("optional")
+	}
+	return opts
+}
+
 func (spec OpenshiftEC2NodeClassSpec) KarpenterDetailedMonitoring() *bool {
 	switch spec.Monitoring {
 	case MonitoringStateDetailed:
