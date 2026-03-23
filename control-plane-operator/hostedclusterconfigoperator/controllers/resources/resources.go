@@ -500,13 +500,17 @@ func (r *reconciler) Reconcile(ctx context.Context, _ ctrl.Request) (ctrl.Result
 		errs = append(errs, fmt.Errorf("failed to reconcile konnectivity agent: %w", err))
 	}
 
-	log.Info("reconciling KAS connection checker deployment")
-	cliImage, ok := releaseImage.ComponentImages()["cli"]
-	if !ok {
-		errs = append(errs, fmt.Errorf("failed to find cli image in release"))
-	} else {
-		if err := r.reconcileKASConnectionCheckerDeployment(ctx, hcp, cliImage); err != nil {
-			errs = append(errs, fmt.Errorf("failed to reconcile KAS connection checker deployment: %w", err))
+	// Only deploy KAS connection checker for private clusters where konnectivity-based
+	// checks alone are insufficient for diagnosing API server connectivity issues.
+	if util.IsPrivateHCP(hcp) {
+		log.Info("reconciling KAS connection checker deployment")
+		cliImage, ok := releaseImage.ComponentImages()["cli"]
+		if !ok {
+			errs = append(errs, fmt.Errorf("failed to find cli image in release"))
+		} else {
+			if err := r.reconcileKASConnectionCheckerDeployment(ctx, hcp, cliImage); err != nil {
+				errs = append(errs, fmt.Errorf("failed to reconcile KAS connection checker deployment: %w", err))
+			}
 		}
 	}
 
@@ -1525,7 +1529,7 @@ done`, endpoint, manifests.KASConnectionCheckerConfigMapName, manifests.KASConne
 		}
 
 		deployment.Spec.Template.Spec.ServiceAccountName = manifests.KASConnectionCheckerName
-		deployment.Spec.Template.Spec.PriorityClassName = "system-node-critical"
+		deployment.Spec.Template.Spec.PriorityClassName = "system-cluster-critical"
 		automount := true
 		deployment.Spec.Template.Spec.AutomountServiceAccountToken = &automount
 

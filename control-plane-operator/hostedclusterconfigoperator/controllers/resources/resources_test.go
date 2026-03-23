@@ -2755,8 +2755,8 @@ func Test_reconciler_reconcileKASConnectionCheckerDeployment(t *testing.T) {
 				}
 
 				// Validate priority class
-				if dep.Spec.Template.Spec.PriorityClassName != "system-node-critical" {
-					t.Errorf("Expected PriorityClassName system-node-critical, got %s", dep.Spec.Template.Spec.PriorityClassName)
+				if dep.Spec.Template.Spec.PriorityClassName != "system-cluster-critical" {
+					t.Errorf("Expected PriorityClassName system-cluster-critical, got %s", dep.Spec.Template.Spec.PriorityClassName)
 				}
 
 				// Validate automount service account token is enabled

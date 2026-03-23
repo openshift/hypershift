@@ -191,6 +191,12 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		portSpec.Port = int32(config.KASSVCIBMCloudPort)
 	}
+	// Azure uses port 7443 for the private service LB because port 6443 collides with
+	// the management cluster's KAS on the shared Azure internal load balancer.
+	// See https://bugzilla.redhat.com/show_bug.cgi?id=2060650
+	if hcp.Spec.Platform.Type == hyperv1.AzurePlatform {
+		portSpec.Port = int32(config.KASSVCLBAzurePort)
+	}
 	portSpec.Protocol = corev1.ProtocolTCP
 	portSpec.TargetPort = intstr.FromString("client")
 	svc.Spec.Type = corev1.ServiceTypeLoadBalancer
@@ -198,9 +204,14 @@ func ReconcilePrivateService(svc *corev1.Service, hcp *hyperv1.HostedControlPlan
 		svc.Annotations = map[string]string{}
 	}
 
-	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
-	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
-	svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
+	switch hcp.Spec.Platform.Type {
+	case hyperv1.AzurePlatform:
+		svc.Annotations[azureutil.InternalLoadBalancerAnnotation] = azureutil.InternalLoadBalancerValue
+	default:
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled"] = "true"
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-internal"] = "true"
+		svc.Annotations["service.beta.kubernetes.io/aws-load-balancer-type"] = "nlb"
+	}
 	svc.Spec.Ports[0] = portSpec
 	return nil
 }
