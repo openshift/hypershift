@@ -20,7 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/kms"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/aws/aws-sdk-go/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"github.com/go-logr/logr"
 )
@@ -85,10 +85,12 @@ func GetIAMClient(ctx context.Context, awsCreds, awsRegion string) awsapi.IAMAPI
 	})
 }
 
-func GetSQSClient(awsCreds, awsRegion string) *sqs.SQS {
-	awsSession := awsutil.NewSession("e2e-sqs", awsCreds, "", "", awsRegion)
-	awsConfig := awsutil.NewConfig()
-	return sqs.New(awsSession, awsConfig)
+func GetSQSClient(ctx context.Context, awsCreds, awsRegion string) awsapi.SQSAPI {
+	awsSession := awsutil.NewSessionV2(ctx, "e2e-sqs", awsCreds, "", "", awsRegion)
+	awsConfig := awsutil.NewConfigV2()
+	return sqs.NewFromConfig(*awsSession, func(o *sqs.Options) {
+		o.Retryer = awsConfig()
+	})
 }
 
 func PutRolePolicy(ctx context.Context, awsCreds, awsRegion, roleARN string, policy string) (func() error, error) {
