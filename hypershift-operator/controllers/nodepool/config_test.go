@@ -28,7 +28,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// coreConfigMaps is a fake list of configMaps to match default expectation of 3.
+// coreConfigMaps is a fake list of configMaps to match default expectation of 4.
+// The default expectation is 3 base configs (fips, ssh, haproxy) plus 1 for image registry CA
+// (since image registry capability is enabled by default when Capabilities is nil).
 var coreConfigMaps = []crclient.Object{
 	&corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{},
@@ -54,6 +56,16 @@ var coreConfigMaps = []crclient.Object{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "core-ignition-config-3",
+			Namespace: "test-test",
+			Labels: map[string]string{
+				nodePoolCoreIgnitionConfigLabel: "true",
+			},
+		},
+	},
+	&corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "core-ignition-config-4",
 			Namespace: "test-test",
 			Labels: map[string]string{
 				nodePoolCoreIgnitionConfigLabel: "true",
@@ -1151,6 +1163,16 @@ status:
 						},
 					},
 				},
+				&corev1.ConfigMap{
+					TypeMeta: metav1.TypeMeta{},
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "core-ignition-config-4",
+						Namespace: "test-test",
+						Labels: map[string]string{
+							nodePoolCoreIgnitionConfigLabel: "true",
+						},
+					},
+				},
 			},
 			expect: coreMachineConfig1Defaulted + "\n---\n" + machineConfig1Defaulted,
 			error:  false,
@@ -1225,6 +1247,16 @@ status:
 						},
 					},
 				},
+				&corev1.ConfigMap{
+					TypeMeta: metav1.TypeMeta{},
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "core-ignition-config-4",
+						Namespace: "test-test",
+						Labels: map[string]string{
+							nodePoolCoreIgnitionConfigLabel: "true",
+						},
+					},
+				},
 			},
 			expect: coreMachineConfig1Defaulted + "\n---\n" + machineConfig1Defaulted,
 			error:  false,
@@ -1265,7 +1297,7 @@ status:
 					BinaryData: nil,
 				},
 			},
-			// Have only 2 core configs as setting rolloutConfig.haproxyRawConfig will decrease the requirement of number of core configs.
+			// Have only 3 core configs as setting rolloutConfig.haproxyRawConfig will decrease the requirement of number of core configs.
 			renderHAProxy: true,
 			coreConfig: []crclient.Object{
 				&corev1.ConfigMap{
@@ -1282,6 +1314,16 @@ status:
 					TypeMeta: metav1.TypeMeta{},
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "core-ignition-config-2",
+						Namespace: "test-test",
+						Labels: map[string]string{
+							nodePoolCoreIgnitionConfigLabel: "true",
+						},
+					},
+				},
+				&corev1.ConfigMap{
+					TypeMeta: metav1.TypeMeta{},
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "core-ignition-config-3",
 						Namespace: "test-test",
 						Labels: map[string]string{
 							nodePoolCoreIgnitionConfigLabel: "true",
@@ -1474,23 +1516,8 @@ func TestGetCoreConfigs(t *testing.T) {
 		expectedError          error
 	}{
 		{
-			name:          "When there are 3 core configs it should return them",
+			name:          "When there are 4 core configs it should return them",
 			hostedCluster: &hyperv1.HostedCluster{},
-			existingConfigMaps: []crclient.Object{
-				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config1", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
-				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config2", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
-				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config3", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
-			},
-			expectedConfigMapCount: 3,
-			expectedError:          nil,
-		},
-		{
-			name: "When there are ImageContentSources in HC it should return 4 core configs",
-			hostedCluster: &hyperv1.HostedCluster{
-				Spec: hyperv1.HostedClusterSpec{
-					ImageContentSources: []hyperv1.ImageContentSource{{Source: "test"}},
-				},
-			},
 			existingConfigMaps: []crclient.Object{
 				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config1", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
 				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config2", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
@@ -1501,14 +1528,32 @@ func TestGetCoreConfigs(t *testing.T) {
 			expectedError:          nil,
 		},
 		{
-			name:             "When there is haproxy content set it should return only 2 core configs",
+			name: "When there are ImageContentSources in HC it should return 5 core configs",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					ImageContentSources: []hyperv1.ImageContentSource{{Source: "test"}},
+				},
+			},
+			existingConfigMaps: []crclient.Object{
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config1", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config2", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config3", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config4", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config5", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
+			},
+			expectedConfigMapCount: 5,
+			expectedError:          nil,
+		},
+		{
+			name:             "When there is haproxy content set it should return only 3 core configs",
 			hostedCluster:    &hyperv1.HostedCluster{},
 			haproxyRawConfig: "some-config",
 			existingConfigMaps: []crclient.Object{
 				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config1", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
 				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config2", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config3", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
 			},
-			expectedConfigMapCount: 2,
+			expectedConfigMapCount: 3,
 			expectedError:          nil,
 		},
 		{
@@ -1519,7 +1564,24 @@ func TestGetCoreConfigs(t *testing.T) {
 				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config2", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
 			},
 			expectedConfigMapCount: 2,
-			expectedError:          &MissingCoreConfigError{Got: 2, Expected: 3},
+			expectedError:          &MissingCoreConfigError{Got: 2, Expected: 4},
+		},
+		{
+			name: "When image registry capability is disabled it should return 3 core configs",
+			hostedCluster: &hyperv1.HostedCluster{
+				Spec: hyperv1.HostedClusterSpec{
+					Capabilities: &hyperv1.Capabilities{
+						Disabled: []hyperv1.OptionalCapability{hyperv1.ImageRegistryCapability},
+					},
+				},
+			},
+			existingConfigMaps: []crclient.Object{
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config1", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config2", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
+				&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "config3", Namespace: namespace, Labels: map[string]string{nodePoolCoreIgnitionConfigLabel: "true"}}},
+			},
+			expectedConfigMapCount: 3,
+			expectedError:          nil,
 		},
 	}
 

@@ -192,6 +192,10 @@ func (cg *ConfigGenerator) getCoreConfigs(ctx context.Context) ([]corev1.ConfigM
 		// additional core config resource created when image content source specified.
 		expectedCoreConfigResources += 1
 	}
+	if capabilities.IsImageRegistryCapabilityEnabled(cg.hostedCluster.Spec.Capabilities) {
+		// additional core config resource for image registry CA distribution.
+		expectedCoreConfigResources += 1
+	}
 	if cg.haproxyRawConfig != "" {
 		expectedCoreConfigResources--
 	}

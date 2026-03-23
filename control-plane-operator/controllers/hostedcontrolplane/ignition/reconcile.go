@@ -15,11 +15,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	jsonserializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/clarketm/json"
 	igntypes "github.com/coreos/ignition/v2/config/v3_2/types"
+	"github.com/vincent-petithory/dataurl"
 )
 
 const (
@@ -122,6 +124,53 @@ func reconcileMachineConfigIgnitionConfigMap(cm *corev1.ConfigMap, mc *mcfgv1.Ma
 		return fmt.Errorf("failed to serialize machine config %s: %w", cm.Name, err)
 	}
 	return ReconcileIgnitionConfigMap(cm, buf.String(), ownerRef)
+}
+
+const (
+	// imageRegistryCertPath is the path on worker nodes where the image registry
+	// service-CA certificate is placed. CRI-O uses this to trust the internal
+	// image registry's TLS certificate when pulling images.
+	imageRegistryCertPath = "/etc/docker/certs.d/image-registry.openshift-image-registry.svc:5000/ca.crt"
+)
+
+// ReconcileImageRegistryCAIgnitionConfig creates a MachineConfig that places the
+// image registry service-CA certificate on worker nodes. This allows nodes to
+// trust the internal image registry without requiring the node-ca daemonset.
+// When serviceCA is empty (e.g., during initial cluster bootstrap before the
+// service-ca operator has started), a no-op MachineConfig is created.
+func ReconcileImageRegistryCAIgnitionConfig(cm *corev1.ConfigMap, ownerRef config.OwnerRef, serviceCA string) error {
+	machineConfig := manifests.MachineConfigImageRegistryCA()
+	SetMachineConfigLabels(machineConfig)
+
+	ignConfig := &igntypes.Config{}
+	ignConfig.Ignition.Version = ignitionVersion
+
+	if len(serviceCA) > 0 {
+		fileMode := 0o644
+		ignConfig.Storage = igntypes.Storage{
+			Files: []igntypes.File{
+				{
+					Node: igntypes.Node{
+						Path:      imageRegistryCertPath,
+						Overwrite: ptr.To(true),
+					},
+					FileEmbedded1: igntypes.FileEmbedded1{
+						Mode: &fileMode,
+						Contents: igntypes.Resource{
+							Source: ptr.To(dataurl.EncodeBytes([]byte(serviceCA))),
+						},
+					},
+				},
+			},
+		}
+	}
+
+	serializedConfig, err := serializeIgnitionConfig(ignConfig)
+	if err != nil {
+		return fmt.Errorf("failed to serialize image registry CA ignition config: %w", err)
+	}
+	machineConfig.Spec.Config.Raw = serializedConfig
+	return reconcileMachineConfigIgnitionConfigMap(cm, machineConfig, ownerRef)
 }
 
 func ReconcileIgnitionConfigMap(cm *corev1.ConfigMap, content string, ownerRef config.OwnerRef) error {
