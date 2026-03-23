@@ -117,6 +117,28 @@ Skills are automatically invoked by Claude based on context. You don't need to d
 
 Commands are manually invoked using `/command-name` syntax.
 
+### Restructure Commits
+
+**Location:** `.claude/commands/restructure-commits.md`
+
+**Description:** Reorganizes all commits on a feature branch into logical, component-based commits that match HyperShift's architecture.
+
+**Usage:**
+```
+/restructure-commits
+```
+
+**Use when:**
+- User asks to "redo commits", "restructure commits", "squash by component", or "organize commits"
+- Preparing a branch for PR review with clean commit history
+- Branch has many small/WIP commits that should be consolidated
+
+**Covers:**
+- Component-based commit grouping (API, Vendor, CLI, HO, CPO, E2E, Docs)
+- Soft reset and re-staging workflow
+- Conventional commit messages with correct type/scope per component
+- Edge cases for file categorization (support/, testdata/, API tests)
+
 ### Fix HyperShift Repo Robot PR
 
 **Location:** `.claude/commands/fix-hypershift-repo-robot-pr.md`
