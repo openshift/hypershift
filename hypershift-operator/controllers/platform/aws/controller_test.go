@@ -422,6 +422,18 @@ func TestRejectVpcEndpointConnections(t *testing.T) {
 			expectRejectCall:           false,
 			expectHasTransitionalConns: true,
 		},
+		{
+			name: "When AWS API returns lowercase state values it should handle them correctly",
+			connections: []ec2types.VpcEndpointConnection{
+				{VpcEndpointId: aws.String("vpce-available"), VpcEndpointState: "available"},
+				{VpcEndpointId: aws.String("vpce-pending"), VpcEndpointState: "pending"},
+				{VpcEndpointId: aws.String("vpce-deleting"), VpcEndpointState: "deleting"},
+				{VpcEndpointId: aws.String("vpce-deleted"), VpcEndpointState: "deleted"},
+			},
+			expectRejectCall:           true,
+			expectedRejectIDs:          []string{"vpce-available", "vpce-pending"},
+			expectHasTransitionalConns: true,
+		},
 	}
 
 	for _, test := range tests {
