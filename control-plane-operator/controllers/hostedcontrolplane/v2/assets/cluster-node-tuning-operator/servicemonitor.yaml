@@ -2,6 +2,11 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: node-tuning-operator
+  annotations:
+    hypershift.openshift.io/metrics-job: node-tuning-operator
+    hypershift.openshift.io/metrics-namespace: openshift-cluster-node-tuning-operator
+    hypershift.openshift.io/metrics-service: node-tuning-operator
+    hypershift.openshift.io/metrics-endpoint: "60000"
 spec:
   endpoints:
   - metricRelabelings:
