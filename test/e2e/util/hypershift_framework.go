@@ -68,6 +68,21 @@ func (opts *PlatformAgnosticOptions) ExpectedNodeCount() int32 {
 }
 
 type hypershiftTestFunc func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster)
+
+// UpgradeContext describes the upgrade scenario for a test, enabling
+// ValidateHostedClusterConditions to gate new field checks appropriately.
+type UpgradeContext struct {
+	// TargetReleaseImage is the release image the test upgrades to.
+	// When set, new HostedCluster conditions and status field checks are
+	// skipped until hc.Spec.Release.Image matches this value and the
+	// control-plane-operator ControlPlaneComponent reports RolloutComplete.
+	TargetReleaseImage string
+	// IsHOUpgrade indicates the HyperShift Operator itself is being upgraded, which means
+	// CRDs may not yet include new fields. New field checks are skipped until the CRD schema
+	// includes the field.
+	IsHOUpgrade bool
+}
+
 type hypershiftTest struct {
 	*testing.T
 	ctx         context.Context
@@ -76,6 +91,7 @@ type hypershiftTest struct {
 
 	test hypershiftTestFunc
 
+	upgradeContext    *UpgradeContext
 	hasBeenTornedDown bool
 }
 
@@ -95,6 +111,28 @@ func NewHypershiftTest(t *testing.T, ctx context.Context, test hypershiftTestFun
 
 func (h *hypershiftTest) WithAssetReader(reader assets.AssetReader) *hypershiftTest {
 	h.assetReader = reader
+	return h
+}
+
+// WithUpgradeTarget marks this test as a control plane upgrade test that will upgrade
+// the HostedCluster to the given release image. This enables ValidateHostedClusterConditions
+// to skip new field checks until the upgrade is complete.
+func (h *hypershiftTest) WithUpgradeTarget(releaseImage string) *hypershiftTest {
+	if h.upgradeContext == nil {
+		h.upgradeContext = &UpgradeContext{}
+	}
+	h.upgradeContext.TargetReleaseImage = releaseImage
+	return h
+}
+
+// WithHOUpgrade marks this test as a HyperShift Operator upgrade test where CRDs
+// may change. This enables ValidateHostedClusterConditions to skip new field checks
+// until the CRD schema includes the field.
+func (h *hypershiftTest) WithHOUpgrade() *hypershiftTest {
+	if h.upgradeContext == nil {
+		h.upgradeContext = &UpgradeContext{}
+	}
+	h.upgradeContext.IsHOUpgrade = true
 	return h
 }
 
@@ -139,7 +177,7 @@ func (h *hypershiftTest) Execute(opts *PlatformAgnosticOptions, platform hyperv1
 	if h.Failed() {
 		numNodes := opts.ExpectedNodeCount()
 		h.Logf("Summarizing unexpected conditions for HostedCluster %s ", hostedCluster.Name)
-		ValidateHostedClusterConditions(h.T, h.ctx, h.client, hostedCluster, numNodes > 0, 2*time.Second)
+		ValidateHostedClusterConditions(h.T, h.ctx, h.client, hostedCluster, numNodes > 0, 2*time.Second, h.upgradeContext)
 	}
 }
 
@@ -151,9 +189,9 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 			// IsPrivateHC includes PublicAndPrivate, which has a reachable API server
 			// and should use ValidatePublicCluster.
 			if !util.IsPublicHC(hostedCluster) {
-				ValidatePrivateCluster(t, h.ctx, h.client, hostedCluster, opts)
+				ValidatePrivateCluster(t, h.ctx, h.client, hostedCluster, opts, h.upgradeContext)
 			} else {
-				ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts)
+				ValidatePublicCluster(t, h.ctx, h.client, hostedCluster, opts, h.upgradeContext)
 			}
 
 			// The following validation is here since TestHAEtcdChaos runs as NonePlatform and it's broken.
@@ -179,7 +217,7 @@ func (h *hypershiftTest) before(hostedCluster *hyperv1.HostedCluster, opts *Plat
 				// wait hosted cluster ready
 				WaitForNReadyNodes(t, context.Background(), guestClient, opts.NodePoolReplicas, platform)
 				WaitForImageRollout(t, context.Background(), h.client, hostedCluster)
-				ValidateHostedClusterConditions(t, context.Background(), h.client, hostedCluster, true, 10*time.Minute)
+				ValidateHostedClusterConditions(t, context.Background(), h.client, hostedCluster, true, 10*time.Minute, h.upgradeContext)
 			}
 
 		}
@@ -261,7 +299,7 @@ func (h *hypershiftTest) after(hostedCluster *hyperv1.HostedCluster, platform hy
 				}
 				hasWorkerNodes = len(nodeList.Items) > 0
 			}
-			ValidateHostedClusterConditions(t, t.Context(), h.client, hostedCluster, hasWorkerNodes, 10*time.Minute)
+			ValidateHostedClusterConditions(t, t.Context(), h.client, hostedCluster, hasWorkerNodes, 10*time.Minute, h.upgradeContext)
 		}
 	})
 }

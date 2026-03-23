@@ -193,6 +193,10 @@ hostedclusters.hypershift.openshift.io:
     jsonPath: .status.version.history[?(@.state=="Completed")].version
     name: Version
     type: string
+  - description: Control Plane Version
+    jsonPath: .status.controlPlaneVersion.history[?(@.state=="Completed")].version
+    name: CP Version
+    type: string
   - description: KubeConfig Secret
     jsonPath: .status.kubeconfig.name
     name: KubeConfig
@@ -212,6 +216,16 @@ hostedclusters.hypershift.openshift.io:
   - description: Message
     jsonPath: .status.conditions[?(@.type=="Available")].message
     name: Message
+    type: string
+  - description: Control Plane Progress
+    jsonPath: .status.controlPlaneVersion.history[0].state
+    name: CP Progress
+    priority: 1
+    type: string
+  - description: Data Plane Progress
+    jsonPath: .status.version.history[0].state
+    name: DP Progress
+    priority: 1
     type: string
   Scope: Namespaced
   ShortNames:

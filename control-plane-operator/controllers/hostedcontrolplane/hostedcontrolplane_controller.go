@@ -116,6 +116,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -184,9 +185,13 @@ type HostedControlPlaneReconciler struct {
 	ImageMetadataProvider                   util.ImageMetadataProvider
 	cpoAzureCredentialsLoaded               sync.Map
 	kmsAzureCredentialsLoaded               sync.Map
+	clock                                   clock.Clock
 }
 
 func (r *HostedControlPlaneReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdate upsert.CreateOrUpdateFN, hcp *hyperv1.HostedControlPlane) error {
+	if r.clock == nil {
+		r.clock = clock.RealClock{}
+	}
 	r.setup(createOrUpdate)
 	b := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.HostedControlPlane{}).
@@ -765,6 +770,40 @@ func (r *HostedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.R
 	releaseImage, err := r.LookupReleaseImage(ctx, hostedControlPlane)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("failed to look up release image metadata: %w", err)
+	}
+
+	// Reconcile controlPlaneVersion status.
+	// This runs after LookupReleaseImage so we can use the version and resolved
+	// digest from the release image metadata.
+	{
+		clk := r.clock
+		if clk == nil {
+			clk = clock.RealClock{}
+		}
+		// Resolve the release image to its digest so controlPlaneVersion records
+		// the immutable image reference, consistent with how CVO records images.
+		pullSecret := common.PullSecret(hostedControlPlane.Namespace)
+		if err := r.Client.Get(ctx, client.ObjectKeyFromObject(pullSecret), pullSecret); err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to get pull secret for version reconciliation: %w", err)
+		}
+		_, resolvedRef, err := r.ImageMetadataProvider.GetDigest(ctx, util.HCPControlPlaneReleaseImage(hostedControlPlane), pullSecret.Data[corev1.DockerConfigJsonKey])
+		if err != nil {
+			return reconcile.Result{}, fmt.Errorf("failed to resolve control plane release image digest: %w", err)
+		}
+		resolvedImage := resolvedRef.String()
+
+		componentsList := &hyperv1.ControlPlaneComponentList{}
+		if listErr := r.Client.List(ctx, componentsList, client.InNamespace(hostedControlPlane.Namespace)); listErr != nil {
+			// On list failure, ensure a Partial entry exists so consumers
+			// know an upgrade was attempted. Preserve observedGeneration.
+			hostedControlPlane.Status.ControlPlaneVersion = ensureControlPlaneVersionPartial(hostedControlPlane, clk, releaseImage.Version(), resolvedImage)
+			// Persist the Partial entry before returning the error.
+			if patchErr := r.Client.Status().Patch(ctx, hostedControlPlane, client.MergeFromWithOptions(originalHostedControlPlane, client.MergeFromWithOptimisticLock{})); patchErr != nil {
+				return reconcile.Result{}, fmt.Errorf("failed to patch status after component list failure: %w (list error: %v)", patchErr, listErr)
+			}
+			return reconcile.Result{}, fmt.Errorf("failed to list control plane components for version reconciliation: %w", listErr)
+		}
+		hostedControlPlane.Status.ControlPlaneVersion = reconcileControlPlaneVersion(hostedControlPlane, componentsList.Items, clk, releaseImage.Version(), resolvedImage)
 	}
 
 	hostedControlPlane.Status.Initialized = true

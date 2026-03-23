@@ -597,7 +597,11 @@ func WaitForNReadyNodesWithOptions(t *testing.T, ctx context.Context, client crc
 	return nodes.Items
 }
 
-func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+// WaitForDataPlaneRollout waits for the data plane (CVO) version to reach Completed state.
+// This was renamed from WaitForImageRollout to clarify that it checks HC.Status.Version
+// (data-plane CVO rollout), in contrast to WaitForControlPlaneRollout which checks
+// HC.Status.ControlPlaneVersion (management-side components).
+func WaitForDataPlaneRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
 	var lastVersionCompletionTime *metav1.Time
 	if hostedCluster.Status.Version != nil &&
 		len(hostedCluster.Status.Version.History) > 0 {
@@ -640,6 +644,33 @@ func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Clie
 	)
 }
 
+// WaitForImageRollout is a deprecated alias for WaitForDataPlaneRollout.
+// Deprecated: Use WaitForDataPlaneRollout instead.
+func WaitForImageRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	WaitForDataPlaneRollout(t, ctx, client, hostedCluster)
+}
+
+// WaitForControlPlaneRollout waits for HC.Status.ControlPlaneVersion to reach Completed state
+// with the desired image. This checks management-side component rollout independently from CVO.
+// Must be gated with AtLeast(t, Version422) at call sites since older clusters lack this field.
+func WaitForControlPlaneRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s controlPlaneVersion to complete", hostedCluster.Namespace, hostedCluster.Name),
+		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
+			hc := &hyperv1.HostedCluster{}
+			err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hc)
+			return hc, err
+		},
+		[]Predicate[*hyperv1.HostedCluster]{
+			isControlPlaneVersionCompleted,
+		},
+		WithTimeout(30*time.Minute),
+		WithInterval(10*time.Second),
+	)
+}
+
+// WaitForControlPlaneComponentRollout waits for all ControlPlaneComponent resources to report
+// RolloutComplete=True and a version different from initialVersion. This provides a belt-and-suspenders
+// check alongside WaitForControlPlaneRollout by directly inspecting individual component status.
 func WaitForControlPlaneComponentRollout(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, initialVersion string) {
 	controlPlaneComponents := &hyperv1.ControlPlaneComponentList{}
 	controlPlaneNamespace := manifests.HostedControlPlaneNamespace(hostedCluster.Namespace, hostedCluster.Name)
@@ -2811,7 +2842,7 @@ func deleteIngressRoute53Records(t *testing.T, ctx context.Context, hostedCluste
 	}
 }
 
-func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
+func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions, upgradeContext *UpgradeContext) {
 	g := NewWithT(t)
 
 	// Sanity check the cluster by waiting for the nodes to report ready
@@ -2853,7 +2884,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	if numNodes == 0 {
 		timeout = 20 * time.Minute
 	}
-	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, timeout)
+	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, timeout, upgradeContext)
 
 	EnsureNodeCountMatchesNodePoolReplicas(t, ctx, client, guestClient, hostedCluster.Spec.Platform.Type, hostedCluster.Namespace)
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
@@ -2871,7 +2902,7 @@ func ValidatePublicCluster(t *testing.T, ctx context.Context, client crclient.Cl
 	ValidateConfigurationStatus(t, ctx, client, guestClient, hostedCluster)
 }
 
-func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions) {
+func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, clusterOpts *PlatformAgnosticOptions, upgradeContext *UpgradeContext) {
 	g := NewWithT(t)
 
 	// We can't wait for a guest client since we don't have connectivity to the API server
@@ -2904,7 +2935,7 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	if numNodes == 0 {
 		timeout = 20 * time.Minute
 	}
-	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, timeout)
+	ValidateHostedClusterConditions(t, ctx, client, hostedCluster, numNodes > 0, timeout, upgradeContext)
 
 	EnsureNoCrashingPods(t, ctx, client, hostedCluster)
 	EnsureOAPIMountsTrustBundle(t, context.Background(), client, hostedCluster)
@@ -2914,7 +2945,9 @@ func ValidatePrivateCluster(t *testing.T, ctx context.Context, client crclient.C
 	}
 }
 
-func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration) {
+// ValidateHostedClusterConditions checks that a HostedCluster's conditions and status fields
+// match expected values. Pass nil for uc when calling outside of an upgrade test context.
+func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client crclient.Client, hostedCluster *hyperv1.HostedCluster, hasWorkerNodes bool, timeout time.Duration, upgradeContext *UpgradeContext) {
 	expectedConditions := conditions.ExpectedHCConditions(hostedCluster)
 	// OCPBUGS-59885: Ignore KubeVirtNodesLiveMigratable in e2e; CI envs may lack RWX-capable PVCs, causing false failures
 	delete(expectedConditions, hyperv1.KubeVirtNodesLiveMigratable)
@@ -2942,7 +2975,7 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 	// TODO: TEMPORARY - Remove this once ControlPlaneConnectionAvailable condition is merged and stable.
 	// Exclude ControlPlaneConnectionAvailable during upgrade tests as the condition
 	// may not be present in all builds during the upgrade window.
-	if strings.Contains(t.Name(), "Upgrade") {
+	if upgradeContext != nil {
 		delete(expectedConditions, hyperv1.ControlPlaneConnectionAvailable)
 	}
 
@@ -2953,6 +2986,20 @@ func ValidateHostedClusterConditions(t *testing.T, ctx context.Context, client c
 			Status: conditionStatus,
 		}))
 	}
+
+	if IsGreaterThanOrEqualTo(Version422) {
+		cpvFieldPath := "status.controlPlaneVersion"
+		cpvEnforce := controlPlaneVersionSteadyState(hasWorkerNodes)
+
+		if upgradeContext != nil {
+			predicates = append(predicates, UpgradeSafeFieldCheck(
+				t, ctx, client, cpvFieldPath, upgradeContext, cpvEnforce,
+			))
+		} else {
+			predicates = append(predicates, cpvEnforce)
+		}
+	}
+
 	EventuallyObject(t, ctx, fmt.Sprintf("HostedCluster %s/%s to have valid conditions", hostedCluster.Namespace, hostedCluster.Name),
 		func(ctx context.Context) (*hyperv1.HostedCluster, error) {
 			hc := &hyperv1.HostedCluster{}
@@ -3987,7 +4034,7 @@ func EnsureCNOOperatorConfiguration(t *testing.T, ctx context.Context, mgmtClien
 			},
 			WithTimeout(10*time.Minute),
 		)
-		ValidateHostedClusterConditions(t, ctx, mgmtClient, hostedCluster, true, 5*time.Minute)
+		ValidateHostedClusterConditions(t, ctx, mgmtClient, hostedCluster, true, 5*time.Minute, nil)
 		// Check that the Network.operator.openshift.io resource in the guest cluster reflects our changes
 		EventuallyObject(t, ctx, "Network.operator.openshift.io/cluster in guest cluster to reflect the custom subnet changes",
 			func(ctx context.Context) (*operatorv1.Network, error) {
