@@ -11,6 +11,7 @@ require (
 	honnef.co/go/tools v0.7.0
 	k8s.io/code-generator v0.34.2
 	k8s.io/utils v0.0.0-20260108192941-914a6e750570
+	sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20260125163108-a19ec76a3c5d
 	sigs.k8s.io/kube-api-linter v0.0.0-20260206102632-39e3d06a2850
 )
 
@@ -101,6 +102,7 @@ require (
 	github.com/go-git/go-git/v5 v5.16.5 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/go-logr/zapr v1.3.0 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
 	github.com/go-openapi/jsonreference v0.20.2 // indirect
 	github.com/go-openapi/swag v0.23.0 // indirect
@@ -277,7 +279,7 @@ require (
 	go.opentelemetry.io/proto/otlp v1.5.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	go.yaml.in/yaml/v2 v2.4.2 // indirect
+	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
@@ -303,7 +305,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/api v0.34.2 // indirect
 	k8s.io/apiextensions-apiserver v0.33.2 // indirect
-	k8s.io/apimachinery v0.34.2 // indirect
+	k8s.io/apimachinery v0.35.0 // indirect
 	k8s.io/apiserver v0.34.2 // indirect
 	k8s.io/client-go v0.34.2 // indirect
 	k8s.io/component-base v0.34.2 // indirect
