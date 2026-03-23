@@ -1071,6 +1071,19 @@ spec:
       source: registry.redhat.io
 `
 
+	imageTagMirrorSet := `
+apiVersion: config.openshift.io/v1
+kind: ImageTagMirrorSet
+metadata:
+  name: valid-itms
+spec:
+  imageTagMirrors:
+    - mirrorSourcePolicy: AllowContactingSource
+      mirrors:
+        - some.registry.io/registry-redhat-io
+      source: registry.redhat.io
+`
+
 	testCases := []struct {
 		name  string
 		input []byte
@@ -1090,6 +1103,10 @@ spec:
 		{
 			name:  "Valid ImageDigestMirrorSet",
 			input: []byte(imageDigestMirrorSet),
+		},
+		{
+			name:  "Valid ImageTagMirrorSet",
+			input: []byte(imageTagMirrorSet),
 		},
 	}
 

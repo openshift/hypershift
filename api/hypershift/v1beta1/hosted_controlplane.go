@@ -192,6 +192,15 @@ type HostedControlPlaneSpec struct {
 	// +kubebuilder:validation:MaxItems=255
 	ImageContentSources []ImageContentSource `json:"imageContentSources,omitempty"`
 
+	// imageMirrorConfigRef is a local reference to a ConfigMap containing both ImageDigestMirrorSet (IDMS)
+	// and ImageTagMirrorSet (ITMS) configurations. The ConfigMap should contain keys "idms.yaml" and/or "itms.yaml"
+	// with the respective mirror configurations.
+	// This provides a unified and GitOps-friendly way to manage image mirror configurations for both digest-based
+	// and tag-based mirrors.
+	// When set, the controllers will parse the ConfigMap and reconcile both IDMS and ITMS configurations.
+	// +optional
+	ImageMirrorConfigRef *corev1.LocalObjectReference `json:"imageMirrorConfigRef,omitempty"`
+
 	// additionalTrustBundle references a ConfigMap containing a PEM-encoded X.509 certificate bundle
 	// +optional
 	AdditionalTrustBundle *corev1.LocalObjectReference `json:"additionalTrustBundle,omitempty"`

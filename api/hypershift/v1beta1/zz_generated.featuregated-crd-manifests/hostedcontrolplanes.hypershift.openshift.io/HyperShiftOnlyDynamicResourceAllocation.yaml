@@ -2422,6 +2422,26 @@ spec:
                   type: object
                 maxItems: 255
                 type: array
+              imageMirrorConfigRef:
+                description: |-
+                  imageMirrorConfigRef is a local reference to a ConfigMap containing both ImageDigestMirrorSet (IDMS)
+                  and ImageTagMirrorSet (ITMS) configurations. The ConfigMap should contain keys "idms.yaml" and/or "itms.yaml"
+                  with the respective mirror configurations.
+                  This provides a unified and GitOps-friendly way to manage image mirror configurations for both digest-based
+                  and tag-based mirrors.
+                  When set, the controllers will parse the ConfigMap and reconcile both IDMS and ITMS configurations.
+                properties:
+                  name:
+                    default: ""
+                    description: |-
+                      Name of the referent.
+                      This field is effectively required, but due to backwards compatibility is
+                      allowed to be empty. Instances of this type with an empty value here are
+                      almost certainly wrong.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
               infraID:
                 description: infraID is the unique id that identifies the cluster
                   internally.
