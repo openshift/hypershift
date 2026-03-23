@@ -35,6 +35,12 @@ const (
 	SATokenIssuerKeyPathDescription   = "Path to the RSA private key file used to sign service account tokens. Required for OIDC-based workload identity authentication."
 	AutoAssignRolesDescription        = "Automatically assign required Azure RBAC roles to workload identities. This grants the identities permissions to manage Azure resources (DNS, networking, storage) for the cluster."
 
+	// Private connectivity / topology
+	TopologyDescription                                      = "API server topology type: Public, PublicAndPrivate, or Private."
+	TopologyPrivateNATSubnetIDDescription                    = "Azure resource ID of the subnet used for Private Link Service NAT IP allocation (the subnet must have privateLinkServiceNetworkPolicies disabled)."
+	TopologyPrivateNATSubnetIDInfraDescription               = "Pre-existing Azure NAT subnet ID for Private Link Service; if not provided, a NAT subnet will be created when topology is not Public."
+	TopologyPrivateAdditionalAllowedSubscriptionsDescription = "Additional Azure subscription IDs permitted to create Private Endpoints (the guest cluster's own subscription is always automatically allowed)."
+
 	// Encryption
 	EncryptionKeyIDDescription     = "Azure Key Vault key identifier used to encrypt etcd data via KMSv2 (format: https://<vault>.vault.azure.net/keys/<key>/<version>)."
 	EncryptionAtHostDescription    = "Enable host-based encryption for VM disks and temp disks. Valid values: Enabled, Disabled."

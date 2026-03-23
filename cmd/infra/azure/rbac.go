@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -67,35 +68,12 @@ func (r *RBACManager) AssignControlPlaneRoles(ctx context.Context, opts *CreateI
 		components[config.CIRO] = controlPlaneMIs.ControlPlane.ImageRegistry.ClientID
 	}
 
-	// Get an access token for Microsoft Graph API for getting the object IDs
-	token, err := r.getAzureToken()
-	if err != nil {
-		return err
-	}
-
-	for component, clientID := range components {
-		objectID, err := r.getObjectIDFromClientID(string(clientID), token)
-		if err != nil {
-			return err
-		}
-
-		role, scopes := azureutil.GetServicePrincipalScopes(r.subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, opts.DNSZoneRG, component, opts.AssignCustomHCPRoles)
-
-		// For each resource group (aka scope), assign the role to the service principal
-		for _, scope := range scopes {
-			if err := r.assignRole(ctx, opts.InfraID, component, objectID, role, scope); err != nil {
-				return fmt.Errorf("failed to perform role assignment: %w", err)
-			}
-		}
-	}
-
-	return nil
+	return r.assignRolesForComponents(ctx, opts, components, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName)
 }
 
-// AssignControlPlaneRoles assigns roles to control plane managed identities
+// AssignWorkloadIdentities assigns roles to workload identity managed identities
 func (r *RBACManager) AssignWorkloadIdentities(ctx context.Context, opts *CreateInfraOptions, workloadIdentities *hyperv1.AzureWorkloadIdentities, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName string) error {
 	components := map[string]hyperv1.AzureClientID{
-		config.CPO:           workloadIdentities.ImageRegistry.ClientID,
 		config.NodePoolMgmt:  workloadIdentities.NodePoolManagement.ClientID,
 		config.CloudProvider: workloadIdentities.CloudProvider.ClientID,
 		config.AzureFile:     workloadIdentities.File.ClientID,
@@ -108,7 +86,15 @@ func (r *RBACManager) AssignWorkloadIdentities(ctx context.Context, opts *Create
 		components[config.CIRO] = workloadIdentities.ImageRegistry.ClientID
 	}
 
-	// Get an access token for Microsoft Graph API for getting the object IDs
+	if workloadIdentities.ControlPlaneOperator.ClientID != "" {
+		components[config.CPO] = workloadIdentities.ControlPlaneOperator.ClientID
+	}
+
+	return r.assignRolesForComponents(ctx, opts, components, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName)
+}
+
+// assignRolesForComponents resolves object IDs and assigns scoped roles for each component.
+func (r *RBACManager) assignRolesForComponents(ctx context.Context, opts *CreateInfraOptions, components map[string]hyperv1.AzureClientID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName string) error {
 	token, err := r.getAzureToken()
 	if err != nil {
 		return err
@@ -122,7 +108,6 @@ func (r *RBACManager) AssignWorkloadIdentities(ctx context.Context, opts *Create
 
 		role, scopes := azureutil.GetServicePrincipalScopes(r.subscriptionID, resourceGroupName, nsgResourceGroupName, vnetResourceGroupName, opts.DNSZoneRG, component, opts.AssignCustomHCPRoles)
 
-		// For each resource group (aka scope), assign the role to the service principal
 		for _, scope := range scopes {
 			if err := r.assignRole(ctx, opts.InfraID, component, objectID, role, scope); err != nil {
 				return fmt.Errorf("failed to perform role assignment: %w", err)
@@ -266,6 +251,12 @@ func (r *RBACManager) getAzureToken() (azcore.AccessToken, error) {
 }
 
 func (r *RBACManager) getObjectIDFromClientID(clientID string, token azcore.AccessToken) (string, error) {
+	// Validate clientID is a UUID to prevent OData injection
+	uuidPattern := regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	if !uuidPattern.MatchString(clientID) {
+		return "", fmt.Errorf("invalid client ID format: must be a UUID")
+	}
+
 	filterQuery := "$filter=appId eq '" + clientID + "'"
 	url := graphAPIEndpoint + "?" + strings.ReplaceAll(filterQuery, " ", "%20")
 
@@ -288,6 +279,11 @@ func (r *RBACManager) getObjectIDFromClientID(clientID string, token azcore.Acce
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
 	}(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("graph API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
 
 	// Parse response
 	var result ServicePrincipalResponse

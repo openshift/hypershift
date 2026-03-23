@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -66,6 +67,10 @@ func (r *reconciler) Reconcile(ctx context.Context, req reconcile.Request) (reco
 
 	machine, err := r.getMachineForNode(ctx, node)
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			log.Error(err, "failed to get Machine for Node")
+			return reconcile.Result{}, nil
+		}
 		return reconcile.Result{}, err
 	}
 	labelsToSync := getManagedLabels(machine.Labels)
@@ -114,12 +119,12 @@ func getManagedLabels(labels map[string]string) map[string]string {
 func (r *reconciler) getMachineForNode(ctx context.Context, node *corev1.Node) (*capiv1.Machine, error) {
 	machineName, ok := node.GetAnnotations()[capiv1.MachineAnnotation]
 	if !ok || machineName == "" {
-		return nil, fmt.Errorf("failed to find MachineAnnotation on Node %q", node.Name)
+		return nil, apierrors.NewNotFound(schema.GroupResource{Group: capiv1.GroupVersion.Group, Resource: "machines"}, node.Name)
 	}
 
 	machineNamespace, ok := node.GetAnnotations()[capiv1.ClusterNamespaceAnnotation]
 	if !ok || machineNamespace == "" {
-		return nil, fmt.Errorf("failed to find ClusterNamespaceAnnotation on Node %q", node.Name)
+		return nil, apierrors.NewNotFound(schema.GroupResource{Group: capiv1.GroupVersion.Group, Resource: "machines"}, node.Name)
 	}
 
 	machine := &capiv1.Machine{

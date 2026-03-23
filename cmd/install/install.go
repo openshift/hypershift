@@ -172,14 +172,24 @@ func (o *Options) Validate() error {
 			errs = append(errs, fmt.Errorf("--gcp-project and --gcp-region must be set together when --private-platform=%s", hyperv1.GCPPlatform))
 		}
 	case hyperv1.AzurePlatform:
-		if len(o.AzurePrivateCreds) > 0 && len(o.AzurePLSManagedIdentityClientID) > 0 {
-			errs = append(errs, fmt.Errorf("--azure-private-creds and --azure-pls-managed-identity-client-id are mutually exclusive"))
-		}
-		if len(o.AzurePrivateCredentialsSecret) > 0 && len(o.AzurePLSManagedIdentityClientID) > 0 {
-			errs = append(errs, fmt.Errorf("--azure-private-secret and --azure-pls-managed-identity-client-id are mutually exclusive"))
-		}
-		if len(o.AzurePLSManagedIdentityClientID) > 0 && len(o.AzurePLSSubscriptionID) == 0 {
-			errs = append(errs, fmt.Errorf("--azure-pls-subscription-id is required with --azure-pls-managed-identity-client-id"))
+		if o.ManagedService != hyperv1.AroHCP {
+			hasCredFile := len(o.AzurePrivateCreds) != 0 || len(o.AzurePrivateCredentialsSecret) != 0
+			hasManagedIdentity := len(o.AzurePLSManagedIdentityClientID) != 0
+			if !hasCredFile && !hasManagedIdentity {
+				errs = append(errs, fmt.Errorf("--azure-private-creds, --azure-private-secret, or --azure-pls-managed-identity-client-id is required with --private-platform=%s", hyperv1.AzurePlatform))
+			}
+			if hasCredFile && hasManagedIdentity {
+				errs = append(errs, fmt.Errorf("--azure-pls-managed-identity-client-id cannot be used with --azure-private-creds or --azure-private-secret"))
+			}
+			if hasManagedIdentity && len(o.AzurePLSSubscriptionID) == 0 {
+				errs = append(errs, fmt.Errorf("--azure-pls-subscription-id is required when using --azure-pls-managed-identity-client-id"))
+			}
+			if len(o.AzurePrivateCreds) != 0 && len(o.AzurePrivateCredentialsSecret) != 0 {
+				errs = append(errs, fmt.Errorf("only one of --azure-private-creds or --azure-private-secret is supported"))
+			}
+			if len(o.AzurePLSResourceGroup) == 0 {
+				errs = append(errs, fmt.Errorf("--azure-pls-resource-group is required with --private-platform=%s", hyperv1.AzurePlatform))
+			}
 		}
 	case hyperv1.NonePlatform:
 	default:
@@ -684,7 +694,7 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 	}
 
 	// Setup Secrets
-	oidcSecret, operatorCredentialsSecret, scaleFromZeroSecret, secretObjs, err := setupAuth(opts, operatorNamespace)
+	oidcSecret, operatorCredentialsSecret, azureCredentialsSecret, scaleFromZeroSecret, secretObjs, err := setupAuth(opts, operatorNamespace)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -709,7 +719,7 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 	// Setup HyperShift Operator Deployment and Service
 	operatorService, operatorObjs := setupOperatorResources(
 		opts, userCABundleCM, trustedCABundle, operatorNamespace, operatorServiceAccount, operatorCredentialsSecret,
-		oidcSecret, scaleFromZeroSecret, images,
+		azureCredentialsSecret, oidcSecret, scaleFromZeroSecret, images,
 	)
 	objects = append(objects, operatorObjs...)
 
@@ -802,6 +812,9 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 					if strings.Contains(path, "awsendpointservices") {
 						return isAWSPlatformEnabled(opts.PlatformsToInstall)
 					}
+					if strings.Contains(path, "azureprivatelinkservices") {
+						return isAzurePlatformEnabled(opts.PlatformsToInstall)
+					}
 					if opts.TechPreviewNoUpgrade {
 						// Skip all featureSets but TechPreviewNoUpgrade.
 						if featureSet, ok := crd.Annotations["release.openshift.io/feature-set"]; ok {
@@ -876,7 +889,19 @@ func isAWSPlatformEnabled(platformsToInstall []string) bool {
 		return true
 	}
 	for _, platform := range platformsToInstall {
-		if strings.Contains("aws", strings.ToLower(platform)) {
+		if strings.EqualFold(platform, "aws") {
+			return true
+		}
+	}
+	return false
+}
+
+func isAzurePlatformEnabled(platformsToInstall []string) bool {
+	if len(platformsToInstall) == 0 {
+		return true
+	}
+	for _, platform := range platformsToInstall {
+		if strings.EqualFold(platform, "azure") {
 			return true
 		}
 	}
@@ -985,7 +1010,7 @@ func setupSharedIngress() []crclient.Object {
 // setupOperatorResources creates the operator Deployment and Service resources.
 //
 // Returns the Service and a list of resources to apply.
-func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trustedCABundle *corev1.ConfigMap, operatorNamespace *corev1.Namespace, operatorServiceAccount *corev1.ServiceAccount, operatorCredentialsSecret *corev1.Secret, oidcSecret *corev1.Secret, scaleFromZeroSecret *corev1.Secret, images map[string]string) (*corev1.Service, []crclient.Object) {
+func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trustedCABundle *corev1.ConfigMap, operatorNamespace *corev1.Namespace, operatorServiceAccount *corev1.ServiceAccount, operatorCredentialsSecret *corev1.Secret, azureCredentialsSecret *corev1.Secret, oidcSecret *corev1.Secret, scaleFromZeroSecret *corev1.Secret, images map[string]string) (*corev1.Service, []crclient.Object) {
 	operatorDeployment := assets.HyperShiftOperatorDeployment{
 		AdditionalTrustBundle:                   userCABundleCM,
 		OpenShiftTrustBundle:                    trustedCABundle,
@@ -1003,6 +1028,11 @@ func setupOperatorResources(opts Options, userCABundleCM *corev1.ConfigMap, trus
 		GCPRegion:                               opts.GCPRegion,
 		AWSPrivateSecret:                        operatorCredentialsSecret,
 		AWSPrivateSecretKey:                     opts.AWSPrivateCredentialsSecretKey,
+		AzurePrivateSecret:                      azureCredentialsSecret,
+		AzurePrivateSecretKey:                   opts.AzurePrivateCredentialsSecretKey,
+		AzurePLSManagedIdentityClientID:         opts.AzurePLSManagedIdentityClientID,
+		AzurePLSSubscriptionID:                  opts.AzurePLSSubscriptionID,
+		AzurePLSResourceGroup:                   opts.AzurePLSResourceGroup,
 		OIDCBucketName:                          opts.OIDCStorageProviderS3BucketName,
 		OIDCBucketRegion:                        opts.OIDCStorageProviderS3Region,
 		OIDCStorageProviderS3Secret:             oidcSecret,
@@ -1193,6 +1223,14 @@ func setupRBAC(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Servi
 	operatorServiceAccount := assets.HyperShiftOperatorServiceAccount{
 		Namespace: operatorNamespace,
 	}.Build()
+	// When using Azure Workload Identity for PLS operations, annotate the SA
+	// so the Azure AD Workload Identity webhook injects federated tokens.
+	if opts.AzurePLSManagedIdentityClientID != "" {
+		if operatorServiceAccount.Annotations == nil {
+			operatorServiceAccount.Annotations = map[string]string{}
+		}
+		operatorServiceAccount.Annotations["azure.workload.identity/client-id"] = opts.AzurePLSManagedIdentityClientID
+	}
 	objects = append(objects, operatorServiceAccount)
 
 	operatorClusterRole := assets.HyperShiftOperatorClusterRole{
@@ -1279,17 +1317,18 @@ func setupAdminRBAC(operatorNamespace *corev1.Namespace) []crclient.Object {
 // - OIDC S3 credentials secret
 // - Platform specific secrets (e.g. AWS credentials)
 //
-// Returns the OIDC S3 credentials secret, operator credentials secret, and a list of resources to apply
-func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secret, *corev1.Secret, *corev1.Secret, []crclient.Object, error) {
+// Returns the OIDC S3 credentials secret, operator credentials secret, Azure credentials secret, and a list of resources to apply
+func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secret, *corev1.Secret, *corev1.Secret, *corev1.Secret, []crclient.Object, error) {
 	var objects []crclient.Object
 	var operatorCredentialsSecret *corev1.Secret
+	var azureCredentialsSecret *corev1.Secret
 	var oidcSecret *corev1.Secret
 	var scaleFromZeroSecret *corev1.Secret
 
 	if len(opts.PullSecretFile) > 0 {
 		pullSecretBytes, err := os.ReadFile(opts.PullSecretFile)
 		if err != nil {
-			return nil, nil, nil, nil, fmt.Errorf("failed to read pull secret file: %w", err)
+			return nil, nil, nil, nil, nil, fmt.Errorf("failed to read pull secret file: %w", err)
 		}
 
 		pullSecret := assets.HyperShiftPullSecret{
@@ -1302,7 +1341,7 @@ func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secre
 	if opts.OIDCStorageProviderS3Credentials != "" {
 		oidcCreds, err := os.ReadFile(opts.OIDCStorageProviderS3Credentials)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, err
 		}
 
 		oidcSecret = assets.HyperShiftOperatorOIDCProviderS3Secret{
@@ -1325,7 +1364,7 @@ func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secre
 		if opts.AWSPrivateCreds != "" {
 			credBytes, err := os.ReadFile(opts.AWSPrivateCreds)
 			if err != nil {
-				return nil, nil, nil, nil, err
+				return nil, nil, nil, nil, nil, err
 			}
 
 			operatorCredentialsSecret = assets.HyperShiftOperatorCredentialsSecret{
@@ -1339,6 +1378,31 @@ func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secre
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: operatorNamespace.Name,
 					Name:      opts.AWSPrivateCredentialsSecret,
+				},
+			}
+		}
+	case hyperv1.AzurePlatform:
+		// ARO HCP uses Swift networking, not Private Link Services
+		if opts.ManagedService == hyperv1.AroHCP {
+			break
+		}
+		if opts.AzurePrivateCreds != "" {
+			credBytes, err := os.ReadFile(opts.AzurePrivateCreds)
+			if err != nil {
+				return nil, nil, nil, nil, nil, err
+			}
+
+			azureCredentialsSecret = assets.HyperShiftOperatorAzureCredentialsSecret{
+				Namespace:  operatorNamespace,
+				CredsBytes: credBytes,
+				CredsKey:   opts.AzurePrivateCredentialsSecretKey,
+			}.Build()
+			objects = append(objects, azureCredentialsSecret)
+		} else if opts.AzurePrivateCredentialsSecret != "" {
+			azureCredentialsSecret = &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: operatorNamespace.Name,
+					Name:      opts.AzurePrivateCredentialsSecret,
 				},
 			}
 		}
@@ -1362,7 +1426,7 @@ func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secre
 	if opts.ScaleFromZeroCreds != "" {
 		credBytes, err := os.ReadFile(opts.ScaleFromZeroCreds)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, err
 		}
 
 		scaleFromZeroSecret = assets.ScaleFromZeroCredentialsSecret{
@@ -1381,5 +1445,5 @@ func setupAuth(opts Options, operatorNamespace *corev1.Namespace) (*corev1.Secre
 		}
 	}
 
-	return oidcSecret, operatorCredentialsSecret, scaleFromZeroSecret, objects, nil
+	return oidcSecret, operatorCredentialsSecret, azureCredentialsSecret, scaleFromZeroSecret, objects, nil
 }

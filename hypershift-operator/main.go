@@ -34,6 +34,7 @@ import (
 	awsinstancetype "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/instancetype/aws"
 	npmetrics "github.com/openshift/hypershift/hypershift-operator/controllers/nodepool/metrics"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/aws"
+	azureplatform "github.com/openshift/hypershift/hypershift-operator/controllers/platform/azure"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/platform/gcp"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/proxy"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/resourcebasedcpautoscaler"
@@ -61,6 +62,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/network/armnetwork/v5"
+
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -79,6 +84,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+	"sigs.k8s.io/yaml"
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
@@ -486,6 +492,93 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 			Log:                    ctrl.Log.WithName("controllers").WithName("GCPPrivateServiceConnect"),
 		}).SetupWithManager(mgr); err != nil {
 			return fmt.Errorf("unable to create GCPPrivateServiceConnect controller: %w", err)
+		}
+	case hyperv1.AzurePlatform:
+		// ARO HCP uses Swift networking, not Private Link Services
+		if !azureutil.IsAroHCP() {
+			azureCloudName := os.Getenv("AZURE_CLOUD_NAME")
+			if azureCloudName == "" {
+				azureCloudName = config.DefaultAzureCloud
+			}
+			cloudConfig, err := azureutil.GetAzureCloudConfiguration(azureCloudName)
+			if err != nil {
+				return fmt.Errorf("failed to get Azure cloud configuration: %w", err)
+			}
+
+			// Environment variables are used because the Azure SDK's DefaultAzureCredential
+			// and WorkloadIdentityCredential read credentials from env vars by design
+			// (see azure-sdk-for-go/sdk/azidentity). Two credential modes are supported:
+			// 1. Workload Identity: The Azure AD Workload Identity webhook injects
+			//    AZURE_CLIENT_ID, AZURE_TENANT_ID, and AZURE_FEDERATED_TOKEN_FILE
+			//    into the pod. DefaultAzureCredential picks these up automatically.
+			// 2. Credential file: A JSON file with clientId, clientSecret, tenantId,
+			//    subscriptionId is parsed and used with NewClientSecretCredential directly.
+			var azureCreds azcore.TokenCredential
+			if plsClientID := os.Getenv("AZURE_PLS_CLIENT_ID"); plsClientID != "" {
+				log.Info("Using Azure Workload Identity for PLS operations", "clientID", plsClientID)
+				azureCreds, err = azidentity.NewDefaultAzureCredential(
+					&azidentity.DefaultAzureCredentialOptions{
+						ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+					},
+				)
+				if err != nil {
+					return fmt.Errorf("failed to create Azure workload identity credentials: %w", err)
+				}
+			} else if credFile := os.Getenv("AZURE_CREDENTIALS_FILE"); credFile != "" {
+				raw, err := os.ReadFile(credFile)
+				if err != nil {
+					return fmt.Errorf("failed to read Azure credentials file %q: %w", credFile, err)
+				}
+				var creds struct {
+					SubscriptionID string `json:"subscriptionId"`
+					ClientID       string `json:"clientId"`
+					ClientSecret   string `json:"clientSecret"`
+					TenantID       string `json:"tenantId"`
+				}
+				if err := yaml.Unmarshal(raw, &creds); err != nil {
+					return fmt.Errorf("failed to parse Azure credentials file %q: %w", credFile, err)
+				}
+				azureCreds, err = azidentity.NewClientSecretCredential(
+					creds.TenantID, creds.ClientID, creds.ClientSecret,
+					&azidentity.ClientSecretCredentialOptions{
+						ClientOptions: azcore.ClientOptions{Cloud: cloudConfig},
+					},
+				)
+				if err != nil {
+					return fmt.Errorf("failed to create Azure client secret credentials: %w", err)
+				}
+				if os.Getenv("AZURE_SUBSCRIPTION_ID") == "" {
+					_ = os.Setenv("AZURE_SUBSCRIPTION_ID", creds.SubscriptionID)
+				}
+			} else {
+				return fmt.Errorf("either AZURE_PLS_CLIENT_ID or AZURE_CREDENTIALS_FILE must be set for Azure Private Link Service operations")
+			}
+
+			azureSubscriptionID := os.Getenv("AZURE_SUBSCRIPTION_ID")
+			if azureSubscriptionID == "" {
+				return fmt.Errorf("AZURE_SUBSCRIPTION_ID environment variable is required for Azure platform")
+			}
+			armClientOpts := azureutil.NewARMClientOptions(cloudConfig)
+			plsClient, err := armnetwork.NewPrivateLinkServicesClient(azureSubscriptionID, azureCreds, armClientOpts)
+			if err != nil {
+				return fmt.Errorf("failed to create Azure Private Link Services client: %w", err)
+			}
+			lbClient, err := armnetwork.NewLoadBalancersClient(azureSubscriptionID, azureCreds, armClientOpts)
+			if err != nil {
+				return fmt.Errorf("failed to create Azure Load Balancers client: %w", err)
+			}
+			azureResourceGroup := os.Getenv("AZURE_RESOURCE_GROUP")
+			if azureResourceGroup == "" {
+				return fmt.Errorf("AZURE_RESOURCE_GROUP environment variable is required for Azure platform")
+			}
+			if err := (&azureplatform.AzurePrivateLinkServiceController{
+				Client:                  mgr.GetClient(),
+				PrivateLinkServices:     plsClient,
+				LoadBalancers:           lbClient,
+				ManagementResourceGroup: azureResourceGroup,
+			}).SetupWithManager(mgr); err != nil {
+				return fmt.Errorf("unable to create AzurePrivateLinkService controller: %w", err)
+			}
 		}
 	}
 

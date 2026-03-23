@@ -1226,6 +1226,380 @@ var _ = Describe("API UX Validation", Label("API"), func() {
 			})
 		})
 
+		Context("Azure endpoint access and private connectivity validation", Label("Azure", "EndpointAccess"), func() {
+			It("When endpointAccess is PublicAndPrivate and privateConnectivity is nil, it should be rejected", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.AzurePlatform
+					hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+						Location:          "eastus",
+						ResourceGroupName: "test-rg",
+						VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+						SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+						TenantID:          "87654321-4321-8765-2109-876543210987",
+						Topology: hyperv1.AzureTopologyPublicAndPrivate,
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("private is required when topology is Private or PublicAndPrivate"))
+			})
+
+			It("When endpointAccess is Private and privateConnectivity is nil, it should be rejected", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.AzurePlatform
+					hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+						Location:          "eastus",
+						ResourceGroupName: "test-rg",
+						VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+						SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+						TenantID:          "87654321-4321-8765-2109-876543210987",
+						Topology: hyperv1.AzureTopologyPrivate,
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("private is required when topology is Private or PublicAndPrivate"))
+			})
+
+			It("When endpointAccess is Public and privateConnectivity is nil, it should be accepted", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.AzurePlatform
+					hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+						Location:          "eastus",
+						ResourceGroupName: "test-rg",
+						VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+						SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+						TenantID:          "87654321-4321-8765-2109-876543210987",
+						Topology: hyperv1.AzureTopologyPublic,
+					}
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("When endpointAccess is empty (default) and privateConnectivity is nil, it should be accepted", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.AzurePlatform
+					hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+						Location:          "eastus",
+						ResourceGroupName: "test-rg",
+						VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+						SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+						TenantID:          "87654321-4321-8765-2109-876543210987",
+					}
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("When endpointAccess is PublicAndPrivate and privateConnectivity is provided, it should be accepted", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.AzurePlatform
+					hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+						Location:          "eastus",
+						ResourceGroupName: "test-rg",
+						VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+						SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+						TenantID:          "87654321-4321-8765-2109-876543210987",
+						Topology: hyperv1.AzureTopologyPublicAndPrivate,
+						Private: hyperv1.AzurePrivateSpec{
+							Type:               hyperv1.AzurePrivateTypePrivateLink,
+							PrivateLink: &hyperv1.AzurePrivateLinkSpec{
+								NATSubnetID:                    "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/pls-subnet",
+								AdditionalAllowedSubscriptions: []string{"12345678-1234-5678-9012-123456789012"},
+							},
+						},
+					}
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("When endpointAccess is Private with LoadBalancer KAS strategy, it should be rejected", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.AzurePlatform
+					hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+						Location:          "eastus",
+						ResourceGroupName: "test-rg",
+						VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+						SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+						TenantID:          "87654321-4321-8765-2109-876543210987",
+						Topology: hyperv1.AzureTopologyPrivate,
+						Private: hyperv1.AzurePrivateSpec{
+							Type:               hyperv1.AzurePrivateTypePrivateLink,
+							PrivateLink: &hyperv1.AzurePrivateLinkSpec{
+								NATSubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/pls-subnet",
+							},
+						},
+					}
+					hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+						{
+							Service: hyperv1.OAuthServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+						{
+							Service: hyperv1.Konnectivity,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Azure platform requires APIServer to use Route service publishing strategy"))
+			})
+
+			It("When endpointAccess is Private with Route KAS strategy and privateConnectivity is provided, it should be accepted", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.AzurePlatform
+					hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+						Location:          "eastus",
+						ResourceGroupName: "test-rg",
+						VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+						SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+						TenantID:          "87654321-4321-8765-2109-876543210987",
+						Topology: hyperv1.AzureTopologyPrivate,
+						Private: hyperv1.AzurePrivateSpec{
+							Type:               hyperv1.AzurePrivateTypePrivateLink,
+							PrivateLink: &hyperv1.AzurePrivateLinkSpec{
+								NATSubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/pls-subnet",
+							},
+						},
+					}
+					hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+								Route: &hyperv1.RoutePublishingStrategy{
+									Hostname: "api.test.example.com",
+								},
+							},
+						},
+						{
+							Service: hyperv1.OAuthServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+						{
+							Service: hyperv1.Konnectivity,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					}
+				})
+				Expect(err).NotTo(HaveOccurred())
+			})
+
+			It("When endpointAccess is Private with NodePort KAS strategy, it should be rejected", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.AzurePlatform
+					hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+						Location:          "eastus",
+						ResourceGroupName: "test-rg",
+						VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+						SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+						TenantID:          "87654321-4321-8765-2109-876543210987",
+						Topology: hyperv1.AzureTopologyPrivate,
+						Private: hyperv1.AzurePrivateSpec{
+							Type:               hyperv1.AzurePrivateTypePrivateLink,
+							PrivateLink: &hyperv1.AzurePrivateLinkSpec{
+								NATSubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/pls-subnet",
+							},
+						},
+					}
+					hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+								NodePort: &hyperv1.NodePortPublishingStrategy{
+									Address: "10.0.0.1",
+									Port:    6443,
+								},
+							},
+						},
+						{
+							Service: hyperv1.OAuthServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+						{
+							Service: hyperv1.Konnectivity,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Azure platform requires APIServer to use Route service publishing strategy"))
+			})
+
+			It("When endpointAccess is PublicAndPrivate with LoadBalancer KAS strategy, it should be rejected", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.AzurePlatform
+					hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+						Location:          "eastus",
+						ResourceGroupName: "test-rg",
+						VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+						SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+						TenantID:          "87654321-4321-8765-2109-876543210987",
+						Topology: hyperv1.AzureTopologyPublicAndPrivate,
+						Private: hyperv1.AzurePrivateSpec{
+							Type:               hyperv1.AzurePrivateTypePrivateLink,
+							PrivateLink: &hyperv1.AzurePrivateLinkSpec{
+								NATSubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/pls-subnet",
+							},
+						},
+					}
+					hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.LoadBalancer,
+							},
+						},
+						{
+							Service: hyperv1.OAuthServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+						{
+							Service: hyperv1.Konnectivity,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Azure platform requires APIServer to use Route service publishing strategy"))
+			})
+
+			It("When endpointAccess is PublicAndPrivate with NodePort KAS strategy, it should be rejected", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.AzurePlatform
+					hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+						Location:          "eastus",
+						ResourceGroupName: "test-rg",
+						VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+						SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+						TenantID:          "87654321-4321-8765-2109-876543210987",
+						Topology: hyperv1.AzureTopologyPublicAndPrivate,
+						Private: hyperv1.AzurePrivateSpec{
+							Type:               hyperv1.AzurePrivateTypePrivateLink,
+							PrivateLink: &hyperv1.AzurePrivateLinkSpec{
+								NATSubnetID: "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/pls-subnet",
+							},
+						},
+					}
+					hc.Spec.Services = []hyperv1.ServicePublishingStrategyMapping{
+						{
+							Service: hyperv1.APIServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.NodePort,
+								NodePort: &hyperv1.NodePortPublishingStrategy{
+									Address: "10.0.0.1",
+									Port:    6443,
+								},
+							},
+						},
+						{
+							Service: hyperv1.OAuthServer,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+						{
+							Service: hyperv1.Konnectivity,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+						{
+							Service: hyperv1.Ignition,
+							ServicePublishingStrategy: hyperv1.ServicePublishingStrategy{
+								Type: hyperv1.Route,
+							},
+						},
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Azure platform requires APIServer to use Route service publishing strategy"))
+			})
+
+			It("When endpointAccess is an invalid value, it should be rejected", func() {
+				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {
+					hc.Spec.Platform.Type = hyperv1.AzurePlatform
+					hc.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{
+						Location:          "eastus",
+						ResourceGroupName: "test-rg",
+						VnetID:            "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet",
+						SubnetID:          "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/virtualNetworks/test-vnet/subnets/test-subnet",
+						SubscriptionID:    "12345678-1234-5678-9012-123456789012",
+						SecurityGroupID:   "/subscriptions/12345678-1234-5678-9012-123456789012/resourceGroups/test-rg/providers/Microsoft.Network/networkSecurityGroups/test-nsg",
+						TenantID:          "87654321-4321-8765-2109-876543210987",
+						Topology: hyperv1.AzureTopologyType("InvalidValue"),
+					}
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("Unsupported value"))
+			})
+
+			})
+
 		Context("Operator configuration validation", Label("Operator", "Configuration"), func() {
 			It("should accept when disableMultiNetwork is set to false", func() {
 				err := testHostedClusterCreation(ctx, mgmtClient, "hostedcluster-base.yaml", func(hc *hyperv1.HostedCluster) {

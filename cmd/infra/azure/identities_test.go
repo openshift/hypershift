@@ -39,11 +39,13 @@ func TestNewIdentityManager(t *testing.T) {
 func TestGetWorkloadIdentityDefinitions(t *testing.T) {
 	tests := map[string]struct {
 		clusterName       string
+		topology          string
 		expectedCount     int
 		expectedComponent []string
 	}{
-		"When called it should return 7 identity definitions with correct components": {
+		"When public topology it should return 7 identity definitions without controlPlaneOperator": {
 			clusterName:   "test-cluster",
+			topology:      "Public",
 			expectedCount: 7,
 			expectedComponent: []string{
 				"disk",
@@ -55,16 +57,46 @@ func TestGetWorkloadIdentityDefinitions(t *testing.T) {
 				"network",
 			},
 		},
+		"When private topology it should return 8 identity definitions with controlPlaneOperator": {
+			clusterName:   "test-cluster",
+			topology:      "Private",
+			expectedCount: 8,
+			expectedComponent: []string{
+				"disk",
+				"file",
+				"imageRegistry",
+				"ingress",
+				"cloudProvider",
+				"nodePoolManagement",
+				"network",
+				"controlPlaneOperator",
+			},
+		},
+		"When empty topology it should return 8 identity definitions for cleanup": {
+			clusterName:   "test-cluster",
+			topology:      "",
+			expectedCount: 8,
+			expectedComponent: []string{
+				"disk",
+				"file",
+				"imageRegistry",
+				"ingress",
+				"cloudProvider",
+				"nodePoolManagement",
+				"network",
+				"controlPlaneOperator",
+			},
+		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
 
-			definitions := GetWorkloadIdentityDefinitions(test.clusterName)
+			definitions := GetWorkloadIdentityDefinitions(test.clusterName, test.topology)
 
 			// Verify count
-			g.Expect(definitions).To(HaveLen(test.expectedCount), "Should return 7 identity definitions")
+			g.Expect(definitions).To(HaveLen(test.expectedCount))
 
 			// Verify all expected components are present
 			componentNames := make([]string, len(definitions))

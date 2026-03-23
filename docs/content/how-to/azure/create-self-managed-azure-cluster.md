@@ -42,6 +42,18 @@ Your Azure service principal must have the following permissions:
 
 ## Creating the Self-Managed Azure HostedCluster
 
+!!! tip "Alternative: Use `create infra azure` and `create iam azure`"
+
+    This guide creates Azure infrastructure manually with `az` CLI commands for
+    transparency. Alternatively, you can use the HyperShift CLI to automate
+    infrastructure and IAM creation:
+
+    - [Create Azure IAM Resources Separately](create-iam-separately.md) — `hypershift create iam azure`
+    - [Create Azure Infrastructure Separately](create-infra-separately.md) — `hypershift create infra azure`
+
+    The private cluster guide ([Deploy Azure Private Clusters](deploy-azure-private-clusters.md))
+    uses these automated commands and is the recommended approach for private topology.
+
 ### Infrastructure Setup
 
 Before creating the HostedCluster, set up the necessary Azure infrastructure:
@@ -147,6 +159,14 @@ ${HYPERSHIFT_BINARY_PATH}/hypershift create cluster azure \
     --workload-identities-file ./workload-identities.json \
     --diagnostics-storage-account-type Managed
 ```
+
+!!! tip "Private Clusters"
+
+    To create a private cluster with Azure Private Link, see
+    [Deploy Azure Private Clusters](deploy-azure-private-clusters.md).
+    Private clusters require additional setup: a NAT subnet in the management
+    cluster's VNet, `--endpoint-access Private` flag, and HyperShift operator
+    installation with `--private-platform Azure`.
 
 ### Configuring Azure Marketplace Images
 

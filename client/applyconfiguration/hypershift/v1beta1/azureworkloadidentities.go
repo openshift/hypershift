@@ -20,13 +20,14 @@ package v1beta1
 // AzureWorkloadIdentitiesApplyConfiguration represents a declarative configuration of the AzureWorkloadIdentities type for use
 // with apply.
 type AzureWorkloadIdentitiesApplyConfiguration struct {
-	ImageRegistry      *WorkloadIdentityApplyConfiguration `json:"imageRegistry,omitempty"`
-	Ingress            *WorkloadIdentityApplyConfiguration `json:"ingress,omitempty"`
-	File               *WorkloadIdentityApplyConfiguration `json:"file,omitempty"`
-	Disk               *WorkloadIdentityApplyConfiguration `json:"disk,omitempty"`
-	NodePoolManagement *WorkloadIdentityApplyConfiguration `json:"nodePoolManagement,omitempty"`
-	CloudProvider      *WorkloadIdentityApplyConfiguration `json:"cloudProvider,omitempty"`
-	Network            *WorkloadIdentityApplyConfiguration `json:"network,omitempty"`
+	ImageRegistry        *WorkloadIdentityApplyConfiguration `json:"imageRegistry,omitempty"`
+	Ingress              *WorkloadIdentityApplyConfiguration `json:"ingress,omitempty"`
+	File                 *WorkloadIdentityApplyConfiguration `json:"file,omitempty"`
+	Disk                 *WorkloadIdentityApplyConfiguration `json:"disk,omitempty"`
+	NodePoolManagement   *WorkloadIdentityApplyConfiguration `json:"nodePoolManagement,omitempty"`
+	CloudProvider        *WorkloadIdentityApplyConfiguration `json:"cloudProvider,omitempty"`
+	Network              *WorkloadIdentityApplyConfiguration `json:"network,omitempty"`
+	ControlPlaneOperator *WorkloadIdentityApplyConfiguration `json:"controlPlaneOperator,omitempty"`
 }
 
 // AzureWorkloadIdentitiesApplyConfiguration constructs a declarative configuration of the AzureWorkloadIdentities type for use with
@@ -88,5 +89,13 @@ func (b *AzureWorkloadIdentitiesApplyConfiguration) WithCloudProvider(value *Wor
 // If called multiple times, the Network field is set to the value of the last call.
 func (b *AzureWorkloadIdentitiesApplyConfiguration) WithNetwork(value *WorkloadIdentityApplyConfiguration) *AzureWorkloadIdentitiesApplyConfiguration {
 	b.Network = value
+	return b
+}
+
+// WithControlPlaneOperator sets the ControlPlaneOperator field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the ControlPlaneOperator field is set to the value of the last call.
+func (b *AzureWorkloadIdentitiesApplyConfiguration) WithControlPlaneOperator(value *WorkloadIdentityApplyConfiguration) *AzureWorkloadIdentitiesApplyConfiguration {
+	b.ControlPlaneOperator = value
 	return b
 }

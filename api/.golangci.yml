@@ -106,6 +106,9 @@ linters:
         path: ^vendor/
       - linters:
           - kubeapilinter
+        path: _test\.go
+      - linters:
+          - kubeapilinter
         path: hypershift/v1beta1/aws.go
         text: 'nobools: field Volume.Encrypted pointer should not use a bool. Use a string type with meaningful constant values as an enum'
       - linters:
@@ -428,6 +431,10 @@ linters:
           - kubeapilinter
         path: hypershift/v1beta1/azure.go
         text: 'optionalfields: field ImageRegistry should have the omitempty tag'
+      - linters:
+          - kubeapilinter
+        path: hypershift/v1beta1/azure.go
+        text: 'optionalfields: field AzurePrivateSpec.PrivateLink does not allow the zero value. The field does not need to be a pointer'
       - linters:
           - kubeapilinter
         path: hypershift/v1beta1/azure.go

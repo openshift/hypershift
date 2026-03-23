@@ -21,6 +21,81 @@ OpenShift clusters at scale.</p>
 worker nodes and their kubelets, and the infrastructure on which they run). This
 enables &ldquo;hosted control plane as a service&rdquo; use cases.</p>
 </p>
+##AzurePrivateLinkService { #hypershift.openshift.io/v1beta1.AzurePrivateLinkService }
+<p>
+<p>AzurePrivateLinkService represents Azure Private Link Service infrastructure
+for private connectivity to hosted cluster API servers.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>apiVersion</code></br>
+string</td>
+<td>
+<code>
+hypershift.openshift.io/v1beta1
+</code>
+</td>
+</tr>
+<tr>
+<td>
+<code>kind</code></br>
+string
+</td>
+<td><code>AzurePrivateLinkService</code></td>
+</tr>
+<tr>
+<td>
+<code>metadata</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#objectmeta-v1-meta">
+Kubernetes meta/v1.ObjectMeta
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>metadata is the metadata for the AzurePrivateLinkService.</p>
+Refer to the Kubernetes API documentation for the fields of the
+<code>metadata</code> field.
+</td>
+</tr>
+<tr>
+<td>
+<code>spec,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec">
+AzurePrivateLinkServiceSpec
+</a>
+</em>
+</td>
+<td>
+<p>spec is the specification for the AzurePrivateLinkService.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>status,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceStatus">
+AzurePrivateLinkServiceStatus
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>status is the status of the AzurePrivateLinkService.</p>
+</td>
+</tr>
+</tbody>
+</table>
 ##CertificateSigningRequestApproval { #hypershift.openshift.io/v1beta1.CertificateSigningRequestApproval }
 <p>
 <p>CertificateSigningRequestApproval defines the desired state of CertificateSigningRequestApproval</p>
@@ -3802,7 +3877,463 @@ string
 <p>tenantID is a unique identifier for the tenant where Azure resources will be created and managed in.</p>
 </td>
 </tr>
+<tr>
+<td>
+<code>topology</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureTopologyType">
+AzureTopologyType
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>topology specifies the network topology of the API server endpoint for the hosted cluster.
+- Public: The API server is accessible only via a public endpoint.
+- PublicAndPrivate: The API server is accessible via both public and private endpoints.
+- Private: The API server is accessible only via a private endpoint.
+When omitted, this means no opinion and the platform is left to choose a reasonable
+default, which is subject to change over time. The current default is Public.
+This field must be set explicitly for self-hosted environments (WorkloadIdentities).
+Transitions between PublicAndPrivate and Private are allowed after creation.
+Transitions from Public to non-Public (or vice versa) are not allowed.
+When set to Private or PublicAndPrivate, the private field must be provided.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>private,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateSpec">
+AzurePrivateSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>private configures private connectivity to the hosted cluster&rsquo;s API server.
+This field is required when topology is Private or PublicAndPrivate, and must
+not be set when topology is Public.
+Once set at cluster creation, this field cannot be removed, and it cannot be
+added to an existing cluster that was created without it.</p>
+</td>
+</tr>
 </tbody>
+</table>
+###AzurePrivateLinkServiceSpec { #hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkService">AzurePrivateLinkService</a>)
+</p>
+<p>
+<p>AzurePrivateLinkServiceSpec defines the desired state of AzurePrivateLinkService</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>loadBalancerIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>loadBalancerIP is the frontend IP address of the internal load balancer that
+fronts the hosted control plane&rsquo;s API server. This field is populated automatically
+by the control plane operator from the kube-apiserver service status.
+It is not set by users directly.
+When set, the value must be a valid IPv4 or IPv6 address.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>subscriptionID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>subscriptionID is the Azure subscription ID where the Private Link Service
+resources will be created. Must be a valid UUID consisting of hexadecimal
+characters and hyphens in the format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+where x is a hexadecimal digit <a href="e.g.," title="550e8400-e29b-41d4-a716-446655440000">0-9a-f</a>.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>resourceGroupName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>resourceGroupName is the name of the Azure resource group where the Private Link
+Service resources will be created. Must be 1-90 characters consisting of
+alphanumerics, underscores, hyphens, periods, and parentheses. Cannot end with a period.
+See <a href="https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules">https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules</a></p>
+</td>
+</tr>
+<tr>
+<td>
+<code>location</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>location is the Azure region where the Private Link Service resources will be
+created (e.g., &ldquo;eastus&rdquo;, &ldquo;westeurope&rdquo;, &ldquo;centralus&rdquo;). Must match the region
+of the management cluster.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>natSubnetID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureSubnetResourceID">
+AzureSubnetResourceID
+</a>
+</em>
+</td>
+<td>
+<p>natSubnetID is the full Azure resource ID of the subnet used for Private Link Service
+NAT IP allocation. This subnet must have privateLinkServiceNetworkPolicies disabled.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalAllowedSubscriptions</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureSubscriptionID">
+[]AzureSubscriptionID
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>additionalAllowedSubscriptions is an optional list of additional Azure subscription IDs
+permitted to create Private Endpoints to the Private Link Service. The guest cluster&rsquo;s
+own subscription (derived from guestSubnetID) is always automatically allowed, so it
+does not need to be listed here.
+Each entry must be a valid UUID of exactly 36 characters consisting of
+lowercase hexadecimal characters and hyphens in the format
+xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx where x is a hexadecimal digit <a href="e.g.," title="550e8400-e29b-41d4-a716-446655440000">0-9a-f</a>.
+A maximum of 50 subscriptions may be specified.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestSubnetID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureSubnetResourceID">
+AzureSubnetResourceID
+</a>
+</em>
+</td>
+<td>
+<p>guestSubnetID is the full Azure resource ID of the subnet in the guest VNet where
+the Private Endpoint will be created.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>guestVNetID</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzureVNetResourceID">
+AzureVNetResourceID
+</a>
+</em>
+</td>
+<td>
+<p>guestVNetID is the full Azure resource ID of the guest VNet for Private DNS zone linking.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>baseDomain</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>baseDomain is the cluster&rsquo;s base domain (e.g., &ldquo;example.hypershift.azure.devcluster.openshift.com&rdquo;).
+Used to create a Private DNS Zone so that worker VMs can resolve the API and OAuth
+hostnames (api-<name>.<baseDomain>, oauth-<name>.<baseDomain>) to the Private Endpoint IP.
+Persisted in spec so that deletion does not depend on the HostedControlPlane still existing.
+baseDomain must be at most 253 characters in length and must consist only of
+lowercase alphanumeric characters, hyphens, and periods. Each period-separated segment
+must start and end with an alphanumeric character.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateLinkServiceStatus { #hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceStatus }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkService">AzurePrivateLinkService</a>)
+</p>
+<p>
+<p>AzurePrivateLinkServiceStatus defines the observed state of AzurePrivateLinkService</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>conditions</code></br>
+<em>
+<a href="https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.22/#condition-v1-meta">
+[]Kubernetes meta/v1.Condition
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>conditions represent the current state of PLS infrastructure.
+Current condition types are: &ldquo;AzurePrivateLinkServiceAvailable&rdquo;, &ldquo;AzureInternalLoadBalancerAvailable&rdquo;,
+&ldquo;AzurePLSCreated&rdquo;, &ldquo;AzurePrivateEndpointAvailable&rdquo;, &ldquo;AzurePrivateDNSAvailable&rdquo;</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>internalLoadBalancerID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>internalLoadBalancerID is the Azure resource ID of the internal load balancer
+fronting the hosted control plane. The expected format is:
+/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/loadBalancers/{loadBalancerName}
+where subscriptionID is a UUID, resourceGroup is up to 90 characters, and
+loadBalancerName is up to 80 characters.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateLinkServiceID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateLinkServiceID is the Azure resource ID of the Private Link Service.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateLinkServiceAlias</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateLinkServiceAlias is the globally unique alias for the Private Link Service.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateEndpointID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateEndpointID is the Azure resource ID of the Private Endpoint.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateEndpointIP</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateEndpointIP is the private IP address assigned to the Private Endpoint.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateDNSZoneID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateDNSZoneID is the Azure resource ID of the Private DNS Zone.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>dnsZoneName</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>dnsZoneName is the Private DNS zone name (derived from the KAS hostname).
+Persisted at creation time so that deletion does not depend on the
+HostedControlPlane still existing.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>baseDomainDNSZoneID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>baseDomainDNSZoneID is the Azure resource ID of the base domain Private DNS Zone.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateLinkSpec { #hypershift.openshift.io/v1beta1.AzurePrivateLinkSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateSpec">AzurePrivateSpec</a>)
+</p>
+<p>
+<p>AzurePrivateLinkSpec configures Azure Private Link Service connectivity.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>natSubnetID</code></br>
+<em>
+string
+</em>
+</td>
+<td>
+<p>natSubnetID is the Azure resource ID of the subnet used for Private Link Service NAT IP allocation.
+This subnet must have privateLinkServiceNetworkPolicies disabled.
+The expected format is:
+/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
+The maximum length is 355 characters.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>additionalAllowedSubscriptions</code></br>
+<em>
+[]string
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>additionalAllowedSubscriptions is an optional list of additional Azure subscription IDs
+permitted to create Private Endpoints to the Private Link Service. The guest cluster&rsquo;s
+own subscription is always automatically allowed, so it does not need to be listed here.
+Each item must be a valid UUID consisting of lowercase hexadecimal characters and hyphens,
+in the format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+(e.g., &ldquo;550e8400-e29b-41d4-a716-446655440000&rdquo;). A maximum of 50 subscriptions may be specified.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateSpec { #hypershift.openshift.io/v1beta1.AzurePrivateSpec }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>AzurePrivateSpec configures private connectivity to an Azure hosted cluster&rsquo;s API server.
+It is a discriminated union keyed on the type field, which selects the private connectivity
+mechanism. Currently only PrivateLink is supported; additional mechanisms (e.g., Swift) may
+be added in the future.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>
+<code>type</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateType">
+AzurePrivateType
+</a>
+</em>
+</td>
+<td>
+<p>type specifies the private connectivity mechanism used for the hosted cluster&rsquo;s API server.
+&ldquo;PrivateLink&rdquo; selects Azure Private Link Service for private API server access.
+This field is immutable once set.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>privateLink,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkSpec">
+AzurePrivateLinkSpec
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>privateLink configures Azure Private Link Service for private API server access.
+This field is required when type is &ldquo;PrivateLink&rdquo; and must not be set otherwise.</p>
+</td>
+</tr>
+</tbody>
+</table>
+###AzurePrivateType { #hypershift.openshift.io/v1beta1.AzurePrivateType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateSpec">AzurePrivateSpec</a>)
+</p>
+<p>
+<p>AzurePrivateType specifies the type of private connectivity mechanism used for the Azure
+hosted cluster&rsquo;s API server. This acts as the discriminator for the AzurePrivateSpec union.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;PrivateLink&#34;</p></td>
+<td><p>AzurePrivateTypePrivateLink specifies private connectivity using Azure Private Link Service.
+In this mode, the operator creates a Private Link Service backed by the management cluster&rsquo;s
+internal load balancer, and a Private Endpoint in the guest VNet for private API server access.</p>
+</td>
+</tr></tbody>
 </table>
 ###AzureResourceManagedIdentities { #hypershift.openshift.io/v1beta1.AzureResourceManagedIdentities }
 <p>
@@ -3850,6 +4381,53 @@ Azure&rsquo;s API.</p>
 </td>
 </tr>
 </tbody>
+</table>
+###AzureSubnetResourceID { #hypershift.openshift.io/v1beta1.AzureSubnetResourceID }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec">AzurePrivateLinkServiceSpec</a>)
+</p>
+<p>
+<p>AzureSubnetResourceID is a full Azure resource ID for a subnet.
+The expected format is:</p>
+<pre><code>/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}
+</code></pre>
+</p>
+###AzureSubscriptionID { #hypershift.openshift.io/v1beta1.AzureSubscriptionID }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec">AzurePrivateLinkServiceSpec</a>)
+</p>
+<p>
+<p>AzureSubscriptionID is an Azure subscription ID in UUID format.
+Must be exactly 36 characters consisting of hexadecimal digits [0-9a-fA-F] and hyphens
+in the format xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (e.g., &ldquo;550e8400-e29b-41d4-a716-446655440000&rdquo;).</p>
+</p>
+###AzureTopologyType { #hypershift.openshift.io/v1beta1.AzureTopologyType }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePlatformSpec">AzurePlatformSpec</a>)
+</p>
+<p>
+<p>AzureTopologyType specifies the network topology of the Azure API server endpoint.</p>
+</p>
+<table>
+<thead>
+<tr>
+<th>Value</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr><td><p>&#34;Private&#34;</p></td>
+<td><p>AzureTopologyPrivate indicates the API server is accessible only via a private endpoint.</p>
+</td>
+</tr><tr><td><p>&#34;Public&#34;</p></td>
+<td><p>AzureTopologyPublic indicates the API server is accessible only via a public endpoint.</p>
+</td>
+</tr><tr><td><p>&#34;PublicAndPrivate&#34;</p></td>
+<td><p>AzureTopologyPublicAndPrivate indicates the API server is accessible via both public and private endpoints.</p>
+</td>
+</tr></tbody>
 </table>
 ###AzureVMImage { #hypershift.openshift.io/v1beta1.AzureVMImage }
 <p>
@@ -3964,6 +4542,17 @@ Valid values are ImageID and AzureMarketplace.</p>
 </td>
 </tr></tbody>
 </table>
+###AzureVNetResourceID { #hypershift.openshift.io/v1beta1.AzureVNetResourceID }
+<p>
+(<em>Appears on:</em>
+<a href="#hypershift.openshift.io/v1beta1.AzurePrivateLinkServiceSpec">AzurePrivateLinkServiceSpec</a>)
+</p>
+<p>
+<p>AzureVNetResourceID is a full Azure resource ID for a virtual network.
+The expected format is:</p>
+<pre><code>/subscriptions/{subscriptionID}/resourceGroups/{resourceGroup}/providers/Microsoft.Network/virtualNetworks/{vnetName}
+</code></pre>
+</p>
 ###AzureWorkloadIdentities { #hypershift.openshift.io/v1beta1.AzureWorkloadIdentities }
 <p>
 (<em>Appears on:</em>
@@ -4077,6 +4666,21 @@ WorkloadIdentity
 <td>
 <p>network is the client ID of a federated managed identity, associated with cluster-network-operator, used in
 workload identity authentication.</p>
+</td>
+</tr>
+<tr>
+<td>
+<code>controlPlaneOperator,omitzero</code></br>
+<em>
+<a href="#hypershift.openshift.io/v1beta1.WorkloadIdentity">
+WorkloadIdentity
+</a>
+</em>
+</td>
+<td>
+<em>(Optional)</em>
+<p>controlPlaneOperator is the client ID of a federated managed identity, associated with control-plane-operator,
+used in workload identity authentication for Azure Private Link Service operations.</p>
 </td>
 </tr>
 </tbody>
@@ -5062,6 +5666,21 @@ created in the guest VPC</p>
 </tr><tr><td><p>&#34;AWSEndpointServiceAvailable&#34;</p></td>
 <td><p>AWSEndpointServiceAvailable indicates whether the AWS Endpoint Service
 has been created for the specified NLB in the management VPC</p>
+</td>
+</tr><tr><td><p>&#34;AzureInternalLoadBalancerAvailable&#34;</p></td>
+<td><p>AzureInternalLoadBalancerAvailable indicates the ILB has been provisioned with a frontend IP</p>
+</td>
+</tr><tr><td><p>&#34;AzurePLSCreated&#34;</p></td>
+<td><p>AzurePLSCreated indicates the Azure Private Link Service has been created in the management cluster resource group</p>
+</td>
+</tr><tr><td><p>&#34;AzurePrivateDNSAvailable&#34;</p></td>
+<td><p>AzurePrivateDNSAvailable indicates the Private DNS zone and A records have been created</p>
+</td>
+</tr><tr><td><p>&#34;AzurePrivateEndpointAvailable&#34;</p></td>
+<td><p>AzurePrivateEndpointAvailable indicates the Private Endpoint has been created in the guest VNet</p>
+</td>
+</tr><tr><td><p>&#34;AzurePrivateLinkServiceAvailable&#34;</p></td>
+<td><p>AzurePrivateLinkServiceAvailable indicates overall PLS infrastructure availability</p>
 </td>
 </tr><tr><td><p>&#34;BackupCompleted&#34;</p></td>
 <td><p>BackupCompleted indicates whether the etcd backup has completed.</p>

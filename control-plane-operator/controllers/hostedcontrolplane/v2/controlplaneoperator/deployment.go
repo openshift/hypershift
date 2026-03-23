@@ -243,6 +243,25 @@ func (cpo *ControlPlaneOperatorOptions) applyPlatformSpecificConfig(hcp *hyperv1
 					azureutil.CreateVolumeForAzureSecretStoreProviderClass(config.ManagedAzureKMSSecretStoreVolumeName, config.ManagedAzureKMSSecretProviderClassName),
 				)
 			}
+		} else if azureutil.IsSelfManagedAzure(hcp.Spec.Platform.Type) {
+			if hcp.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities != nil &&
+				hcp.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.ControlPlaneOperator.ClientID != "" {
+				deployment.Spec.Template.Spec.Containers[0].Env = append(
+					deployment.Spec.Template.Spec.Containers[0].Env,
+					corev1.EnvVar{
+						Name:  "AZURE_FEDERATED_TOKEN_FILE",
+						Value: "/var/run/secrets/openshift/serviceaccount/token",
+					},
+					corev1.EnvVar{
+						Name:  "AZURE_CLIENT_ID",
+						Value: string(hcp.Spec.Platform.Azure.AzureAuthenticationConfig.WorkloadIdentities.ControlPlaneOperator.ClientID),
+					},
+					corev1.EnvVar{
+						Name:  "AZURE_TENANT_ID",
+						Value: hcp.Spec.Platform.Azure.TenantID,
+					},
+				)
+			}
 		}
 	case hyperv1.GCPPlatform:
 		// Mount GCP Workload Identity Federation credentials

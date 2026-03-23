@@ -207,7 +207,7 @@ func (r *Reconciler) reconcileAPIServerService(ctx context.Context, hcp *hyperv1
 	if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 		kasSVCPort = config.KASSVCIBMCloudPort
 	}
-	if serviceStrategy.Type == hyperv1.LoadBalancer && (hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
+	if serviceStrategy.Type == hyperv1.LoadBalancer && util.IsPublicHCP(hcp) && (hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
 		hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform)) {
 		// For Azure or Kubevirt on Azure we currently hardcode 7443 for the SVC LB as 6443 collides with public LB rule for the management cluster.
 		// https://bugzilla.redhat.com/show_bug.cgi?id=2060650
@@ -221,7 +221,7 @@ func (r *Reconciler) reconcileAPIServerService(ctx context.Context, hcp *hyperv1
 		return fmt.Errorf("failed to reconcile API server service: %w", err)
 	}
 
-	if serviceStrategy.Type == hyperv1.LoadBalancer && (hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
+	if serviceStrategy.Type == hyperv1.LoadBalancer && util.IsPublicHCP(hcp) && (hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
 		hcp.Spec.Platform.Type == hyperv1.KubevirtPlatform && hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform)) {
 		// Create the svc clusterIP for Azure on config.KASSVCPort as expected by internal consumers.
 		kasSVC := manifests.KubeAPIServerService(hcp.Namespace)
@@ -511,10 +511,13 @@ func (r *Reconciler) reconcileAPIServerServiceStatus(ctx context.Context, hcp *h
 	}
 	if serviceStrategy.Type == hyperv1.LoadBalancer && (hcp.Spec.Platform.Type == hyperv1.AzurePlatform ||
 		hcp.Annotations[hyperv1.ManagementPlatformAnnotation] == string(hyperv1.AzurePlatform)) {
-		// If Azure or Kubevirt on Azure we get the SVC handling the LB.
-		// TODO(alberto): remove this hack when having proper traffic management for Azure.
+		// Azure uses port 7443 for KAS LB because port 6443 collides with the management cluster's KAS.
 		kasSVCLBPort = config.KASSVCLBAzurePort
-		svc = manifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
+		if util.IsPublicHCP(hcp) {
+			// Public Azure clusters use a dedicated kube-apiserverlb service.
+			// Private-only clusters use kube-apiserver-private (already set above).
+			svc = manifests.KubeAPIServerServiceAzureLB(hcp.Namespace)
+		}
 	}
 
 	if err = r.Client.Get(ctx, client.ObjectKeyFromObject(svc), svc); err != nil {

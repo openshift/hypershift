@@ -146,7 +146,7 @@ func createCluster(ctx context.Context, hc *hyperv1.HostedCluster, opts *Platfor
 		}
 		validOpts := completer.(*azure.ValidatedCreateOptions)
 
-		infraOpts, err := azure.CreateInfraOptions(ctx, validOpts, coreOpts)
+		infraOpts, err := azure.CreateInfraOptions(validOpts, coreOpts)
 		if err != nil {
 			return fmt.Errorf("failed to create infra options: %w", err)
 		}

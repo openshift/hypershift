@@ -91,6 +91,15 @@ func withAWSEndpointAccess(hcp *hyperv1.HostedControlPlane, access hyperv1.AWSEn
 	return hcp
 }
 
+// withAzureTopology sets the Azure topology type on the HCP.
+func withAzureTopology(hcp *hyperv1.HostedControlPlane, topology hyperv1.AzureTopologyType) *hyperv1.HostedControlPlane {
+	if hcp.Spec.Platform.Azure == nil {
+		hcp.Spec.Platform.Azure = &hyperv1.AzurePlatformSpec{}
+	}
+	hcp.Spec.Platform.Azure.Topology = topology
+	return hcp
+}
+
 // withServices sets the service publishing strategies on the HCP.
 func withServices(hcp *hyperv1.HostedControlPlane, services []hyperv1.ServicePublishingStrategyMapping) *hyperv1.HostedControlPlane {
 	hcp.Spec.Services = services
@@ -438,6 +447,30 @@ func TestReconcileInfrastructure(t *testing.T) {
 				ExternalHCPRouterHost: testRouterLBHostname,
 			},
 		},
+		{
+			name: "Azure_Private_KAS_LoadBalancer",
+			hcp: withServices(
+				withAzureTopology(baseAzureHCP(), hyperv1.AzureTopologyPrivate),
+				kasServiceLoadBalancerOthersRoute(),
+			),
+			expectError: false,
+			// For Azure Private with LB:
+			// - APIHost from private KAS LB (kube-apiserver-private)
+			// - APIPort is 7443 (Azure uses different port to avoid collision)
+			// - Internal router needed for private HCP
+			expectedStatus: &InfrastructureStatus{
+				APIHost:               testKASLBHostname,
+				APIPort:               config.KASSVCLBAzurePort,
+				OAuthEnabled:          true,
+				OAuthHost:             testOAuthHostname,
+				OAuthPort:             443,
+				KonnectivityHost:      testKonnectivityHost,
+				KonnectivityPort:      443,
+				NeedInternalRouter:    true,
+				InternalHCPRouterHost: testInternalRouterLBHost,
+				NeedExternalRouter:    false,
+			},
+		},
 		// ARO HCP test cases - use shared ingress
 		{
 			name: "ARO_Route_SharedIngress",
@@ -588,6 +621,7 @@ func simulateInfraProvisioning(ctx context.Context, c client.Client, hcp *hyperv
 		{manifests.PrivateRouterService(hcp.Namespace), internalRouterLBHost},
 		{manifests.KubeAPIServerService(hcp.Namespace), kasLBHost},
 		{manifests.KubeAPIServerPrivateService(hcp.Namespace), kasLBHost},
+		{manifests.KubeAPIServerServiceAzureLB(hcp.Namespace), kasLBHost},
 	}
 
 	for _, lb := range lbServices {

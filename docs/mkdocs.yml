@@ -131,6 +131,7 @@ nav:
       - how-to/azure/create-self-managed-azure-cluster.md
       - how-to/azure/create-iam-separately.md
       - how-to/azure/create-infra-separately.md
+      - how-to/azure/deploy-azure-private-clusters.md
     - 'Global Pull Secret': how-to/azure/global-pull-secret.md
     - 'Troubleshooting':
         - how-to/azure/troubleshooting/index.md
@@ -298,6 +299,8 @@ nav:
     - reference/architecture/index.md
     - 'AWS':
       - 'PrivateLink': reference/architecture/aws/privatelink.md
+    - 'Azure':
+      - 'PrivateLink': reference/architecture/azure/privatelink.md
     - 'Multicluster Engine and Agent': reference/architecture/mce-and-agent.md
     - 'Managed Azure':
         - reference/architecture/managed-azure/secrets-csi.md
