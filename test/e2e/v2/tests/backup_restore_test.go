@@ -47,19 +47,60 @@ const (
 	ContextBreakControlPlane       = "BreakControlPlane"
 )
 
-var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Serial, func() {
+type backupRestorePlatformConfig struct {
+	excludeWorkloads     []string
+	postRestoreHook      func(testCtx *internal.TestContext) error
+	additionalNamespaces []string
+}
+
+var backupRestorePlatforms = map[hyperv1.PlatformType]backupRestorePlatformConfig{
+	hyperv1.AWSPlatform: {
+		excludeWorkloads: []string{"router", "karpenter", "karpenter-operator", "aws-node-termination-handler"},
+		postRestoreHook: func(testCtx *internal.TestContext) error {
+			awsCredsFile := internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
+			fixOpts := &backuprestore.FixDrOidcIamOptions{
+				HCName:       testCtx.ClusterName,
+				HCNamespace:  testCtx.ClusterNamespace,
+				AWSCredsFile: awsCredsFile,
+				Timeout:      backuprestore.OIDCTimeout,
+			}
+			return backuprestore.RunFixDrOidcIam(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, fixOpts)
+		},
+	},
+	hyperv1.AgentPlatform: {
+		excludeWorkloads: []string{"router", "karpenter", "karpenter-operator", "cloud-network-config-controller"},
+		postRestoreHook:  nil,
+	},
+}
+
+var _ = Describe("BackupRestore", Label("backup-restore"), Ordered, Serial, func() {
 
 	var (
-		prober           backuprestore.ProberManager
-		testCtx          *internal.TestContext
-		backupName       string
-		restoreName      string
-		scheduleName     string
-		excludeWorkloads []string = []string{
-			"router", "karpenter", "karpenter-operator", "aws-node-termination-handler",
-		}
+		platformCfg        backupRestorePlatformConfig
+		prober             backuprestore.ProberManager
+		testCtx            *internal.TestContext
+		backupName         string
+		restoreName        string
+		scheduleName       string
 		expectedConditions []util.Condition
 	)
+
+	BeforeAll(func() {
+		testCtx = internal.GetTestContext()
+		Expect(testCtx).NotTo(BeNil())
+		hostedCluster := testCtx.GetHostedCluster()
+		Expect(hostedCluster).NotTo(BeNil(), "HostedCluster should be set up")
+		cfg, supported := backupRestorePlatforms[hostedCluster.Spec.Platform.Type]
+		if !supported {
+			Skip(fmt.Sprintf("Backup/restore test not supported on platform %s", hostedCluster.Spec.Platform.Type))
+		}
+		platformCfg = cfg
+		if hostedCluster.Spec.Platform.Type == hyperv1.AgentPlatform &&
+			hostedCluster.Spec.Platform.Agent != nil &&
+			hostedCluster.Spec.Platform.Agent.AgentNamespace != "" {
+			platformCfg.additionalNamespaces = []string{hostedCluster.Spec.Platform.Agent.AgentNamespace}
+		}
+	})
 
 	AfterAll(func() {
 		// Safety net for Prober
@@ -77,11 +118,6 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 		if err := testCtx.ValidateControlPlaneNamespace(); err != nil {
 			AbortSuite(err.Error())
 		}
-		hostedCluster := testCtx.GetHostedCluster()
-		Expect(hostedCluster).NotTo(BeNil(), "HostedCluster should be set up")
-		if hostedCluster.Spec.Platform.Type != hyperv1.AWSPlatform {
-			Skip("Test is only supported on AWS platform")
-		}
 
 		// Ensure Velero pod is running before proceeding with backup/restore tests
 		err := backuprestore.EnsureVeleroPodRunning(testCtx)
@@ -92,9 +128,9 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 
 	Context(ContextPreBackupControlPlane, func() {
 		It("should have control plane healthy before backup", func() {
-			err := internal.ValidateControlPlaneDeploymentsReadiness(testCtx, excludeWorkloads)
+			err := internal.ValidateControlPlaneDeploymentsReadiness(testCtx, platformCfg.excludeWorkloads)
 			Expect(err).NotTo(HaveOccurred())
-			err = internal.ValidateControlPlaneStatefulSetsReadiness(testCtx, excludeWorkloads)
+			err = internal.ValidateControlPlaneStatefulSetsReadiness(testCtx, platformCfg.excludeWorkloads)
 			Expect(err).NotTo(HaveOccurred())
 			nodePool, err := getNodePool(testCtx)
 			Expect(err).NotTo(HaveOccurred())
@@ -112,7 +148,6 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 	// Setup the continual operations
 	Context(ContextSetupContinual, func() {
 		It("should setup continual operations successfully", func() {
-			Skip("Skipping until CNTRLPLANE-2676 is implemented")
 			verifyReconciliationActiveFunction := func() error {
 				hostedCluster := &hyperv1.HostedCluster{}
 				err := testCtx.MgmtClient.Get(testCtx.Context, crclient.ObjectKey{
@@ -143,11 +178,12 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 			By("Creating schedule")
 			scheduleName = oadp.GenerateScheduleName(testCtx.ClusterName, testCtx.ClusterNamespace)
 			scheduleOpts := &backuprestore.OADPScheduleOptions{
-				Name:            scheduleName,
-				Schedule:        "* * * * *", // Every minute
-				HCName:          testCtx.ClusterName,
-				HCNamespace:     testCtx.ClusterNamespace,
-				StorageLocation: testCtx.ClusterName,
+				Name:              scheduleName,
+				Schedule:          "* * * * *", // Every minute
+				HCName:            testCtx.ClusterName,
+				HCNamespace:       testCtx.ClusterNamespace,
+				StorageLocation:   testCtx.ClusterName,
+				IncludeNamespaces: platformCfg.additionalNamespaces,
 			}
 			err := backuprestore.RunOADPSchedule(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, scheduleOpts)
 			Expect(err).NotTo(HaveOccurred())
@@ -166,10 +202,11 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 				testCtx.ClusterNamespace,
 			)
 			backupOpts := &backuprestore.OADPBackupOptions{
-				Name:            backupName,
-				HCName:          testCtx.ClusterName,
-				HCNamespace:     testCtx.ClusterNamespace,
-				StorageLocation: testCtx.ClusterName,
+				Name:              backupName,
+				HCName:            testCtx.ClusterName,
+				HCNamespace:       testCtx.ClusterNamespace,
+				StorageLocation:   testCtx.ClusterName,
+				IncludeNamespaces: platformCfg.additionalNamespaces,
 			}
 			err = backuprestore.RunOADPBackup(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, backupOpts)
 			Expect(err).NotTo(HaveOccurred())
@@ -187,7 +224,9 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 	// Verify the continual operations
 	Context(ContextVerifyContinual, func() {
 		It("should verify continual operations completed successfully", func() {
-			Skip("Skipping until CNTRLPLANE-2676 is implemented")
+			if prober == nil {
+				Skip("prober not initialized")
+			}
 			err := prober.Stop()
 			Expect(err).NotTo(HaveOccurred())
 		})
@@ -195,9 +234,9 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 
 	Context(ContextPostBackupControlPlane, func() {
 		It("should have control plane healthy after backup", func() {
-			err := internal.ValidateControlPlaneDeploymentsReadiness(testCtx, excludeWorkloads)
+			err := internal.ValidateControlPlaneDeploymentsReadiness(testCtx, platformCfg.excludeWorkloads)
 			Expect(err).NotTo(HaveOccurred())
-			err = internal.ValidateControlPlaneStatefulSetsReadiness(testCtx, excludeWorkloads)
+			err = internal.ValidateControlPlaneStatefulSetsReadiness(testCtx, platformCfg.excludeWorkloads)
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
@@ -214,10 +253,11 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 			By("Creating Restore")
 			restoreName = oadp.GenerateRestoreName(testCtx.ClusterName, testCtx.ClusterNamespace)
 			restoreOpts := &backuprestore.OADPRestoreOptions{
-				Name:        restoreName,
-				FromBackup:  backupName,
-				HCName:      testCtx.ClusterName,
-				HCNamespace: testCtx.ClusterNamespace,
+				Name:              restoreName,
+				FromBackup:        backupName,
+				HCName:            testCtx.ClusterName,
+				HCNamespace:       testCtx.ClusterNamespace,
+				IncludeNamespaces: platformCfg.additionalNamespaces,
 			}
 			err := backuprestore.RunOADPRestore(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, restoreOpts)
 			Expect(err).NotTo(HaveOccurred())
@@ -225,34 +265,32 @@ var _ = Describe("BackupRestore", Label("backup-restore", "aws"), Ordered, Seria
 			err = backuprestore.WaitForRestoreCompletion(testCtx, restoreName)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Fixing OIDC identity provider after restore")
-			awsCredsFile := internal.GetEnvVarValue("AWS_GUEST_INFRA_CREDENTIALS_FILE")
-			fixOpts := &backuprestore.FixDrOidcIamOptions{
-				HCName:       testCtx.ClusterName,
-				HCNamespace:  testCtx.ClusterNamespace,
-				AWSCredsFile: awsCredsFile,
-				Timeout:      backuprestore.OIDCTimeout,
+			if platformCfg.postRestoreHook != nil {
+				By("Running platform-specific post-restore operations")
+				err = platformCfg.postRestoreHook(testCtx)
+				Expect(err).NotTo(HaveOccurred())
 			}
-			err = backuprestore.RunFixDrOidcIam(testCtx.Context, GinkgoLogr.WithName("backup-restore"), testCtx.ArtifactDir, fixOpts)
-			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
 	Context(ContextPostRestoreControlPlane, func() {
 		It("should have control plane healthy after restore", func() {
 			By("Waiting for control plane statefulsets to be ready")
-			err := internal.WaitForControlPlaneStatefulSetsReadiness(testCtx, backuprestore.RestoreTimeout, excludeWorkloads)
+			err := internal.WaitForControlPlaneStatefulSetsReadiness(testCtx, backuprestore.RestoreTimeout, platformCfg.excludeWorkloads)
 			Expect(err).NotTo(HaveOccurred())
 			By("Waiting for control plane deployments to be ready")
-			err = internal.WaitForControlPlaneDeploymentsReadiness(testCtx, backuprestore.RestoreTimeout, excludeWorkloads)
+			err = internal.WaitForControlPlaneDeploymentsReadiness(testCtx, backuprestore.RestoreTimeout, platformCfg.excludeWorkloads)
 			Expect(err).NotTo(HaveOccurred())
-			By("Validating NodePool conditions")
-			Eventually(func(g Gomega) {
-				nodePool, err := getNodePool(testCtx)
-				g.Expect(err).NotTo(HaveOccurred())
-				g.Expect(nodePool).NotTo(BeNil())
-				internal.ValidateConditions(g, nodePool, expectedConditions)
-			}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.OIDCTimeout).Should(Succeed())
+			// TODO(mgencur): Remove this condition once https://redhat.atlassian.net/browse/MGMT-23509 is fixed
+			if testCtx.GetHostedCluster().Spec.Platform.Type != hyperv1.AgentPlatform {
+				By("Validating NodePool conditions")
+				Eventually(func(g Gomega) {
+					nodePool, err := getNodePool(testCtx)
+					g.Expect(err).NotTo(HaveOccurred())
+					g.Expect(nodePool).NotTo(BeNil())
+					internal.ValidateConditions(g, nodePool, expectedConditions)
+				}).WithPolling(backuprestore.PollInterval).WithTimeout(backuprestore.OIDCTimeout).Should(Succeed())
+			}
 		})
 	})
 })
