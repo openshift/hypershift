@@ -29,16 +29,6 @@ spec:
                     secretKeyRef:
                       name: dashboard-secrets
                       key: GITHUB_TOKEN
-                - name: CLAUDE_API_KEY
-                  valueFrom:
-                    secretKeyRef:
-                      name: dashboard-secrets
-                      key: CLAUDE_API_KEY
-                - name: CLAUDE_API_ENDPOINT
-                  valueFrom:
-                    secretKeyRef:
-                      name: dashboard-secrets
-                      key: CLAUDE_API_ENDPOINT
               volumeMounts:
                 - name: db
                   mountPath: /data

@@ -21,11 +21,6 @@ func main() {
 		dbPath = "dashboard.db"
 	}
 	githubToken := os.Getenv("GITHUB_TOKEN")
-	claudeAPIKey := os.Getenv("CLAUDE_API_KEY")
-	claudeAPIEndpoint := os.Getenv("CLAUDE_API_ENDPOINT")
-	if claudeAPIEndpoint == "" {
-		claudeAPIEndpoint = "https://api.anthropic.com/v1/messages"
-	}
 
 	// Open SQLite database and initialize schema
 	sqlDB, err := sql.Open("sqlite3", dbPath)
@@ -45,10 +40,9 @@ func main() {
 	gcsClient := scraper.NewHTTPGCSClient(nil)
 	githubClient := scraper.NewGitHubClient(githubToken)
 	complexityAnalyzer := scraper.NewComplexityAnalyzer(os.TempDir())
-	classifier := scraper.NewClassifier(claudeAPIEndpoint, claudeAPIKey)
 
 	// Create orchestrator and run
-	orch := scraper.NewOrchestrator(store, gcsClient, githubClient, complexityAnalyzer, classifier)
+	orch := scraper.NewOrchestrator(store, gcsClient, githubClient, complexityAnalyzer)
 
 	ctx := context.Background()
 	if err := orch.Run(ctx); err != nil {

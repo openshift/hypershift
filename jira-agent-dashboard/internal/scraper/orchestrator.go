@@ -19,11 +19,6 @@ type GitHubAPI interface {
 	GetPRReviewComments(ctx context.Context, owner, repo string, number int) ([]CommentInfo, error)
 }
 
-// CommentClassifier abstracts comment classification for dependency injection.
-type CommentClassifier interface {
-	Classify(ctx context.Context, commentBody string) (*Classification, error)
-}
-
 // ComplexityAnalyzerAPI abstracts complexity analysis for dependency injection.
 type ComplexityAnalyzerAPI interface {
 	AnalyzePR(ctx context.Context, owner, repo string, prNumber int, baseBranch string) (*ComplexityResult, error)
@@ -36,17 +31,15 @@ type Orchestrator struct {
 	gcs        GCSClient
 	gh         GitHubAPI
 	complexity ComplexityAnalyzerAPI
-	classifier CommentClassifier
 }
 
 // NewOrchestrator creates an Orchestrator with the given dependencies.
-func NewOrchestrator(store *db.Store, gcs GCSClient, gh GitHubAPI, ca ComplexityAnalyzerAPI, cl CommentClassifier) *Orchestrator {
+func NewOrchestrator(store *db.Store, gcs GCSClient, gh GitHubAPI, ca ComplexityAnalyzerAPI) *Orchestrator {
 	return &Orchestrator{
 		store:      store,
 		gcs:        gcs,
 		gh:         gh,
 		complexity: ca,
-		classifier: cl,
 	}
 }
 
@@ -67,10 +60,8 @@ func (o *Orchestrator) Run(ctx context.Context) error {
 		return fmt.Errorf("refreshing open PRs: %w", err)
 	}
 
-	log.Println("Step 3: Classifying new comments...")
-	if err := o.classifyNewComments(ctx); err != nil {
-		return fmt.Errorf("classifying new comments: %w", err)
-	}
+	// TODO: Comment classification will be handled by an ephemeral Claude Code pod
+	// using the code-review:classify-review-comment skill from ai-helpers.
 
 	log.Println("Scrape cycle complete.")
 	return nil
@@ -293,28 +284,6 @@ func (o *Orchestrator) refreshOpenPRs(ctx context.Context) error {
 		}
 
 		log.Printf("Refreshed PR %d for issue %s: state=%s", issue.PRNumber, issue.JiraKey, prState)
-	}
-
-	return nil
-}
-
-// classifyNewComments classifies unclassified review comments.
-func (o *Orchestrator) classifyNewComments(ctx context.Context) error {
-	comments, err := o.store.GetUnclassifiedComments()
-	if err != nil {
-		return fmt.Errorf("getting unclassified comments: %w", err)
-	}
-
-	for _, c := range comments {
-		classification, err := o.classifier.Classify(ctx, c.Body)
-		if err != nil {
-			log.Printf("Warning: could not classify comment %d: %v", c.ID, err)
-			continue
-		}
-
-		if err := o.store.UpdateCommentClassification(c.ID, classification.Severity, classification.Topic, false); err != nil {
-			log.Printf("Warning: could not update classification for comment %d: %v", c.ID, err)
-		}
 	}
 
 	return nil
