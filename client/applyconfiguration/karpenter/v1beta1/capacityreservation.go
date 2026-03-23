@@ -18,20 +18,21 @@ limitations under the License.
 package v1beta1
 
 import (
+	karpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 // CapacityReservationApplyConfiguration represents a declarative configuration of the CapacityReservation type for use
 // with apply.
 type CapacityReservationApplyConfiguration struct {
-	AvailabilityZone      *string  `json:"availabilityZone,omitempty"`
-	EndTime               *v1.Time `json:"endTime,omitempty"`
-	ID                    *string  `json:"id,omitempty"`
-	InstanceMatchCriteria *string  `json:"instanceMatchCriteria,omitempty"`
-	InstanceType          *string  `json:"instanceType,omitempty"`
-	OwnerID               *string  `json:"ownerID,omitempty"`
-	ReservationType       *string  `json:"reservationType,omitempty"`
-	State                 *string  `json:"state,omitempty"`
+	AvailabilityZone      *string                                    `json:"availabilityZone,omitempty"`
+	EndTime               *v1.Time                                   `json:"endTime,omitempty"`
+	ID                    *string                                    `json:"id,omitempty"`
+	InstanceMatchCriteria *karpenterv1beta1.InstanceMatchCriteria    `json:"instanceMatchCriteria,omitempty"`
+	InstanceType          *string                                    `json:"instanceType,omitempty"`
+	OwnerID               *string                                    `json:"ownerID,omitempty"`
+	ReservationType       *karpenterv1beta1.CapacityReservationType  `json:"reservationType,omitempty"`
+	State                 *karpenterv1beta1.CapacityReservationState `json:"state,omitempty"`
 }
 
 // CapacityReservationApplyConfiguration constructs a declarative configuration of the CapacityReservation type for use with
@@ -67,7 +68,7 @@ func (b *CapacityReservationApplyConfiguration) WithID(value string) *CapacityRe
 // WithInstanceMatchCriteria sets the InstanceMatchCriteria field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the InstanceMatchCriteria field is set to the value of the last call.
-func (b *CapacityReservationApplyConfiguration) WithInstanceMatchCriteria(value string) *CapacityReservationApplyConfiguration {
+func (b *CapacityReservationApplyConfiguration) WithInstanceMatchCriteria(value karpenterv1beta1.InstanceMatchCriteria) *CapacityReservationApplyConfiguration {
 	b.InstanceMatchCriteria = &value
 	return b
 }
@@ -91,7 +92,7 @@ func (b *CapacityReservationApplyConfiguration) WithOwnerID(value string) *Capac
 // WithReservationType sets the ReservationType field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the ReservationType field is set to the value of the last call.
-func (b *CapacityReservationApplyConfiguration) WithReservationType(value string) *CapacityReservationApplyConfiguration {
+func (b *CapacityReservationApplyConfiguration) WithReservationType(value karpenterv1beta1.CapacityReservationType) *CapacityReservationApplyConfiguration {
 	b.ReservationType = &value
 	return b
 }
@@ -99,7 +100,7 @@ func (b *CapacityReservationApplyConfiguration) WithReservationType(value string
 // WithState sets the State field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the State field is set to the value of the last call.
-func (b *CapacityReservationApplyConfiguration) WithState(value string) *CapacityReservationApplyConfiguration {
+func (b *CapacityReservationApplyConfiguration) WithState(value karpenterv1beta1.CapacityReservationState) *CapacityReservationApplyConfiguration {
 	b.State = &value
 	return b
 }

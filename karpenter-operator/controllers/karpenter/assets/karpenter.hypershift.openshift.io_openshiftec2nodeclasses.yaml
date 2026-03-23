@@ -175,46 +175,68 @@ spec:
                   rule: self.filter(x, has(x.rootVolume)?x.rootVolume=='RootVolume':false).size()
                     <= 1
               capacityReservationSelectorTerms:
-                description: CapacityReservationSelectorTerms is a list of capacity
-                  reservation selector terms. The terms are ORed.
+                description: |-
+                  capacityReservationSelectorTerms is a list of capacity reservation selector terms. The terms are ORed.
+                  Each term must specify at least one of: tags, id, ownerID, or instanceMatchCriteria.
+                  The id field is mutually exclusive and cannot be combined with tags, ownerID, or instanceMatchCriteria
+                  within the same term.
                 items:
                   description: |-
                     CapacityReservationSelectorTerm defines selection logic for a capacity reservation used by Karpenter to launch nodes.
                     If multiple fields are used for selection, the requirements are ANDed.
+                  minProperties: 1
                   properties:
                     id:
-                      description: ID is the capacity reservation id in EC2
-                      pattern: ^cr-[0-9a-z]+$
+                      description: id is the capacity reservation id in EC2.
+                      maxLength: 256
+                      minLength: 1
                       type: string
+                      x-kubernetes-validations:
+                      - message: id must match the pattern cr-[0-9a-z]+
+                        rule: self.matches('^cr-[0-9a-z]+$')
                     instanceMatchCriteria:
-                      description: InstanceMatchCriteria specifies how instances are
-                        matched to capacity reservations.
+                      description: |-
+                        instanceMatchCriteria filters capacity reservations by how they match instances.
+                        When set to "Open", only selects reservations that any instance with matching
+                        attributes (instance type, platform, Availability Zone) can use automatically.
+                        When set to "Targeted", only selects reservations that require instances to
+                        explicitly target them by ID.
+                        When omitted, selects both Open and Targeted reservations (no filtering on this attribute).
                       enum:
-                      - open
-                      - targeted
+                      - Open
+                      - Targeted
                       type: string
                     ownerID:
-                      description: OwnerID is the owner account id for the capacity
+                      description: ownerID is the owner account id for the capacity
                         reservation.
-                      pattern: ^[0-9]{12}$
+                      maxLength: 12
+                      minLength: 1
                       type: string
+                      x-kubernetes-validations:
+                      - message: ownerID must be a 12-digit AWS account ID
+                        rule: self.matches('^[0-9]{12}$')
                     tags:
                       additionalProperties:
                         type: string
                       description: |-
-                        Tags is a map of key/value tags used to select capacity reservations.
+                        tags is a map of key/value tags used to select capacity reservations.
                         Specifying '*' for a value selects all values for a given tag key.
                       maxProperties: 20
+                      minProperties: 1
                       type: object
                       x-kubernetes-validations:
                       - message: empty tag keys or values aren't supported
                         rule: self.all(k, k != '' && self[k] != '')
                   type: object
                 maxItems: 30
+                minItems: 1
                 type: array
+                x-kubernetes-list-type: atomic
                 x-kubernetes-validations:
-                - message: expected at least one, got none, ['tags', 'id', 'instanceMatchCriteria']
-                  rule: self.all(x, has(x.tags) || has(x.id) || has(x.instanceMatchCriteria))
+                - message: expected at least one, got none, ['tags', 'id', 'ownerID',
+                    'instanceMatchCriteria']
+                  rule: self.all(x, has(x.tags) || has(x.id) || has(x.ownerID) ||
+                    has(x.instanceMatchCriteria))
                 - message: '''id'' is mutually exclusive, cannot be set along with
                     other fields in a capacity reservation selector term'
                   rule: '!self.all(x, has(x.id) && (has(x.tags) || has(x.ownerID)
@@ -447,41 +469,59 @@ spec:
             properties:
               capacityReservations:
                 description: |-
-                  CapacityReservations contains the current Capacity Reservation values that are available to the
+                  capacityReservations contains the current Capacity Reservation values that are available to the
                   cluster under the capacityReservationSelectorTerms.
                 items:
                   description: CapacityReservation contains resolved CapacityReservation
                     selector values utilized for node launch
                   properties:
                     availabilityZone:
-                      description: The availability zone the capacity reservation
-                        is available in.
+                      description: availabilityZone is the availability zone the capacity
+                        reservation is available in.
+                      maxLength: 64
+                      minLength: 1
                       type: string
                     endTime:
                       description: |-
-                        The time at which the capacity reservation expires. Once expired, the reserved capacity is released and Karpenter
+                        endTime is the time at which the capacity reservation expires. Once expired, the reserved capacity is released and Karpenter
                         will no longer be able to launch instances into that reservation.
                       format: date-time
                       type: string
                     id:
-                      description: The id for the capacity reservation.
+                      description: id is the id for the capacity reservation.
+                      maxLength: 256
+                      minLength: 1
                       type: string
                     instanceMatchCriteria:
-                      description: Indicates the type of instance launches the capacity
-                        reservation accepts.
+                      description: instanceMatchCriteria indicates the type of instance
+                        launches the capacity reservation accepts.
+                      enum:
+                      - Open
+                      - Targeted
                       type: string
                     instanceType:
-                      description: The instance type for the capacity reservation.
+                      description: instanceType is the instance type for the capacity
+                        reservation.
+                      maxLength: 256
+                      minLength: 1
                       type: string
                     ownerID:
-                      description: The ID of the AWS account that owns the capacity
-                        reservation.
+                      description: ownerID is the ID of the AWS account that owns
+                        the capacity reservation.
+                      maxLength: 12
+                      minLength: 1
                       type: string
                     reservationType:
-                      description: The type of capacity reservation.
+                      description: reservationType is the type of capacity reservation.
+                      enum:
+                      - Default
+                      - CapacityBlock
                       type: string
                     state:
-                      description: The state of the capacity reservation.
+                      description: state is the state of the capacity reservation.
+                      enum:
+                      - Active
+                      - Expiring
                       type: string
                   required:
                   - availabilityZone
@@ -490,7 +530,10 @@ spec:
                   - instanceType
                   - ownerID
                   type: object
+                maxItems: 100
+                minItems: 1
                 type: array
+                x-kubernetes-list-type: atomic
               conditions:
                 items:
                   description: Condition contains details for one aspect of the current

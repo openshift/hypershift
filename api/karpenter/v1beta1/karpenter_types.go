@@ -203,10 +203,15 @@ type OpenshiftEC2NodeClassSpec struct {
 	// +optional
 	SecurityGroupSelectorTerms []SecurityGroupSelectorTerm `json:"securityGroupSelectorTerms,omitempty"`
 
-	// CapacityReservationSelectorTerms is a list of capacity reservation selector terms. The terms are ORed.
-	// +kubebuilder:validation:XValidation:message="expected at least one, got none, ['tags', 'id', 'instanceMatchCriteria']",rule="self.all(x, has(x.tags) || has(x.id) || has(x.instanceMatchCriteria))"
+	// capacityReservationSelectorTerms is a list of capacity reservation selector terms. The terms are ORed.
+	// Each term must specify at least one of: tags, id, ownerID, or instanceMatchCriteria.
+	// The id field is mutually exclusive and cannot be combined with tags, ownerID, or instanceMatchCriteria
+	// within the same term.
+	// +kubebuilder:validation:XValidation:message="expected at least one, got none, ['tags', 'id', 'ownerID', 'instanceMatchCriteria']",rule="self.all(x, has(x.tags) || has(x.id) || has(x.ownerID) || has(x.instanceMatchCriteria))"
 	// +kubebuilder:validation:XValidation:message="'id' is mutually exclusive, cannot be set along with other fields in a capacity reservation selector term",rule="!self.all(x, has(x.id) && (has(x.tags) || has(x.ownerID) || has(x.instanceMatchCriteria)))"
+	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems:=30
+	// +listType=atomic
 	// +optional
 	CapacityReservationSelectorTerms []CapacityReservationSelectorTerm `json:"capacityReservationSelectorTerms,omitempty"`
 
@@ -323,32 +328,54 @@ type SecurityGroupSelectorTerm struct {
 	Name string `json:"name,omitempty"`
 }
 
-
 // CapacityReservationSelectorTerm defines selection logic for a capacity reservation used by Karpenter to launch nodes.
 // If multiple fields are used for selection, the requirements are ANDed.
+// +kubebuilder:validation:MinProperties=1
 type CapacityReservationSelectorTerm struct {
-	// Tags is a map of key/value tags used to select capacity reservations.
+	// tags is a map of key/value tags used to select capacity reservations.
 	// Specifying '*' for a value selects all values for a given tag key.
 	// +kubebuilder:validation:XValidation:message="empty tag keys or values aren't supported",rule="self.all(k, k != '' && self[k] != '')"
 	// +kubebuilder:validation:MaxProperties:=20
+	// +kubebuilder:validation:MinProperties=1
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`
 
-	// ID is the capacity reservation id in EC2
-	// +kubebuilder:validation:Pattern:="^cr-[0-9a-z]+$"
+	// id is the capacity reservation id in EC2.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^cr-[0-9a-z]+$')",message="id must match the pattern cr-[0-9a-z]+"
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
 	// +optional
 	ID string `json:"id,omitempty"`
 
-	// OwnerID is the owner account id for the capacity reservation.
-	// +kubebuilder:validation:Pattern:="^[0-9]{12}$"
+	// ownerID is the owner account id for the capacity reservation.
+	// +kubebuilder:validation:XValidation:rule="self.matches('^[0-9]{12}$')",message="ownerID must be a 12-digit AWS account ID"
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=12
 	// +optional
 	OwnerID string `json:"ownerID,omitempty"`
 
-	// InstanceMatchCriteria specifies how instances are matched to capacity reservations.
-	// +kubebuilder:validation:Enum:={open,targeted}
+	// instanceMatchCriteria filters capacity reservations by how they match instances.
+	// When set to "Open", only selects reservations that any instance with matching
+	// attributes (instance type, platform, Availability Zone) can use automatically.
+	// When set to "Targeted", only selects reservations that require instances to
+	// explicitly target them by ID.
+	// When omitted, selects both Open and Targeted reservations (no filtering on this attribute).
 	// +optional
-	InstanceMatchCriteria string `json:"instanceMatchCriteria,omitempty"`
+	InstanceMatchCriteria InstanceMatchCriteria `json:"instanceMatchCriteria,omitempty"`
 }
+
+// InstanceMatchCriteria specifies how instances are matched to capacity reservations.
+// +kubebuilder:validation:Enum=Open;Targeted
+type InstanceMatchCriteria string
+
+const (
+	// InstanceMatchCriteriaOpen indicates instances with matching attributes run in
+	// the capacity reservation automatically.
+	InstanceMatchCriteriaOpen InstanceMatchCriteria = "Open"
+	// InstanceMatchCriteriaTargeted indicates instances must explicitly target the
+	// capacity reservation by ID.
+	InstanceMatchCriteriaTargeted InstanceMatchCriteria = "Targeted"
+)
 
 // BlockDeviceMapping defines a block device mapping for a node.
 // +kubebuilder:validation:MinProperties=1
@@ -521,32 +548,63 @@ type MetadataOptions struct {
 
 // CapacityReservation contains resolved CapacityReservation selector values utilized for node launch
 type CapacityReservation struct {
-	// The availability zone the capacity reservation is available in.
+	// availabilityZone is the availability zone the capacity reservation is available in.
 	// +required
-	AvailabilityZone string `json:"availabilityZone"`
-	// The time at which the capacity reservation expires. Once expired, the reserved capacity is released and Karpenter
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=64
+	AvailabilityZone string `json:"availabilityZone,omitempty"`
+	// endTime is the time at which the capacity reservation expires. Once expired, the reserved capacity is released and Karpenter
 	// will no longer be able to launch instances into that reservation.
 	// +optional
-	EndTime *metav1.Time `json:"endTime,omitempty"`
-	// The id for the capacity reservation.
+	EndTime metav1.Time `json:"endTime,omitempty,omitzero"`
+	// id is the id for the capacity reservation.
 	// +required
-	ID string `json:"id"`
-	// Indicates the type of instance launches the capacity reservation accepts.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	ID string `json:"id,omitempty"`
+	// instanceMatchCriteria indicates the type of instance launches the capacity reservation accepts.
 	// +required
-	InstanceMatchCriteria string `json:"instanceMatchCriteria"`
-	// The instance type for the capacity reservation.
+	InstanceMatchCriteria InstanceMatchCriteria `json:"instanceMatchCriteria,omitempty"`
+	// instanceType is the instance type for the capacity reservation.
 	// +required
-	InstanceType string `json:"instanceType"`
-	// The ID of the AWS account that owns the capacity reservation.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
+	InstanceType string `json:"instanceType,omitempty"`
+	// ownerID is the ID of the AWS account that owns the capacity reservation.
 	// +required
-	OwnerID string `json:"ownerID"`
-	// The type of capacity reservation.
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=12
+	OwnerID string `json:"ownerID,omitempty"`
+	// reservationType is the type of capacity reservation.
 	// +optional
-	ReservationType string `json:"reservationType,omitempty"`
-	// The state of the capacity reservation.
+	ReservationType CapacityReservationType `json:"reservationType,omitempty"`
+	// state is the state of the capacity reservation.
 	// +optional
-	State string `json:"state,omitempty"`
+	State CapacityReservationState `json:"state,omitempty"`
 }
+
+// CapacityReservationType is the type of capacity reservation.
+// +kubebuilder:validation:Enum=Default;CapacityBlock
+type CapacityReservationType string
+
+const (
+	// CapacityReservationTypeDefault is a standard on-demand capacity reservation.
+	CapacityReservationTypeDefault CapacityReservationType = "Default"
+	// CapacityReservationTypeCapacityBlock is a capacity block reservation.
+	CapacityReservationTypeCapacityBlock CapacityReservationType = "CapacityBlock"
+)
+
+// CapacityReservationState is the state of a capacity reservation.
+// +kubebuilder:validation:Enum=Active;Expiring
+type CapacityReservationState string
+
+const (
+	// CapacityReservationStateActive indicates the capacity reservation is active.
+	CapacityReservationStateActive CapacityReservationState = "Active"
+	// CapacityReservationStateExpiring indicates the capacity reservation is within
+	// the EC2 reclamation window. Only capacity-block reservations may be in this state.
+	CapacityReservationStateExpiring CapacityReservationState = "Expiring"
+)
 
 // OpenshiftEC2NodeClassStatus defines the observed state of OpenshiftEC2NodeClass.
 // +kubebuilder:validation:MinProperties=1
@@ -590,9 +648,12 @@ type OpenshiftEC2NodeClassStatus struct {
 	// +kubebuilder:validation:MaxLength=64
 	Version string `json:"version,omitempty"`
 
-	// CapacityReservations contains the current Capacity Reservation values that are available to the
+	// capacityReservations contains the current Capacity Reservation values that are available to the
 	// cluster under the capacityReservationSelectorTerms.
 	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=100
 	CapacityReservations []CapacityReservation `json:"capacityReservations,omitempty"`
 }
 

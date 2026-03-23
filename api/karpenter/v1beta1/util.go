@@ -33,10 +33,12 @@ func (spec OpenshiftEC2NodeClassSpec) KarpenterCapacityReservationSelectorTerms(
 	var terms []awskarpenterv1.CapacityReservationSelectorTerm
 	for _, term := range spec.CapacityReservationSelectorTerms {
 		terms = append(terms, awskarpenterv1.CapacityReservationSelectorTerm{
-			Tags:                  term.Tags,
-			ID:                    term.ID,
-			OwnerID:               term.OwnerID,
-			InstanceMatchCriteria: term.InstanceMatchCriteria,
+			Tags:    term.Tags,
+			ID:      term.ID,
+			OwnerID: term.OwnerID,
+			// Our API uses PascalCase enum values (Open, Targeted) while upstream
+			// karpenter uses lowercase (open, targeted), so we convert here.
+			InstanceMatchCriteria: strings.ToLower(string(term.InstanceMatchCriteria)),
 		})
 	}
 	return terms

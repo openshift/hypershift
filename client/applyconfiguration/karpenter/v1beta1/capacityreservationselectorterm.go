@@ -17,13 +17,17 @@ limitations under the License.
 
 package v1beta1
 
+import (
+	karpenterv1beta1 "github.com/openshift/hypershift/api/karpenter/v1beta1"
+)
+
 // CapacityReservationSelectorTermApplyConfiguration represents a declarative configuration of the CapacityReservationSelectorTerm type for use
 // with apply.
 type CapacityReservationSelectorTermApplyConfiguration struct {
-	Tags                  map[string]string `json:"tags,omitempty"`
-	ID                    *string           `json:"id,omitempty"`
-	OwnerID               *string           `json:"ownerID,omitempty"`
-	InstanceMatchCriteria *string           `json:"instanceMatchCriteria,omitempty"`
+	Tags                  map[string]string                       `json:"tags,omitempty"`
+	ID                    *string                                 `json:"id,omitempty"`
+	OwnerID               *string                                 `json:"ownerID,omitempty"`
+	InstanceMatchCriteria *karpenterv1beta1.InstanceMatchCriteria `json:"instanceMatchCriteria,omitempty"`
 }
 
 // CapacityReservationSelectorTermApplyConfiguration constructs a declarative configuration of the CapacityReservationSelectorTerm type for use with
@@ -65,7 +69,7 @@ func (b *CapacityReservationSelectorTermApplyConfiguration) WithOwnerID(value st
 // WithInstanceMatchCriteria sets the InstanceMatchCriteria field in the declarative configuration to the given value
 // and returns the receiver, so that objects can be built by chaining "With" function invocations.
 // If called multiple times, the InstanceMatchCriteria field is set to the value of the last call.
-func (b *CapacityReservationSelectorTermApplyConfiguration) WithInstanceMatchCriteria(value string) *CapacityReservationSelectorTermApplyConfiguration {
+func (b *CapacityReservationSelectorTermApplyConfiguration) WithInstanceMatchCriteria(value karpenterv1beta1.InstanceMatchCriteria) *CapacityReservationSelectorTermApplyConfiguration {
 	b.InstanceMatchCriteria = &value
 	return b
 }

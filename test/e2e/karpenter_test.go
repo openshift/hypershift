@@ -943,8 +943,8 @@ func TestKarpenter(t *testing.T) {
 			instanceID := parts[4]
 			t.Logf("Verifying EC2 instance %s was launched into capacity reservation %s", instanceID, crID)
 
-			result, err := ec2client.DescribeInstancesWithContext(ctx, &ec2.DescribeInstancesInput{
-				InstanceIds: []*string{aws.String(instanceID)},
+			result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+				InstanceIds: []string{instanceID},
 			})
 			g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance %s", instanceID)
 			g.Expect(result.Reservations).NotTo(BeEmpty())
@@ -952,7 +952,7 @@ func TestKarpenter(t *testing.T) {
 
 			instance := result.Reservations[0].Instances[0]
 			g.Expect(instance.CapacityReservationId).NotTo(BeNil(), "instance %s should have a CapacityReservationId", instanceID)
-			g.Expect(aws.StringValue(instance.CapacityReservationId)).To(Equal(crID),
+			g.Expect(aws.ToString(instance.CapacityReservationId)).To(Equal(crID),
 				"instance %s should have been launched into capacity reservation %s", instanceID, crID)
 			t.Logf("Instance %s correctly launched into capacity reservation %s", instanceID, crID)
 		})
