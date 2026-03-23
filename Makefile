@@ -333,7 +333,10 @@ test-backup-restore: backuprestore-e2e
 .PHONY: fmt
 fmt:
 	$(GO) fmt ./...
-
+# Build hypershift-test-extend command line runner (uses separate go.mod in test/extend)
+.PHONY: test-extend
+test-extend:
+	cd test/extend; GO111MODULE=on GOFLAGS=-mod=mod GOWORK=off go build -o ../../bin/hypershift-test-extend ./cmd
 # Run go vet against code
 .PHONY: vet
 vet:
