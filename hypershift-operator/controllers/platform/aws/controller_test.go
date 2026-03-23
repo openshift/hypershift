@@ -144,14 +144,15 @@ func TestReconcileAWSEndpointServiceStatus(t *testing.T) {
 
 func TestDeleteAWSEndpointService(t *testing.T) {
 	tests := []struct {
-		name        string
-		deleteOut   *ec2.DeleteVpcEndpointServiceConfigurationsOutput
-		describeOut *ec2.DescribeVpcEndpointConnectionsOutput
-		expected    bool
-		expectErr   bool
+		name         string
+		deleteOut    *ec2.DeleteVpcEndpointServiceConfigurationsOutput
+		describeOut  *ec2.DescribeVpcEndpointConnectionsOutput
+		expectReject bool
+		expected     bool
+		expectErr    bool
 	}{
 		{
-			name: "successful deletion",
+			name: "When deletion succeeds it should return completed",
 			deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
 				Unsuccessful: []ec2types.UnsuccessfulItem{},
 			},
@@ -159,7 +160,7 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name: "endpoint service no longer exists",
+			name: "When endpoint service no longer exists it should return completed",
 			deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
 				Unsuccessful: []ec2types.UnsuccessfulItem{
 					{
@@ -175,7 +176,7 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name: "existing connections",
+			name: "When existing connections are in Available state it should reject them",
 			deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
 				Unsuccessful: []ec2types.UnsuccessfulItem{
 					{
@@ -195,8 +196,92 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 					},
 				},
 			},
-			expected:  false,
-			expectErr: true,
+			expectReject: true,
+			expected:     false,
+			expectErr:    true,
+		},
+		{
+			name: "When existing connections are in Rejected state it should not reject and return not completed",
+			deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
+				Unsuccessful: []ec2types.UnsuccessfulItem{
+					{
+						Error: &ec2types.UnsuccessfulItemError{
+							Code:    aws.String("ExistingVpcEndpointConnections"),
+							Message: aws.String("Service has existing active VPC Endpoint connections!"),
+						},
+						ResourceId: aws.String("vpce-svc-id"),
+					},
+				},
+			},
+			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
+				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
+					{
+						VpcEndpointId:    aws.String("vpce-id"),
+						VpcEndpointState: ec2types.StateRejected,
+					},
+				},
+			},
+			expectReject: false,
+			expected:     false,
+			expectErr:    true,
+		},
+		{
+			name: "When existing connections are in Deleting state it should not reject and return not completed",
+			deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
+				Unsuccessful: []ec2types.UnsuccessfulItem{
+					{
+						Error: &ec2types.UnsuccessfulItemError{
+							Code:    aws.String("ExistingVpcEndpointConnections"),
+							Message: aws.String("Service has existing active VPC Endpoint connections!"),
+						},
+						ResourceId: aws.String("vpce-svc-id"),
+					},
+				},
+			},
+			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
+				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
+					{
+						VpcEndpointId:    aws.String("vpce-id"),
+						VpcEndpointState: ec2types.StateDeleting,
+					},
+				},
+			},
+			expectReject: false,
+			expected:     false,
+			expectErr:    true,
+		},
+		{
+			name: "When existing connections are a mix of Available and Rejected it should only reject the Available ones",
+			deleteOut: &ec2.DeleteVpcEndpointServiceConfigurationsOutput{
+				Unsuccessful: []ec2types.UnsuccessfulItem{
+					{
+						Error: &ec2types.UnsuccessfulItemError{
+							Code:    aws.String("ExistingVpcEndpointConnections"),
+							Message: aws.String("Service has existing active VPC Endpoint connections!"),
+						},
+						ResourceId: aws.String("vpce-svc-id"),
+					},
+				},
+			},
+			describeOut: &ec2.DescribeVpcEndpointConnectionsOutput{
+				VpcEndpointConnections: []ec2types.VpcEndpointConnection{
+					{
+						VpcEndpointId:    aws.String("vpce-available"),
+						VpcEndpointState: ec2types.StateAvailable,
+					},
+					{
+						VpcEndpointId:    aws.String("vpce-rejected"),
+						VpcEndpointState: ec2types.StateRejected,
+					},
+					{
+						VpcEndpointId:    aws.String("vpce-deleting"),
+						VpcEndpointState: ec2types.StateDeleting,
+					},
+				},
+			},
+			expectReject: true,
+			expected:     false,
+			expectErr:    true,
 		},
 	}
 
@@ -206,7 +291,9 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 			mockEC2.EXPECT().DeleteVpcEndpointServiceConfigurations(gomock.Any(), gomock.Any()).Return(test.deleteOut, nil)
 			if test.describeOut != nil {
 				mockEC2.EXPECT().DescribeVpcEndpointConnections(gomock.Any(), gomock.Any()).Return(test.describeOut, nil)
-				mockEC2.EXPECT().RejectVpcEndpointConnections(gomock.Any(), gomock.Any()).Return(nil, nil)
+				if test.expectReject {
+					mockEC2.EXPECT().RejectVpcEndpointConnections(gomock.Any(), gomock.Any()).Return(nil, nil)
+				}
 			}
 
 			obj := &hyperv1.AWSEndpointService{
@@ -233,6 +320,121 @@ func TestDeleteAWSEndpointService(t *testing.T) {
 						t.Errorf("expected %v, got %v", test.expected, actual)
 					}
 				}
+			}
+		})
+	}
+}
+
+func TestRejectVpcEndpointConnections(t *testing.T) {
+	tests := []struct {
+		name                       string
+		connections                []ec2types.VpcEndpointConnection
+		expectRejectCall           bool
+		expectedRejectIDs          []string
+		expectHasTransitionalConns bool
+	}{
+		{
+			name:                       "When no connections exist it should report no transitional connections",
+			connections:                nil,
+			expectRejectCall:           false,
+			expectHasTransitionalConns: false,
+		},
+		{
+			name: "When connections are in PendingAcceptance state it should reject them",
+			connections: []ec2types.VpcEndpointConnection{
+				{VpcEndpointId: aws.String("vpce-1"), VpcEndpointState: ec2types.StatePendingAcceptance},
+			},
+			expectRejectCall:           true,
+			expectedRejectIDs:          []string{"vpce-1"},
+			expectHasTransitionalConns: false,
+		},
+		{
+			name: "When connections are in Rejected state it should not reject and report transitional",
+			connections: []ec2types.VpcEndpointConnection{
+				{VpcEndpointId: aws.String("vpce-1"), VpcEndpointState: ec2types.StateRejected},
+			},
+			expectRejectCall:           false,
+			expectHasTransitionalConns: true,
+		},
+		{
+			name: "When connections are in Deleting state it should not reject and report transitional",
+			connections: []ec2types.VpcEndpointConnection{
+				{VpcEndpointId: aws.String("vpce-1"), VpcEndpointState: ec2types.StateDeleting},
+			},
+			expectRejectCall:           false,
+			expectHasTransitionalConns: true,
+		},
+		{
+			name: "When connections are in terminal states it should not reject and report no transitional",
+			connections: []ec2types.VpcEndpointConnection{
+				{VpcEndpointId: aws.String("vpce-deleted"), VpcEndpointState: ec2types.StateDeleted},
+				{VpcEndpointId: aws.String("vpce-failed"), VpcEndpointState: ec2types.StateFailed},
+				{VpcEndpointId: aws.String("vpce-expired"), VpcEndpointState: ec2types.StateExpired},
+			},
+			expectRejectCall:           false,
+			expectHasTransitionalConns: false,
+		},
+		{
+			name: "When connections are a mix of actionable transitional and terminal states it should only reject actionable ones",
+			connections: []ec2types.VpcEndpointConnection{
+				{VpcEndpointId: aws.String("vpce-available"), VpcEndpointState: ec2types.StateAvailable},
+				{VpcEndpointId: aws.String("vpce-pending"), VpcEndpointState: ec2types.StatePending},
+				{VpcEndpointId: aws.String("vpce-rejected"), VpcEndpointState: ec2types.StateRejected},
+				{VpcEndpointId: aws.String("vpce-deleting"), VpcEndpointState: ec2types.StateDeleting},
+				{VpcEndpointId: aws.String("vpce-deleted"), VpcEndpointState: ec2types.StateDeleted},
+			},
+			expectRejectCall:           true,
+			expectedRejectIDs:          []string{"vpce-available", "vpce-pending"},
+			expectHasTransitionalConns: true,
+		},
+		{
+			name: "When connections are in Partial state it should treat as transitional",
+			connections: []ec2types.VpcEndpointConnection{
+				{VpcEndpointId: aws.String("vpce-partial"), VpcEndpointState: ec2types.StatePartial},
+			},
+			expectRejectCall:           false,
+			expectHasTransitionalConns: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mockEC2 := awsapi.NewMockEC2API(gomock.NewController(t))
+			mockEC2.EXPECT().DescribeVpcEndpointConnections(gomock.Any(), gomock.Any()).Return(
+				&ec2.DescribeVpcEndpointConnectionsOutput{
+					VpcEndpointConnections: test.connections,
+				}, nil)
+
+			if test.expectRejectCall {
+				mockEC2.EXPECT().RejectVpcEndpointConnections(gomock.Any(), gomock.Any()).
+					Do(func(_ context.Context, in *ec2.RejectVpcEndpointConnectionsInput, _ ...func(*ec2.Options)) {
+						if len(in.VpcEndpointIds) != len(test.expectedRejectIDs) {
+							t.Errorf("expected %d endpoint IDs to reject, got %d", len(test.expectedRejectIDs), len(in.VpcEndpointIds))
+						}
+						actualIDs := map[string]bool{}
+						for _, id := range in.VpcEndpointIds {
+							actualIDs[id] = true
+						}
+						for _, expectedID := range test.expectedRejectIDs {
+							if !actualIDs[expectedID] {
+								t.Errorf("expected endpoint ID %s to be rejected, but it was not", expectedID)
+							}
+						}
+					}).
+					Return(nil, nil)
+			}
+
+			r := AWSEndpointServiceReconciler{
+				ec2Client: mockEC2,
+			}
+
+			ctx := log.IntoContext(t.Context(), testr.New(t))
+			result, err := r.rejectVpcEndpointConnections(ctx, "vpce-svc-test")
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if result.hasTransitionalConnections != test.expectHasTransitionalConns {
+				t.Errorf("expected hasTransitionalConnections=%v, got %v", test.expectHasTransitionalConns, result.hasTransitionalConnections)
 			}
 		})
 	}

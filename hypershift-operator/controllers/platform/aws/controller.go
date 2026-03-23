@@ -587,7 +587,7 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	})
 	if err != nil {
 		log.Info("failed to delete endpoint service, attempting to reject connections", "serviceID", serviceID)
-		if rejectErr := r.rejectVpcEndpointConnections(ctx, serviceID); rejectErr != nil {
+		if _, rejectErr := r.rejectVpcEndpointConnections(ctx, serviceID); rejectErr != nil {
 			return false, unwrapError(log, rejectErr)
 		}
 
@@ -607,8 +607,12 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 				return true, nil
 			case "ExistingVpcEndpointConnections":
 				log.Info("endpoint service has existing connections", "serviceID", serviceID)
-				if err := r.rejectVpcEndpointConnections(ctx, serviceID); err != nil {
-					return false, unwrapError(log, err)
+				result, rejectErr := r.rejectVpcEndpointConnections(ctx, serviceID)
+				if rejectErr != nil {
+					return false, unwrapError(log, rejectErr)
+				}
+				if result != nil && result.hasTransitionalConnections {
+					log.Info("endpoint service has connections in transitional states (e.g. Deleting, Rejected), waiting for them to complete before retrying deletion", "serviceID", serviceID)
 				}
 			}
 		}
@@ -620,10 +624,23 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 	return true, nil
 }
 
-func (r *AWSEndpointServiceReconciler) rejectVpcEndpointConnections(ctx context.Context, serviceID string) error {
+// rejectVpcEndpointConnectionsResult contains the result of rejecting VPC endpoint connections.
+type rejectVpcEndpointConnectionsResult struct {
+	// hasTransitionalConnections is true when connections exist in non-terminal states
+	// that cannot be rejected (e.g. Deleting, Rejected) and must be waited out.
+	hasTransitionalConnections bool
+}
+
+// rejectVpcEndpointConnections attempts to reject any active VPC endpoint connections for the
+// given service. It handles all 9 possible VPC endpoint connection states:
+//   - Actionable (PendingAcceptance, Pending, Available): these are rejected
+//   - Transitional (Deleting, Rejected): these are in progress and must be waited out
+//   - Terminal (Deleted, Failed, Expired): these should not block deletion
+//   - Unknown (Partial or any future state): treated as transitional for safety
+func (r *AWSEndpointServiceReconciler) rejectVpcEndpointConnections(ctx context.Context, serviceID string) (*rejectVpcEndpointConnectionsResult, error) {
 	log, err := logr.FromContext(ctx)
 	if err != nil {
-		return fmt.Errorf("no logger found: %w", err)
+		return nil, fmt.Errorf("no logger found: %w", err)
 	}
 
 	existingConnectionsResult, describeConnectionsErr := r.ec2Client.DescribeVpcEndpointConnections(ctx, &ec2.DescribeVpcEndpointConnectionsInput{
@@ -635,26 +652,42 @@ func (r *AWSEndpointServiceReconciler) rejectVpcEndpointConnections(ctx context.
 		},
 	})
 	if describeConnectionsErr != nil {
-		return unwrapError(log, describeConnectionsErr)
+		return nil, unwrapError(log, describeConnectionsErr)
 	}
-	var existingEndpointIDs []string
+
+	var actionableEndpointIDs []string
+	var transitionalCount int
 	for _, conn := range existingConnectionsResult.VpcEndpointConnections {
+		endpointID := aws.ToString(conn.VpcEndpointId)
 		switch conn.VpcEndpointState {
 		case ec2types.StatePendingAcceptance, ec2types.StatePending, ec2types.StateAvailable:
-			existingEndpointIDs = append(existingEndpointIDs, aws.ToString(conn.VpcEndpointId))
-		}
-	}
-	if len(existingEndpointIDs) > 0 {
-		log.Info("rejecting vpc endpoint connections", "serviceID", serviceID)
-		if _, rejectEndpointsErr := r.ec2Client.RejectVpcEndpointConnections(ctx, &ec2.RejectVpcEndpointConnectionsInput{
-			ServiceId:      aws.String(serviceID),
-			VpcEndpointIds: existingEndpointIDs,
-		}); rejectEndpointsErr != nil {
-			return unwrapError(log, rejectEndpointsErr)
+			// Actionable: these connections can be rejected
+			actionableEndpointIDs = append(actionableEndpointIDs, endpointID)
+			log.Info("vpc endpoint connection in actionable state", "endpointID", endpointID, "state", conn.VpcEndpointState)
+		case ec2types.StateDeleted, ec2types.StateFailed, ec2types.StateExpired:
+			// Terminal: these connections should not block deletion
+			log.Info("vpc endpoint connection in terminal state", "endpointID", endpointID, "state", conn.VpcEndpointState)
+		default:
+			// Transitional (Deleting, Rejected, Partial, or any unknown state):
+			// these are in progress and must be waited out
+			transitionalCount++
+			log.Info("vpc endpoint connection in transitional state, waiting for it to complete", "endpointID", endpointID, "state", conn.VpcEndpointState)
 		}
 	}
 
-	return nil
+	if len(actionableEndpointIDs) > 0 {
+		log.Info("rejecting vpc endpoint connections", "serviceID", serviceID, "endpointIDs", actionableEndpointIDs)
+		if _, rejectEndpointsErr := r.ec2Client.RejectVpcEndpointConnections(ctx, &ec2.RejectVpcEndpointConnectionsInput{
+			ServiceId:      aws.String(serviceID),
+			VpcEndpointIds: actionableEndpointIDs,
+		}); rejectEndpointsErr != nil {
+			return nil, unwrapError(log, rejectEndpointsErr)
+		}
+	}
+
+	return &rejectVpcEndpointConnectionsResult{
+		hasTransitionalConnections: transitionalCount > 0,
+	}, nil
 }
 
 func unwrapError(log logr.Logger, err error) error {
