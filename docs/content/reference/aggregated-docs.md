@@ -45726,6 +45726,10 @@ Legend:
 - Yellow box: namespace
 - Rounded box: processes
 - Rectangle: CR instances
+- Solid arrow (`-->`) with **reconciles**: a controller watches the resource and actively reconciles it
+- Solid arrow (`-->`) with **creates**: a controller creates the resource
+- Solid arrow (`-->`) with **operates**: a controller manages/deploys another process
+- Dotted arrow (`-.->`) with **consumes**: a process reads or references the resource as input without actively watching or reconciling it (i.e. the resource is treated as an input/lookup, not as a trigger for a reconcile loop)
 
 ```mermaid
 flowchart LR
@@ -45778,12 +45782,8 @@ flowchart LR
 
   capi-provider-->|reconciles|capi-machine
   capi-provider-->|creates|capi-provider-machine
+  capi-provider-.->|consumes|capi-machine-template
 ```
-
-TODO:
-1. How do we (or should we) represent an input/output or "consumes" relationship (e.g. the hypershift operator creates and syncs machine templates, and the CAPI provider _reads_ the template, but nothing actively watches templates and does work in reaction to them directly)
-
-
 
 ## Major Components
 
