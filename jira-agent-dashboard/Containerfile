@@ -1,0 +1,22 @@
+# Build stage
+FROM golang:1.22 AS builder
+WORKDIR /build
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=1 GOOS=linux go build -o dashboard ./cmd/dashboard
+RUN CGO_ENABLED=1 GOOS=linux go build -o scraper ./cmd/scraper
+
+# Install complexity tools
+RUN go install github.com/fzipp/gocyclo/cmd/gocyclo@latest
+RUN go install github.com/uudashr/gocognit/cmd/gocognit@latest
+
+# Runtime stage
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+RUN microdnf install -y git sqlite && microdnf clean all
+COPY --from=builder /build/dashboard /usr/local/bin/dashboard
+COPY --from=builder /build/scraper /usr/local/bin/scraper
+COPY --from=builder /go/bin/gocyclo /usr/local/bin/gocyclo
+COPY --from=builder /go/bin/gocognit /usr/local/bin/gocognit
+COPY web/ /opt/dashboard/web/
+WORKDIR /opt/dashboard

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JIRA Agent Dashboard - Issues</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="container">
+    <nav>
+      <h1>JIRA Agent</h1>
+      <ul>
+        <li><a href="index.html">Overview</a></li>
+        <li><a href="issues.html" class="active">Issues</a></li>
+        <li><a href="comments.html">Comments</a></li>
+      </ul>
+    </nav>
+
+    <main>
+      <div class="page-header">
+        <h2>Issues</h2>
+      </div>
+
+      <!-- Time Range Selector -->
+      <div class="time-range">
+        <label>Time Range:</label>
+        <button id="range-30d">Last 30 Days</button>
+        <button id="range-90d" class="active">Last 90 Days</button>
+        <span>|</span>
+        <label for="date-from">From:</label>
+        <input type="date" id="date-from">
+        <label for="date-to">To:</label>
+        <input type="date" id="date-to">
+      </div>
+
+      <!-- Issues Table -->
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th class="sortable" data-column="jira_key">Jira Key</th>
+              <th class="sortable" data-column="pr_number">PR</th>
+              <th class="sortable" data-column="status">Status</th>
+              <th class="sortable" data-column="review_comments">Review Comments</th>
+              <th class="sortable" data-column="lines_changed">Lines Changed</th>
+              <th class="sortable" data-column="files_changed">Files Changed</th>
+              <th class="sortable" data-column="complexity_delta">Complexity Delta</th>
+              <th class="sortable" data-column="cost">Cost</th>
+              <th class="sortable" data-column="duration">Duration</th>
+              <th class="sortable" data-column="quality_score">Quality Score</th>
+            </tr>
+          </thead>
+          <tbody id="issues-tbody">
+            <tr><td colspan="10" style="text-align:center;">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script src="js/issues.js"></script>
+</body>
+</html>

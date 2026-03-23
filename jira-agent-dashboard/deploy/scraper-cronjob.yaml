@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scraper
+  namespace: jira-agent-dashboard
+  labels:
+    app: jira-agent-dashboard
+    component: scraper
+spec:
+  schedule: "0 6 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: scraper
+              image: quay.io/openshift/jira-agent-dashboard:latest
+              command: ["/usr/local/bin/scraper"]
+              env:
+                - name: DB_PATH
+                  value: /data/dashboard.db
+                - name: GITHUB_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: dashboard-secrets
+                      key: GITHUB_TOKEN
+              volumeMounts:
+                - name: db
+                  mountPath: /data
+              resources:
+                requests:
+                  cpu: 200m
+                  memory: 512Mi
+                limits:
+                  cpu: "1"
+                  memory: 1Gi
+          volumes:
+            - name: db
+              persistentVolumeClaim:
+                claimName: dashboard-db
