@@ -1,0 +1,14 @@
+name: CPO Container Sync
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  cpo-container-sync:
+    name: CPO Container Sync
+    runs-on: arc-runner-set
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: make cpo-container-sync

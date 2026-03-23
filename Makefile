@@ -109,6 +109,14 @@ verify: generate update staticcheck fmt vet verify-codespell lint cpo-container-
 	$(eval STATUS = $(shell git status -s))
 	$(if $(strip $(STATUS)),$(error untracked files detected: ${STATUS}))
 
+.PHONY: verify-ci
+verify-ci: generate update staticcheck fmt vet
+	git diff-index --cached --quiet --ignore-submodules HEAD --
+	git diff-files --quiet --ignore-submodules
+	git diff --exit-code HEAD --
+	$(eval STATUS = $(shell git status -s))
+	$(if $(strip $(STATUS)),$(error untracked files detected: ${STATUS}))
+
 $(CONTROLLER_GEN): $(TOOLS_DIR)/go.mod # Build controller-gen from tools folder.
 	cd $(TOOLS_DIR); $(GO) build -tags=tools -o $(BIN_DIR)/controller-gen sigs.k8s.io/controller-tools/cmd/controller-gen
 

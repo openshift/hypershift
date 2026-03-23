@@ -1,0 +1,14 @@
+name: Codespell
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  codespell:
+    name: Codespell
+    runs-on: arc-runner-set
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: make verify-codespell

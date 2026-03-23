@@ -1,0 +1,19 @@
+name: Gitlint
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  gitlint:
+    name: Gitlint
+    runs-on: arc-runner-set
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: make run-gitlint
+        env:
+          PULL_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PULL_PULL_SHA: ${{ github.event.pull_request.head.sha }}
