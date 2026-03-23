@@ -406,9 +406,13 @@ github.com/go-git/go-git/v5/utils/trace
 ## explicit; go 1.18
 github.com/go-logr/logr
 github.com/go-logr/logr/funcr
+github.com/go-logr/logr/slogr
 # github.com/go-logr/stdr v1.2.2
 ## explicit; go 1.16
 github.com/go-logr/stdr
+# github.com/go-logr/zapr v1.3.0
+## explicit; go 1.18
+github.com/go-logr/zapr
 # github.com/go-openapi/jsonpointer v0.21.0
 ## explicit; go 1.20
 github.com/go-openapi/jsonpointer
@@ -1408,7 +1412,7 @@ go.uber.org/zap/internal/exit
 go.uber.org/zap/internal/pool
 go.uber.org/zap/internal/stacktrace
 go.uber.org/zap/zapcore
-# go.yaml.in/yaml/v2 v2.4.2
+# go.yaml.in/yaml/v2 v2.4.3
 ## explicit; go 1.15
 go.yaml.in/yaml/v2
 # go.yaml.in/yaml/v3 v3.0.4
@@ -1985,7 +1989,7 @@ k8s.io/apiextensions-apiserver/pkg/apiserver/schema/objectmeta
 k8s.io/apiextensions-apiserver/pkg/apiserver/schema/pruning
 k8s.io/apiextensions-apiserver/pkg/apiserver/validation
 k8s.io/apiextensions-apiserver/pkg/features
-# k8s.io/apimachinery v0.34.2 => k8s.io/apimachinery v0.34.2
+# k8s.io/apimachinery v0.35.0 => k8s.io/apimachinery v0.34.2
 ## explicit; go 1.24.0
 k8s.io/apimachinery/pkg/api/equality
 k8s.io/apimachinery/pkg/api/errors
@@ -2218,6 +2222,15 @@ sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/client/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/pkg/common/metrics
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client/proto/client
+# sigs.k8s.io/controller-runtime/tools/setup-envtest v0.0.0-20260125163108-a19ec76a3c5d
+## explicit; go 1.24.0
+sigs.k8s.io/controller-runtime/tools/setup-envtest
+sigs.k8s.io/controller-runtime/tools/setup-envtest/env
+sigs.k8s.io/controller-runtime/tools/setup-envtest/remote
+sigs.k8s.io/controller-runtime/tools/setup-envtest/store
+sigs.k8s.io/controller-runtime/tools/setup-envtest/version
+sigs.k8s.io/controller-runtime/tools/setup-envtest/versions
+sigs.k8s.io/controller-runtime/tools/setup-envtest/workflows
 # sigs.k8s.io/controller-tools v0.15.0 => github.com/openshift/controller-tools v0.12.1-0.20250402141027-24f590ca0886
 ## explicit; go 1.23.0
 sigs.k8s.io/controller-tools/cmd/controller-gen
