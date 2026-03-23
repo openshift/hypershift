@@ -49,7 +49,7 @@ func TestBackupManifestValidation(t *testing.T) {
 				TTL:             2 * time.Hour,
 			}
 
-			backup, _, err := opts.GenerateBackupObjectWithPlatform(tt.platform)
+			backup, _, err := opts.GenerateBackupObject(tt.platform)
 			g.Expect(err).ToNot(HaveOccurred(), "Failed to generate backup object")
 
 			// Convert to YAML for validation
@@ -121,7 +121,7 @@ func TestBackupCLIConfiguration(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			g := NewWithT(t)
 
-			backup, _, err := tt.opts.GenerateBackupObjectWithPlatform("AWS")
+			backup, _, err := tt.opts.GenerateBackupObject("AWS")
 			if tt.wantErr {
 				g.Expect(err).To(HaveOccurred())
 				return
@@ -326,17 +326,16 @@ func TestBackupCustomNameIntegration(t *testing.T) {
 
 			// Test backup generation
 			if tt.expectValidBackup {
-				backup, backupName, err := opts.GenerateBackupObjectWithPlatform("AWS")
+				backup, _, err := opts.GenerateBackupObject("AWS")
 				g.Expect(err).ToNot(HaveOccurred(), "Failed to generate backup object")
 
+				backupName := backup.GetName()
 				if tt.customName != "" {
 					g.Expect(backupName).To(Equal(tt.customName), "Custom backup name should be used")
-					g.Expect(backup.GetName()).To(Equal(tt.customName), "Backup object name should match custom name")
 				} else {
 					expectedPrefix := "test-cluster-test-cluster-ns-"
 					g.Expect(backupName).To(HavePrefix(expectedPrefix), "Should use auto-generated name pattern")
 					g.Expect(len(backupName)).To(Equal(len(expectedPrefix) + 6), "Auto-generated name should have 6-char random suffix")
-					g.Expect(backup.GetName()).To(Equal(backupName), "Backup object name should match generated name")
 				}
 			}
 		})
@@ -388,7 +387,7 @@ func TestBackupIncludedNamespacesIntegration(t *testing.T) {
 				TTL:               2 * time.Hour,
 			}
 
-			backup, _, err := opts.GenerateBackupObjectWithPlatform("AWS")
+			backup, _, err := opts.GenerateBackupObject("AWS")
 			g.Expect(err).ToNot(HaveOccurred(), "Failed to generate backup object")
 
 			// Extract included namespaces from backup spec
