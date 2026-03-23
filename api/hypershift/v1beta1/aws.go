@@ -749,6 +749,7 @@ type AWSRolesRef struct {
 	//        "ec2:DescribeAvailabilityZones",
 	//        "ec2:DescribeImages",
 	//        "ec2:DescribeInstances",
+	//        "ec2:DescribeInstanceTypes",
 	//        "ec2:DescribeInternetGateways",
 	//        "ec2:DescribeNatGateways",
 	//        "ec2:DescribeNetworkInterfaces",
@@ -757,6 +758,7 @@ type AWSRolesRef struct {
 	//        "ec2:DescribeSecurityGroups",
 	//        "ec2:DescribeSubnets",
 	//        "ec2:DescribeVpcs",
+	//        "ec2:DescribeDhcpOptions",
 	//        "ec2:DescribeVpcAttribute",
 	//        "ec2:DescribeVolumes",
 	//        "ec2:DetachInternetGateway",
@@ -774,7 +776,9 @@ type AWSRolesRef struct {
 	//        "ec2:DescribeLaunchTemplates",
 	//        "ec2:DescribeLaunchTemplateVersions",
 	//        "ec2:DeleteLaunchTemplate",
-	//        "ec2:DeleteLaunchTemplateVersions"
+	//        "ec2:DeleteLaunchTemplateVersions",
+	//        "sqs:DeleteMessage",
+	//        "sqs:ReceiveMessage"
 	//      ],
 	//      "Resource": [
 	//        "*"
