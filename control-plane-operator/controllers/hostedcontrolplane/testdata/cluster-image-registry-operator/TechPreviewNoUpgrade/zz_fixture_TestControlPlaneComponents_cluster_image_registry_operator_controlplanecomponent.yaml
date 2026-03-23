@@ -19,6 +19,9 @@ status:
     status: "False"
     type: RolloutComplete
   resources:
+  - group: ""
+    kind: ConfigMap
+    name: image-registry-controller-config
   - group: monitoring.coreos.com
     kind: PodMonitor
     name: cluster-image-registry-operator
