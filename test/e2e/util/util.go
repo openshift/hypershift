@@ -133,9 +133,6 @@ var (
 		"network-node-identity": 1,
 		// temporary workaround for https://issues.redhat.com/browse/CNV-76520
 		"kubevirt-cloud-controller-manager": 2,
-		// Allow 1 restart for token-minter sidecar race condition: https://issues.redhat.com/browse/GCP-441
-		// TODO(GCP-447): Remove this toleration once token-minter is injected as a native sidecar init container.
-		"gcp-cloud-controller-manager": 1,
 		// Allow 5 restarts for dns-operator due to new RBAC rollout out by CVO trailing dns-operator rollout
 		// https://redhat.atlassian.net/browse/OCPBUGS-78539
 		// https://redhat.atlassian.net/browse/NE-2500

@@ -255,6 +255,8 @@ func NewStartCommand() *cobra.Command {
 			setupLog.Error(err, "unable to detect cluster capabilities")
 			os.Exit(1)
 		}
+		nativeSidecarsEnabled := mgmtClusterCaps.Has(capabilities.CapabilityNativeSidecarContainers)
+		setupLog.Info("Native sidecar containers support", "enabled", nativeSidecarsEnabled)
 
 		hcpClient, err := hyperclient.NewForConfig(mgr.GetConfig())
 		if err != nil {
@@ -476,6 +478,7 @@ func NewStartCommand() *cobra.Command {
 			Client:                                  mgr.GetClient(),
 			GVKAccessChecker:                        component.NewGVKAccessCache(mgr.GetAPIReader()),
 			ManagementClusterCapabilities:           mgmtClusterCaps,
+			NativeSidecarContainersEnabled:          nativeSidecarsEnabled,
 			ReleaseProvider:                         cpReleaseProvider,
 			UserReleaseProvider:                     userReleaseProvider,
 			EnableCIDebugOutput:                     enableCIDebugOutput,
