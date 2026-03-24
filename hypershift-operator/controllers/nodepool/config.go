@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/apimachinery/pkg/util/yaml"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -321,6 +322,16 @@ func (cg *ConfigGenerator) defaultAndValidateConfigManifest(manifest []byte) ([]
 }
 
 func globalConfigString(hcluster *hyperv1.HostedCluster) (string, error) {
+	// Validate registry sources before processing.
+	if hcluster.Spec.Configuration != nil && hcluster.Spec.Configuration.Image != nil {
+		if errs := globalconfig.ValidateRegistrySources(
+			&hcluster.Spec.Configuration.Image.RegistrySources,
+			field.NewPath("spec", "configuration", "image", "registrySources"),
+		); len(errs) > 0 {
+			return "", fmt.Errorf("invalid image registry sources: %s", errs.ToAggregate().Error())
+		}
+	}
+
 	// 1. - Reconcile conditions according to current state of the world.
 	proxy := globalconfig.ProxyConfig()
 	globalconfig.ReconcileProxyConfigWithStatusFromHostedCluster(proxy, hcluster)

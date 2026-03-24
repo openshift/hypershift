@@ -6,6 +6,7 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/cmd/cluster/core"
+	"github.com/openshift/hypershift/support/globalconfig"
 	"github.com/openshift/hypershift/support/supportedversion"
 	hyperutil "github.com/openshift/hypershift/support/util"
 
@@ -13,6 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -163,6 +165,10 @@ func (v hostedClusterValidator) ValidateCreate(ctx context.Context, obj runtime.
 		return nil, fmt.Errorf("wrong type %T for validation, instead of HostedCluster", obj)
 	}
 
+	if errs := validateImageConfig(hc); len(errs) > 0 {
+		return nil, apierrors.NewInvalid(hyperv1.GroupVersion.WithKind("HostedCluster").GroupKind(), hc.Name, errs)
+	}
+
 	switch hc.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
 		return v.validateCreateKubevirtHostedCluster(ctx, hc)
@@ -180,6 +186,10 @@ func (v hostedClusterValidator) ValidateUpdate(ctx context.Context, oldHC, newHC
 	hcOld, ok := oldHC.(*hyperv1.HostedCluster)
 	if !ok {
 		return nil, fmt.Errorf("wrong type %T for validation, instead of HostedCluster", oldHC)
+	}
+
+	if errs := validateImageConfig(hc); len(errs) > 0 {
+		return nil, apierrors.NewInvalid(hyperv1.GroupVersion.WithKind("HostedCluster").GroupKind(), hc.Name, errs)
 	}
 
 	switch hc.Spec.Platform.Type {
@@ -279,6 +289,16 @@ func (v nodePoolValidator) validateUpdateKubevirtNodePool(ctx context.Context, o
 		return err
 	}
 	return nil
+}
+
+func validateImageConfig(hc *hyperv1.HostedCluster) field.ErrorList {
+	if hc.Spec.Configuration == nil || hc.Spec.Configuration.Image == nil {
+		return nil
+	}
+	return globalconfig.ValidateRegistrySources(
+		&hc.Spec.Configuration.Image.RegistrySources,
+		field.NewPath("spec", "configuration", "image", "registrySources"),
+	)
 }
 
 func validateJsonAnnotation(annotations map[string]string) error {

@@ -3988,6 +3988,13 @@ func (r *HostedClusterReconciler) validateOCPConfigurations(ctx context.Context,
 	var errs field.ErrorList
 	errs = append(errs, validations.ValidateOCPAPIServerSANs(ctx, hc, client)...)
 
+	if hc.Spec.Configuration != nil && hc.Spec.Configuration.Image != nil {
+		errs = append(errs, globalconfig.ValidateRegistrySources(
+			&hc.Spec.Configuration.Image.RegistrySources,
+			field.NewPath("spec", "configuration", "image", "registrySources"),
+		)...)
+	}
+
 	if hc.Spec.Configuration != nil && hc.Spec.Configuration.Authentication != nil {
 		err := supportvalidations.ValidateAuthenticationSpec(ctx, client, hc.Spec.Configuration.Authentication, hc.Namespace, []string{hc.Spec.IssuerURL})
 		if err != nil {
