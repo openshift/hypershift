@@ -2054,6 +2054,14 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	// Reconcile platform specific items
 	switch hcluster.Spec.Platform.Type {
 	case hyperv1.KubevirtPlatform:
+		if hcluster.Spec.Platform.Kubevirt != nil && hcluster.Spec.Platform.Kubevirt.Credentials != nil {
+			if err := r.Client.Status().Update(ctx, hcluster); err != nil {
+				if apierrors.IsConflict(err) {
+					return ctrl.Result{Requeue: true}, nil
+				}
+				return ctrl.Result{}, fmt.Errorf("failed to update status after network policy RBAC check: %w", err)
+			}
+		}
 		err = r.reconcileKubevirtCSIClusterRBAC(ctx, createOrUpdate, hcluster)
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile kubevirt CSI cluster wide RBAC: %w", err)

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"time"
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/manifests"
@@ -22,6 +23,8 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilsnet "k8s.io/utils/net"
@@ -141,12 +144,89 @@ func (r *HostedClusterReconciler) reconcileNetworkPolicies(ctx context.Context, 
 		}
 	case hyperv1.KubevirtPlatform:
 		if hcluster.Spec.Platform.Kubevirt.Credentials == nil {
-			// network policy is being set on centralized infra only, not on external infra
+			// Centralized infra: policy targets the control plane namespace on the management cluster
 			policy = networkpolicy.VirtLauncherNetworkPolicy(controlPlaneNamespaceName)
 			if _, err := createOrUpdate(ctx, r.Client, policy, func() error {
 				return reconcileVirtLauncherNetworkPolicy(log, policy, hcluster, managementClusterNetwork)
 			}); err != nil {
 				return fmt.Errorf("failed to reconcile virt launcher policy: %w", err)
+			}
+		} else {
+			// External infra: policy targets the infra namespace on the infrastructure cluster
+			kvInfraClient, err := r.KubevirtInfraClients.DiscoverKubevirtClusterClient(ctx,
+				r.Client,
+				hcluster.Spec.InfraID,
+				hcluster.Spec.Platform.Kubevirt.Credentials,
+				hcluster.Namespace,
+				hcluster.Namespace)
+			if err != nil {
+				return fmt.Errorf("failed to get kubevirt infra client for network policy: %w", err)
+			}
+
+			infraClient := kvInfraClient.GetInfraClient()
+			infraNamespace := kvInfraClient.GetInfraNamespace()
+
+			// networks.config.openshift.io is cluster-scoped, so the infra
+			// kubeconfig needs a ClusterRole with get permission on that
+			// resource. When the permission is missing we still create the
+			// NetworkPolicy but without CIDR-based egress blocking, and
+			// surface the RBAC gap as a condition on the HostedCluster.
+			var infraClusterNetwork *configv1.Network
+			networkObj := &configv1.Network{ObjectMeta: metav1.ObjectMeta{Name: "cluster"}}
+			if err := infraClient.Get(ctx, client.ObjectKeyFromObject(networkObj), networkObj); err != nil {
+				if apierrors.IsForbidden(err) || apierrors.IsNotFound(err) || meta.IsNoMatchError(err) {
+					rbacMsg := fmt.Sprintf(
+						"The external infrastructure kubeconfig lacks permission to read "+
+							"networks.config.openshift.io/cluster. The virt-launcher NetworkPolicy "+
+							"has been created without CIDR-based egress restrictions, resulting in "+
+							"weaker tenant isolation. Grant a ClusterRole with get on "+
+							"networks.config.openshift.io to the infra service account for full isolation. "+
+							"Error: %v", err)
+					log.Info(rbacMsg)
+					meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+						Type:               string(hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC),
+						Status:             metav1.ConditionFalse,
+						Reason:             hyperv1.InfraClusterNetworkReadFailedReason,
+						ObservedGeneration: hcluster.Generation,
+						Message:            rbacMsg,
+					})
+					emitInfraClusterWarningEvent(ctx, infraClient, infraNamespace, hcluster.Spec.InfraID, rbacMsg, log)
+				} else {
+					return fmt.Errorf("failed to get infrastructure cluster network config: %w", err)
+				}
+			} else {
+				infraClusterNetwork = networkObj
+				meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+					Type:               string(hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC),
+					Status:             metav1.ConditionTrue,
+					Reason:             hyperv1.AsExpectedReason,
+					ObservedGeneration: hcluster.Generation,
+					Message:            "Infrastructure cluster network configuration is readable; CIDR-based egress restrictions are active.",
+				})
+			}
+
+			policy = networkpolicy.VirtLauncherNetworkPolicy(infraNamespace)
+			if _, err := createOrUpdate(ctx, infraClient, policy, func() error {
+				return reconcileVirtLauncherNetworkPolicyExternalInfra(log, policy, hcluster, infraClusterNetwork)
+			}); err != nil {
+				if apierrors.IsForbidden(err) {
+					rbacMsg := fmt.Sprintf(
+						"Unable to create/update virt-launcher NetworkPolicy on the infrastructure cluster: "+
+							"the external infra kubeconfig lacks networking.k8s.io/networkpolicies permissions. "+
+							"Grant create/update/get/list/watch on networkpolicies in the infra namespace. "+
+							"Error: %v", err)
+					log.Info(rbacMsg)
+					meta.SetStatusCondition(&hcluster.Status.Conditions, metav1.Condition{
+						Type:               string(hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC),
+						Status:             metav1.ConditionFalse,
+						Reason:             hyperv1.InfraClusterNetworkPolicyCreateFailedReason,
+						ObservedGeneration: hcluster.Generation,
+						Message:            rbacMsg,
+					})
+					emitInfraClusterWarningEvent(ctx, infraClient, infraNamespace, hcluster.Spec.InfraID, rbacMsg, log)
+				} else {
+					return fmt.Errorf("failed to reconcile virt launcher policy on external infra: %w", err)
+				}
 			}
 		}
 	}
@@ -567,19 +647,75 @@ func addToBlockedNetworks(network string, blockedIPv4Networks []string, blockedI
 }
 
 func reconcileVirtLauncherNetworkPolicy(log logr.Logger, policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, managementClusterNetwork *configv1.Network) error {
-	protocolTCP := corev1.ProtocolTCP
-	protocolUDP := corev1.ProtocolUDP
-	protocolSCTP := corev1.ProtocolSCTP
-
 	blockedIPv4Networks := []string{}
 	blockedIPv6Networks := []string{}
 	for _, network := range managementClusterNetwork.Spec.ClusterNetwork {
 		blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network.CIDR, blockedIPv4Networks, blockedIPv6Networks)
 	}
-
 	for _, network := range managementClusterNetwork.Spec.ServiceNetwork {
 		blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network, blockedIPv4Networks, blockedIPv6Networks)
 	}
+
+	controlPlanePeers := []networkingv1.NetworkPolicyPeer{
+		{
+			PodSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"hypershift.openshift.io/control-plane-component": "kube-apiserver",
+				},
+			},
+		},
+		{
+			PodSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"hypershift.openshift.io/control-plane-component": "oauth-openshift",
+				},
+			},
+		},
+		{
+			PodSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app": "ignition-server-proxy",
+				},
+			},
+		},
+	}
+
+	return buildVirtLauncherNetworkPolicyBase(log, policy, hcluster, blockedIPv4Networks, blockedIPv6Networks, controlPlanePeers)
+}
+
+// reconcileVirtLauncherNetworkPolicyExternalInfra builds the virt-launcher
+// NetworkPolicy for deployments where the KubeVirt VMs run on a separate
+// infrastructure cluster. Unlike the centralized variant, this omits egress
+// rules for control-plane pods (kube-apiserver, oauth, ignition-server-proxy)
+// because those pods reside on the management cluster and are reached via
+// external IPs already permitted by the broad 0.0.0.0/0 allow rule.
+//
+// infraClusterNetwork may be nil when the infra kubeconfig lacks cluster-
+// scoped read access to networks.config.openshift.io. In that case the
+// policy is still created but without CIDR-based egress blocking.
+func reconcileVirtLauncherNetworkPolicyExternalInfra(log logr.Logger, policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, infraClusterNetwork *configv1.Network) error {
+	blockedIPv4Networks := []string{}
+	blockedIPv6Networks := []string{}
+	if infraClusterNetwork != nil {
+		for _, network := range infraClusterNetwork.Spec.ClusterNetwork {
+			blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network.CIDR, blockedIPv4Networks, blockedIPv6Networks)
+		}
+		for _, network := range infraClusterNetwork.Spec.ServiceNetwork {
+			blockedIPv4Networks, blockedIPv6Networks = addToBlockedNetworks(network, blockedIPv4Networks, blockedIPv6Networks)
+		}
+	}
+
+	return buildVirtLauncherNetworkPolicyBase(log, policy, hcluster, blockedIPv4Networks, blockedIPv6Networks, nil)
+}
+
+// buildVirtLauncherNetworkPolicyBase constructs the common virt-launcher
+// NetworkPolicy structure shared by both centralized and external infra
+// deployments. extraEgressPeers are appended to the primary egress rule
+// (e.g. control-plane pod selectors for centralized infra).
+func buildVirtLauncherNetworkPolicyBase(log logr.Logger, policy *networkingv1.NetworkPolicy, hcluster *hyperv1.HostedCluster, blockedIPv4Networks, blockedIPv6Networks []string, extraEgressPeers []networkingv1.NetworkPolicyPeer) error {
+	protocolTCP := corev1.ProtocolTCP
+	protocolUDP := corev1.ProtocolUDP
+	protocolSCTP := corev1.ProtocolSCTP
 
 	policy.Spec.PolicyTypes = []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}
 	policy.Spec.PodSelector = metav1.LabelSelector{
@@ -597,95 +733,66 @@ func reconcileVirtLauncherNetworkPolicy(log logr.Logger, policy *networkingv1.Ne
 			},
 		},
 	}
-	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
+
+	egressPeers := []networkingv1.NetworkPolicyPeer{
 		{
-			To: []networkingv1.NetworkPolicyPeer{
-				{
-					// Allow access towards outside the cluster for the virtual machines (guest nodes),
-					// But deny access to other cluster's pods and services with the exceptions below
-					// IPv4
-					IPBlock: &networkingv1.IPBlock{
-						CIDR:   netip.PrefixFrom(netip.IPv4Unspecified(), 0).String(), // 0.0.0.0/0
-						Except: blockedIPv4Networks,
-					},
+			IPBlock: &networkingv1.IPBlock{
+				CIDR:   netip.PrefixFrom(netip.IPv4Unspecified(), 0).String(),
+				Except: blockedIPv4Networks,
+			},
+		},
+		{
+			IPBlock: &networkingv1.IPBlock{
+				CIDR:   netip.PrefixFrom(netip.IPv6Unspecified(), 0).String(),
+				Except: blockedIPv6Networks,
+			},
+		},
+		{
+			PodSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					hyperv1.InfraIDLabel: hcluster.Spec.InfraID,
+					"kubevirt.io":        "virt-launcher",
 				},
-				{
-					// IPv6
-					IPBlock: &networkingv1.IPBlock{
-						CIDR:   netip.PrefixFrom(netip.IPv6Unspecified(), 0).String(), // ::/0
-						Except: blockedIPv6Networks,
-					},
+			},
+		},
+		{
+			PodSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"dns.operator.openshift.io/daemonset-dns": "default",
 				},
-				{
-					// Allow the guest nodes to communicate between each other
-					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							hyperv1.InfraIDLabel: hcluster.Spec.InfraID,
-							"kubevirt.io":        "virt-launcher",
-						},
-					},
+			},
+			NamespaceSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"kubernetes.io/metadata.name": "openshift-dns",
 				},
-				{
-					// Allow access to the cluster's DNS server for name resolution
-					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"dns.operator.openshift.io/daemonset-dns": "default",
-						},
-					},
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"kubernetes.io/metadata.name": "openshift-dns",
-						},
-					},
+			},
+		},
+		{
+			PodSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"ingresscontroller.operator.openshift.io/deployment-ingresscontroller": "default",
 				},
-				{
-					// Allow access to the guest cluster API server
-					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"hypershift.openshift.io/control-plane-component": "kube-apiserver",
-						},
-					},
-				},
-				{
-					// Allow access to the oauth server (from the console pod on the virtual machine)
-					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"hypershift.openshift.io/control-plane-component": "oauth-openshift",
-						},
-					},
-				},
-				{
-					// Allow access to the ignition server
-					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"app": "ignition-server-proxy",
-						},
-					},
-				},
-				{
-					// Allow access to the management cluster ingress (for ignition server)
-					PodSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"ingresscontroller.operator.openshift.io/deployment-ingresscontroller": "default",
-						},
-					},
-					NamespaceSelector: &metav1.LabelSelector{
-						MatchLabels: map[string]string{
-							"name": "openshift-ingress",
-						},
-					},
+			},
+			NamespaceSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"name": "openshift-ingress",
 				},
 			},
 		},
 	}
+	egressPeers = append(egressPeers, extraEgressPeers...)
+
+	policy.Spec.Egress = []networkingv1.NetworkPolicyEgressRule{
+		{To: egressPeers},
+	}
+
 	nodeAddressesMap := make(map[string]bool)
 	for _, hcService := range hcluster.Spec.Services {
 		if hcService.Type != hyperv1.NodePort {
 			continue
 		}
 		nodeAddress := hcService.NodePort.Address
-		_, exists := nodeAddressesMap[nodeAddress]
-		if exists {
+		if nodeAddressesMap[nodeAddress] {
 			continue
 		}
 		nodeAddressesMap[nodeAddress] = true
@@ -955,4 +1062,49 @@ func reconcileMetricsServerNetworkPolicy(policy *networkingv1.NetworkPolicy, hcp
 	}
 
 	return nil
+}
+
+// emitInfraClusterWarningEvent creates or updates a warning Event in the
+// infrastructure cluster namespace so that operators monitoring the infra
+// cluster can see the RBAC gap without access to the management cluster.
+func emitInfraClusterWarningEvent(ctx context.Context, infraClient client.Client, namespace, infraID, message string, log logr.Logger) {
+	now := metav1.NewTime(time.Now())
+	eventName := fmt.Sprintf("virt-launcher-netpol-rbac-%s", infraID)
+
+	event := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      eventName,
+			Namespace: namespace,
+		},
+	}
+
+	existing := &corev1.Event{}
+	if err := infraClient.Get(ctx, client.ObjectKeyFromObject(event), existing); err == nil {
+		existing.Count++
+		existing.LastTimestamp = now
+		existing.Message = message
+		if updateErr := infraClient.Update(ctx, existing); updateErr != nil {
+			log.Info("unable to update warning event on infrastructure cluster", "error", updateErr)
+		}
+		return
+	}
+
+	event.InvolvedObject = corev1.ObjectReference{
+		APIVersion: "v1",
+		Kind:       "Namespace",
+		Name:       namespace,
+	}
+	event.Reason = "InsufficientNetworkPolicyRBAC"
+	event.Message = message
+	event.Type = corev1.EventTypeWarning
+	event.Source = corev1.EventSource{
+		Component: "hypershift-operator",
+	}
+	event.FirstTimestamp = now
+	event.LastTimestamp = now
+	event.Count = 1
+
+	if createErr := infraClient.Create(ctx, event); createErr != nil {
+		log.Info("unable to create warning event on infrastructure cluster", "error", createErr)
+	}
 }

@@ -6135,6 +6135,15 @@ e.g. the user-provided IDP configuration provided is invalid or the IDP is not r
 hosting a guest cluster utilizing kubevirt platform is a sufficient value that will avoid
 performance degradation due to fragmentation of the double encapsulation in ovn-kubernetes</p>
 </td>
+</tr><tr><td><p>&#34;ValidKubeVirtInfraNetworkPolicyRBAC&#34;</p></td>
+<td><p>ValidKubeVirtInfraNetworkPolicyRBAC indicates whether the external infra
+kubeconfig has sufficient permissions to create/update the virt-launcher network policy
+on the infrastructure cluster. This covers both reading the
+cluster network configuration (networks.config.openshift.io) for CIDR-
+based egress blocking and creating/updating NetworkPolicy resources in
+the infra namespace. When false, tenant isolation may be weaker: the
+NetworkPolicy may be missing or lack CIDR-based egress restrictions.</p>
+</td>
 </tr><tr><td><p>&#34;ValidOIDCConfiguration&#34;</p></td>
 <td><p>ValidOIDCConfiguration indicates if an AWS cluster&rsquo;s OIDC condition is
 detected as invalid.

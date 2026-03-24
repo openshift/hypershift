@@ -88,6 +88,9 @@ func ExpectedHCConditions(hostedCluster *hyperv1.HostedCluster) map[hyperv1.Cond
 			// thus the PVC is RWO and VMs are expected to be non-live-migratable
 			conditions[hyperv1.KubeVirtNodesLiveMigratable] = metav1.ConditionFalse
 		}
+		if hostedCluster.Spec.Platform.Kubevirt != nil && hostedCluster.Spec.Platform.Kubevirt.Credentials != nil {
+			conditions[hyperv1.ValidKubeVirtInfraNetworkPolicyRBAC] = metav1.ConditionTrue
+		}
 	}
 
 	if hostedCluster.Spec.Etcd.ManagementType == hyperv1.Unmanaged {
