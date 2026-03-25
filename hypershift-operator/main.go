@@ -44,6 +44,7 @@ import (
 	sharedingress "github.com/openshift/hypershift/hypershift-operator/controllers/sharedingress"
 	hosupportedversion "github.com/openshift/hypershift/hypershift-operator/controllers/supportedversion"
 	"github.com/openshift/hypershift/hypershift-operator/controllers/uwmtelemetry"
+	"github.com/openshift/hypershift/hypershift-operator/controllers/webhookcerts"
 	"github.com/openshift/hypershift/hypershift-operator/featuregate"
 	kvinfra "github.com/openshift/hypershift/kubevirtexternalinfra"
 	sharedingressconfiggenerator "github.com/openshift/hypershift/sharedingress-config-generator"
@@ -640,6 +641,16 @@ func run(ctx context.Context, opts *StartOptions, log logr.Logger) error {
 		}
 		if err := sharedIngress.SetupWithManager(mgr, createOrUpdate); err != nil {
 			return fmt.Errorf("unable to create dedicated sharedingress controller: %w", err)
+		}
+	}
+
+	if opts.CertDir != "" {
+		webhookCertReconciler := &webhookcerts.WebhookCertReconciler{
+			Namespace:   opts.Namespace,
+			ServiceName: "operator",
+		}
+		if err := webhookCertReconciler.SetupWithManager(mgr, createOrUpdate); err != nil {
+			return fmt.Errorf("unable to create webhook cert controller: %w", err)
 		}
 	}
 
