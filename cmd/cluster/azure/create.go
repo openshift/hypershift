@@ -335,6 +335,14 @@ func (o *CreateOptions) ApplyPlatformSpecifics(cluster *hyperv1.HostedCluster) e
 	}
 
 	cluster.Spec.Services = core.GetIngressServicePublishingStrategyMapping(cluster.Spec.Networking.NetworkType, o.externalDNSDomain != "")
+	// Azure requires all services including APIServer to use Route publishing strategy.
+	// GetIngressServicePublishingStrategyMapping defaults APIServer to LoadBalancer when
+	// external DNS is not configured, so override it here.
+	for i, svc := range cluster.Spec.Services {
+		if svc.Service == hyperv1.APIServer && svc.Type != hyperv1.Route {
+			cluster.Spec.Services[i].Type = hyperv1.Route
+		}
+	}
 	if o.externalDNSDomain != "" {
 		for i, svc := range cluster.Spec.Services {
 			switch svc.Service {
