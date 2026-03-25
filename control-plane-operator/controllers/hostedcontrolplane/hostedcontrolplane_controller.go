@@ -2893,6 +2893,18 @@ func (r *HostedControlPlaneReconciler) validateAzureKMSConfig(ctx context.Contex
 			}
 			log.Info("Reusing existing UserAssignedManagedIdentity credentials for KMS to authenticate to Azure")
 		}
+	} else {
+		// For self-managed Azure, the CPO currently lacks the workload identity credentials
+		// to test the Key Vault. The KMS configuration will be validated by the KMS provider pod itself.
+		condition := metav1.Condition{
+			Type:               string(hyperv1.ValidAzureKMSConfig),
+			ObservedGeneration: hcp.Generation,
+			Status:             metav1.ConditionTrue,
+			Message:            hyperv1.AllIsWellMessage,
+			Reason:             hyperv1.AsExpectedReason,
+		}
+		meta.SetStatusCondition(&hcp.Status.Conditions, condition)
+		return
 	}
 
 	azureKeyVaultDNSSuffix, err := hyperazureutil.GetKeyVaultDNSSuffixFromCloudType(hcp.Spec.Platform.Azure.Cloud)
