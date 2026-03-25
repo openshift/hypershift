@@ -1,4 +1,6 @@
-package extend
+//go:build test_extended
+
+package extended
 
 import (
 	"context"

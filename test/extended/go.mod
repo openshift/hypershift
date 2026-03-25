@@ -1,4 +1,4 @@
-module github.com/openshift/hypershift/test/extend
+module github.com/openshift/hypershift/test/extended
 
 go 1.24.11
 

@@ -38,6 +38,7 @@ GO_CLI_RECIPE=CGO_ENABLED=0 $(GO) build $(GO_GCFLAGS) -ldflags '-extldflags "-st
 GO_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2e -c
 GO_E2EV2_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags e2ev2 -c
 GO_REQSERVING_E2E_RECIPE=CGO_ENABLED=1 $(GO) test $(GO_GCFLAGS) -tags reqserving -c
+GO_EXTENDED_RECIPE=CGO_ENABLED=1 GO111MODULE=on GOFLAGS=-mod=mod GOWORK=off go build -tags test_extended
 
 OUT_DIR ?= bin
 
@@ -296,10 +297,10 @@ e2ev2:
 .PHONY: fmt
 fmt:
 	$(GO) fmt ./...
-# Build hypershift-test-extend command line runner (uses separate go.mod in test/extend)
-.PHONY: test-extend
-test-extend:
-	cd test/extend; GO111MODULE=on GOFLAGS=-mod=mod GOWORK=off go build -o ../../bin/hypershift-test-extend ./cmd
+# Build hypershift-tests-extended command line runner (uses separate go.mod in test/extended)
+.PHONY: test-extended
+test-extended:
+	cd test/extended; $(GO_EXTENDED_RECIPE) -o ../../bin/hypershift-tests-extended ./cmd
 # Run go vet against code
 .PHONY: vet
 vet:

@@ -1,11 +1,13 @@
-package extend
+//go:build test_extended
+
+package extended
 
 import (
 	"context"
 	"github.com/go-logr/logr"
 	g "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
-	. "github.com/openshift/hypershift/test/extend/util"
+	. "github.com/openshift/hypershift/test/extended/util"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crcclient "sigs.k8s.io/controller-runtime/pkg/client"
 )

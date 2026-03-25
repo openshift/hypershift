@@ -1,3 +1,5 @@
+//go:build test_extended
+
 package main
 
 import (
@@ -10,8 +12,8 @@ import (
 	e "github.com/openshift-eng/openshift-tests-extension/pkg/extension"
 	et "github.com/openshift-eng/openshift-tests-extension/pkg/extension/extensiontests"
 	g "github.com/openshift-eng/openshift-tests-extension/pkg/ginkgo"
-	// Import the extend test package to register Ginkgo specs
-	_ "github.com/openshift/hypershift/test/extend"
+	// Import the extended test package to register Ginkgo specs
+	_ "github.com/openshift/hypershift/test/extended"
 )
 
 const (
