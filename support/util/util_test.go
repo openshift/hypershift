@@ -21,6 +21,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+func TestIntentionalFailure(t *testing.T) {
+	t.Fatal("This test intentionally fails to validate the unit test GitHub Actions workflow")
+}
+
 func TestCompressDecompress(t *testing.T) {
 	testCases := []struct {
 		name       string
