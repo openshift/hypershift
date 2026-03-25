@@ -123,7 +123,7 @@ spec:
   services:
   - service: APIServer
     servicePublishingStrategy:
-      type: LoadBalancer
+      type: Route
   - service: Ignition
     servicePublishingStrategy:
       type: Route
