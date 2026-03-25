@@ -50,7 +50,49 @@ Also collect:
 - Any existing CI jobs that exercise this code path
 - Design docs or enhancement proposals referenced in the Jira issue
 
-Present a comprehensive feature summary to the user before proceeding.
+### 1.4 Present Feature Summary
+
+Before proceeding, present a structured feature summary to the user for confirmation:
+
+**Feature Summary Template:**
+
+```
+## Feature Summary: <Feature Name>
+
+### Problem Statement
+What gap or limitation exists today? Why is this feature needed?
+
+### Solution Approach
+- **Architecture**: How the feature works at a high level (controller flow, data flow, component interactions)
+- **Key Mechanism**: The core technical approach (e.g., "controller watches X annotation and reconciles Y resource")
+- **Trigger → Action → Result**: What triggers the feature, what the controller does, and what the end state looks like
+
+### API Design Decisions
+- New/modified fields and their purpose
+- Validation rules (CEL, webhooks)
+- Defaulting behavior
+- Why these design choices were made (from Jira comments and PR discussion)
+
+### PR Scope
+- What this specific PR delivers vs the full feature vision
+- Which components are touched and why
+- What is NOT included (deferred to follow-up work)
+
+### Components Affected
+| Component | Changes | Impact |
+|-----------|---------|--------|
+| API | ... | ... |
+| HyperShift Operator | ... | ... |
+| Control Plane Operator | ... | ... |
+| CLI | ... | ... |
+
+### Related Tests
+- Existing e2e tests covering this feature
+- Existing unit tests in changed packages
+- Gaps in test coverage
+```
+
+Wait for user confirmation before proceeding to Phase 2.
 
 ## Phase 2: Discover or Build Operator Images
 
