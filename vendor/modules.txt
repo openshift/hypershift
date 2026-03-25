@@ -877,6 +877,8 @@ github.com/json-iterator/go
 # github.com/k-orc/openstack-resource-controller v1.0.0 => sigs.k8s.io/cluster-api-provider-openstack/orc v0.0.0-20250113192833-e4f56a2b4f32
 ## explicit; go 1.22.0
 github.com/k-orc/openstack-resource-controller/api/v1alpha1
+# github.com/krishicks/yaml-patch v0.0.10
+## explicit
 # github.com/kubernetes-csi/external-snapshotter/client/v6 v6.3.0
 ## explicit; go 1.20
 github.com/kubernetes-csi/external-snapshotter/client/v6/apis/volumesnapshot/v1
@@ -1275,6 +1277,9 @@ github.com/tmc/grpc-websocket-proxy/wsproxy
 # github.com/vincent-petithory/dataurl v1.0.0
 ## explicit
 github.com/vincent-petithory/dataurl
+# github.com/vmware-archive/yaml-patch v0.0.11
+## explicit
+github.com/vmware-archive/yaml-patch
 # github.com/x448/float16 v0.8.4
 ## explicit; go 1.11
 github.com/x448/float16
