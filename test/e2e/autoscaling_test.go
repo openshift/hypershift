@@ -45,7 +45,7 @@ func TestAutoscaling(t *testing.T) {
 
 			// Set instance type to m5.xlarge for autoscaling tests to increase node capacity
 			if nodepool.Spec.Platform.AWS != nil {
-				nodepool.Spec.Platform.AWS.InstanceType = "m5.xlarge"
+				nodepool.Spec.Platform.AWS.InstanceType = "m5.2xlarge"
 			}
 
 			if additionalNP == nil {
@@ -68,7 +68,7 @@ func TestAutoscaling(t *testing.T) {
 
 				// Also set m5.xlarge for the additional NodePool
 				if additionalNP.Spec.Platform.AWS != nil {
-					additionalNP.Spec.Platform.AWS.InstanceType = "m5.xlarge"
+					additionalNP.Spec.Platform.AWS.InstanceType = "m5.2xlarge"
 				}
 			}
 		}
