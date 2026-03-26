@@ -15,6 +15,39 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: make test
+      - name: Extract coverage
+        id: coverage
+        env:
+          HOME: /tmp
+        run: |
+          COVERAGE=$(go tool cover -func=cover.out | grep '^total:' | awk '{print $NF}' | tr -d '%')
+          echo "total=${COVERAGE}" >> "$GITHUB_OUTPUT"
+          echo "Coverage: ${COVERAGE}%"
+
+          # Generate per-directory coverage as key=value lines
+          awk '
+            NR > 1 {
+              split($1, a, ":")
+              file = a[1]
+              sub("github.com/openshift/hypershift/", "", file)
+              n = split(file, parts, "/")
+              dir = parts[1]
+              stmts = $2
+              count = $3
+              total_stmt[dir] += stmts
+              if (count > 0) covered_stmt[dir] += stmts
+            }
+            END {
+              for (dir in total_stmt) {
+                if (total_stmt[dir] > 0)
+                  printf "%s=%.1f\n", dir, (covered_stmt[dir] / total_stmt[dir]) * 100
+                else
+                  printf "%s=0.0\n", dir
+              }
+            }
+          ' cover.out | sort > coverage-by-dir.txt
+          cat coverage-by-dir.txt
+
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5
         env:
@@ -22,3 +55,85 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           files: cover.out
+
+      # On main, update the baseline ConfigMap
+      - name: Update baseline coverage
+        if: github.ref == 'refs/heads/main'
+        run: |
+          # Build JSON patch with total and per-directory data
+          PATCH='{"data":{"total":"${{ steps.coverage.outputs.total }}"'
+          while IFS='=' read -r dir cov; do
+            PATCH="${PATCH},\"dir.${dir}\":\"${cov}\""
+          done < coverage-by-dir.txt
+          PATCH="${PATCH}}}"
+          kubectl patch configmap coverage-baseline -n arc-runners -p "$PATCH"
+          echo "Baseline updated to ${{ steps.coverage.outputs.total }}%"
+
+      # On PRs, compare against the baseline
+      - name: Compare coverage
+        if: github.event_name == 'pull_request'
+        run: |
+          # Fetch full ConfigMap data
+          kubectl get configmap coverage-baseline -n arc-runners -o json > baseline.json 2>/dev/null || echo '{}' > baseline.json
+          BASE_COV=$(cat baseline.json | awk -F'"' '/"total"/{print $4}')
+          PR_COV="${{ steps.coverage.outputs.total }}"
+
+          if [ -z "$BASE_COV" ]; then
+            echo "No baseline coverage found for main. Skipping comparison."
+            echo "### No baseline coverage found. Skipping comparison." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          DIFF=$(awk "BEGIN {printf \"%.1f\", $PR_COV - $BASE_COV}")
+          if awk "BEGIN {exit !($DIFF > 0)}"; then
+            TREND="increased"; ICON="📈"
+          elif awk "BEGIN {exit !($DIFF < 0)}"; then
+            TREND="decreased"; ICON="📉"
+          else
+            TREND="unchanged"; ICON="➡️"
+          fi
+
+          echo "Baseline (main): ${BASE_COV}%"
+          echo "This PR:         ${PR_COV}%"
+          echo "Diff:            ${DIFF}% (${TREND})"
+
+          # Write report to job summary
+          echo "### ${ICON} Coverage ${TREND}: ${DIFF}%" >> "$GITHUB_STEP_SUMMARY"
+          echo "| | Coverage |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| main (baseline) | ${BASE_COV}% |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| This PR | ${PR_COV}% |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Diff** | **${DIFF}%** |" >> "$GITHUB_STEP_SUMMARY"
+
+          # Per-directory comparison
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "<details>" >> "$GITHUB_STEP_SUMMARY"
+          echo "<summary>Coverage by directory</summary>" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Directory | main | This PR | Diff | |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          while IFS='=' read -r dir pr_dir_cov; do
+            base_dir_cov=$(cat baseline.json | awk -F'"' "/\"dir.${dir}\"/{print \$4}")
+            if [ -n "$base_dir_cov" ]; then
+              dir_diff=$(awk "BEGIN {printf \"%.1f\", $pr_dir_cov - $base_dir_cov}")
+              if awk "BEGIN {exit !($dir_diff > 0)}"; then
+                dir_icon="📈"
+              elif awk "BEGIN {exit !($dir_diff < 0)}"; then
+                dir_icon="📉"
+              else
+                dir_icon="➡️"
+              fi
+              echo "| ${dir} | ${base_dir_cov}% | ${pr_dir_cov}% | ${dir_diff}% | ${dir_icon} |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| ${dir} | — | ${pr_dir_cov}% | — | 🆕 |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done < coverage-by-dir.txt
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "</details>" >> "$GITHUB_STEP_SUMMARY"
+
+          # Fail if coverage drops by more than 1%
+          if awk "BEGIN {exit !($DIFF < -1.0)}"; then
+            echo ""
+            echo "::error::Coverage dropped by ${DIFF}% (threshold: -1%)"
+            exit 1
+          fi
