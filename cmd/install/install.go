@@ -744,7 +744,7 @@ func hyperShiftOperatorManifests(ctx context.Context, client crclient.Client, op
 	// Generate self-managed webhook CA and serving cert when any webhook is enabled.
 	var webhookCABundle []byte
 	if opts.EnableDefaultingWebhook || opts.EnableConversionWebhook || opts.EnableValidatingWebhook || opts.EnableAuditLogPersistence {
-		caSecret, servingSecret, caBundle, err := webhookcerts.GenerateWebhookCerts(operatorNamespace.Name, operatorService.Name)
+		caSecret, servingSecret, caBundle, err := webhookcerts.GenerateInitialWebhookCerts(operatorNamespace.Name, operatorService.Name)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to generate webhook certs: %w", err)
 		}

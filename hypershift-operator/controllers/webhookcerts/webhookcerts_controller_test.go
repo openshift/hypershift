@@ -74,8 +74,8 @@ func TestReconcile(t *testing.T) {
 	t.Run("When secrets already exist it should not error and should requeue", func(t *testing.T) {
 		g := NewWithT(t)
 
-		// Pre-create valid secrets via GenerateWebhookCerts.
-		caSecret, servingSecret, _, err := GenerateWebhookCerts("hypershift", "operator")
+		// Pre-create valid secrets via GenerateInitialWebhookCerts.
+		caSecret, servingSecret, _, err := GenerateInitialWebhookCerts("hypershift", "operator")
 		g.Expect(err).ToNot(HaveOccurred())
 
 		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).WithObjects(caSecret, servingSecret).Build()
@@ -86,31 +86,7 @@ func TestReconcile(t *testing.T) {
 		g.Expect(result.RequeueAfter).To(Equal(12 * time.Hour))
 	})
 
-	t.Run("When a request is for a different namespace it should skip reconciliation", func(t *testing.T) {
-		g := NewWithT(t)
-
-		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).Build()
-		r := newReconciler(cl)
-
-		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: CASecretName, Namespace: "other-ns"}}
-		result, err := r.Reconcile(t.Context(), req)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(result).To(Equal(ctrl.Result{}))
-	})
-
-	t.Run("When a request is for an unrelated secret it should skip reconciliation", func(t *testing.T) {
-		g := NewWithT(t)
-
-		cl := fake.NewClientBuilder().WithScheme(newScheme(t)).Build()
-		r := newReconciler(cl)
-
-		req := ctrl.Request{NamespacedName: client.ObjectKey{Name: "some-other-secret", Namespace: "hypershift"}}
-		result, err := r.Reconcile(t.Context(), req)
-		g.Expect(err).ToNot(HaveOccurred())
-		g.Expect(result).To(Equal(ctrl.Result{}))
-	})
-
-	t.Run("When a CRD has a conversion webhook it should patch its caBundle", func(t *testing.T) {
+	t.Run("When a CRD has a conversion webhook pointing to our service it should patch its caBundle", func(t *testing.T) {
 		g := NewWithT(t)
 
 		crd := &apiextensionsv1.CustomResourceDefinition{
@@ -131,7 +107,13 @@ func TestReconcile(t *testing.T) {
 				Conversion: &apiextensionsv1.CustomResourceConversion{
 					Strategy: apiextensionsv1.WebhookConverter,
 					Webhook: &apiextensionsv1.WebhookConversion{
-						ClientConfig:             &apiextensionsv1.WebhookClientConfig{CABundle: []byte("old-ca")},
+						ClientConfig: &apiextensionsv1.WebhookClientConfig{
+							CABundle: []byte("old-ca"),
+							Service: &apiextensionsv1.ServiceReference{
+								Namespace: "hypershift",
+								Name:      "operator",
+							},
+						},
 						ConversionReviewVersions: []string{"v1beta1"},
 					},
 				},
@@ -150,7 +132,7 @@ func TestReconcile(t *testing.T) {
 		g.Expect(updatedCRD.Spec.Conversion.Webhook.ClientConfig.CABundle).ToNot(BeEmpty())
 	})
 
-	t.Run("When a CRD is not in the hypershift group it should not patch its caBundle", func(t *testing.T) {
+	t.Run("When a CRD conversion webhook points to a different service it should not patch its caBundle", func(t *testing.T) {
 		g := NewWithT(t)
 
 		crd := &apiextensionsv1.CustomResourceDefinition{
@@ -171,7 +153,13 @@ func TestReconcile(t *testing.T) {
 				Conversion: &apiextensionsv1.CustomResourceConversion{
 					Strategy: apiextensionsv1.WebhookConverter,
 					Webhook: &apiextensionsv1.WebhookConversion{
-						ClientConfig:             &apiextensionsv1.WebhookClientConfig{CABundle: []byte("unchanged")},
+						ClientConfig: &apiextensionsv1.WebhookClientConfig{
+							CABundle: []byte("unchanged"),
+							Service: &apiextensionsv1.ServiceReference{
+								Namespace: "other-ns",
+								Name:      "other-service",
+							},
+						},
 						ConversionReviewVersions: []string{"v1"},
 					},
 				},
@@ -243,11 +231,11 @@ func TestReconcile(t *testing.T) {
 	})
 }
 
-func TestGenerateWebhookCerts(t *testing.T) {
+func TestGenerateInitialWebhookCerts(t *testing.T) {
 	t.Run("When generating certs it should return valid CA and serving cert secrets", func(t *testing.T) {
 		g := NewWithT(t)
 
-		caSecret, servingSecret, caBundle, err := GenerateWebhookCerts("hypershift", "operator")
+		caSecret, servingSecret, caBundle, err := GenerateInitialWebhookCerts("hypershift", "operator")
 		g.Expect(err).ToNot(HaveOccurred())
 
 		// CA secret

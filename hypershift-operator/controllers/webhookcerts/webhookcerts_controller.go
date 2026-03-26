@@ -69,14 +69,6 @@ func (r *WebhookCertReconciler) SetupWithManager(mgr ctrl.Manager, createOrUpdat
 func (r *WebhookCertReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	// Only process our own secrets.
-	if req.Namespace != r.Namespace {
-		return ctrl.Result{}, nil
-	}
-	if req.Name != CASecretName && req.Name != ServingCertSecretName {
-		return ctrl.Result{}, nil
-	}
-
 	// 1. Reconcile the self-signed CA.
 	caSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -132,7 +124,7 @@ func (r *WebhookCertReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{RequeueAfter: requeueInterval}, nil
 }
 
-// patchCRDsCABundle patches the caBundle on all hypershift.openshift.io CRDs that have a conversion webhook.
+// patchCRDsCABundle patches the caBundle on all CRDs whose conversion webhook points to our service.
 func (r *WebhookCertReconciler) patchCRDsCABundle(ctx context.Context, caBundle []byte) error {
 	crdList := &apiextensionsv1.CustomResourceDefinitionList{}
 	if err := r.Client.List(ctx, crdList); err != nil {
@@ -141,10 +133,11 @@ func (r *WebhookCertReconciler) patchCRDsCABundle(ctx context.Context, caBundle 
 
 	for i := range crdList.Items {
 		crd := &crdList.Items[i]
-		if crd.Spec.Group != "hypershift.openshift.io" {
+		if crd.Spec.Conversion == nil || crd.Spec.Conversion.Webhook == nil || crd.Spec.Conversion.Webhook.ClientConfig == nil {
 			continue
 		}
-		if crd.Spec.Conversion == nil || crd.Spec.Conversion.Webhook == nil || crd.Spec.Conversion.Webhook.ClientConfig == nil {
+		svc := crd.Spec.Conversion.Webhook.ClientConfig.Service
+		if svc == nil || svc.Name != r.ServiceName || svc.Namespace != r.Namespace {
 			continue
 		}
 		if bytes.Equal(crd.Spec.Conversion.Webhook.ClientConfig.CABundle, caBundle) {
@@ -217,9 +210,9 @@ func webhookDNSNames(serviceName, namespace string) []string {
 	}
 }
 
-// GenerateWebhookCerts generates the CA and serving cert secrets for use at install time.
+// GenerateInitialWebhookCerts generates the CA and serving cert secrets for use at install time.
 // It also returns the CA bundle bytes for injection into CRDs and webhook configs.
-func GenerateWebhookCerts(namespace, serviceName string) (*corev1.Secret, *corev1.Secret, []byte, error) {
+func GenerateInitialWebhookCerts(namespace, serviceName string) (*corev1.Secret, *corev1.Secret, []byte, error) {
 	caSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      CASecretName,
