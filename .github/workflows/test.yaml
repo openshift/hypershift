@@ -1,8 +1,11 @@
 name: Unit Tests
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch: {}
 
 jobs:
   test:
@@ -12,3 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: make test
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        env:
+          HOME: /tmp
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          files: cover.out
