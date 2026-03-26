@@ -94,6 +94,23 @@ What gap or limitation exists today? Why is this feature needed?
 
 Wait for user confirmation before proceeding to Phase 2.
 
+### 1.5 Save Context to Artifacts
+
+Save the gathered context to the artifacts directory so it persists across iterations and sessions:
+
+```bash
+ARTIFACTS_DIR="_artifacts/verify-<jira-key>-$(date +%Y%m%d%H%M%S)"
+mkdir -p "${ARTIFACTS_DIR}"
+```
+
+Write the following files:
+- `${ARTIFACTS_DIR}/feature-summary.md` — The full feature summary from step 1.4
+- `${ARTIFACTS_DIR}/pr-context.md` — PR number, title, branch, base branch, changed files list
+- `${ARTIFACTS_DIR}/jira-context.md` — Jira issue keys, summaries, status, and key comments/decisions extracted from the issues
+- `${ARTIFACTS_DIR}/test-plan.md` — The test plan from Phase 3 (written after Phase 3 completes)
+
+This artifacts directory is reused in Phase 5 for iteration tracking. If the directory was already created (e.g., resuming work), reuse it rather than creating a new one.
+
 ## Phase 2: Discover or Build Operator Images
 
 ### 2.1 Try Konflux Images First
@@ -222,6 +239,31 @@ Decide the job structure:
 
 ## Phase 4: Build CI Verification
 
+### 4.0 Leverage Existing CI Steps and Workflows
+
+**CRITICAL: Always reuse existing CI chains and workflows rather than reimplementing from scratch.**
+
+Before writing any new CI step:
+
+1. **Search for existing steps** that already do what you need:
+   ```bash
+   grep -r "<keyword>" ci-operator/step-registry/hypershift/ --include="*.yaml" -l
+   ```
+
+2. **Study sibling steps** in the same workflow family. The hypershift CI has distinct step families with different conventions:
+   - **`hypershift-aws-*`** chains: Use `from: hypershift-operator`, inherit KUBECONFIG from nested management cluster
+   - **`hypershift-hostedcluster-*`** refs: Use `from_image: ci/hypershift-cli:latest`, hardcode KUBECONFIG to shared management cluster
+   - **Do not mix patterns** — use the same image and KUBECONFIG approach as sibling steps in the workflow
+
+3. **Check what tools are available in the image.** The `hypershift-operator` image (`ubi9:latest`) has `oc` but does NOT have `jq`, `python`, etc.
+   - **Prefer standard shell tools** (`grep`, `sed`, `awk`, `cut`, `sort`) and `oc -o go-template` or `oc -o jsonpath` over `jq`
+   - Never assume a tool exists — if a command fails silently behind `|| true`, you get false negatives/positives
+
+4. **Triggering rehearsals:**
+   - Pushing code alone may not trigger rehearsals — use `/pj-rehearse <full-job-name>` as a PR comment
+   - `/retest` retriggers validation checks but may not create new rehearsal jobs
+   - Allow up to 10 minutes for `/pj-rehearse` to create the job
+
 ### 4.1 Leverage Existing Steps for Image Overrides
 
 Do NOT implement image overrides manually. Use the existing CI step registry infrastructure:
@@ -276,7 +318,28 @@ The workflow should reuse existing steps where possible (e.g., `hypershift-insta
 - Add the job configuration to the appropriate file in `ci-operator/config/openshift/hypershift/`
 - Add `OWNERS` files in new step registry directories
 
-## Phase 5: Create Draft PR and Run Rehearsal
+## Phase 5: Create Draft PR, Run Rehearsal, and Track Iterations
+
+### 5.0 Initialize Iteration Tracking
+
+Reuse the artifacts directory created in Phase 1.5 (or create it now if not already done):
+
+```bash
+# Reuse existing ARTIFACTS_DIR from Phase 1.5, or create if needed
+ARTIFACTS_DIR="${ARTIFACTS_DIR:-_artifacts/verify-<jira-key>-$(date +%Y%m%d%H%M%S)}"
+mkdir -p "${ARTIFACTS_DIR}"
+```
+
+Create an `iterations.md` file to serve as a running log:
+
+```markdown
+# Verification Iterations: <Jira-Key> - <Feature Name>
+
+## Summary
+- **PR:** openshift/release#<number>
+- **Job:** periodic-ci-openshift-hypershift-<version>-periodics-<job-name>
+- **Started:** <timestamp>
+```
 
 ### 5.1 Create Branch, Commit, and Draft PR
 
@@ -299,21 +362,68 @@ gh pr checks <pr-number> --repo openshift/release
 
 Wait for the rehearsal to complete.
 
-### 5.3 Analyze Results
+### 5.3 Save Iteration Results
+
+After each rehearsal completes (pass or fail), save the results to the artifacts directory:
+
+```bash
+ITER_NUM=1  # increment for each iteration
+ITER_DIR="${ARTIFACTS_DIR}/iteration-${ITER_NUM}"
+mkdir -p "${ITER_DIR}"
+
+# Save the build log
+gsutil cat "<gcs-path>/build-log.txt" | gunzip > "${ITER_DIR}/build-log.txt" 2>/dev/null || \
+  gsutil cat "<gcs-path>/build-log.txt" > "${ITER_DIR}/build-log.txt"
+
+# Save step results for each step that ran
+for step_dir in $(gsutil ls "<gcs-path>/artifacts/<job-name>/"); do
+  step_name=$(basename "${step_dir}")
+  mkdir -p "${ITER_DIR}/steps/${step_name}"
+  gsutil cat "${step_dir}finished.json" > "${ITER_DIR}/steps/${step_name}/finished.json" 2>/dev/null || true
+done
+
+# Extract test output (pass/fail/skip lines)
+grep -E "^\[PASS\]|\[FAIL\]|\[SKIP\]|RESULT:|=== Step" "${ITER_DIR}/build-log.txt" > "${ITER_DIR}/test-summary.txt" 2>/dev/null || true
+```
+
+Append the iteration record to `iterations.md`:
+
+```markdown
+## Iteration <N> — <PASS/FAIL> — <timestamp>
+- **Job ID:** <prow-job-id>
+- **Prow URL:** <link>
+- **Commit:** <sha> — <commit message>
+- **Result:** <PASS/FAIL>
+- **Failure Reason:** <root cause if failed, e.g., "jq not found in hypershift-operator image">
+- **Fix Applied:** <what was changed, e.g., "switched to oc go-template">
+
+### Test Output
+\```
+<paste [PASS]/[FAIL]/[SKIP] lines and summary>
+\```
+
+### Step Results
+| Step | Result |
+|------|--------|
+| ipi-install-rbac | SUCCESS |
+| create-management-cluster | SUCCESS |
+| ... | ... |
+```
+
+### 5.4 Iterate on Failures
 
 **If PASSED:**
-- Fetch the build log from GCS:
-  ```bash
-  gsutil cat "<gcs-path>/build-log.txt" | gunzip
-  ```
 - Extract `[PASS]`, `[FAIL]`, `[SKIP]` lines with evidence
+- Save final iteration to artifacts
 - Proceed to Phase 6
 
 **If FAILED:**
-- Fetch the build log and identify the failure
+- Save the failed iteration to artifacts (step 5.3)
+- Fetch the build log and identify the root cause
+- Document the failure reason and fix in `iterations.md`
 - Fix the issue, commit, push
-- Return to step 5.2 to monitor the new rehearsal
-- Iterate until all checks pass
+- Trigger new rehearsal with `/pj-rehearse <job-name>`
+- Increment iteration counter and return to step 5.2
 
 ## Phase 6: Report Results
 
@@ -342,3 +452,18 @@ Present the user with:
 - Links to both PRs
 - Full results summary
 - Suggested next steps (request reviews, squash commits, mark PR ready)
+- Path to local artifacts directory with all iteration history: `${ARTIFACTS_DIR}/`
+
+The artifacts directory provides a complete audit trail:
+```
+_artifacts/verify-OCPBUGS-12345-20260326120000/
+├── iterations.md              # Running log of all iterations with root causes and fixes
+├── iteration-1/
+│   ├── build-log.txt          # Full build log
+│   ├── test-summary.txt       # Extracted [PASS]/[FAIL]/[SKIP] lines
+│   └── steps/                 # Per-step finished.json results
+├── iteration-2/
+│   └── ...
+└── iteration-N/               # Final successful run
+    └── ...
+```
