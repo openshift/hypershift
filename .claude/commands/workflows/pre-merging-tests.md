@@ -423,6 +423,17 @@ The workflow should reuse existing steps where possible (e.g., `hypershift-insta
 - Add the job configuration to the appropriate file in `ci-operator/config/openshift/hypershift/`
 - Add `OWNERS` files in new step registry directories
 
+### 4.5 Regenerate Job Configs
+
+**CRITICAL: You must run `make update` in the openshift/release repo after modifying any ci-operator configs or step registry files.** This regenerates the Prow job YAML files in `ci-operator/jobs/` from the configs in `ci-operator/config/`. Without this step, the rehearsal will not pick up your new job.
+
+```bash
+cd <openshift-release-repo>
+make update
+```
+
+This generates/updates files in `ci-operator/jobs/openshift/hypershift/`. Make sure to `git add` these generated files along with your config and step registry changes.
+
 ## Phase 5: Create Draft PR, Run Rehearsal, and Track Iterations
 
 ### 5.0 Initialize Iteration Tracking
