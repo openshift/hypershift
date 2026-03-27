@@ -48,6 +48,7 @@ The state file (`${ARTIFACTS_DIR}/state.md`) is the single source of truth for r
 
 ## References
 - **HyperShift PR:** openshift/hypershift#<number> — <title>
+- **Target Branch:** <main or release-X.Y>
 - **CI PR:** openshift/release#<number>
 - **Jira:** <JIRA-KEY>
 - **Artifacts Dir:** <path>
@@ -91,7 +92,7 @@ The state file (`${ARTIFACTS_DIR}/state.md`) is the single source of truth for r
 
 ## Phase 1: Gather Context
 
-### 1.1 Detect Current PR
+### 1.1 Detect Current PR and Target Branch
 
 Find the PR associated with the current branch:
 
@@ -101,6 +102,17 @@ gh pr view "$CURRENT_BRANCH" --repo openshift/hypershift --json number,title,bod
 ```
 
 If no PR exists for the current branch, inform the user and stop.
+
+**Determine the target branch** from the PR's `baseRefName`:
+- `main` → CI config goes in `openshift-hypershift-main.yaml`
+- `release-X.Y` (e.g., `release-4.21`) → CI config goes in `openshift-hypershift-release-X.Y.yaml`
+
+Record the target branch in the state file. This affects:
+- Which CI config file to modify in Phase 4.4
+- The generated job names (e.g., `pull-ci-openshift-hypershift-release-4.21-e2e-...` vs `pull-ci-openshift-hypershift-main-e2e-...`)
+- Which branch's code the CI job tests against
+
+**Backport PRs** (base branch is `release-X.Y`): The feature may already be merged to `main` via parent PRs. If so, the release branch images from the nightly/release payload already contain the code — image overrides may not be needed. However, the e2e tests and CI config must target the release branch, not `main`.
 
 ### 1.2 Extract and Read Jira Issues
 
@@ -131,6 +143,14 @@ Also collect:
 - Related unit tests in the changed packages
 - Any existing CI jobs that exercise this code path
 - Design docs or enhancement proposals referenced in the Jira issue
+- **QE-side tests in `openshift-tests-private`**: Search the `openshift/release` repo for existing QE jobs that may already test this feature:
+  ```bash
+  # Search QE config files for feature-related job names or env vars
+  grep -r "<feature-keywords>" ci-operator/config/openshift/openshift-tests-private/ --include="*.yaml" -l
+  # List hypershift QE jobs for the target branch
+  grep "as:.*hypershift.*<feature-keyword>" ci-operator/config/openshift/openshift-tests-private/openshift-openshift-tests-private-<branch>__*.yaml
+  ```
+  QE tests may already provide sufficient coverage — if so, you may not need a custom verification job, or you can design yours to complement rather than duplicate QE coverage.
 
 ### 1.4 Output Feature Summary
 
@@ -234,6 +254,8 @@ Based on the changed files in the PR, determine which operator images need to be
 
 If no operator code changed (e.g., only test or CI changes), no image overrides are needed.
 
+**Backport PRs:** If the PR targets a release branch (e.g., `release-4.21`) and the feature is already merged to `main`, the release branch nightly images may or may not contain the code yet (depends on whether `main` changes have been cherry-picked). Check whether the PR is still open — if so, the release branch images do NOT contain the code and you need Konflux images or local builds from the release branch. If the parent PRs are merged to `main` but not yet to the release branch, image overrides are needed.
+
 ## Phase 3: Create Test Plan
 
 ### 3.1 Focus on Core Feature Logic
@@ -323,9 +345,11 @@ Output the full test plan (happy path + corner cases + risk items), save it to `
 ### 3.6 Determine CI Job Structure
 
 Decide the job structure:
-- **Workflow name**: `hypershift-<platform>-<feature>`
+- **Install method**: Self-managed (`hypershift-install` + `hypershift-aws-*`) or MCE (`hypershift-mce-install` + `hypershift-mce-*`). Choose based on what the feature requires and what existing tests use.
+- **Workflow name**: `hypershift-<platform>-<feature>` (self-managed) or `hypershift-mce-<platform>-<feature>` (MCE)
 - **Steps needed**: setup (with image overrides if needed), verify, teardown
 - **Cluster requirements**: platform, NodePool config, etc.
+- **Config file variant**: Determined by target branch + install method (see Phase 4.4)
 
 ## Phase 4: Build CI Verification
 
@@ -408,8 +432,32 @@ The workflow should reuse existing steps where possible (e.g., `hypershift-insta
 
 ### 4.4 Create CI Config and OWNERS
 
-- Add the job configuration to the appropriate file in `ci-operator/config/openshift/hypershift/`
-- Add `OWNERS` files in new step registry directories
+Add the job configuration to the **correct config file** in `ci-operator/config/openshift/hypershift/`. The config file depends on **two factors**: the target branch and the install method (self-managed vs MCE).
+
+**Determine the install method:**
+- **Self-managed** (default): HyperShift installed via `hypershift install` command. Workflows use `hypershift-aws-*`, `hypershift-kubevirt-*`, etc.
+- **MCE** (MultiCluster Engine): HyperShift installed as an MCE addon. Workflows use `hypershift-mce-*` steps. Use MCE when the feature being tested involves MCE-specific code paths, agent-based provisioning, or when the test requires an MCE environment.
+
+**Config file selection:**
+
+| Target Branch | Install Method | Config File |
+|---|---|---|
+| `main` | Self-managed | `openshift-hypershift-main.yaml` |
+| `main` | MCE | `openshift-hypershift-main__mce-multi-version.yaml` |
+| `release-X.Y` | Self-managed | `openshift-hypershift-release-X.Y.yaml` |
+| `release-X.Y` | MCE (presubmit) | `openshift-hypershift-release-X.Y__mce.yaml` (if exists) |
+| `release-X.Y` | MCE (periodic) | `openshift-hypershift-release-X.Y__periodics-mce.yaml` |
+| `release-X.Y` | Periodic (non-MCE) | `openshift-hypershift-release-X.Y__periodics.yaml` |
+
+**How to detect MCE vs self-managed:** Check the workflow being used. If it starts with `hypershift-mce-*`, use an MCE config file. If it uses `hypershift-aws-*`, `hypershift-kubevirt-*`, or other non-MCE workflows, use the base config file. Also check what existing CI jobs the feature's e2e tests run in — if they're in MCE jobs, your verification should also use MCE.
+
+**Note:** Not all branch/variant combinations exist. Check `ls ci-operator/config/openshift/hypershift/` to see which config files are available for the target branch before choosing. For example, `__mce` variants exist for releases 4.12-4.19 but not 4.20+, while `__periodics-mce` exists for 4.16+.
+
+The target branch was determined in Phase 1.1 from the PR's `baseRefName`. Using the wrong config file means the job won't run against the correct branch code or install method.
+
+**Important:** The `ci-operator` config's `zz_generated_metadata.branch` field must match the target branch, and the `variant` field must match the config suffix (e.g., `mce`, `periodics-mce`). Verify the `org`, `repo`, `variant`, and `branch` fields match the existing entries in that config file.
+
+Also add `OWNERS` files in new step registry directories.
 
 ### 4.5 Regenerate Job Configs
 
