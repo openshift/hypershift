@@ -2946,7 +2946,7 @@ func reconcileCAPIManagerClusterRole(role *rbacv1.ClusterRole) error {
 		{
 			APIGroups: []string{"apiextensions.k8s.io"},
 			Resources: []string{"customresourcedefinitions"},
-			Verbs:     []string{"get", "list", "watch"},
+			Verbs:     []string{"get", "list", "patch", "watch"},
 		},
 	}
 	return nil
