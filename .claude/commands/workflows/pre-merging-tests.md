@@ -7,20 +7,9 @@ Pre-merge verification for a HyperShift feature: discover or build operator imag
 
 [Extended thinking: This workflow orchestrates pre-merge testing for a HyperShift feature. It detects the current branch PR, deeply gathers context from the PR diffs, linked Jira issues and all their comments, discovers Konflux-built images or falls back to local builds, creates a focused test plan targeting the core logic of the feature, builds CI verification steps leveraging existing install/create steps with proper image overrides, creates a draft PR in openshift/release, runs rehearsals, iterates on failures, and reports results with strong proof back to the PR and Jira.]
 
-## Phase 0: Resume from State and Detect Mode
+**CRITICAL: This workflow runs autonomously from start to finish. NEVER ask the user for confirmation, approval, or input. NEVER output phrases like "Would you like me to...", "Shall I proceed?", "Should I...", or "Do you want me to...". Make reasonable default decisions, log them to `state.md`, and keep going. Present summaries as you go, but do not stop and wait.**
 
-### 0.1 Detect Execution Mode
-
-This workflow supports two execution modes:
-
-- **Interactive mode** (default): Running in a conversation with the user. Pause for confirmations at key decision points (feature summary, test plan). Use `/loop` for monitoring.
-- **Non-interactive mode** (`claude -p`): Running headless in a single invocation. Skip all confirmation prompts, make reasonable default decisions. Uses **sub-agents** for iteration monitoring to keep the main context lean.
-
-**How to detect:** If running via `claude -p`, there is no interactive user — proceed without confirmations and write all decisions to `state.md` for auditability.
-
-**CRITICAL for non-interactive mode:** You MUST NOT ask questions, offer choices, or wait for user input at any point. Never output phrases like "Would you like me to...", "Should I...", "Do you want me to...". Instead, make the reasonable default decision, log it to `state.md`, and proceed. The entire workflow (Phases 1-6) must run to completion autonomously.
-
-**Non-interactive invocation:**
+**Non-interactive invocation (`claude -p`):**
 ```bash
 claude -p "Run /workflows:pre-merging-tests" \
   --permission-mode bypassPermissions \
@@ -29,7 +18,7 @@ claude -p "Run /workflows:pre-merging-tests" \
 
 This single invocation runs the entire workflow (Phases 1-6) including rehearsal monitoring. It uses sub-agents for iteration work to avoid filling the main context window (see Phase 5.2 for details).
 
-### 0.2 Resume from State
+## Phase 0: Resume from State
 
 If the user provided an explicit state file path (e.g., `Resume pre-merging-tests from _artifacts/verify-OCPBUGS-74960-20260326/state.md`), use that directly.
 
@@ -143,11 +132,9 @@ Also collect:
 - Any existing CI jobs that exercise this code path
 - Design docs or enhancement proposals referenced in the Jira issue
 
-### 1.4 Present Feature Summary
+### 1.4 Output Feature Summary
 
-Before proceeding, present a structured feature summary to the user for confirmation:
-
-**Feature Summary Template:**
+Present the feature summary using this template, then proceed immediately to Phase 1.5:
 
 ```
 ## Feature Summary: <Feature Name>
@@ -184,9 +171,6 @@ What gap or limitation exists today? Why is this feature needed?
 - Existing unit tests in changed packages
 - Gaps in test coverage
 ```
-
-**Interactive mode:** Wait for user confirmation before proceeding to Phase 2.
-**Non-interactive mode:** Log the summary to `${ARTIFACTS_DIR}/feature-summary.md` and proceed immediately.
 
 ### 1.5 Save Context to Artifacts
 
@@ -291,7 +275,7 @@ The HyperShift CI runs in shared AWS accounts (e.g., `hypershift-aws` cluster pr
 - **Use `SHARED_DIR` for inter-step data passing.** This is the only reliable way to pass data between CI steps (e.g., baseline recordings, cluster names, resource IDs). Files written to `${SHARED_DIR}/` in one step are available in subsequent steps.
 - **Use `best_effort: true` on post/verify steps.** If your verification step is in the `post` phase and you need it to run even when the test step fails (e.g., verifying cleanup after cluster deletion), you MUST set `best_effort: true` in the ref YAML. Without it, post steps are skipped when the test phase fails.
 
-### 3.5 Identify and Test Corner Cases
+### 3.4 Identify and Test Corner Cases
 
 Beyond the happy path, identify corner cases that could break the feature or cause regressions:
 
@@ -309,7 +293,7 @@ For each corner case, decide whether it should be:
 - A unit test in the hypershift repo (if it tests internal logic)
 - Noted as a known limitation (if not feasible to test in CI)
 
-### 3.6 Risk Analysis: Compatibility and Performance
+### 3.5 Risk Analysis: Compatibility and Performance
 
 Before finalizing the test plan, assess the feature's risk profile:
 
@@ -334,10 +318,9 @@ For each identified risk:
 
 Include high and medium risk items as verification steps or acceptance criteria in the test plan.
 
-**Interactive mode:** Output the full test plan (happy path + corner cases + risk items) and ask the user to confirm before proceeding.
-**Non-interactive mode:** Write the test plan to `${ARTIFACTS_DIR}/test-plan.md` and proceed immediately.
+Output the full test plan (happy path + corner cases + risk items), save it to `${ARTIFACTS_DIR}/test-plan.md`, and proceed to Phase 3.6.
 
-### 3.7 Determine CI Job Structure
+### 3.6 Determine CI Job Structure
 
 Decide the job structure:
 - **Workflow name**: `hypershift-<platform>-<feature>`
@@ -476,16 +459,7 @@ gh pr create --draft --title "..." --body "..."
 
 ### 5.2 Monitor Rehearsal Job
 
-**CRITICAL: Do NOT ask the user whether to monitor or wait. Do NOT offer choices like "Would you like me to set up a loop?". Proceed directly with monitoring using the appropriate mode below.**
-
-**Interactive mode:** Use the `/loop` skill to set up recurring status checks. Do not ask — just start it:
-```
-/loop 10m Check the rehearsal job status for openshift/release PR #<number>. Run: gh pr checks <number> --repo openshift/release 2>/dev/null | grep -i "rehearse\|<job-keyword>" and also check gh api repos/openshift/release/issues/<number>/comments --jq '.[-1].body | split("\n")[0:5] | join(" | ")' for any new bot comments about rehearsal results. Report findings concisely.
-```
-
-This polls every 10 minutes automatically. The user can continue other work while waiting. When the job completes, proceed to step 5.3.
-
-**Non-interactive mode (`claude -p`):** Use a **sub-agent polling loop** to monitor and iterate. Each iteration runs in a separate sub-agent with its own context window, keeping the main context lean. **Do not exit or ask questions — run the loop until the job completes or fails.**
+Use a **sub-agent polling loop** to monitor and iterate. Each iteration runs in a separate sub-agent with its own context window, keeping the main context lean. **Do not exit or ask questions — run the loop until the job completes or fails.**
 
 Here is the concrete implementation — follow this exactly:
 
@@ -604,8 +578,6 @@ Append the iteration record to `iterations.md`:
 **After saving iteration results, always update `${ARTIFACTS_DIR}/state.md`** with the iteration outcome, key findings, decisions made, known issues, and the next action. This ensures a new session can resume without re-reading build logs.
 
 ### 5.4 Iterate on Failures
-
-This section defines how the **sub-agents** (in non-interactive mode) or the **main agent** (in interactive mode) should classify and act on results. The classification logic is the same regardless of mode.
 
 **If PASSED:**
 - Extract `[PASS]`, `[FAIL]`, `[SKIP]` lines with evidence
