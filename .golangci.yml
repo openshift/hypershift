@@ -58,6 +58,10 @@ linters:
       - linters:
           - staticcheck
         text: 'SA1019: "github.com/aws/aws-sdk-go'
+      # cluster-api v1beta1 is deprecated but migration to v1beta2 is a separate effort
+      - linters:
+          - staticcheck
+        text: 'SA1019: "sigs.k8s.io/cluster-api/(.*)" is deprecated: This package is deprecated and is going to be removed when support for v1beta1 will be dropped.'
     paths:
       - third_party$
       - builtin$

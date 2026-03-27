@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -98,7 +98,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 				TypeMeta:   machineTypeMeta,
 				ObjectMeta: worker1Meta,
 				Spec: capiv1.MachineSpec{
-					InfrastructureRef: corev1.ObjectReference{
+					InfrastructureRef: capiv1.ContractVersionedObjectReference{
 						Name: vmWorker1Meta.Name,
 					},
 				},
@@ -120,7 +120,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 				TypeMeta:   machineTypeMeta,
 				ObjectMeta: worker2Meta,
 				Spec: capiv1.MachineSpec{
-					InfrastructureRef: corev1.ObjectReference{
+					InfrastructureRef: capiv1.ContractVersionedObjectReference{
 						Name: vmWorker2Meta.Name,
 					},
 				},
@@ -426,7 +426,7 @@ func TestReconcileDefaultIngressEndpoints(t *testing.T) {
 		},
 		{
 			name:             "With Failing machine with internal addresses and passthrow service should mark endpointslices as not ready/not serving",
-			machines:         pairOfDualStackMachines(capiv1.MachinePhaseRunning, capiv1.MachinePhaseFailed),
+			machines:         pairOfDualStackMachines(capiv1.MachinePhaseRunning, capiv1.MachinePhaseUnknown),
 			virtualMachines:  pairOfVirtualMachines,
 			services:         []corev1.Service{defaultIngressService},
 			expectedServices: []corev1.Service{defaultIngressService},
