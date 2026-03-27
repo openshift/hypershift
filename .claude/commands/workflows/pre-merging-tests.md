@@ -7,6 +7,103 @@ Pre-merge verification for a HyperShift feature: discover or build operator imag
 
 [Extended thinking: This workflow orchestrates pre-merge testing for a HyperShift feature. It detects the current branch PR, deeply gathers context from the PR diffs, linked Jira issues and all their comments, discovers Konflux-built images or falls back to local builds, creates a focused test plan targeting the core logic of the feature, builds CI verification steps leveraging existing install/create steps with proper image overrides, creates a draft PR in openshift/release, runs rehearsals, iterates on failures, and reports results with strong proof back to the PR and Jira.]
 
+## Phase 0: Resume from State and Detect Mode
+
+### 0.1 Detect Execution Mode
+
+This workflow supports two execution modes:
+
+- **Interactive mode** (default): Running in a conversation with the user. Pause for confirmations at key decision points (feature summary, test plan). Use `/loop` for monitoring.
+- **Non-interactive mode** (`claude -p`): Running headless. Skip all confirmation prompts, make reasonable default decisions, and exit cleanly after completing one logical unit of work. The next `-p` invocation picks up from state.
+
+**How to detect:** If running via `claude -p`, there is no interactive user — proceed without confirmations and write all decisions to `state.md` for auditability.
+
+**Non-interactive invocation examples:**
+```bash
+# First run: gather context, discover images, create test plan and CI job
+claude -p "Run /workflows:pre-merging-tests"
+
+# Resume: check rehearsal status and iterate
+claude -p "Run /workflows:pre-merging-tests --resume"
+
+# Or with explicit state path
+claude -p "Resume pre-merging-tests from _artifacts/verify-OCPBUGS-74960-20260326/state.md"
+```
+
+In non-interactive mode, each invocation should:
+1. Read `state.md` to determine current phase
+2. Execute the next incomplete phase (or check job status if waiting)
+3. Update `state.md` with results
+4. Exit with a summary of what was done and what comes next
+
+### 0.2 Resume from State
+
+Check if there is an existing state file from a previous session:
+
+```bash
+ls _artifacts/verify-*/state.md 2>/dev/null
+```
+
+If a `state.md` file exists, **read it first**. It contains all context needed to resume: current phase, iteration number, job IDs, image references, error history, and key decisions. Skip completed phases and pick up where the previous session left off.
+
+If no state file exists, proceed to Phase 1.
+
+### State File Format
+
+The state file (`${ARTIFACTS_DIR}/state.md`) is the single source of truth for resuming after context compaction. **Update it after every significant milestone** (phase completion, iteration result, key decision). It must contain everything needed to continue without re-reading build logs or re-running commands.
+
+```markdown
+# Verification State: <Jira-Key>
+
+## Current Status
+- **Phase:** <current phase number and name>
+- **Iteration:** <current iteration number>
+- **Last Updated:** <timestamp>
+- **Overall Result:** <IN_PROGRESS | PARTIAL_PASS | PASS | BLOCKED>
+
+## References
+- **HyperShift PR:** openshift/hypershift#<number> — <title>
+- **CI PR:** openshift/release#<number>
+- **Jira:** <JIRA-KEY>
+- **Artifacts Dir:** <path>
+
+## Images
+- **HO Image:** <full image reference or "default">
+- **CPO Image:** <full image reference or "default">
+
+## CI Job
+- **Job Name:** <full periodic job name>
+- **Workflow:** <workflow name>
+- **Custom Steps:** <list of custom step names you created>
+
+## Iteration History
+### Iteration N — <PASS|FAIL|PARTIAL_PASS> — <timestamp>
+- **Job ID:** <prow job ID>
+- **Prow URL:** <link>
+- **Commit:** <sha> — <message>
+- **Result:** <outcome>
+- **Root Cause:** <if failed, one-line root cause>
+- **Fix Applied:** <if failed, one-line fix description>
+- **Key Findings:** <important observations, e.g., "HC private-fs4xj rolled out in 5m, SG verify passed, e2e had transient controlPlaneVersion timeout">
+
+## Decisions Made
+- <key decision 1, e.g., "Switched from cli to upi-installer for AWS CLI">
+- <key decision 2, e.g., "Using VPC endpoint state check instead of baseline/diff for SG verification">
+
+## Known Issues
+- <issue 1, e.g., "controlPlaneVersion has no desired image — transient CI rate limiter issue, not related to fix">
+
+## Next Action
+<Exactly what to do next, e.g., "Trigger iteration 5 with /pj-rehearse, or proceed to Phase 6 reporting if partial pass is acceptable">
+```
+
+**When to update the state file:**
+- After Phase 1 completes (references, images, feature summary)
+- After Phase 3 completes (test plan, CI job structure)
+- After Phase 4 completes (CI PR created, custom step names)
+- After each iteration completes (result, findings, next action)
+- After any key decision or direction change
+
 ## Phase 1: Gather Context
 
 ### 1.1 Detect Current PR
@@ -92,7 +189,8 @@ What gap or limitation exists today? Why is this feature needed?
 - Gaps in test coverage
 ```
 
-Wait for user confirmation before proceeding to Phase 2.
+**Interactive mode:** Wait for user confirmation before proceeding to Phase 2.
+**Non-interactive mode:** Log the summary to `${ARTIFACTS_DIR}/feature-summary.md` and proceed immediately.
 
 ### 1.5 Save Context to Artifacts
 
@@ -108,8 +206,9 @@ Write the following files:
 - `${ARTIFACTS_DIR}/pr-context.md` — PR number, title, branch, base branch, changed files list
 - `${ARTIFACTS_DIR}/jira-context.md` — Jira issue keys, summaries, status, and key comments/decisions extracted from the issues
 - `${ARTIFACTS_DIR}/test-plan.md` — The test plan from Phase 3 (written after Phase 3 completes)
+- `${ARTIFACTS_DIR}/state.md` — **Initialize the state file** (see Phase 0 for format). Set phase to "Phase 1 complete", populate references and images sections.
 
-This artifacts directory is reused in Phase 5 for iteration tracking. If the directory was already created (e.g., resuming work), reuse it rather than creating a new one.
+This artifacts directory is reused in Phase 5 for iteration tracking. If the directory was already created (e.g., resuming work), reuse it rather than creating a new one. **Always update `state.md` when completing a phase or iteration.**
 
 ## Phase 2: Discover or Build Operator Images
 
@@ -185,7 +284,18 @@ Strong evidence means:
 - Show the specific annotation/label/status that proves the controller logic ran
 - For replacement/new resources, verify by **name** not just count
 
-### 3.3 Identify and Test Corner Cases
+### 3.3 Account for Shared CI Environment
+
+The HyperShift CI runs in shared AWS accounts (e.g., `hypershift-aws` cluster profile) where dozens of jobs run in parallel. This has critical implications for verification design:
+
+- **Never use simple baseline/diff comparisons** for cloud resources (security groups, VPCs, endpoints, etc.). Other parallel jobs will create and delete the same types of resources during your test window, causing false positives.
+- **Verify resource ownership or orphan state** instead. For example, to check if a security group was leaked:
+  - DON'T: count SGs before and after, flag any new ones
+  - DO: for each new SG, check if its parent resource (e.g., VPC endpoint) still exists. A truly orphaned SG has no active parent resources.
+- **Use `SHARED_DIR` for inter-step data passing.** This is the only reliable way to pass data between CI steps (e.g., baseline recordings, cluster names, resource IDs). Files written to `${SHARED_DIR}/` in one step are available in subsequent steps.
+- **Use `best_effort: true` on post/verify steps.** If your verification step is in the `post` phase and you need it to run even when the test step fails (e.g., verifying cleanup after cluster deletion), you MUST set `best_effort: true` in the ref YAML. Without it, post steps are skipped when the test phase fails.
+
+### 3.5 Identify and Test Corner Cases
 
 Beyond the happy path, identify corner cases that could break the feature or cause regressions:
 
@@ -203,7 +313,7 @@ For each corner case, decide whether it should be:
 - A unit test in the hypershift repo (if it tests internal logic)
 - Noted as a known limitation (if not feasible to test in CI)
 
-### 3.4 Risk Analysis: Compatibility and Performance
+### 3.6 Risk Analysis: Compatibility and Performance
 
 Before finalizing the test plan, assess the feature's risk profile:
 
@@ -228,9 +338,10 @@ For each identified risk:
 
 Include high and medium risk items as verification steps or acceptance criteria in the test plan.
 
-Output the full test plan (happy path + corner cases + risk items) and ask the user to confirm before proceeding.
+**Interactive mode:** Output the full test plan (happy path + corner cases + risk items) and ask the user to confirm before proceeding.
+**Non-interactive mode:** Write the test plan to `${ARTIFACTS_DIR}/test-plan.md` and proceed immediately.
 
-### 3.3 Determine CI Job Structure
+### 3.7 Determine CI Job Structure
 
 Decide the job structure:
 - **Workflow name**: `hypershift-<platform>-<feature>`
@@ -255,7 +366,10 @@ Before writing any new CI step:
    - **`hypershift-hostedcluster-*`** refs: Use `from_image: ci/hypershift-cli:latest`, hardcode KUBECONFIG to shared management cluster
    - **Do not mix patterns** — use the same image and KUBECONFIG approach as sibling steps in the workflow
 
-3. **Check what tools are available in the image.** The `hypershift-operator` image (`ubi9:latest`) has `oc` but does NOT have `jq`, `python`, etc.
+3. **Check what tools are available in the image.** Different CI images have different tools:
+   - **`hypershift-operator`** (`ubi9:latest`): Has `oc` but does NOT have `jq`, `python`, `aws`, `unzip`, etc.
+   - **`upi-installer`**: Has AWS CLI pre-installed. **Use this for any step that needs AWS CLI operations** (e.g., describing security groups, VPC endpoints, EC2 instances). Do NOT try to install AWS CLI v2 in other images — `cli` and `hypershift-operator` lack `unzip`.
+   - **`cli`**: Has `oc` and basic tools but does NOT have AWS CLI or `unzip`.
    - **Prefer standard shell tools** (`grep`, `sed`, `awk`, `cut`, `sort`) and `oc -o go-template` or `oc -o jsonpath` over `jq`
    - Never assume a tool exists — if a command fails silently behind `|| true`, you get false negatives/positives
 
@@ -355,12 +469,29 @@ gh pr create --draft --title "..." --body "..."
 
 ### 5.2 Monitor Rehearsal Job
 
-Poll the rehearsal job status:
-```bash
-gh pr checks <pr-number> --repo openshift/release
+**Interactive mode:** Use the `/loop` skill to set up recurring status checks:
+```
+/loop 10m Check the rehearsal job status for openshift/release PR #<number>. Run: gh pr checks <number> --repo openshift/release 2>/dev/null | grep -i "rehearse\|<job-keyword>" and also check gh api repos/openshift/release/issues/<number>/comments --jq '.[-1].body | split("\n")[0:5] | join(" | ")' for any new bot comments about rehearsal results. Report findings concisely.
 ```
 
-Wait for the rehearsal to complete.
+This polls every 10 minutes automatically. The user can continue other work while waiting.
+
+**Non-interactive mode:** Check the job status once. If the job is still pending or running, update `state.md` with the current status and exit. The next `claude -p` invocation will re-read state and check again. Example flow:
+```bash
+# Invocation 1: creates CI PR, triggers rehearsal, exits
+claude -p "Run /workflows:pre-merging-tests"
+# State: Phase 5, iteration 1 triggered, job pending
+
+# Invocation 2 (later): checks job status, finds it completed, analyzes results
+claude -p "Resume pre-merging-tests from _artifacts/verify-OCPBUGS-74960-20260326/state.md"
+# State: Phase 5, iteration 1 PARTIAL_PASS, next action: report results
+
+# Invocation 3: reports results to PR and Jira
+claude -p "Resume pre-merging-tests from _artifacts/verify-OCPBUGS-74960-20260326/state.md"
+# State: Phase 6 complete
+```
+
+**Queue time expectations:** Jobs requiring cluster profiles (e.g., `hypershift-aws`) can sit in "pending" for 30 minutes to several hours waiting for resources. This is normal — inform the user and let the loop handle monitoring (interactive) or exit and resume later (non-interactive).
 
 ### 5.3 Save Iteration Results
 
@@ -389,11 +520,11 @@ grep -E "^\[PASS\]|\[FAIL\]|\[SKIP\]|RESULT:|=== Step" "${ITER_DIR}/build-log.tx
 Append the iteration record to `iterations.md`:
 
 ```markdown
-## Iteration <N> — <PASS/FAIL> — <timestamp>
+## Iteration <N> — <PASS/FAIL/PARTIAL_PASS> — <timestamp>
 - **Job ID:** <prow-job-id>
 - **Prow URL:** <link>
 - **Commit:** <sha> — <commit message>
-- **Result:** <PASS/FAIL>
+- **Result:** <PASS/FAIL/PARTIAL_PASS>
 - **Failure Reason:** <root cause if failed, e.g., "jq not found in hypershift-operator image">
 - **Fix Applied:** <what was changed, e.g., "switched to oc go-template">
 
@@ -410,26 +541,48 @@ Append the iteration record to `iterations.md`:
 | ... | ... |
 ```
 
+**After saving iteration results, always update `${ARTIFACTS_DIR}/state.md`** with the iteration outcome, key findings, decisions made, known issues, and the next action. This ensures a new session can resume without re-reading build logs.
+
 ### 5.4 Iterate on Failures
 
 **If PASSED:**
 - Extract `[PASS]`, `[FAIL]`, `[SKIP]` lines with evidence
 - Save final iteration to artifacts
+- Update `state.md` with final result
 - Proceed to Phase 6
 
-**If FAILED:**
-- Save the failed iteration to artifacts (step 5.3)
-- Fetch the build log and identify the root cause
-- Document the failure reason and fix in `iterations.md`
-- Fix the issue, commit, push
-- Trigger new rehearsal with `/pj-rehearse <job-name>`
-- Increment iteration counter and return to step 5.2
+**If FAILED — classify the failure type before deciding next action:**
+
+1. **Real failure (CI step/script issue):** Missing tools, wrong image, syntax errors, incorrect commands.
+   - Save the failed iteration to artifacts (step 5.3)
+   - Document the failure reason and fix in `iterations.md`
+   - Fix the issue, commit, push
+   - Trigger new rehearsal with `/pj-rehearse <job-name>`
+   - Increment iteration counter and return to step 5.2
+
+2. **Transient CI flake:** Rate limiter exhaustion, condition validation timeouts, infrastructure issues. Common examples:
+   - `client rate limiter Wait returned an error: context deadline exceeded`
+   - `controlPlaneVersion has no desired image` (condition check times out despite successful rollout)
+   - Network timeouts to cloud APIs
+
+   Signs of a transient flake: the cluster actually deployed/rolled out successfully (check the logs for "Successfully waited for..." messages), but a later validation step timed out. **Do not iterate on transient flakes** — document them and check if the custom verification steps (the ones you wrote) passed independently.
+
+3. **Partial pass:** The overall job failed but your custom verification steps passed. This is common when:
+   - The e2e test has a transient failure but your post/verify step (with `best_effort: true`) ran and passed
+   - The cluster lifecycle completed successfully but condition validation timed out
+
+   A partial pass can be sufficient evidence if: (a) the cluster lifecycle completed (create, rollout, destroy), (b) your custom verification steps passed, and (c) the failure is in a step you didn't write and is a known flaky test. Document the partial pass clearly and proceed to Phase 6 with appropriate caveats in the report.
 
 ## Phase 6: Report Results
 
 ### 6.1 Extract Structured Results
 
-From the successful build log, extract results and format into a markdown table with step numbers, checks, results, and evidence.
+From the build log, extract results and format into a markdown table with step numbers, checks, results, and evidence.
+
+**For partial-pass results:** Clearly separate the results into:
+- **Custom verification steps** (the ones you wrote): report their individual PASS/FAIL status
+- **Standard e2e test steps** (existing tests): note if they failed and whether the failure was transient
+- **Overall assessment:** state whether the verification evidence is sufficient despite the partial failure, and explain why
 
 ### 6.2 Update openshift/release PR
 
