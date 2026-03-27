@@ -513,6 +513,7 @@ func TestExternalDNSDeployment_Build(t *testing.T) {
 	tests := map[string]struct {
 		modify     func(*ExternalDNSDeployment)
 		assertArgs func(*GomegaWithT, []string)
+		assertEnv  func(*GomegaWithT, []corev1.EnvVar)
 	}{
 		"When no interval is specified it should use the default 1m interval": {
 			modify: func(d *ExternalDNSDeployment) {},
@@ -554,15 +555,19 @@ func TestExternalDNSDeployment_Build(t *testing.T) {
 				g.Expect(args).To(ContainElement("--aws-zones-cache-duration=30m"))
 			},
 		},
-		"When Azure provider is used it should not include AWS zones cache duration arg": {
+		"When Azure provider is used it should include azure zones cache duration and not include AWS zones cache duration arg": {
 			modify: func(d *ExternalDNSDeployment) {
 				d.Provider = AzureExternalDNSProvider
 			},
 			assertArgs: func(g *GomegaWithT, args []string) {
 				g.Expect(args).To(ContainElement("--interval=" + DefaultExternalDNSInterval))
+				g.Expect(args).To(ContainElement("--azure-zones-cache-duration=1h"))
 				for _, arg := range args {
 					g.Expect(arg).NotTo(HavePrefix("--aws-zones-cache-duration"))
 				}
+			},
+			assertEnv: func(g *GomegaWithT, envVars []corev1.EnvVar) {
+				g.Expect(envVars).To(ContainElement(corev1.EnvVar{Name: "AZURE_SDK_MAX_RETRIES", Value: "5"}))
 			},
 		},
 		"When GCP provider is used it should not include AWS zones cache duration arg": {
@@ -585,6 +590,9 @@ func TestExternalDNSDeployment_Build(t *testing.T) {
 			test.modify(&d)
 			deployment := d.Build()
 			test.assertArgs(g, deployment.Spec.Template.Spec.Containers[0].Args)
+			if test.assertEnv != nil {
+				test.assertEnv(g, deployment.Spec.Template.Spec.Containers[0].Env)
+			}
 		})
 	}
 }
