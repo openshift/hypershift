@@ -1,5 +1,14 @@
 codecov:
   branch: main
 
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+    patch:
+      default:
+        target: auto
+
 comment:
   layout: "condensed_header, diff, flags, components"
