@@ -31,15 +31,18 @@ This single invocation runs the entire workflow (Phases 1-6) including rehearsal
 
 ### 0.2 Resume from State
 
-Check if there is an existing state file from a previous session:
+If the user provided an explicit state file path (e.g., `Resume pre-merging-tests from _artifacts/verify-OCPBUGS-74960-20260326/state.md`), use that directly.
+
+Otherwise, determine the current PR context first (Phase 1.1), extract the Jira key, then look for a matching state file:
 
 ```bash
-ls _artifacts/verify-*/state.md 2>/dev/null
+# Only match state files for THIS PR's Jira key, not other runs
+ls _artifacts/verify-<JIRA-KEY>-*/state.md 2>/dev/null
 ```
 
-If a `state.md` file exists, **read it first**. It contains all context needed to resume: current phase, iteration number, job IDs, image references, error history, and key decisions. Skip completed phases and pick up where the previous session left off.
+If multiple matches exist (e.g., from different dates), use the most recent one. If a matching `state.md` file exists, **read it first**. It contains all context needed to resume: current phase, iteration number, job IDs, image references, error history, and key decisions. Verify the HyperShift PR number in the state file matches the current PR. Skip completed phases and pick up where the previous session left off.
 
-If no state file exists, proceed to Phase 1.
+If no matching state file exists, proceed to Phase 1.
 
 ### State File Format
 
