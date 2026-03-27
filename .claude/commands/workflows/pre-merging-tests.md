@@ -14,27 +14,18 @@ Pre-merge verification for a HyperShift feature: discover or build operator imag
 This workflow supports two execution modes:
 
 - **Interactive mode** (default): Running in a conversation with the user. Pause for confirmations at key decision points (feature summary, test plan). Use `/loop` for monitoring.
-- **Non-interactive mode** (`claude -p`): Running headless. Skip all confirmation prompts, make reasonable default decisions, and exit cleanly after completing one logical unit of work. The next `-p` invocation picks up from state.
+- **Non-interactive mode** (`claude -p`): Running headless in a single invocation. Skip all confirmation prompts, make reasonable default decisions. Uses **sub-agents** for iteration monitoring to keep the main context lean.
 
 **How to detect:** If running via `claude -p`, there is no interactive user — proceed without confirmations and write all decisions to `state.md` for auditability.
 
-**Non-interactive invocation examples:**
+**Non-interactive invocation:**
 ```bash
-# First run: gather context, discover images, create test plan and CI job
-claude -p "Run /workflows:pre-merging-tests"
-
-# Resume: check rehearsal status and iterate
-claude -p "Run /workflows:pre-merging-tests --resume"
-
-# Or with explicit state path
-claude -p "Resume pre-merging-tests from _artifacts/verify-OCPBUGS-74960-20260326/state.md"
+claude -p "Run /workflows:pre-merging-tests" \
+  --permission-mode bypassPermissions \
+  --allowedTools "Bash,Edit,Read,Write,Glob,Grep,Agent,Skill,mcp__github__*,mcp__atlassian__*"
 ```
 
-In non-interactive mode, each invocation should:
-1. Read `state.md` to determine current phase
-2. Execute the next incomplete phase (or check job status if waiting)
-3. Update `state.md` with results
-4. Exit with a summary of what was done and what comes next
+This single invocation runs the entire workflow (Phases 1-6) including rehearsal monitoring. It uses sub-agents for iteration work to avoid filling the main context window (see Phase 5.2 for details).
 
 ### 0.2 Resume from State
 
@@ -476,22 +467,48 @@ gh pr create --draft --title "..." --body "..."
 
 This polls every 10 minutes automatically. The user can continue other work while waiting.
 
-**Non-interactive mode:** Check the job status once. If the job is still pending or running, update `state.md` with the current status and exit. The next `claude -p` invocation will re-read state and check again. Example flow:
-```bash
-# Invocation 1: creates CI PR, triggers rehearsal, exits
-claude -p "Run /workflows:pre-merging-tests"
-# State: Phase 5, iteration 1 triggered, job pending
+**Non-interactive mode:** Use **sub-agents** to monitor and iterate, keeping the main context lean. Each iteration runs in a separate sub-agent with its own context window. The main agent orchestrates via `state.md`.
 
-# Invocation 2 (later): checks job status, finds it completed, analyzes results
-claude -p "Resume pre-merging-tests from _artifacts/verify-OCPBUGS-74960-20260326/state.md"
-# State: Phase 5, iteration 1 PARTIAL_PASS, next action: report results
-
-# Invocation 3: reports results to PR and Jira
-claude -p "Resume pre-merging-tests from _artifacts/verify-OCPBUGS-74960-20260326/state.md"
-# State: Phase 6 complete
+```
+Main agent:
+  Phases 1-4 (gather context, build CI, create PR, trigger rehearsal)
+  ↓
+  Iteration loop:
+    sleep 600  (10 minutes)
+    ↓
+    Spawn sub-agent: "Check rehearsal status"
+      - Read state.md for job details
+      - Run: gh pr checks <number> --repo openshift/release
+      - If job pending/running → update state.md, return "PENDING"
+      - If job complete → download logs, analyze results,
+        update state.md and iterations.md, return result
+    ↓
+    Read sub-agent result
+    ↓
+    If PENDING → continue loop
+    If PASS or PARTIAL_PASS → break, proceed to Phase 6
+    If FAILED →
+      Spawn sub-agent: "Fix iteration failure"
+        - Read state.md and iterations.md for failure details
+        - Diagnose root cause from saved logs
+        - Fix the CI step, commit, push
+        - Trigger new rehearsal with /pj-rehearse
+        - Update state.md with fix applied
+      ↓
+      Continue loop
+  ↓
+  Phase 6: report results
 ```
 
-**Queue time expectations:** Jobs requiring cluster profiles (e.g., `hypershift-aws`) can sit in "pending" for 30 minutes to several hours waiting for resources. This is normal — inform the user and let the loop handle monitoring (interactive) or exit and resume later (non-interactive).
+**Why sub-agents?** Each sub-agent gets a **fresh context window**. Build log analysis, error diagnosis, and fix iterations stay in the sub-agent's context — the main agent only sees a short result summary. This prevents context exhaustion during long monitoring periods with multiple iterations.
+
+**Sub-agent prompts should always include:**
+- Path to `state.md` and `iterations.md`
+- The artifacts directory path
+- The CI PR number and job name
+- Instructions to update `state.md` before returning
+
+**Queue time expectations:** Jobs requiring cluster profiles (e.g., `hypershift-aws`) can sit in "pending" for 30 minutes to several hours waiting for resources. This is normal — the sleep/poll loop handles it automatically.
 
 ### 5.3 Save Iteration Results
 
@@ -545,10 +562,12 @@ Append the iteration record to `iterations.md`:
 
 ### 5.4 Iterate on Failures
 
+This section defines how the **sub-agents** (in non-interactive mode) or the **main agent** (in interactive mode) should classify and act on results. The classification logic is the same regardless of mode.
+
 **If PASSED:**
 - Extract `[PASS]`, `[FAIL]`, `[SKIP]` lines with evidence
 - Save final iteration to artifacts
-- Update `state.md` with final result
+- Update `state.md` with `Overall Result: PASS`
 - Proceed to Phase 6
 
 **If FAILED — classify the failure type before deciding next action:**
@@ -558,6 +577,7 @@ Append the iteration record to `iterations.md`:
    - Document the failure reason and fix in `iterations.md`
    - Fix the issue, commit, push
    - Trigger new rehearsal with `/pj-rehearse <job-name>`
+   - Update `state.md` with `Overall Result: IN_PROGRESS` and the fix details
    - Increment iteration counter and return to step 5.2
 
 2. **Transient CI flake:** Rate limiter exhaustion, condition validation timeouts, infrastructure issues. Common examples:
@@ -571,7 +591,7 @@ Append the iteration record to `iterations.md`:
    - The e2e test has a transient failure but your post/verify step (with `best_effort: true`) ran and passed
    - The cluster lifecycle completed successfully but condition validation timed out
 
-   A partial pass can be sufficient evidence if: (a) the cluster lifecycle completed (create, rollout, destroy), (b) your custom verification steps passed, and (c) the failure is in a step you didn't write and is a known flaky test. Document the partial pass clearly and proceed to Phase 6 with appropriate caveats in the report.
+   A partial pass can be sufficient evidence if: (a) the cluster lifecycle completed (create, rollout, destroy), (b) your custom verification steps passed, and (c) the failure is in a step you didn't write and is a known flaky test. Update `state.md` with `Overall Result: PARTIAL_PASS` and proceed to Phase 6 with appropriate caveats in the report.
 
 ## Phase 6: Report Results
 
