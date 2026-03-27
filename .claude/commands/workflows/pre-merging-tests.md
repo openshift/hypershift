@@ -87,7 +87,7 @@ The state file (`${ARTIFACTS_DIR}/state.md`) is the single source of truth for r
 - <issue 1, e.g., "controlPlaneVersion has no desired image — transient CI rate limiter issue, not related to fix">
 
 ## Next Action
-<Exactly what to do next, e.g., "Trigger iteration 5 with /pj-rehearse, or proceed to Phase 6 reporting if partial pass is acceptable">
+<Exactly what to do next, e.g., "Trigger iteration 5 with /pj-rehearse <full-job-name>, or proceed to Phase 6 reporting if partial pass is acceptable">
 ```
 
 **When to update the state file:**
@@ -533,11 +533,11 @@ for poll in 1..MAX_POLLS:
          - Return 'STATUS: PARTIAL_PASS' with evidence
       5. If real failure:
          - Fix the CI step in openshift/release repo
-         - Commit, push, trigger new rehearsal with /pj-rehearse
+         - Commit, push, trigger new rehearsal by commenting `/pj-rehearse <full-job-name>` on the CI PR
          - Update <artifacts-dir>/state.md and iterations.md
          - Return 'STATUS: FIXED — retriggered iteration N'
       6. If transient flake with no custom verify evidence:
-         - Retrigger with /pj-rehearse
+         - Retrigger by commenting `/pj-rehearse <full-job-name>` on the CI PR
          - Return 'STATUS: RETRIGGER'")
 
     If sub-agent result contains "PARTIAL_PASS":
@@ -616,7 +616,7 @@ This section defines how the **sub-agents** (in non-interactive mode) or the **m
    - Save the failed iteration to artifacts (step 5.3)
    - Document the failure reason and fix in `iterations.md`
    - Fix the issue, commit, push
-   - Trigger new rehearsal with `/pj-rehearse <job-name>`
+   - Trigger new rehearsal by commenting `/pj-rehearse <full-job-name>` on the CI PR (e.g., `gh pr comment <number> --repo openshift/release --body "/pj-rehearse <full-job-name>"`)
    - Update `state.md` with `Overall Result: IN_PROGRESS` and the fix details
    - Increment iteration counter and return to step 5.2
 
