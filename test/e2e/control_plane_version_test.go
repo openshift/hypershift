@@ -179,5 +179,5 @@ func TestControlPlaneVersionField(t *testing.T) {
 				hc.Status.Version.Desired.Version,
 				hc.Status.ControlPlaneVersion.Desired.Version)
 		})
-	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, "control-plane-version", globalOpts.ServiceAccountSigningKey)
 }
