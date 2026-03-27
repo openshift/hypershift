@@ -8,6 +8,7 @@ import (
 
 const (
 	AuthFailure           = "AuthFailure"
+	DependencyViolation   = "DependencyViolation"
 	UnauthorizedOperation = "UnauthorizedOperation"
 )
 

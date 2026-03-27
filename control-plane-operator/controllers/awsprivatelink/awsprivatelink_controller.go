@@ -181,6 +181,11 @@ func (r *PrivateServiceObserver) Reconcile(ctx context.Context, req ctrl.Request
 	return ctrl.Result{}, nil
 }
 
+// errDependencyViolation is returned when AWS reports a DependencyViolation,
+// indicating the VPC endpoint is still being deleted. The caller translates
+// this into a controlled requeue rather than an error-driven requeue.
+var errDependencyViolation = errors.New("security group dependency violation")
+
 const (
 	finalizer                              = "hypershift.openshift.io/control-plane-operator-finalizer"
 	endpointServiceDeletionRequeueDuration = 5 * time.Second
@@ -193,8 +198,20 @@ const (
 type AWSEndpointServiceReconciler struct {
 	client.Client
 	upsert.CreateOrUpdateProvider
-	awsClientBuilder clientBuilder
+	awsClientBuilder awsClientProvider
 }
+
+// awsClientProvider abstracts AWS client creation for testability.
+//
+//go:generate ../../../hack/tools/bin/mockgen -source=awsprivatelink_controller.go -package=awsprivatelink -destination=awsprivatelink_controller_mock.go
+type awsClientProvider interface {
+	getClients() (ec2iface.EC2API, route53iface.Route53API, error)
+	initializeWithHCP(log logr.Logger, hcp *hyperv1.HostedControlPlane)
+	localHostedZoneID() string
+}
+
+// Verify clientBuilder implements awsClientProvider.
+var _ awsClientProvider = (*clientBuilder)(nil)
 
 type clientBuilder struct {
 	mu                             sync.Mutex
@@ -304,6 +321,9 @@ func (b *clientBuilder) setFromHCP(hcp *hyperv1.HostedControlPlane) {
 }
 
 func (r *AWSEndpointServiceReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	if r.awsClientBuilder == nil {
+		r.awsClientBuilder = &clientBuilder{}
+	}
 	_, err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1.AWSEndpointService{}).
 		WithOptions(controller.Options{
@@ -379,17 +399,33 @@ func (r *AWSEndpointServiceReconciler) Reconcile(ctx context.Context, req ctrl.R
 			return ctrl.Result{}, nil
 		}
 
+		// Best-effort initialization for deletion reconciles: after a controller restart
+		// the clientBuilder is uninitialized because initializeWithHCP is only called in
+		// the non-deletion path. If the HCP still exists, initialize from it so that
+		// getClients can succeed and deletion can proceed.
+		//
+		// Known issue (SharedVPC): when the HCP is already deleted, the SharedVPC role
+		// ARNs (needed for cross-account EC2/Route53 access) are lost. Initialization
+		// cannot happen, getClients will fail, and the finalizer will be preserved until
+		// the hypershift-operator force-removes it after the grace period — orphaning
+		// AWS resources in the shared VPC account. A proper fix requires persisting the
+		// SharedVPC role ARNs in the AWSEndpointService status. See
+		// TestReconcileDeletionSharedVPC for details.
+		hcpList := &hyperv1.HostedControlPlaneList{}
+		if err := r.List(ctx, hcpList, &client.ListOptions{Namespace: req.Namespace}); err == nil && len(hcpList.Items) == 1 {
+			r.awsClientBuilder.initializeWithHCP(log, &hcpList.Items[0])
+		}
+
 		ec2Client, route53Client, err := r.awsClientBuilder.getClients()
 		if err != nil {
-			log.Error(err, "failed to get AWS client, skipping aws endpoint service cleanup")
-		} else {
-			completed, err := r.delete(ctx, awsEndpointService, ec2Client, route53Client)
-			if err != nil {
-				return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
-			}
-			if !completed {
-				return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
-			}
+			return ctrl.Result{}, fmt.Errorf("failed to get AWS clients for endpoint service cleanup: %w", err)
+		}
+		completed, err := r.delete(ctx, awsEndpointService, ec2Client, route53Client)
+		if err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to delete resource: %w", err)
+		}
+		if !completed {
+			return ctrl.Result{RequeueAfter: endpointServiceDeletionRequeueDuration}, nil
 		}
 		if controllerutil.ContainsFinalizer(awsEndpointService, finalizer) {
 			controllerutil.RemoveFinalizer(awsEndpointService, finalizer)
@@ -1016,6 +1052,10 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 
 	if awsEndpointService.Status.SecurityGroupID != "" {
 		if err := r.deleteSecurityGroup(ctx, ec2Client, awsEndpointService.Status.SecurityGroupID); err != nil {
+			if errors.Is(err, errDependencyViolation) {
+				log.Info("security group has dependencies, will retry", "id", awsEndpointService.Status.SecurityGroupID)
+				return false, nil
+			}
 			return false, err
 		}
 		log.Info("security group deleted", "id", awsEndpointService.Status.SecurityGroupID)
@@ -1052,7 +1092,6 @@ func (r *AWSEndpointServiceReconciler) delete(ctx context.Context, awsEndpointSe
 }
 
 func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, ec2Client ec2iface.EC2API, sgID string) error {
-	log := ctrl.LoggerFrom(ctx)
 	describeSGResult, err := ec2Client.DescribeSecurityGroupsWithContext(ctx, &ec2.DescribeSecurityGroupsInput{GroupIds: []*string{aws.String(sgID)}})
 	if err != nil {
 		if supportawsutil.AWSErrorCode(err) == "InvalidGroup.NotFound" {
@@ -1070,9 +1109,10 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissions,
 		}); err != nil {
-			log.Error(err, "failed to revoke security group ingress permissions", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
-
-			return fmt.Errorf("failed to revoke security group ingress rules: %s", supportawsutil.AWSErrorCode(err))
+			if supportawsutil.AWSErrorCode(err) == supportawsutil.DependencyViolation {
+				return fmt.Errorf("%w: %w", errDependencyViolation, err)
+			}
+			return fmt.Errorf("failed to revoke security group %s ingress rules: %w", aws.StringValue(sg.GroupId), err)
 		}
 	}
 
@@ -1081,16 +1121,20 @@ func (r *AWSEndpointServiceReconciler) deleteSecurityGroup(ctx context.Context, 
 			GroupId:       sg.GroupId,
 			IpPermissions: sg.IpPermissionsEgress,
 		}); err != nil {
-			log.Error(err, "failed to revoke security group egress permissions", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
-			return fmt.Errorf("failed to revoke security group egress rules: %s", supportawsutil.AWSErrorCode(err))
+			if supportawsutil.AWSErrorCode(err) == supportawsutil.DependencyViolation {
+				return fmt.Errorf("%w: %w", errDependencyViolation, err)
+			}
+			return fmt.Errorf("failed to revoke security group %s egress rules: %w", aws.StringValue(sg.GroupId), err)
 		}
 	}
 
 	if _, err = ec2Client.DeleteSecurityGroupWithContext(ctx, &ec2.DeleteSecurityGroupInput{
 		GroupId: sg.GroupId,
 	}); err != nil {
-		log.Error(err, "failed to delete security group", "SecurityGroupID", aws.StringValue(sg.GroupId), "code", supportawsutil.AWSErrorCode(err))
-		return fmt.Errorf("failed to delete security group %s: %s", aws.StringValue(sg.GroupId), supportawsutil.AWSErrorCode(err))
+		if supportawsutil.AWSErrorCode(err) == supportawsutil.DependencyViolation {
+			return fmt.Errorf("%w: %w", errDependencyViolation, err)
+		}
+		return fmt.Errorf("failed to delete security group %s: %w", aws.StringValue(sg.GroupId), err)
 	}
 
 	return nil
