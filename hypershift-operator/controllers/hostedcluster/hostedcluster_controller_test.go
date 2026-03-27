@@ -61,7 +61,8 @@ import (
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
-	"sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -1097,12 +1098,12 @@ func TestServicePublishingStrategyByType(t *testing.T) {
 func TestReconcileCAPICluster(t *testing.T) {
 	testCases := []struct {
 		name               string
-		capiCluster        *v1beta1.Cluster
+		capiCluster        *capiv1.Cluster
 		hostedCluster      *hyperv1.HostedCluster
 		hostedControlPlane *hyperv1.HostedControlPlane
 		infraCR            crclient.Object
 
-		expectedCAPICluster *v1beta1.Cluster
+		expectedCAPICluster *capiv1.Cluster
 	}{
 		{
 			name:        "IBM Cloud cluster",
@@ -1137,7 +1138,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 					Namespace: "master-cluster1",
 				},
 			},
-			expectedCAPICluster: &v1beta1.Cluster{
+			expectedCAPICluster: &capiv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						hyperutil.HostedClusterAnnotation: "master/cluster1",
@@ -1145,19 +1146,17 @@ func TestReconcileCAPICluster(t *testing.T) {
 					Namespace: "master-cluster1",
 					Name:      "cluster1",
 				},
-				Spec: v1beta1.ClusterSpec{
-					ControlPlaneEndpoint: v1beta1.APIEndpoint{},
-					ControlPlaneRef: &corev1.ObjectReference{
-						APIVersion: "hypershift.openshift.io/v1beta1",
-						Kind:       "HostedControlPlane",
-						Namespace:  "master-cluster1",
-						Name:       "cluster1",
+				Spec: capiv1.ClusterSpec{
+					ControlPlaneEndpoint: capiv1.APIEndpoint{},
+					ControlPlaneRef: capiv1.ContractVersionedObjectReference{
+						APIGroup: "hypershift.openshift.io",
+						Kind:     "HostedControlPlane",
+						Name:     "cluster1",
 					},
-					InfrastructureRef: &corev1.ObjectReference{
-						APIVersion: capibmv1.GroupVersion.String(),
-						Kind:       "IBMVPCCluster",
-						Namespace:  "master-cluster1",
-						Name:       "cluster1",
+					InfrastructureRef: capiv1.ContractVersionedObjectReference{
+						APIGroup: capibmv1.GroupVersion.Group,
+						Kind:     "IBMVPCCluster",
+						Name:     "cluster1",
 					},
 				},
 			},
@@ -1195,7 +1194,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 					Namespace: "master-cluster1",
 				},
 			},
-			expectedCAPICluster: &v1beta1.Cluster{
+			expectedCAPICluster: &capiv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						hyperutil.HostedClusterAnnotation: "master/cluster1",
@@ -1203,19 +1202,17 @@ func TestReconcileCAPICluster(t *testing.T) {
 					Namespace: "master-cluster1",
 					Name:      "cluster1",
 				},
-				Spec: v1beta1.ClusterSpec{
-					ControlPlaneEndpoint: v1beta1.APIEndpoint{},
-					ControlPlaneRef: &corev1.ObjectReference{
-						APIVersion: "hypershift.openshift.io/v1beta1",
-						Kind:       "HostedControlPlane",
-						Namespace:  "master-cluster1",
-						Name:       "cluster1",
+				Spec: capiv1.ClusterSpec{
+					ControlPlaneEndpoint: capiv1.APIEndpoint{},
+					ControlPlaneRef: capiv1.ContractVersionedObjectReference{
+						APIGroup: "hypershift.openshift.io",
+						Kind:     "HostedControlPlane",
+						Name:     "cluster1",
 					},
-					InfrastructureRef: &corev1.ObjectReference{
-						APIVersion: capiaws.GroupVersion.String(),
-						Kind:       "AWSCluster",
-						Namespace:  "master-cluster1",
-						Name:       "cluster1",
+					InfrastructureRef: capiv1.ContractVersionedObjectReference{
+						APIGroup: capiaws.GroupVersion.Group,
+						Kind:     "AWSCluster",
+						Name:     "cluster1",
 					},
 				},
 			},
@@ -2743,7 +2740,7 @@ func TestPauseCAPICluster(t *testing.T) {
 		inputHostedCluster  *hyperv1.HostedCluster
 		inputObjects        []crclient.Object
 		paused              bool
-		expectedCAPICluster *v1beta1.Cluster
+		expectedCAPICluster *capiv1.Cluster
 	}{
 		{
 			name: "When CAPI cluster exists and is paused, it should unpause when paused=false",
@@ -2757,24 +2754,24 @@ func TestPauseCAPICluster(t *testing.T) {
 				},
 			},
 			inputObjects: []crclient.Object{
-				&v1beta1.Cluster{
+				&capiv1.Cluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: controlPlaneNamespace,
 						Name:      fakeInfraID,
 					},
-					Spec: v1beta1.ClusterSpec{
-						Paused: true,
+					Spec: capiv1.ClusterSpec{
+						Paused: ptr.To(true),
 					},
 				},
 			},
 			paused: false,
-			expectedCAPICluster: &v1beta1.Cluster{
+			expectedCAPICluster: &capiv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: controlPlaneNamespace,
 					Name:      fakeInfraID,
 				},
-				Spec: v1beta1.ClusterSpec{
-					Paused: false,
+				Spec: capiv1.ClusterSpec{
+					Paused: ptr.To(false),
 				},
 			},
 		},
@@ -2790,24 +2787,24 @@ func TestPauseCAPICluster(t *testing.T) {
 				},
 			},
 			inputObjects: []crclient.Object{
-				&v1beta1.Cluster{
+				&capiv1.Cluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: controlPlaneNamespace,
 						Name:      fakeInfraID,
 					},
-					Spec: v1beta1.ClusterSpec{
-						Paused: false,
+					Spec: capiv1.ClusterSpec{
+						Paused: ptr.To(false),
 					},
 				},
 			},
 			paused: true,
-			expectedCAPICluster: &v1beta1.Cluster{
+			expectedCAPICluster: &capiv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: controlPlaneNamespace,
 					Name:      fakeInfraID,
 				},
-				Spec: v1beta1.ClusterSpec{
-					Paused: true,
+				Spec: capiv1.ClusterSpec{
+					Paused: ptr.To(true),
 				},
 			},
 		},
@@ -2845,24 +2842,24 @@ func TestPauseCAPICluster(t *testing.T) {
 				},
 			},
 			inputObjects: []crclient.Object{
-				&v1beta1.Cluster{
+				&capiv1.Cluster{
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace: controlPlaneNamespace,
 						Name:      fakeInfraID,
 					},
-					Spec: v1beta1.ClusterSpec{
-						Paused: true,
+					Spec: capiv1.ClusterSpec{
+						Paused: ptr.To(true),
 					},
 				},
 			},
 			paused: true,
-			expectedCAPICluster: &v1beta1.Cluster{
+			expectedCAPICluster: &capiv1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: controlPlaneNamespace,
 					Name:      fakeInfraID,
 				},
-				Spec: v1beta1.ClusterSpec{
-					Paused: true,
+				Spec: capiv1.ClusterSpec{
+					Paused: ptr.To(true),
 				},
 			},
 		},

@@ -845,29 +845,28 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 				}
 				return true
 			}, func(crd *apiextensionsv1.CustomResourceDefinition) {
-				if crd.Spec.Group == "hypershift.openshift.io" {
+				if crd.Spec.Group != "hypershift.openshift.io" {
 					if !opts.EnableConversionWebhook {
 						return
 					}
-					if crd.Annotations != nil {
-						crd.Annotations = map[string]string{}
-					}
-					crd.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
-					crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
-						Strategy: apiextensionsv1.WebhookConverter,
-						Webhook: &apiextensionsv1.WebhookConversion{
-							ClientConfig: &apiextensionsv1.WebhookClientConfig{
-								Service: &apiextensionsv1.ServiceReference{
-									Namespace: operatorNamespace.Name,
-									Name:      operatorService.Name,
-									Port:      ptr.To[int32](443),
-									Path:      ptr.To("/convert"),
-								},
-							},
+				}
+				if crd.Annotations == nil {
+					crd.Annotations = map[string]string{}
+				}
+				crd.Annotations["service.beta.openshift.io/inject-cabundle"] = "true"
+				crd.Spec.Conversion = &apiextensionsv1.CustomResourceConversion{
+					Strategy: apiextensionsv1.WebhookConverter,
+					Webhook: &apiextensionsv1.WebhookConversion{
+						ClientConfig: &apiextensionsv1.WebhookClientConfig{
+							Service: &apiextensionsv1.ServiceReference{
+								Namespace: operatorNamespace.Name,
+								Name:      operatorService.Name,
+								Port:      ptr.To[int32](443),
+								Path:      ptr.To("/convert"),							},
 							ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
 						},
-					}
-				}
+						ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
+					},				}
 			},
 		)...,
 	)

@@ -29,8 +29,7 @@ var CRDS embed.FS
 //go:embed recordingrules/*
 var recordingRules embed.FS
 
-const capiLabel = "cluster.x-k8s.io/v1beta1"
-
+const capiLabel = "cluster.x-k8s.io/v1beta2"
 // capiResources specifies which CRDs should get labeled with capiLabel
 // to satisfy CAPI contracts. There might be a way to achieve this during CRD
 // generation, but for now we're just post-processing at runtime here.
@@ -126,6 +125,10 @@ func getCustomResourceDefinition(files embed.FS, file string) *apiextensionsv1.C
 		}
 		crd.Labels[capiLabel] = label
 	}
+<<<<<<< HEAD
+=======
+
+>>>>>>> 2dd9788bb (refactor(capi): migrate CAPI core types from v1beta1 to v1beta2)
 	return &crd
 }
 

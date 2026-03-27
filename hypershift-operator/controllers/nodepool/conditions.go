@@ -20,7 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -99,7 +99,7 @@ func FindStatusCondition(conditions []hyperv1.NodePoolCondition, conditionType s
 }
 
 // FindStatusCondition finds the conditionType in conditions.
-func findCAPIStatusCondition(conditions []capiv1.Condition, conditionType capiv1.ConditionType) *capiv1.Condition {
+func findCAPIStatusCondition(conditions []metav1.Condition, conditionType string) *metav1.Condition {
 	for i := range conditions {
 		if conditions[i].Type == conditionType {
 			return &conditions[i]
@@ -618,7 +618,7 @@ func (r *NodePoolReconciler) setAllNodesHealthyCondition(nodePool *hyperv1.NodeP
 
 	for _, machine := range machines {
 		condition := findCAPIStatusCondition(machine.Status.Conditions, capiv1.MachineNodeHealthyCondition)
-		if condition != nil && condition.Status != corev1.ConditionTrue {
+		if condition != nil && condition.Status != metav1.ConditionTrue {
 			status = corev1.ConditionFalse
 			reason = condition.Reason
 			message = message + fmt.Sprintf("Machine %s: %s\n", machine.Name, condition.Reason)
@@ -667,7 +667,7 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 
 		for _, machine := range machines {
 			readyCond := findCAPIStatusCondition(machine.Status.Conditions, capiv1.ReadyCondition)
-			if readyCond != nil && readyCond.Status != corev1.ConditionTrue {
+			if readyCond != nil && readyCond.Status != metav1.ConditionTrue {
 				status = corev1.ConditionFalse
 				numNotReady++
 				infraReadyCond := findCAPIStatusCondition(machine.Status.Conditions, capiv1.InfrastructureReadyCondition)
@@ -680,7 +680,7 @@ func (r *NodePoolReconciler) setAllMachinesReadyCondition(nodePool *hyperv1.Node
 				//		status: "False"
 				//		type: Ready
 				var mapReason, mapMessage string
-				if infraReadyCond != nil && infraReadyCond.Status != corev1.ConditionTrue && !isSetupCounterCondMessage.MatchString(infraReadyCond.Message) {
+				if infraReadyCond != nil && infraReadyCond.Status != metav1.ConditionTrue && !isSetupCounterCondMessage.MatchString(infraReadyCond.Message) {
 					mapReason = infraReadyCond.Reason
 					mapMessage = fmt.Sprintf("Machine %s: %s: %s\n", machine.Name, infraReadyCond.Reason, infraReadyCond.Message)
 				} else {

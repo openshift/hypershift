@@ -7,9 +7,9 @@ import (
 
 	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
-	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
 
 // versionKey is used as a map key for grouping machines by version.
@@ -53,7 +53,7 @@ func (r *NodePoolReconciler) nodeVersionsFromMachines(_ context.Context, machine
 
 		// Determine node health from CAPI NodeHealthy condition.
 		condition := findCAPIStatusCondition(machine.Status.Conditions, capiv1.MachineNodeHealthyCondition)
-		if condition != nil && condition.Status == corev1.ConditionTrue {
+		if condition != nil && condition.Status == metav1.ConditionTrue {
 			versionCounts[key].ready++
 		} else {
 			versionCounts[key].unready++

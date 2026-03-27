@@ -13,7 +13,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	"sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -21,7 +21,7 @@ import (
 func TestNodeVersionsFromMachines(t *testing.T) {
 	testCases := []struct {
 		name     string
-		machines []*v1beta1.Machine
+		machines []*capiv1.Machine
 		nodePool *hyperv1.NodePool
 		expected []hyperv1.NodeVersion
 	}{
@@ -35,7 +35,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When all machines have the same version and are healthy it should return a single entry",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				machineWithVersionAndHealth("m2", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				machineWithVersionAndHealth("m3", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
@@ -49,7 +49,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When there are mixed versions during rolling upgrade it should return one entry per version",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				machineWithVersionAndHealth("m2", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				machineWithVersionAndHealth("m3", "v1.32.1", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.19.1"}),
@@ -64,7 +64,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When there is mixed health it should report ready and unready counts per version",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				machineWithVersionAndHealth("m2", "v1.32.1", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.19.1"}),
 				machineWithVersionAndHealth("m3", "v1.32.1", false, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.19.1"}),
@@ -79,7 +79,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When NodeHealthy condition is absent it should count the node as unready",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndConditions("m1", "v1.31.4", nil, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 			},
 			nodePool: &hyperv1.NodePool{
@@ -91,14 +91,14 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When some machines have no NodeInfo it should skip them",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:        "m2",
 						Annotations: map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.19.1"},
 					},
-					Status: v1beta1.MachineStatus{
+					Status: capiv1.MachineStatus{
 						// NodeInfo is nil — not yet provisioned
 					},
 				},
@@ -112,10 +112,10 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When all machines have no NodeInfo it should return nil",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				{
 					ObjectMeta: metav1.ObjectMeta{Name: "m1"},
-					Status:     v1beta1.MachineStatus{},
+					Status:     capiv1.MachineStatus{},
 				},
 			},
 			nodePool: &hyperv1.NodePool{
@@ -125,7 +125,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When machine has release-version annotation it should use it for ocpVersion",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 			},
 			nodePool: &hyperv1.NodePool{
@@ -137,7 +137,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When machine has no annotation it should fall back to nodePool.Status.Version",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndHealth("m1", "v1.31.4", true, nil),
 			},
 			nodePool: &hyperv1.NodePool{
@@ -149,7 +149,7 @@ func TestNodeVersionsFromMachines(t *testing.T) {
 		},
 		{
 			name: "When there are multiple versions it should sort by ocpVersion then kubeletVersion",
-			machines: []*v1beta1.Machine{
+			machines: []*capiv1.Machine{
 				machineWithVersionAndHealth("m1", "v1.32.1", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.19.1"}),
 				machineWithVersionAndHealth("m2", "v1.31.4", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
 				machineWithVersionAndHealth("m3", "v1.31.5", true, map[string]string{hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12"}),
@@ -214,7 +214,7 @@ func TestSetNodesInfoStatus(t *testing.T) {
 		{
 			name: "When machines exist with NodeInfo it should populate NodesInfo",
 			machines: []client.Object{
-				&v1beta1.Machine{
+				&capiv1.Machine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "m1",
 						Namespace: "clusters-test-cluster",
@@ -223,10 +223,10 @@ func TestSetNodesInfoStatus(t *testing.T) {
 							hyperv1.NodePoolReleaseVersionAnnotation: "4.18.12",
 						},
 					},
-					Status: v1beta1.MachineStatus{
+					Status: capiv1.MachineStatus{
 						NodeInfo: &corev1.NodeSystemInfo{KubeletVersion: "v1.31.4"},
-						Conditions: v1beta1.Conditions{
-							{Type: v1beta1.MachineNodeHealthyCondition, Status: corev1.ConditionTrue},
+						Conditions: []metav1.Condition{
+							{Type: capiv1.MachineNodeHealthyCondition, Status: metav1.ConditionTrue},
 						},
 					},
 				},
@@ -252,7 +252,7 @@ func TestSetNodesInfoStatus(t *testing.T) {
 		{
 			name: "When all machines lack NodeInfo it should clear previously set NodesInfo",
 			machines: []client.Object{
-				&v1beta1.Machine{
+				&capiv1.Machine{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "m1",
 						Namespace: "clusters-test-cluster",
@@ -260,7 +260,7 @@ func TestSetNodesInfoStatus(t *testing.T) {
 							nodePoolAnnotation: "clusters/test-nodepool",
 						},
 					},
-					Status: v1beta1.MachineStatus{},
+					Status: capiv1.MachineStatus{},
 				},
 			},
 			nodePool: &hyperv1.NodePool{
@@ -303,23 +303,23 @@ func TestSetNodesInfoStatus(t *testing.T) {
 	}
 }
 
-func machineWithVersionAndHealth(name, kubeletVersion string, healthy bool, annotations map[string]string) *v1beta1.Machine {
+func machineWithVersionAndHealth(name, kubeletVersion string, healthy bool, annotations map[string]string) *capiv1.Machine {
 	healthStatus := corev1.ConditionTrue
 	if !healthy {
 		healthStatus = corev1.ConditionFalse
 	}
-	return machineWithVersionAndConditions(name, kubeletVersion, v1beta1.Conditions{
-		{Type: v1beta1.MachineNodeHealthyCondition, Status: healthStatus},
+	return machineWithVersionAndConditions(name, kubeletVersion, []metav1.Condition{
+		{Type: capiv1.MachineNodeHealthyCondition, Status: metav1.ConditionStatus(healthStatus)},
 	}, annotations)
 }
 
-func machineWithVersionAndConditions(name, kubeletVersion string, conditions v1beta1.Conditions, annotations map[string]string) *v1beta1.Machine {
-	return &v1beta1.Machine{
+func machineWithVersionAndConditions(name, kubeletVersion string, conditions []metav1.Condition, annotations map[string]string) *capiv1.Machine {
+	return &capiv1.Machine{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
 			Annotations: annotations,
 		},
-		Status: v1beta1.MachineStatus{
+		Status: capiv1.MachineStatus{
 			NodeInfo:   &corev1.NodeSystemInfo{KubeletVersion: kubeletVersion},
 			Conditions: conditions,
 		},

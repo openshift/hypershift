@@ -150,6 +150,10 @@ func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *hyperutil.
 	if err != nil {
 		return fmt.Errorf("unable to register hostedcontrolplane webhook: %w", err)
 	}
+<<<<<<< HEAD
+=======
+
+>>>>>>> 2dd9788bb (refactor(capi): migrate CAPI core types from v1beta1 to v1beta2)
 	return nil
 }
 

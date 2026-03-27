@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/rest"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -184,7 +184,7 @@ func machineNodeRefPredicate() predicate.TypedPredicate[*capiv1.Machine] {
 			return false
 		},
 		UpdateFunc: func(e event.TypedUpdateEvent[*capiv1.Machine]) bool {
-			return e.ObjectOld.Status.NodeRef == nil && e.ObjectNew.Status.NodeRef != nil
+			return !e.ObjectOld.Status.NodeRef.IsDefined() && e.ObjectNew.Status.NodeRef.IsDefined()
 		},
 		DeleteFunc: func(e event.TypedDeleteEvent[*capiv1.Machine]) bool {
 			return false
