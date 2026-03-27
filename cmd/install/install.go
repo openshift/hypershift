@@ -845,10 +845,8 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 				}
 				return true
 			}, func(crd *apiextensionsv1.CustomResourceDefinition) {
-				if crd.Spec.Group != "hypershift.openshift.io" {
-					if !opts.EnableConversionWebhook {
-						return
-					}
+				if crd.Spec.Group != "hypershift.openshift.io" || !opts.EnableConversionWebhook {
+					return
 				}
 				if crd.Annotations == nil {
 					crd.Annotations = map[string]string{}
@@ -862,11 +860,12 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 								Namespace: operatorNamespace.Name,
 								Name:      operatorService.Name,
 								Port:      ptr.To[int32](443),
-								Path:      ptr.To("/convert"),							},
-							ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
+								Path:      ptr.To("/convert"),
+							},
 						},
 						ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
-					},				}
+					},
+				}
 			},
 		)...,
 	)

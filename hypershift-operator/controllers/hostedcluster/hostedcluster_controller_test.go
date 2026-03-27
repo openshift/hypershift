@@ -62,7 +62,6 @@ import (
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	capibmv1 "sigs.k8s.io/cluster-api-provider-ibmcloud/api/v1beta2"
 	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -1159,6 +1158,11 @@ func TestReconcileCAPICluster(t *testing.T) {
 						Name:     "cluster1",
 					},
 				},
+				Status: capiv1.ClusterStatus{
+					Initialization: capiv1.ClusterInitializationStatus{
+						InfrastructureProvisioned: ptr.To(true),
+					},
+				},
 			},
 		},
 		{
@@ -1213,6 +1217,11 @@ func TestReconcileCAPICluster(t *testing.T) {
 						APIGroup: capiaws.GroupVersion.Group,
 						Kind:     "AWSCluster",
 						Name:     "cluster1",
+					},
+				},
+				Status: capiv1.ClusterStatus{
+					Initialization: capiv1.ClusterInitializationStatus{
+						InfrastructureProvisioned: ptr.To(true),
 					},
 				},
 			},

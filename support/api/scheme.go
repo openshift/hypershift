@@ -53,7 +53,8 @@ import (
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
 	capiaddonsv1beta2 "sigs.k8s.io/cluster-api/api/addons/v1beta2"
 	capiv1beta2 "sigs.k8s.io/cluster-api/api/core/v1beta2"
-	ipamv1beta2 "sigs.k8s.io/cluster-api/api/ipam/v1beta2"	karpenterapis "sigs.k8s.io/karpenter/pkg/apis"
+	ipamv1beta2 "sigs.k8s.io/cluster-api/api/ipam/v1beta2"
+	karpenterapis "sigs.k8s.io/karpenter/pkg/apis"
 	karpenterv1 "sigs.k8s.io/karpenter/pkg/apis/v1"
 	secretsstorev1 "sigs.k8s.io/secrets-store-csi-driver/apis/v1"
 
@@ -115,7 +116,8 @@ func init() {
 		_ = certificatesv1alpha1.AddToScheme(scheme)
 		_ = capiv1beta2.AddToScheme(scheme)
 		_ = ipamv1beta2.AddToScheme(scheme)
-		_ = capiaddonsv1beta2.AddToScheme(scheme)		_ = configv1.AddToScheme(scheme)
+		_ = capiaddonsv1beta2.AddToScheme(scheme)
+		_ = configv1.AddToScheme(scheme)
 		_ = securityv1.AddToScheme(scheme)
 		_ = operatorv1.AddToScheme(scheme)
 		_ = oauthv1.AddToScheme(scheme)

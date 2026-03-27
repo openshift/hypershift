@@ -1804,7 +1804,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-
 	if err := r.reconcileAWSSubnets(ctx, createOrUpdate, infraCR, req.Namespace, req.Name, controlPlaneNamespace.Name); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -2886,6 +2885,12 @@ func reconcilecontrolPlaneOperatorIngressOperatorRoleBinding(binding *rbacv1.Rol
 }
 
 func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, infraCR client.Object) error {
+	// Set InfrastructureProvisioned so CAPI 1.11's v1beta2 cluster controller
+	// considers the infrastructure ready. CAPI v1beta2 checks this field
+	// instead of the infrastructure object's status.ready. Once set to true,
+	// CAPI guarantees it is never updated back to false.
+	cluster.Status.Initialization.InfrastructureProvisioned = ptr.To(true)
+
 	// We only create this resource once and then let CAPI own it
 	if !cluster.CreationTimestamp.IsZero() {
 		// make sure cluster is not paused.
