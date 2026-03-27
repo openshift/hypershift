@@ -115,7 +115,7 @@ func TestControlPlaneVersionField(t *testing.T) {
 
 		g.Expect(entry.Version).NotTo(BeEmpty(), "history[0].version is empty")
 		g.Expect(entry.Image).NotTo(BeEmpty(), "history[0].image is empty")
-		g.Expect(entry.StartedTime).NotTo(BeNil(), "history[0].startedTime is nil")
+		g.Expect(entry.StartedTime.IsZero()).To(BeFalse(), "history[0].startedTime is zero")
 
 		if entry.State == configv1.CompletedUpdate {
 			// When state=Completed, completionTime MUST be present
