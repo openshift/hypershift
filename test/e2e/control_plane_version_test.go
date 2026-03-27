@@ -37,27 +37,21 @@ func TestControlPlaneVersionField(t *testing.T) {
 	ctx, cancel := context.WithCancel(testContext)
 	defer cancel()
 
-	client := e2eutil.GetClientOrDie()
-	hostedCluster := globalOpts.hostedCluster
+	clusterOpts := globalOpts.DefaultClusterOptions(t)
 
-	// Fetch current HostedCluster
-	var hc hyperv1.HostedCluster
-	err := client.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), &hc)
-	if err != nil {
-		t.Fatalf("failed to get HostedCluster: %v", err)
-	}
+	e2eutil.NewHypershiftTest(t, ctx, func(t *testing.T, g Gomega, mgtClient crclient.Client, hostedCluster *hyperv1.HostedCluster) {
+		// Fetch current HostedCluster
+		var hc hyperv1.HostedCluster
+		err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), &hc)
+		g.Expect(err).NotTo(HaveOccurred(), "failed to get HostedCluster")
 
-	// Fetch corresponding HostedControlPlane
-	hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
-	var hcpList hyperv1.HostedControlPlaneList
-	err = client.List(ctx, &hcpList, crclient.InNamespace(hcpNamespace))
-	if err != nil {
-		t.Fatalf("failed to list HostedControlPlane: %v", err)
-	}
-	if len(hcpList.Items) == 0 {
-		t.Fatal("no HostedControlPlane found")
-	}
-	hcp := hcpList.Items[0]
+		// Fetch corresponding HostedControlPlane
+		hcpNamespace := manifests.HostedControlPlaneNamespace(hc.Namespace, hc.Name)
+		var hcpList hyperv1.HostedControlPlaneList
+		err = mgtClient.List(ctx, &hcpList, crclient.InNamespace(hcpNamespace))
+		g.Expect(err).NotTo(HaveOccurred(), "failed to list HostedControlPlane")
+		g.Expect(hcpList.Items).NotTo(BeEmpty(), "no HostedControlPlane found")
+		hcp := hcpList.Items[0]
 
 	// Validate field presence on both HC and HCP
 	t.Run("HC and HCP both have controlPlaneVersion with matching values", func(t *testing.T) {
@@ -184,5 +178,5 @@ func TestControlPlaneVersionField(t *testing.T) {
 		t.Logf("version.desired=%s, controlPlaneVersion.desired=%s",
 			hc.Status.Version.Desired.Version,
 			hc.Status.ControlPlaneVersion.Desired.Version)
-	})
+	}).Execute(&clusterOpts, globalOpts.Platform, globalOpts.ArtifactDir, globalOpts.ServiceAccountSigningKey)
 }
