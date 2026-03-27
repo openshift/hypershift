@@ -18,6 +18,8 @@ This workflow supports two execution modes:
 
 **How to detect:** If running via `claude -p`, there is no interactive user — proceed without confirmations and write all decisions to `state.md` for auditability.
 
+**CRITICAL for non-interactive mode:** You MUST NOT ask questions, offer choices, or wait for user input at any point. Never output phrases like "Would you like me to...", "Should I...", "Do you want me to...". Instead, make the reasonable default decision, log it to `state.md`, and proceed. The entire workflow (Phases 1-6) must run to completion autonomously.
+
 **Non-interactive invocation:**
 ```bash
 claude -p "Run /workflows:pre-merging-tests" \
@@ -471,55 +473,82 @@ gh pr create --draft --title "..." --body "..."
 
 ### 5.2 Monitor Rehearsal Job
 
-**Interactive mode:** Use the `/loop` skill to set up recurring status checks:
+**CRITICAL: Do NOT ask the user whether to monitor or wait. Do NOT offer choices like "Would you like me to set up a loop?". Proceed directly with monitoring using the appropriate mode below.**
+
+**Interactive mode:** Use the `/loop` skill to set up recurring status checks. Do not ask — just start it:
 ```
 /loop 10m Check the rehearsal job status for openshift/release PR #<number>. Run: gh pr checks <number> --repo openshift/release 2>/dev/null | grep -i "rehearse\|<job-keyword>" and also check gh api repos/openshift/release/issues/<number>/comments --jq '.[-1].body | split("\n")[0:5] | join(" | ")' for any new bot comments about rehearsal results. Report findings concisely.
 ```
 
-This polls every 10 minutes automatically. The user can continue other work while waiting.
+This polls every 10 minutes automatically. The user can continue other work while waiting. When the job completes, proceed to step 5.3.
 
-**Non-interactive mode:** Use **sub-agents** to monitor and iterate, keeping the main context lean. Each iteration runs in a separate sub-agent with its own context window. The main agent orchestrates via `state.md`.
+**Non-interactive mode (`claude -p`):** Use a **sub-agent polling loop** to monitor and iterate. Each iteration runs in a separate sub-agent with its own context window, keeping the main context lean. **Do not exit or ask questions — run the loop until the job completes or fails.**
+
+Here is the concrete implementation — follow this exactly:
 
 ```
-Main agent:
-  Phases 1-4 (gather context, build CI, create PR, trigger rehearsal)
-  ↓
-  Iteration loop:
+# Step A: Initial wait (rehearsals take time to start)
+sleep 300  (5 minutes for job to be picked up)
+
+# Step B: Polling loop
+MAX_POLLS=30  (5 hours max at 10-minute intervals)
+for poll in 1..MAX_POLLS:
+
+  # Spawn a sub-agent to check status
+  Agent(prompt="Check rehearsal job status for openshift/release PR #<number>.
+    Run: gh pr checks <number> --repo openshift/release | grep -i rehearse
+
+    If the job is still pending or running, respond with exactly: STATUS: PENDING
+    If the job passed, respond with exactly: STATUS: PASS
+    If the job failed, respond with exactly: STATUS: FAIL
+
+    Also read and update <artifacts-dir>/state.md with current status.")
+
+  # Read the sub-agent result
+  If result contains "STATUS: PENDING":
     sleep 600  (10 minutes)
-    ↓
-    Spawn sub-agent: "Check rehearsal status"
-      - Read state.md for job details
-      - Run: gh pr checks <number> --repo openshift/release
-      - If job pending/running → update state.md, return "PENDING"
-      - If job complete → download logs, analyze results,
-        update state.md and iterations.md, return result
-    ↓
-    Read sub-agent result
-    ↓
-    If PENDING → continue loop
-    If PASS or PARTIAL_PASS → break, proceed to Phase 6
-    If FAILED →
-      Spawn sub-agent: "Fix iteration failure"
-        - Read state.md and iterations.md for failure details
-        - Diagnose root cause from saved logs
-        - Fix the CI step, commit, push
-        - Trigger new rehearsal with /pj-rehearse
-        - Update state.md with fix applied
-      ↓
-      Continue loop
-  ↓
-  Phase 6: report results
+    continue
+
+  If result contains "STATUS: PASS":
+    # Spawn sub-agent to analyze results
+    Agent(prompt="The rehearsal job for openshift/release PR #<number> PASSED.
+      1. Download the build log for the custom verify step from GCS
+         (decompress with gunzip if needed)
+      2. Extract [PASS]/[FAIL]/[SKIP] lines
+      3. Check finished.json for each step
+      4. Save results to <artifacts-dir>/iterations.md
+      5. Update <artifacts-dir>/state.md with Overall Result: PASS
+      6. Return the full test output and step results.")
+    break → proceed to Phase 6
+
+  If result contains "STATUS: FAIL":
+    # Spawn sub-agent to analyze failure and fix
+    Agent(prompt="The rehearsal job for openshift/release PR #<number> FAILED.
+      1. Download the build log from GCS (decompress with gunzip if needed)
+      2. Identify which step failed and the root cause
+      3. Classify: real failure, transient flake, or partial pass (see Phase 5.4)
+      4. If partial pass (custom verify passed, e2e flaked):
+         - Save results to <artifacts-dir>/iterations.md
+         - Update <artifacts-dir>/state.md with Overall Result: PARTIAL_PASS
+         - Return 'STATUS: PARTIAL_PASS' with evidence
+      5. If real failure:
+         - Fix the CI step in openshift/release repo
+         - Commit, push, trigger new rehearsal with /pj-rehearse
+         - Update <artifacts-dir>/state.md and iterations.md
+         - Return 'STATUS: FIXED — retriggered iteration N'
+      6. If transient flake with no custom verify evidence:
+         - Retrigger with /pj-rehearse
+         - Return 'STATUS: RETRIGGER'")
+
+    If sub-agent result contains "PARTIAL_PASS":
+      break → proceed to Phase 6
+    If sub-agent result contains "FIXED" or "RETRIGGER":
+      continue loop (will check new job on next poll)
 ```
 
 **Why sub-agents?** Each sub-agent gets a **fresh context window**. Build log analysis, error diagnosis, and fix iterations stay in the sub-agent's context — the main agent only sees a short result summary. This prevents context exhaustion during long monitoring periods with multiple iterations.
 
-**Sub-agent prompts should always include:**
-- Path to `state.md` and `iterations.md`
-- The artifacts directory path
-- The CI PR number and job name
-- Instructions to update `state.md` before returning
-
-**Queue time expectations:** Jobs requiring cluster profiles (e.g., `hypershift-aws`) can sit in "pending" for 30 minutes to several hours waiting for resources. This is normal — the sleep/poll loop handles it automatically.
+**Queue time expectations:** Jobs requiring cluster profiles (e.g., `hypershift-aws`) can sit in "pending" for 30 minutes to several hours waiting for resources. This is normal — the polling loop handles it automatically.
 
 ### 5.3 Save Iteration Results
 
@@ -623,14 +652,21 @@ Update the PR description with the full results table using `gh pr edit`. Includ
 - Link to the successful rehearsal job
 - Image overrides used (if any)
 
-### 6.3 Update Jira Issue
+### 6.3 Comment on HyperShift PR
+
+Post a comment on the HyperShift PR with the verification results using `gh pr comment`. The comment should include:
+- Results table with evidence
+- Link to the rehearsal job and CI PR
+- **End the comment with `/verified by <USER>`** where `<USER>` is the GitHub username of the person who requested the verification (get it via `gh api user --jq .login` or from the PR author). This marks the PR as verified.
+
+### 6.4 Update Jira Issue
 
 Add a comment to the linked Jira issue with verification results using `mcp__atlassian__jira_add_comment`. Include:
 - Results table
 - Links to the rehearsal job and both PRs
 - Which operator images were tested
 
-### 6.4 Final Summary
+### 6.5 Final Summary
 
 Present the user with:
 - Links to both PRs
