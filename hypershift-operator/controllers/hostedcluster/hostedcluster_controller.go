@@ -2885,12 +2885,17 @@ func reconcilecontrolPlaneOperatorIngressOperatorRoleBinding(binding *rbacv1.Rol
 }
 
 func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, infraCR client.Object) error {
-	// Set InfrastructureProvisioned and ControlPlaneInitialized for CAPI 1.11 v1beta2.
-	// For externally managed infra (ManagedByAnnotation="external"), providers skip
-	// reconciliation so HyperShift must declare readiness via these fields directly.
-	// CAPI guarantees these fields are never updated back to false once set to true.
+	// Set InfrastructureProvisioned for CAPI 1.11 v1beta2.
+	// For externally managed infra (ManagedByAnnotation="external"), CAPI skips
+	// InfrastructureCluster reconciliation, so HyperShift must declare infra readiness
+	// directly. CAPI guarantees this field is never updated back to false once set to true.
 	cluster.Status.Initialization.InfrastructureProvisioned = ptr.To(true)
-	cluster.Status.Initialization.ControlPlaneInitialized = ptr.To(true)
+	// Note: ControlPlaneInitialized is intentionally NOT set here. CAPI's cluster
+	// controller will set it naturally when HCP.Status.Initialized=True (via v1beta1
+	// contract reading status.initialized). This preserves CAPI 1.10 timing where
+	// machines were only created after the guest cluster bootstrap RBAC was set up by
+	// HCCO. Setting it unconditionally caused machines to boot before HCCO had finished
+	// configuring the guest cluster, resulting in bootstrap authentication failures.
 
 	// We only create this resource once and then let CAPI own it
 	if !cluster.CreationTimestamp.IsZero() {
