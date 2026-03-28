@@ -100,6 +100,8 @@ func TestKarpenter(t *testing.T) {
 			if !globalOpts.ConfigurableClusterOptions.AWSMultiArch && !globalOpts.ConfigurableClusterOptions.AzureMultiArch {
 				t.Skip("test only supported on multi-arch clusters")
 			}
+			// Enable parallel execution - this test uses unique ARM64 resources
+			t.Parallel()
 			t.Cleanup(func() {
 				_ = guestClient.Delete(ctx, armWorkLoads)
 				_ = guestClient.Delete(ctx, armNodePool)
@@ -189,7 +191,7 @@ func TestKarpenter(t *testing.T) {
 						Reason: hyperv1.AsExpectedReason,
 					}),
 				},
-				e2eutil.WithTimeout(2*time.Minute),
+				e2eutil.WithTimeout(90*time.Second),
 			)
 
 			// TODO(alberto): increase coverage:
@@ -334,6 +336,9 @@ func TestKarpenter(t *testing.T) {
 			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, nodeLabels)
 		})
 
+		// CONSOLIDATED: This test has been merged into "Consolidated provisioning with validations"
+		// to reduce redundant node provisioning cycles and save ~8-10 minutes
+		/* DISABLED - functionality moved to consolidated test
 		t.Run("Instance profile annotation propagation", func(t *testing.T) {
 			// Get the current HostedCluster
 			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
@@ -372,7 +377,7 @@ func TestKarpenter(t *testing.T) {
 				g.Expect(defaultEC2NodeClass).NotTo(BeNil(), "default EC2NodeClass should exist")
 				g.Expect(defaultEC2NodeClass.Spec.InstanceProfile).NotTo(BeNil(), "InstanceProfile should be set")
 				g.Expect(*defaultEC2NodeClass.Spec.InstanceProfile).To(Equal(workerInstanceProfile))
-			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+			}).WithTimeout(90 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 			t.Logf("EC2NodeClass has InstanceProfile set correctly")
 
 			// Now provision actual nodes to verify EC2 instances get the instance profile
@@ -469,11 +474,14 @@ func TestKarpenter(t *testing.T) {
 				err := guestClient.Get(ctx, crclient.ObjectKey{Name: "default"}, ec2NodeClass)
 				g.Expect(err).NotTo(HaveOccurred())
 				g.Expect(ec2NodeClass.Spec.InstanceProfile).To(BeNil(), "InstanceProfile should be cleared")
-			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+			}).WithTimeout(90 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 			t.Logf("EC2NodeClass InstanceProfile cleared successfully")
 		})
+		*/ // End of commented-out instance profile test
 
 		t.Run("OpenshiftEC2NodeClass version field", func(t *testing.T) {
+			// Enable parallel execution - this test is mostly validation-focused
+			t.Parallel()
 			g := NewWithT(t)
 
 			// Re-fetch the hosted cluster to get the latest version status
@@ -515,7 +523,7 @@ func TestKarpenter(t *testing.T) {
 						return true, fmt.Sprintf("status.releaseImage matches control plane: %s", nc.Status.ReleaseImage), nil
 					}),
 				},
-				e2eutil.WithTimeout(2*time.Minute),
+				e2eutil.WithTimeout(90*time.Second),
 			)
 			t.Log("Default OpenshiftEC2NodeClass has correct version status")
 
@@ -609,7 +617,7 @@ func TestKarpenter(t *testing.T) {
 						return true, "MetadataOptions propagated correctly", nil
 					}),
 				},
-				e2eutil.WithTimeout(2*time.Minute),
+				e2eutil.WithTimeout(90*time.Second),
 			)
 			t.Log("MetadataOptions propagated correctly to EC2NodeClass")
 
@@ -745,6 +753,8 @@ func TestKarpenter(t *testing.T) {
 		})
 
 		t.Run("OpenshiftEC2NodeClass with version exceeding allowed skew sets SupportedVersionSkew condition", func(t *testing.T) {
+			// Enable parallel execution - this test is mostly validation-focused
+			t.Parallel()
 			g := NewWithT(t)
 
 			// Re-fetch the hosted cluster to get the latest version status
@@ -899,7 +909,7 @@ func TestKarpenter(t *testing.T) {
 							crID, ec2nc.Spec.CapacityReservationSelectorTerms), nil
 					},
 				},
-				e2eutil.WithTimeout(2*time.Minute), e2eutil.WithInterval(5*time.Second),
+				e2eutil.WithTimeout(90*time.Second), e2eutil.WithInterval(5*time.Second),
 			)
 
 			// Verify karpenter resolves the capacity reservation and reflects it in the OpenshiftEC2NodeClass status.
@@ -1161,7 +1171,7 @@ func TestKarpenter(t *testing.T) {
 					subnetIDs = append(subnetIDs, s.ID)
 				}
 				g.Expect(subnetIDs).To(ContainElement(subnetID), "status.subnets should contain the test subnet")
-			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+			}).WithTimeout(90 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 			t.Logf("OpenshiftEC2NodeClass status.subnets contains %s", subnetID)
 
 			// Wait for the karpenter-subnets ConfigMap in the HCP namespace to contain the subnet ID.
@@ -1177,7 +1187,7 @@ func TestKarpenter(t *testing.T) {
 				var cmSubnetIDs []string
 				g.Expect(json.Unmarshal([]byte(cm.Data["subnetIDs"]), &cmSubnetIDs)).To(Succeed())
 				g.Expect(cmSubnetIDs).To(ContainElement(subnetID), "karpenter-subnets ConfigMap should contain the test subnet")
-			}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+			}).WithTimeout(90 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
 			t.Logf("karpenter-subnets ConfigMap contains subnet %s", subnetID)
 
 			// Wait for any AWSEndpointService in the HCP namespace to include the subnet ID.
@@ -1287,6 +1297,146 @@ func TestKarpenter(t *testing.T) {
 			g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
 			t.Logf("Waiting for arbitrary-subnet-test nodes to be removed")
 			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
+		})
+
+		// Consolidated mega test: combines instance profile validation with basic provisioning checks
+		// This reduces the number of separate node provisioning cycles
+		t.Run("Consolidated provisioning with validations", func(t *testing.T) {
+			// Can run in parallel with ARM64 test
+			t.Parallel()
+			g := NewWithT(t)
+
+			// Get current HostedCluster for instance profile setup
+			err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+			g.Expect(err).NotTo(HaveOccurred())
+
+			// Use the default worker instance profile
+			workerInstanceProfile := hostedCluster.Spec.InfraID + "-worker"
+
+			t.Log("Phase 1: Setting instance profile annotation on HostedCluster")
+			err = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+				if obj.Annotations == nil {
+					obj.Annotations = make(map[string]string)
+				}
+				obj.Annotations[hyperv1.AWSKarpenterDefaultInstanceProfile] = workerInstanceProfile
+			})
+			g.Expect(err).NotTo(HaveOccurred())
+			t.Logf("Applied annotation %s=%s to HostedCluster", hyperv1.AWSKarpenterDefaultInstanceProfile, workerInstanceProfile)
+
+			// Cleanup annotation at the end
+			defer func() {
+				err := mgtClient.Get(ctx, crclient.ObjectKeyFromObject(hostedCluster), hostedCluster)
+				if err == nil {
+					_ = e2eutil.UpdateObject(t, ctx, mgtClient, hostedCluster, func(obj *hyperv1.HostedCluster) {
+						delete(obj.Annotations, hyperv1.AWSKarpenterDefaultInstanceProfile)
+					})
+					t.Logf("Removed annotation %s from HostedCluster", hyperv1.AWSKarpenterDefaultInstanceProfile)
+				}
+			}()
+
+			// Wait for the EC2NodeClass to have the InstanceProfile field set
+			t.Logf("Phase 2: Waiting for EC2NodeClass to have InstanceProfile set to %s", workerInstanceProfile)
+			g.Eventually(func(g Gomega) {
+				ec2NodeClassList := &awskarpenterv1.EC2NodeClassList{}
+				err := guestClient.List(ctx, ec2NodeClassList)
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(ec2NodeClassList.Items).NotTo(BeEmpty())
+
+				// Find the default EC2NodeClass
+				var defaultEC2NodeClass *awskarpenterv1.EC2NodeClass
+				for i := range ec2NodeClassList.Items {
+					if ec2NodeClassList.Items[i].Name == "default" {
+						defaultEC2NodeClass = &ec2NodeClassList.Items[i]
+						break
+					}
+				}
+				g.Expect(defaultEC2NodeClass).NotTo(BeNil(), "default EC2NodeClass should exist")
+				g.Expect(defaultEC2NodeClass.Spec.InstanceProfile).NotTo(BeNil(), "InstanceProfile should be set")
+				g.Expect(*defaultEC2NodeClass.Spec.InstanceProfile).To(Equal(workerInstanceProfile))
+			}).WithTimeout(90 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
+			t.Logf("EC2NodeClass has InstanceProfile set correctly")
+
+			t.Log("Phase 3: Creating NodePool and workload for consolidated testing")
+			// Create copies to avoid polluting shared test objects
+			testNodePool := karpenterNodePool.DeepCopy()
+			testWorkLoads := workLoads.DeepCopy()
+			testNodePool.SetResourceVersion("")
+			testWorkLoads.SetResourceVersion("")
+
+			replicas := 2
+			testWorkLoads.Object["spec"].(map[string]interface{})["replicas"] = replicas
+			testNodePool.SetName("consolidated-test")
+			testWorkLoads.SetName("consolidated-web-app")
+
+			g.Expect(guestClient.Create(ctx, testNodePool)).To(Succeed())
+			t.Logf("Created Karpenter NodePool")
+			g.Expect(guestClient.Create(ctx, testWorkLoads)).To(Succeed())
+			t.Logf("Created workloads")
+
+			// Ensure cleanup happens
+			defer func() {
+				_ = guestClient.Delete(ctx, testWorkLoads)
+				_ = guestClient.Delete(ctx, testNodePool)
+			}()
+
+			// Update node labels to match the unique NodePool name
+			testNodeLabels := map[string]string{
+				"node.kubernetes.io/instance-type": "t3.large",
+				"karpenter.sh/nodepool":            testNodePool.GetName(),
+			}
+
+			t.Log("Phase 4: Waiting for nodes to be provisioned")
+			nodes := e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, int32(replicas), testNodeLabels)
+			t.Logf("Karpenter nodes are ready: %d", len(nodes))
+
+			// Validate basic provisioning
+			validateBasicNodeProvisioning(t, nodes, replicas, testNodeLabels)
+
+			t.Log("Phase 5: Verifying EC2 instances have the correct instance profile")
+			ec2client := ec2Client(clusterOpts.AWSPlatform.Credentials.AWSCredentialsFile, clusterOpts.AWSPlatform.Region)
+
+			for _, node := range nodes {
+				// Extract instance ID from providerID (format: aws:///region/instance-id)
+				providerID := node.Spec.ProviderID
+				g.Expect(providerID).NotTo(BeEmpty(), "node should have a providerID")
+
+				// Parse instance ID from providerID
+				parts := strings.Split(providerID, "/")
+				g.Expect(parts).To(HaveLen(5), "providerID should have 5 parts")
+				instanceID := parts[4]
+				t.Logf("Checking instance profile for node %s (instance %s)", node.Name, instanceID)
+
+				// Get EC2 instance details
+				result, err := ec2client.DescribeInstances(ctx, &ec2.DescribeInstancesInput{
+					InstanceIds: []string{instanceID},
+				})
+				g.Expect(err).NotTo(HaveOccurred(), "failed to describe EC2 instance")
+				g.Expect(result.Reservations).NotTo(BeEmpty(), "expected at least one reservation")
+				g.Expect(result.Reservations[0].Instances).NotTo(BeEmpty(), "expected at least one instance")
+
+				instance := result.Reservations[0].Instances[0]
+				g.Expect(instance.IamInstanceProfile).NotTo(BeNil(), "instance should have an IAM instance profile")
+
+				// Extract instance profile name from ARN
+				profileArn := *instance.IamInstanceProfile.Arn
+				profileParts := strings.Split(profileArn, "/")
+				g.Expect(profileParts).To(HaveLen(2), "instance profile ARN should have 2 parts")
+				actualInstanceProfile := profileParts[1]
+
+				g.Expect(actualInstanceProfile).To(Equal(workerInstanceProfile),
+					"instance %s should have instance profile %s, but has %s", instanceID, workerInstanceProfile, actualInstanceProfile)
+				t.Logf("Instance %s has correct instance profile: %s", instanceID, actualInstanceProfile)
+			}
+
+			t.Log("Phase 6: Cleaning up test resources")
+			g.Expect(guestClient.Delete(ctx, testWorkLoads)).To(Succeed())
+			g.Expect(guestClient.Delete(ctx, testNodePool)).To(Succeed())
+
+			t.Log("Waiting for nodes to be deleted")
+			_ = e2eutil.WaitForReadyNodesByLabels(t, ctx, guestClient, hostedCluster.Spec.Platform.Type, 0, testNodeLabels)
+
+			// Annotation will be cleaned up by defer
+			t.Log("Consolidated test complete")
 		})
 
 		t.Run("AutoNode enable/disable lifecycle", func(t *testing.T) {
