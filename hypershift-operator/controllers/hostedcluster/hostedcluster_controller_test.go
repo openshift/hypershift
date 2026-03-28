@@ -1161,6 +1161,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 				Status: capiv1.ClusterStatus{
 					Initialization: capiv1.ClusterInitializationStatus{
 						InfrastructureProvisioned: ptr.To(true),
+						ControlPlaneInitialized:   ptr.To(true),
 					},
 				},
 			},
@@ -1222,6 +1223,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 				Status: capiv1.ClusterStatus{
 					Initialization: capiv1.ClusterInitializationStatus{
 						InfrastructureProvisioned: ptr.To(true),
+						ControlPlaneInitialized:   ptr.To(true),
 					},
 				},
 			},
