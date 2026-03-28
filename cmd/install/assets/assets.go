@@ -29,7 +29,7 @@ var CRDS embed.FS
 //go:embed recordingrules/*
 var recordingRules embed.FS
 
-const capiLabel = "cluster.x-k8s.io/v1beta2"
+const capiLabel = "cluster.x-k8s.io/v1beta1"
 
 // capiResources specifies which CRDs should get labeled with capiLabel
 // to satisfy CAPI contracts. There might be a way to achieve this during CRD
