@@ -614,9 +614,9 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 	// Bubble up AvailableReplicas and Ready condition from MachineDeployment.
 	nodePool.Status.Replicas = ptr.Deref(machineDeployment.Status.AvailableReplicas, 0)
 	for _, c := range machineDeployment.Status.Conditions {
-		// In CAPI v1beta2 "Ready" was replaced by "MachinesReady" (True when all machines are ready).
+		// In CAPI v1beta2 "Ready" was replaced by "Available" on MachineDeployment.
 		// https://github.com/kubernetes-sigs/cluster-api/issues/3486.
-		if c.Type == capiv1.MachinesReadyCondition {
+		if c.Type == capiv1.AvailableCondition {
 			// this is so api server does not complain
 			// invalid value: \"\": status.conditions.reason in body should be at least 1 chars long"
 			reason := hyperv1.AsExpectedReason
