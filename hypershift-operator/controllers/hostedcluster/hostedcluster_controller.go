@@ -1825,6 +1825,17 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile capi cluster: %w", err)
 		}
+		// Patch InfrastructureProvisioned on the CAPI Cluster status once infrastructure
+		// is confirmed ready. This is done via a dedicated Status patch (not in
+		// reconcileCAPICluster) to keep spec and status concerns separate.
+		// Gate on HCP.InfrastructureReady to match CAPI 1.10 timing where CAPA set
+		// AWSCluster.status.ready only after infrastructure was verified, preventing
+		// premature control plane convergence that breaks e2e timing assumptions.
+		if hcp != nil && meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.InfrastructureReady)) {
+			if err := patchInfrastructureInitializationProvisioned(ctx, r.Client, capiCluster); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to patch CAPI cluster InfrastructureProvisioned: %w", err)
+			}
+		}
 	}
 
 	// Reconcile the monitoring dashboard if configured
@@ -2884,12 +2895,25 @@ func reconcilecontrolPlaneOperatorIngressOperatorRoleBinding(binding *rbacv1.Rol
 	return nil
 }
 
+// patchInfrastructureInitializationProvisioned sets InfrastructureProvisioned=True on
+// the CAPI Cluster status via a dedicated Status patch. For externally managed infra
+// (ManagedByAnnotation="external"), CAPI skips InfrastructureCluster reconciliation so
+// it cannot determine infra readiness itself. HyperShift fulfills this part of the CAPI
+// contract here, gated on HCP.InfrastructureReady=True.
+func patchInfrastructureInitializationProvisioned(ctx context.Context, c client.Client, capiCluster *capiv1.Cluster) error {
+	if ptr.Deref(capiCluster.Status.Initialization.InfrastructureProvisioned, false) {
+		return nil
+	}
+	original := capiCluster.DeepCopy()
+	capiCluster.Status.Initialization.InfrastructureProvisioned = ptr.To(true)
+	return c.Status().Patch(ctx, capiCluster, client.MergeFrom(original))
+}
+
 func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, infraCR client.Object) error {
-	// Set InfrastructureProvisioned for CAPI 1.11 v1beta2.
-	// For externally managed infra (ManagedByAnnotation="external"), CAPI skips
-	// InfrastructureCluster reconciliation, so HyperShift must declare infra readiness
-	// directly. CAPI guarantees this field is never updated back to false once set to true.
-	cluster.Status.Initialization.InfrastructureProvisioned = ptr.To(true)
+	// Note: InfrastructureProvisioned is NOT set here. It is managed by
+	// patchInfrastructureInitializationProvisioned which does a dedicated Status
+	// patch gated on HCP.InfrastructureReady=True. This preserves CAPI 1.10
+	// timing semantics and keeps this function focused on spec-only changes.
 	// Note: ControlPlaneInitialized is intentionally NOT set here. CAPI's cluster
 	// controller will set it naturally when HCP.Status.Initialized=True (via v1beta1
 	// contract reading status.initialized). This preserves CAPI 1.10 timing where

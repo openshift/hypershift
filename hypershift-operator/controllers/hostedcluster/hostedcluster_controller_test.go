@@ -1159,9 +1159,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 					},
 				},
 				Status: capiv1.ClusterStatus{
-					Initialization: capiv1.ClusterInitializationStatus{
-						InfrastructureProvisioned: ptr.To(true),
-					},
+					Initialization: capiv1.ClusterInitializationStatus{},
 				},
 			},
 		},
@@ -1220,9 +1218,7 @@ func TestReconcileCAPICluster(t *testing.T) {
 					},
 				},
 				Status: capiv1.ClusterStatus{
-					Initialization: capiv1.ClusterInitializationStatus{
-						InfrastructureProvisioned: ptr.To(true),
-					},
+					Initialization: capiv1.ClusterInitializationStatus{},
 				},
 			},
 		},
