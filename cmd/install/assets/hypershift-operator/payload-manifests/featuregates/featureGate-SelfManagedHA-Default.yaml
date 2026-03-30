@@ -19,6 +19,9 @@
                         "name": "AutoNodeKarpenter",
                     },
                     {
+                        "name": "ExternalOIDCWithUpstreamParity"
+                    },
+                    {
                       "name": "AROHCPManagedIdentities"
                     },
                     {

@@ -86,8 +86,7 @@ func New(utilitiesImage string, capiProviderImage string, payloadVersion *semver
 // and enables CAPG controllers to manage GCP resources for NodePool support.
 func (p GCP) ReconcileCAPIInfraCR(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint,
-) (client.Object, error) {
+	controlPlaneNamespace string, apiEndpoint hyperv1.APIEndpoint) (client.Object, error) {
 	// Create GCPCluster object following AWS pattern
 	gcpCluster := &capigcp.GCPCluster{
 		ObjectMeta: metav1.ObjectMeta{
@@ -162,7 +161,7 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 	}
 
 	// Set control plane endpoint (following AWS pattern)
-	gcpCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{ //nolint:staticcheck
+	gcpCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}
@@ -297,8 +296,7 @@ func (p GCP) buildVolumes(hcluster *hyperv1.HostedCluster) []corev1.Volume {
 
 func (p GCP) ReconcileCredentials(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string,
-) error {
+	controlPlaneNamespace string) error {
 	// Validate GCP platform configuration is present
 	if hcluster.Spec.Platform.GCP == nil {
 		setCondition(hcluster, hyperv1.ValidGCPWorkloadIdentity, metav1.ConditionFalse, "MissingGCPConfiguration", "GCP platform configuration is missing")
@@ -493,8 +491,7 @@ func buildGCPWorkloadIdentityCredentials(wif hyperv1.GCPWorkloadIdentityConfig, 
 // TODO: Implement GCP KMS secret encryption integration.
 func (p GCP) ReconcileSecretEncryption(ctx context.Context, c client.Client, createOrUpdate upsert.CreateOrUpdateFN,
 	hcluster *hyperv1.HostedCluster,
-	controlPlaneNamespace string,
-) error {
+	controlPlaneNamespace string) error {
 	// TODO: Implement GCP KMS secret encryption
 	return nil
 }

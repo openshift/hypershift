@@ -782,12 +782,17 @@ func MachineDeploymentComplete(deployment *capiv1.MachineDeployment, machineSets
 		return false
 	}
 
-	// Direct MachineSet spec comparison replicates v1beta1's synchronous
-	// UpdatedReplicas semantics without relying on async Machine conditions.
 	desiredSecret := ptr.Deref(deployment.Spec.Template.Spec.Bootstrap.DataSecretName, "")
 	desiredVersion := deployment.Spec.Template.Spec.Version
 	desiredInfraRef := deployment.Spec.Template.Spec.InfrastructureRef.Name
 	for _, ms := range machineSets {
+		// Skip MachineSets that have been scaled to zero: they are being cleaned up after a
+		// rolling update and their stale spec should not block completion detection.
+		// Active MachineSets (spec.Replicas > 0) must all carry the desired spec; if any
+		// does not, the rolling update is still in progress.
+		if ptr.Deref(ms.Spec.Replicas, 0) == 0 {
+			continue
+		}
 		if ptr.Deref(ms.Spec.Template.Spec.Bootstrap.DataSecretName, "") != desiredSecret ||
 			ms.Spec.Template.Spec.Version != desiredVersion ||
 			ms.Spec.Template.Spec.InfrastructureRef.Name != desiredInfraRef {
