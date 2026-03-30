@@ -884,10 +884,33 @@ spec:
                                 has(self.version)].filter(x, x == true).size() ==
                                 4'
                           imageID:
-                            description: imageID is the Azure resource ID of a VHD
-                              image to use to boot the Azure VMs from.
-                            maxLength: 255
+                            description: |-
+                              imageID is the Azure resource ID of a VHD image to use to boot the Azure VMs from.
+                              The imageID should be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/images/{imageName}`.
+                              The subscriptionId in the imageID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+                              The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
+                              The imageName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens, underscores and periods.
+                            maxLength: 285
+                            minLength: 1
                             type: string
+                            x-kubernetes-validations:
+                            - message: imageID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Compute/images/{imageName}`
+                              rule: size(self.split('/')) == 9 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Compute/images/.*$')
+                            - message: the subscriptionId in the imageID must be a
+                                valid UUID. It should be 5 groups of hyphen separated
+                                hexadecimal characters in the form 8-4-4-4-12
+                              rule: self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
+                            - message: The resourceGroupName should be between 1 and
+                                90 characters, consisting only of alphanumeric characters,
+                                hyphens, underscores, periods and parenthesis
+                              rule: self.split('/')[4].matches('[a-zA-Z0-9-_\\(\\)\\.]{1,90}')
+                            - message: the resourceGroupName in the imageID must not
+                                end with a period (.) character
+                              rule: '!self.split(''/'')[4].endsWith(''.'')'
+                            - message: The imageName should be between 1 and 80 characters,
+                                consisting only of alphanumeric characters, hyphens,
+                                underscores and periods
+                              rule: self.split('/')[8].matches('[a-zA-Z0-9-_\\.]{1,80}')
                           type:
                             description: |-
                               type is the type of image data that will be provided to the Azure VM.
