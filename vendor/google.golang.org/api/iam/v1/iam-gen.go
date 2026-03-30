@@ -1273,6 +1273,15 @@ type GoogleIamAdminV1WorkforcePoolProviderExtraAttributesOAuth2Client struct {
 	// user's groups that are returned from Microsoft Entra ID can be mapped by
 	// using the following attributes: * OIDC: `assertion.groups` * SAML:
 	// `assertion.attributes.groups`
+	//   "AZURE_AD_GROUPS_DISPLAY_NAME" - Used to get the user's group claims from
+	// the Microsoft Entra ID identity provider using the configuration provided in
+	// ExtraAttributesOAuth2Client. The `displayName` property of the
+	// `microsoft.graph.group` object is used for claim mapping. See
+	// https://learn.microsoft.com/en-us/graph/api/resources/group?view=graph-rest-1.0#properties
+	// for more details on `microsoft.graph.group` properties. The display names of
+	// the user's groups that are returned from Microsoft Entra ID can be mapped by
+	// using the following attributes: * OIDC: `assertion.groups` * SAML:
+	// `assertion.attributes.groups`
 	AttributesType string `json:"attributesType,omitempty"`
 	// ClientId: Required. The OAuth 2.0 client ID for retrieving extra attributes
 	// from the identity provider. Required to get the Access Token using client
@@ -1559,6 +1568,15 @@ type InlineCertificateIssuanceConfig struct {
 	// initiated. Must be between 50 and 80. If no value is specified, rotation
 	// window percentage is defaulted to 50.
 	RotationWindowPercentage int64 `json:"rotationWindowPercentage,omitempty"`
+	// UseDefaultSharedCa: Optional. If set to true, the trust domain will utilize
+	// the GCP-provisioned default CA. A default CA in the same region as the
+	// workload will be selected to issue the certificate. Enabling this will clear
+	// any existing `ca_pools` configuration to provision the certificates. NOTE:
+	// This field is mutually exclusive with `ca_pools`. If this flag is enabled,
+	// certificates will be automatically provisioned from the default shared CAs.
+	// This flag should not be set if you want to use your own CA pools to
+	// provision the certificates.
+	UseDefaultSharedCa bool `json:"useDefaultSharedCa,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "CaPools") to unconditionally
 	// include in API requests. By default, fields with empty or default values are
 	// omitted from API requests. See
@@ -3571,6 +3589,11 @@ type TrustStore struct {
 	// validation against a given TrustStore. The incoming end entity's certificate
 	// must be in the trust chain of one of the trust anchors here.
 	TrustAnchors []*TrustAnchor `json:"trustAnchors,omitempty"`
+	// TrustDefaultSharedCa: Optional. If set to True, the trust bundle will
+	// include the private ca managed identity regional root public certificates.
+	// Important: `trust_default_shared_ca` is only supported for managed identity
+	// trust domain resource.
+	TrustDefaultSharedCa bool `json:"trustDefaultSharedCa,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "IntermediateCas") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
@@ -3656,11 +3679,6 @@ type UndeleteWorkforcePoolProviderRequest struct {
 // UndeleteWorkforcePoolProviderScimTenantRequest: Gemini Enterprise only.
 // Request message for UndeleteWorkforcePoolProviderScimTenant.
 type UndeleteWorkforcePoolProviderScimTenantRequest struct {
-}
-
-// UndeleteWorkforcePoolProviderScimTokenRequest: Gemini Enterprise only.
-// Request message for UndeleteWorkforcePoolProviderScimToken.
-type UndeleteWorkforcePoolProviderScimTokenRequest struct {
 }
 
 // UndeleteWorkforcePoolRequest: Request message for UndeleteWorkforcePool.
@@ -8663,114 +8681,6 @@ func (c *LocationsWorkforcePoolsProvidersScimTenantsTokensPatchCall) Do(opts ...
 		return nil, err
 	}
 	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "iam.locations.workforcePools.providers.scimTenants.tokens.patch", "response", internallog.HTTPResponse(res, b))
-	return ret, nil
-}
-
-type LocationsWorkforcePoolsProvidersScimTenantsTokensUndeleteCall struct {
-	s                                             *Service
-	name                                          string
-	undeleteworkforcepoolproviderscimtokenrequest *UndeleteWorkforcePoolProviderScimTokenRequest
-	urlParams_                                    gensupport.URLParams
-	ctx_                                          context.Context
-	header_                                       http.Header
-}
-
-// Undelete: Gemini Enterprise only. Undeletes a
-// WorkforcePoolProviderScimToken,that was deleted fewer than 30 days ago.
-//
-//   - name: Gemini Enterprise only. The name of the SCIM token to undelete.
-//     Format:
-//     `locations/{location}/workforcePools/{workforce_pool}/providers/{provider}/
-//     scimTenants/{scim_tenant}/tokens/{token}`.
-func (r *LocationsWorkforcePoolsProvidersScimTenantsTokensService) Undelete(name string, undeleteworkforcepoolproviderscimtokenrequest *UndeleteWorkforcePoolProviderScimTokenRequest) *LocationsWorkforcePoolsProvidersScimTenantsTokensUndeleteCall {
-	c := &LocationsWorkforcePoolsProvidersScimTenantsTokensUndeleteCall{s: r.s, urlParams_: make(gensupport.URLParams)}
-	c.name = name
-	c.undeleteworkforcepoolproviderscimtokenrequest = undeleteworkforcepoolproviderscimtokenrequest
-	return c
-}
-
-// Fields allows partial responses to be retrieved. See
-// https://developers.google.com/gdata/docs/2.0/basics#PartialResponse for more
-// details.
-func (c *LocationsWorkforcePoolsProvidersScimTenantsTokensUndeleteCall) Fields(s ...googleapi.Field) *LocationsWorkforcePoolsProvidersScimTenantsTokensUndeleteCall {
-	c.urlParams_.Set("fields", googleapi.CombineFields(s))
-	return c
-}
-
-// Context sets the context to be used in this call's Do method.
-func (c *LocationsWorkforcePoolsProvidersScimTenantsTokensUndeleteCall) Context(ctx context.Context) *LocationsWorkforcePoolsProvidersScimTenantsTokensUndeleteCall {
-	c.ctx_ = ctx
-	return c
-}
-
-// Header returns a http.Header that can be modified by the caller to add
-// headers to the request.
-func (c *LocationsWorkforcePoolsProvidersScimTenantsTokensUndeleteCall) Header() http.Header {
-	if c.header_ == nil {
-		c.header_ = make(http.Header)
-	}
-	return c.header_
-}
-
-func (c *LocationsWorkforcePoolsProvidersScimTenantsTokensUndeleteCall) doRequest(alt string) (*http.Response, error) {
-	reqHeaders := gensupport.SetHeaders(c.s.userAgent(), "application/json", c.header_)
-	body, err := googleapi.WithoutDataWrapper.JSONBuffer(c.undeleteworkforcepoolproviderscimtokenrequest)
-	if err != nil {
-		return nil, err
-	}
-	c.urlParams_.Set("alt", alt)
-	c.urlParams_.Set("prettyPrint", "false")
-	urls := googleapi.ResolveRelative(c.s.BasePath, "v1/{+name}:undelete")
-	urls += "?" + c.urlParams_.Encode()
-	req, err := http.NewRequest("POST", urls, body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header = reqHeaders
-	googleapi.Expand(req.URL, map[string]string{
-		"name": c.name,
-	})
-	c.s.logger.DebugContext(c.ctx_, "api request", "serviceName", apiName, "rpcName", "iam.locations.workforcePools.providers.scimTenants.tokens.undelete", "request", internallog.HTTPRequest(req, body.Bytes()))
-	return gensupport.SendRequest(c.ctx_, c.s.client, req)
-}
-
-// Do executes the "iam.locations.workforcePools.providers.scimTenants.tokens.undelete" call.
-// Any non-2xx status code is an error. Response headers are in either
-// *WorkforcePoolProviderScimToken.ServerResponse.Header or (if a response was
-// returned at all) in error.(*googleapi.Error).Header. Use
-// googleapi.IsNotModified to check whether the returned error was because
-// http.StatusNotModified was returned.
-func (c *LocationsWorkforcePoolsProvidersScimTenantsTokensUndeleteCall) Do(opts ...googleapi.CallOption) (*WorkforcePoolProviderScimToken, error) {
-	gensupport.SetOptions(c.urlParams_, opts...)
-	res, err := c.doRequest("json")
-	if res != nil && res.StatusCode == http.StatusNotModified {
-		if res.Body != nil {
-			res.Body.Close()
-		}
-		return nil, gensupport.WrapError(&googleapi.Error{
-			Code:   res.StatusCode,
-			Header: res.Header,
-		})
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer googleapi.CloseBody(res)
-	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, gensupport.WrapError(err)
-	}
-	ret := &WorkforcePoolProviderScimToken{
-		ServerResponse: googleapi.ServerResponse{
-			Header:         res.Header,
-			HTTPStatusCode: res.StatusCode,
-		},
-	}
-	target := &ret
-	b, err := gensupport.DecodeResponseBytes(target, res)
-	if err != nil {
-		return nil, err
-	}
-	c.s.logger.DebugContext(c.ctx_, "api response", "serviceName", apiName, "rpcName", "iam.locations.workforcePools.providers.scimTenants.tokens.undelete", "response", internallog.HTTPResponse(res, b))
 	return ret, nil
 }
 
