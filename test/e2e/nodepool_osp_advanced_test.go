@@ -16,7 +16,7 @@ import (
 	"k8s.io/utils/ptr"
 	capiopenstackv1alpha1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1alpha1"
 	capiopenstackv1beta1 "sigs.k8s.io/cluster-api-provider-openstack/api/v1beta1"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -167,10 +167,10 @@ func (o OpenStackAdvancedTest) Run(t *testing.T, nodePool hyperv1.NodePool, _ []
 		},
 		[]e2eutil.Predicate[*capiv1.Machine]{
 			func(machine *capiv1.Machine) (done bool, reasons string, err error) {
-				if machine.Spec.FailureDomain == nil {
+				if machine.Spec.FailureDomain == "" {
 					return false, "Machine does not have a failure domain", nil
 				}
-				want, got := getAZName(), *machine.Spec.FailureDomain
+				want, got := getAZName(), machine.Spec.FailureDomain
 				return want == got, fmt.Sprintf("expected Machine to have failure domain %s, got %s", want, got), nil
 			},
 		},

@@ -589,6 +589,7 @@ func WaitUntilAvailable(ctx context.Context, opts Options) (*appsv1.Deployment, 
 		}
 		fmt.Printf("Endpoints available\n")
 		return true, nil
+
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to wait for operator service endpoints: %w", err)
@@ -848,25 +849,9 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 				}
 				return true
 			}, func(crd *apiextensionsv1.CustomResourceDefinition) {
-				// Check if this CRD needs a conversion webhook
-				var needsConversion bool
-				var conversionReviewVersions []string
-
-				// Hypershift conversion can be toggled with a flag
-				if crd.Spec.Group == "hypershift.openshift.io" && opts.EnableConversionWebhook {
-					needsConversion = true
-					conversionReviewVersions = []string{"v1beta1", "v1alpha1"}
-
-					// CAPI conversion is always required during v1beta1 -> v1beta2 transition period
-				} else if override, ok := assets.CAPICRDOverrides[crd.Name]; ok && override.NeedsConversion {
-					needsConversion = true
-					conversionReviewVersions = []string{"v1beta1", "v1beta2"}
-				}
-
-				if !needsConversion {
+				if crd.Spec.Group != "hypershift.openshift.io" || !opts.EnableConversionWebhook {
 					return
 				}
-
 				if crd.Annotations == nil {
 					crd.Annotations = map[string]string{}
 				}
@@ -882,7 +867,7 @@ func setupCRDs(ctx context.Context, client crclient.Client, opts Options, operat
 								Path:      ptr.To("/convert"),
 							},
 						},
-						ConversionReviewVersions: conversionReviewVersions,
+						ConversionReviewVersions: []string{"v1beta1", "v1alpha1"},
 					},
 				}
 			},
