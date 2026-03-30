@@ -10,6 +10,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 
@@ -309,4 +310,40 @@ func TestSetDefaultOptions(t *testing.T) {
 	g.Expect(err).NotTo(HaveOccurred())
 	g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.RunAsUser).To(Equal(ptr.To(int64(1002))))
 	g.Expect(workloadObject.Spec.Template.Spec.SecurityContext.FSGroup).To(Equal(ptr.To(int64(1002))))
+}
+
+func TestSetAnnotations_RequiredSCCDefault(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	cpw := &controlPlaneWorkload[*appsv1.Deployment]{
+		name:             "test-component",
+		workloadProvider: &deploymentProvider{},
+	}
+	hcp := &hyperv1.HostedControlPlane{}
+	podTemplate := &corev1.PodTemplateSpec{}
+
+	cpw.setAnnotations(podTemplate, hcp)
+
+	g.Expect(podTemplate.Annotations).To(HaveKeyWithValue("openshift.io/required-scc", "restricted-v2"))
+}
+
+func TestSetAnnotations_RequiredSCCExplicitOverridePreserved(t *testing.T) {
+	g := NewGomegaWithT(t)
+
+	cpw := &controlPlaneWorkload[*appsv1.Deployment]{
+		name:             "test-component",
+		workloadProvider: &deploymentProvider{},
+	}
+	hcp := &hyperv1.HostedControlPlane{}
+	podTemplate := &corev1.PodTemplateSpec{
+		ObjectMeta: metav1.ObjectMeta{
+			Annotations: map[string]string{
+				"openshift.io/required-scc": "privileged",
+			},
+		},
+	}
+
+	cpw.setAnnotations(podTemplate, hcp)
+
+	g.Expect(podTemplate.Annotations).To(HaveKeyWithValue("openshift.io/required-scc", "privileged"))
 }

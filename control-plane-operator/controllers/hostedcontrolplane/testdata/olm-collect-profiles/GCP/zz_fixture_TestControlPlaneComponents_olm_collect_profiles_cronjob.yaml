@@ -23,6 +23,7 @@ spec:
             cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp-dir
             component.hypershift.openshift.io/config-hash: fe7dc514
             hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+            openshift.io/required-scc: restricted-v2
           labels:
             app: olm-collect-profiles
             hypershift.openshift.io/control-plane-component: olm-collect-profiles

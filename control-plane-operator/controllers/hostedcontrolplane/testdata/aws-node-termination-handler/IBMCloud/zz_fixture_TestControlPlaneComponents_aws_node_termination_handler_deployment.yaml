@@ -26,6 +26,7 @@ spec:
         cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes: tmp,token,tmp-dir
         component.hypershift.openshift.io/config-hash: 2e848593
         hypershift.openshift.io/release-image: quay.io/openshift-release-dev/ocp-release:4.16.10-x86_64
+        openshift.io/required-scc: restricted-v2
       labels:
         app: aws-node-termination-handler
         hypershift.openshift.io/control-plane-component: aws-node-termination-handler

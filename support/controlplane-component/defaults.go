@@ -14,6 +14,8 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	"github.com/openshift/hypershift/support/util"
 
+	securityv1 "github.com/openshift/api/security/v1"
+
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -41,6 +43,11 @@ const (
 	// podSafeToEvictLocalVolumesAnnotation is an annotation denoting the local volumes of a pod that can be safely evicted.
 	// This is needed for the CA operator to make sure it can properly drain the nodes with those volumes.
 	podSafeToEvictLocalVolumesAnnotation = "cluster-autoscaler.kubernetes.io/safe-to-evict-local-volumes"
+
+	// defaultRequiredSCC is the SCC pinned on all control plane pod templates to
+	// prevent permissive global SCCs from preempting the namespace PSA profile.
+	// See https://issues.redhat.com/browse/OCPBUGS-78145
+	defaultRequiredSCC = "restricted-v2"
 )
 
 var (
@@ -184,6 +191,10 @@ func (c *controlPlaneWorkload[T]) setDefaultOptions(cpContext ControlPlaneContex
 func (c *controlPlaneWorkload[T]) setAnnotations(podTemplate *corev1.PodTemplateSpec, hcp *hyperv1.HostedControlPlane) {
 	if podTemplate.Annotations == nil {
 		podTemplate.Annotations = map[string]string{}
+	}
+
+	if _, exists := podTemplate.Annotations[securityv1.RequiredSCCAnnotation]; !exists {
+		podTemplate.Annotations[securityv1.RequiredSCCAnnotation] = defaultRequiredSCC
 	}
 
 	podTemplate.Annotations[hyperv1.ReleaseImageAnnotation] = util.HCPControlPlaneReleaseImage(hcp)
