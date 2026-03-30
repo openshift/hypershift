@@ -5113,7 +5113,7 @@ spec:
                           HostedCluster.Spec.Platform.Azure.SubscriptionID.
                           subnetID is immutable once set.
                           The subnetID should be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`.
-                          The subscriptionId in the encryptionSetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
+                          The subscriptionId in the subnetID must be a valid UUID. It should be 5 groups of hyphen separated hexadecimal characters in the form 8-4-4-4-12.
                           The resourceGroupName should be between 1 and 90 characters, consisting only of alphanumeric characters, hyphens, underscores, periods and parenthesis and must not end with a period (.) character.
                           The vnetName should be between 2 and 64 characters, consisting only of alphanumeric characters, hyphens, underscores and periods and must not end with either a period (.) or hyphen (-) character.
                           The subnetName should be between 1 and 80 characters, consisting only of alphanumeric characters, hyphens and underscores and must start with an alphanumeric character and must not end with a period (.) or hyphen (-) character.
@@ -5121,8 +5121,12 @@ spec:
                         minLength: 1
                         type: string
                         x-kubernetes-validations:
-                        - message: encryptionSetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`
+                        - message: subnetID must be in the format `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/providers/Microsoft.Network/virtualNetworks/{vnetName}/subnets/{subnetName}`
                           rule: size(self.split('/')) == 11 && self.matches('^/subscriptions/.*/resourceGroups/.*/providers/Microsoft.Network/virtualNetworks/.*/subnets/.*$')
+                        - message: the subscriptionId in the subnetID must be a valid
+                            UUID. It should be 5 groups of hyphen separated hexadecimal
+                            characters in the form 8-4-4-4-12
+                          rule: self.split('/')[2].matches('^[{]?[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}[}]?$')
                         - message: The resourceGroupName should be between 1 and 90
                             characters, consisting only of alphanumeric characters,
                             hyphens, underscores, periods and parenthesis
