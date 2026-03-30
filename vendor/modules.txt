@@ -112,7 +112,7 @@ github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/internal/shared
 github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/pageblob
 github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas
 github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service
-# github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161
+# github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c
 ## explicit; go 1.16
 github.com/Azure/go-ansiterm
 github.com/Azure/go-ansiterm/winterm
@@ -1042,6 +1042,7 @@ github.com/opencontainers/image-spec/specs-go/v1
 github.com/opencontainers/selinux/go-selinux
 github.com/opencontainers/selinux/pkg/pwalkdir
 # github.com/openshift-online/ocm-common v0.0.31
+## explicit; go 1.21
 github.com/openshift-online/ocm-common/pkg/resource/validations
 # github.com/openshift/api v0.0.0-20260304122341-cf5d8996109f
 ## explicit; go 1.24.0
@@ -1295,8 +1296,6 @@ github.com/samber/lo
 github.com/samber/lo/internal/constraints
 github.com/samber/lo/internal/rand
 github.com/samber/lo/mutable
-# github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3
-## explicit; go 1.13
 # github.com/shopspring/decimal v1.4.0
 ## explicit; go 1.10
 github.com/shopspring/decimal
@@ -1550,7 +1549,7 @@ go.opentelemetry.io/otel/trace
 go.opentelemetry.io/otel/trace/embedded
 go.opentelemetry.io/otel/trace/internal/telemetry
 go.opentelemetry.io/otel/trace/noop
-# go.opentelemetry.io/proto/otlp v1.7.1
+# go.opentelemetry.io/proto/otlp v1.9.0
 ## explicit; go 1.23.0
 go.opentelemetry.io/proto/otlp/collector/trace/v1
 go.opentelemetry.io/proto/otlp/common/v1

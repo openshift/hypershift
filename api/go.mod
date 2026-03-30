@@ -45,7 +45,6 @@ require (
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/gnostic-models v0.7.1 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/pprof v0.0.0-20250923004556-9e5a51aed1e8 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
@@ -87,7 +86,7 @@ require (
 	k8s.io/client-go v0.34.3 // indirect
 	k8s.io/cloud-provider v0.34.1 // indirect
 	k8s.io/component-base v0.34.3 // indirect
-	k8s.io/component-helpers v0.34.2 // indirect
+	k8s.io/component-helpers v0.34.3 // indirect
 	k8s.io/csi-translation-lib v0.34.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20251125145642-4e65d59e963e // indirect
