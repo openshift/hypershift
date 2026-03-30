@@ -169,7 +169,6 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args := kubeAPIServerArgs{}
 	args.Set("advertise-address", p.AdvertiseAddress)
 	args.Set("allow-privileged", "true")
-	args.Set("anonymous-auth", "true")
 	args.Set("api-audiences", p.ServiceAccountIssuerURL)
 	args.Set("audit-log-format", "json")
 	args.Set("audit-log-maxbackup", "1")
@@ -195,13 +194,10 @@ func generateConfig(p KubeAPIServerConfigParams) (*kcpv1.KubeAPIServerConfig, er
 	args.Set("egress-selector-config-file", cpath(egressSelectorConfigVolumeName, EgressSelectorConfigKey))
 	args.Set("enable-admission-plugins", enabledAdmissionPlugins(p)...)
 	args.Set("disable-admission-plugins", disabledAdmissionPlugins(p)...)
+	args.Set("authentication-config", cpath(authConfigVolumeName, AuthenticationConfigKey))
 	if util.ConfigOAuthEnabled(p.Authentication) {
 		args.Set("authentication-token-webhook-config-file", cpath(authTokenWebhookConfigVolumeName, KubeconfigKey))
 		args.Set("authentication-token-webhook-version", "v1")
-	} else {
-		if p.Authentication != nil && len(p.Authentication.OIDCProviders) > 0 {
-			args.Set("authentication-config", cpath(authConfigVolumeName, AuthenticationConfigKey))
-		}
 	}
 	args.Set("enable-aggregator-routing", "true")
 	args.Set("enable-logs-handler", "false")

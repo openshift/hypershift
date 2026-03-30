@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/featuregates"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/supportedversion"
+	"github.com/openshift/hypershift/support/util"
 
 	configv1 "github.com/openshift/api/config/v1"
 
@@ -33,16 +34,27 @@ const (
 
 func adaptAuthConfig(cpContext component.WorkloadContext, config *corev1.ConfigMap) error {
 	configuration := cpContext.HCP.Spec.Configuration
-	if configuration == nil || configuration.Authentication == nil || len(configuration.Authentication.OIDCProviders) == 0 {
-		return nil
+
+	authConfig := &AuthenticationConfiguration{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "AuthenticationConfiguration",
+			APIVersion: "apiserver.config.k8s.io/v1alpha1",
+		},
+		JWT:       []JWTAuthenticator{},
+		Anonymous: anonymousAuthConfig(cpContext.HCP),
 	}
 
-	authConfig, err := generateAuthConfig(cpContext, cpContext.Client, cpContext.HCP)
-	if err != nil {
-		return fmt.Errorf("failed to generate authentication config: %w", err)
+	if configuration != nil && configuration.Authentication != nil && len(configuration.Authentication.OIDCProviders) > 0 {
+		for _, provider := range configuration.Authentication.OIDCProviders {
+			jwt, err := generateJWTForProvider(cpContext, provider, cpContext.Client, cpContext.HCP.Namespace)
+			if err != nil {
+				return fmt.Errorf("generating JWT authenticator for provider %q: %v", provider.Name, err)
+			}
+			authConfig.JWT = append(authConfig.JWT, jwt)
+		}
 	}
 
-	err = validateAuthConfig(authConfig, []string{serviceAccountIssuerURL(cpContext.HCP)})
+	err := validateAuthConfig(authConfig, []string{serviceAccountIssuerURL(cpContext.HCP)})
 	if err != nil {
 		return fmt.Errorf("validating generated authentication config: %w", err)
 	}
@@ -59,23 +71,26 @@ func adaptAuthConfig(cpContext component.WorkloadContext, config *corev1.ConfigM
 	return nil
 }
 
-func generateAuthConfig(ctx context.Context, c crclient.Reader, hcp *hyperv1.HostedControlPlane) (*AuthenticationConfiguration, error) {
-	config := &AuthenticationConfiguration{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "AuthenticationConfiguration",
-			APIVersion: "apiserver.config.k8s.io/v1alpha1",
+// anonymousAuthConfig returns an anonymous auth configuration that
+// restricts anonymous access to only a few select endpoints. The
+// /.well-known/oauth-authorization-server endpoint is only exposed when
+// integrated OAuth is enabled, since no server serves it otherwise.
+func anonymousAuthConfig(hcp *hyperv1.HostedControlPlane) *AnonymousAuthConfig {
+	config := &AnonymousAuthConfig{
+		Enabled: true,
+		Conditions: []AnonymousAuthCondition{
+			{Path: "/healthz"},
+			{Path: "/livez"},
+			{Path: "/livez/ping"},
+			{Path: "/readyz"},
 		},
-		JWT: []JWTAuthenticator{},
 	}
 
-	for _, provider := range hcp.Spec.Configuration.Authentication.OIDCProviders {
-		jwt, err := generateJWTForProvider(ctx, provider, c, hcp.Namespace)
-		if err != nil {
-			return nil, fmt.Errorf("generating JWT authenticator for provider %q: %v", provider.Name, err)
-		}
-		config.JWT = append(config.JWT, jwt)
+	if util.HCPOAuthEnabled(hcp) {
+		config.Conditions = append(config.Conditions, AnonymousAuthCondition{Path: "/.well-known/oauth-authorization-server"})
 	}
-	return config, nil
+
+	return config
 }
 
 func generateJWTForProvider(ctx context.Context, provider configv1.OIDCProvider, client crclient.Reader, namespace string) (JWTAuthenticator, error) {

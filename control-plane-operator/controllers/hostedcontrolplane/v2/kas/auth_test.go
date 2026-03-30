@@ -80,6 +80,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 					Kind:       "AuthenticationConfiguration",
 				},
 				JWT: []JWTAuthenticator{},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -109,6 +119,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 					Kind:       "AuthenticationConfiguration",
 				},
 				JWT: []JWTAuthenticator{},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -163,6 +183,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 							Extra: []ExtraMapping{},
 						},
 						ClaimValidationRules: []ClaimValidationRule{},
+					},
+				},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
 					},
 				},
 			},
@@ -226,6 +256,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 						ClaimValidationRules: []ClaimValidationRule{},
 					},
 				},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -282,6 +322,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 							Extra: []ExtraMapping{},
 						},
 						ClaimValidationRules: []ClaimValidationRule{},
+					},
+				},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
 					},
 				},
 			},
@@ -370,6 +420,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 						ClaimValidationRules: []ClaimValidationRule{},
 					},
 				},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -428,6 +488,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 						ClaimValidationRules: []ClaimValidationRule{},
 					},
 				},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -484,6 +554,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 							Extra: []ExtraMapping{},
 						},
 						ClaimValidationRules: []ClaimValidationRule{},
+					},
+				},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
 					},
 				},
 			},
@@ -550,6 +630,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 						ClaimValidationRules: []ClaimValidationRule{},
 					},
 				},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -609,6 +699,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 							Extra: []ExtraMapping{},
 						},
 						ClaimValidationRules: []ClaimValidationRule{},
+					},
+				},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
 					},
 				},
 			},
@@ -732,6 +832,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 							},
 						},
 						ClaimValidationRules: []ClaimValidationRule{},
+					},
+				},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
 					},
 				},
 			},
@@ -894,6 +1004,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 						},
 					},
 				},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -992,6 +1112,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 					Kind:       "AuthenticationConfiguration",
 				},
 				JWT: []JWTAuthenticator{},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -1021,6 +1151,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 					Kind:       "AuthenticationConfiguration",
 				},
 				JWT: []JWTAuthenticator{},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -1051,6 +1191,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 					Kind:       "AuthenticationConfiguration",
 				},
 				JWT: []JWTAuthenticator{},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -1081,6 +1231,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 					Kind:       "AuthenticationConfiguration",
 				},
 				JWT: []JWTAuthenticator{},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -1111,6 +1271,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 					Kind:       "AuthenticationConfiguration",
 				},
 				JWT: []JWTAuthenticator{},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -1141,6 +1311,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 					Kind:       "AuthenticationConfiguration",
 				},
 				JWT: []JWTAuthenticator{},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -1171,6 +1351,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 					Kind:       "AuthenticationConfiguration",
 				},
 				JWT: []JWTAuthenticator{},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -1201,6 +1391,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 					Kind:       "AuthenticationConfiguration",
 				},
 				JWT: []JWTAuthenticator{},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -1254,6 +1454,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 								Message:    "email must be verified",
 							},
 						},
+					},
+				},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
 					},
 				},
 			},
@@ -1375,6 +1585,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 						ClaimValidationRules: []ClaimValidationRule{},
 					},
 				},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -1468,6 +1688,16 @@ func TestAdaptAuthConfig(t *testing.T) {
 					Kind:       "AuthenticationConfiguration",
 				},
 				JWT: []JWTAuthenticator{},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
 			},
 			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
 				OIDCProviders: []configv1.OIDCProvider{
@@ -1520,6 +1750,52 @@ func TestAdaptAuthConfig(t *testing.T) {
 				},
 			},
 			shouldError: true,
+		},
+		{
+			name:   "When no OIDC providers are configured it should still generate an auth config with anonymous auth restricted to probe endpoints",
+			client: nil,
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+						{Path: "/.well-known/oauth-authorization-server"},
+					},
+				},
+			},
+			shouldError: false,
+		},
+		{
+			name:   "When integrated OAuth is disabled it should not allow anonymous access to the oauth metadata endpoint",
+			client: nil,
+			hcpAuthenticationSpec: &configv1.AuthenticationSpec{
+				Type: configv1.AuthenticationTypeOIDC,
+			},
+			expectedAuthenticationConfiguration: &AuthenticationConfiguration{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: "apiserver.config.k8s.io/v1alpha1",
+					Kind:       "AuthenticationConfiguration",
+				},
+				JWT: []JWTAuthenticator{},
+				Anonymous: &AnonymousAuthConfig{
+					Enabled: true,
+					Conditions: []AnonymousAuthCondition{
+						{Path: "/healthz"},
+						{Path: "/livez"},
+						{Path: "/livez/ping"},
+						{Path: "/readyz"},
+					},
+				},
+			},
+			shouldError: false,
 		},
 	}
 

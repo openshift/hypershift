@@ -451,7 +451,6 @@ func TestGenerateConfig(t *testing.T) {
 
 					delete(kasc.APIServerArguments, "authentication-token-webhook-config-file")
 					delete(kasc.APIServerArguments, "authentication-token-webhook-version")
-					kasc.APIServerArguments["authentication-config"] = kcpv1.Arguments{"/etc/kubernetes/auth/auth.json"}
 
 					kasc.AuthConfig.OAuthMetadataFile = ""
 				},
@@ -694,13 +693,13 @@ func defaultKASConfig() *kcpv1.KubeAPIServerConfig {
 		APIServerArguments: map[string]kcpv1.Arguments{
 			"advertise-address":                        {""},
 			"allow-privileged":                         {"true"},
-			"anonymous-auth":                           {"true"},
 			"api-audiences":                            {""},
 			"audit-log-format":                         {"json"},
 			"audit-log-maxbackup":                      {"1"},
 			"audit-log-maxsize":                        {"10"},
 			"audit-log-path":                           {"/var/log/kube-apiserver/audit.log"},
 			"audit-policy-file":                        {"/etc/kubernetes/audit/policy.yaml"},
+			"authentication-config":                    {"/etc/kubernetes/auth/auth.json"},
 			"authentication-token-webhook-config-file": {"/etc/kubernetes/auth-token-webhook/kubeconfig"},
 			"authentication-token-webhook-version":     {"v1"},
 			"authorization-mode": {
