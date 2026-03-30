@@ -193,7 +193,7 @@ func (c *controlPlaneWorkload[T]) setAnnotations(podTemplate *corev1.PodTemplate
 		podTemplate.Annotations = map[string]string{}
 	}
 
-	if _, exists := podTemplate.Annotations[securityv1.RequiredSCCAnnotation]; !exists {
+	if scc, exists := podTemplate.Annotations[securityv1.RequiredSCCAnnotation]; !exists || strings.TrimSpace(scc) == "" {
 		podTemplate.Annotations[securityv1.RequiredSCCAnnotation] = defaultRequiredSCC
 	}
 

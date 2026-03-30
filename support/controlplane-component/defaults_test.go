@@ -347,3 +347,36 @@ func TestSetAnnotations_RequiredSCCExplicitOverridePreserved(t *testing.T) {
 
 	g.Expect(podTemplate.Annotations).To(HaveKeyWithValue("openshift.io/required-scc", "privileged"))
 }
+
+func TestSetAnnotations_RequiredSCCEmptyStringDefaults(t *testing.T) {
+	tests := []struct {
+		name             string
+		existingSCCValue string
+	}{
+		{name: "empty string", existingSCCValue: ""},
+		{name: "whitespace only", existingSCCValue: "   \t  "},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewGomegaWithT(t)
+
+			cpw := &controlPlaneWorkload[*appsv1.Deployment]{
+				name:             "test-component",
+				workloadProvider: &deploymentProvider{},
+			}
+			hcp := &hyperv1.HostedControlPlane{}
+			podTemplate := &corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						"openshift.io/required-scc": tt.existingSCCValue,
+					},
+				},
+			}
+
+			cpw.setAnnotations(podTemplate, hcp)
+
+			g.Expect(podTemplate.Annotations).To(HaveKeyWithValue("openshift.io/required-scc", "restricted-v2"))
+		})
+	}
+}
