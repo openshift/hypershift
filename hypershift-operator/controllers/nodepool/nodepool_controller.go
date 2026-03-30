@@ -774,17 +774,11 @@ func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.Rel
 // MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas
 // are updated and available, and no old machines are running.
 func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
-	replicas := ptr.Deref(deployment.Spec.Replicas, 0)
-	s := &deployment.Status
-	// In CAPI v1beta2, AvailableReplicas requires NodeHealthy=True (stricter than v1beta1
-	// which only required InfraReady+Bootstrap). Using AvailableReplicas causes premature
-	// completion when nodes briefly become healthy then unhealthy (e.g. CNI flap), making
-	// UpdatingConfig flip to False before tests can observe True. UpToDateReplicas is
-	// template-based (no NodeHealthy dependency) and matches v1beta1 completion semantics.
-	return ptr.Deref(s.UpToDateReplicas, 0) == replicas &&
-		ptr.Deref(s.Replicas, 0) == replicas &&
-		ptr.Deref(s.ReadyReplicas, 0) == replicas &&
-		s.ObservedGeneration >= deployment.Generation
+	newStatus := &deployment.Status
+	return newStatus.Deprecated.V1Beta1.UpdatedReplicas == *(deployment.Spec.Replicas) &&
+		ptr.Deref(newStatus.Replicas, 0) == *(deployment.Spec.Replicas) &&
+		ptr.Deref(newStatus.AvailableReplicas, 0) == *(deployment.Spec.Replicas) &&
+		newStatus.ObservedGeneration >= deployment.Generation
 }
 
 // GetHostedClusterByName finds and return a HostedCluster object using the specified params.
