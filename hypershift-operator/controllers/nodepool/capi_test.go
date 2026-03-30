@@ -24,7 +24,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	capiaws "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -807,11 +807,10 @@ func TestCleanupMachineTemplates(t *testing.T) {
 		Spec: capiv1.MachineSetSpec{
 			Template: capiv1.MachineTemplateSpec{
 				Spec: capiv1.MachineSpec{
-					InfrastructureRef: corev1.ObjectReference{
-						Kind:       gvk.Kind,
-						APIVersion: gvk.GroupVersion().String(),
-						Name:       template1.Name,
-						Namespace:  template1.Namespace,
+					InfrastructureRef: capiv1.ContractVersionedObjectReference{
+						Kind:     gvk.Kind,
+						APIGroup: gvk.Group,
+						Name:     template1.Name,
 					},
 				},
 			},
@@ -1086,6 +1085,8 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 	healthcheck := func(opts ...func(*capiv1.MachineHealthCheck)) *capiv1.MachineHealthCheck {
 		mhc := &capiv1.MachineHealthCheck{ObjectMeta: metav1.ObjectMeta{Namespace: "ns-cluster", Name: "nodepool"}}
 		resName := generateName("cluster", "cluster", "nodepool")
+		timeoutSec := int32((8 * time.Minute).Seconds())
+		startupSec := int32((20 * time.Minute).Seconds())
 		mhc.Spec = capiv1.MachineHealthCheckSpec{
 			ClusterName: "cluster",
 			Selector: metav1.LabelSelector{
@@ -1093,25 +1094,17 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 					resName: resName,
 				},
 			},
-			UnhealthyConditions: []capiv1.UnhealthyCondition{
-				{
-					Type:   corev1.NodeReady,
-					Status: corev1.ConditionFalse,
-					Timeout: metav1.Duration{
-						Duration: time.Duration(8 * time.Minute),
-					},
-				},
-				{
-					Type:   corev1.NodeReady,
-					Status: corev1.ConditionUnknown,
-					Timeout: metav1.Duration{
-						Duration: time.Duration(8 * time.Minute),
-					},
+			Checks: capiv1.MachineHealthCheckChecks{
+				NodeStartupTimeoutSeconds: &startupSec,
+				UnhealthyNodeConditions: []capiv1.UnhealthyNodeCondition{
+					{Type: corev1.NodeReady, Status: corev1.ConditionFalse, TimeoutSeconds: &timeoutSec},
+					{Type: corev1.NodeReady, Status: corev1.ConditionUnknown, TimeoutSeconds: &timeoutSec},
 				},
 			},
-			MaxUnhealthy: &defaultMaxUnhealthy,
-			NodeStartupTimeout: &metav1.Duration{
-				Duration: 20 * time.Minute,
+			Remediation: capiv1.MachineHealthCheckRemediation{
+				TriggerIf: capiv1.MachineHealthCheckRemediationTriggerIf{
+					UnhealthyLessThanOrEqualTo: &defaultMaxUnhealthy,
+				},
 			},
 		}
 		for _, o := range opts {
@@ -1143,8 +1136,9 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 	}
 	withTimeout := func(d time.Duration) func(*capiv1.MachineHealthCheck) {
 		return func(mhc *capiv1.MachineHealthCheck) {
-			for i := range mhc.Spec.UnhealthyConditions {
-				mhc.Spec.UnhealthyConditions[i].Timeout = metav1.Duration{Duration: d}
+			s := int32(d.Seconds())
+			for i := range mhc.Spec.Checks.UnhealthyNodeConditions {
+				mhc.Spec.Checks.UnhealthyNodeConditions[i].TimeoutSeconds = &s
 			}
 		}
 	}
@@ -1160,7 +1154,8 @@ func TestReconcileMachineHealthCheck(t *testing.T) {
 	}
 	withNodeStartupTimeout := func(d time.Duration) func(*capiv1.MachineHealthCheck) {
 		return func(mhc *capiv1.MachineHealthCheck) {
-			mhc.Spec.NodeStartupTimeout = &metav1.Duration{Duration: d}
+			s := int32(d.Seconds())
+			mhc.Spec.Checks.NodeStartupTimeoutSeconds = &s
 		}
 	}
 
@@ -1330,13 +1325,10 @@ func TestCAPIReconcile(t *testing.T) {
 				Spec: capiv1.MachineSetSpec{
 					Template: capiv1.MachineTemplateSpec{
 						Spec: capiv1.MachineSpec{
-							InfrastructureRef: corev1.ObjectReference{
-								Kind:       "AWSMachineTemplate",
-								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
-								Namespace:  "test-namespace-test-cluster",
-								// This is the generated name by machineTemplateBuilders.
-								// So reconciliation doesn't create a new AWSMachineTemplate but reconcile this one.
-								Name: awsMachineTemplateName,
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{
+								Kind:     "AWSMachineTemplate",
+								APIGroup: "infrastructure.cluster.x-k8s.io",
+								Name:     awsMachineTemplateName,
 							},
 						},
 					},
@@ -1426,13 +1418,10 @@ func TestCAPIReconcile(t *testing.T) {
 				Spec: capiv1.MachineSetSpec{
 					Template: capiv1.MachineTemplateSpec{
 						Spec: capiv1.MachineSpec{
-							InfrastructureRef: corev1.ObjectReference{
-								Kind:       "AWSMachineTemplate",
-								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
-								Namespace:  "test-namespace-test-cluster",
-								// This is the generated name by machineTemplateBuilders.
-								// So reconciliation doesn't create a new AWSMachineTemplate but reconcile this one.
-								Name: awsMachineTemplateName,
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{
+								Kind:     "AWSMachineTemplate",
+								APIGroup: "infrastructure.cluster.x-k8s.io",
+								Name:     awsMachineTemplateName,
 							},
 						},
 					},
@@ -1533,13 +1522,10 @@ func TestCAPIReconcile(t *testing.T) {
 				Spec: capiv1.MachineSetSpec{
 					Template: capiv1.MachineTemplateSpec{
 						Spec: capiv1.MachineSpec{
-							InfrastructureRef: corev1.ObjectReference{
-								Kind:       "AWSMachineTemplate",
-								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
-								Namespace:  "test-namespace-test-cluster",
-								// This is the generated name by machineTemplateBuilders.
-								// So reconciliation doesn't create a new AWSMachineTemplate but reconcile this one.
-								Name: awsMachineTemplateName,
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{
+								Kind:     "AWSMachineTemplate",
+								APIGroup: "infrastructure.cluster.x-k8s.io",
+								Name:     awsMachineTemplateName,
 							},
 						},
 					},
@@ -1647,11 +1633,10 @@ func TestCAPIReconcile(t *testing.T) {
 				Spec: capiv1.MachineSetSpec{
 					Template: capiv1.MachineTemplateSpec{
 						Spec: capiv1.MachineSpec{
-							InfrastructureRef: corev1.ObjectReference{
-								Kind:       "AWSMachineTemplate",
-								APIVersion: "infrastructure.cluster.x-k8s.io/v1beta2",
-								Namespace:  "test-namespace-test-cluster",
-								Name:       awsMachineTemplateName,
+							InfrastructureRef: capiv1.ContractVersionedObjectReference{
+								Kind:     "AWSMachineTemplate",
+								APIGroup: "infrastructure.cluster.x-k8s.io",
+								Name:     awsMachineTemplateName,
 							},
 						},
 					},
@@ -1749,9 +1734,9 @@ func TestCAPIReconcile(t *testing.T) {
 				g.Expect(md.Annotations).To(HaveKeyWithValue(nodePoolAnnotation, "test-namespace/test-nodepool"))
 
 				// Check MachineDeployment spec.
-				g.Expect(md.Spec.Strategy.Type).To(Equal(capiv1.MachineDeploymentStrategyType("RollingUpdate")))
-				g.Expect(md.Spec.Strategy.RollingUpdate.MaxUnavailable.IntValue()).To(Equal(0))
-				g.Expect(md.Spec.Strategy.RollingUpdate.MaxSurge.IntValue()).To(Equal(1))
+				g.Expect(md.Spec.Rollout.Strategy.Type).To(Equal(capiv1.MachineDeploymentRolloutStrategyType("RollingUpdate")))
+				g.Expect(md.Spec.Rollout.Strategy.RollingUpdate.MaxUnavailable.IntValue()).To(Equal(0))
+				g.Expect(md.Spec.Rollout.Strategy.RollingUpdate.MaxSurge.IntValue()).To(Equal(1))
 
 				// Check MachineDeployment labels.
 				g.Expect(md.Labels).To(HaveKeyWithValue(capiv1.ClusterNameLabel, capiClusterName))
@@ -1764,14 +1749,13 @@ func TestCAPIReconcile(t *testing.T) {
 
 				// Check MachineDeployment template spec
 				g.Expect(md.Spec.Template.Spec.ClusterName).To(Equal(capiClusterName))
-				g.Expect(md.Spec.Template.Spec.InfrastructureRef.APIVersion).To(Equal("infrastructure.cluster.x-k8s.io/v1beta2"))
+				g.Expect(md.Spec.Template.Spec.InfrastructureRef.APIGroup).To(Equal("infrastructure.cluster.x-k8s.io"))
 				g.Expect(md.Spec.Template.Spec.InfrastructureRef.Kind).To(Equal("AWSMachineTemplate"))
-				g.Expect(md.Spec.Template.Spec.InfrastructureRef.Namespace).To(Equal(controlpaneNamespace))
 				g.Expect(md.Spec.Template.Spec.InfrastructureRef.Name).To(Equal(awsMachineTemplateName))
 
-				g.Expect(*md.Spec.Template.Spec.Version).To(Equal("target-version"))
-				g.Expect(md.Spec.Template.Spec.NodeDrainTimeout).To(Equal(tt.nodePool.Spec.NodeDrainTimeout))
-				g.Expect(md.Spec.Template.Spec.NodeVolumeDetachTimeout).To(Equal(tt.nodePool.Spec.NodeVolumeDetachTimeout))
+				g.Expect(md.Spec.Template.Spec.Version).To(Equal("target-version"))
+				g.Expect(md.Spec.Template.Spec.Deletion.NodeDrainTimeoutSeconds).To(Equal(durationToSeconds(tt.nodePool.Spec.NodeDrainTimeout)))
+				g.Expect(md.Spec.Template.Spec.Deletion.NodeVolumeDetachTimeoutSeconds).To(Equal(durationToSeconds(tt.nodePool.Spec.NodeVolumeDetachTimeout)))
 
 				// Check Bootstrap DataSecretName.
 				g.Expect(md.Spec.Template.Spec.Bootstrap.DataSecretName).NotTo(BeNil())
@@ -1826,10 +1810,10 @@ func TestCAPIReconcile(t *testing.T) {
 					g.Expect(err).NotTo(HaveOccurred())
 
 					// Update MachineDeployment status to indicate rollout is complete.
-					md.Status.Replicas = *tt.nodePool.Spec.Replicas
-					md.Status.UpdatedReplicas = *tt.nodePool.Spec.Replicas
-					md.Status.ReadyReplicas = *tt.nodePool.Spec.Replicas
-					md.Status.AvailableReplicas = *tt.nodePool.Spec.Replicas
+					md.Status.Replicas = tt.nodePool.Spec.Replicas
+					md.Status.UpToDateReplicas = tt.nodePool.Spec.Replicas
+					md.Status.ReadyReplicas = tt.nodePool.Spec.Replicas
+					md.Status.AvailableReplicas = tt.nodePool.Spec.Replicas
 					md.Status.ObservedGeneration = md.Generation
 					err = capi.Client.Update(t.Context(), md)
 					g.Expect(err).NotTo(HaveOccurred())

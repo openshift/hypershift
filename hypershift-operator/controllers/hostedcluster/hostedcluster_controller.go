@@ -96,7 +96,7 @@ import (
 	"k8s.io/utils/clock"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -1804,7 +1804,6 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-
 	if err := r.reconcileAWSSubnets(ctx, createOrUpdate, infraCR, req.Namespace, req.Name, controlPlaneNamespace.Name); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -1825,6 +1824,17 @@ func (r *HostedClusterReconciler) reconcile(ctx context.Context, req ctrl.Reques
 		})
 		if err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to reconcile capi cluster: %w", err)
+		}
+		// Patch InfrastructureProvisioned on the CAPI Cluster status once infrastructure
+		// is confirmed ready. This is done via a dedicated Status patch (not in
+		// reconcileCAPICluster) to keep spec and status concerns separate.
+		// Gate on HCP.InfrastructureReady to match CAPI 1.10 timing where CAPA set
+		// AWSCluster.status.ready only after infrastructure was verified, preventing
+		// premature control plane convergence that breaks e2e timing assumptions.
+		if hcp != nil && meta.IsStatusConditionTrue(hcp.Status.Conditions, string(hyperv1.InfrastructureReady)) {
+			if err := patchInfrastructureInitializationProvisioned(ctx, r.Client, capiCluster); err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to patch CAPI cluster InfrastructureProvisioned: %w", err)
+			}
 		}
 	}
 
@@ -2885,11 +2895,36 @@ func reconcilecontrolPlaneOperatorIngressOperatorRoleBinding(binding *rbacv1.Rol
 	return nil
 }
 
+// patchInfrastructureInitializationProvisioned sets InfrastructureProvisioned=True on
+// the CAPI Cluster status via a dedicated Status patch. For externally managed infra
+// (ManagedByAnnotation="external"), CAPI skips InfrastructureCluster reconciliation so
+// it cannot determine infra readiness itself. HyperShift fulfills this part of the CAPI
+// contract here, gated on HCP.InfrastructureReady=True.
+func patchInfrastructureInitializationProvisioned(ctx context.Context, c client.Client, capiCluster *capiv1.Cluster) error {
+	if ptr.Deref(capiCluster.Status.Initialization.InfrastructureProvisioned, false) {
+		return nil
+	}
+	original := capiCluster.DeepCopy()
+	capiCluster.Status.Initialization.InfrastructureProvisioned = ptr.To(true)
+	return c.Status().Patch(ctx, capiCluster, client.MergeFrom(original))
+}
+
 func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedCluster, hcp *hyperv1.HostedControlPlane, infraCR client.Object) error {
+	// Note: InfrastructureProvisioned is NOT set here. It is managed by
+	// patchInfrastructureInitializationProvisioned which does a dedicated Status
+	// patch gated on HCP.InfrastructureReady=True. This preserves CAPI 1.10
+	// timing semantics and keeps this function focused on spec-only changes.
+	// Note: ControlPlaneInitialized is intentionally NOT set here. CAPI's cluster
+	// controller will set it naturally when HCP.Status.Initialized=True (via v1beta1
+	// contract reading status.initialized). This preserves CAPI 1.10 timing where
+	// machines were only created after the guest cluster bootstrap RBAC was set up by
+	// HCCO. Setting it unconditionally caused machines to boot before HCCO had finished
+	// configuring the guest cluster, resulting in bootstrap authentication failures.
+
 	// We only create this resource once and then let CAPI own it
 	if !cluster.CreationTimestamp.IsZero() {
 		// make sure cluster is not paused.
-		cluster.Spec.Paused = false
+		cluster.Spec.Paused = ptr.To(false)
 		return nil
 	}
 	infraCRGVK, err := apiutil.GVKForObject(infraCR, api.Scheme)
@@ -2902,17 +2937,15 @@ func reconcileCAPICluster(cluster *capiv1.Cluster, hcluster *hyperv1.HostedClust
 	}
 	cluster.Spec = capiv1.ClusterSpec{
 		ControlPlaneEndpoint: capiv1.APIEndpoint{},
-		ControlPlaneRef: &corev1.ObjectReference{
-			APIVersion: "hypershift.openshift.io/v1beta1",
-			Kind:       "HostedControlPlane",
-			Namespace:  hcp.Namespace,
-			Name:       hcp.Name,
+		ControlPlaneRef: capiv1.ContractVersionedObjectReference{
+			APIGroup: "hypershift.openshift.io",
+			Kind:     "HostedControlPlane",
+			Name:     hcp.Name,
 		},
-		InfrastructureRef: &corev1.ObjectReference{
-			APIVersion: infraCRGVK.GroupVersion().String(),
-			Kind:       infraCRGVK.Kind,
-			Namespace:  infraCR.GetNamespace(),
-			Name:       infraCR.GetName(),
+		InfrastructureRef: capiv1.ContractVersionedObjectReference{
+			APIGroup: infraCRGVK.Group,
+			Kind:     infraCRGVK.Kind,
+			Name:     infraCR.GetName(),
 		},
 	}
 
@@ -2934,8 +2967,8 @@ func pauseCAPICluster(ctx context.Context, c client.Client, hc *hyperv1.HostedCl
 		return nil
 	}
 
-	if capiCluster.Spec.Paused != paused {
-		capiCluster.Spec.Paused = paused
+	if ptr.Deref(capiCluster.Spec.Paused, false) != paused {
+		capiCluster.Spec.Paused = ptr.To(paused)
 		if err := c.Update(ctx, capiCluster); err != nil {
 			return fmt.Errorf("failed to update CAPI Cluster: %w", err)
 		}
@@ -2948,7 +2981,7 @@ func reconcileCAPIManagerClusterRole(role *rbacv1.ClusterRole) error {
 		{
 			APIGroups: []string{"apiextensions.k8s.io"},
 			Resources: []string{"customresourcedefinitions"},
-			Verbs:     []string{"get", "list", "watch"},
+			Verbs:     []string{"get", "list", "patch", "watch"},
 		},
 	}
 	return nil

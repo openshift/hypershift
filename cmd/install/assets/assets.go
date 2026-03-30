@@ -125,7 +125,9 @@ func getCustomResourceDefinition(files embed.FS, file string) *apiextensionsv1.C
 			crd.Labels = map[string]string{}
 		}
 		crd.Labels[capiLabel] = label
+
 	}
+
 	return &crd
 }
 

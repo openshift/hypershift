@@ -15,7 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -56,7 +56,7 @@ func TestGetNodesForMachineSet(t *testing.T) {
 				Labels: selector,
 			},
 			Status: capiv1.MachineStatus{
-				NodeRef: &corev1.ObjectReference{
+				NodeRef: capiv1.MachineNodeReference{
 					Name: "test",
 				},
 			},
@@ -75,7 +75,7 @@ func TestGetNodesForMachineSet(t *testing.T) {
 				Labels: selector,
 			},
 			Status: capiv1.MachineStatus{
-				NodeRef: &corev1.ObjectReference{
+				NodeRef: capiv1.MachineNodeReference{
 					Name: "otherOwner",
 				},
 			},
@@ -96,7 +96,7 @@ func TestGetNodesForMachineSet(t *testing.T) {
 				},
 			},
 			Status: capiv1.MachineStatus{
-				NodeRef: &corev1.ObjectReference{
+				NodeRef: capiv1.MachineNodeReference{
 					Name: "otherSelector",
 				},
 			},
@@ -631,7 +631,7 @@ func TestReconcileInPlaceUpgradeAnnotatesMachineWithNodePoolVersion(t *testing.T
 			},
 		},
 		Status: capiv1.MachineStatus{
-			NodeRef: &corev1.ObjectReference{Name: "test-node"},
+			NodeRef: capiv1.MachineNodeReference{Name: "test-node"},
 		},
 	}
 
@@ -651,7 +651,7 @@ func TestReconcileInPlaceUpgradeAnnotatesMachineWithNodePoolVersion(t *testing.T
 			},
 		},
 		Status: capiv1.MachineStatus{
-			NodeRef: &corev1.ObjectReference{Name: "upgrading-node"},
+			NodeRef: capiv1.MachineNodeReference{Name: "upgrading-node"},
 		},
 	}
 

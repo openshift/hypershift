@@ -162,7 +162,7 @@ func (p GCP) reconcileGCPCluster(gcpCluster *capigcp.GCPCluster, hcluster *hyper
 	}
 
 	// Set control plane endpoint (following AWS pattern)
-	gcpCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{
+	gcpCluster.Spec.ControlPlaneEndpoint = capiv1.APIEndpoint{ //nolint:staticcheck
 		Host: apiEndpoint.Host,
 		Port: apiEndpoint.Port,
 	}

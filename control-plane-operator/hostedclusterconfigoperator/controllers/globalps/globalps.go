@@ -18,7 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	crreconcile "sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -240,7 +240,7 @@ func (r *Reconciler) labelNodesForGlobalPullSecret(ctx context.Context) error {
 
 		// Mark nodes from this Replace MachineSet for labeling
 		for _, machine := range machines.Items {
-			if machine.Status.NodeRef != nil {
+			if machine.Status.NodeRef.IsDefined() {
 				nodesToLabel[machine.Status.NodeRef.Name] = true
 			}
 		}

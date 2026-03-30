@@ -150,6 +150,7 @@ func SetupWebhookWithManager(mgr ctrl.Manager, imageMetaDataProvider *hyperutil.
 	if err != nil {
 		return fmt.Errorf("unable to register hostedcontrolplane webhook: %w", err)
 	}
+
 	return nil
 }
 

@@ -34,7 +34,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
-	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	capiv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -784,10 +784,10 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:   capiv1.ReadyCondition,
-									Status: corev1.ConditionTrue,
+									Status: metav1.ConditionTrue,
 								},
 							},
 						},
@@ -801,10 +801,10 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:   capiv1.ReadyCondition,
-									Status: corev1.ConditionTrue,
+									Status: metav1.ConditionTrue,
 								},
 							},
 						},
@@ -835,16 +835,16 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:    capiv1.ReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode1",
 									Message: "test message node 1",
 								},
 								{
 									Type:    capiv1.MachineNodeHealthyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode1",
 									Message: "test message node 1",
 								},
@@ -860,16 +860,16 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:    capiv1.ReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode2",
 									Message: "test message node 2",
 								},
 								{
 									Type:    capiv1.MachineNodeHealthyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode2",
 									Message: "test message node 2",
 								},
@@ -903,22 +903,22 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:    capiv1.ReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode1",
 									Message: "test message node 1",
 								},
 								{
 									Type:    capiv1.InfrastructureReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode1",
 									Message: "12 of 34 completed",
 								},
 								{
 									Type:    capiv1.MachineNodeHealthyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode1",
 									Message: "test message node 1",
 								},
@@ -935,22 +935,22 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:    capiv1.ReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode2",
 									Message: "test message node 2",
 								},
 								{
 									Type:    capiv1.InfrastructureReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode2",
 									Message: "some real failed message",
 								},
 								{
 									Type:    capiv1.MachineNodeHealthyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode2",
 									Message: "test message node 2",
 								},
@@ -967,14 +967,14 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:   capiv1.ReadyCondition,
-									Status: corev1.ConditionTrue,
+									Status: metav1.ConditionTrue,
 								},
 								{
 									Type:   capiv1.MachineNodeHealthyCondition,
-									Status: corev1.ConditionTrue,
+									Status: metav1.ConditionTrue,
 								},
 							},
 						},
@@ -1006,22 +1006,22 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:    capiv1.ReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode1",
 									Message: "test message node 1",
 								},
 								{
 									Type:    capiv1.InfrastructureReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode1",
 									Message: "some real failed message",
 								},
 								{
 									Type:    capiv1.MachineNodeHealthyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode1",
 									Message: "test message node 1",
 								},
@@ -1038,22 +1038,22 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:    capiv1.ReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode2",
 									Message: "test message node 2",
 								},
 								{
 									Type:    capiv1.InfrastructureReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode2",
 									Message: "12 of 34 completed",
 								},
 								{
 									Type:    capiv1.MachineNodeHealthyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode2",
 									Message: "test message node 2",
 								},
@@ -1070,14 +1070,14 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:   capiv1.ReadyCondition,
-									Status: corev1.ConditionTrue,
+									Status: metav1.ConditionTrue,
 								},
 								{
 									Type:   capiv1.MachineNodeHealthyCondition,
-									Status: corev1.ConditionTrue,
+									Status: metav1.ConditionTrue,
 								},
 							},
 						},
@@ -1114,16 +1114,16 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:    capiv1.ReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode1",
 									Message: "not ready",
 								},
 								{
 									Type:    capiv1.InfrastructureReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode1",
 									Message: longMessage,
 								},
@@ -1141,16 +1141,16 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:    capiv1.ReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode2",
 									Message: "not ready",
 								},
 								{
 									Type:    capiv1.InfrastructureReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode2",
 									Message: longMessage,
 								},
@@ -1168,16 +1168,16 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:    capiv1.ReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode3",
 									Message: "not ready",
 								},
 								{
 									Type:    capiv1.InfrastructureReadyCondition,
-									Status:  corev1.ConditionFalse,
+									Status:  metav1.ConditionFalse,
 									Reason:  "TestReasonNode3",
 									Message: longMessage,
 								},
@@ -1195,10 +1195,10 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:   capiv1.ReadyCondition,
-									Status: corev1.ConditionTrue,
+									Status: metav1.ConditionTrue,
 								},
 							},
 						},
@@ -1226,10 +1226,10 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:   capiv1.ReadyCondition,
-									Status: corev1.ConditionTrue,
+									Status: metav1.ConditionTrue,
 								},
 							},
 							Addresses: capiv1.MachineAddresses{
@@ -1249,10 +1249,10 @@ func TestSetMachineAndNodeConditions(t *testing.T) {
 							},
 						},
 						Status: capiv1.MachineStatus{
-							Conditions: []capiv1.Condition{
+							Conditions: []metav1.Condition{
 								{
 									Type:   capiv1.ReadyCondition,
-									Status: corev1.ConditionTrue,
+									Status: metav1.ConditionTrue,
 								},
 							},
 							Addresses: capiv1.MachineAddresses{
