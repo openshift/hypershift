@@ -597,9 +597,27 @@ func (c *CAPI) reconcileMachineDeployment(ctx context.Context, log logr.Logger,
 		return nil
 	}
 
+	// List MachineSets owned by this MachineDeployment to pass to MachineDeploymentComplete.
+	// Direct MachineSet spec comparison avoids the CAPI v1beta2 async-condition race where
+	// ObservedGeneration advances before UpToDateReplicas is recomputed.
+	msList := &capiv1.MachineSetList{}
+	if err := c.List(ctx, msList, client.InNamespace(machineDeployment.Namespace)); err != nil {
+		return fmt.Errorf("failed to list MachineSets: %w", err)
+	}
+	var ownedMachineSets []*capiv1.MachineSet
+	for idx := range msList.Items {
+		ms := &msList.Items[idx]
+		for _, ref := range ms.OwnerReferences {
+			if ref.Kind == "MachineDeployment" && ref.Name == machineDeployment.Name {
+				ownedMachineSets = append(ownedMachineSets, ms)
+				break
+			}
+		}
+	}
+
 	// If the MachineDeployment is now processing we know
 	// is at the expected version (spec.version) and config (userData Secret) so we reconcile status and annotation.
-	if MachineDeploymentComplete(machineDeployment) {
+	if MachineDeploymentComplete(machineDeployment, ownedMachineSets) {
 		if nodePool.Status.Version != targetVersion {
 			log.Info("Version update complete",
 				"previous", nodePool.Status.Version, "new", targetVersion)

@@ -773,12 +773,28 @@ func defaultNodePoolGCPImage(specifiedArch string, releaseImage *releaseinfo.Rel
 
 // MachineDeploymentComplete considers a MachineDeployment to be complete once all of its desired replicas
 // are updated and available, and no old machines are running.
-func MachineDeploymentComplete(deployment *capiv1.MachineDeployment) bool {
-	newStatus := &deployment.Status
-	return newStatus.Deprecated.V1Beta1.UpdatedReplicas == *(deployment.Spec.Replicas) &&
-		ptr.Deref(newStatus.Replicas, 0) == *(deployment.Spec.Replicas) &&
-		ptr.Deref(newStatus.AvailableReplicas, 0) == *(deployment.Spec.Replicas) &&
-		newStatus.ObservedGeneration >= deployment.Generation
+func MachineDeploymentComplete(deployment *capiv1.MachineDeployment, machineSets []*capiv1.MachineSet) bool {
+	replicas := ptr.Deref(deployment.Spec.Replicas, 0)
+	s := &deployment.Status
+	if ptr.Deref(s.Replicas, 0) != replicas ||
+		ptr.Deref(s.AvailableReplicas, 0) != replicas ||
+		s.ObservedGeneration < deployment.Generation {
+		return false
+	}
+
+	// Direct MachineSet spec comparison replicates v1beta1's synchronous
+	// UpdatedReplicas semantics without relying on async Machine conditions.
+	desiredSecret := ptr.Deref(deployment.Spec.Template.Spec.Bootstrap.DataSecretName, "")
+	desiredVersion := deployment.Spec.Template.Spec.Version
+	desiredInfraRef := deployment.Spec.Template.Spec.InfrastructureRef.Name
+	for _, ms := range machineSets {
+		if ptr.Deref(ms.Spec.Template.Spec.Bootstrap.DataSecretName, "") != desiredSecret ||
+			ms.Spec.Template.Spec.Version != desiredVersion ||
+			ms.Spec.Template.Spec.InfrastructureRef.Name != desiredInfraRef {
+			return false
+		}
+	}
+	return true
 }
 
 // GetHostedClusterByName finds and return a HostedCluster object using the specified params.
