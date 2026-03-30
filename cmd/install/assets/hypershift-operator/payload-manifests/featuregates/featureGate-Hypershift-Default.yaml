@@ -22,6 +22,9 @@
                       "name": "AROHCPManagedIdentities"
                     },
                     {
+                        "name": "ExternalOIDCWithUpstreamParity"
+                    },
+                    {
                         "name": "OpenStack"
                     },
                     {
