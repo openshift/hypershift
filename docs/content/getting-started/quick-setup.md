@@ -106,7 +106,7 @@ Create a new hosted cluster, specifying the domain of the public zone provided i
 
 The HyperShift CLI uses AWS STS (Security Token Service) for authentication. You need:
 
-1. An IAM role with the [required permissions](./reference/infrastructure/aws.md) to create cluster infrastructure
+1. An IAM role with the [required permissions](../reference/infrastructure/aws.md) to create cluster infrastructure
 2. Temporary STS credentials to authenticate
 
 Create an IAM role using the HyperShift CLI. The `--aws-creds` flag points to the credentials file for your
@@ -264,7 +264,7 @@ oc scale nodepool/$NODEPOOL_NAME \
 
 !!! note
 
-    See the [Scale Down](./how-to/automated-machine-management/nodepool-lifecycle.md#scale-down) section of the [NodePool lifecycle page](./how-to/automated-machine-management/nodepool-lifecycle.md) for more details when scaling down NodePools.
+    See the [Scale Down](../how-to/automated-machine-management/nodepool-lifecycle.md#scale-down) section of the [NodePool lifecycle page](../how-to/automated-machine-management/nodepool-lifecycle.md) for more details when scaling down NodePools.
 
 ## Delete a Hosted Cluster
 To delete a Hosted Cluster:

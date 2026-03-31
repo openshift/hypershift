@@ -37,7 +37,7 @@ To run the HyperShift Operator locally, follow these steps:
 
     `Default values are provided for HYPERSHIFT_REGION and HYPERSHIFT_BUCKET_NAME so Step #4 will function without requiring you to export any values.
 
-4. Install HyperShift in development mode which causes the operator deployment to be deployment scaled to zero so that it doesn't conflict with your local operator process (see [Prerequisites](../getting-started.md#prerequisites)):
+4. Install HyperShift in development mode which causes the operator deployment to be deployment scaled to zero so that it doesn't conflict with your local operator process (see [Prerequisites](../getting-started/quick-setup.md#prerequisites)):
   
 ```shell linenums="1"
   make hypershift-install-aws-dev
