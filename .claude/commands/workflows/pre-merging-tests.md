@@ -1,11 +1,11 @@
 ---
 model: opus
-description: "Pre-merge feature verification through CI: gather deep context from the current branch PR and Jira, discover or build operator images, create a focused test plan targeting core feature logic, build CI jobs, run rehearsals, iterate on failures, and report results with strong evidence."
+description: "Pre-merge feature verification: gather deep context, audit test coverage, assess fix feasibility, and either run CI verification or produce a review-only report with actionable findings."
 ---
 
-Pre-merge verification for a HyperShift feature: discover or build operator images, create focused CI verification targeting the core feature logic, run rehearsals, and report results with strong evidence.
+Pre-merge verification for a HyperShift feature: gather deep context, audit existing test coverage, assess whether the fix is correct and complete, then either build CI verification jobs (for runtime behavior changes) or produce a review-only report (for API/validation/config changes).
 
-[Extended thinking: This workflow orchestrates pre-merge testing for a HyperShift feature. It detects the current branch PR, deeply gathers context from the PR diffs, linked Jira issues and all their comments, discovers Konflux-built images or falls back to local builds, creates a focused test plan targeting the core logic of the feature, builds CI verification steps leveraging existing install/create steps with proper image overrides, creates a draft PR in openshift/release, runs rehearsals, iterates on failures, and reports results with strong proof back to the PR and Jira.]
+[Extended thinking: This workflow orchestrates pre-merge analysis and testing for a HyperShift feature. It detects the current branch PR, deeply gathers context from the PR diffs, linked Jira issues and all their comments, audits existing test coverage for breakage and gaps, assesses whether the fix actually solves the reported bug, and then triages: if runtime behavior changed, it discovers Konflux-built images or falls back to local builds, creates a focused test plan, builds CI verification steps, creates a draft PR in openshift/release, runs rehearsals, iterates on failures, and reports results with strong proof. If only API/validation/config changed, it produces a review-only report with test coverage issues, feasibility concerns, and recommendations — posted directly to the PR and Jira.]
 
 **CRITICAL: This workflow runs autonomously from start to finish. NEVER ask the user for confirmation, approval, or input. NEVER output phrases like "Would you like me to...", "Shall I proceed?", "Should I...", or "Do you want me to...". Make reasonable default decisions, log them to `state.md`, and keep going. Present summaries as you go, but do not stop and wait.**
 
@@ -42,9 +42,10 @@ The state file (`${ARTIFACTS_DIR}/state.md`) is the single source of truth for r
 
 ## Current Status
 - **Phase:** <current phase number and name>
+- **Verification Path:** <FULL_CI | REVIEW_ONLY>
 - **Iteration:** <current iteration number>
 - **Last Updated:** <timestamp>
-- **Overall Result:** <IN_PROGRESS | PARTIAL_PASS | PASS | BLOCKED>
+- **Overall Result:** <IN_PROGRESS | PARTIAL_PASS | PASS | BLOCKED | REVIEW_COMPLETE>
 
 ## References
 - **HyperShift PR:** openshift/hypershift#<number> — <title>
@@ -85,8 +86,11 @@ The state file (`${ARTIFACTS_DIR}/state.md`) is the single source of truth for r
 
 **When to update the state file:**
 - After Phase 1 completes (references, images, feature summary)
-- After Phase 3 completes (test plan, CI job structure)
-- After Phase 4 completes (CI PR created, custom step names)
+- After Phase 1.6 completes (triage decision: FULL_CI or REVIEW_ONLY)
+- After Phase 1.7 completes (test coverage audit findings)
+- After Phase 1.8 completes (feasibility analysis)
+- After Phase 3 completes (test plan, CI job structure) — Full CI path only
+- After Phase 4 completes (CI PR created, custom step names) — Full CI path only
 - After each iteration completes (result, findings, next action)
 - After any key decision or direction change
 
@@ -209,6 +213,265 @@ Write the following files:
 - `${ARTIFACTS_DIR}/state.md` — **Initialize the state file** (see Phase 0 for format). Set phase to "Phase 1 complete", populate references and images sections.
 
 This artifacts directory is reused in Phase 5 for iteration tracking. If the directory was already created (e.g., resuming work), reuse it rather than creating a new one. **Always update `state.md` when completing a phase or iteration.**
+
+### 1.6 Triage Gate: Determine Verification Path
+
+After gathering context and saving artifacts, classify the PR to determine which verification path to follow. This is a critical decision point that avoids wasting CI resources on changes that don't need a custom job.
+
+**Classification criteria:**
+
+| Changed Paths | Change Type | Verification Path |
+|---|---|---|
+| Only `api/` (types, CEL rules, CRDs) | API/validation change | **Review-Only** → Phase 1.7-1.9 → Phase 6A |
+| Only `test/` | Test-only change | **Review-Only** → Phase 1.7 → Phase 6A |
+| Only docs, comments, `.work/` | Non-functional change | **Review-Only** → Phase 6A |
+| `hypershift-operator/`, `control-plane-operator/`, `support/` | Runtime behavior change | **Full CI** → Phase 2-6 |
+| `cmd/` (CLI logic, not just generated CRDs) | CLI behavior change | **Full CI** → Phase 2-6 |
+| Mix of API + operator/CPO code | Runtime + API change | **Full CI** → Phase 2-6 |
+
+**Decision rules:**
+1. If only generated files changed (CRD manifests, `zz_generated.*`), trace back to the source change. Generated-only changes follow the source type.
+2. If unsure, default to **Full CI** — it's better to run a CI job than to miss a runtime issue.
+3. The `--dry-run` flag (if passed by user) forces Review-Only regardless of classification.
+
+Record the decision in `state.md` under "Decisions Made."
+
+**If Review-Only path:** Continue to Phase 1.7 (Test Coverage Audit), then 1.8 (Fix Feasibility), then 1.9 (Solve Spec Audit if applicable), then Phase 6A (Review-Only Report).
+
+**If Full CI path:** Continue to Phase 2 (Discover or Build Operator Images).
+
+### 1.7 Test Coverage Audit
+
+Audit existing tests to determine if the PR will break them and identify gaps. This phase runs for **both** verification paths.
+
+#### 1.7.1 Will Existing Tests Break?
+
+Search for tests that reference behavior the PR changes:
+
+1. **Find tests referencing changed constants, error messages, or validation rules:**
+   ```bash
+   # Extract key strings from the diff (error messages, constant values, validation rules)
+   # Search test files for those strings
+   grep -r "<old-error-message>" test/ --include="*.go" -l
+   grep -r "<old-constant-value>" test/ --include="*.go" -l
+   ```
+
+2. **Check if the PR updated those test files:**
+   Compare the list of files referencing old behavior against the PR's changed files list. Any test file that references old behavior but is NOT in the changed files list is a **potential breakage**.
+
+3. **For each potentially broken test, verify:**
+   - Read the test to confirm it will actually fail (not just reference the string in a comment)
+   - Determine the exact fix needed (new expected value, new test input, etc.)
+   - Classify severity: **Blocker** (presubmit will fail) vs **Warning** (periodic test, less urgent)
+
+#### 1.7.2 Are Positive Tests Missing?
+
+For the new behavior the PR introduces, check if there's a test that exercises it:
+
+1. **Identify the core new behavior** (e.g., "3 services should now be accepted")
+2. **Search for an existing test** that covers it
+3. **If missing, describe what the test should do** — include:
+   - Test name (following project conventions: "When... it should...")
+   - Input setup
+   - Expected outcome
+   - Which test file it belongs in
+
+#### 1.7.3 Are Existing Test Fixtures Stale?
+
+Check if test fixtures (YAML files, sample objects) reference deprecated or removed values that the PR addresses:
+
+```bash
+grep -r "<deprecated-value>" test/ --include="*.yaml" -l
+grep -r "<deprecated-value>" test/ --include="*.go" -l | head -20
+```
+
+Stale fixtures are low-priority but worth noting.
+
+#### 1.7.4 Output Test Coverage Report
+
+Present findings as a table:
+
+```
+## Test Coverage Audit
+
+### Tests That Will Break (Blockers)
+| Test File | Line | Test Name | Issue | Required Fix |
+|-----------|------|-----------|-------|--------------|
+| ... | ... | ... | ... | ... |
+
+### Missing Positive Tests
+| New Behavior | Expected Test | Priority |
+|-------------|---------------|----------|
+| ... | ... | High/Medium/Low |
+
+### Stale Fixtures
+| File | Line | Issue | Priority |
+|------|------|-------|----------|
+| ... | ... | ... | Low |
+```
+
+Save to `${ARTIFACTS_DIR}/test-coverage-audit.md`.
+
+### 1.8 Fix Feasibility Analysis
+
+Assess whether the PR's fix actually solves the reported bug and whether it introduces new risks. This phase is especially important for API/validation changes where the fix may be too broad or too narrow.
+
+#### 1.8.1 Does the Fix Match the Bug Scenario?
+
+1. **Reproduce the bug path mentally:**
+   - What exact user action triggers the bug? (CLI command, manual YAML, API call)
+   - Trace the code path from that action to the failure
+   - Does the PR's change actually intercept that code path?
+
+2. **Check if the reported trigger actually hits the changed code:**
+   - If the bug says "using the CLI with --flag X", check if the CLI code path actually reaches the validation being changed
+   - If the bug says "manually creating YAML", verify the validation is CEL-based (applied at API server) vs webhook-based vs controller-based
+   - **Watch for dead code:** Parameters accepted but never used, functions called but results ignored
+
+3. **Can the bug be reproduced with the current codebase?**
+   - Check if the CLI/webhook/controller has been updated since the bug was filed
+   - The bug may already be partially fixed or the code path may have changed
+
+#### 1.8.2 Is the Fix Scoped Correctly?
+
+1. **Too broad:** Does the fix relax validation for cases beyond the bug scenario?
+   - Example: Lowering service count from 4→3 for ALL platforms when only network type `Other` needs it
+   - For each case the fix now allows, ask: "Will this succeed at runtime, or just pass validation?"
+
+2. **Too narrow:** Does the fix only address one symptom while the root cause affects other cases?
+   - Example: Fixing one platform's validation but the same issue exists for others
+
+3. **Check for safety nets being removed:**
+   - If validation is being relaxed, what catches invalid configs that used to be blocked?
+   - Are there platform-specific guards that compensate? (e.g., Azure has Ignition CEL rule, but AWS doesn't)
+   - List platforms/scenarios where the removed safety net had value
+
+#### 1.8.3 Suggest Alternatives (if applicable)
+
+If the fix is too broad or has gaps, propose alternatives:
+- **More targeted fix:** Scope the change to the specific scenario (e.g., network-type-aware CEL rule)
+- **Fix + guards:** Apply the broad fix but add compensating guards (e.g., platform-specific CEL rules)
+- **Different approach:** If the root cause is elsewhere (e.g., CLI should generate different services for `Other` network type)
+
+#### 1.8.4 Output Feasibility Report
+
+```
+## Fix Feasibility Analysis
+
+### Bug Scenario Match
+- **Reported trigger:** <how the user hits the bug>
+- **Code path:** <trigger → validation → failure>
+- **Fix intercepts at:** <where the PR changes the code path>
+- **Match assessment:** <EXACT_MATCH | PARTIAL_MATCH | MISMATCH>
+
+### Scope Assessment
+- **Fix scope:** <what the fix changes>
+- **Bug scope:** <what the bug requires>
+- **Gap:** <what the fix allows beyond the bug, or what it misses>
+
+### Risk Matrix
+| Scenario | Before Fix | After Fix | Runtime Outcome |
+|----------|-----------|-----------|-----------------|
+| ... | Rejected/Accepted | Rejected/Accepted | Success/Failure |
+
+### Recommendations
+1. ...
+2. ...
+```
+
+Save to `${ARTIFACTS_DIR}/feasibility-analysis.md`.
+
+### 1.9 Solve Spec Audit (if applicable)
+
+If the PR includes a `.work/jira/solve/spec-*.md` file (generated by `/jira:solve`), audit the spec against the actual implementation. Skip this phase if no spec file exists.
+
+#### 1.9.1 Compare Spec Claims to Reality
+
+For each claim in the spec:
+1. **Root cause analysis:** Does the spec correctly identify the root cause? Cross-reference with the actual code.
+2. **Solution plan:** Were all planned changes implemented? Were any skipped?
+3. **Files to modify:** Were all listed files actually modified? Were unexpected files changed?
+4. **Testing phase:** Were the spec's testing recommendations followed?
+
+#### 1.9.2 Check Spec Accuracy
+
+- **Code references:** Are the line numbers and file paths in the spec still accurate? (Code may have shifted since the spec was generated)
+- **Behavioral claims:** Does the spec correctly describe what the code does? (e.g., "the CLI generates OVNSbDb" — does it really?)
+- **Acceptance criteria:** Are all criteria met by the PR?
+
+#### 1.9.3 Output Spec Audit Report
+
+```
+## Solve Spec Audit
+
+### Spec vs Implementation
+| Spec Claim | Reality | Status |
+|------------|---------|--------|
+| ... | ... | CORRECT / INCORRECT / NOT_IMPLEMENTED |
+
+### Spec Accuracy Issues
+| Issue | Impact |
+|-------|--------|
+| ... | ... |
+
+### Unmet Acceptance Criteria
+| Criterion | Status | Gap |
+|-----------|--------|-----|
+| ... | ... | ... |
+```
+
+Save to `${ARTIFACTS_DIR}/spec-audit.md`.
+
+## Phase 6A: Review-Only Report
+
+This phase is used when the Triage Gate (Phase 1.6) determined that a custom CI job is not needed. Instead of building CI infrastructure, produce a comprehensive review comment on the PR.
+
+### 6A.1 Compile Report
+
+Combine findings from all completed phases into a single report:
+
+1. **Feature Summary** (from Phase 1.4)
+2. **Test Coverage Audit** (from Phase 1.7) — broken tests, missing tests, stale fixtures
+3. **Fix Feasibility Analysis** (from Phase 1.8) — scope assessment, risk matrix, recommendations
+4. **Solve Spec Audit** (from Phase 1.9, if applicable) — spec vs implementation gaps
+
+### 6A.2 Post Comment on HyperShift PR
+
+Post a structured comment on the PR using `gh pr comment`. Format:
+
+```markdown
+## Pre-Merge Analysis: <Jira-Key> — <Title>
+
+### Feature Summary
+<1-2 paragraph summary of what the PR does>
+
+### Test Coverage Issues
+<Table of broken tests (blockers) and missing tests>
+
+### Fix Feasibility
+<Scope assessment, risk matrix, recommendations>
+
+### Solve Spec Gaps (if applicable)
+<Spec vs implementation discrepancies>
+
+### Recommendations
+<Numbered list of actionable items, ordered by priority>
+
+---
+_Analysis generated via `/workflows:pre-merging-tests` review-only path_
+```
+
+### 6A.3 Update Jira Issue
+
+Add a comment to the linked Jira issue with a summary of findings using `mcp__atlassian__jira_add_comment`.
+
+### 6A.4 Final Summary
+
+Present the user with:
+- Link to the PR comment
+- Summary of findings by severity (blockers, warnings, suggestions)
+- Whether the PR is ready for review or needs fixes first
+- Path to local artifacts directory
 
 ## Phase 2: Discover or Build Operator Images
 
